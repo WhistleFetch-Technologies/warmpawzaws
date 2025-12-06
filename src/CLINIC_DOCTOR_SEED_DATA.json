@@ -1,0 +1,381 @@
+{
+  "clinics": [
+    {
+      "businessName": "Happy Paws Veterinary Clinic",
+      "ownerName": "Dr. Sarah Johnson",
+      "phone": "9876543210",
+      "email": "happypaws@example.com",
+      "address": "123 MG Road, Koramangala",
+      "city": "Bangalore",
+      "state": "Karnataka",
+      "pincode": "560095",
+      "roleId": "veterinary_clinic",
+      "facilities": {
+        "icuAvailable": true,
+        "xrayAvailable": true,
+        "surgeryFacility": true,
+        "pharmacy": true,
+        "emergencyServices": true,
+        "petGrooming": false,
+        "boarding": false
+      },
+      "operatingHours": {
+        "monday": "9:00 AM - 8:00 PM",
+        "tuesday": "9:00 AM - 8:00 PM",
+        "wednesday": "9:00 AM - 8:00 PM",
+        "thursday": "9:00 AM - 8:00 PM",
+        "friday": "9:00 AM - 8:00 PM",
+        "saturday": "9:00 AM - 6:00 PM",
+        "sunday": "10:00 AM - 4:00 PM"
+      },
+      "description": "State-of-the-art veterinary clinic with experienced doctors and modern facilities. We provide comprehensive care for all your pet needs.",
+      "doctors": [
+        {
+          "name": "Dr. Rajesh Kumar",
+          "email": "rajesh@happypaws.com",
+          "phone": "9876543211",
+          "password": "doctor123",
+          "specialization": ["General Practice", "Surgery", "Orthopedics"],
+          "experience": 12,
+          "qualifications": "BVSc, MVSc (Surgery)",
+          "about": "Dr. Rajesh has over 12 years of experience in veterinary medicine with a special focus on orthopedic surgeries. He has successfully performed 500+ surgeries and is known for his gentle approach with pets.",
+          "consultationFee": 600,
+          "services": [
+            {
+              "id": "service_1",
+              "serviceName": "General Consultation",
+              "price": 500,
+              "duration": 30,
+              "description": "Comprehensive health checkup and consultation for your pet"
+            },
+            {
+              "id": "service_2",
+              "serviceName": "Orthopedic Surgery",
+              "price": 15000,
+              "duration": 120,
+              "description": "Surgical treatment for bone and joint issues"
+            },
+            {
+              "id": "service_3",
+              "serviceName": "Post-Surgery Follow-up",
+              "price": 300,
+              "duration": 20,
+              "description": "Follow-up consultation after surgery"
+            }
+          ]
+        },
+        {
+          "name": "Dr. Priya Sharma",
+          "email": "priya@happypaws.com",
+          "phone": "9876543212",
+          "password": "doctor123",
+          "specialization": ["Cardiology", "Internal Medicine"],
+          "experience": 8,
+          "qualifications": "BVSc, MD (Cardiology)",
+          "about": "Dr. Priya specializes in cardiac care and internal medicine. She is passionate about preventive care and has helped hundreds of pets live healthier lives.",
+          "consultationFee": 700,
+          "services": [
+            {
+              "id": "service_4",
+              "serviceName": "Cardiac Consultation",
+              "price": 800,
+              "duration": 45,
+              "description": "Specialized consultation for heart-related issues"
+            },
+            {
+              "id": "service_5",
+              "serviceName": "ECG Test",
+              "price": 1500,
+              "duration": 30,
+              "description": "Electrocardiogram test for heart health assessment"
+            },
+            {
+              "id": "service_6",
+              "serviceName": "General Health Checkup",
+              "price": 600,
+              "duration": 30,
+              "description": "Complete health screening including blood tests"
+            }
+          ]
+        },
+        {
+          "name": "Dr. Amit Patel",
+          "email": "amit@happypaws.com",
+          "phone": "9876543213",
+          "password": "doctor123",
+          "specialization": ["Dermatology", "Nutrition"],
+          "experience": 6,
+          "qualifications": "BVSc, Dip. Dermatology",
+          "about": "Dr. Amit is an expert in pet dermatology and nutrition. He helps pets with skin conditions and creates customized diet plans for optimal health.",
+          "consultationFee": 550,
+          "services": [
+            {
+              "id": "service_7",
+              "serviceName": "Dermatology Consultation",
+              "price": 600,
+              "duration": 30,
+              "description": "Consultation for skin, coat, and allergy issues"
+            },
+            {
+              "id": "service_8",
+              "serviceName": "Nutrition Counseling",
+              "price": 400,
+              "duration": 30,
+              "description": "Personalized diet plan and nutrition guidance"
+            },
+            {
+              "id": "service_9",
+              "serviceName": "Allergy Testing",
+              "price": 2500,
+              "duration": 45,
+              "description": "Comprehensive allergy testing and treatment plan"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "businessName": "PetCare Multi-Specialty Hospital",
+      "ownerName": "Dr. Meera Reddy",
+      "phone": "9876543220",
+      "email": "petcare@example.com",
+      "address": "456 Indiranagar 100 Feet Road",
+      "city": "Bangalore",
+      "state": "Karnataka",
+      "pincode": "560038",
+      "roleId": "veterinary_clinic",
+      "facilities": {
+        "icuAvailable": true,
+        "xrayAvailable": true,
+        "surgeryFacility": true,
+        "pharmacy": true,
+        "emergencyServices": true,
+        "petGrooming": true,
+        "boarding": true,
+        "laboratory": true
+      },
+      "operatingHours": {
+        "monday": "24/7",
+        "tuesday": "24/7",
+        "wednesday": "24/7",
+        "thursday": "24/7",
+        "friday": "24/7",
+        "saturday": "24/7",
+        "sunday": "24/7"
+      },
+      "description": "24/7 multi-specialty veterinary hospital with advanced diagnostic facilities and experienced specialists. We handle all pet emergencies and provide comprehensive care.",
+      "doctors": [
+        {
+          "name": "Dr. Karthik Rao",
+          "email": "karthik@petcare.com",
+          "phone": "9876543221",
+          "password": "doctor123",
+          "specialization": ["Emergency Medicine", "Critical Care"],
+          "experience": 10,
+          "qualifications": "BVSc, MVSc (Emergency Medicine)",
+          "about": "Dr. Karthik heads the emergency department with expertise in critical care. He is available 24/7 for emergency cases.",
+          "consultationFee": 800,
+          "services": [
+            {
+              "id": "service_10",
+              "serviceName": "Emergency Consultation",
+              "price": 1000,
+              "duration": 45,
+              "description": "Immediate consultation for emergency cases"
+            },
+            {
+              "id": "service_11",
+              "serviceName": "Critical Care Admission",
+              "price": 5000,
+              "duration": 1440,
+              "description": "24-hour ICU care for critically ill pets"
+            }
+          ]
+        },
+        {
+          "name": "Dr. Anjali Verma",
+          "email": "anjali@petcare.com",
+          "phone": "9876543222",
+          "password": "doctor123",
+          "specialization": ["Oncology", "Chemotherapy"],
+          "experience": 9,
+          "qualifications": "BVSc, MD (Oncology)",
+          "about": "Dr. Anjali is a renowned oncologist specializing in cancer treatment for pets. She provides compassionate care and advanced treatment options.",
+          "consultationFee": 900,
+          "services": [
+            {
+              "id": "service_12",
+              "serviceName": "Oncology Consultation",
+              "price": 1000,
+              "duration": 60,
+              "description": "Specialized consultation for cancer diagnosis and treatment"
+            },
+            {
+              "id": "service_13",
+              "serviceName": "Chemotherapy Session",
+              "price": 8000,
+              "duration": 120,
+              "description": "Chemotherapy treatment session"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "independentDoctors": [
+    {
+      "name": "Dr. Mobile Vet",
+      "email": "mobile@vet.com",
+      "phone": "9876543230",
+      "password": "doctor123",
+      "specialization": ["General Practice", "Home Visits"],
+      "experience": 5,
+      "qualifications": "BVSc",
+      "about": "Independent veterinarian providing home visit services across Bangalore. I bring the clinic to your doorstep.",
+      "consultationFee": 700,
+      "clinicId": null,
+      "isIndependent": true,
+      "services": [
+        {
+          "id": "service_14",
+          "serviceName": "Home Visit Consultation",
+          "price": 800,
+          "duration": 45,
+          "description": "Veterinary consultation at your home"
+        },
+        {
+          "id": "service_15",
+          "serviceName": "Vaccination at Home",
+          "price": 500,
+          "duration": 20,
+          "description": "Pet vaccination service at your location"
+        }
+      ]
+    }
+  ],
+  "groomingCenters": [
+    {
+      "businessName": "Pampered Paws Grooming Center",
+      "ownerName": "Mr. Suresh Kumar",
+      "phone": "9876543240",
+      "email": "pamperedpaws@example.com",
+      "address": "789 HSR Layout",
+      "city": "Bangalore",
+      "state": "Karnataka",
+      "pincode": "560102",
+      "roleId": "grooming_center",
+      "facilities": {
+        "bathing": true,
+        "trimming": true,
+        "styling": true,
+        "nailCutting": true,
+        "earCleaning": true,
+        "teethCleaning": true
+      },
+      "operatingHours": {
+        "monday": "9:00 AM - 7:00 PM",
+        "tuesday": "9:00 AM - 7:00 PM",
+        "wednesday": "9:00 AM - 7:00 PM",
+        "thursday": "9:00 AM - 7:00 PM",
+        "friday": "9:00 AM - 7:00 PM",
+        "saturday": "9:00 AM - 8:00 PM",
+        "sunday": "10:00 AM - 6:00 PM"
+      },
+      "description": "Professional pet grooming services with experienced groomers and premium products.",
+      "groomers": [
+        {
+          "name": "Rahul the Groomer",
+          "email": "rahul@grooming.com",
+          "phone": "9876543241",
+          "password": "groomer123",
+          "specialization": ["Full Grooming", "Styling"],
+          "experience": 7,
+          "consultationFee": 0
+        },
+        {
+          "name": "Sneha Stylist",
+          "email": "sneha@grooming.com",
+          "phone": "9876543242",
+          "password": "groomer123",
+          "specialization": ["Creative Styling", "Show Grooming"],
+          "experience": 5,
+          "consultationFee": 0
+        }
+      ]
+    }
+  ],
+  "trainingCenters": [
+    {
+      "businessName": "Obedience Plus Training Center",
+      "ownerName": "Mr. Vikram Singh",
+      "phone": "9876543250",
+      "email": "obedienceplus@example.com",
+      "address": "321 Whitefield Main Road",
+      "city": "Bangalore",
+      "state": "Karnataka",
+      "pincode": "560066",
+      "roleId": "training_center",
+      "facilities": {
+        "outdoorArena": true,
+        "indoorTraining": true,
+        "agilityEquipment": true,
+        "playground": true
+      },
+      "operatingHours": {
+        "monday": "6:00 AM - 8:00 PM",
+        "tuesday": "6:00 AM - 8:00 PM",
+        "wednesday": "6:00 AM - 8:00 PM",
+        "thursday": "6:00 AM - 8:00 PM",
+        "friday": "6:00 AM - 8:00 PM",
+        "saturday": "6:00 AM - 8:00 PM",
+        "sunday": "7:00 AM - 6:00 PM"
+      },
+      "description": "Professional dog training center offering obedience, agility, and behavioral training programs.",
+      "trainers": [
+        {
+          "name": "Arjun - Obedience Trainer",
+          "email": "arjun@training.com",
+          "phone": "9876543251",
+          "password": "trainer123",
+          "specialization": ["Basic Obedience", "Advanced Obedience"],
+          "experience": 10,
+          "consultationFee": 500
+        },
+        {
+          "name": "Neha - Agility Specialist",
+          "email": "neha@training.com",
+          "phone": "9876543252",
+          "password": "trainer123",
+          "specialization": ["Agility Training", "Competition Prep"],
+          "experience": 6,
+          "consultationFee": 600
+        },
+        {
+          "name": "Rohan - Behavior Expert",
+          "email": "rohan@training.com",
+          "phone": "9876543253",
+          "password": "trainer123",
+          "specialization": ["Behavioral Modification", "Anxiety Treatment"],
+          "experience": 8,
+          "consultationFee": 800
+        }
+      ]
+    }
+  ],
+  "usage": {
+    "description": "This seed data can be used to populate the clinic-doctor system for testing",
+    "instructions": [
+      "1. Use the clinic creation endpoint for each clinic",
+      "2. Use the doctor creation endpoint for each doctor within a clinic",
+      "3. Use the service configuration endpoint to set up doctor services",
+      "4. For independent doctors, set clinicId to null",
+      "5. For grooming/training centers, use the same structure with appropriate roleId"
+    ],
+    "notes": [
+      "All passwords are 'doctor123', 'groomer123', or 'trainer123' for testing",
+      "Phone numbers are fictional and start with 9876543xxx",
+      "Email addresses are for testing purposes only",
+      "This data creates a realistic multi-clinic, multi-doctor environment for comprehensive testing"
+    ]
+  }
+}

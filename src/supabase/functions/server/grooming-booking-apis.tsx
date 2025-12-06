@@ -1,0 +1,613 @@
+import { Hono } from "npm:hono@4";
+import * as kv from "./kv_store.tsx";
+import { broadcastSlotUpdate } from "./websocket-server.tsx"; // ✅ NEW: Real-time WebSocket
+
+const groomingBookingAPIs = new Hono();
+
+/**
+ * ========================================
+ * ADDRESS MANAGEMENT APIs
+ * ========================================
+ */
+
+// GET /customer/addresses/:phone - Get all addresses for customer
+groomingBookingAPIs.get("/customer/addresses/:phone", async (c) => {
+  try {
+    const phone = c.req.param("phone");
+    const cleanPhone = phone.replace(/[^0-9]/g, "");
+
+    console.log(`\n📍 [GET-ADDRESSES] Fetching addresses for: ${cleanPhone}`);
+
+    const addresses = await kv.get(`customer:addresses:${cleanPhone}`) || [];
+    
+    console.log(`✅ [GET-ADDRESSES] Found ${addresses.length} addresses`);
+
+    return c.json({ addresses, count: addresses.length });
+  } catch (error) {
+    console.error("❌ [GET-ADDRESSES] Error:", error);
+    return c.json({ error: "Failed to fetch addresses", addresses: [] }, 500);
+  }
+});
+
+// POST /customer/addresses - Add new address
+groomingBookingAPIs.post("/customer/addresses", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { phone, label, fullAddress, landmark, city, pincode, isDefault } = body;
+    const cleanPhone = phone.replace(/[^0-9]/g, "");
+
+    console.log(`\n📍 [ADD-ADDRESS] Adding address for: ${cleanPhone}`);
+
+    // Get existing addresses
+    const addresses = await kv.get(`customer:addresses:${cleanPhone}`) || [];
+    
+    // If this is set as default, remove default from others
+    if (isDefault) {
+      addresses.forEach((addr: any) => addr.isDefault = false);
+    }
+
+    // Create new address
+    const newAddress = {
+      id: `addr_${Date.now()}`,
+      label,
+      fullAddress,
+      landmark: landmark || '',
+      city,
+      pincode,
+      isDefault: isDefault || addresses.length === 0, // First address is default
+      createdAt: new Date().toISOString()
+    };
+
+    addresses.push(newAddress);
+    await kv.set(`customer:addresses:${cleanPhone}`, addresses);
+
+    console.log(`✅ [ADD-ADDRESS] Address added: ${newAddress.id}`);
+
+    return c.json({ address: newAddress, success: true });
+  } catch (error) {
+    console.error("❌ [ADD-ADDRESS] Error:", error);
+    return c.json({ error: "Failed to add address" }, 500);
+  }
+});
+
+// DELETE /customer/addresses/:addressId - Delete address
+groomingBookingAPIs.delete("/customer/addresses/:phone/:addressId", async (c) => {
+  try {
+    const phone = c.req.param("phone");
+    const addressId = c.req.param("addressId");
+    const cleanPhone = phone.replace(/[^0-9]/g, "");
+
+    console.log(`\n📍 [DELETE-ADDRESS] Deleting ${addressId} for: ${cleanPhone}`);
+
+    const addresses = await kv.get(`customer:addresses:${cleanPhone}`) || [];
+    const filtered = addresses.filter((addr: any) => addr.id !== addressId);
+
+    await kv.set(`customer:addresses:${cleanPhone}`, filtered);
+
+    console.log(`✅ [DELETE-ADDRESS] Address deleted`);
+
+    return c.json({ success: true });
+  } catch (error) {
+    console.error("❌ [DELETE-ADDRESS] Error:", error);
+    return c.json({ error: "Failed to delete address" }, 500);
+  }
+});
+
+/**
+ * ========================================
+ * WALLET APIs
+ * ========================================
+ */
+
+// GET /customer/wallet/:phone - Get wallet balance
+groomingBookingAPIs.get("/customer/wallet/:phone", async (c) => {
+  try {
+    const phone = c.req.param("phone");
+    const cleanPhone = phone.replace(/[^0-9]/g, "");
+
+    console.log(`\n💰 [GET-WALLET] Fetching wallet for: ${cleanPhone}`);
+
+    const wallet = await kv.get(`customer:wallet:${cleanPhone}`) || {
+      balance: 0,
+      transactions: []
+    };
+
+    console.log(`✅ [GET-WALLET] Balance: ₹${wallet.balance}`);
+
+    return c.json(wallet);
+  } catch (error) {
+    console.error("❌ [GET-WALLET] Error:", error);
+    return c.json({ error: "Failed to fetch wallet", balance: 0, transactions: [] }, 500);
+  }
+});
+
+// POST /customer/wallet/deduct - Deduct from wallet
+groomingBookingAPIs.post("/customer/wallet/deduct", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { phone, amount, bookingId, description } = body;
+    const cleanPhone = phone.replace(/[^0-9]/g, "");
+
+    console.log(`\n💰 [WALLET-DEDUCT] Deducting ₹${amount} for: ${cleanPhone}`);
+
+    const wallet = await kv.get(`customer:wallet:${cleanPhone}`) || {
+      balance: 0,
+      transactions: []
+    };
+
+    if (wallet.balance < amount) {
+      return c.json({ error: "Insufficient wallet balance", success: false }, 400);
+    }
+
+    wallet.balance -= amount;
+    wallet.transactions.push({
+      id: `txn_${Date.now()}`,
+      type: 'debit',
+      amount,
+      bookingId,
+      description: description || 'Booking payment',
+      timestamp: new Date().toISOString()
+    });
+
+    await kv.set(`customer:wallet:${cleanPhone}`, wallet);
+
+    console.log(`✅ [WALLET-DEDUCT] New balance: ₹${wallet.balance}`);
+
+    return c.json({ success: true, newBalance: wallet.balance });
+  } catch (error) {
+    console.error("❌ [WALLET-DEDUCT] Error:", error);
+    return c.json({ error: "Failed to deduct from wallet" }, 500);
+  }
+});
+
+// POST /customer/wallet/credit - Add to wallet
+groomingBookingAPIs.post("/customer/wallet/credit", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { phone, amount, description } = body;
+    const cleanPhone = phone.replace(/[^0-9]/g, "");
+
+    console.log(`\n💰 [WALLET-CREDIT] Adding ₹${amount} for: ${cleanPhone}`);
+
+    const wallet = await kv.get(`customer:wallet:${cleanPhone}`) || {
+      balance: 0,
+      transactions: []
+    };
+
+    wallet.balance += amount;
+    wallet.transactions.push({
+      id: `txn_${Date.now()}`,
+      type: 'credit',
+      amount,
+      description: description || 'Wallet top-up',
+      timestamp: new Date().toISOString()
+    });
+
+    await kv.set(`customer:wallet:${cleanPhone}`, wallet);
+
+    console.log(`✅ [WALLET-CREDIT] New balance: ₹${wallet.balance}`);
+
+    return c.json({ success: true, newBalance: wallet.balance });
+  } catch (error) {
+    console.error("❌ [WALLET-CREDIT] Error:", error);
+    return c.json({ error: "Failed to credit wallet" }, 500);
+  }
+});
+
+/**
+ * ========================================
+ * COUPON APIs
+ * ========================================
+ */
+
+// POST /coupon/validate - Validate coupon code
+groomingBookingAPIs.post("/coupon/validate", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { code, amount } = body;
+
+    console.log(`\n🎟️ [VALIDATE-COUPON] Validating: ${code}`);
+
+    // Get all coupons from admin config
+    const allCoupons = await kv.get('admin:coupons') || [];
+    
+    // Hardcoded test coupons for now
+    const testCoupons = [
+      { code: 'FIRST20', discount: 20, maxDiscount: 500, minOrder: 0, active: true },
+      { code: 'SAVE10', discount: 10, maxDiscount: 200, minOrder: 0, active: true },
+      { code: 'GROOM50', discount: 15, maxDiscount: 300, minOrder: 500, active: true }
+    ];
+
+    const allAvailableCoupons = [...allCoupons, ...testCoupons];
+    const coupon = allAvailableCoupons.find((c: any) => 
+      c.code.toUpperCase() === code.toUpperCase() && c.active !== false
+    );
+
+    if (!coupon) {
+      console.log(`❌ [VALIDATE-COUPON] Invalid coupon: ${code}`);
+      return c.json({ valid: false, error: "Invalid coupon code" }, 400);
+    }
+
+    // Check minimum order
+    if (coupon.minOrder && amount < coupon.minOrder) {
+      return c.json({ 
+        valid: false, 
+        error: `Minimum order of ₹${coupon.minOrder} required` 
+      }, 400);
+    }
+
+    // Calculate discount
+    let discountAmount = (amount * coupon.discount) / 100;
+    if (coupon.maxDiscount) {
+      discountAmount = Math.min(discountAmount, coupon.maxDiscount);
+    }
+
+    console.log(`✅ [VALIDATE-COUPON] Valid! Discount: ₹${discountAmount}`);
+
+    return c.json({
+      valid: true,
+      code: coupon.code,
+      discount: coupon.discount,
+      discountAmount,
+      maxDiscount: coupon.maxDiscount
+    });
+  } catch (error) {
+    console.error("❌ [VALIDATE-COUPON] Error:", error);
+    return c.json({ error: "Failed to validate coupon", valid: false }, 500);
+  }
+});
+
+/**
+ * ========================================
+ * SLOT AVAILABILITY APIs
+ * ========================================
+ */
+
+// GET /grooming/slots/:vendorId/:date - Get available slots
+groomingBookingAPIs.get("/grooming/slots/:vendorId/:date", async (c) => {
+  try {
+    const vendorId = c.req.param("vendorId");
+    const date = c.req.param("date");
+
+    console.log(`\n📅 [GET-SLOTS] Fetching slots for vendor: ${vendorId}, date: ${date}`);
+
+    // Get vendor's availability V2
+    const availabilityData = await kv.get(`vendor:${vendorId}:availability:v2`);
+    console.log(`📅 [GET-SLOTS] Raw availability data:`, availabilityData);
+    
+    // Ensure availabilityV2 is an array
+    let availabilityV2 = [];
+    if (Array.isArray(availabilityData)) {
+      availabilityV2 = availabilityData;
+    } else if (availabilityData && typeof availabilityData === 'object') {
+      // Handle case where it might be an object with an array property
+      if (Array.isArray(availabilityData.availability)) {
+        availabilityV2 = availabilityData.availability;
+      } else if (Array.isArray(availabilityData.schedule)) {
+        availabilityV2 = availabilityData.schedule;
+      } else if (Array.isArray(availabilityData.days)) {
+        availabilityV2 = availabilityData.days;
+      } else {
+        console.warn('⚠️ [GET-SLOTS] Unexpected availability format:', availabilityData);
+      }
+    }
+    
+    console.log(`📅 [GET-SLOTS] Parsed availability array:`, availabilityV2.length, 'days');
+    
+    // Get bookings for this date
+    const allBookings = await kv.getByPrefix('booking:');
+    const dateBookings = allBookings.filter((b: any) => 
+      b.vendorId === vendorId && 
+      b.scheduledDate === date &&
+      b.status !== 'cancelled'
+    );
+
+    // Get day of week
+    const bookingDate = new Date(date);
+    const dayOfWeek = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][bookingDate.getDay()];
+
+    // Find day configuration
+    const dayConfig = availabilityV2.find((a: any) => a.dayOfWeek === dayOfWeek);
+
+    if (!dayConfig) {
+      console.log(`❌ [GET-SLOTS] No availability for ${dayOfWeek}`);
+      return c.json({ slots: [], message: "Vendor not available on this day" });
+    }
+
+    // Generate slots from time windows
+    const slots: any[] = [];
+    
+    for (const window of dayConfig.timeWindows) {
+      if (!window.isEnabled) continue;
+
+      const startMinutes = timeToMinutes(window.startTime);
+      const endMinutes = timeToMinutes(window.endTime);
+      const slotDuration = 30; // 30-minute slots
+
+      for (let minutes = startMinutes; minutes < endMinutes; minutes += slotDuration) {
+        const time = minutesToTime(minutes);
+        
+        // Count bookings for this slot
+        const bookedCount = dateBookings.filter((b: any) => {
+          const bookingTime = b.scheduledTime?.split(' - ')[0];
+          return bookingTime === time;
+        }).length;
+
+        const capacity = window.maxBookings || 3;
+        
+        slots.push({
+          time,
+          available: bookedCount < capacity,
+          capacity,
+          booked: bookedCount,
+          period: minutes < 720 ? 'morning' : minutes < 960 ? 'afternoon' : 'evening'
+        });
+      }
+    }
+
+    console.log(`✅ [GET-SLOTS] Generated ${slots.length} slots`);
+
+    return c.json({ slots, date, vendorId });
+  } catch (error) {
+    console.error("❌ [GET-SLOTS] Error:", error);
+    return c.json({ error: "Failed to fetch slots", slots: [] }, 500);
+  }
+});
+
+/**
+ * ========================================
+ * OTP APIs for Service Completion
+ * ========================================
+ */
+
+// POST /customer/booking - Create a new booking
+groomingBookingAPIs.post("/customer/booking", async (c) => {
+  try {
+    const bookingData = await c.req.json();
+    
+    console.log('\n📝 [CREATE-BOOKING] Creating new booking');
+    console.log('📝 [CREATE-BOOKING] Data:', bookingData);
+    
+    // Generate booking ID
+    const bookingId = `booking_${Date.now()}`;
+    
+    // Generate 4-digit OTP immediately
+    const otp = Math.floor(1000 + Math.random() * 9000).toString();
+    console.log(`🔐 [CREATE-BOOKING] Generated OTP: ${otp}`);
+    
+    // Clean phone number
+    const cleanPhone = bookingData.customerPhone.replace(/[^0-9]/g, '');
+    
+    // Get vendor and pet details for display
+    const vendor = await kv.get(`vendor:${bookingData.vendorId}`) || {};
+    const pets = await kv.get(`customer:pets:${cleanPhone}`) || { pets: [] };
+    const pet = pets.pets?.find((p: any) => p.id === bookingData.petId) || {};
+    
+    console.log(`📝 [CREATE-BOOKING] Vendor: ${vendor.name || 'Unknown'}`);
+    console.log(`📝 [CREATE-BOOKING] Pet: ${pet.name || 'Unknown'}`);
+    
+    // Create comprehensive booking object
+    const booking = {
+      id: bookingId,
+      bookingId,
+      customerPhone: cleanPhone,
+      petId: bookingData.petId,
+      petName: pet.name || bookingData.petName || 'Pet',
+      petBreed: pet.breed,
+      petAge: pet.age,
+      petPhoto: pet.photo,
+      vendorId: bookingData.vendorId,
+      vendorName: vendor.name || bookingData.vendorName || 'Vendor',
+      vendorPhone: vendor.phone || vendor.contactNumber,
+      vendorPhoto: vendor.logo,
+      serviceId: bookingData.serviceId,
+      serviceType: bookingData.serviceType || 'grooming',
+      serviceName: bookingData.serviceName || 'Grooming Service',
+      serviceStyle: bookingData.serviceStyle || 'at_center',
+      scheduledDate: bookingData.scheduledDate,
+      scheduledTime: bookingData.scheduledTime,
+      startDate: bookingData.scheduledDate, // For compatibility
+      address: bookingData.address || null,
+      paymentMethod: bookingData.paymentMethod,
+      transactionId: bookingData.transactionId,
+      price: bookingData.amount,
+      amount: bookingData.amount,
+      addOns: bookingData.addOns || [],
+      walletUsed: bookingData.walletUsed || 0,
+      couponApplied: bookingData.couponApplied || null,
+      
+      // OTP fields
+      requiresOTP: true,
+      completionOTP: otp,
+      otpGeneratedAt: new Date().toISOString(),
+      otpVerifiedAt: null,
+      
+      // Status tracking
+      status: 'confirmed',
+      totalSessions: 1,
+      completedSessions: 0,
+      upcomingSessions: 1,
+      
+      // Timestamps
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    
+    // Save booking to main key
+    await kv.set(`booking:${bookingId}`, booking);
+    console.log('✅ [CREATE-BOOKING] Saved to booking:' + bookingId);
+    
+    // Add booking ID to customer's booking list
+    const customerBookingsKey = `customer:bookings:${cleanPhone}`;
+    const customerBookings = await kv.get(customerBookingsKey) || [];
+    if (!customerBookings.includes(bookingId)) {
+      customerBookings.push(bookingId);
+      await kv.set(customerBookingsKey, customerBookings);
+      console.log('✅ [CREATE-BOOKING] Added to customer booking list');
+    }
+    
+    // Also save OTP data separately for verification
+    const otpData = {
+      otp,
+      bookingId,
+      generatedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days
+      verified: false
+    };
+    await kv.set(`booking:otp:${bookingId}`, otpData);
+    console.log('✅ [CREATE-BOOKING] OTP data saved');
+    
+    // ✅ NEW: Broadcast slot update via WebSocket
+    if (bookingData.staffId) {
+      try {
+        broadcastSlotUpdate({
+          staffId: bookingData.staffId,
+          vendorId: bookingData.vendorId,
+          date: bookingData.scheduledDate,
+          time: bookingData.scheduledTime,
+          action: 'booked',
+          bookingId,
+          customerName: pet.name || 'Customer',
+          serviceName: bookingData.serviceName,
+          duration: bookingData.serviceDuration || 30
+        });
+        console.log('📢 [CREATE-BOOKING] WebSocket update broadcasted');
+      } catch (wsError) {
+        console.warn('⚠️ [CREATE-BOOKING] Failed to broadcast WebSocket update:', wsError);
+        // Don't fail the booking if WebSocket fails
+      }
+    }
+    
+    console.log('✅ [CREATE-BOOKING] Booking created successfully:', bookingId);
+    
+    return c.json({ 
+      success: true,
+      bookingId,
+      booking,
+      otp, // Return OTP in response
+      message: 'Booking created successfully'
+    });
+  } catch (error) {
+    console.error('❌ [CREATE-BOOKING] Error:', error);
+    return c.json({ error: 'Failed to create booking', success: false }, 500);
+  }
+});
+
+/**
+ * ========================================
+ * OTP APIs for Service Completion
+ * ========================================
+ */
+
+// POST /booking/:bookingId/generate-otp - Generate OTP for service completion
+groomingBookingAPIs.post("/booking/:bookingId/generate-otp", async (c) => {
+  try {
+    const bookingId = c.req.param("bookingId");
+
+    console.log(`\n🔐 [GENERATE-OTP] Generating OTP for booking: ${bookingId}`);
+
+    // Get booking
+    const booking = await kv.get(`booking:${bookingId}`);
+    if (!booking) {
+      return c.json({ error: "Booking not found" }, 404);
+    }
+
+    // Generate 4-digit OTP
+    const otp = Math.floor(1000 + Math.random() * 9000).toString();
+
+    // Store OTP with expiry (1 hour)
+    const otpData = {
+      otp,
+      bookingId,
+      generatedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(), // 1 hour
+      verified: false
+    };
+
+    await kv.set(`booking:otp:${bookingId}`, otpData);
+
+    // Update booking with OTP
+    booking.serviceCompletionOtp = otp;
+    await kv.set(`booking:${bookingId}`, booking);
+
+    console.log(`✅ [GENERATE-OTP] OTP generated: ${otp}`);
+
+    return c.json({ 
+      otp, 
+      bookingId,
+      expiresAt: otpData.expiresAt,
+      message: "OTP generated successfully"
+    });
+  } catch (error) {
+    console.error("❌ [GENERATE-OTP] Error:", error);
+    return c.json({ error: "Failed to generate OTP" }, 500);
+  }
+});
+
+// POST /booking/:bookingId/verify-otp - Verify OTP and complete service
+groomingBookingAPIs.post("/booking/:bookingId/verify-otp", async (c) => {
+  try {
+    const bookingId = c.req.param("bookingId");
+    const body = await c.req.json();
+    const { otp } = body;
+
+    console.log(`\n🔐 [VERIFY-OTP] Verifying OTP for booking: ${bookingId}`);
+
+    // Get OTP data
+    const otpData = await kv.get(`booking:otp:${bookingId}`);
+    if (!otpData) {
+      return c.json({ error: "OTP not found", verified: false }, 404);
+    }
+
+    // Check expiry
+    if (new Date() > new Date(otpData.expiresAt)) {
+      return c.json({ error: "OTP expired", verified: false }, 400);
+    }
+
+    // Verify OTP
+    if (otpData.otp !== otp) {
+      console.log(`❌ [VERIFY-OTP] Invalid OTP provided`);
+      return c.json({ error: "Invalid OTP", verified: false }, 400);
+    }
+
+    // Mark OTP as verified
+    otpData.verified = true;
+    otpData.verifiedAt = new Date().toISOString();
+    await kv.set(`booking:otp:${bookingId}`, otpData);
+
+    // Update booking status to completed
+    const booking = await kv.get(`booking:${bookingId}`);
+    if (booking) {
+      booking.status = 'completed';
+      booking.completedAt = new Date().toISOString();
+      booking.serviceCompletionVerified = true;
+      await kv.set(`booking:${bookingId}`, booking);
+
+      console.log(`✅ [VERIFY-OTP] Booking completed: ${bookingId}`);
+    }
+
+    return c.json({ 
+      verified: true, 
+      bookingCompleted: true,
+      completedAt: otpData.verifiedAt,
+      message: "Service completed successfully"
+    });
+  } catch (error) {
+    console.error("❌ [VERIFY-OTP] Error:", error);
+    return c.json({ error: "Failed to verify OTP", verified: false }, 500);
+  }
+});
+
+// Helper functions
+function timeToMinutes(time: string): number {
+  const [hours, minutes] = time.split(':').map(Number);
+  return hours * 60 + minutes;
+}
+
+function minutesToTime(minutes: number): string {
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+}
+
+export { groomingBookingAPIs };

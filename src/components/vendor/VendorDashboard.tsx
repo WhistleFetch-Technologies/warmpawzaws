@@ -1,0 +1,824 @@
+import { useState, useEffect } from 'react';
+import { 
+  Calendar, 
+  Clock, 
+  Phone, 
+  Video, 
+  MessageSquare, 
+  Star, 
+  RefreshCw, 
+  ChevronRight, 
+  Plus, 
+  Package, 
+  DollarSign, 
+  Users,
+  Settings,
+  BarChart3,
+  Stethoscope,
+  Home,
+  Monitor,
+  MapPin,
+  Pill,
+  FileText,
+  ShoppingBag,
+  Map as MapIcon,
+  Activity
+} from 'lucide-react';
+import { Badge } from '../ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../ui/dialog';
+import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { VendorAnalytics } from './VendorAnalytics';
+import { VendorPaymentSettings } from './VendorPaymentSettings';
+import { DoctorManagement } from './clinic/DoctorManagement';
+import { getVendorIconTheme, getRoleIcon, getRoleColorScheme } from '../../utils/vendor-icon-themes';
+import { VendorNotificationModal } from './VendorNotificationModal';
+import { CommunicationHub } from '../communication/CommunicationHub';
+import { AppointmentDetailModal } from './AppointmentDetailModal';
+import { AIChatBot } from '../customer/AIChatBot';
+import { useVendorCapabilities } from './hooks/useVendorCapabilities';
+
+interface VendorDashboardProps {
+  vendorId: string;
+  vendorData: any;
+  onNavigateToConsultation?: () => void;
+  onNavigateToServiceManagement?: () => void;
+  onNavigateToBookingManagement?: () => void;
+  onNavigateToTeleConsultation?: () => void;
+  onNavigateToScheduleManagement?: () => void;
+  onNavigateToFacilityManagement?: () => void;
+  onNavigateToStaffManagement?: () => void;
+  onNavigateToBusinessHub?: () => void;
+  onNavigateToLiveTracking?: () => void;
+}
+
+interface DashboardStats {
+  appointments: number;
+  consultations: number;
+  earnings: number;
+  pendingEarnings: number;
+  completedServices: number;
+  rating: number;
+  totalReviews: number;
+  activeOrders?: number;
+}
+
+interface ScheduleItem {
+  id: string;
+  bookingId: string;
+  time: string;
+  duration: number;
+  petName: string;
+  petBreed?: string;
+  customerName: string;
+  customerPhone: string;
+  serviceName: string;
+  serviceType: string;
+  status: string;
+  price: number;
+  address: string;
+  specialInstructions?: string;
+  prescriptionUrl?: string;
+  prescriptionNotes?: string;
+  hasPrescription?: boolean;
+  hasUnreadMessages?: boolean;
+  unreadMessageCount?: number;
+  chatEnabled?: boolean;
+  isFollowUp?: boolean;
+}
+
+interface WatchlistItem {
+  watchlistId: string;
+  petName: string;
+  customerName: string;
+  issue: string;
+  lastUpdated: string;
+}
+
+interface NotificationItem {
+  notificationId: string;
+  type: string;
+  title: string;
+  message: string;
+  createdAt: string;
+  isRead: boolean;
+}
+
+export function VendorDashboard({ 
+  vendorId, 
+  vendorData, 
+  onNavigateToConsultation, 
+  onNavigateToServiceManagement, 
+  onNavigateToBookingManagement, 
+  onNavigateToTeleConsultation, 
+  onNavigateToScheduleManagement, 
+  onNavigateToFacilityManagement, 
+  onNavigateToStaffManagement, 
+  onNavigateToBusinessHub,
+  onNavigateToLiveTracking
+}: VendorDashboardProps) {
+  const [activeTab, setActiveTab] = useState<'today' | 'week' | 'month'>('today');
+  const [activeBottomTab, setActiveBottomTab] = useState<'home' | 'bookings' | 'reporting' | 'settings'>('home');
+  const [appointmentTypeFilter, setAppointmentTypeFilter] = useState<'all' | 'clinic' | 'home' | 'tele'>('all');
+  const [stats, setStats] = useState<DashboardStats>({
+    appointments: 0,
+    consultations: 0,
+    earnings: 0,
+    pendingEarnings: 0,
+    completedServices: 0,
+    rating: 4.8,
+    totalReviews: 0,
+    activeOrders: 0
+  });
+  const [todaySchedule, setTodaySchedule] = useState<ScheduleItem[]>([]);
+  const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [services, setServices] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [vendor, setVendor] = useState(vendorData);
+  const [notificationModalOpen, setNotificationModalOpen] = useState(false);
+  const [communicationMode, setCommunicationMode] = useState<'chat' | 'video' | null>(null);
+  const [appointmentDetailModalOpen, setAppointmentDetailModalOpen] = useState(false);
+  const [selectedAppointment, setSelectedAppointment] = useState<ScheduleItem | null>(null);
+
+  // 🔌 CORE: Load dynamic capabilities
+  const { capabilities, loading: capsLoading } = useVendorCapabilities(vendorData?.roleId);
+
+  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const isVet = vendorData?.roleId === 'veterinarian' || vendorData?.roleId === 'vet';
+
+  // Fetch dashboard data
+  const fetchDashboardData = async (showRefresh = false) => {
+    try {
+      if (showRefresh) setRefreshing(true);
+      else setLoading(true);
+
+      console.log('📊 Fetching vendor dashboard data for:', vendorId);
+
+      // Fetch main dashboard stats
+      const dashboardRes = await fetch(`${API_BASE}/vendor/dashboard/${vendorId}?timeframe=${activeTab}`, {
+        headers: {
+          'Authorization': `Bearer ${publicAnonKey}`
+        }
+      });
+
+      if (dashboardRes.ok) {
+        const dashboardData = await dashboardRes.json();
+        if (dashboardData.success) {
+          setStats(dashboardData.stats);
+          setVendor(dashboardData.vendor);
+        }
+      }
+
+      // Only fetch schedule if booking capability is enabled
+      if (capabilities.booking) {
+        const today = new Date().toISOString().split('T')[0];
+        const scheduleRes = await fetch(`${API_BASE}/vendor/schedule/${vendorId}?date=${today}`, {
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`
+          }
+        });
+
+        if (scheduleRes.ok) {
+          const scheduleData = await scheduleRes.json();
+          if (scheduleData.success) {
+            setTodaySchedule(scheduleData.schedule || []);
+          }
+        }
+      }
+
+      // Only fetch watchlist if medical_records is enabled
+      if (capabilities.medical_records) {
+        const watchlistRes = await fetch(`${API_BASE}/vendor/watchlist/${vendorId}`, {
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`
+          }
+        });
+
+        if (watchlistRes.ok) {
+          const watchlistData = await watchlistRes.json();
+          if (watchlistData.success) {
+            setWatchlist(watchlistData.watchlist || []);
+          }
+        }
+      }
+
+      // Fetch notifications (Always)
+      const notificationsRes = await fetch(`${API_BASE}/vendor/notifications/${vendorId}?limit=5`, {
+        headers: {
+          'Authorization': `Bearer ${publicAnonKey}`
+        }
+      });
+
+      if (notificationsRes.ok) {
+        const notificationsData = await notificationsRes.json();
+        if (notificationsData.success) {
+          setNotifications(notificationsData.notifications || []);
+        }
+      }
+
+      // Fetch services/products
+      if (capabilities.catalog || capabilities.booking) {
+        const servicesRes = await fetch(`${API_BASE}/vendor/services/${vendorId}`, {
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`
+          }
+        });
+
+        if (servicesRes.ok) {
+          const servicesData = await servicesRes.json();
+          if (servicesData.success) {
+            setServices(servicesData.services || []);
+          }
+        }
+      }
+
+    } catch (error) {
+      console.error('❌ Error fetching dashboard data:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  // Fetch data on mount and when activeTab changes
+  useEffect(() => {
+    if (vendorId && !capsLoading) {
+      fetchDashboardData();
+    }
+  }, [vendorId, activeTab, capsLoading, capabilities.booking, capabilities.medical_records]);
+
+  // Format time ago
+  const formatTimeAgo = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return 'Now';
+    if (diffMins < 60) return `${diffMins} min${diffMins > 1 ? 's' : ''}`;
+    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''}`;
+    return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+  };
+
+  // 🎨 GET DYNAMIC ICON THEME FOR THIS VENDOR
+  const iconTheme = getVendorIconTheme(vendorData?.roleId);
+  const RoleIconComponent = getRoleIcon(vendorData?.roleId);
+  const colorScheme = getRoleColorScheme(vendorData?.roleId);
+
+  if (loading || capsLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <RefreshCw className="w-8 h-8 text-[#FF8C42] animate-spin mx-auto mb-2" />
+          <p className="text-gray-600">Loading dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <div className="w-full max-w-[430px] mx-auto bg-white min-h-screen">
+        {/* Header */}
+        <div className="p-4 bg-white border-b border-gray-200">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-3">
+              <div className={`w-10 h-10 ${colorScheme.primary} rounded-lg flex items-center justify-center`}>
+                <RoleIconComponent className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h1 className="font-semibold text-gray-900">
+                  {vendor?.businessName || vendor?.fullName || 'Vendor Dashboard'}
+                </h1>
+                <p className="text-xs text-gray-500">{vendor?.address || 'India'}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={() => fetchDashboardData(true)} disabled={refreshing}>
+                <RefreshCw className={`w-5 h-5 text-gray-400 ${refreshing ? 'animate-spin' : ''}`} />
+              </button>
+              
+              {capabilities.chat && (
+                <iconTheme.actions.messages className="w-5 h-5 text-gray-400" />
+              )}
+
+              <button 
+                className="relative"
+                onClick={() => setNotificationModalOpen(true)}
+              >
+                <iconTheme.actions.notifications className="w-5 h-5 text-gray-400 hover:text-[#FF8C42] transition-colors" />
+                {notifications.filter(n => !n.isRead).length > 0 && (
+                  <div className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Online Status Badge */}
+          <div className="flex items-center justify-between">
+            <Badge className="bg-green-100 text-green-700 border-green-200">
+              ONLINE
+            </Badge>
+            <div className="flex items-center gap-1">
+              <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
+              <span className="text-sm font-semibold">{stats.rating.toFixed(1)}</span>
+              <span className="text-xs text-gray-500">({stats.totalReviews} reviews)</span>
+            </div>
+          </div>
+
+          {/* Service Summary */}
+          {capabilities.booking && (
+            <div className="mt-3 p-3 bg-orange-50 rounded-lg border border-orange-100">
+              <div className="flex items-center gap-2 text-sm">
+                <Calendar className="w-4 h-4 text-orange-600" />
+                <span className="text-gray-700">
+                  Service Availability: <span className="font-semibold text-orange-600">Mon-Fri 9AM-6PM</span>
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 🧱 DYNAMIC QUICK ACTIONS */}
+        <div className="p-4 border-b border-gray-100 grid grid-cols-2 gap-3">
+          {/* Staff Management - For Clinics/Hospitals */}
+          {onNavigateToStaffManagement && (vendorData?.roleId === 'clinic' || vendorData?.roleId === 'hospital') && (
+            <button
+              onClick={onNavigateToStaffManagement}
+              className="bg-white border-2 border-[#FF8C42] text-[#FF8C42] rounded-xl p-4 flex flex-col items-center justify-center hover:bg-[#FF8C42] hover:text-white transition-colors group text-center"
+            >
+              <Users className="w-6 h-6 mb-2" />
+              <span className="font-semibold text-sm">Manage Staff</span>
+            </button>
+          )}
+          
+          {/* Inventory/Store - For Pet Stores/Pharmacies */}
+          {capabilities.inventory && onNavigateToBusinessHub && (
+            <button
+              onClick={onNavigateToBusinessHub}
+              className="bg-white border-2 border-blue-500 text-blue-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-blue-500 hover:text-white transition-colors group text-center"
+            >
+              <Package className="w-6 h-6 mb-2" />
+              <span className="font-semibold text-sm">Inventory & Store</span>
+            </button>
+          )}
+
+          {/* GPS Tracking - For Walkers/Ambulance/Delivery */}
+          {capabilities.gps_tracking && (
+            <button
+              onClick={onNavigateToLiveTracking}
+              className="bg-white border-2 border-green-500 text-green-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-green-500 hover:text-white transition-colors group text-center"
+            >
+              <MapIcon className="w-6 h-6 mb-2" />
+              <span className="font-semibold text-sm">Live Tracking</span>
+            </button>
+          )}
+
+          {/* Medical Records - For Vets */}
+          {capabilities.medical_records && (
+            <button
+              className="bg-white border-2 border-purple-500 text-purple-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-purple-500 hover:text-white transition-colors group text-center"
+            >
+              <FileText className="w-6 h-6 mb-2" />
+              <span className="font-semibold text-sm">Medical Records</span>
+            </button>
+          )}
+
+           {/* Start Consultation - For Tele-health */}
+           {capabilities.tele && (
+            <button
+              onClick={onNavigateToTeleConsultation}
+              className="bg-white border-2 border-teal-500 text-teal-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-teal-500 hover:text-white transition-colors group text-center"
+            >
+              <Video className="w-6 h-6 mb-2" />
+              <span className="font-semibold text-sm">Start Consultation</span>
+            </button>
+          )}
+        </div>
+
+        {/* Stats Dashboard - Conditionally Rendered */}
+        <div className="p-4 border-b border-gray-100">
+          <div className="flex gap-2 mb-3">
+             <button
+              onClick={() => setActiveTab('today')}
+              className={`px-4 py-1.5 rounded-full text-sm ${activeTab === 'today' ? 'bg-[#FF8C42] text-white' : 'bg-gray-100 text-gray-600'}`}
+            >Today</button>
+            <button
+              onClick={() => setActiveTab('week')}
+              className={`px-4 py-1.5 rounded-full text-sm ${activeTab === 'week' ? 'bg-[#FF8C42] text-white' : 'bg-gray-100 text-gray-600'}`}
+            >Week</button>
+            <button
+              onClick={() => setActiveTab('month')}
+              className={`px-4 py-1.5 rounded-full text-sm ${activeTab === 'month' ? 'bg-[#FF8C42] text-white' : 'bg-gray-100 text-gray-600'}`}
+            >Month</button>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            {/* Appointments Stat */}
+            {capabilities.booking && (
+              <div className={`text-center p-3 ${colorScheme.light} rounded-lg`}>
+                <iconTheme.stats.bookings className={`w-5 h-5 ${colorScheme.dark} mx-auto mb-1`} />
+                <div className="text-2xl font-bold text-gray-900">{stats.appointments}</div>
+                <div className="text-xs text-gray-500">Appointments</div>
+              </div>
+            )}
+
+            {/* Orders Stat (if booking is disabled or orders enabled) */}
+            {capabilities.orders && (
+              <div className={`text-center p-3 bg-blue-50 rounded-lg`}>
+                <ShoppingBag className={`w-5 h-5 text-blue-600 mx-auto mb-1`} />
+                <div className="text-2xl font-bold text-gray-900">{stats.activeOrders || 0}</div>
+                <div className="text-xs text-gray-500">Orders</div>
+              </div>
+            )}
+
+            {/* Consultations Stat */}
+            {(capabilities.tele || capabilities.booking) && (
+              <div className={`text-center p-3 ${colorScheme.light} rounded-lg`}>
+                <iconTheme.stats.customers className={`w-5 h-5 ${colorScheme.dark} mx-auto mb-1`} />
+                <div className="text-2xl font-bold text-gray-900">{stats.consultations}</div>
+                <div className="text-xs text-gray-500">Consultations</div>
+              </div>
+            )}
+
+            {/* Earnings Stat - Always show */}
+            <div className="text-center p-3 bg-green-50 rounded-lg">
+              <iconTheme.stats.revenue className="w-5 h-5 text-green-600 mx-auto mb-1" />
+              <div className="text-2xl font-bold text-green-600">₹{stats.earnings.toLocaleString()}</div>
+              <div className="text-xs text-gray-500">Earnings</div>
+            </div>
+          </div>
+        </div>
+
+        {/* 🗓️ TODAY'S SCHEDULE (Conditional) */}
+        {capabilities.booking && (
+          <div className="p-4 border-b border-gray-100">
+            <h2 className="font-semibold text-gray-900 text-center mb-3">Today's Schedule</h2>
+            
+            {/* Appointment Type Filter */}
+            <div className="flex gap-2 mb-3 overflow-x-auto pb-2">
+              <button onClick={() => setAppointmentTypeFilter('all')} className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${appointmentTypeFilter === 'all' ? 'bg-[#FF8C42] text-white' : 'bg-gray-100 text-gray-600'}`}>All Types</button>
+              
+              <button onClick={() => setAppointmentTypeFilter('clinic')} className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${appointmentTypeFilter === 'clinic' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-600'}`}>
+                <Stethoscope className="w-3.5 h-3.5" /> Clinic
+              </button>
+              
+              <button onClick={() => setAppointmentTypeFilter('home')} className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${appointmentTypeFilter === 'home' ? 'bg-green-500 text-white' : 'bg-gray-100 text-gray-600'}`}>
+                <Home className="w-3.5 h-3.5" /> Home
+              </button>
+              
+              {capabilities.tele && (
+                <button onClick={() => setAppointmentTypeFilter('tele')} className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${appointmentTypeFilter === 'tele' ? 'bg-purple-500 text-white' : 'bg-gray-100 text-gray-600'}`}>
+                  <Monitor className="w-3.5 h-3.5" /> Tele
+                </button>
+              )}
+            </div>
+
+            {todaySchedule.length === 0 ? (
+              <div className="text-center py-8 px-4 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
+                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <Calendar className="w-8 h-8 text-gray-400" />
+                </div>
+                <h3 className="text-gray-900 font-semibold mb-1">No Appointments Yet</h3>
+                <p className="text-sm text-gray-500 mb-4 max-w-[250px] mx-auto">
+                  Share your profile with customers to start getting bookings!
+                </p>
+                <button 
+                  onClick={async () => {
+                    const shareData = {
+                      title: vendor?.businessName || 'My Pet Service',
+                      text: `Book your pet appointment with ${vendor?.businessName || 'us'} on Warmpawz!`,
+                      url: window.location.origin
+                    };
+                    
+                    if (navigator.share && navigator.canShare && navigator.canShare(shareData)) {
+                      try {
+                        await navigator.share(shareData);
+                      } catch (err) {
+                        console.error('Share failed:', err);
+                      }
+                    } else {
+                      navigator.clipboard.writeText(window.location.origin);
+                      alert('Profile link copied to clipboard!');
+                    }
+                  }}
+                  className="px-4 py-2 bg-[#FF8C42] hover:bg-[#FF7A2E] text-white rounded-lg text-sm font-medium transition-colors inline-flex items-center gap-2"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  Share Profile
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center justify-end mb-2">
+                  <button className="text-sm text-[#FF8C42]" onClick={onNavigateToBookingManagement}>View All →</button>
+                </div>
+                <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
+                  {todaySchedule
+                    .filter(appointment => {
+                      if (appointmentTypeFilter === 'all') return true;
+                      const typeMap: Record<string, string> = {
+                        'at_center': 'clinic',
+                        'clinic': 'clinic',
+                        'at_home': 'home',
+                        'home': 'home',
+                        'tele': 'tele',
+                        'teleconsultation': 'tele'
+                      };
+                      return typeMap[appointment.serviceType?.toLowerCase()] === appointmentTypeFilter;
+                    })
+                    .map(appointment => {
+                       const serviceType = appointment.serviceType?.toLowerCase();
+                       let typeIcon = Stethoscope;
+                       let typeColor = 'bg-blue-100';
+                       let typeTextColor = 'text-blue-700';
+                       let typeLabel = 'Clinic';
+
+                       if (serviceType === 'at_home' || serviceType === 'home') {
+                         typeIcon = Home;
+                         typeColor = 'bg-green-100';
+                         typeTextColor = 'text-green-700';
+                         typeLabel = 'Home Visit';
+                       } else if (serviceType === 'tele' || serviceType === 'teleconsultation') {
+                         typeIcon = Monitor;
+                         typeColor = 'bg-purple-100';
+                         typeTextColor = 'text-purple-700';
+                         typeLabel = 'Tele';
+                       }
+
+                       const TypeIcon = typeIcon;
+
+                       return (
+                         <div key={appointment.id} className="bg-white border-2 border-gray-200 rounded-xl p-3 hover:border-[#FF8C42] transition-colors">
+                            <div className="flex items-start gap-3">
+                              <div className="flex flex-col items-center gap-1">
+                                <div className={`w-12 h-12 ${typeColor} rounded-xl flex items-center justify-center`}>
+                                   <TypeIcon className={`w-6 h-6 ${typeTextColor}`} />
+                                </div>
+                                <span className={`text-xs font-medium ${typeTextColor}`}>{typeLabel}</span>
+                              </div>
+                              
+                              <div className="flex-1">
+                                <div className="flex items-center justify-between mb-1">
+                                   <div className="flex items-center gap-2">
+                                      <Clock className="w-4 h-4 text-gray-400" />
+                                      <span className="text-sm font-semibold text-gray-900">{appointment.time}</span>
+                                   </div>
+                                   <Badge>{appointment.status}</Badge>
+                                </div>
+                                <div className="text-sm font-medium text-gray-900">{appointment.petName}</div>
+                                <div className="text-xs text-gray-500">{appointment.customerName} • {appointment.petBreed || 'Pet'}</div>
+                                <div className="text-xs font-medium text-[#FF8C42] mt-1 mb-2">{appointment.serviceName}</div>
+                                
+                                 <div className="flex gap-2">
+                                   <button 
+                                     onClick={() => {
+                                        setSelectedAppointment(appointment);
+                                        setAppointmentDetailModalOpen(true);
+                                     }}
+                                     className="flex-1 py-1.5 px-3 bg-gray-100 text-gray-700 rounded-lg text-xs font-medium flex items-center justify-center gap-1"
+                                   >
+                                      Details
+                                   </button>
+                                   <button 
+                                     onClick={() => window.location.href = `tel:${appointment.customerPhone}`}
+                                     className="flex-1 py-1.5 px-3 bg-blue-50 text-blue-700 rounded-lg text-xs font-medium flex items-center justify-center gap-1"
+                                   >
+                                      <Phone className="w-3.5 h-3.5" /> Call
+                                   </button>
+                                   {capabilities.chat && (
+                                     <button 
+                                       onClick={() => {
+                                          setSelectedAppointment(appointment);
+                                          setCommunicationMode('chat');
+                                       }}
+                                       className="relative flex-1 py-1.5 px-3 bg-[#FF8C42] text-white rounded-lg text-xs font-medium flex items-center justify-center gap-1"
+                                     >
+                                        <MessageSquare className="w-3.5 h-3.5" /> Chat
+                                        {appointment.hasUnreadMessages && (
+                                          <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-pulse" />
+                                        )}
+                                     </button>
+                                   )}
+                                   {/* TELE-HEALTH DIRECT JOIN */}
+                                   {(serviceType === 'tele' || serviceType === 'teleconsultation') && (
+                                      <a
+                                        href={`https://meet.jit.si/warmpawz-${appointment.bookingId}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="flex-1 py-1.5 px-3 bg-purple-100 text-purple-700 rounded-lg text-xs font-medium flex items-center justify-center gap-1"
+                                        onClick={(e) => e.stopPropagation()} 
+                                      >
+                                         <Video className="w-3.5 h-3.5" /> Join
+                                      </a>
+                                   )}
+                                </div>
+                              </div>
+                            </div>
+                         </div>
+                       );
+                    })}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* 📦 YOUR SERVICES / PRODUCTS */}
+        {(capabilities.catalog || capabilities.booking) && (
+          <div className="p-4 border-b border-gray-100">
+            <h2 className="font-semibold text-gray-900 text-center mb-3">
+              {capabilities.catalog && !capabilities.booking ? 'Your Products' : 'Your Services'}
+            </h2>
+            <div className="flex items-center justify-center mb-2">
+              <button className="text-sm text-[#FF8C42]" onClick={onNavigateToServiceManagement}>See All →</button>
+            </div>
+            <div className="flex gap-2 overflow-x-auto pb-2 justify-center">
+              <button 
+                onClick={onNavigateToServiceManagement}
+                className="flex-shrink-0 w-16 h-16 bg-purple-100 rounded-xl flex flex-col items-center justify-center hover:bg-purple-200 transition-colors"
+              >
+                <Plus className="w-6 h-6 text-purple-600 mb-1" />
+                <span className="text-xs">Add</span>
+              </button>
+              {services.slice(0, 4).map((service) => (
+                <div key={service.serviceId} className="flex-shrink-0 w-16 h-16 bg-blue-100 rounded-xl flex flex-col items-center justify-center">
+                  {capabilities.catalog && !capabilities.booking ? (
+                     <Package className="w-6 h-6 text-blue-600 mb-1" />
+                  ) : (
+                     <Activity className="w-6 h-6 text-blue-600 mb-1" />
+                  )}
+                  <span className="text-xs truncate w-full text-center px-1">{service.name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Watchlisted Patients */}
+        {capabilities.medical_records && watchlist.length > 0 && (
+          <div className="p-4 border-b border-gray-100">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-semibold text-gray-900">Watchlisted</h2>
+              <button className="flex items-center gap-1 text-sm text-[#FF8C42]">
+                <Plus className="w-4 h-4" />
+                Add visit
+              </button>
+            </div>
+            <div className="space-y-2">
+              {watchlist.slice(0, 3).map(patient => (
+                <div key={patient.watchlistId} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+                  <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                    <span className="text-sm font-semibold text-blue-600">
+                      {patient.customerName.split(' ').map(n => n[0]).join('')}
+                    </span>
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-gray-900">{patient.customerName}</div>
+                    <div className="text-xs text-gray-500">{patient.petName}</div>
+                    <div className="text-xs text-gray-400">{patient.issue}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs text-gray-400">{formatTimeAgo(patient.lastUpdated)}</div>
+                    <ChevronRight className="w-4 h-4 text-gray-400 ml-auto mt-1" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Bottom padding for fixed nav */}
+        <div className="pb-24"></div>
+
+        {/* Bottom Navigation */}
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-10">
+          <div className="max-w-[430px] mx-auto flex items-center justify-around py-3">
+            <button 
+              onClick={() => setActiveBottomTab('home')}
+              className={`flex flex-col items-center gap-1 ${
+                activeBottomTab === 'home' ? 'text-[#FF8C42]' : 'text-gray-400'
+              }`}
+            >
+              <div className="w-6 h-6">🏠</div>
+              <span className="text-xs">Home</span>
+            </button>
+            
+            {capabilities.booking && (
+              <button 
+                onClick={() => {
+                  onNavigateToBookingManagement?.();
+                  setActiveBottomTab('bookings');
+                }}
+                className={`flex flex-col items-center gap-1 ${
+                  activeBottomTab === 'bookings' ? 'text-[#FF8C42]' : 'text-gray-400'
+                }`}
+              >
+                <Calendar className="w-6 h-6" />
+                <span className="text-xs">Bookings</span>
+              </button>
+            )}
+
+            <button 
+              onClick={() => setActiveBottomTab('reporting')}
+              className={`flex flex-col items-center gap-1 ${
+                activeBottomTab === 'reporting' ? 'text-[#FF8C42]' : 'text-gray-400'
+              }`}
+            >
+              <BarChart3 className="w-6 h-6" />
+              <span className="text-xs">Reporting</span>
+            </button>
+            
+            <button 
+              onClick={() => {
+                setActiveBottomTab('settings');
+                // onNavigateToFacilityManagement?.(); // Using internal settings now
+              }}
+              className={`flex flex-col items-center gap-1 ${
+                activeBottomTab === 'settings' ? 'text-[#FF8C42]' : 'text-gray-400'
+              }`}
+            >
+              <Settings className="w-6 h-6" />
+              <span className="text-xs">Settings</span>
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+      {/* Modals */}
+      <VendorNotificationModal 
+        vendorId={vendorId}
+        open={notificationModalOpen}
+        onClose={() => setNotificationModalOpen(false)}
+        onNotificationsRead={() => fetchDashboardData(true)}
+      />
+
+      {/* Communication Hub (Unified Chat/Video) */}
+      {communicationMode && selectedAppointment && (
+        <CommunicationHub
+          mode={communicationMode}
+          bookingId={selectedAppointment.bookingId}
+          userId={vendorData?.phone || vendorData?.mobile || '+91'}
+          userName={vendorData?.fullName || vendorData?.businessName || 'Vendor'}
+          otherUserName={selectedAppointment.customerName}
+          userType="vendor"
+          onClose={() => {
+            setCommunicationMode(null);
+            setSelectedAppointment(null);
+            fetchDashboardData(true); // Reload to clear unread badges
+          }}
+        />
+      )}
+
+      {/* Appointment Detail Modal */}
+      {appointmentDetailModalOpen && selectedAppointment && (
+        <AppointmentDetailModal
+          bookingId={selectedAppointment.bookingId}
+          vendorData={vendorData}
+          onClose={() => {
+            setAppointmentDetailModalOpen(false);
+            setSelectedAppointment(null);
+          }}
+          onRefresh={() => fetchDashboardData(true)}
+        />
+      )}
+
+      {/* Vendor Analytics */}
+      {activeBottomTab === 'reporting' && (
+        <div className="fixed inset-0 bg-gray-50 z-20 overflow-y-auto pb-24">
+          <VendorAnalytics
+            vendorId={vendorId}
+            vendorData={vendorData}
+            onBack={() => setActiveBottomTab('home')}
+          />
+        </div>
+      )}
+
+      {/* Vendor Payment Settings */}
+      {activeBottomTab === 'settings' && (
+        <div className="fixed inset-0 bg-gray-50 z-20 overflow-y-auto pb-24">
+          <div className="p-4 bg-white border-b border-gray-200 sticky top-0 z-30 flex items-center gap-3">
+            <button onClick={() => setActiveBottomTab('home')} className="p-2 hover:bg-gray-100 rounded-full">
+              <ChevronRight className="w-5 h-5 rotate-180 text-gray-600" />
+            </button>
+            <h2 className="text-lg font-semibold text-gray-900">Settings & Payouts</h2>
+          </div>
+          <div className="p-4">
+            <VendorPaymentSettings vendorId={vendorId} />
+          </div>
+        </div>
+      )}
+
+      {/* AI Support Bot for Vendors */}
+      <AIChatBot 
+        customerId={vendorId} // Using vendorId as customerId for CRM tracking
+        customerName={vendor?.fullName || vendor?.businessName || 'Vendor'} 
+      />
+
+    </div>
+  );
+}
