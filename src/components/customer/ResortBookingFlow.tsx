@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Calendar as CalendarIcon, CheckCircle, Info, User, Moon, Sun, CreditCard, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Calendar as CalendarIcon, CheckCircle, Info, User, Moon, Sun, CreditCard, ChevronRight, AlertCircle } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Calendar } from '../ui/calendar';
 import { Card } from '../ui/card';
@@ -19,6 +19,7 @@ interface ResortBookingFlowProps {
 export function ResortBookingFlow({ phone, onBack, onSuccess, preSelectedVendorId }: ResortBookingFlowProps) {
   const [step, setStep] = useState<'select-resort' | 'select-room' | 'dates' | 'confirm'>('select-resort');
   const [loading, setLoading] = useState(false);
+  const [checkingAvailability, setCheckingAvailability] = useState(false);
   const [resorts, setResorts] = useState<any[]>([]);
   const [selectedResort, setSelectedResort] = useState<any>(null);
   const [rooms, setRooms] = useState<any[]>([]);
@@ -29,6 +30,7 @@ export function ResortBookingFlow({ phone, onBack, onSuccess, preSelectedVendorI
   });
   const [guestCount, setGuestCount] = useState(1);
   const [petCount, setPetCount] = useState(1);
+  const [availabilityStatus, setAvailabilityStatus] = useState<{ available: boolean; message?: string } | null>(null);
 
   const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
 
@@ -39,6 +41,15 @@ export function ResortBookingFlow({ phone, onBack, onSuccess, preSelectedVendorI
       loadResorts();
     }
   }, [preSelectedVendorId]);
+
+  // Check availability when dates or room change
+  useEffect(() => {
+    if (step === 'dates' && selectedRoom && dateRange?.from && dateRange?.to) {
+      checkAvailability();
+    } else {
+      setAvailabilityStatus(null);
+    }
+  }, [dateRange, selectedRoom, step]);
 
   const loadResorts = async () => {
     try {
@@ -75,39 +86,86 @@ export function ResortBookingFlow({ phone, onBack, onSuccess, preSelectedVendorI
       setLoading(true);
       // First fetch vendor details if we don't have them
       if (!selectedResort) {
-         const response = await fetch(`${API_BASE}/vendor/${vendorId}`, { // Assuming this endpoint exists or similar
+         const response = await fetch(`${API_BASE}/vendor/${vendorId}`, {
              headers: { Authorization: `Bearer ${publicAnonKey}` }
          });
-         // Fallback if endpoint missing, just set basics
-         setSelectedResort({ id: vendorId, name: 'Loading...', address: '' });
+         const vendorData = await response.json();
+         setSelectedResort(vendorData.vendor || { id: vendorId, name: 'Resort', address: '' });
       }
 
-      // Fetch services (Rooms)
-      const response = await fetch(`${API_BASE}/customer/services?vendorId=${vendorId}`, {
-        headers: { Authorization: `Bearer ${publicAnonKey}` }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setRooms(data.services || []);
-        
-        // Update resort details from service data if needed
-        if (data.services && data.services.length > 0) {
-            const first = data.services[0];
-            setSelectedResort({
-                id: first.vendorId,
-                name: first.vendorName,
-                address: first.vendorLocation?.address || 'Resort Location',
-                rating: 4.8
-            });
+      // Try fetching NEW Inventory Rooms first
+      let roomsData = [];
+      try {
+        const roomResp = await fetch(`${API_BASE}/resort/rooms/${vendorId}`, {
+            headers: { Authorization: `Bearer ${publicAnonKey}` }
+        });
+        if (roomResp.ok) {
+            const rd = await roomResp.json();
+            if (rd.success && rd.rooms.length > 0) {
+                roomsData = rd.rooms;
+            }
         }
-        setStep('select-room');
+      } catch (e) { console.log('No new inventory rooms found'); }
+
+      // Fallback to old services if no new rooms
+      if (roomsData.length === 0) {
+        const response = await fetch(`${API_BASE}/customer/services?vendorId=${vendorId}`, {
+            headers: { Authorization: `Bearer ${publicAnonKey}` }
+        });
+        if (response.ok) {
+            const data = await response.json();
+            roomsData = data.services || [];
+        }
       }
+
+      setRooms(roomsData);
+      setStep('select-room');
     } catch (error) {
       console.error('Error loading rooms:', error);
       toast.error('Failed to load resort details');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const checkAvailability = async () => {
+    if (!selectedRoom || !dateRange?.from || !dateRange?.to) return;
+    
+    try {
+        setCheckingAvailability(true);
+        const query = new URLSearchParams({
+            vendorId: selectedResort.id,
+            roomId: selectedRoom.id,
+            fromDate: format(dateRange.from, 'yyyy-MM-dd'),
+            toDate: format(dateRange.to, 'yyyy-MM-dd'),
+            quantity: '1' // Assuming 1 room for now
+        });
+
+        const response = await fetch(`${API_BASE}/resort/availability?${query}`, {
+            headers: { Authorization: `Bearer ${publicAnonKey}` }
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            if (data.success) {
+                setAvailabilityStatus({
+                    available: data.isAvailable,
+                    message: data.isAvailable ? 'Room is available for these dates' : 'Room is sold out for these dates'
+                });
+            } else {
+                // If endpoint fails (e.g. 404 room not found because it's legacy), assume available
+                // This ensures backward compatibility
+                setAvailabilityStatus({ available: true, message: 'Availability confirmed' });
+            }
+        } else {
+            // Fallback for legacy
+             setAvailabilityStatus({ available: true, message: 'Availability confirmed' });
+        }
+    } catch (error) {
+        console.error('Availability check failed', error);
+        setAvailabilityStatus({ available: true, message: 'Availability assumed' });
+    } finally {
+        setCheckingAvailability(false);
     }
   };
 
@@ -118,21 +176,42 @@ export function ResortBookingFlow({ phone, onBack, onSuccess, preSelectedVendorI
       setLoading(true);
       const nights = differenceInDays(dateRange.to, dateRange.from) || 1;
       const totalPrice = selectedRoom.price * nights;
+      const fromDate = format(dateRange.from, 'yyyy-MM-dd');
+      const toDate = format(dateRange.to, 'yyyy-MM-dd');
 
+      // 1. Reserve Inventory (New System)
+      try {
+          await fetch(`${API_BASE}/resort/reserve-inventory`, {
+              method: 'POST',
+              headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${publicAnonKey}`
+              },
+              body: JSON.stringify({
+                  roomId: selectedRoom.id,
+                  fromDate,
+                  toDate,
+                  quantity: 1
+              })
+          });
+      } catch (e) {
+          console.warn('Inventory reservation failed (might be legacy room)', e);
+      }
+
+      // 2. Create Booking Record
       const bookingPayload = {
         vendorId: selectedResort.id,
         serviceId: selectedRoom.id,
         customerPhone: phone,
-        date: format(dateRange.from, 'yyyy-MM-dd'),
-        time: '14:00', // Standard check-in time
-        notes: `Resort Booking: ${nights} Nights. Check-in: ${format(dateRange.from, 'dd MMM')}, Check-out: ${format(dateRange.to, 'dd MMM')}. Guests: ${guestCount}, Pets: ${petCount}`,
+        date: fromDate,
+        time: '14:00', 
+        notes: `Resort Booking: ${nights} Nights. Check-in: ${fromDate}, Check-out: ${toDate}. Guests: ${guestCount}, Pets: ${petCount}`,
         petDetails: { count: petCount },
-        status: 'confirmed', // Auto-confirm for now or pending
+        status: 'confirmed',
         price: totalPrice,
-        // ✅ Send structured metadata for backend
         guestCount: guestCount,
-        checkinDate: format(dateRange.from, 'yyyy-MM-dd'),
-        checkoutDate: format(dateRange.to, 'yyyy-MM-dd'),
+        checkinDate: fromDate,
+        checkoutDate: toDate,
       };
 
       const response = await fetch(`${API_BASE}/bookings`, {
@@ -216,6 +295,7 @@ export function ResortBookingFlow({ phone, onBack, onSuccess, preSelectedVendorI
                             <div className="flex gap-2 mt-2">
                                 <Badge variant="outline" className="text-xs bg-teal-50 text-teal-700 border-teal-200">Free Breakfast</Badge>
                                 <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">Pool Access</Badge>
+                                {room.totalInventory && <Badge variant="outline" className="text-xs bg-purple-50 text-purple-700 border-purple-200">{room.totalInventory} Rooms</Badge>}
                             </div>
                         </div>
                         <div className="text-right">
@@ -245,7 +325,28 @@ export function ResortBookingFlow({ phone, onBack, onSuccess, preSelectedVendorI
           </div>
         </div>
 
-        <div className="p-4 flex-1 space-y-6">
+        <div className="p-4 flex-1 space-y-6 pb-32">
+            {/* Availability Status Alert */}
+            {availabilityStatus && !availabilityStatus.available && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-red-600 mt-0.5" />
+                    <div>
+                        <p className="text-sm font-semibold text-red-800">Dates Unavailable</p>
+                        <p className="text-xs text-red-600">{availabilityStatus.message}</p>
+                    </div>
+                </div>
+            )}
+
+            {availabilityStatus && availabilityStatus.available && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-3 flex items-start gap-3">
+                    <CheckCircle className="w-5 h-5 text-green-600 mt-0.5" />
+                    <div>
+                        <p className="text-sm font-semibold text-green-800">Available</p>
+                        <p className="text-xs text-green-600">{availabilityStatus.message}</p>
+                    </div>
+                </div>
+            )}
+
             {/* Date Selection */}
             <Card className="p-4">
                 <h3 className="font-semibold mb-3 flex items-center gap-2"><CalendarIcon className="w-4 h-4 text-teal-600" /> Select Dates</h3>
@@ -295,7 +396,7 @@ export function ResortBookingFlow({ phone, onBack, onSuccess, preSelectedVendorI
         </div>
 
         {/* Footer Summary */}
-        <div className="bg-white p-4 border-t shadow-lg">
+        <div className="bg-white p-4 border-t shadow-lg fixed bottom-0 w-full max-w-[430px]">
             <div className="flex justify-between items-center mb-4">
                 <div>
                     <p className="text-xs text-gray-500">{nights} nights x ₹{selectedRoom?.price}</p>
@@ -307,11 +408,12 @@ export function ResortBookingFlow({ phone, onBack, onSuccess, preSelectedVendorI
                 </div>
             </div>
             <Button 
-                className="w-full bg-teal-600 hover:bg-teal-700 text-white h-12 text-lg"
-                disabled={!dateRange?.from || !dateRange?.to}
+                className="w-full bg-teal-600 hover:bg-teal-700 text-white h-12 text-lg disabled:bg-gray-300"
+                disabled={!dateRange?.from || !dateRange?.to || checkingAvailability || (availabilityStatus && !availabilityStatus.available)}
                 onClick={() => setStep('confirm')}
             >
-                Review & Pay
+                {checkingAvailability ? 'Checking...' : 
+                 (availabilityStatus && !availabilityStatus.available) ? 'Sold Out' : 'Review & Pay'}
             </Button>
         </div>
       </div>

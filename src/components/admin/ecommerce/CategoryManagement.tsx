@@ -500,7 +500,9 @@ export function CategoryManagement() {
             <div>
               <p className="text-sm text-gray-500">Avg Commission</p>
               <p className="text-2xl font-bold text-gray-900">
-                {(categories.reduce((sum, c) => sum + (c.metadata.commissionRate || 0), 0) / categories.length).toFixed(1)}%
+                {categories.length > 0 
+                  ? (categories.reduce((sum, c) => sum + (c.metadata?.commissionRate || 0), 0) / categories.length).toFixed(1)
+                  : '0.0'}%
               </p>
             </div>
           </div>
@@ -673,10 +675,10 @@ function CategoryTreeItem({
                 <p className="text-sm text-gray-500 mt-1">{category.description}</p>
               )}
               <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
-                <span>Commission: {category.metadata.commissionRate}%</span>
-                <span>GST: {category.metadata.gstRate}%</span>
-                {category.metadata.allowReturns && (
-                  <span>Returns: {category.metadata.returnWindow} days</span>
+                <span>Commission: {category.metadata?.commissionRate || 0}%</span>
+                <span>GST: {category.metadata?.gstRate || 0}%</span>
+                {category.metadata?.allowReturns && (
+                  <span>Returns: {category.metadata?.returnWindow || 0} days</span>
                 )}
               </div>
             </div>
@@ -793,16 +795,16 @@ function CategoryGridItem({ category, onEdit, onDelete, onToggleEnabled }: any) 
       <div className="space-y-2 text-xs text-gray-600 border-t border-gray-200 pt-3">
         <div className="flex justify-between">
           <span>Commission:</span>
-          <span className="font-semibold">{category.metadata.commissionRate}%</span>
+          <span className="font-semibold">{category.metadata?.commissionRate || 0}%</span>
         </div>
         <div className="flex justify-between">
           <span>GST Rate:</span>
-          <span className="font-semibold">{category.metadata.gstRate}%</span>
+          <span className="font-semibold">{category.metadata?.gstRate || 0}%</span>
         </div>
-        {category.metadata.allowReturns && (
+        {category.metadata?.allowReturns && (
           <div className="flex justify-between">
             <span>Return Window:</span>
-            <span className="font-semibold">{category.metadata.returnWindow} days</span>
+            <span className="font-semibold">{category.metadata?.returnWindow || 0} days</span>
           </div>
         )}
       </div>
@@ -821,7 +823,17 @@ function CategoryGridItem({ category, onEdit, onDelete, onToggleEnabled }: any) 
 
 // Category Editor Modal Component
 function CategoryEditorModal({ category, onSave, onClose }: any) {
-  const [editedCategory, setEditedCategory] = useState<Category>(category);
+  const [editedCategory, setEditedCategory] = useState<Category>(() => ({
+    ...category,
+    metadata: category.metadata || {
+      commissionRate: 0,
+      gstRate: 0,
+      allowReturns: false,
+      returnWindow: 0,
+      shippingCategory: 'standard',
+      requiresPrescription: false
+    }
+  }));
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
