@@ -28,37 +28,75 @@ export function BreederCatalogView({ phone, onBack, onViewDetails }: BreederCata
   const loadAnimals = async () => {
     try {
       setLoading(true);
-      // Fetch services/products for breeders. 
-      // In real implementation, this might be a specific endpoint for animals.
-      // For now, we fetch generic services for 'pet_breeder' and treat them as animals
-      const response = await fetch(`${API_BASE}/customer/services?roleId=pet_breeder`, {
-        headers: { Authorization: `Bearer ${publicAnonKey}` }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        // Transform generic services into Animal cards
-        // Assuming service.name = Breed/Name, description contains details
-        const transformedAnimals = (data.services || []).map((s: any) => ({
-            id: s.id,
-            name: s.name, // e.g., "Golden Retriever Puppy"
-            breed: s.name.split(' ')[0], // Simple heuristic
-            age: '2 Months', // Mock or parsed
-            gender: Math.random() > 0.5 ? 'Male' : 'Female',
-            price: s.price,
-            vendorName: s.vendorName,
-            vendorId: s.vendorId,
-            image: 'https://images.unsplash.com/photo-1543466835-00a7907e9de1?auto=format&fit=crop&q=80&w=1000', // Mock
-            certified: true, // KCI registered flag
-            description: s.description
-        }));
-        setAnimals(transformedAnimals);
+      let animalData: any[] = [];
+      
+      // 1. Try New Breeder Listing API
+      try {
+          const listingResponse = await fetch(`${API_BASE}/breeder/listings`, {
+              headers: { Authorization: `Bearer ${publicAnonKey}` }
+          });
+          if (listingResponse.ok) {
+              const data = await listingResponse.json();
+              if (data.success && data.listings.length > 0) {
+                  animalData = data.listings.map((l: any) => ({
+                      id: l.id,
+                      name: l.name,
+                      breed: l.breed,
+                      age: l.dob ? calculateAge(l.dob) : 'Unknown Age',
+                      gender: l.gender,
+                      price: l.price,
+                      vendorName: 'Verified Breeder', // Should fetch vendor name ideally
+                      vendorId: l.vendorId,
+                      image: l.images && l.images.length > 0 ? l.images[0] : 'https://images.unsplash.com/photo-1543466835-00a7907e9de1?auto=format&fit=crop&q=80&w=1000',
+                      certified: l.kciRegistered,
+                      description: l.description,
+                      kciNumber: l.kciNumber
+                  }));
+              }
+          }
+      } catch (e) {
+          console.warn('Failed to fetch from new breeder API', e);
       }
+
+      // 2. Fallback to Legacy Services
+      if (animalData.length === 0) {
+          const response = await fetch(`${API_BASE}/customer/services?roleId=pet_breeder`, {
+            headers: { Authorization: `Bearer ${publicAnonKey}` }
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            const transformedAnimals = (data.services || []).map((s: any) => ({
+                id: s.id,
+                name: s.name, // e.g., "Golden Retriever Puppy"
+                breed: s.name.split(' ')[0], // Simple heuristic
+                age: '2 Months', // Mock or parsed
+                gender: Math.random() > 0.5 ? 'Male' : 'Female',
+                price: s.price,
+                vendorName: s.vendorName,
+                vendorId: s.vendorId,
+                image: 'https://images.unsplash.com/photo-1543466835-00a7907e9de1?auto=format&fit=crop&q=80&w=1000', // Mock
+                certified: true, // KCI registered flag
+                description: s.description
+            }));
+            animalData = transformedAnimals;
+          }
+      }
+
+      setAnimals(animalData);
     } catch (error) {
       console.error('Error loading animals:', error);
     } finally {
       setLoading(false);
     }
+  };
+
+  const calculateAge = (dob: string) => {
+      const birth = new Date(dob);
+      const now = new Date();
+      const diffMonths = (now.getFullYear() - birth.getFullYear()) * 12 + (now.getMonth() - birth.getMonth());
+      if (diffMonths < 1) return '< 1 Month';
+      return `${diffMonths} Months`;
   };
 
   const filteredAnimals = animals.filter(a => 
