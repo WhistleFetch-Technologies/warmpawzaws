@@ -31,7 +31,6 @@ export interface VendorCapabilities {
 
   // Admin
   staff_management: boolean;
-  facility_management: boolean;
 }
 
 const DEFAULT_CAPABILITIES: VendorCapabilities = {
@@ -51,8 +50,7 @@ const DEFAULT_CAPABILITIES: VendorCapabilities = {
   progress_tracking: false,
   cctv_access: false,
   gps_tracking: false,
-  staff_management: false,
-  facility_management: false
+  staff_management: false
 };
 
 export function useVendorCapabilities(roleId?: string) {

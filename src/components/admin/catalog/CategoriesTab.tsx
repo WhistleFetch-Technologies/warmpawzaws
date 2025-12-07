@@ -1,17 +1,16 @@
 import { useState, useEffect } from 'react';
-import { ChevronDown, ChevronRight, Plus, Edit, Trash2, MoreVertical } from 'lucide-react';
+import { Plus, ChevronDown, ChevronRight, Edit, Trash2, MoreVertical } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { DeleteCategoryModal } from './DeleteCategoryModal';
+import { BulkActionsModal } from './BulkActionsModal';
+import { ExportCategoriesModal } from './ExportCategoriesModal';
 import { CreateServiceModal } from './CreateServiceModal';
 import { CreateCategoryModal } from './CreateCategoryModal';
 import { CreateSubCategoryModal } from './CreateSubCategoryModal';
 import { EditCategoryModal } from './EditCategoryModal';
 import { EditSubCategoryModal } from './EditSubCategoryModal';
 import { EditServiceModal } from './EditServiceModal';
-import { DeleteCategoryModal } from './DeleteCategoryModal';
-import { BulkActionsModal } from './BulkActionsModal';
-import { ExportCategoriesModal } from './ExportCategoriesModal';
-import { TestBookingsModal } from './TestBookingsModal';
 
 interface Service {
   id: string;
@@ -72,7 +71,6 @@ export function CategoriesTab({ onRefresh }: CategoriesTabProps) {
   const [deletingItem, setDeletingItem] = useState<any>(null);
   const [showBulkActions, setShowBulkActions] = useState(false);
   const [showExport, setShowExport] = useState(false);
-  const [showTestBookings, setShowTestBookings] = useState(false);
   const [seeding, setSeeding] = useState(false);
 
   useEffect(() => {
@@ -351,13 +349,6 @@ export function CategoriesTab({ onRefresh }: CategoriesTabProps) {
             onClick={() => setShowExport(true)}
           >
             Export
-          </Button>
-          <Button 
-            variant="outline" 
-            className="text-sm"
-            onClick={() => setShowTestBookings(true)}
-          >
-            Test Bookings
           </Button>
           <Button 
             variant="outline" 
@@ -728,12 +719,6 @@ export function CategoriesTab({ onRefresh }: CategoriesTabProps) {
       <ExportCategoriesModal
         isOpen={showExport}
         onClose={() => setShowExport(false)}
-        categories={categories}
-      />
-
-      <TestBookingsModal
-        isOpen={showTestBookings}
-        onClose={() => setShowTestBookings(false)}
         categories={categories}
       />
     </div>

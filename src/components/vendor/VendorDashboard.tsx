@@ -15,7 +15,6 @@ import {
   Settings,
   BarChart3,
   Stethoscope,
-  Building2,
   Home,
   Monitor,
   MapPin,
@@ -365,17 +364,6 @@ export function VendorDashboard({
             >
               <Package className="w-6 h-6 mb-2" />
               <span className="font-semibold text-sm">Inventory & Store</span>
-            </button>
-          )}
-
-          {/* Facility Management - For Centers/Clinics */}
-          {capabilities.facility_management && onNavigateToFacilityManagement && (
-            <button
-              onClick={onNavigateToFacilityManagement}
-              className="bg-white border-2 border-indigo-500 text-indigo-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-indigo-500 hover:text-white transition-colors group text-center"
-            >
-              <Building2 className="w-6 h-6 mb-2" />
-              <span className="font-semibold text-sm">Manage Center</span>
             </button>
           )}
         </div>

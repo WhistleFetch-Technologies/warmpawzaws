@@ -24,17 +24,10 @@ import { bookingEndpoints } from "./booking-endpoints.tsx";
 import { registerAICRMRoutes } from "./ai-crm-routes.tsx";
 import { registerAIChatbotRoutes } from "./ai-chatbot-routes.tsx";
 import { vendorRoleConfigEndpoints } from "./vendor-role-config.tsx";
-import { vendorMigrationEndpoints } from "./vendor-migration.tsx";
-import { seedRolesEndpoints, ensureRolesSeeded } from "./seed_roles.tsx";
-import { fixDuplicateRegions, registerRegionFix } from "./fix_regions.tsx";
-import { seedUnifiedRoles, registerUnifiedSeed } from "./unified_role_seed.tsx";
-import { registerOnboardingFix, applyOnboardingVersionFix } from "./fix_onboarding_versions.tsx";
 import { registerVendorServiceEndpoints } from "./vendor-services-endpoints.tsx";
-import { registerVendorServiceGapFixes } from "./vendor-services-gap-fixes.tsx";
 import { registerVendorCatalogAPIV2 } from "./vendor-catalog-api-v2.tsx";
 import { vendorScheduleV2Endpoints } from "./vendor-schedule-v2.tsx";
 import { registerProblemGridSpecializationSystem } from "./problem-grid-specialization-system.tsx";
-import { registerTestDataFix, seedTestDataNow } from "./fix_test_data.tsx";
 import { registerAdminCatalogEndpoints } from "./admin-catalog-endpoints.tsx";
 import { adminIntegrationEndpoints } from "./admin-integration-endpoints.tsx";
 import { registerVendorSettingsRulesEndpoints } from "./vendor-settings-rules-endpoints.tsx";
@@ -44,9 +37,6 @@ import staffAvailabilityRoutes from "./staff-availability-routes.tsx";
 import staffScheduleRoutes from "./staff-schedule-endpoints.tsx";
 import staffCRUDRoutes from "./staff-crud-endpoints.tsx";
 import staffAuthRoutes from "./staff-auth-endpoints.tsx";
-import { staffCriticalFixes } from "./staff-fixes.tsx";
-import { registerStaffUserFix, fixStaffUsersNow } from "./fix-staff-users.tsx";
-import { ensureCatalogSeeded } from "./catalog-seed-api-v2.tsx";
 import { paymentEndpoints } from "./payment-endpoints.tsx";
 import { marketplacePaymentEndpoints } from "./marketplace-payment-endpoints.tsx";
 import { criticalActionGuard } from "./critical-action-guard.tsx";
@@ -55,16 +45,15 @@ import ecommerceRoutes from "./ecommerce_routes.tsx";
 import marketingRoutesV2 from "./marketing-routes-v2.tsx";
 import customerEcommerceRoutes from "./customer-ecommerce-endpoints.tsx";
 import { registerGPSTrackingEndpoints } from "./gps-tracking.tsx";
-import { registerBookingLifecycleEndpoints } from "./booking-lifecycle.tsx";
 import { registerCafeFeatures } from "./cafe-features.tsx";
 import { registerResortInventory } from "./resort-inventory.tsx";
 import { registerBreederListings } from "./breeder-listings.tsx";
-import { registerVerificationEndpoints } from "./verification-simulation.tsx";
 import { registerAnalyticsIngestion } from "./analytics-events.tsx";
 import { registerLogisticsEndpoints } from "./logistics-adapter.tsx";
 import { registerChatEndpoints } from "./chat-endpoints.tsx";
 import { registerSubscriptionEndpoints } from "./subscription-endpoints.tsx";
 import { registerVideoConsultationEndpoints } from "./video-consultation-endpoints.tsx";
+import { registerMedicalHistoryEndpoints } from "./medical-history-endpoints.tsx";
 
 const app = new Hono();
 
@@ -182,42 +171,8 @@ app.patch('/make-server-3dd53475/admin/regions/:regionId/status', async (c) => {
 // CRITICAL ACTION GUARD
 // Protects destructive endpoints from accidental execution
 app.use('/make-server-3dd53475/admin/catalog/clear', criticalActionGuard());
-app.use('/make-server-3dd53475/fix/seed-roles', criticalActionGuard());
 app.use('/make-server-3dd53475/admin/catalog/seed', criticalActionGuard());
 app.use('/make-server-3dd53475/admin/onboarding-fields/sync', criticalActionGuard());
-
-// ------------------------------------------------------------------
-// BOOTSTRAP & SELF-HEALING
-// ------------------------------------------------------------------
-// Check if essential data exists, if not, seed it.
-// We fire and forget this to avoid blocking server startup.
-(async () => {
-  try {
-    console.log('🚀 [BOOTSTRAP] Starting self-healing checks...');
-    
-    // 1. Fix Critical Region Conflicts first
-    await fixDuplicateRegions();
-    
-    // 2. Fix Role Configuration (Merge config + onboarding)
-    await seedUnifiedRoles();
-
-    // 3. Fix Onboarding Versions (v2-v7 for respective roles)
-    await applyOnboardingVersionFix();
-    
-    // 4. Seed Catalog if needed
-    await ensureCatalogSeeded();
-
-    // 5. Seed Missing Test Data (Customer/Pet)
-    await seedTestDataNow();
-
-    // 6. Fix Staff Users (Ensure login indexes)
-    await fixStaffUsersNow();
-    
-    console.log('✅ [BOOTSTRAP] Self-healing complete.');
-  } catch (err) {
-    console.error('❌ [BOOTSTRAP] Error during self-healing:', err);
-  }
-})();
 
 // ------------------------------------------------------------------
 // REGISTER ROUTES
@@ -240,26 +195,19 @@ vendorOnboardingEndpoints(app, kv);
 vendorDashboardEndpoints(app, kv);
 vendorRoleConfigEndpoints(app);
 registerDynamicOnboarding(app);
-seedRolesEndpoints(app);
 registerVendorServiceEndpoints(app);
-registerVendorServiceGapFixes(app);
 registerVendorCatalogAPIV2(app);
 app.route('/make-server-3dd53475', vendorScheduleV2Endpoints);
 
 // 3. Admin Routes
 registerAdminVendorRoutes(app);
 adminVendorEndpoints(app, kv);
-vendorMigrationEndpoints(app, kv);
 registerAdminCatalogEndpoints(app);
 adminIntegrationEndpoints(app);
 registerVendorSettingsRulesEndpoints(app);
 registerVideoCallEndpoints(app);
 regionEndpoints(app, kv);
-registerRegionFix(app);
-registerUnifiedSeed(app);
-registerOnboardingFix(app);
 registerProblemGridSpecializationSystem(app);
-registerTestDataFix(app);
 
 // 4. Core Customer & Auth Routes
 // MUST BE REGISTERED BEFORE STAFF ROUTES to avoid shadowing by staff wildcard router
@@ -273,13 +221,12 @@ marketplacePaymentEndpoints(app, kv);
 registerChatEndpoints(app);
 registerSubscriptionEndpoints(app);
 registerVideoConsultationEndpoints(app);
+registerMedicalHistoryEndpoints(app);
 registerGPSTrackingEndpoints(app);
 bookingEndpoints(app, kv);
-// registerBookingLifecycleEndpoints(app); // Replaced by comprehensive bookingEndpoints
 registerCafeFeatures(app);
 registerResortInventory(app);
 registerBreederListings(app);
-registerVerificationEndpoints(app);
 registerAnalyticsIngestion(app);
 registerLogisticsEndpoints(app);
 app.route('/make-server-3dd53475/orders', orderRoutes);
@@ -292,8 +239,6 @@ app.route('/make-server-3dd53475', staffAuthRoutes); // Register Auth FIRST to a
 app.route('/make-server-3dd53475/staff', staffAvailabilityRoutes);
 app.route('/', staffScheduleRoutes);
 app.route('/', staffCRUDRoutes);
-staffCriticalFixes(app);
-registerStaffUserFix(app);
 
 // ------------------------------------------------------------------
 // GLOBAL ERROR HANDLERS

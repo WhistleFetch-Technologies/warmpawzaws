@@ -20,6 +20,7 @@ import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { VendorChatModal } from './VendorChatModal';
 import { VendorPrescriptionModal } from './VendorPrescriptionModal';
 import { MedicalHistoryModal } from './MedicalHistoryModal';
+import { AddVetSummaryModal } from './AddVetSummaryModal';
 import { CommunicationHub } from '../communication/CommunicationHub'; // ✅ ADD
 
 interface AppointmentDetailModalProps {
@@ -102,6 +103,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
   const [communicationMode, setCommunicationMode] = useState<'video' | 'chat' | null>(null);
   const [showPrescriptionModal, setShowPrescriptionModal] = useState(false);
   const [showMedicalHistory, setShowMedicalHistory] = useState(false);
+  const [showVetSummaryModal, setShowVetSummaryModal] = useState(false);
   const [showTracking, setShowTracking] = useState(false);
   
   // OTP States
@@ -673,20 +675,29 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
             
             {/* Prescription Action (Vet Only) */}
             {(vendorData?.roleId === 'veterinarian' || vendorData?.roleId === 'pet_clinic') && booking.status !== 'cancelled' && (
-              <div className="flex gap-2">
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setShowMedicalHistory(true)}
+                    className="flex-1 py-3 bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 rounded-xl font-medium flex items-center justify-center gap-2"
+                  >
+                    <FileText className="w-4 h-4" />
+                    Medical History
+                  </button>
+                  <button
+                    onClick={() => setShowPrescriptionModal(true)}
+                    className="flex-1 py-3 bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 rounded-xl font-medium flex items-center justify-center gap-2"
+                  >
+                    <Pill className="w-4 h-4" />
+                    {prescriptions.length > 0 ? 'Update Rx' : 'Write Rx'}
+                  </button>
+                </div>
                 <button
-                  onClick={() => setShowMedicalHistory(true)}
-                  className="flex-1 py-3 bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 rounded-xl font-medium flex items-center justify-center gap-2"
+                  onClick={() => setShowVetSummaryModal(true)}
+                  className="w-full py-3 bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 rounded-xl font-medium flex items-center justify-center gap-2"
                 >
-                  <FileText className="w-4 h-4" />
-                  Medical History
-                </button>
-                <button
-                  onClick={() => setShowPrescriptionModal(true)}
-                  className="flex-1 py-3 bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 rounded-xl font-medium flex items-center justify-center gap-2"
-                >
-                  <Pill className="w-4 h-4" />
-                  {prescriptions.length > 0 ? 'Update Rx' : 'Write Rx'}
+                  <Stethoscope className="w-4 h-4" />
+                  Add Consultation Summary
                 </button>
               </div>
             )}
@@ -694,13 +705,29 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
         </div>
       </div>
 
-      {/* Medical History Modal (New) */}
+      {/* Medical History Modal */}
       {showMedicalHistory && booking.petId && (
         <MedicalHistoryModal
           petId={booking.petId}
           petName={booking.petName}
           bookingId={bookingId}
+          vendorId={vendorData?.id || ''}
           onClose={() => setShowMedicalHistory(false)}
+        />
+      )}
+
+      {/* Add Vet Summary Modal */}
+      {showVetSummaryModal && (
+        <AddVetSummaryModal
+          appointmentId={bookingId}
+          petName={booking.petName}
+          vendorId={vendorData?.id || ''}
+          onClose={() => setShowVetSummaryModal(false)}
+          onSuccess={() => {
+            setShowVetSummaryModal(false);
+            loadAppointmentDetails(); // Refresh
+            onRefresh?.();
+          }}
         />
       )}
 

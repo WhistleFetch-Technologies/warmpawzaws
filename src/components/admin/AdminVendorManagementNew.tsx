@@ -26,7 +26,6 @@ import { AddVendorModal } from './AddVendorModal';
 import { ApplicationDetailModal } from './ApplicationDetailModal';
 import { VendorSettingsTabNew } from './VendorSettingsTabNew';
 import { ClarificationRequestedTab } from './ClarificationRequestedTab';
-import { StaffMigrationTool } from './StaffMigrationTool';
 import { UnifiedAdminSidebar } from './layout/UnifiedAdminSidebar';
 
 interface VendorStats {
@@ -89,7 +88,6 @@ export function AdminVendorManagementNew({ onNavigate }: AdminVendorManagementNe
   const [showAdminProfile, setShowAdminProfile] = useState(false);
   const [showAddVendor, setShowAddVendor] = useState(false);
   const [showApplicationDetail, setShowApplicationDetail] = useState(false);
-  const [showMigrationModal, setShowMigrationModal] = useState(false);
   const [selectedApplication, setSelectedApplication] = useState<VendorApplication | null>(null);
   const [successMessage, setSuccessMessage] = useState('Renewal Sent!');
   
@@ -801,22 +799,6 @@ export function AdminVendorManagementNew({ onNavigate }: AdminVendorManagementNe
             </div>
             
             <div className="flex items-center gap-3">
-              <Button
-                onClick={() => onNavigate?.('vendor-diagnostic')}
-                className="bg-blue-600 hover:bg-blue-700 text-white text-sm px-4 py-2 flex items-center gap-2"
-              >
-                <Search className="w-4 h-4" />
-                Diagnostic
-              </Button>
-              
-              <Button
-                onClick={() => onNavigate?.('vendor-migration')}
-                className="bg-[#FF8C42] hover:bg-[#FF7029] text-white text-sm px-4 py-2 flex items-center gap-2"
-              >
-                <RefreshCw className="w-4 h-4" />
-                Fix Data
-              </Button>
-              
               <div className="relative">
                 <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
@@ -846,30 +828,6 @@ export function AdminVendorManagementNew({ onNavigate }: AdminVendorManagementNe
               </Button>
               <Button 
                 variant="outline" 
-                className="gap-2 border-[#FF8C42] text-[#FF8C42] hover:bg-orange-50" 
-                onClick={() => setShowMigrationModal(true)}
-              >
-                <Users className="w-4 h-4" />
-                Fix Staff Records
-              </Button>
-              <Button 
-                variant="outline" 
-                className="gap-2 border-green-300 text-green-700 hover:bg-green-50 bg-green-50" 
-                onClick={handleSeedVendors}
-              >
-                🌱
-                Seed Test Data
-              </Button>
-              <Button 
-                variant="outline" 
-                className="gap-2 border-blue-300 text-blue-600 hover:bg-blue-50" 
-                onClick={handleFixCategories}
-              >
-                🔧
-                Fix Categories
-              </Button>
-              <Button 
-                variant="outline" 
                 className="gap-2 border-gray-300 text-gray-700 hover:bg-gray-50" 
                 onClick={() => {
                   console.log('👉 Clicked Platform Settings');
@@ -883,22 +841,6 @@ export function AdminVendorManagementNew({ onNavigate }: AdminVendorManagementNe
               >
                 <Settings className="w-4 h-4" />
                 Platform Settings
-              </Button>
-              <Button 
-                variant="outline" 
-                className="gap-2 border-orange-300 text-orange-600 hover:bg-orange-50" 
-                onClick={handleFixVendorIndexes}
-              >
-                🔗
-                Fix Vendor Indexes
-              </Button>
-              <Button 
-                variant="outline" 
-                className="gap-2 border-red-300 text-red-600 hover:bg-red-50" 
-                onClick={handleFlushAllVendors}
-              >
-                🗑️
-                Flush All
               </Button>
             </div>
             
@@ -1382,19 +1324,6 @@ export function AdminVendorManagementNew({ onNavigate }: AdminVendorManagementNe
           loadData();
         }}
       />
-
-      {/* Staff Migration Modal */}
-      <Dialog open={showMigrationModal} onOpenChange={setShowMigrationModal}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Fix Missing Staff Records</DialogTitle>
-            <DialogDescription>
-              Create staff records for individual vendors who are missing them. This fixes the issue where doctors don't appear in customer searches.
-            </DialogDescription>
-          </DialogHeader>
-          <StaffMigrationTool />
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

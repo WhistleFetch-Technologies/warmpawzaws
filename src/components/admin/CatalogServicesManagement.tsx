@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { RoleManagement } from './RoleManagement';
 import { EnhancedOnboardingFormBuilder } from './EnhancedOnboardingFormBuilder';
 import { ServiceCatalogTabNew } from './catalog/ServiceCatalogTabNew';
-import { CatalogSeedPanel } from './CatalogSeedPanel';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { Button } from '../ui/button';
 import { 
@@ -54,7 +53,7 @@ interface CatalogServicesManagementProps {
 }
 
 export function CatalogServicesManagement({ onNavigate }: CatalogServicesManagementProps = {}) {
-  const [activeTab, setActiveTab] = useState<'categories' | 'products' | 'pricing' | 'bulk' | 'roles' | 'onboarding' | 'servicecatalog' | 'seed'>('categories');
+  const [activeTab, setActiveTab] = useState<'categories' | 'products' | 'pricing' | 'bulk' | 'roles' | 'onboarding' | 'servicecatalog'>('categories');
   const [stats, setStats] = useState<CatalogStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [showCreateCategory, setShowCreateCategory] = useState(false);
@@ -237,11 +236,6 @@ export function CatalogServicesManagement({ onNavigate }: CatalogServicesManagem
                   active={activeTab === 'servicecatalog'}
                   onClick={() => setActiveTab('servicecatalog')}
                 />
-                <TabButton 
-                  label="Seed" 
-                  active={activeTab === 'seed'}
-                  onClick={() => setActiveTab('seed')}
-                />
               </div>
 
               <div className="flex gap-2">
@@ -275,7 +269,6 @@ export function CatalogServicesManagement({ onNavigate }: CatalogServicesManagem
               {activeTab === 'roles' && <RoleManagement />}
               {activeTab === 'onboarding' && <EnhancedOnboardingFormBuilder />}
               {activeTab === 'servicecatalog' && <ServiceCatalogTabNew />}
-              {activeTab === 'seed' && <CatalogSeedPanel />}
             </div>
           </div>
         </div>
