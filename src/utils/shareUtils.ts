@@ -81,9 +81,14 @@ async function copyToClipboard(data: ShareData): Promise<boolean> {
 
     // Use Clipboard API if available
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      await navigator.clipboard.writeText(textToCopy.trim());
-      toast.success('Copied to clipboard!');
-      return true;
+      try {
+        await navigator.clipboard.writeText(textToCopy.trim());
+        toast.success('Copied to clipboard!');
+        return true;
+      } catch (err) {
+        console.warn('Clipboard API failed, falling back to legacy method:', err);
+        // Fall through to legacy method
+      }
     }
 
     // Fallback: Use old-school method
@@ -109,6 +114,10 @@ async function copyToClipboard(data: ShareData): Promise<boolean> {
     toast.error('Could not copy to clipboard');
     return false;
   }
+}
+
+export async function copyTextToClipboard(text: string): Promise<boolean> {
+  return copyToClipboard({ text });
 }
 
 /**

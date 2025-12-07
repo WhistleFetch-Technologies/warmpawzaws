@@ -39,13 +39,13 @@ export function registerProblemGridSpecializationSystem(app: Hono) {
       let roleType = '';
       
       // Map role to problem grid
-      if (['veterinarian', 'vet_clinic', 'pet_clinic'].includes(normalizedRoleId)) {
+      if (['veterinarian', 'vet_clinic', 'pet_clinic', 'clinic', 'hospital'].includes(normalizedRoleId)) {
         problemGrid = vetHealthProblems;
         roleType = 'Healthcare';
-      } else if (['groomer', 'pet_groomer', 'grooming_center'].includes(normalizedRoleId)) {
+      } else if (['groomer', 'pet_groomer', 'grooming_center', 'grooming_salon', 'pet_salon'].includes(normalizedRoleId)) {
         problemGrid = groomingNeeds;
         roleType = 'Grooming';
-      } else if (['trainer', 'pet_trainer', 'training_center'].includes(normalizedRoleId)) {
+      } else if (['trainer', 'pet_trainer', 'training_center', 'dog_trainer'].includes(normalizedRoleId)) {
         problemGrid = trainingNeeds;
         roleType = 'Training';
       } else if (['walker', 'dog_walker', 'pet_walker'].includes(normalizedRoleId)) {
@@ -54,22 +54,53 @@ export function registerProblemGridSpecializationSystem(app: Hono) {
       } else if (['behaviourist', 'behaviorist', 'pet_behaviorist'].includes(normalizedRoleId)) {
         problemGrid = behavioralIssues;
         roleType = 'Behavioral';
-      } else if (['boarding', 'pet_boarding', 'boarding_center'].includes(normalizedRoleId)) {
+      } else if (['boarding', 'pet_boarding', 'boarding_center', 'pet_sitter', 'pet_resort', 'kennel'].includes(normalizedRoleId)) {
         problemGrid = boardingNeeds;
-        roleType = 'Boarding';
+        roleType = 'Boarding/Sitting';
       } else {
-        return c.json({
-          success: false,
-          error: `Unknown roleId: ${roleId}`,
-          supportedRoles: [
-            'veterinarian', 'vet_clinic', 'pet_clinic',
-            'groomer', 'pet_groomer', 'grooming_center',
-            'trainer', 'pet_trainer', 'training_center',
-            'walker', 'dog_walker', 'pet_walker',
-            'behaviourist', 'behaviorist', 'pet_behaviorist',
-            'boarding', 'pet_boarding', 'boarding_center'
-          ]
-        }, 400);
+        // ✅ FALLBACK: Return generic capabilities instead of error
+        // This ensures custom roles or new roles can still create staff
+        console.warn(`[PROBLEM GRID] Unknown roleId: ${roleId}, falling back to General Services`);
+        
+        problemGrid = [
+          {
+            id: 'general_service',
+            name: 'General Service',
+            displayName: 'General Service',
+            icon: '🐾',
+            color: '#10B981',
+            gradient: 'from-green-500 to-green-600',
+            description: 'General pet care services',
+            keywords: ['general', 'service', 'care'],
+            mappedSubCategories: ['sub_general'],
+            order: 1
+          },
+          {
+            id: 'consultation',
+            name: 'Consultation',
+            displayName: 'Consultation',
+            icon: '💬',
+            color: '#3B82F6',
+            gradient: 'from-blue-500 to-blue-600',
+            description: 'Professional consultation',
+            keywords: ['consult', 'advice'],
+            mappedSubCategories: ['sub_consultation'],
+            order: 2
+          },
+          {
+            id: 'emergency',
+            name: 'Emergency',
+            displayName: 'Emergency Support',
+            icon: '🚨',
+            color: '#EF4444',
+            gradient: 'from-red-500 to-red-600',
+            description: 'Urgent assistance',
+            keywords: ['urgent', 'emergency'],
+            mappedSubCategories: ['sub_emergency'],
+            order: 3
+          }
+        ];
+        roleType = 'General Service';
       }
       
       // Format specializations using problem grid data

@@ -14,7 +14,7 @@ import { VendorApprovedSetup } from './VendorApprovedSetup';
 import { VendorAvailabilitySetup } from './VendorAvailabilitySetup';
 import { VendorSetupCompleted } from './VendorSetupCompleted';
 import { VendorApplicationRejected } from './VendorApplicationRejected';
-import { VendorServiceManagementComplete } from './VendorServiceManagementComplete';
+import { VendorServiceManagementNew } from './VendorServiceManagementNew';
 import { InsuranceVendorContainer } from './insurance/InsuranceVendorContainer';
 import { CafeVendorDashboard } from './cafe/CafeVendorDashboard';
 import { SunsetServicesVendorDashboard } from './sunset/SunsetServicesVendorDashboard';

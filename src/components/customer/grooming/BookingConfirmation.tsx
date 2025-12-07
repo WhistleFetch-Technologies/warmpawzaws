@@ -3,7 +3,7 @@ import { CheckCircle, Calendar, Clock, MapPin, User, Share2, Download, Home, Pho
 import { Button } from '../../ui/button';
 import { Card } from '../../ui/card';
 import { Badge } from '../../ui/badge';
-import { shareContent } from '../../../utils/shareUtils';
+import { shareContent, copyTextToClipboard } from '../../../utils/shareUtils';
 
 interface BookingConfirmationProps {
   bookingData: {
@@ -30,7 +30,7 @@ export function BookingConfirmation({ bookingData, onViewBooking, onViewAppointm
 
   const handleCopyOTP = () => {
     if (bookingData.otp) {
-      navigator.clipboard.writeText(bookingData.otp);
+      copyTextToClipboard(bookingData.otp);
       setOtpCopied(true);
       setTimeout(() => setOtpCopied(false), 2000);
     }

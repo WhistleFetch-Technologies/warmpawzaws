@@ -15,6 +15,7 @@ import {
   Settings,
   BarChart3,
   Stethoscope,
+  Building2,
   Home,
   Monitor,
   MapPin,
@@ -36,6 +37,7 @@ import { CommunicationHub } from '../communication/CommunicationHub';
 import { AppointmentDetailModal } from './AppointmentDetailModal';
 import { AIChatBot } from '../customer/AIChatBot';
 import { useVendorCapabilities } from './hooks/useVendorCapabilities';
+import { copyTextToClipboard } from '../../utils/shareUtils';
 
 interface VendorDashboardProps {
   vendorId: string;
@@ -345,7 +347,7 @@ export function VendorDashboard({
         {/* 🧱 DYNAMIC QUICK ACTIONS */}
         <div className="p-4 border-b border-gray-100 grid grid-cols-2 gap-3">
           {/* Staff Management - For Clinics/Hospitals */}
-          {onNavigateToStaffManagement && (vendorData?.roleId === 'clinic' || vendorData?.roleId === 'hospital') && (
+          {onNavigateToStaffManagement && capabilities.staff_management && (
             <button
               onClick={onNavigateToStaffManagement}
               className="bg-white border-2 border-[#FF8C42] text-[#FF8C42] rounded-xl p-4 flex flex-col items-center justify-center hover:bg-[#FF8C42] hover:text-white transition-colors group text-center"
@@ -366,35 +368,14 @@ export function VendorDashboard({
             </button>
           )}
 
-          {/* GPS Tracking - For Walkers/Ambulance/Delivery */}
-          {capabilities.gps_tracking && (
+          {/* Facility Management - For Centers/Clinics */}
+          {capabilities.facility_management && onNavigateToFacilityManagement && (
             <button
-              onClick={onNavigateToLiveTracking}
-              className="bg-white border-2 border-green-500 text-green-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-green-500 hover:text-white transition-colors group text-center"
+              onClick={onNavigateToFacilityManagement}
+              className="bg-white border-2 border-indigo-500 text-indigo-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-indigo-500 hover:text-white transition-colors group text-center"
             >
-              <MapIcon className="w-6 h-6 mb-2" />
-              <span className="font-semibold text-sm">Live Tracking</span>
-            </button>
-          )}
-
-          {/* Medical Records - For Vets */}
-          {capabilities.medical_records && (
-            <button
-              className="bg-white border-2 border-purple-500 text-purple-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-purple-500 hover:text-white transition-colors group text-center"
-            >
-              <FileText className="w-6 h-6 mb-2" />
-              <span className="font-semibold text-sm">Medical Records</span>
-            </button>
-          )}
-
-           {/* Start Consultation - For Tele-health */}
-           {capabilities.tele && (
-            <button
-              onClick={onNavigateToTeleConsultation}
-              className="bg-white border-2 border-teal-500 text-teal-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-teal-500 hover:text-white transition-colors group text-center"
-            >
-              <Video className="w-6 h-6 mb-2" />
-              <span className="font-semibold text-sm">Start Consultation</span>
+              <Building2 className="w-6 h-6 mb-2" />
+              <span className="font-semibold text-sm">Manage Center</span>
             </button>
           )}
         </div>
@@ -501,7 +482,7 @@ export function VendorDashboard({
                         console.error('Share failed:', err);
                       }
                     } else {
-                      navigator.clipboard.writeText(window.location.origin);
+                      copyTextToClipboard(window.location.origin);
                       alert('Profile link copied to clipboard!');
                     }
                   }}

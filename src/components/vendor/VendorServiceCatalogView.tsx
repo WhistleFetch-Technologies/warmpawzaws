@@ -70,6 +70,7 @@ export function VendorServiceCatalogView({
   const [vendorServices, setVendorServices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeStyle, setActiveStyle] = useState<'all' | 'at_home' | 'at_center' | 'tele'>('all');
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const [expandedSubcategories, setExpandedSubcategories] = useState<Set<string>>(new Set());
   const [roles, setRoles] = useState<any[]>([]);
@@ -80,7 +81,7 @@ export function VendorServiceCatalogView({
 
   useEffect(() => {
     groupServicesByCategory();
-  }, [services, searchQuery]);
+  }, [services, searchQuery, activeStyle, vendorData]);
 
   const loadCatalogData = async () => {
     try {
@@ -138,7 +139,18 @@ export function VendorServiceCatalogView({
   const groupServicesByCategory = () => {
     let filteredServices = [...services];
 
-    // Apply search filter
+    // 1. Strict Role Filter
+    // Only show services applicable to the current vendor's role
+    if (vendorData?.roleId) {
+      filteredServices = filteredServices.filter(service => isServiceApplicable(service));
+    }
+
+    // 2. Service Style Filter
+    if (activeStyle !== 'all') {
+      filteredServices = filteredServices.filter(service => service.serviceStyle === activeStyle);
+    }
+
+    // 3. Search Filter
     if (searchQuery) {
       filteredServices = filteredServices.filter(service =>
         service.serviceName.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -312,6 +324,50 @@ export function VendorServiceCatalogView({
             />
           </div>
 
+          {/* Service Style Filter */}
+          <div className="flex gap-2 overflow-x-auto pb-2 mb-2 scrollbar-hide">
+            <button
+              onClick={() => setActiveStyle('all')}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
+                activeStyle === 'all'
+                  ? 'bg-gray-900 text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              All Styles
+            </button>
+            <button
+              onClick={() => setActiveStyle('at_home')}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
+                activeStyle === 'at_home'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
+              }`}
+            >
+              🏠 At Home
+            </button>
+            <button
+              onClick={() => setActiveStyle('at_center')}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
+                activeStyle === 'at_center'
+                  ? 'bg-green-600 text-white'
+                  : 'bg-green-50 text-green-700 hover:bg-green-100'
+              }`}
+            >
+              🏥 At Center
+            </button>
+            <button
+              onClick={() => setActiveStyle('tele')}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
+                activeStyle === 'tele'
+                  ? 'bg-purple-600 text-white'
+                  : 'bg-purple-50 text-purple-700 hover:bg-purple-100'
+              }`}
+            >
+              📞 Tele
+            </button>
+          </div>
+
           {/* Expand/Collapse Controls */}
           <div className="flex gap-2">
             <Button 
@@ -439,9 +495,7 @@ export function VendorServiceCatalogView({
                                         className={`bg-white p-3 mb-2 rounded-lg border-2 transition-colors ${
                                           isEnabled
                                             ? 'border-[#FF8C42] bg-orange-50'
-                                            : isApplicable
-                                            ? 'border-gray-200 hover:border-[#FF8C42]'
-                                            : 'border-gray-100 opacity-60'
+                                            : 'border-gray-200 hover:border-[#FF8C42]'
                                         }`}
                                       >
                                         <div className="flex items-start justify-between">
@@ -473,50 +527,42 @@ export function VendorServiceCatalogView({
                                               </span>
                                             </div>
 
-                                            <div className="flex flex-wrap gap-1">
-                                              {service.applicableRoles.map(roleId => {
-                                                const role = roles.find(r => r.id === roleId);
-                                                return (
-                                                  <span key={roleId} className="text-xs bg-orange-50 text-orange-700 px-2 py-0.5 rounded">
-                                                    {role?.name || roleId}
-                                                  </span>
-                                                );
-                                              })}
-                                            </div>
-
-                                            {!isApplicable && (
-                                              <div className="mt-2 text-xs text-gray-500 italic">
-                                                Not available for your role
-                                              </div>
-                                            )}
-
                                             {isEnabled && vendorService && (
                                               <div className="mt-2 pt-2 border-t border-orange-200">
-                                                <div className="text-xs text-gray-600">
-                                                  <span className="font-medium">Status:</span> {vendorService.status}
+                                                <div className="flex items-center justify-between">
+                                                  <div className="text-xs text-gray-600">
+                                                    <span className="font-medium">Status:</span> {vendorService.status}
+                                                  </div>
+                                                  <button 
+                                                    onClick={() => onSelectService?.(service)}
+                                                    className="text-xs text-[#FF8C42] hover:text-[#FF7829] font-medium flex items-center gap-1"
+                                                  >
+                                                    Manage Settings &rarr;
+                                                  </button>
                                                 </div>
                                               </div>
                                             )}
                                           </div>
 
                                           <div className="flex gap-1 ml-4">
-                                            {isApplicable && (
-                                              <div>
-                                                {isEnabled ? (
-                                                  <Badge className="bg-green-500 text-white border-green-600">
-                                                    ✓ Enabled
-                                                  </Badge>
-                                                ) : (
-                                                  <button
-                                                    onClick={() => onSelectService?.(service)}
-                                                    className="px-3 py-1.5 bg-[#FF8C42] hover:bg-[#FF7829] text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1"
-                                                  >
-                                                    <Plus className="w-3 h-3" />
-                                                    Add
-                                                  </button>
-                                                )}
-                                              </div>
-                                            )}
+                                            <div>
+                                              {isEnabled ? (
+                                                <button
+                                                  onClick={() => onSelectService?.(service)}
+                                                  className="px-3 py-1.5 bg-green-100 hover:bg-green-200 text-green-700 border border-green-200 rounded-lg text-xs font-medium transition-colors flex items-center gap-1"
+                                                >
+                                                  ✓ Added
+                                                </button>
+                                              ) : (
+                                                <button
+                                                  onClick={() => onSelectService?.(service)}
+                                                  className="px-3 py-1.5 bg-[#FF8C42] hover:bg-[#FF7829] text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1"
+                                                >
+                                                  <Plus className="w-3 h-3" />
+                                                  Add
+                                                </button>
+                                              )}
+                                            </div>
                                           </div>
                                         </div>
                                       </div>

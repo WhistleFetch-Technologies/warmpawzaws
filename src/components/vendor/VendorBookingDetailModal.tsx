@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { X, Calendar, Clock, User, Phone, FileText, MessageCircle, History, AlertCircle, Copy, Check } from 'lucide-react';
 import { Button } from '../ui/button';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { copyTextToClipboard } from '../../utils/shareUtils';
 import { VendorPrescriptionForm } from './VendorPrescriptionForm';
 import { VendorChatModal } from './VendorChatModal';
 import { PetMedicalHistoryModal } from './PetMedicalHistoryModal';
@@ -82,7 +83,7 @@ export function VendorBookingDetailModal({
 
   const handleCopyOtp = () => {
     if (booking?.completionOTP) {
-      navigator.clipboard.writeText(booking.completionOTP);
+      copyTextToClipboard(booking.completionOTP);
       setCopiedOtp(true);
       setTimeout(() => setCopiedOtp(false), 2000);
     }

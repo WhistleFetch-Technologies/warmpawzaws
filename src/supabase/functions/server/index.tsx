@@ -20,6 +20,7 @@ import { reviewEndpoints } from "./review-endpoints.tsx";
 import { analyticsEndpoints } from "./analytics-endpoints.tsx";
 import { registerDynamicOnboarding } from "./dynamic-onboarding-management.tsx";
 import { registerAuthEndpoints } from "./auth-endpoints.tsx";
+import { bookingEndpoints } from "./booking-endpoints.tsx";
 import { registerAICRMRoutes } from "./ai-crm-routes.tsx";
 import { registerAIChatbotRoutes } from "./ai-chatbot-routes.tsx";
 import { vendorRoleConfigEndpoints } from "./vendor-role-config.tsx";
@@ -273,7 +274,8 @@ registerChatEndpoints(app);
 registerSubscriptionEndpoints(app);
 registerVideoConsultationEndpoints(app);
 registerGPSTrackingEndpoints(app);
-registerBookingLifecycleEndpoints(app);
+bookingEndpoints(app, kv);
+// registerBookingLifecycleEndpoints(app); // Replaced by comprehensive bookingEndpoints
 registerCafeFeatures(app);
 registerResortInventory(app);
 registerBreederListings(app);

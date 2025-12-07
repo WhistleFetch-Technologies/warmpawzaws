@@ -5,6 +5,7 @@ import {
   AlertCircle, RefreshCw, Eye, EyeOff, Package, ChevronRight
 } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { copyTextToClipboard } from '../../utils/shareUtils';
 
 import { BookingDetailModal } from './BookingDetailModal';
 
@@ -103,7 +104,7 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine 
   };
 
   const copyOTP = (otp: string, id: string) => {
-    navigator.clipboard.writeText(otp);
+    copyTextToClipboard(otp);
     setCopiedOTP(id);
     setTimeout(() => setCopiedOTP(null), 2000);
   };

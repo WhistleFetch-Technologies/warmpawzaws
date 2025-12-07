@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { copyTextToClipboard } from '../../utils/shareUtils';
 import { LiveTracking } from './LiveTracking';
 import { BookingActions } from './BookingActions';
 
@@ -127,7 +128,7 @@ export function PetQuickView({
   };
 
   const handleCopyOtp = (otp: string, sessionId: string) => {
-    navigator.clipboard.writeText(otp);
+    copyTextToClipboard(otp);
     setCopiedOtp(sessionId);
     setTimeout(() => setCopiedOtp(null), 2000);
   };

@@ -6,6 +6,7 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
 import { Switch } from '../ui/switch';
+import { Checkbox } from '../ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from '../ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { Plus, Edit, Trash2, Check, X, Settings, FileText, Shield, Zap, Users, RotateCcw, RefreshCw } from 'lucide-react';
@@ -544,13 +545,32 @@ function RoleEditor({ role, onSave, onCancel }: {
         ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/config/roles/${role.id}`
         : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/config/roles`;
 
+      // Strictly construct payload with only editable fields to prevent schema errors
+      const payload = {
+        name: formData.name,
+        description: formData.description,
+        icon: formData.icon,
+        features: formData.features || [],
+        vendorTypes: formData.vendorTypes || [],
+        serviceStyles: formData.serviceStyles || [],
+        pricingControl: formData.pricingControl,
+        onboardingFields: formData.onboardingFields,
+        documentRequirements: formData.documentRequirements || [],
+        staffManagement: formData.staffManagement,
+        multiService: formData.multiService,
+        approvalWorkflow: formData.approvalWorkflow,
+        capabilities: formData.capabilities || [],
+        order: formData.order,
+        isActive: formData.isActive
+      };
+
       const response = await fetch(url, {
         method: role ? 'PUT' : 'POST',
         headers: {
           'Authorization': `Bearer ${publicAnonKey}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify(formData)
+        body: JSON.stringify(payload)
       });
 
       if (response.ok) {
@@ -558,11 +578,13 @@ function RoleEditor({ role, onSave, onCancel }: {
         onSave();
       } else {
         const error = await response.json();
-        alert(`Error: ${error.error}`);
+        // Handle case where error might be an object
+        const errorMessage = typeof error.error === 'string' ? error.error : JSON.stringify(error);
+        alert(`Error: ${errorMessage || 'Unknown error occurred'}`);
       }
     } catch (error) {
       console.error('Error saving role:', error);
-      alert('Failed to save role');
+      alert('Failed to save role: ' + (error instanceof Error ? error.message : String(error)));
     }
   };
 
@@ -629,17 +651,17 @@ function RoleEditor({ role, onSave, onCancel }: {
             <div className="space-y-2 mt-2">
               {vendorTypeOptions.map((option) => (
                 <div key={option.value} className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
+                  <Checkbox
+                    id={`vt-${option.value}`}
                     checked={formData.vendorTypes.includes(option.value)}
-                    onChange={(e) => {
-                      const types = e.target.checked
+                    onCheckedChange={(checked) => {
+                      const types = checked
                         ? [...formData.vendorTypes, option.value]
                         : formData.vendorTypes.filter((t: string) => t !== option.value);
                       setFormData({ ...formData, vendorTypes: types });
                     }}
                   />
-                  <Label>{option.label}</Label>
+                  <Label htmlFor={`vt-${option.value}`} className="cursor-pointer">{option.label}</Label>
                 </div>
               ))}
             </div>
@@ -649,17 +671,17 @@ function RoleEditor({ role, onSave, onCancel }: {
             <div className="space-y-2 mt-2">
               {serviceStyleOptions.map((option) => (
                 <div key={option.value} className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
+                  <Checkbox
+                    id={`ss-${option.value}`}
                     checked={formData.serviceStyles.includes(option.value)}
-                    onChange={(e) => {
-                      const styles = e.target.checked
+                    onCheckedChange={(checked) => {
+                      const styles = checked
                         ? [...formData.serviceStyles, option.value]
                         : formData.serviceStyles.filter((s: string) => s !== option.value);
                       setFormData({ ...formData, serviceStyles: styles });
                     }}
                   />
-                  <Label>{option.label}</Label>
+                  <Label htmlFor={`ss-${option.value}`} className="cursor-pointer">{option.label}</Label>
                 </div>
               ))}
             </div>
@@ -669,17 +691,17 @@ function RoleEditor({ role, onSave, onCancel }: {
             <div className="grid grid-cols-2 gap-2 mt-2">
               {capabilityOptions.map((cap) => (
                 <div key={cap} className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
+                  <Checkbox
+                    id={`cap-${cap}`}
                     checked={formData.capabilities.includes(cap)}
-                    onChange={(e) => {
-                      const caps = e.target.checked
+                    onCheckedChange={(checked) => {
+                      const caps = checked
                         ? [...formData.capabilities, cap]
                         : formData.capabilities.filter((c: string) => c !== cap);
                       setFormData({ ...formData, capabilities: caps });
                     }}
                   />
-                  <Label className="text-sm">{cap}</Label>
+                  <Label htmlFor={`cap-${cap}`} className="text-sm cursor-pointer">{cap}</Label>
                 </div>
               ))}
             </div>

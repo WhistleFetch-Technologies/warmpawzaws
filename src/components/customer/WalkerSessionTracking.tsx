@@ -3,6 +3,7 @@ import { MapPin, Play, StopCircle, Clock, Navigation, User, X, AlertCircle, Chec
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { copyTextToClipboard } from '../../utils/shareUtils';
 
 declare global {
   interface Window {
@@ -253,7 +254,7 @@ export function WalkerSessionTracking({
   };
 
   const copyOtp = (otp: string, type: 'start' | 'end') => {
-    navigator.clipboard.writeText(otp);
+    copyTextToClipboard(otp);
     setCopiedOtp(type);
     setTimeout(() => setCopiedOtp(null), 2000);
   };

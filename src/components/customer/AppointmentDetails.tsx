@@ -5,6 +5,12 @@ import { Card } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 
+import { PrescriptionModal } from './PrescriptionModal';
+import { CommunicationHub } from '../communication/CommunicationHub';
+import { LiveTrackingMap } from './LiveTrackingMap';
+import { FollowUpBookingModal } from './FollowUpBookingModal';
+import { RateServiceModal } from './RateServiceModal';
+
 interface AppointmentDetailsProps {
   bookingId: string;
   customerPhone: string;
@@ -18,6 +24,13 @@ export function AppointmentDetails({ bookingId, customerPhone, onBack, onCancel,
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showMap, setShowMap] = useState(false);
+  const [showLiveTracking, setShowLiveTracking] = useState(false);
+  
+  // Interaction States
+  const [communicationMode, setCommunicationMode] = useState<'video' | 'chat' | null>(null);
+  const [showPrescription, setShowPrescription] = useState(false);
+  const [showRateModal, setShowRateModal] = useState(false);
+  const [showFollowUpModal, setShowFollowUpModal] = useState(false);
 
   const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
 
@@ -145,6 +158,29 @@ export function AppointmentDetails({ bookingId, customerPhone, onBack, onCancel,
       </div>
 
       <div className="px-6 py-6 space-y-4">
+        {/* Live Tracking Banner */}
+        {booking.status === 'in_progress' && (
+          <Card className="p-5 bg-green-50 border-2 border-green-500 shadow-lg animate-pulse-slow">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center animate-pulse">
+                  <MapPin className="w-6 h-6 text-green-600" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-green-900">Service is In Progress</h3>
+                  <p className="text-sm text-green-700">Track live location & ETA</p>
+                </div>
+              </div>
+              <Button 
+                onClick={() => setShowLiveTracking(true)}
+                className="bg-green-600 hover:bg-green-700 text-white shadow-md"
+              >
+                Track Live
+              </Button>
+            </div>
+          </Card>
+        )}
+
         {/* Service Information */}
         <Card className="p-5 border border-gray-200">
           <div className="flex items-start gap-4 mb-4">
@@ -318,8 +354,45 @@ export function AppointmentDetails({ bookingId, customerPhone, onBack, onCancel,
           </div>
         </Card>
 
-        {/* OTP Information - If applicable */}
-        {booking.otp && booking.status !== 'completed' && (
+        {/* OTP Information - Contextually Smart */}
+        {/* Start OTP - Show when confirmed/arrived */}
+        {booking.status === 'confirmed' && booking.startOTP && (
+          <Card className="p-5 bg-gradient-to-br from-orange-50 to-white border-2 border-orange-300">
+            <h3 className="font-semibold mb-3 text-orange-900">Start Session OTP</h3>
+            <div className="bg-white rounded-lg border-2 border-orange-200 p-4 mb-3">
+              <div className="text-center">
+                <p className="text-sm text-gray-600 mb-2">Share to START the service</p>
+                <div className="text-4xl font-bold text-orange-600 tracking-wider font-mono">
+                  {booking.startOTP}
+                </div>
+              </div>
+            </div>
+            <p className="text-xs text-orange-800 text-center">
+              Give this to the provider when they arrive/start
+            </p>
+          </Card>
+        )}
+
+        {/* Completion OTP - Show when in progress */}
+        {booking.status === 'in_progress' && booking.completionOTP && (
+          <Card className="p-5 bg-gradient-to-br from-purple-50 to-white border-2 border-purple-300">
+            <h3 className="font-semibold mb-3 text-purple-900">Completion OTP</h3>
+            <div className="bg-white rounded-lg border-2 border-purple-200 p-4 mb-3">
+              <div className="text-center">
+                <p className="text-sm text-gray-600 mb-2">Share to END the service</p>
+                <div className="text-4xl font-bold text-purple-600 tracking-wider font-mono">
+                  {booking.completionOTP}
+                </div>
+              </div>
+            </div>
+            <p className="text-xs text-purple-800 text-center">
+              Only share after service is fully completed
+            </p>
+          </Card>
+        )}
+
+        {/* OTP Information - Fallback/Legacy */}
+        {booking.otp && booking.status !== 'completed' && !booking.startOTP && !booking.completionOTP && (
           <Card className="p-5 bg-gradient-to-br from-purple-50 to-white border-2 border-purple-300">
             <h3 className="font-semibold mb-3 text-purple-900">Service Completion OTP</h3>
             <div className="bg-white rounded-lg border-2 border-purple-200 p-4 mb-3">
@@ -354,10 +427,27 @@ export function AppointmentDetails({ bookingId, customerPhone, onBack, onCancel,
               </div>
             )}
             {booking.prescriptionId && (
-              <Button variant="outline" className="w-full mt-2">
-                <Download className="w-4 h-4 mr-2" />
-                Download Prescription
-              </Button>
+              <>
+                <Button 
+                  onClick={() => setShowPrescription(true)}
+                  variant="outline" 
+                  className="w-full mt-2 border-purple-200 text-purple-700 hover:bg-purple-50"
+                >
+                  <FileText className="w-4 h-4 mr-2" />
+                  View Prescription
+                </Button>
+                <Button 
+                  variant="outline" 
+                  className="w-full mt-2 border-blue-200 text-blue-700 hover:bg-blue-50"
+                  onClick={() => {
+                    // Order Medicine Flow
+                    alert('Navigating to pharmacy with prescription...');
+                  }}
+                >
+                  <Pill className="w-4 h-4 mr-2" />
+                  Order Medicine
+                </Button>
+              </>
             )}
           </Card>
         )}
@@ -365,6 +455,17 @@ export function AppointmentDetails({ bookingId, customerPhone, onBack, onCancel,
         {/* Action Buttons */}
         {canCancelOrReschedule() && (
           <div className="grid grid-cols-2 gap-3 pt-2">
+            {/* Tele-health Join Button */}
+            {booking.serviceType === 'tele' && booking.status === 'confirmed' && (
+              <Button
+                className="col-span-2 bg-purple-600 hover:bg-purple-700 text-white mb-2"
+                onClick={() => setCommunicationMode('video')}
+              >
+                <Video className="w-4 h-4 mr-2" />
+                Join Video Call
+              </Button>
+            )}
+
             <Button
               variant="outline"
               className="border-orange-300 text-orange-600 hover:bg-orange-50"
@@ -382,6 +483,18 @@ export function AppointmentDetails({ bookingId, customerPhone, onBack, onCancel,
               Cancel
             </Button>
           </div>
+        )}
+
+        {/* Chat Button - Always Available */}
+        {booking.status !== 'cancelled' && (
+          <Button
+            variant="outline"
+            className="w-full mt-2 border-gray-300 text-gray-700"
+            onClick={() => setCommunicationMode('chat')}
+          >
+            <Mail className="w-4 h-4 mr-2" />
+            Chat with Provider
+          </Button>
         )}
 
         {/* Cancelled Information */}
@@ -427,6 +540,27 @@ export function AppointmentDetails({ bookingId, customerPhone, onBack, onCancel,
           </Card>
         )}
       </div>
+      {/* Communication Hub */}
+      {communicationMode && (
+        <CommunicationHub
+          mode={communicationMode}
+          bookingId={booking.id}
+          userId={customerPhone}
+          userName="You"
+          otherUserName={booking.vendorName}
+          userType="customer"
+          onClose={() => setCommunicationMode(null)}
+        />
+      )}
+
+      {/* Prescription Modal (View Only) */}
+      {showPrescription && booking.prescriptionId && (
+        <PrescriptionModal
+          prescriptionId={booking.prescriptionId}
+          onClose={() => setShowPrescription(false)}
+          readOnly={true}
+        />
+      )}
     </div>
   );
 }
