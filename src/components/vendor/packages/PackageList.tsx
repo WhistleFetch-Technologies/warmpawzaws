@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Package, Plus, Edit, Trash2, TrendingUp, Clock, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
+import { Package, Plus, Edit, Trash2, TrendingUp, Clock, CheckCircle, XCircle, AlertCircle, ArrowLeft } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Badge } from '../../ui/badge';
 import { Card } from '../../ui/card';
@@ -131,8 +131,11 @@ export function PackageList({
     <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
       {/* Header */}
       <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] p-4 text-white sticky top-0 z-10">
-        <div className="flex items-center justify-between mb-4">
-          <div>
+        <div className="flex items-center gap-3 mb-4">
+          <button onClick={onBack} className="p-1 hover:bg-white/10 rounded-full transition-colors">
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <div className="flex-1">
             <h1 className="text-xl font-bold">My Packages</h1>
             <p className="text-sm text-white/90">Manage your service packages</p>
           </div>

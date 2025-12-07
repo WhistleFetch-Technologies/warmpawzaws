@@ -19,6 +19,7 @@ import {
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { VendorChatModal } from './VendorChatModal';
 import { VendorPrescriptionModal } from './VendorPrescriptionModal';
+import { MedicalHistoryModal } from './MedicalHistoryModal';
 import { CommunicationHub } from '../communication/CommunicationHub'; // ✅ ADD
 
 interface AppointmentDetailModalProps {
@@ -30,6 +31,7 @@ interface AppointmentDetailModalProps {
 
 interface Booking {
   id: string;
+  petId?: string; // ✅ Added petId for medical history context
   time: string;
   customerName: string;
   customerPhone: string;
@@ -99,6 +101,15 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
   // Modal states
   const [communicationMode, setCommunicationMode] = useState<'video' | 'chat' | null>(null);
   const [showPrescriptionModal, setShowPrescriptionModal] = useState(false);
+  const [showMedicalHistory, setShowMedicalHistory] = useState(false);
+  const [showTracking, setShowTracking] = useState(false);
+  
+  // OTP States
+  const [otp, setOtp] = useState('');
+  const [showOtpModal, setShowOtpModal] = useState(false);
+  const [otpAction, setOtpAction] = useState<'start' | 'complete' | null>(null);
+  const [otpError, setOtpError] = useState<string | null>(null);
+  const [processing, setProcessing] = useState(false);
 
   useEffect(() => {
     loadAppointmentDetails();
@@ -126,6 +137,105 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
       console.error('Error loading appointment details:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleOtpSubmit = async () => {
+    if (otp.length !== 6) {
+      setOtpError('Please enter a valid 6-digit OTP');
+      return;
+    }
+
+    setProcessing(true);
+    setOtpError(null);
+
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/bookings/${bookingId}/otp/verify`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ otp, action: otpAction })
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        setShowOtpModal(false);
+        setOtp('');
+        setOtpAction(null);
+        loadAppointmentDetails(); // Refresh state
+        onRefresh?.();
+        alert(data.message || 'Success!');
+      } else {
+        const error = await response.json();
+        setOtpError(error.error || 'Invalid OTP');
+      }
+    } catch (error) {
+      console.error('Error verifying OTP:', error);
+      setOtpError('Verification failed');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleStartTravel = async () => {
+    if (!booking) return;
+    
+    // Create/Update tracking session
+    try {
+      setProcessing(true);
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/tracking/session/create`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            bookingId: booking.id,
+            vendorId: vendorData.id,
+            type: 'traveling'
+          })
+        }
+      );
+      
+      if (response.ok) {
+        // Update local state to show we are traveling
+        loadAppointmentDetails();
+        onRefresh?.();
+      }
+    } catch (error) {
+      console.error('Error starting travel:', error);
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleArrived = async () => {
+    try {
+      setProcessing(true);
+      await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/bookings/${bookingId}/status`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ status: 'arrived', note: 'Vendor has arrived at location' })
+        }
+      );
+      loadAppointmentDetails();
+      onRefresh?.();
+    } catch (error) {
+      console.error('Error marking arrived:', error);
+    } finally {
+      setProcessing(false);
     }
   };
 
@@ -483,45 +593,116 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
           {/* Action Buttons */}
           <div className="bg-white border-t border-gray-200 p-4 space-y-2">
             <div className="flex gap-2">
+              {/* CHAT - Always available */}
               <button
                 onClick={() => setCommunicationMode('chat')}
-                className="flex-1 py-3 bg-[#FF8C42] hover:bg-[#FF7829] text-white rounded-xl font-medium flex items-center justify-center gap-2"
+                className="flex-1 py-3 bg-white border border-[#FF8C42] text-[#FF8C42] rounded-xl font-medium flex items-center justify-center gap-2"
               >
                 <MessageSquare className="w-4 h-4" />
-                Open Chat
+                Chat
               </button>
               
-              {booking.serviceType === 'tele' && booking.status !== 'completed' && (
-                <a
-                  href={booking.meetingLink || '#'}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={(e) => {
-                    if (!booking.meetingLink) {
-                      e.preventDefault();
-                      alert('Meeting link not generated yet.');
-                    }
-                  }}
-                  className="flex-1 py-3 bg-purple-500 hover:bg-purple-600 text-white rounded-xl font-medium flex items-center justify-center gap-2"
+              {/* TELE-CONSULTATION Actions */}
+              {booking.serviceType === 'tele' && booking.status !== 'completed' && booking.status !== 'cancelled' && (
+                <button
+                  onClick={() => setCommunicationMode('video')}
+                  className="flex-1 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-medium flex items-center justify-center gap-2"
                 >
                   <Video className="w-4 h-4" />
-                  Join Call
-                </a>
+                  Start Video Call
+                </button>
+              )}
+
+              {/* HOME SERVICE Actions (Walker/Trainer/Groomer) */}
+              {(booking.serviceType === 'at_home' || booking.serviceType === 'home') && booking.status !== 'completed' && booking.status !== 'cancelled' && (
+                <>
+                  {/* Phase 1: Start Travel (If confirmed) */}
+                  {booking.status === 'confirmed' && (
+                    <button
+                      onClick={handleStartTravel}
+                      disabled={processing}
+                      className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium flex items-center justify-center gap-2"
+                    >
+                      <MapPin className="w-4 h-4" />
+                      Start Travel
+                    </button>
+                  )}
+
+                  {/* Phase 2: Arrived (If traveling/in_progress) */}
+                  {(booking.status === 'traveling' || (booking.status === 'in_progress' && !booking.arrived)) && (
+                    <button
+                      onClick={handleArrived}
+                      disabled={processing}
+                      className="flex-1 py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-medium flex items-center justify-center gap-2"
+                    >
+                      <MapPin className="w-4 h-4" />
+                      Mark Arrived
+                    </button>
+                  )}
+
+                  {/* Phase 3: Start Session (If Arrived & Walker/Trainer) */}
+                  {booking.status === 'arrived' && (vendorData?.roleId === 'pet_walker' || vendorData?.roleId === 'pet_trainer') && (
+                    <button
+                      onClick={() => {
+                        setOtpAction('start');
+                        setShowOtpModal(true);
+                      }}
+                      className="flex-1 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-medium flex items-center justify-center gap-2"
+                    >
+                      <Clock className="w-4 h-4" />
+                      Start Session (OTP)
+                    </button>
+                  )}
+
+                  {/* Phase 4: Complete (If In Progress or Arrived for non-session roles) */}
+                  {((booking.status === 'in_progress' && booking.arrived) || (booking.status === 'arrived' && vendorData?.roleId !== 'pet_walker' && vendorData?.roleId !== 'pet_trainer')) && (
+                    <button
+                      onClick={() => {
+                        setOtpAction('complete');
+                        setShowOtpModal(true);
+                      }}
+                      className="flex-1 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-medium flex items-center justify-center gap-2"
+                    >
+                      <CheckCircle className="w-4 h-4" />
+                      Complete Job (OTP)
+                    </button>
+                  )}
+                </>
               )}
             </div>
             
-            {vendorData?.roleId === 'veterinarian' && booking.status !== 'cancelled' && (
-              <button
-                onClick={() => setShowPrescriptionModal(true)}
-                className="w-full py-3 bg-green-500 hover:bg-green-600 text-white rounded-xl font-medium flex items-center justify-center gap-2"
-              >
-                <Pill className="w-4 h-4" />
-                {prescriptions.length > 0 ? 'Update Prescription' : 'Add Prescription'}
-              </button>
+            {/* Prescription Action (Vet Only) */}
+            {(vendorData?.roleId === 'veterinarian' || vendorData?.roleId === 'pet_clinic') && booking.status !== 'cancelled' && (
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowMedicalHistory(true)}
+                  className="flex-1 py-3 bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 rounded-xl font-medium flex items-center justify-center gap-2"
+                >
+                  <FileText className="w-4 h-4" />
+                  Medical History
+                </button>
+                <button
+                  onClick={() => setShowPrescriptionModal(true)}
+                  className="flex-1 py-3 bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 rounded-xl font-medium flex items-center justify-center gap-2"
+                >
+                  <Pill className="w-4 h-4" />
+                  {prescriptions.length > 0 ? 'Update Rx' : 'Write Rx'}
+                </button>
+              </div>
             )}
           </div>
         </div>
       </div>
+
+      {/* Medical History Modal (New) */}
+      {showMedicalHistory && booking.petId && (
+        <MedicalHistoryModal
+          petId={booking.petId}
+          petName={booking.petName}
+          bookingId={bookingId}
+          onClose={() => setShowMedicalHistory(false)}
+        />
+      )}
 
       {/* Communication Hub (Unified Chat/Video) */}
       {communicationMode && (
@@ -554,6 +735,56 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
             onRefresh?.();
           }}
         />
+      )}
+
+      {/* OTP Verification Modal */}
+      {showOtpModal && (
+        <div className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-sm p-6 animate-in fade-in zoom-in duration-200">
+            <h3 className="text-lg font-bold text-gray-900 mb-2">
+              {otpAction === 'start' ? 'Start Session' : 'Complete Service'}
+            </h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Ask the customer for the 6-digit OTP sent to their phone to {otpAction} the service.
+            </p>
+            
+            <input
+              type="text"
+              maxLength={6}
+              value={otp}
+              onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+              placeholder="Enter 6-digit OTP"
+              className="w-full text-center text-2xl tracking-[0.5em] font-mono border-2 border-gray-200 rounded-xl py-3 mb-4 focus:border-[#FF8C42] focus:outline-none"
+              autoFocus
+            />
+            
+            {otpError && (
+              <p className="text-red-500 text-sm text-center mb-4 bg-red-50 p-2 rounded-lg">
+                {otpError}
+              </p>
+            )}
+            
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowOtpModal(false);
+                  setOtp('');
+                  setOtpError(null);
+                }}
+                className="flex-1 py-3 border border-gray-300 rounded-xl font-medium text-gray-700"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleOtpSubmit}
+                disabled={otp.length !== 6 || processing}
+                className="flex-1 py-3 bg-[#FF8C42] text-white rounded-xl font-medium disabled:opacity-50"
+              >
+                {processing ? 'Verifying...' : 'Verify OTP'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   );

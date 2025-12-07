@@ -3,6 +3,7 @@ import { X, Calendar, Clock, MapPin, Copy, Check, User, Phone, Package, Info, Fi
 import { Button } from '../ui/button';
 import { toast } from 'sonner@2.0.3';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { copyTextToClipboard } from '../../utils/shareUtils';
 import { PrescriptionModal } from './PrescriptionModal';
 import { CommunicationHub } from '../communication/CommunicationHub';
 import { LiveTrackingMap } from '../tracking/LiveTrackingMap';
@@ -120,7 +121,7 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
 
   const handleCopyOtp = () => {
     if (booking?.completionOTP) {
-      navigator.clipboard.writeText(booking.completionOTP);
+      copyTextToClipboard(booking.completionOTP);
       setCopiedOtp(true);
       setTimeout(() => setCopiedOtp(false), 2000);
     }
@@ -231,8 +232,7 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
 
                 <button
                   onClick={() => {
-                    navigator.clipboard.writeText(booking.startOTP);
-                    toast.success('Start OTP copied!');
+                    copyTextToClipboard(booking.startOTP);
                   }}
                   className="w-full bg-green-500 hover:bg-green-600 text-white py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
                 >

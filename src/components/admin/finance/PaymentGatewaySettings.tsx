@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { copyTextToClipboard } from '../../../utils/shareUtils';
 
 interface PaymentGatewaySettingsProps {
   onBack: () => void;
@@ -518,10 +519,9 @@ export function PaymentGatewaySettings({ onBack }: PaymentGatewaySettingsProps) 
                           size="sm"
                           variant="outline"
                           onClick={() => {
-                            navigator.clipboard.writeText(
+                            copyTextToClipboard(
                               `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/webhooks/${selectedGateway.provider}`
                             );
-                            toast.success('Webhook URL copied to clipboard');
                           }}
                         >
                           Copy

@@ -1,7 +1,7 @@
 import { CheckCircle, Calendar, Clock, MapPin, Phone, Video, Download, Share2, Home as HomeIcon } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Card } from '../../ui/card';
-import { shareContent } from '../../../utils/shareUtils';
+import { shareContent, copyTextToClipboard } from '../../../utils/shareUtils';
 
 interface VetBookingSuccessProps {
   bookingData: {
@@ -79,19 +79,14 @@ export function VetBookingSuccess({ bookingData, onGoHome, onViewBookings }: Vet
   const copyBookingDetails = () => {
     const text = `🐾 Warmpawz Booking Confirmation\n\nBooking ID: ${bookingData.bookingId}\nPet: ${bookingData.petName}\nDoctor: ${bookingData.vendorName}\nDate: ${new Date(bookingData.scheduledDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}\nTime: ${formatTime(bookingData.scheduledTime)}${bookingData.completionOTP ? `\nOTP: ${bookingData.completionOTP}` : ''}`;
     
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text)
-        .then(() => {
-          alert('✅ Booking details copied to clipboard!');
-        })
-        .catch(() => {
-          // Final fallback - just show in alert
-          alert(text);
-        });
-    } else {
-      // Final fallback - just show in alert
-      alert(text);
-    }
+    copyTextToClipboard(text)
+      .then(() => {
+        // Success handling is already done inside copyTextToClipboard (toast)
+      })
+      .catch(() => {
+        // Fallback
+        alert(text);
+      });
   };
 
   return (

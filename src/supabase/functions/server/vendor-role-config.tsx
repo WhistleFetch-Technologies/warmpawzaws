@@ -387,6 +387,79 @@ export function vendorRoleConfigEndpoints(app: Hono) {
     }
   });
 
+  /**
+   * POST /make-server-3dd53475/config/roles
+   * Create a new role configuration
+   */
+  app.post("/make-server-3dd53475/config/roles", async (c) => {
+    try {
+      const body = await c.req.json();
+      
+      // Generate ID from name if not provided
+      let id = body.id;
+      if (!id && body.name) {
+        id = body.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '_');
+      }
+      
+      if (!id) {
+        return c.json({ error: "Role Name or ID is required" }, 400);
+      }
+
+      // Check if exists
+      const existing = await kv.get(`role:config:${id}`);
+      if (existing) {
+        return c.json({ error: `Role with ID '${id}' already exists` }, 409);
+      }
+
+      const newRole = {
+        ...body,
+        id,
+        roleId: id,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        status: 'active',
+        isActive: true,
+        version: 1
+      };
+      
+      await kv.set(`role:config:${id}`, newRole);
+      return c.json({ success: true, role: newRole });
+    } catch (error) {
+      console.error('Error creating role:', error);
+      return c.json({ error: String(error) }, 500);
+    }
+  });
+
+  /**
+   * PUT /make-server-3dd53475/config/roles/:id
+   * Update an existing role configuration
+   */
+  app.put("/make-server-3dd53475/config/roles/:id", async (c) => {
+    try {
+      const id = c.req.param('id');
+      const body = await c.req.json();
+      
+      const existing = await kv.get(`role:config:${id}`);
+      if (!existing) {
+        return c.json({ error: `Role '${id}' not found` }, 404);
+      }
+
+      const updatedRole = {
+        ...existing,
+        ...body,
+        id, // Ensure ID matches URL param
+        roleId: id,
+        updatedAt: new Date().toISOString()
+      };
+      
+      await kv.set(`role:config:${id}`, updatedRole);
+      return c.json({ success: true, role: updatedRole });
+    } catch (error) {
+      console.error('Error updating role:', error);
+      return c.json({ error: String(error) }, 500);
+    }
+  });
+
   // ... Rest of the endpoints (Get Config, Save, etc.) remain largely the same but use the cleanup implicitly
   
   app.get("/make-server-3dd53475/admin/onboarding-forms/:roleId", async (c) => {

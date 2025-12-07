@@ -9,6 +9,7 @@ import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
 import { CheckCircle2, Clock, PlayCircle, XCircle, Key, Copy, Check } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
+import { copyTextToClipboard } from '../../utils/shareUtils';
 
 interface Booking {
   id: string;
@@ -192,9 +193,8 @@ export function BookingLifecycleManager() {
   }
 
   function copyOTPToClipboard(otp: string) {
-    navigator.clipboard.writeText(otp);
+    copyTextToClipboard(otp);
     setCopiedOTP(true);
-    toast.success('OTP copied to clipboard');
     setTimeout(() => setCopiedOTP(false), 2000);
   }
 

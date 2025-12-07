@@ -16,6 +16,7 @@ import {
 } from '../../ui/select';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
 import { toast } from 'sonner@2.0.3';
+import { copyTextToClipboard } from '../../../utils/shareUtils';
 
 export function CouponManagement() {
   const [coupons, setCoupons] = useState<any[]>([]);
@@ -157,8 +158,7 @@ export function CouponManagement() {
   };
 
   const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    toast.success('Copied to clipboard');
+    copyTextToClipboard(text);
   };
 
   return (

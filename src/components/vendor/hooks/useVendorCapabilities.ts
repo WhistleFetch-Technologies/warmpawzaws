@@ -28,6 +28,10 @@ export interface VendorCapabilities {
   
   // Location
   gps_tracking: boolean;
+
+  // Admin
+  staff_management: boolean;
+  facility_management: boolean;
 }
 
 const DEFAULT_CAPABILITIES: VendorCapabilities = {
@@ -46,7 +50,9 @@ const DEFAULT_CAPABILITIES: VendorCapabilities = {
   portfolio: true,
   progress_tracking: false,
   cctv_access: false,
-  gps_tracking: false
+  gps_tracking: false,
+  staff_management: false,
+  facility_management: false
 };
 
 export function useVendorCapabilities(roleId?: string) {
@@ -96,6 +102,11 @@ export function useVendorCapabilities(roleId?: string) {
                   (newCapabilities as any)[cap] = true;
                 }
               });
+
+              // Explicit check for staff management object
+              if (currentRole.staffManagement?.enabled) {
+                newCapabilities.staff_management = true;
+              }
             }
             
             setCapabilities(newCapabilities);

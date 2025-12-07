@@ -413,7 +413,72 @@ export function roleConfigEndpoints(app: Hono, kvStore: any) {
             requiresBackgroundCheck: true,
             requiresLicenseVerification: true
           },
-          capabilities: ['booking', 'tele', 'chat', 'prescription', 'medical_records'],
+          capabilities: ['booking', 'tele', 'chat', 'prescription', 'medical_records', 'facility_management'],
+          order: 1,
+          isActive: true
+        },
+
+        // 1.5 PET CLINIC - Multi-doctor facility
+        {
+          id: 'pet_clinic',
+          name: 'Pet Clinic',
+          description: 'Veterinary clinic or hospital with multiple doctors and facilities',
+          icon: '🏥',
+          features: [
+            'Multi-specialty care',
+            'Surgery & diagnostics',
+            'In-patient facilities',
+            'Emergency services',
+            'Pharmacy & lab'
+          ],
+          vendorTypes: ['healthcare_provider'],
+          serviceStyles: ['at_center', 'tele', 'at_home'],
+          pricingControl: {
+            canControlPrice: true,
+            canControlDuration: true,
+            priceRangeMin: 200,
+            priceRangeMax: 10000
+          },
+          onboardingFields: {
+            required: [
+              'businessName',
+              'ownerName',
+              'phone',
+              'email',
+              'address',
+              'gstNumber',
+              'licenseNumber',
+              'experience'
+            ],
+            optional: ['website', 'emergencyContact', 'facilities'],
+            custom: [
+              { id: 'licenseNumber', label: 'Clinic Registration Number', type: 'text' },
+              { id: 'facilities', label: 'Facilities Available', type: 'multiselect', options: ['X-Ray', 'Ultrasound', 'Operation Theatre', 'In-patient Ward', 'Laboratory'] }
+            ]
+          },
+          documentRequirements: [
+            { id: 'aadhar', name: 'Owner Aadhar', required: true, sides: ['front', 'back'] },
+            { id: 'pan', name: 'Business PAN', required: true, sides: ['front'] },
+            { id: 'clinic_registration', name: 'Clinic Registration', required: true, sides: ['front'] },
+            { id: 'gst_certificate', name: 'GST Certificate', required: true, sides: ['front'] }
+          ],
+          staffManagement: {
+            enabled: true,
+            roles: ['doctor', 'nurse', 'admin', 'technician'],
+            requiresStaffDocuments: true
+          },
+          multiService: {
+            enabled: true,
+            allowedServices: ['grooming', 'pharmacy', 'boarding'],
+            requiresSeparateApproval: true
+          },
+          approvalWorkflow: {
+            requiresManualApproval: true,
+            autoApproveAfterDays: null,
+            requiresBackgroundCheck: true,
+            requiresLicenseVerification: true
+          },
+          capabilities: ['booking', 'tele', 'chat', 'prescription', 'medical_records', 'facility_management', 'staff_management', 'inventory'],
           order: 1,
           isActive: true
         },
@@ -465,8 +530,8 @@ export function roleConfigEndpoints(app: Hono, kvStore: any) {
             { id: 'shop_photos', name: 'Shop Photos', required: false, requiredFor: ['at_center'] }
           ],
           staffManagement: {
-            enabled: false,
-            roles: [],
+            enabled: true,
+            roles: ['groomer', 'assistant'],
             requiresStaffDocuments: false
           },
           multiService: {
@@ -480,7 +545,7 @@ export function roleConfigEndpoints(app: Hono, kvStore: any) {
             requiresBackgroundCheck: true,
             requiresLicenseVerification: false
           },
-          capabilities: ['booking', 'gallery'],
+          capabilities: ['booking', 'gallery', 'facility_management'],
           order: 2,
           isActive: true
         },
@@ -528,8 +593,8 @@ export function roleConfigEndpoints(app: Hono, kvStore: any) {
             { id: 'certifications', name: 'Training Certifications', required: false, sides: ['front'] }
           ],
           staffManagement: {
-            enabled: false,
-            roles: [],
+            enabled: true,
+            roles: ['trainer', 'assistant'],
             requiresStaffDocuments: false
           },
           multiService: {
@@ -543,7 +608,7 @@ export function roleConfigEndpoints(app: Hono, kvStore: any) {
             requiresBackgroundCheck: true,
             requiresLicenseVerification: false
           },
-          capabilities: ['booking', 'progress_tracking'],
+          capabilities: ['booking', 'progress_tracking', 'facility_management'],
           order: 3,
           isActive: true
         },
@@ -669,7 +734,7 @@ export function roleConfigEndpoints(app: Hono, kvStore: any) {
             requiresBackgroundCheck: true,
             requiresLicenseVerification: true
           },
-          capabilities: ['booking', 'cctv_access', 'photo_updates'],
+          capabilities: ['booking', 'cctv_access', 'photo_updates', 'facility_management'],
           order: 5,
           isActive: true
         },
@@ -731,7 +796,7 @@ export function roleConfigEndpoints(app: Hono, kvStore: any) {
             requiresBackgroundCheck: false,
             requiresLicenseVerification: false
           },
-          capabilities: ['booking', 'gallery', 'portfolio'],
+          capabilities: ['booking', 'gallery', 'portfolio', 'facility_management'],
           order: 6,
           isActive: true
         },
@@ -797,7 +862,7 @@ export function roleConfigEndpoints(app: Hono, kvStore: any) {
             requiresBackgroundCheck: true,
             requiresLicenseVerification: true
           },
-          capabilities: ['catalog', 'inventory', 'orders', 'delivery'],
+          capabilities: ['catalog', 'inventory', 'orders', 'delivery', 'facility_management'],
           order: 7,
           isActive: true
         },
@@ -864,7 +929,7 @@ export function roleConfigEndpoints(app: Hono, kvStore: any) {
             requiresBackgroundCheck: true,
             requiresLicenseVerification: true
           },
-          capabilities: ['booking', 'tele', 'chat', 'prescription', 'catalog', 'inventory', 'medical_records', 'emergency'],
+          capabilities: ['booking', 'tele', 'chat', 'prescription', 'catalog', 'inventory', 'medical_records', 'emergency', 'facility_management'],
           order: 8,
           isActive: true
         },
@@ -998,7 +1063,7 @@ export function roleConfigEndpoints(app: Hono, kvStore: any) {
             requiresBackgroundCheck: true,
             requiresLicenseVerification: true
           },
-          capabilities: ['booking', 'reservation_management', 'menu', 'events', 'gallery'],
+          capabilities: ['booking', 'reservation_management', 'menu', 'events', 'gallery', 'facility_management'],
           order: 10,
           isActive: true
         },
@@ -1063,7 +1128,7 @@ export function roleConfigEndpoints(app: Hono, kvStore: any) {
             requiresBackgroundCheck: true,
             requiresLicenseVerification: true
           },
-          capabilities: ['booking', 'grief_support', 'memorial_services', 'documents', 'chat'],
+          capabilities: ['booking', 'grief_support', 'memorial_services', 'documents', 'chat', 'facility_management'],
           order: 11,
           isActive: true
         },
