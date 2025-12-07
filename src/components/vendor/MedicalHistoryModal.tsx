@@ -7,26 +7,31 @@ interface MedicalHistoryModalProps {
   petId: string;
   bookingId: string; // Context for access control
   petName: string;
+  vendorId: string; // ✅ ADD: For authentication
   onClose: () => void;
 }
 
 interface MedicalRecord {
   id: string;
-  type: 'prescription' | 'vaccination' | 'lab_report' | 'consultation_note';
+  type: 'prescription' | 'vaccination' | 'lab_report' | 'consultation_note' | 'vet_summary' | 'upload' | 'xray' | 'other';
   title: string;
   description?: string;
   date: string;
+  uploadedBy?: string; // Changed from doctorName
   doctorName?: string;
   clinicName?: string;
   url?: string | null;
+  fileName?: string;
+  fileType?: string;
   metadata?: any;
 }
 
-export function MedicalHistoryModal({ petId, bookingId, petName, onClose }: MedicalHistoryModalProps) {
+export function MedicalHistoryModal({ petId, bookingId, petName, vendorId, onClose }: MedicalHistoryModalProps) {
   const [records, setRecords] = useState<MedicalRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'all' | 'prescriptions' | 'reports' | 'notes'>('all');
   const [error, setError] = useState<string | null>(null);
+  const [petInfo, setPetInfo] = useState<any>(null); // ✅ ADD: Store pet details
 
   useEffect(() => {
     fetchMedicalHistory();
@@ -37,13 +42,15 @@ export function MedicalHistoryModal({ petId, bookingId, petName, onClose }: Medi
       setLoading(true);
       setError(null);
 
-      console.log('[MEDICAL UI] Requesting history for:', { petId, bookingId });
+      console.log('[MEDICAL UI] Requesting history for appointment:', bookingId);
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/pet/${petId}/medical-history?bookingId=${bookingId}`,
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/appointments/${bookingId}/medical-records`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            'Authorization': `Bearer ${publicAnonKey}`,
+            'X-User-Id': vendorId,
+            'X-User-Role': 'vendor'
           }
         }
       );
@@ -52,6 +59,13 @@ export function MedicalHistoryModal({ petId, bookingId, petName, onClose }: Medi
         const data = await response.json();
         if (data.success) {
           setRecords(data.records || []);
+          setPetInfo(data.petInfo || null); // ✅ ADD: Store pet details
+          setPetInfo({
+            name: data.petName,
+            photo: data.petPhoto,
+            species: data.petSpecies,
+            breed: data.petBreed
+          });
         } else {
           setError(data.error || 'Failed to load records');
         }

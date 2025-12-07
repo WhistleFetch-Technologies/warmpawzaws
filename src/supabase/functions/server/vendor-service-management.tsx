@@ -640,45 +640,6 @@ export function registerVendorServiceManagementRoutes(app: Hono) {
       const publishedCount = catalogServices.length;
       const pendingCount = customServices.length;
       
-      // ============================================
-      // STAFF PROPAGATION: Deactivate disabled services for all staff
-      // ============================================
-      // If a service is disabled by the vendor, it MUST be disabled for all staff
-      const disabledServices = vendorServices.services.filter((s: any) => !s.isEnabled);
-      
-      if (disabledServices.length > 0) {
-        console.log(`🔄 [STAFF-PROPAGATION] Deactivating ${disabledServices.length} disabled services for all staff...`);
-        
-        // 1. Get all staff for this vendor
-        const staffMembers = await kv.getByPrefix(`vendor:${vendorId}:staff:`);
-        console.log(`   👥 Found ${staffMembers.length} staff members`);
-        
-        for (const staff of staffMembers) {
-          // 2. For each staff, check their services
-          const staffServices = await kv.getByPrefix(`staff:${staff.id}:service:`);
-          
-          for (const disabledService of disabledServices) {
-            const matchingStaffServices = staffServices.filter((ss: any) => ss.serviceId === disabledService.serviceId);
-            
-            for (const staffService of matchingStaffServices) {
-              if (staffService.isActive) {
-                // Deactivate it
-                staffService.isActive = false;
-                staffService.updatedAt = new Date().toISOString();
-                staffService.statusNote = 'Deactivated by clinic/vendor';
-                
-                // Save update
-                await kv.set(`staff:${staff.id}:service:${staffService.id}`, staffService);
-                // Also update the direct reference if it exists
-                await kv.set(`staff:service:${staffService.id}`, staffService);
-                
-                console.log(`   🚫 Deactivated service ${disabledService.serviceName} for staff ${staff.fullName}`);
-              }
-            }
-          }
-        }
-      }
-      
       if (pendingCount > 0 && publishedCount > 0) {
         return c.json({
           success: true,
