@@ -43,6 +43,12 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
       onClick: () => onNavigate('dashboard')
     },
     { 
+      icon: BarChart3, 
+      label: 'Analytics & Insights', 
+      id: 'analytics',
+      onClick: () => onNavigate('analytics')
+    },
+    { 
       icon: Briefcase, 
       label: 'Enterprise & Revenue', 
       id: 'enterprise',
