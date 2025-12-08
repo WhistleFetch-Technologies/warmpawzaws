@@ -18,7 +18,7 @@ import { toast } from 'sonner';
 import { StaffScheduleManagement } from '../vendor/StaffScheduleManagement'; // ✅ Self-service schedule management
 import { StaffAnalytics } from './StaffAnalytics'; // ✅ Staff analytics view
 import { StaffServiceManagement } from './StaffServiceManagement'; // ✅ Staff service management
-import { StaffAvailabilityManagement } from './StaffAvailabilityManagement'; // ✅ Availability & location management
+import { LocationScheduleManager } from './LocationScheduleManager'; // ✅ Location & availability window management
 import { ServiceStyleManager } from './ServiceStyleManager'; // ✅ Service style management (at_home, at_center, tele)
 
 interface StaffDashboardProps {
@@ -137,7 +137,7 @@ export function StaffDashboard({ staff, onLogout }: StaffDashboardProps) {
 
       {/* Render Availability View */}
       {activeView === 'availability' && (
-        <StaffAvailabilityManagement
+        <LocationScheduleManager
           staff={staff}
           onBack={() => setActiveView('appointments')}
         />

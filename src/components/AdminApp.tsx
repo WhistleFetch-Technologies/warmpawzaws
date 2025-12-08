@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { AdminDashboard } from './admin/AdminDashboard';
 import { AdminAuth } from './admin/AdminAuth';
 import { AdminVendorManagementNew } from './admin/AdminVendorManagementNew';
+import { EnhancedVendorAdministration } from './admin/EnhancedVendorAdministration';
 import { CatalogServicesManagement } from './admin/CatalogServicesManagement';
 import { PaymentRefundManagement } from './admin/PaymentRefundManagement';
 import { AdminServiceCatalog } from './admin/AdminServiceCatalog';

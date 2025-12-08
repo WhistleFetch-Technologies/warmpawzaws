@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, Check, AlertCircle, FileText, Image as ImageIcon, Download, Eye } from 'lucide-react';
+import { X, Check, AlertCircle, FileText, Image as ImageIcon, Download, Eye, CheckCircle, XCircle } from 'lucide-react';
 import { Button } from '../ui/button';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 
@@ -29,16 +29,6 @@ export function ApplicationDetailModal({
   const [requesting, setRequesting] = useState(false);
 
   if (!isOpen || !application) return null;
-
-  // Debug logging
-  console.log('📋 ApplicationDetailModal - Full application data:', application);
-  console.log('📋 ApplicationDetailModal - Documents:', application.documents);
-  console.log('📋 ApplicationDetailModal - Document count:', application.documents?.length || 0);
-  console.log('📋 ApplicationDetailModal - IDs:', {
-    id: application.id,
-    applicationId: application.applicationId,
-    vendorId: application.vendorId
-  });
 
   // Use the correct application ID (try applicationId first, fallback to id)
   const appId = application.applicationId || application.id;
@@ -412,98 +402,117 @@ export function ApplicationDetailModal({
 
         {/* Actions */}
         <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
-          <div className="flex items-center gap-3">
-            <Button
-              onClick={handleApprove}
-              disabled={approving}
-              className="flex-1 bg-green-600 hover:bg-green-700 text-white"
-            >
-              <Check className="w-4 h-4 mr-2" />
-              {approving ? 'Approving...' : 'Approve Application'}
-            </Button>
-            
-            <Button
-              onClick={() => setClarifying(!clarifying)}
-              variant="outline"
-              className="flex-1"
-            >
-              <AlertCircle className="w-4 h-4 mr-2" />
-              Request Clarification
-            </Button>
-            
-            <Button
-              onClick={() => setRejecting(!rejecting)}
-              variant="outline"
-              className="flex-1 border-red-200 text-red-600 hover:bg-red-50"
-            >
-              <X className="w-4 h-4 mr-2" />
-              Reject Application
-            </Button>
-          </div>
-
-          {/* Rejection Form */}
-          {rejecting && (
-            <div className="mt-4 bg-white border border-red-200 rounded-lg p-4">
-              <label className="text-sm text-gray-700 mb-2 block">Rejection Reason</label>
-              <textarea
-                value={rejectionReason}
-                onChange={(e) => setRejectionReason(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-3"
-                rows={3}
-                placeholder="Provide reason for rejection..."
-              />
-              <div className="flex gap-2">
+          {/* Show different actions based on current status */}
+          {application.status === 'pending_approval' || application.status === 'pending_reverification' ? (
+            <>
+              <div className="flex items-center gap-3">
                 <Button
-                  onClick={handleReject}
-                  disabled={!rejectionReason.trim()}
-                  className="bg-red-600 hover:bg-red-700 text-white"
+                  onClick={handleApprove}
+                  disabled={approving}
+                  className="flex-1 bg-green-600 hover:bg-green-700 text-white"
                 >
-                  Confirm Rejection
+                  <Check className="w-4 h-4 mr-2" />
+                  {approving ? 'Approving...' : 'Approve Application'}
                 </Button>
+                
                 <Button
-                  onClick={() => {
-                    setRejecting(false);
-                    setRejectionReason('');
-                  }}
+                  onClick={() => setClarifying(!clarifying)}
                   variant="outline"
+                  className="flex-1"
                 >
-                  Cancel
+                  <AlertCircle className="w-4 h-4 mr-2" />
+                  Request Clarification
+                </Button>
+                
+                <Button
+                  onClick={() => setRejecting(!rejecting)}
+                  variant="outline"
+                  className="flex-1 border-red-200 text-red-600 hover:bg-red-50"
+                >
+                  <X className="w-4 h-4 mr-2" />
+                  Reject Application
                 </Button>
               </div>
-            </div>
-          )}
 
-          {/* Clarification Form */}
-          {clarifying && (
-            <div className="mt-4 bg-white border border-orange-200 rounded-lg p-4">
-              <label className="text-sm text-gray-700 mb-2 block">Clarification Notes</label>
-              <textarea
-                value={clarificationNotes}
-                onChange={(e) => setClarificationNotes(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-3"
-                rows={3}
-                placeholder="What information do you need from the vendor?"
-              />
-              <div className="flex gap-2">
-                <Button
-                  onClick={handleRequestClarification}
-                  disabled={!clarificationNotes.trim()}
-                  className="bg-orange-600 hover:bg-orange-700 text-white"
-                >
-                  Send Clarification Request
-                </Button>
-                <Button
-                  onClick={() => {
-                    setClarifying(false);
-                    setClarificationNotes('');
-                  }}
-                  variant="outline"
-                >
-                  Cancel
-                </Button>
+              {/* Rejection Form */}
+              {rejecting && (
+                <div className="mt-4 bg-white border border-red-200 rounded-lg p-4">
+                  <label className="text-sm text-gray-700 mb-2 block">Rejection Reason</label>
+                  <textarea
+                    value={rejectionReason}
+                    onChange={(e) => setRejectionReason(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-3"
+                    rows={3}
+                    placeholder="Provide reason for rejection..."
+                  />
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={handleReject}
+                      disabled={!rejectionReason.trim()}
+                      className="bg-red-600 hover:bg-red-700 text-white"
+                    >
+                      Confirm Rejection
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        setRejecting(false);
+                        setRejectionReason('');
+                      }}
+                      variant="outline"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Clarification Form */}
+              {clarifying && (
+                <div className="mt-4 bg-white border border-orange-200 rounded-lg p-4">
+                  <label className="text-sm text-gray-700 mb-2 block">Clarification Notes</label>
+                  <textarea
+                    value={clarificationNotes}
+                    onChange={(e) => setClarificationNotes(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-3"
+                    rows={3}
+                    placeholder="What information do you need from the vendor?"
+                  />
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={handleRequestClarification}
+                      disabled={!clarificationNotes.trim()}
+                      className="bg-orange-600 hover:bg-orange-700 text-white"
+                    >
+                      Send Clarification Request
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        setClarifying(false);
+                        setClarificationNotes('');
+                      }}
+                      variant="outline"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : application.status === 'approved' ? (
+            <div className="text-center py-3">
+              <div className="inline-flex items-center gap-2 text-green-600 bg-green-50 px-4 py-2 rounded-lg">
+                <CheckCircle className="w-5 h-5" />
+                <span className="font-medium">This application has been approved</span>
               </div>
             </div>
-          )}
+          ) : application.status === 'rejected' ? (
+            <div className="text-center py-3">
+              <div className="inline-flex items-center gap-2 text-red-600 bg-red-50 px-4 py-2 rounded-lg">
+                <XCircle className="w-5 h-5" />
+                <span className="font-medium">This application has been rejected</span>
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
