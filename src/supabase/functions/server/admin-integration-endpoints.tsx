@@ -181,6 +181,77 @@ export function adminIntegrationEndpoints(app: Hono) {
     }
   });
 
+  // ✅ NEW: Save payment gateway settings (Razorpay, Stripe, etc.)
+  app.post(`${BASE_PATH}/admin/settings/payment-gateway`, async (c) => {
+    try {
+      const settings = await c.req.json();
+      
+      const paymentGatewaySettings = {
+        razorpay: {
+          enabled: settings.razorpay?.enabled || false,
+          key_id: settings.razorpay?.key_id || '',
+          key_secret: settings.razorpay?.key_secret || '',
+          webhook_secret: settings.razorpay?.webhook_secret || '',
+          auto_capture: settings.razorpay?.auto_capture !== false,
+          test_mode: settings.razorpay?.test_mode || false
+        },
+        stripe: {
+          enabled: settings.stripe?.enabled || false,
+          publishable_key: settings.stripe?.publishable_key || '',
+          secret_key: settings.stripe?.secret_key || '',
+          webhook_secret: settings.stripe?.webhook_secret || '',
+          test_mode: settings.stripe?.test_mode || false
+        },
+        paytm: {
+          enabled: settings.paytm?.enabled || false,
+          merchant_id: settings.paytm?.merchant_id || '',
+          merchant_key: settings.paytm?.merchant_key || '',
+          test_mode: settings.paytm?.test_mode || false
+        },
+        default_gateway: settings.default_gateway || 'razorpay',
+        commission_percentage: settings.commission_percentage || 15,
+        settlement_period_days: settings.settlement_period_days || 3,
+        updatedAt: new Date().toISOString()
+      };
+      
+      await kv.set('platform:settings:payment_gateway', paymentGatewaySettings);
+      
+      console.log('✅ Payment gateway settings updated');
+      return c.json({ 
+        success: true,
+        message: 'Payment gateway settings updated successfully',
+        settings: paymentGatewaySettings
+      });
+    } catch (error) {
+      console.error('Error updating payment gateway settings:', error);
+      return c.json({ error: String(error) }, 500);
+    }
+  });
+
+  // ✅ NEW: Get payment gateway settings
+  app.get(`${BASE_PATH}/admin/settings/payment-gateway`, async (c) => {
+    try {
+      const settings = await kv.get('platform:settings:payment_gateway');
+      
+      const defaultSettings = {
+        razorpay: { enabled: false, key_id: '', test_mode: true },
+        stripe: { enabled: false, test_mode: true },
+        paytm: { enabled: false, test_mode: true },
+        default_gateway: 'razorpay',
+        commission_percentage: 15,
+        settlement_period_days: 3
+      };
+      
+      return c.json({
+        success: true,
+        settings: settings || defaultSettings
+      });
+    } catch (error) {
+      console.error('Error fetching payment gateway settings:', error);
+      return c.json({ error: String(error) }, 500);
+    }
+  });
+
   // ==========================================
   // 3. LOGISTICS PARTNERS & TERRITORY RULES
   // ==========================================
@@ -239,6 +310,73 @@ export function adminIntegrationEndpoints(app: Hono) {
       return c.json({ success: true, rules });
     } catch (error) {
       return c.json({ success: false, error: String(error) }, 500);
+    }
+  });
+
+  // ✅ NEW: Save logistics integration settings (Shiprocket, etc.)
+  app.post(`${BASE_PATH}/admin/settings/logistics`, async (c) => {
+    try {
+      const settings = await c.req.json();
+      
+      const logisticsSettings = {
+        shiprocket: {
+          enabled: settings.shiprocket?.enabled || false,
+          email: settings.shiprocket?.email || '',
+          password: settings.shiprocket?.password || '',
+          auto_awb: settings.shiprocket?.auto_awb !== false,
+          auto_pickup: settings.shiprocket?.auto_pickup !== false,
+          test_mode: settings.shiprocket?.test_mode || false
+        },
+        delhivery: {
+          enabled: settings.delhivery?.enabled || false,
+          api_key: settings.delhivery?.api_key || '',
+          test_mode: settings.delhivery?.test_mode || false
+        },
+        bluedart: {
+          enabled: settings.bluedart?.enabled || false,
+          username: settings.bluedart?.username || '',
+          password: settings.bluedart?.password || '',
+          test_mode: settings.bluedart?.test_mode || false
+        },
+        default_provider: settings.default_provider || 'shiprocket',
+        warehouse_address: settings.warehouse_address || {},
+        updatedAt: new Date().toISOString()
+      };
+      
+      await kv.set('platform:settings:logistics', logisticsSettings);
+      
+      console.log('✅ Logistics settings updated');
+      return c.json({
+        success: true,
+        message: 'Logistics settings updated successfully',
+        settings: logisticsSettings
+      });
+    } catch (error) {
+      console.error('Error updating logistics settings:', error);
+      return c.json({ error: String(error) }, 500);
+    }
+  });
+
+  // ✅ NEW: Get logistics settings
+  app.get(`${BASE_PATH}/admin/settings/logistics`, async (c) => {
+    try {
+      const settings = await kv.get('platform:settings:logistics');
+      
+      const defaultSettings = {
+        shiprocket: { enabled: false, test_mode: true },
+        delhivery: { enabled: false, test_mode: true },
+        bluedart: { enabled: false, test_mode: true },
+        default_provider: 'shiprocket',
+        warehouse_address: {}
+      };
+      
+      return c.json({
+        success: true,
+        settings: settings || defaultSettings
+      });
+    } catch (error) {
+      console.error('Error fetching logistics settings:', error);
+      return c.json({ error: String(error) }, 500);
     }
   });
 
