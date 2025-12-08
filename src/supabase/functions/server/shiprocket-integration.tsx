@@ -1,171 +1,316 @@
 /**
- * SHIPROCKET LOGISTICS INTEGRATION
- * 
- * Fulfills P0 Critical Gap: Real logistics integration
- * 
- * Features:
- * - Order creation
- * - AWB generation
- * - Pickup scheduling
- * - Real-time tracking
- * - Return processing
- * - Label generation
+ * Shiprocket Integration for Warmpawz
+ * Handles order fulfillment and logistics for marketplace vendors
  */
 
-import type { Hono } from 'npm:hono';
+import { Hono } from 'npm:hono';
 import * as kv from './kv_store.tsx';
 
-const BASE_PATH = '/make-server-3dd53475';
+// Shiprocket credentials from environment
+const SHIPROCKET_EMAIL = Deno.env.get('SHIPROCKET_EMAIL') || '';
+const SHIPROCKET_PASSWORD = Deno.env.get('SHIPROCKET_PASSWORD') || '';
+const SHIPROCKET_API_BASE = 'https://apiv2.shiprocket.in/v1/external';
 
-// Shiprocket API configuration
-const getShiprocketConfig = async () => {
-  const config = await kv.get('platform:settings:logistics');
-  
-  if (!config || !config.value || !config.value.shiprocket) {
-    throw new Error('Shiprocket configuration not found');
+// Token management
+let shiprocketToken: string | null = null;
+let tokenExpiryTime: number = 0;
+
+/**
+ * Authenticate with Shiprocket and get token
+ */
+async function getShiprocketToken(): Promise<string> {
+  // Return cached token if still valid
+  if (shiprocketToken && Date.now() < tokenExpiryTime) {
+    return shiprocketToken;
   }
 
-  return {
-    email: config.value.shiprocket.email,
-    password: config.value.shiprocket.password,
-    enabled: config.value.shiprocket.enabled
-  };
-};
-
-// Authentication token cache
-let authToken: string | null = null;
-let tokenExpiry: number = 0;
-
-// Shiprocket API helper
-const shiprocketRequest = async (method: string, endpoint: string, body?: any) => {
-  // Get or refresh auth token
-  if (!authToken || Date.now() > tokenExpiry) {
-    const config = await getShiprocketConfig();
-    
-    const authResponse = await fetch('https://apiv2.shiprocket.in/v1/external/auth/login', {
+  try {
+    const response = await fetch(`${SHIPROCKET_API_BASE}/auth/login`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+      },
       body: JSON.stringify({
-        email: config.email,
-        password: config.password
+        email: SHIPROCKET_EMAIL,
+        password: SHIPROCKET_PASSWORD
       })
     });
 
-    if (!authResponse.ok) {
-      throw new Error('Shiprocket authentication failed');
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(`Shiprocket auth failed: ${JSON.stringify(error)}`);
     }
 
-    const authData = await authResponse.json();
-    authToken = authData.token;
-    tokenExpiry = Date.now() + (10 * 60 * 60 * 1000); // 10 hours
+    const data = await response.json();
+    shiprocketToken = data.token;
+    tokenExpiryTime = Date.now() + (10 * 24 * 60 * 60 * 1000); // 10 days validity
+    
+    console.log('✅ Shiprocket token obtained');
+    return shiprocketToken;
+  } catch (error) {
+    console.error('❌ Shiprocket auth error:', error);
+    throw error;
   }
-
-  const response = await fetch(`https://apiv2.shiprocket.in/v1/external${endpoint}`, {
-    method,
-    headers: {
-      'Authorization': `Bearer ${authToken}`,
-      'Content-Type': 'application/json'
-    },
-    body: body ? JSON.stringify(body) : undefined
-  });
-
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(`Shiprocket API error: ${error.message || 'Unknown error'}`);
-  }
-
-  return await response.json();
-};
+}
 
 /**
- * Register Shiprocket routes
+ * Create Shiprocket Order
+ */
+export async function createShiprocketOrder(orderData: any) {
+  try {
+    const token = await getShiprocketToken();
+    
+    const response = await fetch(`${SHIPROCKET_API_BASE}/orders/create/adhoc`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        order_id: orderData.orderId,
+        order_date: orderData.orderDate || new Date().toISOString().split('T')[0],
+        pickup_location: orderData.pickupLocation || 'Primary',
+        channel_id: orderData.channelId || '',
+        comment: orderData.comment || 'Warmpawz Order',
+        billing_customer_name: orderData.customerName,
+        billing_last_name: orderData.customerLastName || '',
+        billing_address: orderData.billingAddress.street,
+        billing_address_2: orderData.billingAddress.landmark || '',
+        billing_city: orderData.billingAddress.city,
+        billing_pincode: orderData.billingAddress.pincode,
+        billing_state: orderData.billingAddress.state,
+        billing_country: 'India',
+        billing_email: orderData.customerEmail,
+        billing_phone: orderData.customerPhone,
+        shipping_is_billing: orderData.shippingIsBilling !== false,
+        shipping_customer_name: orderData.shippingAddress?.name || orderData.customerName,
+        shipping_last_name: orderData.shippingAddress?.lastName || '',
+        shipping_address: orderData.shippingAddress?.street || orderData.billingAddress.street,
+        shipping_address_2: orderData.shippingAddress?.landmark || orderData.billingAddress.landmark || '',
+        shipping_city: orderData.shippingAddress?.city || orderData.billingAddress.city,
+        shipping_pincode: orderData.shippingAddress?.pincode || orderData.billingAddress.pincode,
+        shipping_country: 'India',
+        shipping_state: orderData.shippingAddress?.state || orderData.billingAddress.state,
+        shipping_email: orderData.shippingAddress?.email || orderData.customerEmail,
+        shipping_phone: orderData.shippingAddress?.phone || orderData.customerPhone,
+        order_items: orderData.items.map((item: any) => ({
+          name: item.name,
+          sku: item.sku || item.productId,
+          units: item.quantity,
+          selling_price: item.price,
+          discount: item.discount || 0,
+          tax: item.tax || 0,
+          hsn: item.hsn || 0
+        })),
+        payment_method: orderData.paymentMethod === 'cod' ? 'COD' : 'Prepaid',
+        shipping_charges: orderData.shippingCharges || 0,
+        giftwrap_charges: orderData.giftwrapCharges || 0,
+        transaction_charges: orderData.transactionCharges || 0,
+        total_discount: orderData.totalDiscount || 0,
+        sub_total: orderData.subTotal,
+        length: orderData.length || 10,
+        breadth: orderData.breadth || 10,
+        height: orderData.height || 10,
+        weight: orderData.weight || 0.5
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(`Shiprocket order creation failed: ${JSON.stringify(error)}`);
+    }
+
+    const result = await response.json();
+    console.log('✅ Shiprocket order created:', result.order_id);
+    return result;
+  } catch (error) {
+    console.error('❌ Shiprocket order creation error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Generate AWB (Airway Bill) for Shipment
+ */
+export async function generateAWB(shipmentId: number, courierId: number) {
+  try {
+    const token = await getShiprocketToken();
+    
+    const response = await fetch(`${SHIPROCKET_API_BASE}/courier/assign/awb`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        shipment_id: shipmentId,
+        courier_id: courierId
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(`AWB generation failed: ${JSON.stringify(error)}`);
+    }
+
+    const result = await response.json();
+    console.log('✅ AWB generated:', result.response.data.awb_code);
+    return result;
+  } catch (error) {
+    console.error('❌ AWB generation error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get Available Couriers for Shipment
+ */
+export async function getAvailableCouriers(pickupPincode: string, deliveryPincode: string, weight: number, cod: boolean = false) {
+  try {
+    const token = await getShiprocketToken();
+    
+    const response = await fetch(
+      `${SHIPROCKET_API_BASE}/courier/serviceability?pickup_postcode=${pickupPincode}&delivery_postcode=${deliveryPincode}&weight=${weight}&cod=${cod ? 1 : 0}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        }
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error('Failed to fetch couriers');
+    }
+
+    const result = await response.json();
+    return result.data.available_courier_companies || [];
+  } catch (error) {
+    console.error('❌ Fetch couriers error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Track Shipment
+ */
+export async function trackShipment(shipmentId: number) {
+  try {
+    const token = await getShiprocketToken();
+    
+    const response = await fetch(`${SHIPROCKET_API_BASE}/courier/track/shipment/${shipmentId}`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to track shipment');
+    }
+
+    const result = await response.json();
+    return result.tracking_data;
+  } catch (error) {
+    console.error('❌ Track shipment error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Cancel Shipment
+ */
+export async function cancelShipment(orderIds: string[]) {
+  try {
+    const token = await getShiprocketToken();
+    
+    const response = await fetch(`${SHIPROCKET_API_BASE}/orders/cancel`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        ids: orderIds
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(`Shipment cancellation failed: ${JSON.stringify(error)}`);
+    }
+
+    const result = await response.json();
+    console.log('✅ Shipment cancelled:', orderIds);
+    return result;
+  } catch (error) {
+    console.error('❌ Shipment cancellation error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Create Return Order
+ */
+export async function createReturnOrder(orderData: any) {
+  try {
+    const token = await getShiprocketToken();
+    
+    const response = await fetch(`${SHIPROCKET_API_BASE}/orders/create/return`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(orderData)
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(`Return order creation failed: ${JSON.stringify(error)}`);
+    }
+
+    const result = await response.json();
+    console.log('✅ Return order created:', result.order_id);
+    return result;
+  } catch (error) {
+    console.error('❌ Return order creation error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Shiprocket Endpoints for Hono
  */
 export function registerShiprocketIntegration(app: Hono) {
-
+  
   /**
-   * POST /logistics/shiprocket/create-order
-   * Create Shiprocket order
+   * GET /shiprocket/config
+   * Get Shiprocket configuration status
    */
-  app.post(`${BASE_PATH}/logistics/shiprocket/create-order`, async (c) => {
+  app.get('/make-server-3dd53475/shiprocket/config', async (c) => {
     try {
-      const { orderId, customerDetails, productDetails, pickupAddress, deliveryAddress } = await c.req.json();
-
-      if (!orderId || !customerDetails || !productDetails || !deliveryAddress) {
-        return c.json({
-          error: 'Missing required fields',
-          required: ['orderId', 'customerDetails', 'productDetails', 'deliveryAddress']
-        }, 400);
-      }
-
-      const orderData = await kv.get(`order:${orderId}`);
-      if (!orderData || !orderData.value) {
-        return c.json({ error: 'Order not found' }, 404);
-      }
-
-      const order = orderData.value;
-
-      const shiprocketOrder = await shiprocketRequest('POST', '/orders/create/adhoc', {
-        order_id: orderId,
-        order_date: order.createdAt,
-        pickup_location: pickupAddress?.name || 'Primary',
-        channel_id: '',
-        comment: order.notes || '',
-        billing_customer_name: customerDetails.name,
-        billing_last_name: customerDetails.lastName || '',
-        billing_address: deliveryAddress.address,
-        billing_address_2: deliveryAddress.address2 || '',
-        billing_city: deliveryAddress.city,
-        billing_pincode: deliveryAddress.pincode,
-        billing_state: deliveryAddress.state,
-        billing_country: deliveryAddress.country || 'India',
-        billing_email: customerDetails.email,
-        billing_phone: customerDetails.phone,
-        shipping_is_billing: true,
-        order_items: productDetails.map((product: any) => ({
-          name: product.name,
-          sku: product.sku || product.id,
-          units: product.quantity,
-          selling_price: product.price,
-          discount: product.discount || 0,
-          tax: product.tax || 0,
-          hsn: product.hsn || ''
-        })),
-        payment_method: order.paymentMethod || 'Prepaid',
-        shipping_charges: order.shippingCharges || 0,
-        giftwrap_charges: 0,
-        transaction_charges: 0,
-        total_discount: order.discount || 0,
-        sub_total: order.subtotal || order.total,
-        length: productDetails[0]?.dimensions?.length || 10,
-        breadth: productDetails[0]?.dimensions?.breadth || 10,
-        height: productDetails[0]?.dimensions?.height || 10,
-        weight: productDetails.reduce((sum: number, p: any) => sum + (p.weight || 0.5), 0)
-      });
-
-      await kv.set(`logistics:shiprocket:order:${orderId}`, {
-        orderId,
-        shiprocketOrderId: shiprocketOrder.order_id,
-        shipmentId: shiprocketOrder.shipment_id,
-        status: shiprocketOrder.status,
-        channel_order_id: shiprocketOrder.channel_order_id,
-        createdAt: new Date().toISOString()
-      });
-
-      order.shipmentId = shiprocketOrder.shipment_id;
-      order.shiprocketOrderId = shiprocketOrder.order_id;
-      order.logisticsProvider = 'shiprocket';
-      await kv.set(`order:${orderId}`, order);
-
-      console.log(`✅ Shiprocket order created: ${shiprocketOrder.order_id} for order ${orderId}`);
-
       return c.json({
         success: true,
-        orderId,
-        shiprocketOrderId: shiprocketOrder.order_id,
-        shipmentId: shiprocketOrder.shipment_id,
-        status: shiprocketOrder.status
+        enabled: !!SHIPROCKET_EMAIL && !!SHIPROCKET_PASSWORD
       });
+    } catch (error: any) {
+      console.error('Error fetching Shiprocket config:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
 
+  /**
+   * POST /shiprocket/orders/create
+   * Create Shiprocket order
+   */
+  app.post('/make-server-3dd53475/shiprocket/orders/create', async (c) => {
+    try {
+      const orderData = await c.req.json();
+      const result = await createShiprocketOrder(orderData);
+      
+      return c.json({
+        success: true,
+        data: result
+      });
     } catch (error: any) {
       console.error('Error creating Shiprocket order:', error);
       return c.json({ error: error.message }, 500);
@@ -173,52 +318,41 @@ export function registerShiprocketIntegration(app: Hono) {
   });
 
   /**
-   * POST /logistics/shiprocket/generate-awb
-   * Generate AWB for shipment
+   * GET /shiprocket/couriers/available
+   * Get available couriers for shipment
    */
-  app.post(`${BASE_PATH}/logistics/shiprocket/generate-awb`, async (c) => {
+  app.get('/make-server-3dd53475/shiprocket/couriers/available', async (c) => {
     try {
-      const { shipmentId, courierId } = await c.req.json();
-
-      if (!shipmentId) {
-        return c.json({ error: 'Shipment ID required' }, 400);
-      }
-
-      let selectedCourierId = courierId;
+      const pickupPincode = c.req.query('pickupPincode') || '';
+      const deliveryPincode = c.req.query('deliveryPincode') || '';
+      const weight = parseFloat(c.req.query('weight') || '0.5');
+      const cod = c.req.query('cod') === 'true';
       
-      if (!courierId) {
-        const serviceability = await shiprocketRequest('GET', `/courier/serviceability?pickup_postcode=110001&delivery_postcode=110002&cod=0&weight=1`);
-        
-        if (serviceability.data?.available_courier_companies?.length > 0) {
-          selectedCourierId = serviceability.data.available_courier_companies[0].courier_company_id;
-        } else {
-          return c.json({ error: 'No courier available for this route' }, 400);
-        }
-      }
-
-      const awbResponse = await shiprocketRequest('POST', '/courier/assign/awb', {
-        shipment_id: parseInt(shipmentId),
-        courier_id: selectedCourierId
-      });
-
-      await kv.set(`logistics:shiprocket:awb:${shipmentId}`, {
-        shipmentId,
-        awbCode: awbResponse.awb_assign_status === 1 ? awbResponse.response.data.awb_code : null,
-        courierId: selectedCourierId,
-        courierName: awbResponse.response?.data?.courier_name || '',
-        status: awbResponse.awb_assign_status === 1 ? 'assigned' : 'failed',
-        createdAt: new Date().toISOString()
-      });
-
-      console.log(`✅ AWB generated: ${awbResponse.response?.data?.awb_code} for shipment ${shipmentId}`);
-
+      const couriers = await getAvailableCouriers(pickupPincode, deliveryPincode, weight, cod);
+      
       return c.json({
         success: true,
-        awbCode: awbResponse.response?.data?.awb_code,
-        courierName: awbResponse.response?.data?.courier_name,
-        shipmentId
+        couriers
       });
+    } catch (error: any) {
+      console.error('Error fetching couriers:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
 
+  /**
+   * POST /shiprocket/shipments/generate-awb
+   * Generate AWB for shipment
+   */
+  app.post('/make-server-3dd53475/shiprocket/shipments/generate-awb', async (c) => {
+    try {
+      const { shipmentId, courierId } = await c.req.json();
+      const result = await generateAWB(shipmentId, courierId);
+      
+      return c.json({
+        success: true,
+        data: result
+      });
     } catch (error: any) {
       console.error('Error generating AWB:', error);
       return c.json({ error: error.message }, 500);
@@ -226,89 +360,18 @@ export function registerShiprocketIntegration(app: Hono) {
   });
 
   /**
-   * POST /logistics/shiprocket/schedule-pickup
-   * Schedule pickup for shipment
+   * GET /shiprocket/shipments/track/:shipmentId
+   * Track shipment
    */
-  app.post(`${BASE_PATH}/logistics/shiprocket/schedule-pickup`, async (c) => {
+  app.get('/make-server-3dd53475/shiprocket/shipments/track/:shipmentId', async (c) => {
     try {
-      const { shipmentId, pickupDate } = await c.req.json();
-
-      if (!shipmentId) {
-        return c.json({ error: 'Shipment ID required' }, 400);
-      }
-
-      const pickupResponse = await shiprocketRequest('POST', '/courier/generate/pickup', {
-        shipment_id: [parseInt(shipmentId)],
-        pickup_date: pickupDate || new Date().toISOString().split('T')[0]
-      });
-
-      await kv.set(`logistics:shiprocket:pickup:${shipmentId}`, {
-        shipmentId,
-        pickupScheduled: pickupResponse.pickup_scheduled_date,
-        pickupTokenNumber: pickupResponse.pickup_token_number,
-        status: pickupResponse.response?.status === 200 ? 'scheduled' : 'failed',
-        createdAt: new Date().toISOString()
-      });
-
-      console.log(`✅ Pickup scheduled for shipment ${shipmentId}: ${pickupResponse.pickup_scheduled_date}`);
-
+      const shipmentId = parseInt(c.req.param('shipmentId'));
+      const trackingData = await trackShipment(shipmentId);
+      
       return c.json({
         success: true,
-        pickupScheduled: pickupResponse.pickup_scheduled_date,
-        pickupTokenNumber: pickupResponse.pickup_token_number
+        trackingData
       });
-
-    } catch (error: any) {
-      console.error('Error scheduling pickup:', error);
-      return c.json({ error: error.message }, 500);
-    }
-  });
-
-  /**
-   * GET /logistics/shiprocket/track/:awbCode
-   * Real-time shipment tracking
-   */
-  app.get(`${BASE_PATH}/logistics/shiprocket/track/:awbCode`, async (c) => {
-    try {
-      const awbCode = c.req.param('awbCode');
-
-      const tracking = await shiprocketRequest('GET', `/courier/track/awb/${awbCode}`);
-
-      if (!tracking.tracking_data) {
-        return c.json({ error: 'Tracking data not found' }, 404);
-      }
-
-      const trackingData = tracking.tracking_data;
-
-      await kv.set(`logistics:shiprocket:tracking:${awbCode}:${Date.now()}`, {
-        awbCode,
-        status: trackingData.shipment_status,
-        currentLocation: trackingData.current_location || '',
-        trackingData: trackingData.shipment_track,
-        deliveredDate: trackingData.delivered_date || null,
-        updatedAt: new Date().toISOString()
-      });
-
-      const timeline = trackingData.shipment_track.map((event: any) => ({
-        date: event.date,
-        status: event.status,
-        activity: event.activity,
-        location: event.location || '',
-        srStatusLabel: event['sr-status-label'] || ''
-      }));
-
-      console.log(`📦 Tracking fetched for AWB ${awbCode}: ${trackingData.shipment_status}`);
-
-      return c.json({
-        success: true,
-        awbCode,
-        status: trackingData.shipment_status,
-        currentLocation: trackingData.current_location,
-        deliveredDate: trackingData.delivered_date,
-        timeline,
-        etd: trackingData.etd || null
-      });
-
     } catch (error: any) {
       console.error('Error tracking shipment:', error);
       return c.json({ error: error.message }, 500);
@@ -316,224 +379,59 @@ export function registerShiprocketIntegration(app: Hono) {
   });
 
   /**
-   * POST /logistics/shiprocket/create-return
-   * Create return shipment
+   * POST /shiprocket/shipments/cancel
+   * Cancel shipment
    */
-  app.post(`${BASE_PATH}/logistics/shiprocket/create-return`, async (c) => {
+  app.post('/make-server-3dd53475/shiprocket/shipments/cancel', async (c) => {
     try {
-      const { orderId, returnItems, reason } = await c.req.json();
-
-      if (!orderId || !returnItems) {
-        return c.json({
-          error: 'Missing required fields',
-          required: ['orderId', 'returnItems']
-        }, 400);
-      }
-
-      const shiprocketOrderData = await kv.get(`logistics:shiprocket:order:${orderId}`);
-      if (!shiprocketOrderData || !shiprocketOrderData.value) {
-        return c.json({ error: 'Original shipment not found' }, 404);
-      }
-
-      const returnResponse = await shiprocketRequest('POST', '/orders/create/return', {
-        order_id: `RET_${orderId}`,
-        order_date: new Date().toISOString(),
-        channel_id: '',
-        pickup_customer_name: returnItems[0].customerName,
-        pickup_last_name: '',
-        pickup_address: returnItems[0].pickupAddress.address,
-        pickup_city: returnItems[0].pickupAddress.city,
-        pickup_state: returnItems[0].pickupAddress.state,
-        pickup_country: 'India',
-        pickup_pincode: returnItems[0].pickupAddress.pincode,
-        pickup_email: returnItems[0].customerEmail,
-        pickup_phone: returnItems[0].customerPhone,
-        pickup_isd_code: '91',
-        shipping_customer_name: 'Warmpawz',
-        shipping_address: 'Warehouse Address',
-        shipping_city: 'Bangalore',
-        shipping_pincode: '560001',
-        shipping_country: 'India',
-        shipping_state: 'Karnataka',
-        shipping_email: 'returns@warmpawz.com',
-        shipping_phone: '9876543210',
-        order_items: returnItems.map((item: any) => ({
-          name: item.name,
-          sku: item.sku,
-          units: item.quantity,
-          selling_price: item.price
-        })),
-        payment_method: 'Prepaid',
-        sub_total: returnItems.reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0)
-      });
-
-      const returnId = `return_${Date.now()}`;
-      await kv.set(`logistics:shiprocket:return:${returnId}`, {
-        returnId,
-        orderId,
-        shiprocketReturnOrderId: returnResponse.order_id,
-        returnShipmentId: returnResponse.shipment_id,
-        reason,
-        status: 'created',
-        createdAt: new Date().toISOString()
-      });
-
-      console.log(`✅ Return created: ${returnResponse.order_id} for order ${orderId}`);
-
+      const { orderIds } = await c.req.json();
+      const result = await cancelShipment(orderIds);
+      
       return c.json({
         success: true,
-        returnId,
-        shiprocketReturnOrderId: returnResponse.order_id,
-        returnShipmentId: returnResponse.shipment_id
+        data: result
       });
-
     } catch (error: any) {
-      console.error('Error creating return:', error);
+      console.error('Error cancelling shipment:', error);
       return c.json({ error: error.message }, 500);
     }
   });
 
   /**
-   * GET /logistics/shiprocket/label/:shipmentId
-   * Generate and retrieve shipping label
-   */
-  app.get(`${BASE_PATH}/logistics/shiprocket/label/:shipmentId`, async (c) => {
-    try {
-      const shipmentId = c.req.param('shipmentId');
-
-      const labelResponse = await shiprocketRequest('POST', '/courier/generate/label', {
-        shipment_id: [parseInt(shipmentId)]
-      });
-
-      if (!labelResponse.label_url) {
-        return c.json({ error: 'Label generation failed' }, 500);
-      }
-
-      console.log(`✅ Label generated for shipment ${shipmentId}`);
-
-      return c.json({
-        success: true,
-        labelUrl: labelResponse.label_url,
-        shipmentId
-      });
-
-    } catch (error: any) {
-      console.error('Error generating label:', error);
-      return c.json({ error: error.message }, 500);
-    }
-  });
-
-  /**
-   * GET /logistics/shiprocket/invoice/:orderId
-   * Generate invoice for order
-   */
-  app.get(`${BASE_PATH}/logistics/shiprocket/invoice/:orderId`, async (c) => {
-    try {
-      const orderId = c.req.param('orderId');
-
-      const shiprocketOrderData = await kv.get(`logistics:shiprocket:order:${orderId}`);
-      if (!shiprocketOrderData || !shiprocketOrderData.value) {
-        return c.json({ error: 'Shipment not found' }, 404);
-      }
-
-      const shiprocketOrder = shiprocketOrderData.value;
-
-      const invoiceResponse = await shiprocketRequest('POST', '/orders/print/invoice', {
-        ids: [shiprocketOrder.shiprocketOrderId]
-      });
-
-      console.log(`✅ Invoice generated for order ${orderId}`);
-
-      return c.json({
-        success: true,
-        invoiceUrl: invoiceResponse.invoice_url,
-        orderId
-      });
-
-    } catch (error: any) {
-      console.error('Error generating invoice:', error);
-      return c.json({ error: error.message }, 500);
-    }
-  });
-
-  /**
-   * GET /logistics/shiprocket/couriers/serviceability
-   * Check courier serviceability
-   */
-  app.get(`${BASE_PATH}/logistics/shiprocket/couriers/serviceability`, async (c) => {
-    try {
-      const pickupPincode = c.req.query('pickupPincode');
-      const deliveryPincode = c.req.query('deliveryPincode');
-      const cod = c.req.query('cod') || '0';
-      const weight = c.req.query('weight') || '1';
-
-      if (!pickupPincode || !deliveryPincode) {
-        return c.json({
-          error: 'Missing required parameters',
-          required: ['pickupPincode', 'deliveryPincode']
-        }, 400);
-      }
-
-      const serviceability = await shiprocketRequest(
-        'GET',
-        `/courier/serviceability?pickup_postcode=${pickupPincode}&delivery_postcode=${deliveryPincode}&cod=${cod}&weight=${weight}`
-      );
-
-      const availableCouriers = serviceability.data?.available_courier_companies || [];
-
-      return c.json({
-        success: true,
-        available: availableCouriers.length > 0,
-        couriers: availableCouriers.map((courier: any) => ({
-          id: courier.courier_company_id,
-          name: courier.courier_name,
-          rate: courier.rate,
-          estimatedDays: courier.etd,
-          cod: courier.cod,
-          rating: courier.rating
-        }))
-      });
-
-    } catch (error: any) {
-      console.error('Error checking serviceability:', error);
-      return c.json({ error: error.message }, 500);
-    }
-  });
-
-  /**
-   * POST /logistics/shiprocket/webhook
+   * POST /shiprocket/webhook
    * Handle Shiprocket webhooks
    */
-  app.post(`${BASE_PATH}/logistics/shiprocket/webhook`, async (c) => {
+  app.post('/make-server-3dd53475/shiprocket/webhook', async (c) => {
     try {
-      const event = await c.req.json();
-
-      console.log(`📬 Shiprocket webhook received: ${event.event}`);
-
-      switch (event.event) {
-        case 'SHIPMENT_STATUS_CHANGED':
-          console.log(`📦 Shipment status changed: AWB ${event.awb} → ${event.current_status}`);
+      const body = await c.req.json();
+      
+      console.log('📦 Shiprocket webhook received:', body.event);
+      
+      // Handle different webhook events
+      switch (body.event) {
+        case 'ORDER_SHIPPED':
+          console.log('✅ Order shipped:', body.order_id);
           break;
-
-        case 'SHIPMENT_DELIVERED':
-          console.log(`✅ Shipment delivered: AWB ${event.awb} on ${event.delivered_date}`);
+          
+        case 'ORDER_DELIVERED':
+          console.log('✅ Order delivered:', body.order_id);
           break;
-
-        case 'NDR_EVENT':
-          console.log(`⚠️ NDR event: AWB ${event.awb} - ${event.ndr_status}`);
+          
+        case 'ORDER_CANCELLED':
+          console.log('❌ Order cancelled:', body.order_id);
           break;
-
-        default:
-          console.log(`⚠️ Unhandled webhook event: ${event.event}`);
+          
+        case 'ORDER_RTO':
+          console.log('🔄 Order RTO:', body.order_id);
+          break;
       }
-
+      
       return c.json({ success: true });
-
     } catch (error: any) {
-      console.error('Error processing Shiprocket webhook:', error);
+      console.error('Error handling webhook:', error);
       return c.json({ error: error.message }, 500);
     }
   });
 
-  console.log('✅ Shiprocket integration routes registered');
+  console.log('✅ Shiprocket endpoints registered');
 }

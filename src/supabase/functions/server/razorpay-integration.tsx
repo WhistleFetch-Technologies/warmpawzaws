@@ -1,462 +1,318 @@
 /**
- * RAZORPAY PAYMENT GATEWAY INTEGRATION
- * 
- * Fulfills P0 Critical Gap: Real payment gateway integration
- * 
- * Features:
- * - Payment order creation
- * - Payment verification
- * - Webhook handling
- * - Refund processing
- * - Auto-capture
- * - Subscription support
+ * Razorpay Integration for Warmpawz
+ * Handles payment processing and vendor payouts via Razorpay
  */
 
-import type { Hono } from 'npm:hono';
+import { Hono } from 'npm:hono';
 import * as kv from './kv_store.tsx';
 
-const BASE_PATH = '/make-server-3dd53475';
+// Razorpay credentials from environment
+const RAZORPAY_KEY_ID = Deno.env.get('RAZORPAY_KEY_ID') || '';
+const RAZORPAY_KEY_SECRET = Deno.env.get('RAZORPAY_KEY_SECRET') || '';
 
-// Razorpay API configuration
-const getRazorpayConfig = async () => {
-  const config = await kv.get('platform:settings:payment_gateway');
-  
-  if (!config || !config.value || !config.value.razorpay) {
-    throw new Error('Razorpay configuration not found');
-  }
-
-  return {
-    keyId: config.value.razorpay.key_id,
-    keySecret: config.value.razorpay.key_secret,
-    webhookSecret: config.value.razorpay.webhook_secret,
-    enabled: config.value.razorpay.enabled
-  };
-};
-
-// Razorpay API helper
-const razorpayRequest = async (method: string, endpoint: string, body?: any) => {
-  const config = await getRazorpayConfig();
-  
-  const auth = btoa(`${config.keyId}:${config.keySecret}`);
-  
-  const response = await fetch(`https://api.razorpay.com/v1${endpoint}`, {
-    method,
-    headers: {
-      'Authorization': `Basic ${auth}`,
-      'Content-Type': 'application/json'
-    },
-    body: body ? JSON.stringify(body) : undefined
-  });
-
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(`Razorpay API error: ${error.error?.description || 'Unknown error'}`);
-  }
-
-  return await response.json();
-};
+// Base64 encode credentials for API auth
+const RAZORPAY_AUTH = btoa(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`);
+const RAZORPAY_API_BASE = 'https://api.razorpay.com/v1';
 
 /**
- * Helper: Update vendor earnings after successful payment
+ * Create Razorpay Order
  */
-async function updateVendorEarnings(booking: any) {
+export async function createRazorpayOrder(amount: number, bookingId?: string, orderId?: string) {
   try {
-    const vendorId = booking.vendorId;
-    const amount = booking.amount || booking.price || 0;
-    const commission = 0.15; // 15% platform commission
-    const vendorEarnings = amount * (1 - commission);
-
-    // Get vendor
-    const vendorData = await kv.get(`vendor:${vendorId}`);
-    if (!vendorData || !vendorData.value) return;
-
-    const vendor = vendorData.value;
-
-    // Update wallet
-    vendor.wallet = vendor.wallet || { balance: 0, pendingPayouts: 0 };
-    vendor.wallet.balance += vendorEarnings;
-    vendor.wallet.pendingPayouts += vendorEarnings;
-
-    await kv.set(`vendor:${vendorId}`, vendor);
-
-    // Create earnings record
-    const earningId = `earning_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-    await kv.set(`vendor:${vendorId}:earning:${earningId}`, {
-      id: earningId,
-      vendorId,
-      bookingId: booking.id,
-      amount: vendorEarnings,
-      commission: amount * commission,
-      status: 'pending',
-      createdAt: new Date().toISOString()
+    const response = await fetch(`${RAZORPAY_API_BASE}/orders`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${RAZORPAY_AUTH}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        amount: amount * 100, // Convert to paise
+        currency: 'INR',
+        receipt: bookingId || orderId || `receipt_${Date.now()}`,
+        notes: {
+          bookingId: bookingId || '',
+          orderId: orderId || '',
+          platform: 'warmpawz'
+        }
+      })
     });
 
-    console.log(`✅ Vendor earnings updated: ${vendorId} +${vendorEarnings}`);
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(`Razorpay order creation failed: ${JSON.stringify(error)}`);
+    }
 
+    const order = await response.json();
+    console.log('✅ Razorpay order created:', order.id);
+    return order;
   } catch (error) {
-    console.error('Error updating vendor earnings:', error);
+    console.error('❌ Razorpay order creation error:', error);
+    throw error;
   }
 }
 
 /**
- * Webhook Handlers
+ * Verify Razorpay Payment Signature
  */
-
-async function handlePaymentCaptured(payment: any) {
-  console.log(`✅ Payment captured: ${payment.id}`);
-  
-  const paymentData = await kv.get(`payment:razorpay:payment:${payment.id}`);
-  if (paymentData && paymentData.value) {
-    paymentData.value.status = 'captured';
-    paymentData.value.captured = true;
-    await kv.set(`payment:razorpay:payment:${payment.id}`, paymentData.value);
+export async function verifyRazorpaySignature(
+  orderId: string, 
+  paymentId: string, 
+  signature: string
+): Promise<boolean> {
+  try {
+    // Create signature string
+    const signatureString = `${orderId}|${paymentId}`;
+    
+    // Generate HMAC SHA256
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      'raw',
+      encoder.encode(RAZORPAY_KEY_SECRET),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    );
+    
+    const signatureBuffer = await crypto.subtle.sign(
+      'HMAC',
+      key,
+      encoder.encode(signatureString)
+    );
+    
+    // Convert to hex
+    const expectedSignature = Array.from(new Uint8Array(signatureBuffer))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+    
+    const isValid = expectedSignature === signature;
+    console.log(isValid ? '✅ Signature verified' : '❌ Signature verification failed');
+    return isValid;
+  } catch (error) {
+    console.error('❌ Signature verification error:', error);
+    return false;
   }
 }
 
-async function handlePaymentFailed(payment: any) {
-  console.log(`❌ Payment failed: ${payment.id}`);
-  
-  const orderData = await kv.get(`payment:razorpay:order:${payment.order_id}`);
-  if (orderData && orderData.value) {
-    const bookingData = await kv.get(`booking:${orderData.value.bookingId}`);
-    if (bookingData && bookingData.value) {
-      const booking = bookingData.value;
-      booking.paymentStatus = 'failed';
-      booking.status = 'payment_failed';
-      await kv.set(`booking:${orderData.value.bookingId}`, booking);
+/**
+ * Fetch Payment Details from Razorpay
+ */
+export async function fetchRazorpayPayment(paymentId: string) {
+  try {
+    const response = await fetch(`${RAZORPAY_API_BASE}/payments/${paymentId}`, {
+      headers: {
+        'Authorization': `Basic ${RAZORPAY_AUTH}`,
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error('Payment fetch failed');
     }
-  }
-}
 
-async function handleRefundCreated(refund: any) {
-  console.log(`📤 Refund created: ${refund.id}`);
-}
-
-async function handleRefundProcessed(refund: any) {
-  console.log(`✅ Refund processed: ${refund.id}`);
-  
-  const refundData = await kv.get(`payment:razorpay:refund:${refund.id}`);
-  if (refundData && refundData.value) {
-    refundData.value.status = 'processed';
-    await kv.set(`payment:razorpay:refund:${refund.id}`, refundData.value);
+    return await response.json();
+  } catch (error) {
+    console.error('❌ Fetch payment error:', error);
+    throw error;
   }
 }
 
 /**
- * Register Razorpay routes
+ * Create Razorpay Transfer (for vendor payouts)
+ * Uses Razorpay Route for splitting payments
  */
-export function registerRazorpayIntegration(app: Hono) {
-  
-  /**
-   * POST /payments/razorpay/create-order
-   * Create Razorpay payment order
-   */
-  app.post(`${BASE_PATH}/payments/razorpay/create-order`, async (c) => {
-    try {
-      const { bookingId, amount, currency = 'INR', receipt, notes } = await c.req.json();
+export async function createRazorpayTransfer(
+  vendorAccountId: string,
+  amount: number,
+  paymentId: string,
+  notes: any = {}
+) {
+  try {
+    const response = await fetch(`${RAZORPAY_API_BASE}/payments/${paymentId}/transfers`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${RAZORPAY_AUTH}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        transfers: [
+          {
+            account: vendorAccountId,
+            amount: amount * 100, // Convert to paise
+            currency: 'INR',
+            notes: notes,
+            linked_account_notes: [notes]
+          }
+        ]
+      })
+    });
 
-      if (!bookingId || !amount) {
-        return c.json({
-          error: 'Missing required fields',
-          required: ['bookingId', 'amount']
-        }, 400);
-      }
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(`Transfer creation failed: ${JSON.stringify(error)}`);
+    }
 
-      const bookingData = await kv.get(`booking:${bookingId}`);
-      if (!bookingData || !bookingData.value) {
-        return c.json({ error: 'Booking not found' }, 404);
-      }
+    const transfer = await response.json();
+    console.log('✅ Razorpay transfer created:', transfer);
+    return transfer;
+  } catch (error) {
+    console.error('❌ Transfer creation error:', error);
+    throw error;
+  }
+}
 
-      const booking = bookingData.value;
+/**
+ * Process Refund via Razorpay
+ */
+export async function createRazorpayRefund(paymentId: string, amount: number, notes: any = {}) {
+  try {
+    const response = await fetch(`${RAZORPAY_API_BASE}/payments/${paymentId}/refund`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${RAZORPAY_AUTH}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        amount: amount * 100, // Convert to paise
+        notes: notes
+      })
+    });
 
-      const order = await razorpayRequest('POST', '/orders', {
-        amount: amount * 100,
-        currency,
-        receipt: receipt || `rcpt_${bookingId}`,
-        notes: notes || {
-          bookingId,
-          customerId: booking.customerId,
-          vendorId: booking.vendorId,
-          serviceId: booking.serviceId
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(`Refund creation failed: ${JSON.stringify(error)}`);
+    }
+
+    const refund = await response.json();
+    console.log('✅ Razorpay refund created:', refund.id);
+    return refund;
+  } catch (error) {
+    console.error('❌ Refund creation error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Create Linked Account for Vendor (Razorpay Route)
+ */
+export async function createLinkedAccount(vendor: any) {
+  try {
+    const response = await fetch(`${RAZORPAY_API_BASE}/accounts`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${RAZORPAY_AUTH}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        email: vendor.email,
+        phone: vendor.phone,
+        type: 'route',
+        legal_business_name: vendor.businessName,
+        business_type: 'individual', // or 'partnership', 'llp', 'private_limited', etc.
+        contact_name: vendor.fullName || vendor.ownerName,
+        profile: {
+          category: 'healthcare',
+          subcategory: 'clinic',
+          addresses: {
+            registered: {
+              street1: vendor.address?.street,
+              street2: vendor.address?.landmark,
+              city: vendor.address?.city,
+              state: vendor.address?.state,
+              postal_code: vendor.address?.pincode,
+              country: 'IN'
+            }
+          }
         },
-        partial_payment: false
-      });
+        legal_info: {
+          pan: vendor.documents?.find((d: any) => d.type === 'pan')?.number || '',
+          gst: vendor.gstNumber || ''
+        },
+        notes: {
+          vendorId: vendor.id,
+          roleId: vendor.roleId,
+          platform: 'warmpawz'
+        }
+      })
+    });
 
-      await kv.set(`payment:razorpay:order:${order.id}`, {
-        orderId: order.id,
-        bookingId,
-        amount: amount,
-        currency,
-        status: order.status,
-        createdAt: new Date(order.created_at * 1000).toISOString(),
-        receipt: order.receipt,
-        notes: order.notes
-      });
-
-      booking.paymentOrderId = order.id;
-      booking.paymentGateway = 'razorpay';
-      booking.paymentStatus = 'pending';
-      await kv.set(`booking:${bookingId}`, booking);
-
-      console.log(`✅ Razorpay order created: ${order.id} for booking ${bookingId}`);
-
-      return c.json({
-        success: true,
-        orderId: order.id,
-        amount: order.amount,
-        currency: order.currency,
-        keyId: (await getRazorpayConfig()).keyId,
-        bookingId
-      });
-
-    } catch (error: any) {
-      console.error('Error creating Razorpay order:', error);
-      return c.json({ error: error.message }, 500);
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(`Linked account creation failed: ${JSON.stringify(error)}`);
     }
-  });
 
+    const account = await response.json();
+    console.log('✅ Razorpay linked account created:', account.id);
+    return account;
+  } catch (error) {
+    console.error('❌ Linked account creation error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Razorpay Endpoints for Hono
+ */
+export function razorpayEndpoints(app: Hono) {
+  
   /**
-   * POST /payments/razorpay/verify
-   * Verify Razorpay payment signature
+   * GET /razorpay/config
+   * Get Razorpay configuration for frontend
    */
-  app.post(`${BASE_PATH}/payments/razorpay/verify`, async (c) => {
+  app.get('/make-server-3dd53475/razorpay/config', async (c) => {
     try {
-      const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = await c.req.json();
-
-      if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
-        return c.json({
-          error: 'Missing required fields',
-          required: ['razorpay_order_id', 'razorpay_payment_id', 'razorpay_signature']
-        }, 400);
-      }
-
-      const orderData = await kv.get(`payment:razorpay:order:${razorpay_order_id}`);
-      if (!orderData || !orderData.value) {
-        return c.json({ error: 'Order not found' }, 404);
-      }
-
-      const order = orderData.value;
-
-      const config = await getRazorpayConfig();
-      const crypto = await import('node:crypto');
-      
-      const expectedSignature = crypto.createHmac('sha256', config.keySecret)
-        .update(`${razorpay_order_id}|${razorpay_payment_id}`)
-        .digest('hex');
-
-      if (expectedSignature !== razorpay_signature) {
-        console.error(`❌ Payment signature verification failed for order ${razorpay_order_id}`);
-        return c.json({ error: 'Invalid payment signature' }, 400);
-      }
-
-      const payment = await razorpayRequest('GET', `/payments/${razorpay_payment_id}`);
-
-      await kv.set(`payment:razorpay:payment:${razorpay_payment_id}`, {
-        paymentId: razorpay_payment_id,
-        orderId: razorpay_order_id,
-        bookingId: order.bookingId,
-        amount: payment.amount / 100,
-        currency: payment.currency,
-        status: payment.status,
-        method: payment.method,
-        email: payment.email,
-        contact: payment.contact,
-        captured: payment.captured,
-        createdAt: new Date(payment.created_at * 1000).toISOString(),
-        fee: payment.fee ? payment.fee / 100 : 0,
-        tax: payment.tax ? payment.tax / 100 : 0
-      });
-
-      const bookingData = await kv.get(`booking:${order.bookingId}`);
-      if (bookingData && bookingData.value) {
-        const booking = bookingData.value;
-        booking.paymentId = razorpay_payment_id;
-        booking.paymentStatus = payment.captured ? 'captured' : 'authorized';
-        booking.status = 'confirmed';
-        booking.confirmedAt = new Date().toISOString();
-        await kv.set(`booking:${order.bookingId}`, booking);
-
-        await updateVendorEarnings(booking);
-      }
-
-      console.log(`✅ Payment verified and captured: ${razorpay_payment_id}`);
-
       return c.json({
         success: true,
-        verified: true,
-        paymentId: razorpay_payment_id,
-        orderId: razorpay_order_id,
-        bookingId: order.bookingId,
-        status: payment.status,
-        captured: payment.captured
+        key: RAZORPAY_KEY_ID,
+        enabled: !!RAZORPAY_KEY_ID && !!RAZORPAY_KEY_SECRET
       });
-
     } catch (error: any) {
-      console.error('Error verifying payment:', error);
+      console.error('Error fetching Razorpay config:', error);
       return c.json({ error: error.message }, 500);
     }
   });
 
   /**
-   * POST /payments/razorpay/webhook
+   * POST /razorpay/webhook
    * Handle Razorpay webhooks
    */
-  app.post(`${BASE_PATH}/payments/razorpay/webhook`, async (c) => {
+  app.post('/make-server-3dd53475/razorpay/webhook', async (c) => {
     try {
-      const body = await c.req.text();
-      const signature = c.req.header('x-razorpay-signature');
-
-      if (!signature) {
-        return c.json({ error: 'Missing signature' }, 400);
-      }
-
-      const config = await getRazorpayConfig();
-      const crypto = await import('node:crypto');
+      const body = await c.req.json();
+      const signature = c.req.header('X-Razorpay-Signature') || '';
       
-      const expectedSignature = crypto.createHmac('sha256', config.webhookSecret)
-        .update(body)
-        .digest('hex');
-
-      if (expectedSignature !== signature) {
-        console.error('❌ Webhook signature verification failed');
-        return c.json({ error: 'Invalid signature' }, 400);
-      }
-
-      const event = JSON.parse(body);
-
-      console.log(`📬 Webhook received: ${event.event} for ${event.payload.payment.entity.id}`);
-
-      switch (event.event) {
+      // Verify webhook signature
+      // TODO: Implement webhook signature verification
+      
+      console.log('📨 Razorpay webhook received:', body.event);
+      
+      // Handle different events
+      switch (body.event) {
         case 'payment.captured':
-          await handlePaymentCaptured(event.payload.payment.entity);
+          // Payment successful
+          console.log('✅ Payment captured:', body.payload.payment.entity.id);
           break;
-
+          
         case 'payment.failed':
-          await handlePaymentFailed(event.payload.payment.entity);
+          // Payment failed
+          console.log('❌ Payment failed:', body.payload.payment.entity.id);
           break;
-
+          
         case 'refund.created':
-          await handleRefundCreated(event.payload.refund.entity);
+          // Refund created
+          console.log('💰 Refund created:', body.payload.refund.entity.id);
           break;
-
-        case 'refund.processed':
-          await handleRefundProcessed(event.payload.refund.entity);
+          
+        case 'transfer.processed':
+          // Transfer processed
+          console.log('💸 Transfer processed:', body.payload.transfer.entity.id);
           break;
-
-        default:
-          console.log(`⚠️ Unhandled webhook event: ${event.event}`);
       }
-
-      return c.json({ success: true, event: event.event });
-
+      
+      return c.json({ success: true });
     } catch (error: any) {
-      console.error('Error processing webhook:', error);
+      console.error('Error handling webhook:', error);
       return c.json({ error: error.message }, 500);
     }
   });
 
-  /**
-   * POST /payments/razorpay/refund
-   * Process refund via Razorpay
-   */
-  app.post(`${BASE_PATH}/payments/razorpay/refund`, async (c) => {
-    try {
-      const { paymentId, amount, bookingId, reason } = await c.req.json();
-
-      if (!paymentId) {
-        return c.json({ error: 'Payment ID required' }, 400);
-      }
-
-      const paymentData = await kv.get(`payment:razorpay:payment:${paymentId}`);
-      if (!paymentData || !paymentData.value) {
-        return c.json({ error: 'Payment not found' }, 404);
-      }
-
-      const payment = paymentData.value;
-
-      const refund = await razorpayRequest('POST', `/payments/${paymentId}/refund`, {
-        amount: amount ? amount * 100 : undefined,
-        speed: 'normal',
-        notes: {
-          reason,
-          bookingId: bookingId || payment.bookingId
-        },
-        receipt: `refund_${Date.now()}`
-      });
-
-      await kv.set(`payment:razorpay:refund:${refund.id}`, {
-        refundId: refund.id,
-        paymentId,
-        bookingId: bookingId || payment.bookingId,
-        amount: refund.amount / 100,
-        currency: refund.currency,
-        status: refund.status,
-        createdAt: new Date(refund.created_at * 1000).toISOString(),
-        reason
-      });
-
-      if (bookingId || payment.bookingId) {
-        const bid = bookingId || payment.bookingId;
-        const bookingData = await kv.get(`booking:${bid}`);
-        if (bookingData && bookingData.value) {
-          const booking = bookingData.value;
-          booking.refundId = refund.id;
-          booking.refundStatus = refund.status;
-          booking.refundAmount = refund.amount / 100;
-          booking.refundedAt = new Date().toISOString();
-          await kv.set(`booking:${bid}`, booking);
-        }
-      }
-
-      console.log(`✅ Refund created: ${refund.id} for payment ${paymentId}`);
-
-      return c.json({
-        success: true,
-        refundId: refund.id,
-        amount: refund.amount / 100,
-        status: refund.status
-      });
-
-    } catch (error: any) {
-      console.error('Error processing refund:', error);
-      return c.json({ error: error.message }, 500);
-    }
-  });
-
-  /**
-   * GET /payments/razorpay/payment/:paymentId
-   * Get payment details
-   */
-  app.get(`${BASE_PATH}/payments/razorpay/payment/:paymentId`, async (c) => {
-    try {
-      const paymentId = c.req.param('paymentId');
-
-      const cached = await kv.get(`payment:razorpay:payment:${paymentId}`);
-      if (cached && cached.value) {
-        return c.json({ success: true, payment: cached.value });
-      }
-
-      const payment = await razorpayRequest('GET', `/payments/${paymentId}`);
-
-      return c.json({
-        success: true,
-        payment: {
-          paymentId: payment.id,
-          orderId: payment.order_id,
-          amount: payment.amount / 100,
-          currency: payment.currency,
-          status: payment.status,
-          method: payment.method,
-          captured: payment.captured,
-          createdAt: new Date(payment.created_at * 1000).toISOString()
-        }
-      });
-
-    } catch (error: any) {
-      console.error('Error fetching payment:', error);
-      return c.json({ error: error.message }, 500);
-    }
-  });
-
-  console.log('✅ Razorpay integration routes registered');
+  console.log('✅ Razorpay endpoints registered');
 }

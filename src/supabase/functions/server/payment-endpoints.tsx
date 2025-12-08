@@ -1,5 +1,6 @@
 import { Hono } from "npm:hono";
 import { sendSuccess, sendError } from "./response-utils.ts";
+import { createRazorpayOrder, verifyRazorpaySignature, fetchRazorpayPayment } from "./razorpay-integration.tsx";
 
 export function paymentEndpoints(app: Hono, kv: any) {
   
@@ -32,7 +33,7 @@ export function paymentEndpoints(app: Hono, kv: any) {
   // ============================================
   
   /**
-   * Initiate payment (Create Payment Intent)
+   * Initiate payment (Create Payment Intent) - REAL RAZORPAY
    * POST /make-server-3dd53475/ecommerce/payments/initiate
    */
   app.post("/make-server-3dd53475/ecommerce/payments/initiate", async (c) => {
@@ -45,6 +46,15 @@ export function paymentEndpoints(app: Hono, kv: any) {
 
       const paymentId = `pay_${Date.now()}_${Math.random().toString(36).substring(7)}`;
       
+      // Create REAL Razorpay Order
+      let razorpayOrder;
+      try {
+        razorpayOrder = await createRazorpayOrder(amount, bookingId, orderId);
+      } catch (error) {
+        console.error('❌ Razorpay order creation failed:', error);
+        return sendError(c, 'Payment gateway error. Please try again.', 500);
+      }
+      
       // Create Pending Payment
       const payment = {
         id: paymentId,
@@ -56,20 +66,21 @@ export function paymentEndpoints(app: Hono, kv: any) {
         paymentMethod,
         status: 'pending',
         createdAt: new Date().toISOString(),
-        // Simulate Gateway Data
-        gatewayOrderId: `order_${Math.random().toString(36).substring(7)}`,
-        currency: 'INR'
+        // Real Razorpay Data
+        razorpayOrderId: razorpayOrder.id,
+        razorpayAmount: razorpayOrder.amount,
+        currency: razorpayOrder.currency
       };
 
       await kv.set(`payment:${paymentId}`, payment);
-      console.log(`⏳ Payment Initiated: ${paymentId} for Booking: ${bookingId}`);
+      console.log(`⏳ Payment Initiated with Razorpay: ${paymentId} | Order: ${razorpayOrder.id}`);
 
       return sendSuccess(c, { 
         paymentId, 
-        orderId: payment.gatewayOrderId,
-        amount: payment.amount,
+        orderId: razorpayOrder.id,
+        amount: amount,
         currency: 'INR',
-        key: 'rzp_test_mock_key' // Mock Key for frontend to use
+        key: Deno.env.get('RAZORPAY_KEY_ID') // Real Razorpay Key for frontend
       });
     } catch (error) {
       return sendError(c, error, 500);
@@ -77,25 +88,39 @@ export function paymentEndpoints(app: Hono, kv: any) {
   });
 
   /**
-   * Verify Payment (Complete Transaction)
+   * Verify Payment (Complete Transaction) - REAL RAZORPAY
    * POST /make-server-3dd53475/payments/verify
    */
   app.post("/make-server-3dd53475/ecommerce/payments/verify", async (c) => {
     try {
-      const { paymentId, bookingId, gatewayPaymentId, signature } = await c.req.json();
+      const { paymentId, razorpayOrderId, razorpayPaymentId, razorpaySignature } = await c.req.json();
 
-      const payment = await kv.get(`payment:${paymentId}`);
+      const payment = await kv.get(`payment:${paymentId}` );
       if (!payment) {
         return sendError(c, 'Payment not found', 404);
       }
 
-      // Simulate Signature Verification
-      // In production, crypto.createHmac...
+      // Verify REAL Razorpay Signature
+      const isSignatureValid = await verifyRazorpaySignature(
+        razorpayOrderId,
+        razorpayPaymentId,
+        razorpaySignature
+      );
+      
+      if (!isSignatureValid) {
+        console.error('❌ Invalid Razorpay signature');
+        payment.status = 'failed';
+        payment.failedAt = new Date().toISOString();
+        payment.failureReason = 'Invalid signature';
+        await kv.set(`payment:${paymentId}`, payment);
+        return sendError(c, 'Invalid payment signature', 400);
+      }
       
       // Update Payment Status
       payment.status = 'completed';
       payment.completedAt = new Date().toISOString();
-      payment.gatewayPaymentId = gatewayPaymentId || `pay_g_${Date.now()}`;
+      payment.razorpayPaymentId = razorpayPaymentId;
+      payment.razorpaySignature = razorpaySignature;
       
       // Calculate Commission & Vendor Share
       const commissionRate = 10; // 10% Platform Fee
@@ -105,7 +130,7 @@ export function paymentEndpoints(app: Hono, kv: any) {
       await kv.set(`payment:${paymentId}`, payment);
 
       // Update Booking Status
-      const booking = await kv.get(`booking:${bookingId}`);
+      const booking = await kv.get(`booking:${payment.bookingId}`);
       if (booking) {
         booking.paymentStatus = 'paid';
         booking.paymentId = paymentId;
@@ -114,9 +139,9 @@ export function paymentEndpoints(app: Hono, kv: any) {
         booking.statusHistory.push({
           status: 'confirmed',
           timestamp: new Date().toISOString(),
-          note: 'Payment successful. Booking confirmed.'
+          note: 'Payment successful via Razorpay. Booking confirmed.'
         });
-        await kv.set(`booking:${bookingId}`, booking);
+        await kv.set(`booking:${payment.bookingId}`, booking);
       }
 
       // Add to History Lists (Idempotent)
@@ -150,8 +175,8 @@ export function paymentEndpoints(app: Hono, kv: any) {
         type: 'booking_confirmed',
         category: 'bookings',
         title: 'Payment Successful',
-        message: `Payment of ${payment.amount} successful for booking.`,
-        data: { paymentId, bookingId },
+        message: `Payment of ₹${payment.amount} successful for booking.`,
+        data: { paymentId, bookingId: payment.bookingId },
         priority: 'medium'
       });
 
@@ -162,15 +187,16 @@ export function paymentEndpoints(app: Hono, kv: any) {
         type: 'booking_confirmed',
         category: 'bookings',
         title: 'Payment Received',
-        message: `Received payment of ${payment.vendorAmount} for booking.`,
-        data: { paymentId, bookingId },
+        message: `Received payment of ₹${payment.vendorAmount} for booking.`,
+        data: { paymentId, bookingId: payment.bookingId },
         priority: 'medium'
       });
 
-      console.log(`✅ Payment Verified: ${paymentId}`);
-      return sendSuccess(c, { payment });
+      console.log(`✅ Razorpay Payment Verified: ${paymentId} | ${razorpayPaymentId}`);
+      return sendSuccess(c, { payment, success: true });
 
     } catch (error) {
+      console.error('Payment verification error:', error);
       return sendError(c, error, 500);
     }
   });
