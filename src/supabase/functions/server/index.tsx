@@ -72,6 +72,10 @@ import { registerSettlementAutomation } from "./settlement-automation.tsx";
 import { registerS3AutoUploader } from "./s3-auto-uploader.tsx";
 import { registerSmsEventNotifications } from "./sms-event-notifications.tsx";
 
+// ✅ NEW: Payment & Logistics Integrations
+import { registerRazorpayIntegration } from "./razorpay-integration.tsx";
+import { registerShiprocketIntegration } from "./shiprocket-integration.tsx";
+
 const app = new Hono();
 
 // Global Middleware
@@ -267,6 +271,10 @@ registerGooglePlacesService(app);
 registerSettlementAutomation(app);
 registerS3AutoUploader(app);
 const smsNotifications = registerSmsEventNotifications(app);
+
+// ✅ NEW: Payment & Logistics Integrations
+registerRazorpayIntegration(app);
+registerShiprocketIntegration(app);
 
 // 5. Staff Routes
 app.route('/make-server-3dd53475', staffAuthRoutes); // Register Auth FIRST to avoid shadowing by /staff wildcard
