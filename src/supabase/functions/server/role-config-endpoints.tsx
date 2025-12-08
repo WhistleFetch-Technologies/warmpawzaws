@@ -139,12 +139,24 @@ export function roleConfigEndpoints(app: Hono, kvStore: any) {
       
       console.log('✅ [ALLOWED-STYLES] Role found:', role.name, 'Styles:', role.serviceStyles);
       
+      // ✅ NEW: Calculate resolved capabilities
+      const resolvedCapabilities = {
+        canManageCentres: role.staffManagement?.enabled || false,
+        canManageStaff: role.staffManagement?.enabled || false,
+        canCreatePackages: (vendor.centres?.length > 0) && (role.capabilities?.includes('package_management') || false),
+        canOfferHomeServices: role.serviceStyles?.includes('at_home') || false,
+        canOfferTeleServices: role.serviceStyles?.includes('tele') || false,
+        canOfferCentreServices: role.serviceStyles?.includes('at_center') || false
+      };
+      
       return c.json({
         success: true,
         vendorId,
         roleId,
         roleName: role.name,
         allowedStyles: role.serviceStyles || [],
+        // ✅ NEW: Include resolved capabilities object
+        resolvedCapabilities,
         roleConfig: {
           id: role.id,
           name: role.name,
