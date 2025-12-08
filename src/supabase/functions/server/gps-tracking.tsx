@@ -246,9 +246,75 @@ export function registerGPSTrackingEndpoints(app: Hono) {
         session.duration = (now - start) / 1000;
       }
 
+      // Calculate ETA if destination is available
+      const booking = await kv.get(`booking:${sessionId}`);
+      if (booking && booking.location && session.currentLocation) {
+        const distanceToDestination = calculateDistance(
+          session.currentLocation.lat,
+          session.currentLocation.lng,
+          booking.location.lat,
+          booking.location.lng
+        );
+        
+        // Estimate ETA (assuming average speed of 20 km/h for walking/driving)
+        const avgSpeed = session.speed || 20; // km/h
+        const etaMinutes = (distanceToDestination / avgSpeed) * 60;
+        
+        session.eta = {
+          distanceKm: distanceToDestination,
+          etaMinutes: Math.round(etaMinutes),
+          estimatedArrival: new Date(Date.now() + etaMinutes * 60000).toISOString()
+        };
+      }
+
       return sendSuccess(c, { session });
     } catch (error) {
       console.error('Error fetching tracking data:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  /**
+   * GET /make-server-3dd53475/gps/tracking/:sessionId/eta
+   * Get real-time ETA to destination
+   */
+  app.get("/make-server-3dd53475/gps/tracking/:sessionId/eta", async (c) => {
+    try {
+      const { sessionId } = c.req.param();
+      
+      const sessionKey = `session:tracking:${sessionId}`;
+      const session = await kv.get(sessionKey);
+      
+      if (!session) {
+        return sendError(c, 'Session not found', 404);
+      }
+
+      const booking = await kv.get(`booking:${sessionId}`);
+      if (!booking || !booking.location) {
+        return sendError(c, 'Destination not found', 404);
+      }
+
+      const distanceToDestination = calculateDistance(
+        session.currentLocation.lat,
+        session.currentLocation.lng,
+        booking.location.lat,
+        booking.location.lng
+      );
+      
+      // Use actual speed if available, otherwise estimate
+      const avgSpeed = session.speed && session.speed > 0 ? session.speed : 20;
+      const etaMinutes = (distanceToDestination / avgSpeed) * 60;
+      
+      return sendSuccess(c, {
+        eta: {
+          distanceKm: distanceToDestination,
+          etaMinutes: Math.round(etaMinutes),
+          estimatedArrival: new Date(Date.now() + etaMinutes * 60000).toISOString(),
+          currentSpeed: session.speed || 0
+        }
+      });
+    } catch (error) {
+      console.error('Error calculating ETA:', error);
       return sendError(c, error, 500);
     }
   });
