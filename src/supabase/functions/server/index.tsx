@@ -104,6 +104,15 @@ import trainerProgressTracking from "./trainer-progress-tracking.tsx";
 import cafeTableManagement from "./cafe-table-management.tsx";
 import insuranceClaimManagement from "./insurance-claim-management.tsx";
 
+// ✅ NEW: Customer App Features (Manually Edited)
+import customerWalletTopup from "./customer-wallet-topup.tsx";
+import rewardsLoyaltySystem from "./rewards-loyalty-system.tsx";
+import referralSystem from "./referral-system.tsx";
+import customerMedicalRecords from "./customer-medical-records.tsx";
+
+// ✅ NEW: Customer App Enhancements
+import customerAppEnhancements from "./customer-app-enhancements.tsx";
+
 const app = new Hono();
 
 // Global Middleware
@@ -331,6 +340,15 @@ app.route('/make-server-3dd53475', groomerGallerySystem);
 app.route('/make-server-3dd53475', trainerProgressTracking);
 app.route('/make-server-3dd53475', cafeTableManagement);
 app.route('/make-server-3dd53475', insuranceClaimManagement);
+
+// ✅ NEW: Customer App Features (Manually Edited)
+app.route('/make-server-3dd53475', customerWalletTopup);
+app.route('/make-server-3dd53475', rewardsLoyaltySystem);
+app.route('/make-server-3dd53475', referralSystem);
+app.route('/make-server-3dd53475', customerMedicalRecords);
+
+// ✅ NEW: Customer App Enhancements
+app.route('/make-server-3dd53475', customerAppEnhancements);
 
 // 5. Staff Routes
 app.route('/make-server-3dd53475', staffAuthRoutes); // Register Auth FIRST to avoid shadowing by /staff wildcard
