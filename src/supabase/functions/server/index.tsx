@@ -90,10 +90,19 @@ import { reportBuilderEndpoints } from "./report-builder-endpoints.tsx";
 import { petIntelligenceEndpoints } from "./pet-intelligence-endpoints.tsx";
 import { transactionMonitoringEndpoints } from "./transaction-monitoring-endpoints.tsx";
 
-// ✅ NEW: Priority 2 Enhanced Endpoints (PRODUCTION-READY)
+// ✅ NEW: Priority 2 Enhanced Endpoints
 import enhancedServicePublishing from "./enhanced-service-publishing.tsx";
 import enhancedStaffAvailability from "./enhanced-staff-availability-with-conflicts.tsx";
 import enhancedGpsTracking from "./enhanced-gps-tracking.tsx";
+
+// ✅ NEW: Critical Flow Fixes (P0)
+import criticalFlowFixes from "./critical-flow-fixes.tsx";
+
+// ✅ NEW: P1 Vendor-Specific Features
+import groomerGallerySystem from "./groomer-gallery-system.tsx";
+import trainerProgressTracking from "./trainer-progress-tracking.tsx";
+import cafeTableManagement from "./cafe-table-management.tsx";
+import insuranceClaimManagement from "./insurance-claim-management.tsx";
 
 const app = new Hono();
 
@@ -309,10 +318,19 @@ reportBuilderEndpoints(app);
 petIntelligenceEndpoints(app);
 transactionMonitoringEndpoints(app);
 
-// ✅ NEW: Priority 2 Enhanced Endpoints (PRODUCTION-READY)
+// ✅ NEW: Priority 2 Enhanced Endpoints
 app.route('/make-server-3dd53475', enhancedServicePublishing);
 app.route('/make-server-3dd53475', enhancedStaffAvailability);
 app.route('/make-server-3dd53475', enhancedGpsTracking);
+
+// ✅ NEW: Critical Flow Fixes (P0)
+app.route('/make-server-3dd53475', criticalFlowFixes);
+
+// ✅ NEW: P1 Vendor-Specific Features
+app.route('/make-server-3dd53475', groomerGallerySystem);
+app.route('/make-server-3dd53475', trainerProgressTracking);
+app.route('/make-server-3dd53475', cafeTableManagement);
+app.route('/make-server-3dd53475', insuranceClaimManagement);
 
 // 5. Staff Routes
 app.route('/make-server-3dd53475', staffAuthRoutes); // Register Auth FIRST to avoid shadowing by /staff wildcard
