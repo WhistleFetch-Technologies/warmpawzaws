@@ -1516,6 +1516,10 @@
     height: 250px;
   }
 
+  .h-\[300px\] {
+    height: 300px;
+  }
+
   .h-\[350px\] {
     height: 350px;
   }
@@ -3018,6 +3022,10 @@
     border-color: var(--color-slate-200);
   }
 
+  .border-slate-300 {
+    border-color: var(--color-slate-300);
+  }
+
   .border-slate-700 {
     border-color: var(--color-slate-700);
   }
@@ -3686,6 +3694,10 @@
 
   .bg-slate-100 {
     background-color: var(--color-slate-100);
+  }
+
+  .bg-slate-200 {
+    background-color: var(--color-slate-200);
   }
 
   .bg-slate-300 {

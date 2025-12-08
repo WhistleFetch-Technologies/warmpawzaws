@@ -7,12 +7,14 @@ import { CatalogServicesManagement } from './admin/CatalogServicesManagement';
 import { PaymentRefundManagement } from './admin/PaymentRefundManagement';
 import { AdminServiceCatalog } from './admin/AdminServiceCatalog';
 import { ECommerceManagement } from './admin/ecommerce/ECommerceManagement';
-
 import { SupportCRM } from './admin/SupportCRM';
-
 import { RegionManager } from './admin/RegionManager';
 import { PlatformSettings } from './admin/PlatformSettings';
 import { FinanceManagement } from './admin/finance/FinanceManagement';
+import { PetInformationDashboard } from './admin/pets/PetInformationDashboard';
+import { RBACDashboard } from './admin/rbac/RBACDashboard';
+import { ReportsDashboard } from './admin/reports/ReportsDashboard';
+import { AdminOperationsDashboard } from './admin/operations/AdminOperationsDashboard';
 import { createClient } from '../utils/supabase/client';
 
 export function AdminApp() {
@@ -57,7 +59,12 @@ export function AdminApp() {
       'support': 'support',
       'events': 'events',
       'content': 'content',
-      'finance': 'finance'
+      'finance': 'finance',
+      'pet-info': 'pet-info',
+      'roles': 'roles',
+      'reports': 'reports',
+      'analytics': 'analytics',
+      'operations': 'operations'
     };
     
     const mappedView = viewMap[viewId];
@@ -123,8 +130,29 @@ export function AdminApp() {
     return <FinanceManagement onBack={() => setCurrentView('vendor-management')} />;
   }
 
+  // ✅ NEW: Enterprise Admin Capabilities
+  if (currentView === 'pet-info') {
+    return <PetInformationDashboard onBack={() => setCurrentView('vendor-management')} />;
+  }
+
+  if (currentView === 'roles') {
+    return <RBACDashboard onBack={() => setCurrentView('vendor-management')} />;
+  }
+
+  if (currentView === 'reports') {
+    return <ReportsDashboard onBack={() => setCurrentView('vendor-management')} />;
+  }
+
+  if (currentView === 'analytics') {
+    return <AdminDashboard session={session} onNavigate={handleNavigation} initialView="analytics" />;
+  }
+
   if (['events', 'content'].includes(currentView)) {
     return <AdminDashboard session={session} onNavigate={handleNavigation} initialView={currentView} />;
+  }
+
+  if (currentView === 'operations') {
+    return <AdminOperationsDashboard onBack={() => setCurrentView('vendor-management')} />;
   }
 
   return <AdminDashboard session={session} onNavigate={handleNavigation} />;
