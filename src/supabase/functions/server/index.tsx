@@ -90,6 +90,11 @@ import { reportBuilderEndpoints } from "./report-builder-endpoints.tsx";
 import { petIntelligenceEndpoints } from "./pet-intelligence-endpoints.tsx";
 import { transactionMonitoringEndpoints } from "./transaction-monitoring-endpoints.tsx";
 
+// ✅ NEW: Priority 2 Enhanced Endpoints (PRODUCTION-READY)
+import enhancedServicePublishing from "./enhanced-service-publishing.tsx";
+import enhancedStaffAvailability from "./enhanced-staff-availability-with-conflicts.tsx";
+import enhancedGpsTracking from "./enhanced-gps-tracking.tsx";
+
 const app = new Hono();
 
 // Global Middleware
@@ -303,6 +308,11 @@ rbacEndpoints(app);
 reportBuilderEndpoints(app);
 petIntelligenceEndpoints(app);
 transactionMonitoringEndpoints(app);
+
+// ✅ NEW: Priority 2 Enhanced Endpoints (PRODUCTION-READY)
+app.route('/make-server-3dd53475', enhancedServicePublishing);
+app.route('/make-server-3dd53475', enhancedStaffAvailability);
+app.route('/make-server-3dd53475', enhancedGpsTracking);
 
 // 5. Staff Routes
 app.route('/make-server-3dd53475', staffAuthRoutes); // Register Auth FIRST to avoid shadowing by /staff wildcard
