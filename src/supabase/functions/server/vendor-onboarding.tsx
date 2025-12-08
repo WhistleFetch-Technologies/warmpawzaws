@@ -128,6 +128,75 @@ export function vendorOnboardingEndpoints(app: Hono, kv: any) {
         sides: Object.keys(documents[key] || {})
       }))));
       
+      // ✅ CRITICAL: Validate phone and email
+      if (!formData.phone || !formData.email) {
+        console.error('❌ Missing required fields: phone or email');
+        return c.json({ 
+          error: 'Phone number and email are required',
+          missingFields: { phone: !formData.phone, email: !formData.email }
+        }, 400);
+      }
+      
+      // ✅ DUPLICATE CHECK: Check for existing vendors with same phone or email
+      console.log('🔍 Checking for duplicate phone/email...');
+      const cleanPhone = normalizePhone(formData.phone);
+      const cleanEmail = formData.email?.toLowerCase().trim();
+      
+      const allVendors = await kv.getByPrefix('vendor:vendor_');
+      
+      // Check for duplicate phone
+      const duplicatePhone = allVendors.find((v: any) => {
+        if (!v || !v.phone) return false;
+        const vendorCleanPhone = normalizePhone(v.phone);
+        return vendorCleanPhone === cleanPhone;
+      });
+      
+      if (duplicatePhone) {
+        console.error(`❌ Duplicate phone number found: ${formData.phone}`);
+        console.error(`   Existing vendor: ${duplicatePhone.id} (${duplicatePhone.fullName})`);
+        console.error(`   Status: ${duplicatePhone.status}`);
+        
+        // If the duplicate is the same vendor (same applicationId), allow update
+        if (duplicatePhone.applicationId === applicationId) {
+          console.log('ℹ️ Same application ID - allowing update of existing vendor');
+        } else {
+          return c.json({ 
+            error: 'A vendor with this phone number already exists',
+            duplicateField: 'phone',
+            existingVendor: {
+              id: duplicatePhone.id,
+              name: duplicatePhone.fullName || duplicatePhone.businessName,
+              status: duplicatePhone.status
+            }
+          }, 409); // 409 Conflict
+        }
+      }
+      
+      // Check for duplicate email
+      const duplicateEmail = allVendors.find((v: any) => {
+        if (!v || !v.email) return false;
+        const vendorCleanEmail = v.email?.toLowerCase().trim();
+        return vendorCleanEmail === cleanEmail;
+      });
+      
+      if (duplicateEmail && duplicateEmail.applicationId !== applicationId) {
+        console.error(`❌ Duplicate email found: ${formData.email}`);
+        console.error(`   Existing vendor: ${duplicateEmail.id} (${duplicateEmail.fullName})`);
+        console.error(`   Status: ${duplicateEmail.status}`);
+        
+        return c.json({ 
+          error: 'A vendor with this email already exists',
+          duplicateField: 'email',
+          existingVendor: {
+            id: duplicateEmail.id,
+            name: duplicateEmail.fullName || duplicateEmail.businessName,
+            status: duplicateEmail.status
+          }
+        }, 409); // 409 Conflict
+      }
+      
+      console.log('✅ No duplicates found, proceeding with onboarding...');
+      
       // Get role configuration to extract category and vendorType
       const role = await kv.get(`role:config:${roleId}`);
       
@@ -141,7 +210,6 @@ export function vendorOnboardingEndpoints(app: Hono, kv: any) {
       } : 'NOT FOUND');
       
       // Generate vendor ID from phone
-      const cleanPhone = normalizePhone(formData.phone);
       const vendorId = createVendorId(cleanPhone);
       
       // Convert documents object to array format for display

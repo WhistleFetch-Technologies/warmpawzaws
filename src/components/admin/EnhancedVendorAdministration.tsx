@@ -1,913 +1,579 @@
 import { useState, useEffect } from 'react';
 import { 
-  Users, Clock, CheckCircle, XCircle, AlertTriangle, RefreshCw, 
-  Filter, Search, TrendingUp, Activity, BarChart3, Download, Eye,
-  Calendar, MapPin, Phone, Mail, Award, FileText, Shield
+  Search, Phone, Building2, User, Filter, Eye, CheckCircle, XCircle, 
+  Clock, AlertCircle, RefreshCw, Download, Plus, Loader2, MapPin, AlertTriangle
 } from 'lucide-react';
 import { Button } from '../ui/button';
-import { Card } from '../ui/card';
-import { Badge } from '../ui/badge';
 import { Input } from '../ui/input';
+import { Badge } from '../ui/badge';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../ui/dialog';
-import { toast } from 'sonner';
-
-/**
- * Enhanced Vendor Administration
- * Clear tabs for different vendor statuses with working filters and metrics in popups
- */
+import { ApplicationDetailModal } from './ApplicationDetailModal';
+import { AddVendorModal } from './AddVendorModal';
+import { DuplicateVendorManagement } from './DuplicateVendorManagement';
 
 interface Vendor {
   id: string;
   fullName: string;
   businessName?: string;
-  roleName: string;
-  serviceCategory: string;
-  serviceStyle: string;
   phone: string;
   email: string;
-  city: string;
-  state: string;
+  category: string;
+  roleId?: string;
+  services: string[];
   status: 'pending_approval' | 'approved' | 'rejected' | 'pending_reverification';
-  submittedAt?: string;
+  submittedAt: string;
   approvedAt?: string;
   rejectedAt?: string;
-  rejectionReason?: string;
-  totalServices?: number;
-  activeServices?: number;
+  city?: string;
+  state?: string;
+  address?: string;
   rating?: number;
   totalBookings?: number;
-  revenue?: number;
-  lastActivityAt?: string;
-  vendorType?: string;
+  isActive?: boolean;
 }
-
-interface VendorStats {
-  total: number;
-  pending: number;
-  approved: number;
-  rejected: number;
-  reverification: number;
-  activeToday: number;
-  newThisWeek: number;
-  conversionRate: number;
-  avgApprovalTime: number;
-}
-
-type TabType = 'pending' | 'approved' | 'reverification' | 'rejected';
 
 interface EnhancedVendorAdministrationProps {
   onNavigate?: (view: string) => void;
 }
 
-export function EnhancedVendorAdministration({ onNavigate }: EnhancedVendorAdministrationProps = {}) {
-  const [activeTab, setActiveTab] = useState<TabType>('pending');
+type TabType = 'new_applications' | 'approved' | 'rejected' | 'reverification' | 'duplicates';
+type RoleFilterType = 'all' | 'veterinarian' | 'pet_groomer' | 'pet_trainer' | 'pet_walker' | 'boarding_center' | 'pet_behaviourist' | 'pet_nutritionist' | 'pet_breeder';
+
+export function EnhancedVendorAdministration({ onNavigate }: EnhancedVendorAdministrationProps) {
+  const [activeTab, setActiveTab] = useState<TabType>('new_applications');
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [filteredVendors, setFilteredVendors] = useState<Vendor[]>([]);
-  const [stats, setStats] = useState<VendorStats | null>(null);
   const [loading, setLoading] = useState(true);
-  
-  // Filters
   const [searchQuery, setSearchQuery] = useState('');
-  const [roleFilter, setRoleFilter] = useState('all');
-  const [styleFilter, setStyleFilter] = useState('all');
-  const [cityFilter, setCityFilter] = useState('all');
-  
-  // Modal states
-  const [showStatsModal, setShowStatsModal] = useState(false);
+  const [roleFilter, setRoleFilter] = useState<RoleFilterType>('all');
   const [selectedVendor, setSelectedVendor] = useState<Vendor | null>(null);
-  const [showVendorDetail, setShowVendorDetail] = useState(false);
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [showAddVendor, setShowAddVendor] = useState(false);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  // Stats
+  const [stats, setStats] = useState({
+    newApplications: 0,
+    approved: 0,
+    rejected: 0,
+    reverification: 0
+  });
 
   useEffect(() => {
     loadVendors();
-    loadStats();
   }, []);
 
   useEffect(() => {
     applyFilters();
-  }, [vendors, activeTab, searchQuery, roleFilter, styleFilter, cityFilter]);
+  }, [vendors, activeTab, searchQuery, roleFilter]);
 
-  // Load all vendors
   const loadVendors = async () => {
     try {
       setLoading(true);
-      
-      const response = await fetch(`${API_BASE}/admin/vendors/all`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to load vendors');
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendors/all`,
+        {
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`
+          }
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        const vendorList = data.vendors || [];
+        
+        // Deduplicate vendors by ID to prevent duplicate key errors
+        // Filter out any vendors without IDs first
+        const validVendors = vendorList.filter((v: Vendor) => v.id);
+        
+        const uniqueVendors = Array.from(
+          new Map(validVendors.map((v: Vendor) => [v.id, v])).values()
+        );
+        
+        console.log('📊 Loaded vendors:', {
+          total: vendorList.length,
+          valid: validVendors.length,
+          unique: uniqueVendors.length,
+          duplicatesRemoved: validVendors.length - uniqueVendors.length
+        });
+        
+        setVendors(uniqueVendors);
+
+        // Calculate stats
+        setStats({
+          newApplications: uniqueVendors.filter((v: Vendor) => v.status === 'pending_approval').length,
+          approved: uniqueVendors.filter((v: Vendor) => v.status === 'approved').length,
+          rejected: uniqueVendors.filter((v: Vendor) => v.status === 'rejected').length,
+          reverification: uniqueVendors.filter((v: Vendor) => v.status === 'pending_reverification').length
+        });
       }
-      
-      const data = await response.json();
-      setVendors(data.vendors || []);
-      
     } catch (error) {
       console.error('Error loading vendors:', error);
-      toast.error('Failed to load vendors');
     } finally {
       setLoading(false);
     }
   };
 
-  // Load statistics
-  const loadStats = async () => {
-    try {
-      const response = await fetch(`${API_BASE}/admin/vendors/stats-enhanced`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        setStats(data.stats);
-      }
-    } catch (error) {
-      console.error('Error loading stats:', error);
-    }
-  };
-
-  // Apply filters
   const applyFilters = () => {
-    let filtered = vendors;
+    let filtered = [...vendors];
 
     // Filter by tab (status)
     switch (activeTab) {
-      case 'pending':
+      case 'new_applications':
         filtered = filtered.filter(v => v.status === 'pending_approval');
         break;
       case 'approved':
         filtered = filtered.filter(v => v.status === 'approved');
         break;
-      case 'reverification':
-        filtered = filtered.filter(v => v.status === 'pending_reverification');
-        break;
       case 'rejected':
         filtered = filtered.filter(v => v.status === 'rejected');
         break;
+      case 'reverification':
+        filtered = filtered.filter(v => v.status === 'pending_reverification');
+        break;
+      case 'duplicates':
+        filtered = filtered.filter(v => v.id.includes('duplicate'));
+        break;
     }
 
-    // Search filter
+    // Filter by role
+    if (roleFilter !== 'all') {
+      filtered = filtered.filter(v => v.roleId === roleFilter || v.category === roleFilter);
+    }
+
+    // Filter by search query (mobile, name, business name)
     if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
+      const query = searchQuery.toLowerCase().trim();
       filtered = filtered.filter(v => 
+        v.phone?.includes(query) ||
         v.fullName?.toLowerCase().includes(query) ||
         v.businessName?.toLowerCase().includes(query) ||
-        v.phone?.includes(query) ||
-        v.email?.toLowerCase().includes(query) ||
-        v.city?.toLowerCase().includes(query)
+        v.email?.toLowerCase().includes(query)
       );
-    }
-
-    // Role filter
-    if (roleFilter !== 'all') {
-      filtered = filtered.filter(v => v.roleName === roleFilter);
-    }
-
-    // Service style filter
-    if (styleFilter !== 'all') {
-      filtered = filtered.filter(v => v.serviceStyle === styleFilter);
-    }
-
-    // City filter
-    if (cityFilter !== 'all') {
-      filtered = filtered.filter(v => v.city === cityFilter);
     }
 
     setFilteredVendors(filtered);
   };
 
-  // Get unique values for filters
-  const getUniqueRoles = () => {
-    const roles = new Set(vendors.map(v => v.roleName).filter(Boolean));
-    return Array.from(roles).sort();
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'pending_approval':
+        return <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200">Pending</Badge>;
+      case 'approved':
+        return <Badge className="bg-green-100 text-green-800 border-green-200">Approved</Badge>;
+      case 'rejected':
+        return <Badge className="bg-red-100 text-red-800 border-red-200">Rejected</Badge>;
+      case 'pending_reverification':
+        return <Badge className="bg-orange-100 text-orange-800 border-orange-200">Re-verification</Badge>;
+      default:
+        return <Badge className="bg-gray-100 text-gray-800">Unknown</Badge>;
+    }
   };
 
-  const getUniqueCities = () => {
-    const cities = new Set(vendors.map(v => v.city).filter(Boolean));
-    return Array.from(cities).sort();
-  };
-
-  // Reset filters
-  const resetFilters = () => {
-    setSearchQuery('');
-    setRoleFilter('all');
-    setStyleFilter('all');
-    setCityFilter('all');
-  };
-
-  // Quick stats for current tab
-  const getTabStats = () => {
-    return {
-      total: filteredVendors.length,
-      newToday: filteredVendors.filter(v => {
-        const date = new Date(v.submittedAt || '');
-        const today = new Date();
-        return date.toDateString() === today.toDateString();
-      }).length,
-      newThisWeek: filteredVendors.filter(v => {
-        const date = new Date(v.submittedAt || '');
-        const weekAgo = new Date();
-        weekAgo.setDate(weekAgo.getDate() - 7);
-        return date >= weekAgo;
-      }).length
+  const getRoleBadge = (roleId: string) => {
+    const roleColors: any = {
+      'veterinarian': 'bg-blue-50 text-blue-700 border-blue-200',
+      'pet_groomer': 'bg-purple-50 text-purple-700 border-purple-200',
+      'pet_trainer': 'bg-green-50 text-green-700 border-green-200',
+      'pet_walker': 'bg-pink-50 text-pink-700 border-pink-200',
+      'boarding_center': 'bg-indigo-50 text-indigo-700 border-indigo-200',
+      'pet_behaviourist': 'bg-orange-50 text-orange-700 border-orange-200',
+      'pet_nutritionist': 'bg-teal-50 text-teal-700 border-teal-200',
+      'pet_breeder': 'bg-amber-50 text-amber-700 border-amber-200'
     };
+
+    const roleNames: any = {
+      'veterinarian': 'Veterinarian',
+      'pet_groomer': 'Groomer',
+      'pet_trainer': 'Trainer',
+      'pet_walker': 'Walker',
+      'boarding_center': 'Boarding',
+      'pet_behaviourist': 'Behaviourist',
+      'pet_nutritionist': 'Nutritionist',
+      'pet_breeder': 'Breeder'
+    };
+
+    return (
+      <Badge className={`${roleColors[roleId] || 'bg-gray-50 text-gray-700 border-gray-200'} border`}>
+        {roleNames[roleId] || roleId}
+      </Badge>
+    );
   };
 
-  const tabStats = getTabStats();
-
-  // Approve vendor
-  const approveVendor = async (vendor: Vendor) => {
-    if (!confirm(`Approve ${vendor.fullName || vendor.businessName}?`)) return;
-
-    try {
-      const response = await fetch(`${API_BASE}/admin/vendors/${vendor.id}/approve`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
-        },
-        body: JSON.stringify({
-          adminId: 'admin-user',
-          adminName: 'Admin'
-        })
-      });
-
-      if (!response.ok) throw new Error('Approval failed');
-
-      toast.success('Vendor approved successfully');
-      loadVendors();
-      loadStats();
-    } catch (error) {
-      toast.error('Failed to approve vendor');
-    }
+  const formatDate = (dateString: string) => {
+    if (!dateString) return 'N/A';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', { 
+      year: 'numeric', 
+      month: 'short', 
+      day: 'numeric' 
+    });
   };
 
-  // Reject vendor
-  const rejectVendor = async (vendor: Vendor) => {
-    const reason = prompt('Enter rejection reason:');
-    if (!reason) return;
-
-    try {
-      const response = await fetch(`${API_BASE}/admin/vendors/${vendor.id}/reject`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
-        },
-        body: JSON.stringify({
-          adminId: 'admin-user',
-          adminName: 'Admin',
-          reason
-        })
-      });
-
-      if (!response.ok) throw new Error('Rejection failed');
-
-      toast.success('Vendor rejected');
-      loadVendors();
-      loadStats();
-    } catch (error) {
-      toast.error('Failed to reject vendor');
-    }
+  const viewDetails = (vendor: Vendor) => {
+    setSelectedVendor(vendor);
+    setShowDetailModal(true);
   };
 
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4">
+      <div className="bg-white border-b border-gray-200 px-8 py-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-gray-900 mb-1">Vendor Administration</h1>
-            <p className="text-gray-600">Manage vendor applications and accounts</p>
+            <h1 className="text-2xl font-bold text-gray-900">Vendor Administration</h1>
+            <p className="text-sm text-gray-600 mt-1">Manage vendor applications and accounts</p>
           </div>
           <div className="flex items-center gap-3">
-            <Button
-              variant="outline"
+            <Button 
+              variant="outline" 
+              className="gap-2"
               onClick={loadVendors}
-              disabled={loading}
             >
-              <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+              <RefreshCw className="w-4 h-4" />
               Refresh
             </Button>
-            <Button
-              variant="outline"
-              onClick={() => setShowStatsModal(true)}
+            <Button 
+              variant="outline" 
+              className="gap-2"
             >
-              <BarChart3 className="w-4 h-4 mr-2" />
-              View Analytics
+              <Download className="w-4 h-4" />
+              Export
+            </Button>
+            <Button 
+              className="gap-2 bg-[#FF8C42] hover:bg-[#FF7A2E] text-white"
+              onClick={() => setShowAddVendor(true)}
+            >
+              <Plus className="w-4 h-4" />
+              Add Vendor
             </Button>
           </div>
         </div>
       </div>
 
-      {/* Quick Stats Cards */}
-      <div className="px-6 py-6">
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
-          {/* Pending Applications */}
-          <Card 
-            className={`p-4 cursor-pointer transition-all ${activeTab === 'pending' ? 'ring-2 ring-orange-500' : ''}`}
-            onClick={() => setActiveTab('pending')}
+      {/* Stats Cards */}
+      <div className="px-8 py-6">
+        <div className="grid grid-cols-4 gap-4">
+          <button
+            onClick={() => setActiveTab('new_applications')}
+            className={`bg-white rounded-xl p-5 border-2 transition-all ${
+              activeTab === 'new_applications' 
+                ? 'border-yellow-500 shadow-lg' 
+                : 'border-gray-200 hover:border-yellow-300'
+            }`}
           >
             <div className="flex items-center justify-between mb-2">
-              <Clock className="w-5 h-5 text-orange-600" />
-              <Badge variant="secondary" className="bg-orange-100 text-orange-700">
-                {stats?.pending || 0}
-              </Badge>
-            </div>
-            <h3 className="text-gray-900 mb-1">Pending Approval</h3>
-            <p className="text-gray-600">New applications</p>
-          </Card>
-
-          {/* Approved Vendors */}
-          <Card 
-            className={`p-4 cursor-pointer transition-all ${activeTab === 'approved' ? 'ring-2 ring-green-500' : ''}`}
-            onClick={() => setActiveTab('approved')}
-          >
-            <div className="flex items-center justify-between mb-2">
-              <CheckCircle className="w-5 h-5 text-green-600" />
-              <Badge variant="secondary" className="bg-green-100 text-green-700">
-                {stats?.approved || 0}
-              </Badge>
-            </div>
-            <h3 className="text-gray-900 mb-1">Approved</h3>
-            <p className="text-gray-600">Active vendors</p>
-          </Card>
-
-          {/* Re-verification */}
-          <Card 
-            className={`p-4 cursor-pointer transition-all ${activeTab === 'reverification' ? 'ring-2 ring-yellow-500' : ''}`}
-            onClick={() => setActiveTab('reverification')}
-          >
-            <div className="flex items-center justify-between mb-2">
-              <AlertTriangle className="w-5 h-5 text-yellow-600" />
-              <Badge variant="secondary" className="bg-yellow-100 text-yellow-700">
-                {stats?.reverification || 0}
-              </Badge>
-            </div>
-            <h3 className="text-gray-900 mb-1">Re-verification</h3>
-            <p className="text-gray-600">Needs review</p>
-          </Card>
-
-          {/* Rejected */}
-          <Card 
-            className={`p-4 cursor-pointer transition-all ${activeTab === 'rejected' ? 'ring-2 ring-red-500' : ''}`}
-            onClick={() => setActiveTab('rejected')}
-          >
-            <div className="flex items-center justify-between mb-2">
-              <XCircle className="w-5 h-5 text-red-600" />
-              <Badge variant="secondary" className="bg-red-100 text-red-700">
-                {stats?.rejected || 0}
-              </Badge>
-            </div>
-            <h3 className="text-gray-900 mb-1">Rejected</h3>
-            <p className="text-gray-600">Declined apps</p>
-          </Card>
-
-          {/* Total */}
-          <Card className="p-4 bg-gradient-to-br from-orange-50 to-orange-100">
-            <div className="flex items-center justify-between mb-2">
-              <Users className="w-5 h-5 text-orange-600" />
-              <Badge className="bg-orange-600">
-                {stats?.total || 0}
-              </Badge>
-            </div>
-            <h3 className="text-gray-900 mb-1">Total Vendors</h3>
-            <p className="text-gray-600">All time</p>
-          </Card>
-        </div>
-
-        {/* Filters Bar */}
-        <Card className="p-4 mb-6">
-          <div className="flex items-center gap-4 flex-wrap">
-            {/* Search */}
-            <div className="flex-1 min-w-[250px]">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <Input
-                  placeholder="Search by name, phone, email, city..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10"
-                />
+              <div className={`p-2 rounded-lg ${
+                activeTab === 'new_applications' ? 'bg-yellow-100' : 'bg-gray-50'
+              }`}>
+                <Clock className={`w-5 h-5 ${
+                  activeTab === 'new_applications' ? 'text-yellow-600' : 'text-gray-600'
+                }`} />
               </div>
+              <span className="text-3xl font-bold text-gray-900">{stats.newApplications}</span>
+            </div>
+            <div className="text-left">
+              <p className="text-sm font-medium text-gray-900">New Applications</p>
+              <p className="text-xs text-gray-500 mt-1">Pending approval</p>
+            </div>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('approved')}
+            className={`bg-white rounded-xl p-5 border-2 transition-all ${
+              activeTab === 'approved' 
+                ? 'border-green-500 shadow-lg' 
+                : 'border-gray-200 hover:border-green-300'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <div className={`p-2 rounded-lg ${
+                activeTab === 'approved' ? 'bg-green-100' : 'bg-gray-50'
+              }`}>
+                <CheckCircle className={`w-5 h-5 ${
+                  activeTab === 'approved' ? 'text-green-600' : 'text-gray-600'
+                }`} />
+              </div>
+              <span className="text-3xl font-bold text-gray-900">{stats.approved}</span>
+            </div>
+            <div className="text-left">
+              <p className="text-sm font-medium text-gray-900">Approved Vendors</p>
+              <p className="text-xs text-gray-500 mt-1">Active accounts</p>
+            </div>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('rejected')}
+            className={`bg-white rounded-xl p-5 border-2 transition-all ${
+              activeTab === 'rejected' 
+                ? 'border-red-500 shadow-lg' 
+                : 'border-gray-200 hover:border-red-300'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <div className={`p-2 rounded-lg ${
+                activeTab === 'rejected' ? 'bg-red-100' : 'bg-gray-50'
+              }`}>
+                <XCircle className={`w-5 h-5 ${
+                  activeTab === 'rejected' ? 'text-red-600' : 'text-gray-600'
+                }`} />
+              </div>
+              <span className="text-3xl font-bold text-gray-900">{stats.rejected}</span>
+            </div>
+            <div className="text-left">
+              <p className="text-sm font-medium text-gray-900">Rejected</p>
+              <p className="text-xs text-gray-500 mt-1">Declined applications</p>
+            </div>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('reverification')}
+            className={`bg-white rounded-xl p-5 border-2 transition-all ${
+              activeTab === 'reverification' 
+                ? 'border-orange-500 shadow-lg' 
+                : 'border-gray-200 hover:border-orange-300'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <div className={`p-2 rounded-lg ${
+                activeTab === 'reverification' ? 'bg-orange-100' : 'bg-gray-50'
+              }`}>
+                <AlertCircle className={`w-5 h-5 ${
+                  activeTab === 'reverification' ? 'text-orange-600' : 'text-gray-600'
+                }`} />
+              </div>
+              <span className="text-3xl font-bold text-gray-900">{stats.reverification}</span>
+            </div>
+            <div className="text-left">
+              <p className="text-sm font-medium text-gray-900">Re-verification</p>
+              <p className="text-xs text-gray-500 mt-1">Requires review</p>
+            </div>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('duplicates')}
+            className={`bg-white rounded-xl p-5 border-2 transition-all ${
+              activeTab === 'duplicates' 
+                ? 'border-red-500 shadow-lg' 
+                : 'border-gray-200 hover:border-red-300'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <div className={`p-2 rounded-lg ${
+                activeTab === 'duplicates' ? 'bg-red-100' : 'bg-gray-50'
+              }`}>
+                <AlertTriangle className={`w-5 h-5 ${
+                  activeTab === 'duplicates' ? 'text-red-600' : 'text-gray-600'
+                }`} />
+              </div>
+              <span className="text-3xl font-bold text-gray-900">{stats.reverification}</span>
+            </div>
+            <div className="text-left">
+              <p className="text-sm font-medium text-gray-900">Duplicates</p>
+              <p className="text-xs text-gray-500 mt-1">Identified duplicates</p>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      {/* Search and Filters */}
+      <div className="px-8 pb-6">
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <div className="flex items-center gap-4">
+            {/* Search */}
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <Input
+                placeholder="Search by mobile number, name, or business name..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10 bg-gray-50 border-gray-200"
+              />
             </div>
 
             {/* Role Filter */}
-            <select
-              value={roleFilter}
-              onChange={(e) => setRoleFilter(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg"
-            >
-              <option value="all">All Roles</option>
-              {getUniqueRoles().map(role => (
-                <option key={role} value={role}>{role}</option>
-              ))}
-            </select>
-
-            {/* Service Style Filter */}
-            <select
-              value={styleFilter}
-              onChange={(e) => setStyleFilter(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg"
-            >
-              <option value="all">All Styles</option>
-              <option value="at_home">At Home</option>
-              <option value="at_center">At Center</option>
-              <option value="both">Both</option>
-              <option value="tele">Tele</option>
-            </select>
-
-            {/* City Filter */}
-            <select
-              value={cityFilter}
-              onChange={(e) => setCityFilter(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg"
-            >
-              <option value="all">All Cities</option>
-              {getUniqueCities().map(city => (
-                <option key={city} value={city}>{city}</option>
-              ))}
-            </select>
-
-            {/* Reset Filters */}
-            {(searchQuery || roleFilter !== 'all' || styleFilter !== 'all' || cityFilter !== 'all') && (
-              <Button variant="outline" onClick={resetFilters} size="sm">
-                <XCircle className="w-4 h-4 mr-2" />
-                Clear Filters
-              </Button>
-            )}
-
-            {/* Results Count */}
-            <div className="ml-auto text-gray-600">
-              Showing <span className="font-semibold text-gray-900">{filteredVendors.length}</span> vendors
+            <div className="flex items-center gap-2">
+              <Filter className="w-4 h-4 text-gray-500" />
+              <select
+                value={roleFilter}
+                onChange={(e) => setRoleFilter(e.target.value as RoleFilterType)}
+                className="px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
+              >
+                <option value="all">All Roles</option>
+                <option value="veterinarian">Veterinarian</option>
+                <option value="pet_groomer">Groomer</option>
+                <option value="pet_trainer">Trainer</option>
+                <option value="pet_walker">Walker</option>
+                <option value="boarding_center">Boarding Center</option>
+                <option value="pet_behaviourist">Behaviourist</option>
+                <option value="pet_nutritionist">Nutritionist</option>
+                <option value="pet_breeder">Breeder</option>
+              </select>
             </div>
-          </div>
-        </Card>
 
-        {/* Tab Statistics */}
-        <div className="flex items-center gap-4 mb-4">
-          <div className="flex items-center gap-2 text-gray-600">
-            <Activity className="w-4 h-4" />
-            <span>
-              <span className="font-semibold text-gray-900">{tabStats.newToday}</span> new today
-            </span>
-          </div>
-          <div className="flex items-center gap-2 text-gray-600">
-            <TrendingUp className="w-4 h-4" />
-            <span>
-              <span className="font-semibold text-gray-900">{tabStats.newThisWeek}</span> this week
-            </span>
+            {/* Result Count */}
+            <div className="text-sm text-gray-600 whitespace-nowrap">
+              {filteredVendors.length} {filteredVendors.length === 1 ? 'vendor' : 'vendors'}
+            </div>
           </div>
         </div>
-
-        {/* Vendors Table */}
-        <Card>
-          {loading ? (
-            <div className="p-12 text-center">
-              <RefreshCw className="w-8 h-8 animate-spin text-gray-400 mx-auto mb-3" />
-              <p className="text-gray-600">Loading vendors...</p>
-            </div>
-          ) : filteredVendors.length === 0 ? (
-            <div className="p-12 text-center">
-              <Users className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-              <h3 className="text-gray-900 mb-1">No vendors found</h3>
-              <p className="text-gray-600">
-                {searchQuery || roleFilter !== 'all' || styleFilter !== 'all' || cityFilter !== 'all'
-                  ? 'Try adjusting your filters'
-                  : 'No vendors in this category yet'}
-              </p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-gray-700">Vendor</th>
-                    <th className="px-6 py-3 text-left text-gray-700">Role</th>
-                    <th className="px-6 py-3 text-left text-gray-700">Service Style</th>
-                    <th className="px-6 py-3 text-left text-gray-700">Location</th>
-                    <th className="px-6 py-3 text-left text-gray-700">Contact</th>
-                    {activeTab === 'approved' && (
-                      <>
-                        <th className="px-6 py-3 text-left text-gray-700">Services</th>
-                        <th className="px-6 py-3 text-left text-gray-700">Rating</th>
-                      </>
-                    )}
-                    {activeTab === 'pending' && (
-                      <th className="px-6 py-3 text-left text-gray-700">Submitted</th>
-                    )}
-                    {activeTab === 'rejected' && (
-                      <th className="px-6 py-3 text-left text-gray-700">Reason</th>
-                    )}
-                    <th className="px-6 py-3 text-right text-gray-700">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {filteredVendors.map((vendor) => (
-                    <tr key={vendor.id} className="hover:bg-gray-50">
-                      {/* Vendor Info */}
-                      <td className="px-6 py-4">
-                        <div>
-                          <div className="font-medium text-gray-900">
-                            {vendor.fullName || vendor.businessName}
-                          </div>
-                          {vendor.businessName && vendor.fullName && (
-                            <div className="text-gray-600">{vendor.businessName}</div>
-                          )}
-                          <div className="text-gray-500" style={{ fontSize: '0.875rem' }}>
-                            ID: {vendor.id.substring(0, 8)}...
-                          </div>
-                        </div>
-                      </td>
-
-                      {/* Role */}
-                      <td className="px-6 py-4">
-                        <Badge variant="outline">{vendor.roleName}</Badge>
-                      </td>
-
-                      {/* Service Style */}
-                      <td className="px-6 py-4">
-                        <Badge 
-                          variant="secondary"
-                          className={
-                            vendor.serviceStyle === 'at_home' ? 'bg-blue-100 text-blue-700' :
-                            vendor.serviceStyle === 'at_center' ? 'bg-purple-100 text-purple-700' :
-                            vendor.serviceStyle === 'both' ? 'bg-green-100 text-green-700' :
-                            'bg-orange-100 text-orange-700'
-                          }
-                        >
-                          {vendor.serviceStyle === 'at_home' ? 'At Home' :
-                           vendor.serviceStyle === 'at_center' ? 'At Center' :
-                           vendor.serviceStyle === 'both' ? 'Both' :
-                           'Tele'}
-                        </Badge>
-                      </td>
-
-                      {/* Location */}
-                      <td className="px-6 py-4">
-                        <div className="flex items-start gap-2">
-                          <MapPin className="w-4 h-4 text-gray-400 mt-0.5" />
-                          <div>
-                            <div className="text-gray-900">{vendor.city}</div>
-                            <div className="text-gray-600">{vendor.state}</div>
-                          </div>
-                        </div>
-                      </td>
-
-                      {/* Contact */}
-                      <td className="px-6 py-4">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2 text-gray-700">
-                            <Phone className="w-3 h-3 text-gray-400" />
-                            <span style={{ fontSize: '0.875rem' }}>{vendor.phone}</span>
-                          </div>
-                          <div className="flex items-center gap-2 text-gray-700">
-                            <Mail className="w-3 h-3 text-gray-400" />
-                            <span style={{ fontSize: '0.875rem' }}>{vendor.email}</span>
-                          </div>
-                        </div>
-                      </td>
-
-                      {/* Approved: Services & Rating */}
-                      {activeTab === 'approved' && (
-                        <>
-                          <td className="px-6 py-4">
-                            <div className="text-gray-900">
-                              {vendor.activeServices || 0} active
-                            </div>
-                            <div className="text-gray-600">
-                              of {vendor.totalServices || 0} total
-                            </div>
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-1">
-                              <Award className="w-4 h-4 text-yellow-500" />
-                              <span className="text-gray-900">
-                                {vendor.rating?.toFixed(1) || 'N/A'}
-                              </span>
-                            </div>
-                          </td>
-                        </>
-                      )}
-
-                      {/* Pending: Submitted Date */}
-                      {activeTab === 'pending' && (
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-2 text-gray-700">
-                            <Calendar className="w-4 h-4 text-gray-400" />
-                            <span style={{ fontSize: '0.875rem' }}>
-                              {vendor.submittedAt 
-                                ? new Date(vendor.submittedAt).toLocaleDateString()
-                                : 'N/A'}
-                            </span>
-                          </div>
-                        </td>
-                      )}
-
-                      {/* Rejected: Reason */}
-                      {activeTab === 'rejected' && (
-                        <td className="px-6 py-4">
-                          <div className="text-gray-700 max-w-xs truncate">
-                            {vendor.rejectionReason || 'No reason provided'}
-                          </div>
-                        </td>
-                      )}
-
-                      {/* Actions */}
-                      <td className="px-6 py-4">
-                        <div className="flex items-center justify-end gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              setSelectedVendor(vendor);
-                              setShowVendorDetail(true);
-                            }}
-                          >
-                            <Eye className="w-4 h-4 mr-1" />
-                            View
-                          </Button>
-                          
-                          {activeTab === 'pending' && (
-                            <>
-                              <Button
-                                size="sm"
-                                className="bg-green-600 hover:bg-green-700"
-                                onClick={() => approveVendor(vendor)}
-                              >
-                                <CheckCircle className="w-4 h-4 mr-1" />
-                                Approve
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="destructive"
-                                onClick={() => rejectVendor(vendor)}
-                              >
-                                <XCircle className="w-4 h-4 mr-1" />
-                                Reject
-                              </Button>
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Card>
       </div>
 
-      {/* Analytics Modal */}
-      <Dialog open={showStatsModal} onOpenChange={setShowStatsModal}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>Vendor Analytics & Metrics</DialogTitle>
-            <DialogDescription>
-              View comprehensive analytics and performance metrics across all vendors
-            </DialogDescription>
-          </DialogHeader>
-          
-          {stats && (
-            <div className="space-y-6">
-              {/* Overview Metrics */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <Card className="p-4">
-                  <div className="text-gray-600 mb-1">Total Vendors</div>
-                  <div className="text-gray-900" style={{ fontSize: '1.875rem' }}>
-                    {stats.total}
-                  </div>
-                </Card>
-                <Card className="p-4">
-                  <div className="text-gray-600 mb-1">Approval Rate</div>
-                  <div className="text-green-600" style={{ fontSize: '1.875rem' }}>
-                    {stats.conversionRate.toFixed(1)}%
-                  </div>
-                </Card>
-                <Card className="p-4">
-                  <div className="text-gray-600 mb-1">Avg Approval Time</div>
-                  <div className="text-gray-900" style={{ fontSize: '1.875rem' }}>
-                    {stats.avgApprovalTime.toFixed(0)}h
-                  </div>
-                </Card>
-                <Card className="p-4">
-                  <div className="text-gray-600 mb-1">Active Today</div>
-                  <div className="text-orange-600" style={{ fontSize: '1.875rem' }}>
-                    {stats.activeToday}
-                  </div>
-                </Card>
+      {/* Vendors Table */}
+      <div className="px-8 pb-8">
+        {activeTab === 'duplicates' ? (
+          <DuplicateVendorManagement />
+        ) : (
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            {loading ? (
+              <div className="flex items-center justify-center py-16">
+                <Loader2 className="w-8 h-8 animate-spin text-[#FF8C42]" />
               </div>
-
-              {/* Status Breakdown */}
-              <Card className="p-6">
-                <h3 className="text-gray-900 mb-4">Status Distribution</h3>
-                <div className="space-y-3">
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-gray-700">Pending Approval</span>
-                      <span className="font-semibold text-gray-900">{stats.pending}</span>
-                    </div>
-                    <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                      <div 
-                        className="h-full bg-orange-500"
-                        style={{ width: `${(stats.pending / stats.total) * 100}%` }}
-                      />
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-gray-700">Approved</span>
-                      <span className="font-semibold text-gray-900">{stats.approved}</span>
-                    </div>
-                    <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                      <div 
-                        className="h-full bg-green-500"
-                        style={{ width: `${(stats.approved / stats.total) * 100}%` }}
-                      />
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-gray-700">Re-verification</span>
-                      <span className="font-semibold text-gray-900">{stats.reverification}</span>
-                    </div>
-                    <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                      <div 
-                        className="h-full bg-yellow-500"
-                        style={{ width: `${(stats.reverification / stats.total) * 100}%` }}
-                      />
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-gray-700">Rejected</span>
-                      <span className="font-semibold text-gray-900">{stats.rejected}</span>
-                    </div>
-                    <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                      <div 
-                        className="h-full bg-red-500"
-                        style={{ width: `${(stats.rejected / stats.total) * 100}%` }}
-                      />
-                    </div>
-                  </div>
+            ) : filteredVendors.length === 0 ? (
+              <div className="text-center py-16">
+                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Building2 className="w-8 h-8 text-gray-400" />
                 </div>
-              </Card>
-
-              {/* Recent Activity */}
-              <Card className="p-6">
-                <h3 className="text-gray-900 mb-4">Recent Activity</h3>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between py-2 border-b border-gray-200">
-                    <span className="text-gray-700">New this week</span>
-                    <Badge variant="secondary">{stats.newThisWeek}</Badge>
-                  </div>
-                  <div className="flex items-center justify-between py-2">
-                    <span className="text-gray-700">Active vendors today</span>
-                    <Badge className="bg-orange-600">{stats.activeToday}</Badge>
-                  </div>
-                </div>
-              </Card>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Vendor Detail Modal */}
-      <Dialog open={showVendorDetail} onOpenChange={setShowVendorDetail}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Vendor Details</DialogTitle>
-            <DialogDescription>
-              View detailed information about this vendor's application and status
-            </DialogDescription>
-          </DialogHeader>
-          
-          {selectedVendor && (
-            <div className="space-y-6">
-              {/* Basic Info */}
-              <Card className="p-6">
-                <h3 className="text-gray-900 mb-4">Basic Information</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-gray-600">Full Name</label>
-                    <p className="text-gray-900">{selectedVendor.fullName}</p>
-                  </div>
-                  {selectedVendor.businessName && (
-                    <div>
-                      <label className="text-gray-600">Business Name</label>
-                      <p className="text-gray-900">{selectedVendor.businessName}</p>
-                    </div>
-                  )}
-                  <div>
-                    <label className="text-gray-600">Role</label>
-                    <p className="text-gray-900">{selectedVendor.roleName}</p>
-                  </div>
-                  <div>
-                    <label className="text-gray-600">Service Style</label>
-                    <p className="text-gray-900">{selectedVendor.serviceStyle}</p>
-                  </div>
-                  <div>
-                    <label className="text-gray-600">Phone</label>
-                    <p className="text-gray-900">{selectedVendor.phone}</p>
-                  </div>
-                  <div>
-                    <label className="text-gray-600">Email</label>
-                    <p className="text-gray-900">{selectedVendor.email}</p>
-                  </div>
-                  <div>
-                    <label className="text-gray-600">City</label>
-                    <p className="text-gray-900">{selectedVendor.city}</p>
-                  </div>
-                  <div>
-                    <label className="text-gray-600">State</label>
-                    <p className="text-gray-900">{selectedVendor.state}</p>
-                  </div>
-                </div>
-              </Card>
-
-              {/* Status Info */}
-              <Card className="p-6">
-                <h3 className="text-gray-900 mb-4">Status Information</h3>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-gray-600">Current Status</span>
-                    <Badge 
-                      className={
-                        selectedVendor.status === 'approved' ? 'bg-green-600' :
-                        selectedVendor.status === 'rejected' ? 'bg-red-600' :
-                        selectedVendor.status === 'pending_reverification' ? 'bg-yellow-600' :
-                        'bg-orange-600'
-                      }
-                    >
-                      {selectedVendor.status.replace('_', ' ').toUpperCase()}
-                    </Badge>
-                  </div>
-                  {selectedVendor.submittedAt && (
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-600">Submitted</span>
-                      <span className="text-gray-900">
-                        {new Date(selectedVendor.submittedAt).toLocaleString()}
-                      </span>
-                    </div>
-                  )}
-                  {selectedVendor.approvedAt && (
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-600">Approved</span>
-                      <span className="text-gray-900">
-                        {new Date(selectedVendor.approvedAt).toLocaleString()}
-                      </span>
-                    </div>
-                  )}
-                  {selectedVendor.rejectionReason && (
-                    <div>
-                      <label className="text-gray-600">Rejection Reason</label>
-                      <p className="text-gray-900 mt-1">{selectedVendor.rejectionReason}</p>
-                    </div>
-                  )}
-                </div>
-              </Card>
-
-              {/* Actions */}
-              <div className="flex justify-end gap-3">
-                <Button variant="outline" onClick={() => setShowVendorDetail(false)}>
-                  Close
-                </Button>
-                {selectedVendor.status === 'pending_approval' && (
-                  <>
-                    <Button
-                      className="bg-green-600 hover:bg-green-700"
-                      onClick={() => {
-                        approveVendor(selectedVendor);
-                        setShowVendorDetail(false);
-                      }}
-                    >
-                      <CheckCircle className="w-4 h-4 mr-2" />
-                      Approve Vendor
-                    </Button>
-                    <Button
-                      variant="destructive"
-                      onClick={() => {
-                        rejectVendor(selectedVendor);
-                        setShowVendorDetail(false);
-                      }}
-                    >
-                      <XCircle className="w-4 h-4 mr-2" />
-                      Reject Vendor
-                    </Button>
-                  </>
-                )}
+                <p className="text-gray-600 font-medium">No vendors found</p>
+                <p className="text-sm text-gray-500 mt-1">
+                  {searchQuery || roleFilter !== 'all' 
+                    ? 'Try adjusting your search or filters'
+                    : 'No vendors in this category yet'}
+                </p>
               </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        Vendor Details
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        Contact
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        Role/Category
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        Location
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        Status
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        Submitted
+                      </th>
+                      <th className="px-6 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                        Actions
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {filteredVendors.map((vendor) => (
+                      <tr key={vendor.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-gradient-to-br from-[#FF8C42] to-[#FF7A2E] rounded-full flex items-center justify-center">
+                              <span className="text-white font-bold text-sm">
+                                {vendor.fullName?.charAt(0) || vendor.businessName?.charAt(0) || 'V'}
+                              </span>
+                            </div>
+                            <div>
+                              <p className="font-semibold text-gray-900">{vendor.fullName}</p>
+                              {vendor.businessName && (
+                                <p className="text-sm text-gray-500 flex items-center gap-1">
+                                  <Building2 className="w-3 h-3" />
+                                  {vendor.businessName}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="space-y-1">
+                            <p className="text-sm text-gray-900 flex items-center gap-1">
+                              <Phone className="w-3 h-3 text-gray-400" />
+                              {vendor.phone}
+                            </p>
+                            {vendor.email && (
+                              <p className="text-xs text-gray-500">{vendor.email}</p>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          {getRoleBadge(vendor.roleId || vendor.category)}
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-start gap-1">
+                            <MapPin className="w-3 h-3 text-gray-400 mt-0.5 flex-shrink-0" />
+                            <div className="text-sm text-gray-600">
+                              {vendor.city && <div>{vendor.city}</div>}
+                              {vendor.state && <div className="text-xs text-gray-500">{vendor.state}</div>}
+                              {!vendor.city && !vendor.state && <span className="text-gray-400">N/A</span>}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          {getStatusBadge(vendor.status)}
+                        </td>
+                        <td className="px-6 py-4">
+                          <p className="text-sm text-gray-600">{formatDate(vendor.submittedAt)}</p>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center justify-center">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="gap-2 text-[#FF8C42] hover:text-[#FF7A2E] hover:bg-orange-50"
+                              onClick={() => viewDetails(vendor)}
+                            >
+                              <Eye className="w-4 h-4" />
+                              View
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Modals */}
+      {showDetailModal && selectedVendor && (
+        <ApplicationDetailModal
+          isOpen={showDetailModal}
+          onClose={() => {
+            setShowDetailModal(false);
+            setSelectedVendor(null);
+          }}
+          application={selectedVendor as any}
+          onApprove={() => {
+            // Reload vendors after approval
+            loadVendors();
+          }}
+          onReject={() => {
+            // Reload vendors after rejection
+            loadVendors();
+          }}
+          onRequestClarification={() => {
+            // Reload vendors after clarification request
+            loadVendors();
+          }}
+        />
+      )}
+
+      {showAddVendor && (
+        <AddVendorModal
+          isOpen={showAddVendor}
+          onClose={() => setShowAddVendor(false)}
+          onVendorAdded={loadVendors}
+        />
+      )}
     </div>
   );
 }

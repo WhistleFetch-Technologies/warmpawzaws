@@ -53,6 +53,7 @@
         '@radix-ui/react-accordion@1.2.3': '@radix-ui/react-accordion',
         '@jsr/supabase__supabase-js@2.49.8': '@jsr/supabase__supabase-js',
         '@jsr/supabase__supabase-js@2': '@jsr/supabase__supabase-js',
+        '@aws-sdk/client-s3@3': '@aws-sdk/client-s3',
         '@': path.resolve(__dirname, './src'),
       },
     },

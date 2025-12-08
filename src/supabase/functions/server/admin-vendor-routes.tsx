@@ -12,33 +12,65 @@ app.get("/make-server-3dd53475/admin/vendors/stats", async (c) => {
   try {
     console.log('Fetching vendor statistics...');
     
-    // FIX: Get all vendors with prefix 'vendor:' not 'vendor:vendor_'
+    // Optimized: Use cached stats if available and fresh (less than 5 minutes old)
+    const cachedStats = await kv.get('admin:vendor_stats_cache');
+    if (cachedStats && cachedStats.cachedAt) {
+      const cacheAge = Date.now() - new Date(cachedStats.cachedAt).getTime();
+      const fiveMinutes = 5 * 60 * 1000;
+      
+      if (cacheAge < fiveMinutes) {
+        console.log('✅ Returning cached stats (age: ' + Math.round(cacheAge / 1000) + 's)');
+        return c.json({
+          success: true,
+          stats: cachedStats.stats,
+          cached: true
+        });
+      }
+    }
+    
+    console.log('📊 Computing fresh stats...');
+    
+    // Get all vendors with prefix 'vendor:' not 'vendor:vendor_'
     const allVendors = await kv.getByPrefix('vendor:');
-    console.log(`Total vendors found: ${allVendors.length}`);
+    console.log(`Total vendor records found: ${allVendors.length}`);
     
-    // Calculate statistics
-    const activeVendors = allVendors.filter(v => v.status === 'approved' && !v.deactivated);
-    const pendingApplications = allVendors.filter(v => v.status === 'pending_approval');
-    const deactivatedVendors = allVendors.filter(v => v.deactivated === true);
-    const rejectedVendors = allVendors.filter(v => v.status === 'rejected');
-    
-    // Get compliance issues
-    const complianceIssues = allVendors.filter(v => {
-      if (!v.complianceFlags) return false;
-      return v.complianceFlags.length > 0;
+    // Filter to actual vendor records (exclude metadata)
+    const vendors = allVendors.filter((v: any) => {
+      if (!v || typeof v !== 'object') return false;
+      if (v.applicationId === v.id || (v.id && String(v.id).startsWith('APP'))) return false;
+      if (v.type === 'index' || v.type === 'metadata') return false;
+      const id = v.id || v.vendorId;
+      if (id && String(id).startsWith('vendor_')) return true;
+      const hasName = !!(v.businessName || v.fullName);
+      const hasPhone = !!v.phone;
+      const hasRole = !!v.role || !!v.roleId || !!v.roleName;
+      if (hasName && hasPhone && hasRole) {
+        if (v.documents && v.documents.length > 0 && v.formData) return false;
+        return true;
+      }
+      return false;
     });
     
-    // Get vendors with high priority issues
+    console.log(`Filtered vendor count: ${vendors.length}`);
+    
+    // Calculate statistics efficiently
+    const activeVendors = vendors.filter(v => v.status === 'approved' && !v.deactivated);
+    const pendingApplications = vendors.filter(v => v.status === 'pending_approval');
+    const deactivatedVendors = vendors.filter(v => v.deactivated === true);
+    const rejectedVendors = vendors.filter(v => v.status === 'rejected');
+    
+    // Get compliance issues (simplified)
+    const complianceIssues = vendors.filter(v => v.complianceFlags && v.complianceFlags.length > 0);
     const highPriorityIssues = complianceIssues.filter(v => 
       v.complianceFlags?.some((flag: any) => flag.priority === 'high')
     );
     
-    // Count support tickets
-    const supportTickets = await kv.getByPrefix('support:ticket:vendor:');
-    const openTickets = supportTickets.filter((t: any) => t.status === 'open' || t.status === 'in_progress');
+    // Simplified support tickets count (use cache or skip for now)
+    let supportTicketCount = 0;
+    let openTicketCount = 0;
     
-    // Calculate quality alerts
-    const qualityAlerts = allVendors.filter(v => {
+    // Simplified quality alerts
+    const qualityAlerts = vendors.filter(v => {
       if (!v.rating) return false;
       return v.rating < 3.5 || (v.complaints && v.complaints.length > 0);
     });
@@ -47,55 +79,82 @@ app.get("/make-server-3dd53475/admin/vendors/stats", async (c) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const pendingToday = pendingApplications.filter(v => {
+      if (!v.submittedAt) return false;
       const submittedDate = new Date(v.submittedAt);
       return submittedDate >= today;
     });
     
-    // Distribution by category
-    const distributionByCategory = allVendors.reduce((acc: any, vendor) => {
-      if (!vendor.services) return acc;
-      vendor.services.forEach((service: string) => {
-        acc[service] = (acc[service] || 0) + 1;
-      });
-      return acc;
-    }, {});
+    // Distribution by category (simplified)
+    const distributionByCategory: any = {};
+    vendors.forEach(vendor => {
+      if (vendor.serviceCategory) {
+        distributionByCategory[vendor.serviceCategory] = (distributionByCategory[vendor.serviceCategory] || 0) + 1;
+      }
+    });
+    
+    const stats = {
+      activeVendors: {
+        count: activeVendors.length,
+        percentage: vendors.length > 0 ? Math.round((activeVendors.length / vendors.length) * 100) : 0
+      },
+      pendingApplications: {
+        count: pendingApplications.length,
+        todayCount: pendingToday.length
+      },
+      deactivatedVendors: {
+        count: deactivatedVendors.length
+      },
+      complianceIssues: {
+        count: complianceIssues.length,
+        highPriority: highPriorityIssues.length
+      },
+      supportTickets: {
+        total: supportTicketCount,
+        open: openTicketCount
+      },
+      qualityAlerts: {
+        count: qualityAlerts.length
+      },
+      distribution: {
+        active: activeVendors.length,
+        deactivated: deactivatedVendors.length,
+        pending: pendingApplications.length
+      },
+      categoryDistribution: distributionByCategory
+    };
+    
+    // Cache the stats for 5 minutes
+    await kv.set('admin:vendor_stats_cache', {
+      stats,
+      cachedAt: new Date().toISOString()
+    });
+    
+    console.log('✅ Stats computed and cached');
     
     return c.json({
       success: true,
-      stats: {
-        activeVendors: {
-          count: activeVendors.length,
-          percentage: allVendors.length > 0 ? Math.round((activeVendors.length / allVendors.length) * 100) : 0
-        },
-        pendingApplications: {
-          count: pendingApplications.length,
-          todayCount: pendingToday.length
-        },
-        deactivatedVendors: {
-          count: deactivatedVendors.length
-        },
-        complianceIssues: {
-          count: complianceIssues.length,
-          highPriority: highPriorityIssues.length
-        },
-        supportTickets: {
-          total: supportTickets.length,
-          open: openTickets.length
-        },
-        qualityAlerts: {
-          count: qualityAlerts.length
-        },
-        distribution: {
-          active: activeVendors.length,
-          deactivated: deactivatedVendors.length,
-          pending: pendingApplications.length
-        },
-        categoryDistribution: distributionByCategory
-      }
+      stats,
+      cached: false
     });
   } catch (error) {
     console.error('Error fetching vendor stats:', error);
-    return c.json({ error: String(error) }, 500);
+    
+    // Return basic fallback stats on error
+    return c.json({
+      success: true,
+      stats: {
+        activeVendors: { count: 0, percentage: 0 },
+        pendingApplications: { count: 0, todayCount: 0 },
+        deactivatedVendors: { count: 0 },
+        complianceIssues: { count: 0, highPriority: 0 },
+        supportTickets: { total: 0, open: 0 },
+        qualityAlerts: { count: 0 },
+        distribution: { active: 0, deactivated: 0, pending: 0 },
+        categoryDistribution: {}
+      },
+      error: String(error),
+      fallback: true
+    });
   }
 });
 
@@ -210,7 +269,7 @@ app.get("/make-server-3dd53475/applications/:vendorId", async (c) => {
 });
 
 // Approve vendor application
-app.post("/make-server-3dd53475/applications/:vendorId/approve", async (c) => {
+app.post("/make-server-3dd53475/admin/vendor/application/:vendorId/approve", async (c) => {
   try {
     const { vendorId } = c.req.param();
     const { adminId, adminName, notes } = await c.req.json();
@@ -221,8 +280,9 @@ app.post("/make-server-3dd53475/applications/:vendorId/approve", async (c) => {
       return c.json({ error: 'Vendor not found' }, 404);
     }
     
-    if (vendor.status !== 'pending_approval') {
-      return c.json({ error: 'Vendor is not pending approval' }, 400);
+    // Accept both 'pending' and 'pending_approval' statuses
+    if (vendor.status !== 'pending_approval' && vendor.status !== 'pending') {
+      return c.json({ error: 'Vendor is not pending approval', currentStatus: vendor.status }, 400);
     }
     
     // Update vendor status
@@ -256,6 +316,235 @@ app.post("/make-server-3dd53475/applications/:vendorId/approve", async (c) => {
       createdAt: new Date().toISOString()
     });
     
+    console.log('✅ Vendor approved successfully:', vendorId);
+    
+    return c.json({
+      success: true,
+      message: 'Vendor approved successfully',
+      vendor
+    });
+  } catch (error) {
+    console.error('Error approving vendor:', error);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
+// Approve vendor application (plural endpoint for backward compatibility)
+app.post("/make-server-3dd53475/admin/vendors/applications/:vendorId/approve", async (c) => {
+  try {
+    const { vendorId } = c.req.param();
+    const { adminId, adminName, notes } = await c.req.json();
+    
+    console.log('🔍 Attempting to approve vendor:', vendorId);
+    console.log('📦 Looking for key:', `vendor:${vendorId}`);
+    
+    // First try direct lookup
+    let vendor = await kv.get(`vendor:${vendorId}`);
+    let actualKey = `vendor:${vendorId}`;
+    
+    if (!vendor) {
+      console.log('⚠️ Direct lookup failed, searching database for matching vendor...');
+      
+      // Query database directly to find the vendor
+      const { createClient } = await import('jsr:@supabase/supabase-js@2.49.8');
+      const supabase = createClient(
+        Deno.env.get('SUPABASE_URL'),
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+      );
+      
+      const { data: kvRecords, error } = await supabase
+        .from('kv_store_3dd53475')
+        .select('key, value')
+        .like('key', 'vendor:%');
+      
+      if (error) {
+        console.error('❌ Database query error:', error);
+        return c.json({ error: 'Database error' }, 500);
+      }
+      
+      // Find vendor by matching the vendorId in the value OR in the key
+      const matchingRecord = kvRecords?.find((record: any) => {
+        const v = record.value;
+        const key = record.key;
+        
+        // Check if the key ends with the vendorId
+        if (key === `vendor:${vendorId}`) return true;
+        
+        // Check if the value has matching id or vendorId
+        if (v.id === vendorId || v.vendorId === vendorId) return true;
+        
+        // Check if the key contains the vendorId (in case of different formats)
+        if (key.includes(vendorId)) return true;
+        
+        return false;
+      });
+      
+      if (matchingRecord) {
+        vendor = matchingRecord.value;
+        actualKey = matchingRecord.key;
+        console.log('✅ Found vendor with key:', actualKey);
+        console.log('📋 Vendor ID in data:', vendor.id);
+      } else {
+        console.error('❌ Vendor not found with ID:', vendorId);
+        console.log('📊 Total vendors in database:', kvRecords?.length || 0);
+        
+        // Log first few vendor keys for debugging
+        console.log('📝 Sample vendor keys:', kvRecords?.slice(0, 5).map((r: any) => r.key));
+        
+        return c.json({ error: 'Vendor not found', vendorId, searchKey: `vendor:${vendorId}` }, 404);
+      }
+    }
+    
+    console.log('📋 Vendor found with status:', vendor.status);
+    
+    // Accept both 'pending' and 'pending_approval' statuses
+    if (vendor.status !== 'pending_approval' && vendor.status !== 'pending') {
+      console.error('❌ Vendor status is not pending:', vendor.status);
+      return c.json({ error: 'Vendor is not pending approval', currentStatus: vendor.status }, 400);
+    }
+    
+    // ✅ DUPLICATE CHECK: Before approving, check if phone/email are already used by an approved vendor
+    console.log('🔍 Checking for duplicate phone/email in approved vendors...');
+    
+    const { createClient } = await import('jsr:@supabase/supabase-js@2.49.8');
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL'),
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+    );
+    
+    // Import phone utils for normalization
+    const { normalizePhone } = await import('./phone-utils.tsx');
+    const cleanPhone = normalizePhone(vendor.phone || '');
+    const cleanEmail = vendor.email?.toLowerCase().trim();
+    
+    // Query all vendor records
+    const { data: allVendorRecords, error: queryError } = await supabase
+      .from('kv_store_3dd53475')
+      .select('key, value')
+      .like('key', 'vendor:vendor_%');
+    
+    if (!queryError && allVendorRecords) {
+      // Check for duplicate phone in approved vendors
+      const duplicatePhone = allVendorRecords.find((record: any) => {
+        const v = record.value;
+        
+        // Skip if it's the same vendor
+        if (v.id === vendorId || record.key === actualKey) return false;
+        
+        // Only check approved vendors
+        if (v.status !== 'approved') return false;
+        
+        // Check phone match
+        if (v.phone) {
+          const vCleanPhone = normalizePhone(v.phone);
+          if (vCleanPhone === cleanPhone && cleanPhone) {
+            console.error(`❌ Duplicate phone found in approved vendor: ${v.id}`);
+            return true;
+          }
+        }
+        
+        return false;
+      });
+      
+      if (duplicatePhone) {
+        const dupVendor = duplicatePhone.value;
+        console.error('❌ DUPLICATE PHONE NUMBER DETECTED!');
+        console.error(`   Current vendor: ${vendorId} - ${vendor.fullName || vendor.businessName}`);
+        console.error(`   Existing approved vendor: ${dupVendor.id} - ${dupVendor.fullName || dupVendor.businessName}`);
+        console.error(`   Phone: ${vendor.phone} (normalized: ${cleanPhone})`);
+        
+        return c.json({ 
+          error: 'Cannot approve: A vendor with this phone number is already approved',
+          duplicateField: 'phone',
+          duplicateVendor: {
+            id: dupVendor.id,
+            name: dupVendor.fullName || dupVendor.businessName,
+            phone: dupVendor.phone,
+            status: dupVendor.status
+          }
+        }, 409); // 409 Conflict
+      }
+      
+      // Check for duplicate email in approved vendors
+      if (cleanEmail) {
+        const duplicateEmail = allVendorRecords.find((record: any) => {
+          const v = record.value;
+          
+          // Skip if it's the same vendor
+          if (v.id === vendorId || record.key === actualKey) return false;
+          
+          // Only check approved vendors
+          if (v.status !== 'approved') return false;
+          
+          // Check email match
+          if (v.email) {
+            const vCleanEmail = v.email?.toLowerCase().trim();
+            if (vCleanEmail === cleanEmail) {
+              console.error(`❌ Duplicate email found in approved vendor: ${v.id}`);
+              return true;
+            }
+          }
+          
+          return false;
+        });
+        
+        if (duplicateEmail) {
+          const dupVendor = duplicateEmail.value;
+          console.error('❌ DUPLICATE EMAIL DETECTED!');
+          console.error(`   Current vendor: ${vendorId} - ${vendor.fullName || vendor.businessName}`);
+          console.error(`   Existing approved vendor: ${dupVendor.id} - ${dupVendor.fullName || dupVendor.businessName}`);
+          console.error(`   Email: ${vendor.email}`);
+          
+          return c.json({ 
+            error: 'Cannot approve: A vendor with this email is already approved',
+            duplicateField: 'email',
+            duplicateVendor: {
+              id: dupVendor.id,
+              name: dupVendor.fullName || dupVendor.businessName,
+              email: dupVendor.email,
+              status: dupVendor.status
+            }
+          }, 409); // 409 Conflict
+        }
+      }
+    }
+    
+    console.log('✅ No duplicates found, proceeding with approval...');
+    
+    // Update vendor status
+    vendor.status = 'approved';
+    vendor.reviewedBy = adminId;
+    vendor.reviewedByName = adminName;
+    vendor.reviewedAt = new Date().toISOString();
+    vendor.approvalNotes = notes;
+    vendor.isActive = true;
+    
+    // Save using the actual key we found
+    await kv.set(actualKey, vendor);
+    
+    // Remove from pending list and add to approved list
+    const pendingList = await kv.get('vendor:pending_approvals') || [];
+    const updatedPending = pendingList.filter((id: string) => id !== vendorId);
+    await kv.set('vendor:pending_approvals', updatedPending);
+    
+    const approvedList = await kv.get('vendor:approved_list') || [];
+    approvedList.push(vendorId);
+    await kv.set('vendor:approved_list', approvedList);
+    
+    // Create notification for vendor
+    const notificationId = `notification_${Date.now()}`;
+    await kv.set(`notification:vendor:${vendorId}:${notificationId}`, {
+      id: notificationId,
+      vendorId,
+      type: 'application_approved',
+      title: 'Application Approved',
+      message: 'Congratulations! Your vendor application has been approved. You can now start accepting bookings.',
+      read: false,
+      createdAt: new Date().toISOString()
+    });
+    
+    console.log('✅ Vendor approved successfully:', vendorId);
+    
     return c.json({
       success: true,
       message: 'Vendor approved successfully',
@@ -268,7 +557,7 @@ app.post("/make-server-3dd53475/applications/:vendorId/approve", async (c) => {
 });
 
 // Reject vendor application
-app.post("/make-server-3dd53475/applications/:vendorId/reject", async (c) => {
+app.post("/make-server-3dd53475/admin/vendor/application/:vendorId/reject", async (c) => {
   try {
     const { vendorId } = c.req.param();
     const { adminId, adminName, reason, rejectionNotes } = await c.req.json();
@@ -279,13 +568,14 @@ app.post("/make-server-3dd53475/applications/:vendorId/reject", async (c) => {
       return c.json({ error: 'Vendor not found' }, 404);
     }
     
-    if (vendor.status !== 'pending_approval') {
-      return c.json({ error: 'Vendor is not pending approval' }, 400);
+    // Accept both 'pending' and 'pending_approval' statuses
+    if (vendor.status !== 'pending_approval' && vendor.status !== 'pending') {
+      return c.json({ error: 'Vendor is not pending approval', currentStatus: vendor.status }, 400);
     }
     
     // Update vendor status
     vendor.status = 'rejected';
-    vendor.isActive = false; // ✅ PERMANENT FIX: Rejected vendors should NOT be active
+    vendor.isActive = false;
     vendor.reviewedBy = adminId;
     vendor.reviewedByName = adminName;
     vendor.reviewedAt = new Date().toISOString();
@@ -310,6 +600,121 @@ app.post("/make-server-3dd53475/applications/:vendorId/reject", async (c) => {
       read: false,
       createdAt: new Date().toISOString()
     });
+    
+    console.log('✅ Vendor rejected successfully:', vendorId);
+    
+    return c.json({
+      success: true,
+      message: 'Vendor rejected',
+      vendor
+    });
+  } catch (error) {
+    console.error('Error rejecting vendor:', error);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
+// Reject vendor application (plural endpoint for backward compatibility)
+app.post("/make-server-3dd53475/admin/vendors/applications/:vendorId/reject", async (c) => {
+  try {
+    const { vendorId } = c.req.param();
+    const { adminId, adminName, reason, rejectionNotes } = await c.req.json();
+    
+    console.log('🔍 Attempting to reject vendor:', vendorId);
+    console.log('📦 Looking for key:', `vendor:${vendorId}`);
+    
+    // First try direct lookup
+    let vendor = await kv.get(`vendor:${vendorId}`);
+    let actualKey = `vendor:${vendorId}`;
+    
+    if (!vendor) {
+      console.log('⚠️ Direct lookup failed, searching database for matching vendor...');
+      
+      // Query database directly to find the vendor
+      const { createClient } = await import('jsr:@supabase/supabase-js@2.49.8');
+      const supabase = createClient(
+        Deno.env.get('SUPABASE_URL'),
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+      );
+      
+      const { data: kvRecords, error } = await supabase
+        .from('kv_store_3dd53475')
+        .select('key, value')
+        .like('key', 'vendor:%');
+      
+      if (error) {
+        console.error('❌ Database query error:', error);
+        return c.json({ error: 'Database error' }, 500);
+      }
+      
+      // Find vendor by matching the vendorId in the value OR in the key
+      const matchingRecord = kvRecords?.find((record: any) => {
+        const v = record.value;
+        const key = record.key;
+        
+        // Check if the key ends with the vendorId
+        if (key === `vendor:${vendorId}`) return true;
+        
+        // Check if the value has matching id or vendorId
+        if (v.id === vendorId || v.vendorId === vendorId) return true;
+        
+        // Check if the key contains the vendorId (in case of different formats)
+        if (key.includes(vendorId)) return true;
+        
+        return false;
+      });
+      
+      if (matchingRecord) {
+        vendor = matchingRecord.value;
+        actualKey = matchingRecord.key;
+        console.log('✅ Found vendor with key:', actualKey);
+        console.log('📋 Vendor ID in data:', vendor.id);
+      } else {
+        console.error('❌ Vendor not found with ID:', vendorId);
+        console.log('📊 Total vendors in database:', kvRecords?.length || 0);
+        
+        return c.json({ error: 'Vendor not found', vendorId, searchKey: `vendor:${vendorId}` }, 404);
+      }
+    }
+    
+    console.log('📋 Vendor found with status:', vendor.status);
+    
+    // Accept both 'pending' and 'pending_approval' statuses
+    if (vendor.status !== 'pending_approval' && vendor.status !== 'pending') {
+      console.error('❌ Vendor status is not pending:', vendor.status);
+      return c.json({ error: 'Vendor is not pending approval', currentStatus: vendor.status }, 400);
+    }
+    
+    // Update vendor status
+    vendor.status = 'rejected';
+    vendor.isActive = false;
+    vendor.reviewedBy = adminId;
+    vendor.reviewedByName = adminName;
+    vendor.reviewedAt = new Date().toISOString();
+    vendor.rejectionReason = reason;
+    vendor.rejectionNotes = rejectionNotes;
+    
+    // Save using the actual key we found
+    await kv.set(actualKey, vendor);
+    
+    // Remove from pending list
+    const pendingList = await kv.get('vendor:pending_approvals') || [];
+    const updatedPending = pendingList.filter((id: string) => id !== vendorId);
+    await kv.set('vendor:pending_approvals', updatedPending);
+    
+    // Create notification for vendor
+    const notificationId = `notification_${Date.now()}`;
+    await kv.set(`notification:vendor:${vendorId}:${notificationId}`, {
+      id: notificationId,
+      vendorId,
+      type: 'application_rejected',
+      title: 'Application Rejected',
+      message: `Unfortunately, your vendor application has been rejected. Reason: ${reason}`,
+      read: false,
+      createdAt: new Date().toISOString()
+    });
+    
+    console.log('✅ Vendor rejected successfully:', vendorId);
     
     return c.json({
       success: true,
@@ -808,6 +1213,272 @@ app.get("/make-server-3dd53475/search", async (c) => {
     });
   } catch (error) {
     console.error('Error searching vendors:', error);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
+// ============================================
+// DUPLICATE DETECTION & CLEANUP
+// ============================================
+
+/**
+ * Find duplicate vendors by phone or email
+ * GET /make-server-3dd53475/admin/vendors/duplicates
+ */
+app.get("/make-server-3dd53475/admin/vendors/duplicates", async (c) => {
+  try {
+    console.log('🔍 Scanning for duplicate vendors...');
+    
+    // Import phone utils
+    const { normalizePhone } = await import('./phone-utils.tsx');
+    
+    // Get all vendor records
+    const { createClient } = await import('jsr:@supabase/supabase-js@2.49.8');
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL'),
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+    );
+    
+    const { data: vendorRecords, error } = await supabase
+      .from('kv_store_3dd53475')
+      .select('key, value')
+      .like('key', 'vendor:vendor_%');
+    
+    if (error) {
+      console.error('❌ Database query error:', error);
+      return c.json({ error: 'Database error' }, 500);
+    }
+    
+    console.log(`📊 Found ${vendorRecords?.length || 0} vendor records`);
+    
+    // Track duplicates
+    const phoneMap = new Map<string, any[]>();
+    const emailMap = new Map<string, any[]>();
+    
+    // Group vendors by phone and email
+    vendorRecords?.forEach((record: any) => {
+      const vendor = record.value;
+      const key = record.key;
+      
+      // Group by phone
+      if (vendor.phone) {
+        const cleanPhone = normalizePhone(vendor.phone);
+        if (cleanPhone) {
+          if (!phoneMap.has(cleanPhone)) {
+            phoneMap.set(cleanPhone, []);
+          }
+          phoneMap.get(cleanPhone)!.push({ ...vendor, _key: key });
+        }
+      }
+      
+      // Group by email
+      if (vendor.email) {
+        const cleanEmail = vendor.email.toLowerCase().trim();
+        if (!emailMap.has(cleanEmail)) {
+          emailMap.set(cleanEmail, []);
+        }
+        emailMap.get(cleanEmail)!.push({ ...vendor, _key: key });
+      }
+    });
+    
+    // Find duplicates
+    const duplicatesByPhone: any[] = [];
+    phoneMap.forEach((vendors, phone) => {
+      if (vendors.length > 1) {
+        duplicatesByPhone.push({
+          phone,
+          count: vendors.length,
+          vendors: vendors.map(v => ({
+            id: v.id,
+            key: v._key,
+            name: v.fullName || v.businessName,
+            status: v.status,
+            email: v.email,
+            createdAt: v.createdAt,
+            submittedAt: v.submittedAt
+          }))
+        });
+      }
+    });
+    
+    const duplicatesByEmail: any[] = [];
+    emailMap.forEach((vendors, email) => {
+      if (vendors.length > 1) {
+        duplicatesByEmail.push({
+          email,
+          count: vendors.length,
+          vendors: vendors.map(v => ({
+            id: v.id,
+            key: v._key,
+            name: v.fullName || v.businessName,
+            status: v.status,
+            phone: v.phone,
+            createdAt: v.createdAt,
+            submittedAt: v.submittedAt
+          }))
+        });
+      }
+    });
+    
+    console.log(`📋 Found ${duplicatesByPhone.length} phone duplicates`);
+    console.log(`📋 Found ${duplicatesByEmail.length} email duplicates`);
+    
+    return c.json({
+      success: true,
+      duplicates: {
+        byPhone: duplicatesByPhone,
+        byEmail: duplicatesByEmail
+      },
+      summary: {
+        totalPhoneDuplicates: duplicatesByPhone.length,
+        totalEmailDuplicates: duplicatesByEmail.length,
+        affectedVendorsByPhone: duplicatesByPhone.reduce((sum, dup) => sum + dup.count, 0),
+        affectedVendorsByEmail: duplicatesByEmail.reduce((sum, dup) => sum + dup.count, 0)
+      }
+    });
+  } catch (error) {
+    console.error('Error finding duplicates:', error);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
+/**
+ * Clean up duplicate vendors (keeping the most recent approved one)
+ * POST /make-server-3dd53475/admin/vendors/duplicates/cleanup
+ */
+app.post("/make-server-3dd53475/admin/vendors/duplicates/cleanup", async (c) => {
+  try {
+    const { dryRun = true, keepStrategy = 'newest_approved' } = await c.req.json();
+    
+    console.log('🧹 Starting duplicate cleanup...');
+    console.log(`   Mode: ${dryRun ? 'DRY RUN' : 'LIVE'}`);
+    console.log(`   Strategy: ${keepStrategy}`);
+    
+    // Import phone utils
+    const { normalizePhone } = await import('./phone-utils.tsx');
+    
+    // Get all vendor records
+    const { createClient } = await import('jsr:@supabase/supabase-js@2.49.8');
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL'),
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+    );
+    
+    const { data: vendorRecords, error } = await supabase
+      .from('kv_store_3dd53475')
+      .select('key, value')
+      .like('key', 'vendor:vendor_%');
+    
+    if (error) {
+      return c.json({ error: 'Database error' }, 500);
+    }
+    
+    // Group vendors by phone
+    const phoneGroups = new Map<string, any[]>();
+    vendorRecords?.forEach((record: any) => {
+      const vendor = record.value;
+      const key = record.key;
+      
+      if (vendor.phone) {
+        const cleanPhone = normalizePhone(vendor.phone);
+        if (cleanPhone) {
+          if (!phoneGroups.has(cleanPhone)) {
+            phoneGroups.set(cleanPhone, []);
+          }
+          phoneGroups.get(cleanPhone)!.push({ ...vendor, _key: key });
+        }
+      }
+    });
+    
+    const cleanupActions: any[] = [];
+    let vendorsToDelete = 0;
+    let vendorsToKeep = 0;
+    
+    // Process each group
+    phoneGroups.forEach((vendors, phone) => {
+      if (vendors.length > 1) {
+        console.log(`\n📞 Processing duplicate group for phone: ${phone}`);
+        console.log(`   Found ${vendors.length} vendors`);
+        
+        // Sort vendors by priority:
+        // 1. Approved vendors first
+        // 2. Then by creation date (newest first)
+        vendors.sort((a, b) => {
+          // Approved status takes priority
+          if (a.status === 'approved' && b.status !== 'approved') return -1;
+          if (a.status !== 'approved' && b.status === 'approved') return 1;
+          
+          // Then by creation date (newest first)
+          const dateA = new Date(a.createdAt || a.submittedAt || 0);
+          const dateB = new Date(b.createdAt || b.submittedAt || 0);
+          return dateB.getTime() - dateA.getTime();
+        });
+        
+        // Keep the first one (highest priority)
+        const toKeep = vendors[0];
+        const toDelete = vendors.slice(1);
+        
+        console.log(`   ✅ Keeping: ${toKeep.id} (${toKeep.fullName || toKeep.businessName}) - Status: ${toKeep.status}`);
+        vendorsToKeep++;
+        
+        toDelete.forEach(vendor => {
+          console.log(`   ❌ Deleting: ${vendor.id} (${vendor.fullName || vendor.businessName}) - Status: ${vendor.status}`);
+          vendorsToDelete++;
+          
+          cleanupActions.push({
+            action: 'delete',
+            vendorId: vendor.id,
+            key: vendor._key,
+            name: vendor.fullName || vendor.businessName,
+            status: vendor.status,
+            reason: `Duplicate of ${toKeep.id}`,
+            phone: vendor.phone,
+            email: vendor.email
+          });
+        });
+      }
+    });
+    
+    console.log(`\n📊 Cleanup Summary:`);
+    console.log(`   Vendors to keep: ${vendorsToKeep}`);
+    console.log(`   Vendors to delete: ${vendorsToDelete}`);
+    console.log(`   Total cleanup actions: ${cleanupActions.length}`);
+    
+    // Execute cleanup if not dry run
+    if (!dryRun && cleanupActions.length > 0) {
+      console.log('\n🔥 Executing cleanup (LIVE MODE)...');
+      
+      for (const action of cleanupActions) {
+        try {
+          // Delete from KV store
+          await kv.del(action.key);
+          console.log(`   ✅ Deleted: ${action.key}`);
+        } catch (err) {
+          console.error(`   ❌ Failed to delete ${action.key}:`, err);
+          action.error = String(err);
+        }
+      }
+      
+      console.log('✅ Cleanup completed!');
+    } else if (dryRun) {
+      console.log('\n💡 DRY RUN - No changes made. Set dryRun=false to execute cleanup.');
+    }
+    
+    return c.json({
+      success: true,
+      dryRun,
+      summary: {
+        vendorsToKeep,
+        vendorsToDelete,
+        totalActions: cleanupActions.length
+      },
+      actions: cleanupActions,
+      message: dryRun 
+        ? 'Dry run completed. Review actions and set dryRun=false to execute cleanup.'
+        : `Cleanup completed. Deleted ${vendorsToDelete} duplicate vendors.`
+    });
+  } catch (error) {
+    console.error('Error during cleanup:', error);
     return c.json({ error: String(error) }, 500);
   }
 });

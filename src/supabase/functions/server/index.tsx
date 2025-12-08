@@ -54,12 +54,29 @@ import { registerChatEndpoints } from "./chat-endpoints.tsx";
 import { registerSubscriptionEndpoints } from "./subscription-endpoints.tsx";
 import { registerVideoConsultationEndpoints } from "./video-consultation-endpoints.tsx";
 import { registerMedicalHistoryEndpoints } from "./medical-history-endpoints.tsx";
+import { registerUniversalStaffSchedule } from "./universal-staff-schedule.tsx";
+import { registerCenterAvailabilityEndpoints } from "./center-availability-endpoints.tsx";
+import { registerBoardingRoomManagement } from "./boarding-room-management.tsx";
+import { registerPetListingManagement } from "./pet-listing-management.tsx";
+import { registerNutritionistMealManagement } from "./nutritionist-meal-management.tsx";
+import { registerServicePackageManagement } from "./service-package-management.tsx";
+import { registerMarketplaceProducts } from "./marketplace-products.tsx";
+import { registerUniversalServiceDiscovery } from "./universal-service-discovery.tsx";
+import { registerUniversalOTPSystem } from "./universal-otp-system.tsx";
+import { registerHomeServiceBookingFlow } from "./home-service-booking-flow.tsx";
+import { registerBookingLifecycleManagement } from "./booking-lifecycle-management.tsx";
+import { registerSmsOtpService } from "./sms-otp-service.tsx";
+import { registerRazorpayRefundProcessor } from "./razorpay-refund-processor.tsx";
+import { registerGooglePlacesService } from "./google-places-service.tsx";
+import { registerSettlementAutomation } from "./settlement-automation.tsx";
+import { registerS3AutoUploader } from "./s3-auto-uploader.tsx";
+import { registerSmsEventNotifications } from "./sms-event-notifications.tsx";
 
 const app = new Hono();
 
 // Global Middleware
 app.use('*', cors());
-app.use('*', logger());
+app.use('*', logger(console.log));
 
 // ------------------------------------------------------------------
 // CRITICAL: Region endpoint must be registered FIRST to avoid being shadowed
@@ -222,6 +239,12 @@ registerChatEndpoints(app);
 registerSubscriptionEndpoints(app);
 registerVideoConsultationEndpoints(app);
 registerMedicalHistoryEndpoints(app);
+registerUniversalStaffSchedule(app);
+registerCenterAvailabilityEndpoints(app);
+registerBoardingRoomManagement(app);
+registerPetListingManagement(app);
+registerNutritionistMealManagement(app);
+registerServicePackageManagement(app);
 registerGPSTrackingEndpoints(app);
 bookingEndpoints(app, kv);
 registerCafeFeatures(app);
@@ -233,6 +256,17 @@ app.route('/make-server-3dd53475/orders', orderRoutes);
 app.route('/make-server-3dd53475/ecommerce', ecommerceRoutes);
 app.route('/make-server-3dd53475', customerEcommerceRoutes);
 app.route('/make-server-3dd53475', marketingRoutesV2);
+registerMarketplaceProducts(app);
+registerUniversalServiceDiscovery(app);
+registerUniversalOTPSystem(app);
+registerHomeServiceBookingFlow(app);
+registerBookingLifecycleManagement(app);
+registerSmsOtpService(app);
+registerRazorpayRefundProcessor(app);
+registerGooglePlacesService(app);
+registerSettlementAutomation(app);
+registerS3AutoUploader(app);
+const smsNotifications = registerSmsEventNotifications(app);
 
 // 5. Staff Routes
 app.route('/make-server-3dd53475', staffAuthRoutes); // Register Auth FIRST to avoid shadowing by /staff wildcard

@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
 import { LoadingState, ErrorState, EmptyState } from '../ui/states';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
+import { SearchBar } from '../ui/SearchBar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Card } from '../ui/card';
 import { Badge } from '../ui/badge';
@@ -47,6 +47,8 @@ export function CustomerServicesPage({ onBack, onNavigate, initialFilters }: Cus
   const [serviceStyle, setServiceStyle] = useState<'at_home' | 'at_center' | 'tele' | 'all'>('all');
   const [roleId, setRoleId] = useState(initialFilters?.roleId || '');
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filteredServices, setFilteredServices] = useState<Service[]>([]);
   
   const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
 
@@ -125,6 +127,13 @@ export function CustomerServicesPage({ onBack, onNavigate, initialFilters }: Cus
     }
   };
   
+  useEffect(() => {
+    const filtered = services.filter(service =>
+      service.serviceName.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+    setFilteredServices(filtered);
+  }, [searchQuery, services]);
+  
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
       {/* Header */}
@@ -180,11 +189,11 @@ export function CustomerServicesPage({ onBack, onNavigate, initialFilters }: Cus
           <LoadingState message="Finding services..." />
         ) : error ? (
           <ErrorState message={error} onRetry={fetchServices} />
-        ) : services.length === 0 ? (
+        ) : filteredServices.length === 0 ? (
           <EmptyState message="No services found matching your filters." />
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {services.map((service) => (
+            {filteredServices.map((service) => (
               <ServiceCard
                 key={service.id}
                 service={service}

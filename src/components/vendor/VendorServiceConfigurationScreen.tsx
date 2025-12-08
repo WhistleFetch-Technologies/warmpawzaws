@@ -651,14 +651,48 @@ export function VendorServiceConfigurationScreen({
 
           {/* Add Custom Service Button - Available for ALL at_center vendors */}
           {serviceStyle === 'at_center' && (
-            <Button
-              onClick={() => setShowAddCustomDialog(true)}
-              variant="outline"
-              className="w-full mt-3 border-2 border-dashed border-[#FF8C42] text-[#FF8C42] hover:bg-orange-50"
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Create Custom Service
-            </Button>
+            <div className="mt-3">
+              <Button
+                onClick={() => setShowAddCustomDialog(true)}
+                variant="outline"
+                className="w-full border-2 border-dashed border-[#FF8C42] text-[#FF8C42] hover:bg-orange-50"
+                disabled={false} // Always enabled for single services
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Create Custom Service
+              </Button>
+              
+              {/* TASK 3: Custom Package Button with Restriction */}
+              <div className="relative mt-2 group">
+                <Button
+                  onClick={() => {
+                    // Only allow package creation in centre context
+                    if (vendorData?.centres && vendorData.centres.length > 0) {
+                      // Navigate to centre selection or package creation
+                      toast.info('Please create packages from the Centre Management section');
+                    } else {
+                      // Show tooltip explaining restriction
+                      toast.error('Custom packages can only be created for centre-based services');
+                    }
+                  }}
+                  variant="outline"
+                  className="w-full border-2 border-dashed border-purple-500 text-purple-600 hover:bg-purple-50 opacity-50 cursor-not-allowed"
+                  disabled={true}
+                >
+                  <Package className="w-4 h-4 mr-2" />
+                  Create Custom Package
+                </Button>
+                
+                {/* Tooltip */}
+                <div className="hidden group-hover:block absolute bottom-full left-0 right-0 mb-2 z-10">
+                  <div className="bg-gray-900 text-white text-xs rounded-lg p-3 shadow-lg">
+                    <p className="font-semibold mb-1">⚠️ Centre Context Required</p>
+                    <p>Custom packages can only be created for centre-based services. Please go to Centre Management to create packages.</p>
+                    <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-1/2 rotate-45 w-2 h-2 bg-gray-900"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
           )}
         </div>
 

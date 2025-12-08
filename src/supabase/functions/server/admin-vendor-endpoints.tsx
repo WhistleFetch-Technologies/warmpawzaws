@@ -1,5 +1,6 @@
 import { Hono } from "npm:hono";
 import { sendSuccess, sendError } from "./response-utils.ts";
+import { createClient } from "jsr:@supabase/supabase-js@2.49.8";
 
 /**
  * Enhanced Admin Vendor Management Endpoints
@@ -21,12 +22,31 @@ export function adminVendorEndpoints(app: Hono, kv: any) {
       console.log('📋 ADMIN: Loading all vendors...');
       console.log('========================================');
       
-      // Get all vendors
-      const allVendors = await kv.getByPrefix('vendor:');
-      console.log(`📦 Raw vendor records from KV: ${allVendors.length}`);
+      // Get all vendors with their actual keys
+      // Note: kv.getByPrefix only returns values, not keys
+      // We need to query the database directly to get both keys and values
+      const supabase = createClient(
+        Deno.env.get('SUPABASE_URL'),
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+      );
+      
+      const { data: kvRecords, error } = await supabase
+        .from('kv_store_3dd53475')
+        .select('key, value')
+        .like('key', 'vendor:%');
+      
+      if (error) {
+        console.error('❌ Error fetching vendors:', error);
+        return c.json({ error: error.message }, 500);
+      }
+      
+      console.log(`📦 Raw vendor records from KV: ${kvRecords?.length || 0}`);
       
       // Filter to only main vendor records (not indexes, applications, or other metadata)
-      const vendors = allVendors.filter((v: any) => {
+      const vendors = kvRecords?.filter((record: any) => {
+        const v = record.value;
+        const key = record.key;
+        
         // 1. Check if it's an object
         if (!v || typeof v !== 'object') return false;
         
@@ -64,19 +84,26 @@ export function adminVendorEndpoints(app: Hono, kv: any) {
         }
         
         return false;
-      });
+      }) || [];
       
       console.log(`✅ Filtered main vendor records: ${vendors.length}`);
       
       // Enrich with additional data
-      const enrichedVendors = vendors.map((vendor: any) => {
+      const enrichedVendors = vendors.map((record: any) => {
+        const vendor = record.value;
+        const dbKey = record.key;
+        
+        // Extract vendorId from the key (e.g., "vendor:vendor_123" -> "vendor_123")
+        const vendorIdFromKey = dbKey.replace('vendor:', '');
+        
         // Normalize status for Admin UI (Admin expects 'pending_approval')
         let displayStatus = vendor.status || 'pending_approval';
         if (displayStatus === 'pending') displayStatus = 'pending_approval';
 
         return {
           id: vendor.id,
-          vendorId: vendor.id, // Add vendorId for approval
+          vendorId: vendorIdFromKey, // Use the ID from the actual database key
+          dbKey: dbKey, // Include the full database key for debugging
           applicationId: vendor.applicationId || vendor.id,
           fullName: vendor.fullName,
           businessName: vendor.businessName,
@@ -209,6 +236,114 @@ export function adminVendorEndpoints(app: Hono, kv: any) {
       
     } catch (error) {
       console.error('❌ Error calculating statistics:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  // ============================================
+  // GET ACTIVE VENDORS
+  // ============================================
+
+  /**
+   * GET /admin/vendors/active
+   * Get all active/approved vendors
+   */
+  app.get("/make-server-3dd53475/admin/vendors/active", async (c) => {
+    try {
+      console.log('📋 Loading active vendors...');
+      
+      // Query database directly for active vendors
+      const supabase = createClient(
+        Deno.env.get('SUPABASE_URL'),
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+      );
+      
+      const { data: kvRecords, error } = await supabase
+        .from('kv_store_3dd53475')
+        .select('key, value')
+        .like('key', 'vendor:%');
+      
+      if (error) {
+        console.error('❌ Error fetching vendors:', error);
+        return c.json({ error: error.message }, 500);
+      }
+      
+      // Filter to active vendors only
+      const activeVendors = kvRecords?.filter((record: any) => {
+        const v = record.value;
+        
+        // Must be an object
+        if (!v || typeof v !== 'object') return false;
+        
+        // Must have vendor_ prefix
+        const id = v.id || v.vendorId;
+        if (!id || !String(id).startsWith('vendor_')) return false;
+        
+        // Must be approved and active
+        return v.status === 'approved' && v.isActive === true;
+      }).map((record: any) => {
+        const vendor = record.value;
+        const dbKey = record.key;
+        const vendorIdFromKey = dbKey.replace('vendor:', '');
+        
+        return {
+          id: vendor.id,
+          vendorId: vendorIdFromKey,
+          fullName: vendor.fullName,
+          businessName: vendor.businessName,
+          roleName: vendor.roleName,
+          phone: vendor.phone,
+          email: vendor.email,
+          city: vendor.city,
+          state: vendor.state,
+          status: vendor.status,
+          isActive: vendor.isActive,
+          rating: vendor.rating || null,
+          totalBookings: vendor.totalBookings || 0,
+          revenue: vendor.revenue || 0,
+          lastActivityAt: vendor.lastActivityAt,
+          approvedAt: vendor.approvedAt
+        };
+      }) || [];
+      
+      console.log(`✅ Returning ${activeVendors.length} active vendors`);
+      
+      return sendSuccess(c, {
+        vendors: activeVendors,
+        total: activeVendors.length
+      });
+      
+    } catch (error) {
+      console.error('❌ Error loading active vendors:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  // ============================================
+  // GET SINGLE VENDOR BY ID (for status checking)
+  // ============================================
+  
+  /**
+   * GET /admin/vendors/:vendorId
+   * Get a single vendor by ID for status verification
+   * IMPORTANT: This must be registered AFTER all static routes to avoid route shadowing
+   */
+  app.get("/make-server-3dd53475/admin/vendors/:vendorId", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      console.log(`🔍 Fetching vendor by ID: ${vendorId}`);
+      
+      const vendor = await kv.get(`vendor:${vendorId}`);
+      
+      if (!vendor) {
+        console.error(`❌ Vendor not found: ${vendorId}`);
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+      
+      console.log(`✅ Vendor found with status: ${vendor.status}`);
+      return sendSuccess(c, { vendor });
+    } catch (error) {
+      console.error('Error fetching vendor:', error);
       return sendError(c, error, 500);
     }
   });

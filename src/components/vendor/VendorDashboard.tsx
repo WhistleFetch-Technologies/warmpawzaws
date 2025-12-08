@@ -37,6 +37,8 @@ import { AppointmentDetailModal } from './AppointmentDetailModal';
 import { AIChatBot } from '../customer/AIChatBot';
 import { useVendorCapabilities } from './hooks/useVendorCapabilities';
 import { copyTextToClipboard } from '../../utils/shareUtils';
+import { CapabilityDebugOverlay } from './CapabilityDebugOverlay';
+import { ModuleDisabledMessage, ModuleMessages } from './ModuleDisabledMessage';
 
 interface VendorDashboardProps {
   vendorId: string;
@@ -143,7 +145,7 @@ export function VendorDashboard({
   const [selectedAppointment, setSelectedAppointment] = useState<ScheduleItem | null>(null);
 
   // 🔌 CORE: Load dynamic capabilities
-  const { capabilities, loading: capsLoading } = useVendorCapabilities(vendorData?.roleId);
+  const { capabilities, loading: capsLoading, roleName } = useVendorCapabilities(vendorData?.roleId);
 
   const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
   const isVet = vendorData?.roleId === 'veterinarian' || vendorData?.roleId === 'vet';
@@ -786,6 +788,14 @@ export function VendorDashboard({
       <AIChatBot 
         customerId={vendorId} // Using vendorId as customerId for CRM tracking
         customerName={vendor?.fullName || vendor?.businessName || 'Vendor'} 
+      />
+
+      {/* Capability Debug Overlay (Dev Only) */}
+      <CapabilityDebugOverlay
+        roleId={vendorData?.roleId || 'unknown'}
+        roleName={roleName}
+        capabilities={capabilities}
+        vendorData={vendorData}
       />
 
     </div>

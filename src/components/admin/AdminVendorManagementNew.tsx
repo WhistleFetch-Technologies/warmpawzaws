@@ -18,7 +18,7 @@ import { ExportApplicationsModal } from './ExportApplicationsModal';
 import { SuccessModal } from './SuccessModal';
 import { SupportVendorTab } from './SupportVendorTab';
 import { ComplianceIssuesTab } from './ComplianceIssuesTab';
-import { PendingApplicationsTab } from './PendingApplicationsTab';
+import { EnhancedPendingApplicationsTab } from './EnhancedPendingApplicationsTab';
 import { PaymentDisputesTab } from './PaymentDisputesTab';
 import { ActiveVendorsTab } from './ActiveVendorsTab';
 import { SuperAdminProfileModal } from './SuperAdminProfileModal';
@@ -69,7 +69,7 @@ interface AdminVendorManagementNewProps {
 }
 
 export function AdminVendorManagementNew({ onNavigate }: AdminVendorManagementNewProps = {}) {
-  const [activeTab, setActiveTab] = useState<'applications' | 'deactivation' | 'rate-changes' | 'reverification' | 'support' | 'compliance' | 'pending' | 'payment-disputes' | 'active-vendors' | 'settings' | 'clarification'>('applications');
+  const [activeTab, setActiveTab] = useState<'applications' | 'deactivation' | 'rate-changes' | 'reverification' | 'support' | 'compliance' | 'payment-disputes' | 'active-vendors' | 'settings' | 'clarification'>('applications');
   const [stats, setStats] = useState<VendorStats | null>(null);
   const [applications, setApplications] = useState<VendorApplication[]>([]);
   const [allVendors, setAllVendors] = useState<VendorApplication[]>([]); // NEW: Store all vendors
@@ -80,6 +80,10 @@ export function AdminVendorManagementNew({ onNavigate }: AdminVendorManagementNe
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending_approval' | 'approved' | 'rejected' | 'pending_reverification'>('all'); // NEW: Status filter
   const [alertFilter, setAlertFilter] = useState('all');
   const [expandedSection, setExpandedSection] = useState<string | null>('refund-policies');
+  
+  // NEW: Advanced search and role filtering
+  const [searchQuery, setSearchQuery] = useState('');
+  const [roleFilter, setRoleFilter] = useState<'all' | 'vet' | 'grooming' | 'walking' | 'boarding' | 'training'>('all');
   
   // Modal states
   const [showRenewalModal, setShowRenewalModal] = useState(false);
@@ -123,6 +127,29 @@ export function AdminVendorManagementNew({ onNavigate }: AdminVendorManagementNe
     try {
       setLoading(true);
       
+      // ✅ HEALTH CHECK FIRST
+      console.log('🏥 Checking server health...');
+      try {
+        const healthResponse = await fetch(
+          `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/health`,
+          {
+            headers: {
+              'Authorization': `Bearer ${publicAnonKey}`
+            }
+          }
+        );
+        
+        if (healthResponse.ok) {
+          const healthData = await healthResponse.json();
+          console.log('✅ Server is healthy:', healthData);
+        } else {
+          console.warn('⚠️ Health check failed with status:', healthResponse.status);
+        }
+      } catch (healthError) {
+        console.error('❌ Server health check failed:', healthError);
+        throw new Error('Server is not responding. Please ensure the backend is deployed and running.');
+      }
+      
       // Load stats
       const statsResponse = await fetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendors/stats`,
@@ -136,6 +163,8 @@ export function AdminVendorManagementNew({ onNavigate }: AdminVendorManagementNe
       if (statsResponse.ok) {
         const statsData = await statsResponse.json();
         setStats(statsData.stats);
+      } else {
+        console.error('❌ Failed to load stats:', await statsResponse.text());
       }
       
       // Load ALL vendors (not just pending) - NEW!
@@ -177,7 +206,7 @@ export function AdminVendorManagementNew({ onNavigate }: AdminVendorManagementNe
       
       // Load quality alerts
       const alertsResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendors/quality/alerts`,
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/quality/alerts`,
         {
           headers: {
             'Authorization': `Bearer ${publicAnonKey}`
@@ -191,7 +220,12 @@ export function AdminVendorManagementNew({ onNavigate }: AdminVendorManagementNe
       }
       
     } catch (error) {
-      console.error('Error loading vendor data:', error);
+      console.error('❌ Error loading vendor data:', error);
+      console.error('Error type:', error instanceof TypeError ? 'Network/Fetch Error' : 'Other Error');
+      console.error('Error message:', error.message);
+      
+      // Show user-friendly alert
+      alert(`Failed to load vendor data. Please check:\n\n1. Server is running\n2. Network connection\n3. Console for detailed error\n\nError: ${error.message}`);
     } finally {
       setLoading(false);
     }
@@ -820,15 +854,15 @@ export function AdminVendorManagementNew({ onNavigate }: AdminVendorManagementNe
             </div>
           </div>
 
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Button variant="outline" className="gap-2" onClick={loadData}>
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+              <Button variant="outline" className="gap-2 flex-1 sm:flex-initial" onClick={loadData}>
                 <RefreshCw className="w-4 h-4" />
-                Refresh
+                <span className="hidden sm:inline">Refresh</span>
               </Button>
               <Button 
                 variant="outline" 
-                className="gap-2 border-gray-300 text-gray-700 hover:bg-gray-50" 
+                className="gap-2 border-gray-300 text-gray-700 hover:bg-gray-50 flex-1 sm:flex-initial" 
                 onClick={() => {
                   console.log('👉 Clicked Platform Settings');
                   if (onNavigate) {
@@ -840,11 +874,11 @@ export function AdminVendorManagementNew({ onNavigate }: AdminVendorManagementNe
                 }}
               >
                 <Settings className="w-4 h-4" />
-                Platform Settings
+                <span className="hidden sm:inline">Platform Settings</span>
               </Button>
             </div>
             
-            <Button className="bg-[#FF8C42] hover:bg-[#FF7A2E] gap-2" onClick={() => setShowAddVendor(true)}>
+            <Button className="bg-[#FF8C42] hover:bg-[#FF7A2E] gap-2 w-full sm:w-auto" onClick={() => setShowAddVendor(true)}>
               <Plus className="w-4 h-4" />
               Add Vendor
             </Button>
@@ -854,7 +888,7 @@ export function AdminVendorManagementNew({ onNavigate }: AdminVendorManagementNe
         {/* Content Area */}
         <div className="flex-1 overflow-y-auto p-6">
           {/* Stats Cards - NOW CLICKABLE! */}
-          <div className="grid grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             <div onClick={() => handleStatCardClick('approved')} className="cursor-pointer">
               <StatCard
                 icon={<TrendingUp className="w-5 h-5 text-green-600" />}
@@ -899,7 +933,7 @@ export function AdminVendorManagementNew({ onNavigate }: AdminVendorManagementNe
           </div>
 
           {/* Distribution and Quick Access */}
-          <div className="grid grid-cols-3 gap-6 mb-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
             {/* Vendor Distribution */}
             <div className="bg-white rounded-xl p-6 border border-gray-200">
               <div className="flex items-center justify-between mb-4">
@@ -940,10 +974,10 @@ export function AdminVendorManagementNew({ onNavigate }: AdminVendorManagementNe
             </div>
 
             {/* Quick Access */}
-            <div className="col-span-2 bg-white rounded-xl p-6 border border-gray-200">
+            <div className="lg:col-span-2 bg-white rounded-xl p-6 border border-gray-200">
               <h3 className="text-sm mb-4">Quick Access</h3>
               
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 <QuickAccessCard
                   icon={<AlertTriangle className="w-5 h-5 text-red-600" />}
                   label="Deactivation Requests"
@@ -986,32 +1020,20 @@ export function AdminVendorManagementNew({ onNavigate }: AdminVendorManagementNe
 
           {/* Tabs */}
           <div className="bg-white rounded-xl border border-gray-200">
-            <div className="border-b border-gray-200 px-6 py-3 flex gap-6">
-              <TabButton 
-                label="New Vendor Applications" 
-                active={activeTab === 'applications'}
-                onClick={() => setActiveTab('applications')}
-              />
-              <TabButton 
-                label="Deactivation Requests" 
-                active={activeTab === 'deactivation'}
-                onClick={() => setActiveTab('deactivation')}
-              />
-              <TabButton 
-                label="Rate Changes" 
-                active={activeTab === 'rate-changes'}
-                onClick={() => setActiveTab('rate-changes')}
-              />
-              <TabButton 
-                label="Re-Verification List" 
-                active={activeTab === 'reverification'}
-                onClick={() => setActiveTab('reverification')}
-              />
-            </div>
 
             {/* Tab Content */}
-            <div className="p-6">
+            <div className="p-3 sm:p-6">
               {activeTab === 'applications' && (
+                <EnhancedPendingApplicationsTab
+                  onViewDetails={(vendor) => {
+                    setSelectedApplication(vendor as any);
+                    setShowApplicationDetail(true);
+                  }}
+                />
+              )}
+
+              {/* OLD TAB - Keeping for reference but hidden */}
+              {false && activeTab === 'applications-old' && (
                 <div className="flex gap-6">
                   {/* Applications List */}
                   <div className="flex-1">
@@ -1229,10 +1251,6 @@ export function AdminVendorManagementNew({ onNavigate }: AdminVendorManagementNe
 
               {activeTab === 'compliance' && (
                 <ComplianceIssuesTab />
-              )}
-
-              {activeTab === 'pending' && (
-                <PendingApplicationsTab />
               )}
 
               {activeTab === 'payment-disputes' && (

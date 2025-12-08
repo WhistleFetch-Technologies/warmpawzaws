@@ -57,6 +57,8 @@ interface EnhancedPackageCreationModalProps {
   onSubmit: (data: PackageFormData) => Promise<void>;
   serviceStyle: 'at_center' | 'at_clinic';
   availableServices?: ServiceItem[];
+  centreContext?: boolean; // NEW: Whether this is being created in a centre context
+  centreName?: string; // NEW: Name of the centre (for UI display)
 }
 
 export function EnhancedPackageCreationModal({ 
@@ -64,7 +66,9 @@ export function EnhancedPackageCreationModal({
   onClose, 
   onSubmit,
   serviceStyle,
-  availableServices = []
+  availableServices = [],
+  centreContext = false,
+  centreName = ''
 }: EnhancedPackageCreationModalProps) {
   const [formData, setFormData] = useState<PackageFormData>({
     serviceName: '',

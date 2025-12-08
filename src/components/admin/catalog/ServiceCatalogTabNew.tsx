@@ -191,12 +191,14 @@ export function ServiceCatalogTabNew() {
     const grouped: { [key: string]: CategoryGroup } = {};
 
     filteredServices.forEach(service => {
-      const categoryKey = service.categoryId || service.categoryName;
+      // Ensure we have a valid categoryId - use categoryName as fallback to ensure uniqueness
+      const categoryId = service.categoryId || service.categoryName.toLowerCase().replace(/\s+/g, '_');
+      const categoryKey = categoryId;
       
       if (!grouped[categoryKey]) {
         grouped[categoryKey] = {
           categoryName: service.categoryName,
-          categoryId: service.categoryId,
+          categoryId: categoryId, // Use the normalized categoryId
           subcategories: []
         };
       }
