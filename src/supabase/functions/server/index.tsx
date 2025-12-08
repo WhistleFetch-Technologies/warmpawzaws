@@ -76,6 +76,8 @@ import { registerSmsEventNotifications } from "./sms-event-notifications.tsx";
 import { razorpayEndpoints } from "./razorpay-integration.tsx";
 import { registerShiprocketIntegration } from "./shiprocket-integration.tsx";
 import { registerIntegrationInitEndpoints } from "./init-integrations.tsx";
+import { agoraVideoEndpoints } from "./agora-video-integration.tsx";
+import { automatedPayoutEndpoints } from "./automated-vendor-payouts.tsx";
 
 // ✅ NEW: Enterprise Admin Capabilities
 import { analyticsAggregationEndpoints } from "./analytics-aggregation.tsx";
@@ -284,6 +286,8 @@ const smsNotifications = registerSmsEventNotifications(app);
 razorpayEndpoints(app);
 registerShiprocketIntegration(app);
 registerIntegrationInitEndpoints(app);
+agoraVideoEndpoints(app);
+automatedPayoutEndpoints(app);
 
 // ✅ NEW: Enterprise Admin Capabilities
 analyticsAggregationEndpoints(app);
