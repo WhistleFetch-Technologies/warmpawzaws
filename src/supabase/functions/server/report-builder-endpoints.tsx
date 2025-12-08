@@ -20,213 +20,92 @@ export function reportBuilderEndpoints(app: Hono) {
   });
 
   /**
-   * POST /admin/reports
-   * Create a new report
+   * GET /admin/reports/saved
+   * Get all saved reports (alias for compatibility)
    */
-  app.post("/make-server-3dd53475/admin/reports", async (c) => {
+  app.get("/make-server-3dd53475/admin/reports/saved", async (c) => {
+    try {
+      const reports = await kv.getByPrefix('report:');
+      const validReports = reports.filter((r: any) => r.id && !r.id.includes(':template'));
+      
+      return c.json({ success: true, reports: validReports });
+    } catch (error) {
+      console.error('Get Saved Reports Error:', error);
+      return c.json({ error: String(error) }, 500);
+    }
+  });
+
+  /**
+   * POST /admin/reports/save
+   * Save a report configuration
+   */
+  app.post("/make-server-3dd53475/admin/reports/save", async (c) => {
     try {
       const reportConfig = await c.req.json();
       
-      const {
-        name,
-        type,
-        description,
-        dateRange,
-        filters,
-        metrics,
-        groupBy,
-        format,
-        schedule
-      } = reportConfig;
-      
-      if (!name || !type) {
-        return c.json({ error: 'Report name and type are required' }, 400);
+      if (!reportConfig.name) {
+        return c.json({ error: 'Report name is required' }, 400);
       }
       
-      const reportId = `report_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+      const reportId = reportConfig.id || `report_${Date.now()}_${Math.random().toString(36).substring(7)}`;
       
       const report = {
+        ...reportConfig,
         id: reportId,
-        name,
-        type,
-        description: description || '',
-        dateRange: dateRange || '30d',
-        filters: filters || {},
-        metrics: metrics || [],
-        groupBy: groupBy || 'day',
-        format: format || 'csv',
-        schedule: schedule || null,
-        isTemplate: false,
-        createdBy: 'admin',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        lastGenerated: null,
-        generationCount: 0
-      };
-      
-      await kv.set(`report:${reportId}`, report);
-      
-      console.log(`✅ Report created: ${reportId} - ${name}`);
-      return c.json({ success: true, report });
-    } catch (error) {
-      console.error('Create Report Error:', error);
-      return c.json({ error: String(error) }, 500);
-    }
-  });
-
-  /**
-   * GET /admin/reports/:reportId
-   * Get a specific report
-   */
-  app.get("/make-server-3dd53475/admin/reports/:reportId", async (c) => {
-    try {
-      const { reportId } = c.req.param();
-      
-      const report = await kv.get(`report:${reportId}`);
-      if (!report) {
-        return c.json({ error: 'Report not found' }, 404);
-      }
-      
-      return c.json({ success: true, report });
-    } catch (error) {
-      console.error('Get Report Error:', error);
-      return c.json({ error: String(error) }, 500);
-    }
-  });
-
-  /**
-   * PUT /admin/reports/:reportId
-   * Update a report
-   */
-  app.put("/make-server-3dd53475/admin/reports/:reportId", async (c) => {
-    try {
-      const { reportId } = c.req.param();
-      const updates = await c.req.json();
-      
-      const report = await kv.get(`report:${reportId}`);
-      if (!report) {
-        return c.json({ error: 'Report not found' }, 404);
-      }
-      
-      const updatedReport = {
-        ...report,
-        ...updates,
-        id: reportId,
+        savedAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
       
-      await kv.set(`report:${reportId}`, updatedReport);
-      
-      console.log(`✅ Report updated: ${reportId}`);
-      return c.json({ success: true, report: updatedReport });
-    } catch (error) {
-      console.error('Update Report Error:', error);
-      return c.json({ error: String(error) }, 500);
-    }
-  });
-
-  /**
-   * DELETE /admin/reports/:reportId
-   * Delete a report
-   */
-  app.delete("/make-server-3dd53475/admin/reports/:reportId", async (c) => {
-    try {
-      const { reportId } = c.req.param();
-      
-      const report = await kv.get(`report:${reportId}`);
-      if (!report) {
-        return c.json({ error: 'Report not found' }, 404);
-      }
-      
-      await kv.del(`report:${reportId}`);
-      
-      console.log(`✅ Report deleted: ${reportId}`);
-      return c.json({ success: true });
-    } catch (error) {
-      console.error('Delete Report Error:', error);
-      return c.json({ error: String(error) }, 500);
-    }
-  });
-
-  /**
-   * POST /admin/reports/:reportId/generate
-   * Generate a report
-   */
-  app.post("/make-server-3dd53475/admin/reports/:reportId/generate", async (c) => {
-    try {
-      const { reportId } = c.req.param();
-      
-      const report = await kv.get(`report:${reportId}`);
-      if (!report) {
-        return c.json({ error: 'Report not found' }, 404);
-      }
-      
-      // Generate report data based on type
-      const reportData = await generateReportData(report);
-      
-      // Update report metadata
-      report.lastGenerated = new Date().toISOString();
-      report.generationCount = (report.generationCount || 0) + 1;
       await kv.set(`report:${reportId}`, report);
       
-      // Save generated report
-      const generatedId = `report:${reportId}:generated:${Date.now()}`;
-      await kv.set(generatedId, {
-        reportId,
-        data: reportData,
-        generatedAt: new Date().toISOString()
-      });
-      
-      console.log(`✅ Report generated: ${reportId}`);
-      return c.json({ success: true, data: reportData, reportId });
+      console.log(`✅ Report saved: ${reportId} - ${reportConfig.name}`);
+      return c.json({ success: true, report });
     } catch (error) {
-      console.error('Generate Report Error:', error);
+      console.error('Save Report Error:', error);
       return c.json({ error: String(error) }, 500);
     }
   });
 
   /**
-   * POST /admin/reports/:reportId/export
-   * Export report in specified format
+   * POST /admin/reports/generate
+   * Generate report data based on configuration
    */
-  app.post("/make-server-3dd53475/admin/reports/:reportId/export", async (c) => {
+  app.post("/make-server-3dd53475/admin/reports/generate", async (c) => {
     try {
-      const { reportId } = c.req.param();
-      const { format } = await c.req.json();
+      const reportConfig = await c.req.json();
       
-      const report = await kv.get(`report:${reportId}`);
-      if (!report) {
-        return c.json({ error: 'Report not found' }, 404);
+      const { reportType, dateRange, groupBy, filters, metrics } = reportConfig;
+      
+      // Calculate date range
+      const { startDate, endDate } = getDateRange(dateRange || '30d');
+      
+      let data: any[] = [];
+      
+      // Generate data based on report type
+      switch (reportType) {
+        case 'revenue':
+          data = await generateRevenueReport(startDate, endDate, groupBy, filters, metrics);
+          break;
+        case 'bookings':
+          data = await generateBookingsReport(startDate, endDate, groupBy, filters, metrics);
+          break;
+        case 'vendors':
+          data = await generateVendorsReport(startDate, endDate, groupBy, filters, metrics);
+          break;
+        case 'customers':
+          data = await generateCustomersReport(startDate, endDate, groupBy, filters, metrics);
+          break;
+        case 'custom':
+          data = await generateCustomReport(startDate, endDate, groupBy, filters, metrics);
+          break;
+        default:
+          data = await generateRevenueReport(startDate, endDate, groupBy, filters, metrics);
       }
       
-      const reportData = await generateReportData(report);
-      
-      // Convert to requested format
-      let exportData;
-      let contentType;
-      
-      if (format === 'csv') {
-        exportData = convertToCSV(reportData);
-        contentType = 'text/csv';
-      } else if (format === 'json') {
-        exportData = JSON.stringify(reportData, null, 2);
-        contentType = 'application/json';
-      } else if (format === 'excel') {
-        // Simplified - in production use a proper Excel library
-        exportData = convertToCSV(reportData);
-        contentType = 'application/vnd.ms-excel';
-      } else {
-        return c.json({ error: 'Unsupported format' }, 400);
-      }
-      
-      return c.json({
-        success: true,
-        data: exportData,
-        contentType,
-        filename: `${report.name}_${new Date().toISOString().split('T')[0]}.${format}`
-      });
+      console.log(`✅ Report generated: ${reportType} with ${data.length} rows`);
+      return c.json({ success: true, data });
     } catch (error) {
-      console.error('Export Report Error:', error);
+      console.error('Generate Report Error:', error);
       return c.json({ error: String(error) }, 500);
     }
   });
@@ -402,12 +281,12 @@ export function reportBuilderEndpoints(app: Hono) {
     };
   }
 
-  async function generateFinancialReport(
+  async function generateRevenueReport(
     start: string, 
     end: string, 
+    groupBy: string, 
     filters: any, 
-    metrics: string[], 
-    groupBy: string
+    metrics: string[]
   ): Promise<any> {
     const bookings = await getBookingsInRange(start, end);
     const orders = await getOrdersInRange(start, end);
@@ -436,12 +315,12 @@ export function reportBuilderEndpoints(app: Hono) {
     };
   }
 
-  async function generateOperationalReport(
+  async function generateBookingsReport(
     start: string, 
     end: string, 
+    groupBy: string, 
     filters: any, 
-    metrics: string[], 
-    groupBy: string
+    metrics: string[]
   ): Promise<any> {
     const bookings = await getBookingsInRange(start, end);
     const vendors = await kv.getByPrefix('vendor:');
@@ -467,49 +346,12 @@ export function reportBuilderEndpoints(app: Hono) {
     };
   }
 
-  async function generateMarketingReport(
+  async function generateVendorsReport(
     start: string, 
     end: string, 
+    groupBy: string, 
     filters: any, 
-    metrics: string[], 
-    groupBy: string
-  ): Promise<any> {
-    const campaigns = await getCampaignsInRange(start, end);
-    const customers = await kv.getByPrefix('customer:');
-    const newCustomers = customers.filter((c: any) => {
-      if (!c.id || c.id.includes(':')) return false;
-      const created = new Date(c.createdAt);
-      return created >= new Date(start) && created <= new Date(end);
-    });
-    
-    return {
-      summary: {
-        activeCampaigns: campaigns.filter(c => c.status === 'active').length,
-        totalCampaigns: campaigns.length,
-        newCustomers: newCustomers.length,
-        totalCustomers: customers.filter((c: any) => !c.id.includes(':')).length,
-        customerGrowthRate: 0 // Calculate based on previous period
-      },
-      campaignPerformance: campaigns.map(c => ({
-        name: c.name,
-        type: c.type,
-        impressions: c.impressions || 0,
-        clicks: c.clicks || 0,
-        conversions: c.conversions || 0,
-        spend: c.spend || 0,
-        roi: c.spend > 0 ? ((c.revenue || 0) - c.spend) / c.spend : 0
-      })),
-      channelPerformance: await getChannelPerformance(campaigns),
-      customerAcquisitionCost: await calculateCAC(start, end)
-    };
-  }
-
-  async function generateVendorReport(
-    start: string, 
-    end: string, 
-    filters: any, 
-    metrics: string[], 
-    groupBy: string
+    metrics: string[]
   ): Promise<any> {
     const vendors = await kv.getByPrefix('vendor:');
     const activeVendors = vendors.filter((v: any) => 
@@ -547,12 +389,12 @@ export function reportBuilderEndpoints(app: Hono) {
     };
   }
 
-  async function generateCustomerReport(
+  async function generateCustomersReport(
     start: string, 
     end: string, 
+    groupBy: string, 
     filters: any, 
-    metrics: string[], 
-    groupBy: string
+    metrics: string[]
   ): Promise<any> {
     const customers = await kv.getByPrefix('customer:');
     const validCustomers = customers.filter((c: any) => !c.id.includes(':'));
@@ -592,6 +434,17 @@ export function reportBuilderEndpoints(app: Hono) {
       topCustomers: customerMetrics.sort((a, b) => b.totalSpend - a.totalSpend).slice(0, 20),
       customerSegments: segmentCustomers(customerMetrics)
     };
+  }
+
+  async function generateCustomReport(
+    start: string, 
+    end: string, 
+    groupBy: string, 
+    filters: any, 
+    metrics: string[]
+  ): Promise<any> {
+    // Custom report generation logic
+    return {};
   }
 
   function convertToCSV(data: any): string {
