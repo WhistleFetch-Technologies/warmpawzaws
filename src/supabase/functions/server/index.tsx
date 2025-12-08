@@ -73,7 +73,7 @@ import { registerS3AutoUploader } from "./s3-auto-uploader.tsx";
 import { registerSmsEventNotifications } from "./sms-event-notifications.tsx";
 
 // ✅ NEW: Payment & Logistics Integrations
-import { registerRazorpayIntegration } from "./razorpay-integration.tsx";
+import { razorpayEndpoints } from "./razorpay-integration.tsx";
 import { registerShiprocketIntegration } from "./shiprocket-integration.tsx";
 import { registerIntegrationInitEndpoints } from "./init-integrations.tsx";
 
@@ -281,7 +281,7 @@ registerS3AutoUploader(app);
 const smsNotifications = registerSmsEventNotifications(app);
 
 // ✅ NEW: Payment & Logistics Integrations
-registerRazorpayIntegration(app);
+razorpayEndpoints(app);
 registerShiprocketIntegration(app);
 registerIntegrationInitEndpoints(app);
 
