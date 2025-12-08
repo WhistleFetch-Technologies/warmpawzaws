@@ -79,6 +79,10 @@ import { registerIntegrationInitEndpoints } from "./init-integrations.tsx";
 import { agoraVideoEndpoints } from "./agora-video-integration.tsx";
 import { automatedPayoutEndpoints } from "./automated-vendor-payouts.tsx";
 
+// ✅ NEW: AWS Chime Video & Chat Integration
+import { registerAWSChimeVideoEndpoints } from "./aws-chime-video-integration.tsx";
+import { registerAWSChimeChatEndpoints } from "./aws-chime-chat-integration.tsx";
+
 // ✅ NEW: Enterprise Admin Capabilities
 import { analyticsAggregationEndpoints } from "./analytics-aggregation.tsx";
 import { rbacEndpoints } from "./rbac-endpoints.tsx";
@@ -288,6 +292,10 @@ registerShiprocketIntegration(app);
 registerIntegrationInitEndpoints(app);
 agoraVideoEndpoints(app);
 automatedPayoutEndpoints(app);
+
+// ✅ NEW: AWS Chime Video & Chat Integration
+registerAWSChimeVideoEndpoints(app);
+registerAWSChimeChatEndpoints(app);
 
 // ✅ NEW: Enterprise Admin Capabilities
 analyticsAggregationEndpoints(app);

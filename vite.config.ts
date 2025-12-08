@@ -54,6 +54,7 @@
         '@jsr/supabase__supabase-js@2.49.8': '@jsr/supabase__supabase-js',
         '@jsr/supabase__supabase-js@2': '@jsr/supabase__supabase-js',
         '@aws-sdk/client-s3@3': '@aws-sdk/client-s3',
+        '@aws-sdk/client-chime-sdk-meetings@3.450.0': '@aws-sdk/client-chime-sdk-meetings',
         '@': path.resolve(__dirname, './src'),
       },
     },
