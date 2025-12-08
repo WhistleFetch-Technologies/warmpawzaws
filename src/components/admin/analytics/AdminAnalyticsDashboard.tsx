@@ -79,7 +79,79 @@ export function AdminAnalyticsDashboard({ onBack }: AnalyticsDashboardProps) {
   const COLORS = ['#FF8C42', '#4F46E5', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
 
   const exportData = () => {
-    console.log('Exporting analytics data...');
+    try {
+      // Create CSV content
+      const csvRows = [];
+      
+      // Header
+      csvRows.push('Warmpawz Analytics Export');
+      csvRows.push(`Date Range: ${dateRange}`);
+      csvRows.push(`Generated: ${new Date().toLocaleString()}`);
+      csvRows.push('');
+      
+      // KPI Section
+      csvRows.push('KEY PERFORMANCE INDICATORS');
+      csvRows.push('Metric,Value');
+      csvRows.push(`Total GMV,₹${safeKpiData.totalGMV.toLocaleString()}`);
+      csvRows.push(`Total Revenue,₹${safeKpiData.totalRevenue.toLocaleString()}`);
+      csvRows.push(`Commission Earned,₹${safeKpiData.commissionEarned.toLocaleString()}`);
+      csvRows.push(`Active Customers,${safeKpiData.activeCustomers.toLocaleString()}`);
+      csvRows.push(`Active Vendors,${safeKpiData.activeVendors.toLocaleString()}`);
+      csvRows.push(`Total Orders,${safeKpiData.totalOrders.toLocaleString()}`);
+      csvRows.push(`Average Order Value,₹${safeKpiData.avgOrderValue.toLocaleString()}`);
+      csvRows.push(`Conversion Rate,${(safeKpiData.conversionRate || 0).toFixed(2)}%`);
+      csvRows.push(`Customer LTV,₹${(safeKpiData.customerLTV || 0).toLocaleString()}`);
+      csvRows.push(`Customer CAC,₹${(safeKpiData.customerCAC || 0).toLocaleString()}`);
+      csvRows.push(`Retention Rate,${(safeKpiData.retentionRate || 0).toFixed(2)}%`);
+      csvRows.push('');
+      
+      // Revenue Data Section
+      if (revenueData && revenueData.length > 0) {
+        csvRows.push('REVENUE TREND');
+        csvRows.push('Date,Revenue,Commission,Orders');
+        revenueData.forEach(item => {
+          csvRows.push(`${item.date},₹${item.revenue},₹${item.commission},${item.count}`);
+        });
+        csvRows.push('');
+      }
+      
+      // Category Data Section
+      if (categoryData && categoryData.length > 0) {
+        csvRows.push('CATEGORY PERFORMANCE');
+        csvRows.push('Category,Revenue,Orders');
+        categoryData.forEach(item => {
+          csvRows.push(`${item.name},₹${item.revenue},${item.count}`);
+        });
+        csvRows.push('');
+      }
+      
+      // Vendor Data Section
+      if (vendorData && vendorData.length > 0) {
+        csvRows.push('TOP VENDOR PERFORMANCE');
+        csvRows.push('Vendor,Revenue,Orders,Rating');
+        vendorData.slice(0, 20).forEach(vendor => {
+          csvRows.push(`${vendor.name},₹${vendor.revenue},${vendor.bookings},${vendor.rating}`);
+        });
+      }
+      
+      // Create blob and download
+      const csvContent = csvRows.join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      
+      link.setAttribute('href', url);
+      link.setAttribute('download', `warmpawz-analytics-${dateRange}-${Date.now()}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      console.log('✅ Analytics exported successfully');
+    } catch (err) {
+      console.error('Export error:', err);
+      alert('Failed to export analytics data');
+    }
   };
 
   if (loading) {
@@ -88,6 +160,26 @@ export function AdminAnalyticsDashboard({ onBack }: AnalyticsDashboardProps) {
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42] mx-auto"></div>
           <p className="mt-4 text-gray-600">Loading analytics...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center max-w-md">
+          <div className="bg-red-50 border border-red-200 rounded-lg p-6">
+            <h3 className="text-red-800 font-semibold mb-2">Failed to Load Analytics</h3>
+            <p className="text-red-600 text-sm mb-4">{error}</p>
+            <Button 
+              onClick={refresh}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Retry
+            </Button>
+          </div>
         </div>
       </div>
     );

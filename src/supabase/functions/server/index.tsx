@@ -84,7 +84,7 @@ import { analyticsAggregationEndpoints } from "./analytics-aggregation.tsx";
 import { rbacEndpoints } from "./rbac-endpoints.tsx";
 import { reportBuilderEndpoints } from "./report-builder-endpoints.tsx";
 import { petIntelligenceEndpoints } from "./pet-intelligence-endpoints.tsx";
-import { adminOperationsDashboard } from "./admin-operations-dashboard.tsx";
+import { transactionMonitoringEndpoints } from "./transaction-monitoring-endpoints.tsx";
 
 const app = new Hono();
 
@@ -294,7 +294,7 @@ analyticsAggregationEndpoints(app);
 rbacEndpoints(app);
 reportBuilderEndpoints(app);
 petIntelligenceEndpoints(app);
-adminOperationsDashboard(app);
+transactionMonitoringEndpoints(app);
 
 // 5. Staff Routes
 app.route('/make-server-3dd53475', staffAuthRoutes); // Register Auth FIRST to avoid shadowing by /staff wildcard
