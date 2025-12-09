@@ -69,6 +69,17 @@ import { CreateBookingPage } from './CreateBookingPage';
 import { CustomerPetsPage } from './CustomerPetsPage';
 import { OrderTrackingPage } from '../customer/shop/OrderTrackingPage';
 
+// ✅ P2 CUSTOMER APP ENHANCEMENTS - Recently Developed UI Components
+import { MultiPetBookingPage } from './MultiPetBookingPage';
+import { ReturnRequestPage } from './ReturnRequestPage';
+import { RewardsLoyaltyPage } from './RewardsLoyaltyPage';
+import { ReferralSystemPage } from './ReferralSystemPage';
+import { PackageBookingPage } from './PackageBookingPage';
+import { EmergencyBookingPage } from './EmergencyBookingPage';
+import { CheckInCheckOutPage } from './CheckInCheckOutPage';
+import { MedicalRecordsPage } from './MedicalRecordsPage';
+import { WalletPage as CustomerWalletPage } from './WalletPage';
+
 type ScreenType = 
   | 'home' 
   | 'user-profile' 
@@ -98,7 +109,7 @@ type ScreenType =
   | 'insurance'
   | 'insurance_provider'
   | 'cafes'
-  | 'cafe_reservation' // ✅ NEW
+  | 'cafe_reservation'
   | 'shop'
   | 'product_detail'
   | 'cart'
@@ -111,13 +122,13 @@ type ScreenType =
   | 'pharmacy_checkout'
   | 'photography'
   | 'breeder'
-  | 'breeder_catalog' // ✅ NEW
+  | 'breeder_catalog'
   | 'ambulance'
-  | 'ambulance_sos' // ✅ NEW
+  | 'ambulance_sos'
   | 'nutritionist'
   | 'relocation'
   | 'resort'
-  | 'resort_booking' // ✅ NEW
+  | 'resort_booking'
   | 'holiday'
   | 'food'
   | 'booking-details'
@@ -132,7 +143,16 @@ type ScreenType =
   | 'services'
   | 'bookings'
   | 'create-booking'
-  | 'pets'; // ✅ NEW
+  | 'pets'
+  | 'multi-pet-booking'
+  | 'return-request'
+  | 'rewards-loyalty'
+  | 'referral-system'
+  | 'package-booking'
+  | 'emergency-booking'
+  | 'check-in-out'
+  | 'medical-records'
+  | 'customer-wallet';
 
 export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phone: string; onNavigate: (screen: string) => void; initialScreen?: ScreenType }) {
   console.log('CustomerHomeWrapper: Rendering with phone:', phone);
@@ -258,6 +278,8 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     if (path === 'account/orders') setCurrentScreen('order_history');
     else if (path === 'account/addresses') setCurrentScreen('address_book');
     else if (path === 'account/wallet') setCurrentScreen('wallet');
+    else if (path === 'rewards-loyalty') setCurrentScreen('rewards-loyalty');
+    else if (path === 'referral-system') setCurrentScreen('referral-system');
     else if (path === 'account/settings') toast.info('Settings coming soon');
   };
 
@@ -447,6 +469,70 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
       }
     }} 
     onAddPet={() => setShowAddPetModal(true)} 
+  />;
+
+  // ✅ P2 CUSTOMER APP ENHANCEMENTS - Recently Developed Features
+
+  // Multi-Pet Booking
+  if (currentScreen === 'multi-pet-booking') return <MultiPetBookingPage 
+    customerPhone={phone}
+    customerId={phone}
+    petId={selectedPetId || undefined}
+  />;
+
+  // Return Request
+  if (currentScreen === 'return-request' && selectedOrder) return <ReturnRequestPage
+    customerPhone={phone}
+    customerId={phone}
+    orderId={selectedOrder.id}
+    onBack={() => setCurrentScreen('order_detail')}
+  />;
+
+  // Rewards & Loyalty
+  if (currentScreen === 'rewards-loyalty') return <RewardsLoyaltyPage
+    customerPhone={phone}
+    customerId={phone}
+    onBack={handleBack}
+  />;
+
+  // Referral System
+  if (currentScreen === 'referral-system') return <ReferralSystemPage
+    customerPhone={phone}
+    customerId={phone}
+    onBack={handleBack}
+  />;
+
+  // Package Booking
+  if (currentScreen === 'package-booking') return <PackageBookingPage
+    customerPhone={phone}
+    customerId={phone}
+    petId={selectedPetId || undefined}
+  />;
+
+  // Emergency Booking
+  if (currentScreen === 'emergency-booking') return <EmergencyBookingPage
+    customerPhone={phone}
+    customerId={phone}
+  />;
+
+  // Check-In/Check-Out
+  if (currentScreen === 'check-in-out') return <CheckInCheckOutPage
+    customerPhone={phone}
+    customerId={phone}
+    bookingId={selectedBookingId || undefined}
+  />;
+
+  // Medical Records
+  if (currentScreen === 'medical-records' && selectedPetId) return <MedicalRecordsPage
+    phone={phone}
+    petId={selectedPetId}
+    onBack={() => setCurrentScreen('pet-details')}
+  />;
+
+  // Customer Wallet (Enhanced)
+  if (currentScreen === 'customer-wallet') return <CustomerWalletPage
+    customerPhone={phone}
+    customerId={phone}
   />;
 
   return <ComingSoon onBack={handleBack} />;
