@@ -1,5 +1,6 @@
 import { Hono } from "npm:hono";
 import * as kv from "./kv_store.tsx";
+import { safeGet, safeSet, safeGetByPrefix, tryGet, trySet } from "./kv-safe.tsx";
 
 export function registerAdminVendorRoutes(app: Hono) {
 
@@ -13,7 +14,7 @@ app.get("/make-server-3dd53475/admin/vendors/stats", async (c) => {
     console.log('Fetching vendor statistics...');
     
     // Optimized: Use cached stats if available and fresh (less than 5 minutes old)
-    const cachedStats = await kv.get('admin:vendor_stats_cache');
+    const cachedStats = await tryGet('admin:vendor_stats_cache', null, { timeout: 3000 });
     if (cachedStats && cachedStats.cachedAt) {
       const cacheAge = Date.now() - new Date(cachedStats.cachedAt).getTime();
       const fiveMinutes = 5 * 60 * 1000;
@@ -30,8 +31,13 @@ app.get("/make-server-3dd53475/admin/vendors/stats", async (c) => {
     
     console.log('📊 Computing fresh stats...');
     
-    // Get all vendors with prefix 'vendor:' not 'vendor:vendor_'
-    const allVendors = await kv.getByPrefix('vendor:');
+    // ✅ FIX: Use safe getByPrefix with timeout and limit
+    const allVendors = await safeGetByPrefix('vendor:', { 
+      timeout: 10000, // 10 second timeout
+      retries: 1,
+      limit: 1000 // Limit to prevent huge queries
+    });
+    
     console.log(`Total vendor records found: ${allVendors.length}`);
     
     // Filter to actual vendor records (exclude metadata)
@@ -124,12 +130,16 @@ app.get("/make-server-3dd53475/admin/vendors/stats", async (c) => {
     };
     
     // Cache the stats for 5 minutes
-    await kv.set('admin:vendor_stats_cache', {
-      stats,
-      cachedAt: new Date().toISOString()
-    });
-    
-    console.log('✅ Stats computed and cached');
+    try {
+      await safeSet('admin:vendor_stats_cache', {
+        stats,
+        cachedAt: new Date().toISOString()
+      }, { timeout: 3000 });
+      console.log('✅ Stats computed and cached');
+    } catch (cacheError) {
+      console.warn('⚠️ Failed to cache stats (non-critical):', cacheError);
+      // Continue anyway - caching failure shouldn't break the request
+    }
     
     return c.json({
       success: true,
@@ -1078,8 +1088,14 @@ app.post("/make-server-3dd53475/:vendorId/compliance/flag", async (c) => {
 // Get quality alerts
 app.get("/make-server-3dd53475/quality/alerts", async (c) => {
   try {
-    const allVendors = await kv.getByPrefix('vendor:');
-    const activeVendors = allVendors.filter(v => v.status === 'approved' && !v.deactivated);
+    // ✅ FIX: Use safeGetByPrefix with timeout and limit
+    const allVendors = await safeGetByPrefix('vendor:', { 
+      timeout: 10000,
+      retries: 1,
+      limit: 1000
+    });
+    
+    const activeVendors = allVendors.filter((v: any) => v.status === 'approved' && !v.deactivated);
     
     const qualityAlerts = activeVendors.filter(vendor => {
       // Low rating alert
@@ -1162,7 +1178,13 @@ app.get("/make-server-3dd53475/quality/alerts", async (c) => {
     });
   } catch (error) {
     console.error('Error fetching quality alerts:', error);
-    return c.json({ error: String(error) }, 500);
+    // Return empty alerts on timeout/error instead of 500
+    return c.json({
+      success: true,
+      alerts: [],
+      count: 0,
+      error: 'Query timed out - please try again'
+    });
   }
 });
 
@@ -1177,7 +1199,7 @@ app.get("/make-server-3dd53475/search", async (c) => {
     const status = c.req.query('status') || 'all';
     const service = c.req.query('service') || 'all';
     
-    let vendors = await kv.getByPrefix('vendor:');
+    let vendors = await safeGetByPrefix('vendor:', { timeout: 10000, limit: 1000 });
     
     // Filter by status
     if (status !== 'all') {

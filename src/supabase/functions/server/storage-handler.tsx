@@ -1,54 +1,21 @@
 import { Hono } from "npm:hono";
-import { createClient } from "npm:@supabase/supabase-js@2";
+import * as kv from "./kv_store.tsx";
+import { createClient } from "jsr:@supabase/supabase-js@2.49.8";
+import { ensureBucket } from "./bucket-manager.tsx";
 
-/**
- * Storage Handler for File Uploads
- * Manages document uploads to Supabase Storage
- */
-export function storageEndpoints(app: Hono) {
-  const BUCKET_NAME = 'make-3dd53475-vendor-docs';
+export function registerStorageEndpoints(app: Hono) {
+  const BASE_PATH = "/make-server-3dd53475";
+  
+  const BUCKET_NAME = 'make-3dd53475-general-storage';
 
-  // Initialize storage bucket
-  const initializeBucket = async () => {
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    );
-
-    try {
-      const { data: buckets } = await supabase.storage.listBuckets();
-      const bucketExists = buckets?.some(bucket => bucket.name === BUCKET_NAME);
-      
-      if (!bucketExists) {
-        console.log(`📦 Creating storage bucket: ${BUCKET_NAME}`);
-        const { data, error } = await supabase.storage.createBucket(BUCKET_NAME, {
-          public: false, // Private bucket
-          fileSizeLimit: 10485760 // 10MB limit
-        });
-        
-        if (error) {
-          // Ignore "already exists" error (409)
-          if (error.statusCode === '409' || error.message?.includes('already exists')) {
-            console.log('✅ Storage bucket already exists (409 ignored)');
-          } else {
-            console.error('❌ Error creating bucket:', error);
-          }
-        } else {
-          console.log('✅ Storage bucket created successfully');
-        }
-      } else {
-        console.log('✅ Storage bucket already exists');
-      }
-    } catch (error) {
-      console.error('❌ Error initializing bucket:', error);
-    }
-  };
-
-  // Initialize on startup
-  initializeBucket();
+  // Initialize storage bucket (non-blocking, fire-and-forget)
+  ensureBucket(BUCKET_NAME, {
+    public: false,
+    fileSizeLimit: 10485760 // 10MB
+  }).catch(err => console.warn('⚠️ Storage bucket init warning:', err));
 
   // Upload document endpoint
-  app.post("/make-server-3dd53475/storage/upload", async (c) => {
+  app.post(`${BASE_PATH}/storage/upload`, async (c) => {
     try {
       const formData = await c.req.formData();
       const file = formData.get('file') as File;
@@ -113,7 +80,7 @@ export function storageEndpoints(app: Hono) {
   });
 
   // Upload multiple documents endpoint
-  app.post("/make-server-3dd53475/storage/upload-multiple", async (c) => {
+  app.post(`${BASE_PATH}/storage/upload-multiple`, async (c) => {
     try {
       const formData = await c.req.formData();
       const vendorId = formData.get('vendorId') as string;
@@ -198,7 +165,7 @@ export function storageEndpoints(app: Hono) {
   });
 
   // Get document URL (refresh signed URL)
-  app.get("/make-server-3dd53475/storage/document/:vendorId/:fileName", async (c) => {
+  app.get(`${BASE_PATH}/storage/document/:vendorId/:fileName`, async (c) => {
     try {
       const { vendorId, fileName } = c.req.param();
       
@@ -230,7 +197,7 @@ export function storageEndpoints(app: Hono) {
   });
 
   // Upload facility photos endpoint
-  app.post("/make-server-3dd53475/storage/upload-facility-photos", async (c) => {
+  app.post(`${BASE_PATH}/storage/upload-facility-photos`, async (c) => {
     try {
       const formData = await c.req.formData();
       const vendorId = formData.get('vendorId') as string;

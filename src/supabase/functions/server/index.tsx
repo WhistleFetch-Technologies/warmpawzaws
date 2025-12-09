@@ -119,6 +119,13 @@ import advancedFilteringSystem from "./advanced-filtering-system.tsx";
 import appointmentReminderSystem from "./appointment-reminder-system.tsx";
 import serviceComparisonSystem from "./service-comparison-system.tsx";
 
+// ✅ NEW: Platform Subscription Tiers & Mating/Dating Service
+import { registerPlatformSubscriptionTiers } from "./platform-subscription-tiers.tsx";
+import { registerMatingDatingService } from "./mating-dating-service.tsx";
+
+// ✅ Vendor Bookings
+import vendorBookings from "./vendor-bookings.tsx";
+
 const app = new Hono();
 
 // Global Middleware
@@ -232,6 +239,78 @@ app.patch('/make-server-3dd53475/admin/regions/:regionId/status', async (c) => {
   }
 });
 
+// Initialize India region endpoint
+app.post('/make-server-3dd53475/admin/regions/init-india', async (c) => {
+  try {
+    console.log('🌍 POST /admin/regions/init-india called');
+    
+    // Check if region already exists
+    const existing = await kv.get('region_india');
+    if (existing) {
+      return sendSuccess(c, { region: existing }, 'India region already exists');
+    }
+    
+    // Create India region
+    const indiaRegion = {
+      regionId: 'india',
+      regionName: 'India',
+      regionCode: 'IN',
+      isActive: true,
+      currency: {
+        code: 'INR',
+        symbol: '₹',
+        name: 'Indian Rupee',
+      },
+      phoneConfig: {
+        countryCode: '+91',
+        format: '+91 XXXXX XXXXX',
+        length: 10,
+        validation: '/^[6-9]\\d{9}$/',
+      },
+      serviceCatalog: {
+        veterinary: true,
+        grooming: true,
+        training: true,
+        daycare: true,
+        boarding: true,
+        walking: true,
+        sitting: true,
+        adoption: true,
+        ecommerce: true,
+        telemedicine: true,
+        emergency: true,
+        nutrition: true,
+        breeding: true,
+        photography: true,
+        insurance: true,
+        cremation: true,
+        spa: true,
+        cafe: true,
+        'mating-dating': true,
+      },
+      popularBreeds: {
+        dogs: ['Labrador Retriever', 'German Shepherd', 'Golden Retriever', 'Beagle', 'Pug', 'Indian Pariah Dog'],
+        cats: ['Persian', 'Siamese', 'Maine Coon', 'Indian Street Cat', 'British Shorthair'],
+      },
+      timezone: 'Asia/Kolkata',
+      dateFormat: 'DD/MM/YYYY',
+      timeFormat: '12h',
+      launchDate: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    
+    await kv.set('region_india', indiaRegion);
+    
+    console.log('✅ India region initialized successfully');
+    
+    return sendSuccess(c, { region: indiaRegion }, 'India region initialized successfully');
+  } catch (error) {
+    console.error('❌ Error initializing India region:', error);
+    return sendError(c, error, 500);
+  }
+});
+
 // CRITICAL ACTION GUARD
 // Protects destructive endpoints from accidental execution
 app.use('/make-server-3dd53475/admin/catalog/clear', criticalActionGuard());
@@ -302,7 +381,13 @@ registerLogisticsEndpoints(app);
 app.route('/make-server-3dd53475/orders', orderRoutes);
 app.route('/make-server-3dd53475/ecommerce', ecommerceRoutes);
 app.route('/make-server-3dd53475', customerEcommerceRoutes);
-app.route('/make-server-3dd53475', marketingRoutesV2);
+// Marketing routes with error handling
+if (marketingRoutesV2 && typeof marketingRoutesV2 === 'object') {
+  console.log('✅ Registering marketing routes...');
+  app.route('/make-server-3dd53475/marketing', marketingRoutesV2);
+} else {
+  console.warn('⚠️ Marketing routes module is undefined or invalid, skipping registration');
+}
 registerMarketplaceProducts(app);
 registerUniversalServiceDiscovery(app);
 registerUniversalOTPSystem(app);
@@ -334,39 +419,148 @@ petIntelligenceEndpoints(app);
 transactionMonitoringEndpoints(app);
 
 // ✅ NEW: Priority 2 Enhanced Endpoints
-app.route('/make-server-3dd53475', enhancedServicePublishing);
-app.route('/make-server-3dd53475', enhancedStaffAvailability);
-app.route('/make-server-3dd53475', enhancedGpsTracking);
+if (enhancedServicePublishing && typeof enhancedServicePublishing === 'object') {
+  app.route('/make-server-3dd53475', enhancedServicePublishing);
+} else {
+  console.warn('⚠️ Enhanced Service Publishing module undefined, skipping');
+}
+
+if (enhancedStaffAvailability && typeof enhancedStaffAvailability === 'object') {
+  app.route('/make-server-3dd53475', enhancedStaffAvailability);
+} else {
+  console.warn('⚠️ Enhanced Staff Availability module undefined, skipping');
+}
+
+if (enhancedGpsTracking && typeof enhancedGpsTracking === 'object') {
+  app.route('/make-server-3dd53475', enhancedGpsTracking);
+} else {
+  console.warn('⚠️ Enhanced GPS Tracking module undefined, skipping');
+}
 
 // ✅ NEW: Critical Flow Fixes (P0)
-app.route('/make-server-3dd53475', criticalFlowFixes);
+if (criticalFlowFixes && typeof criticalFlowFixes === 'object') {
+  app.route('/make-server-3dd53475', criticalFlowFixes);
+} else {
+  console.warn('⚠️ Critical Flow Fixes module undefined, skipping');
+}
 
 // ✅ NEW: P1 Vendor-Specific Features
-app.route('/make-server-3dd53475', groomerGallerySystem);
-app.route('/make-server-3dd53475', trainerProgressTracking);
-app.route('/make-server-3dd53475', cafeTableManagement);
-app.route('/make-server-3dd53475', insuranceClaimManagement);
+if (groomerGallerySystem && typeof groomerGallerySystem === 'object') {
+  app.route('/make-server-3dd53475', groomerGallerySystem);
+} else {
+  console.warn('⚠️ Groomer Gallery System module undefined, skipping');
+}
+
+if (trainerProgressTracking && typeof trainerProgressTracking === 'object') {
+  app.route('/make-server-3dd53475', trainerProgressTracking);
+} else {
+  console.warn('⚠️ Trainer Progress Tracking module undefined, skipping');
+}
+
+if (cafeTableManagement && typeof cafeTableManagement === 'object') {
+  app.route('/make-server-3dd53475', cafeTableManagement);
+} else {
+  console.warn('⚠️ Cafe Table Management module undefined, skipping');
+}
+
+if (insuranceClaimManagement && typeof insuranceClaimManagement === 'object') {
+  app.route('/make-server-3dd53475', insuranceClaimManagement);
+} else {
+  console.warn('⚠️ Insurance Claim Management module undefined, skipping');
+}
 
 // ✅ NEW: Customer App Features (Manually Edited)
-app.route('/make-server-3dd53475', customerWalletTopup);
-app.route('/make-server-3dd53475', rewardsLoyaltySystem);
-app.route('/make-server-3dd53475', referralSystem);
-app.route('/make-server-3dd53475', customerMedicalRecords);
+if (customerWalletTopup && typeof customerWalletTopup === 'object') {
+  app.route('/make-server-3dd53475', customerWalletTopup);
+} else {
+  console.warn('⚠️ Customer Wallet Topup module undefined, skipping');
+}
+
+if (rewardsLoyaltySystem && typeof rewardsLoyaltySystem === 'object') {
+  app.route('/make-server-3dd53475', rewardsLoyaltySystem);
+} else {
+  console.warn('⚠️ Rewards Loyalty System module undefined, skipping');
+}
+
+if (referralSystem && typeof referralSystem === 'object') {
+  app.route('/make-server-3dd53475', referralSystem);
+} else {
+  console.warn('⚠️ Referral System module undefined, skipping');
+}
+
+if (customerMedicalRecords && typeof customerMedicalRecords === 'object') {
+  app.route('/make-server-3dd53475', customerMedicalRecords);
+} else {
+  console.warn('⚠️ Customer Medical Records module undefined, skipping');
+}
 
 // ✅ NEW: Customer App Enhancements
-app.route('/make-server-3dd53475', customerAppEnhancements);
+if (customerAppEnhancements && typeof customerAppEnhancements === 'object') {
+  app.route('/make-server-3dd53475', customerAppEnhancements);
+} else {
+  console.warn('⚠️ Customer App Enhancements module undefined, skipping');
+}
 
 // ✅ NEW: P2 Features - Final 18% to reach 100%
-app.route('/make-server-3dd53475', profilePhotoManagement);
-app.route('/make-server-3dd53475', advancedFilteringSystem);
-app.route('/make-server-3dd53475', appointmentReminderSystem);
-app.route('/make-server-3dd53475', serviceComparisonSystem);
+if (profilePhotoManagement && typeof profilePhotoManagement === 'object') {
+  app.route('/make-server-3dd53475', profilePhotoManagement);
+} else {
+  console.warn('⚠️ Profile Photo Management module undefined, skipping');
+}
+
+if (advancedFilteringSystem && typeof advancedFilteringSystem === 'object') {
+  app.route('/make-server-3dd53475', advancedFilteringSystem);
+} else {
+  console.warn('⚠️ Advanced Filtering System module undefined, skipping');
+}
+
+if (appointmentReminderSystem && typeof appointmentReminderSystem === 'object') {
+  app.route('/make-server-3dd53475', appointmentReminderSystem);
+} else {
+  console.warn('⚠️ Appointment Reminder System module undefined, skipping');
+}
+
+if (serviceComparisonSystem && typeof serviceComparisonSystem === 'object') {
+  app.route('/make-server-3dd53475', serviceComparisonSystem);
+} else {
+  console.warn('⚠️ Service Comparison System module undefined, skipping');
+}
+
+// ✅ NEW: Platform Subscription Tiers & Mating/Dating Service
+registerPlatformSubscriptionTiers(app);
+registerMatingDatingService(app);
+
+// ✅ Vendor Bookings
+if (vendorBookings && typeof vendorBookings === 'object') {
+  app.route('/make-server-3dd53475', vendorBookings);
+} else {
+  console.warn('⚠️ Vendor Bookings module undefined, skipping');
+}
 
 // 5. Staff Routes
-app.route('/make-server-3dd53475', staffAuthRoutes); // Register Auth FIRST to avoid shadowing by /staff wildcard
-app.route('/make-server-3dd53475/staff', staffAvailabilityRoutes);
-app.route('/', staffScheduleRoutes);
-app.route('/', staffCRUDRoutes);
+if (staffAuthRoutes && typeof staffAuthRoutes === 'object') {
+  app.route('/make-server-3dd53475', staffAuthRoutes); // Register Auth FIRST to avoid shadowing by /staff wildcard
+} else {
+  console.warn('⚠️ Staff Auth Routes module undefined, skipping');
+}
+
+if (staffAvailabilityRoutes && typeof staffAvailabilityRoutes === 'object') {
+  app.route('/make-server-3dd53475/staff', staffAvailabilityRoutes);
+} else {
+  console.warn('⚠️ Staff Availability Routes module undefined, skipping');
+}
+
+if (staffScheduleRoutes && typeof staffScheduleRoutes === 'object') {
+  app.route('/', staffScheduleRoutes);
+} else {
+  console.warn('⚠️ Staff Schedule Routes module undefined, skipping');
+}
+
+if (staffCRUDRoutes && typeof staffCRUDRoutes === 'object') {
+  app.route('/', staffCRUDRoutes);
+} else {
+  console.warn('⚠️ Staff CRUD Routes module undefined, skipping');
+}
 
 // ------------------------------------------------------------------
 // GLOBAL ERROR HANDLERS
@@ -386,6 +580,81 @@ app.onError((err, c) => {
 // ------------------------------------------------------------------
 app.get('/', (c) => c.text('Warmpawz API Server Running'));
 app.get('/make-server-3dd53475/health', (c) => sendSuccess(c, { status: 'ok', timestamp: new Date().toISOString() }));
+
+// ------------------------------------------------------------------
+// REGION INITIALIZATION
+// ------------------------------------------------------------------
+async function initializeDefaultRegion() {
+  try {
+    console.log('🌍 Initializing India region...');
+    
+    // Check if India region exists
+    const existingRegion = await kv.get('region_india');
+    
+    if (existingRegion) {
+      console.log('✅ India region already exists');
+      return;
+    }
+    
+    // Default India region configuration
+    const indiaRegion = {
+      regionId: 'india',
+      regionName: 'India',
+      regionCode: 'IN',
+      isActive: true,
+      currency: {
+        code: 'INR',
+        symbol: '₹',
+        name: 'Indian Rupee',
+      },
+      phoneConfig: {
+        countryCode: '+91',
+        format: '+91 XXXXX XXXXX',
+        length: 10,
+        validation: /^[6-9]\d{9}$/,
+      },
+      serviceCatalog: {
+        veterinary: true,
+        grooming: true,
+        training: true,
+        daycare: true,
+        boarding: true,
+        walking: true,
+        sitting: true,
+        adoption: true,
+        ecommerce: true,
+        telemedicine: true,
+        emergency: true,
+        nutrition: true,
+        breeding: true,
+        photography: true,
+        insurance: true,
+        cremation: true,
+        spa: true,
+        cafe: true,
+        'mating-dating': true,
+      },
+      popularBreeds: {
+        dogs: ['Labrador Retriever', 'German Shepherd', 'Golden Retriever', 'Beagle', 'Pug', 'Indian Pariah Dog'],
+        cats: ['Persian', 'Siamese', 'Maine Coon', 'Indian Street Cat', 'British Shorthair'],
+      },
+      timezone: 'Asia/Kolkata',
+      dateFormat: 'DD/MM/YYYY',
+      timeFormat: '12h',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    
+    await kv.set('region_india', indiaRegion);
+    console.log('✅ India region initialized successfully');
+  } catch (error) {
+    console.error('❌ Error initializing India region:', error);
+    console.warn('⚠️ Region not found, using default India region');
+  }
+}
+
+// Initialize region before starting server
+await initializeDefaultRegion();
 
 // Start Server
 console.log("🚀 Server starting...");

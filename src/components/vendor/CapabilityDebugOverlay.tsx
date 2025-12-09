@@ -30,7 +30,7 @@ export function CapabilityDebugOverlay({
   const [activeTab, setActiveTab] = useState<'modules' | 'capabilities' | 'vendor'>('modules');
 
   // Only show in development unless explicitly enabled
-  const isDev = import.meta.env.DEV || showInProduction;
+  const isDev = (typeof import.meta !== 'undefined' && import.meta.env?.DEV) || showInProduction;
   if (!isDev) return null;
 
   // Determine which modules should load based on capabilities

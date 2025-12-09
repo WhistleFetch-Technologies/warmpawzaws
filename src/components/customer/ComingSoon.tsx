@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { useCart } from '../../context/CartContext';
 
 interface ComingSoonProps {
-  serviceName: string;
+  serviceName?: string;
   onBack: () => void;
 }
 
@@ -283,9 +283,11 @@ export function ComingSoon({ serviceName, onBack }: ComingSoonProps) {
   
   // Format service name for display
   const formattedName = serviceName
-    .split('-')
-    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
+    ? serviceName
+        .split('-')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ')
+    : 'Pet Products';
 
   const handleAddToCart = (product: typeof featuredProducts[0]) => {
     addToCart({

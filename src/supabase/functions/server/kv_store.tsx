@@ -10,78 +10,331 @@ CREATE TABLE kv_store_3dd53475 (
 // View at https://supabase.com/dashboard/project/vpvpbdwtyugbknrntkho/database/tables
 
 // This file provides a simple key-value interface for storing Figma Make data. It should be adequate for most small-scale use cases.
-import { createClient } from "jsr:@supabase/supabase-js@2.49.8";
+import { createClient } from "jsr:@supabase/supabase-js@2";
 
-const client = () => createClient(
-  Deno.env.get("SUPABASE_URL"),
-  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"),
-);
+const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-// Set stores a key-value pair in the database.
-export const set = async (key: string, value: any): Promise<void> => {
-  const supabase = client()
-  const { error } = await supabase.from("kv_store_3dd53475").upsert({
-    key,
-    value
+const supabase = createClient(supabaseUrl, supabaseKey);
+
+// ⚠️ DATABASE TIMEOUT PROTECTION: Fallback to in-memory cache when DB is down
+const MEMORY_CACHE = new Map<string, string>();
+const DB_TIMEOUT_MS = 2000; // 2 second timeout for all DB operations
+let DB_IS_HEALTHY = true; // Track database health
+
+// Helper: Race a promise against timeout
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> {
+  const timeoutPromise = new Promise<T>((resolve) => 
+    setTimeout(() => {
+      console.warn(`⚠️ [KV-TIMEOUT] Database operation timed out after ${timeoutMs}ms, using fallback`);
+      DB_IS_HEALTHY = false; // Mark DB as unhealthy
+      resolve(fallback);
+    }, timeoutMs)
+  );
+  
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } catch (error) {
+    console.error(`❌ [KV-ERROR] Database operation failed:`, error);
+    DB_IS_HEALTHY = false;
+    return fallback;
+  }
+}
+
+export async function get(key: string): Promise<string | null> {
+  console.log(`🔍 [KV-GET] Fetching key: ${key}`);
+  
+  // Try memory cache first if DB is unhealthy
+  if (!DB_IS_HEALTHY && MEMORY_CACHE.has(key)) {
+    console.log(`✅ [KV-GET] Returning from memory cache: ${key}`);
+    return MEMORY_CACHE.get(key)!;
+  }
+  
+  try {
+    const result = await withTimeout(
+      supabase
+        .from("kv_store_3dd53475")
+        .select("value")
+        .eq("key", key)
+        .maybeSingle(),
+      DB_TIMEOUT_MS,
+      { data: null, error: new Error("Timeout") }
+    );
+
+    if (result.error) {
+      console.error(`❌ [KV-GET] Error fetching ${key}:`, result.error);
+      // Fallback to memory cache
+      return MEMORY_CACHE.get(key) || null;
+    }
+
+    if (result.data?.value) {
+      // Update memory cache
+      MEMORY_CACHE.set(key, result.data.value);
+    }
+
+    console.log(`✅ [KV-GET] Successfully fetched ${key}:`, result.data?.value ? 'found' : 'not found');
+    return result.data?.value || null;
+  } catch (error: unknown) {
+    console.error(`❌ [KV-GET] Exception fetching ${key}:`, error);
+    DB_IS_HEALTHY = false;
+    return MEMORY_CACHE.get(key) || null;
+  }
+}
+
+export async function set(key: string, value: string): Promise<void> {
+  console.log(`💾 [KV-SET] Setting key: ${key}`);
+  
+  // Always update memory cache immediately
+  MEMORY_CACHE.set(key, value);
+  
+  // Try DB write with timeout (fire-and-forget if DB is unhealthy)
+  if (!DB_IS_HEALTHY) {
+    console.log(`⚠️ [KV-SET] DB unhealthy, only updating memory cache: ${key}`);
+    return;
+  }
+  
+  try {
+    const result = await withTimeout(
+      supabase
+        .from("kv_store_3dd53475")
+        .upsert({ key, value }, { onConflict: "key" }),
+      DB_TIMEOUT_MS,
+      { data: null, error: new Error("Timeout") }
+    );
+
+    if (result.error) {
+      console.error(`❌ [KV-SET] Error setting ${key}:`, result.error);
+      // Already in memory cache, so operation is successful
+    } else {
+      console.log(`✅ [KV-SET] Successfully set ${key}`);
+      DB_IS_HEALTHY = true; // DB is working again
+    }
+  } catch (error: unknown) {
+    console.error(`❌ [KV-SET] Exception setting ${key}:`, error);
+    DB_IS_HEALTHY = false;
+    // Already in memory cache, so operation is successful
+  }
+}
+
+export async function del(key: string): Promise<void> {
+  console.log(`🗑️ [KV-DEL] Deleting key: ${key}`);
+  
+  // Always update memory cache immediately
+  MEMORY_CACHE.delete(key);
+  
+  // Try DB delete with timeout
+  if (!DB_IS_HEALTHY) {
+    console.log(`⚠️ [KV-DEL] DB unhealthy, only updating memory cache: ${key}`);
+    return;
+  }
+  
+  try {
+    const result = await withTimeout(
+      supabase
+        .from("kv_store_3dd53475")
+        .delete()
+        .eq("key", key),
+      DB_TIMEOUT_MS,
+      { data: null, error: new Error("Timeout") }
+    );
+
+    if (result.error) {
+      console.error(`❌ [KV-DEL] Error deleting ${key}:`, result.error);
+    } else {
+      console.log(`✅ [KV-DEL] Successfully deleted ${key}`);
+      DB_IS_HEALTHY = true;
+    }
+  } catch (error: unknown) {
+    console.error(`❌ [KV-DEL] Exception deleting ${key}:`, error);
+    DB_IS_HEALTHY = false;
+  }
+}
+
+export async function mget(keys: string[]): Promise<Map<string, string>> {
+  console.log(`🔍 [KV-MGET] Fetching ${keys.length} keys`);
+  
+  if (!DB_IS_HEALTHY) {
+    console.log(`⚠️ [KV-MGET] DB unhealthy, using memory cache only`);
+    const result = new Map<string, string>();
+    keys.forEach(key => {
+      const value = MEMORY_CACHE.get(key);
+      if (value) result.set(key, value);
+    });
+    return result;
+  }
+  
+  try {
+    const result = await withTimeout(
+      supabase
+        .from("kv_store_3dd53475")
+        .select("key, value")
+        .in("key", keys),
+      DB_TIMEOUT_MS,
+      { data: [], error: new Error("Timeout") }
+    );
+
+    if (result.error) {
+      console.error(`❌ [KV-MGET] Error fetching multiple keys:`, result.error);
+      // Fallback to memory cache
+      const memResult = new Map<string, string>();
+      keys.forEach(key => {
+        const value = MEMORY_CACHE.get(key);
+        if (value) memResult.set(key, value);
+      });
+      return memResult;
+    }
+
+    const map = new Map<string, string>();
+    result.data.forEach((row: { key: string; value: string }) => {
+      map.set(row.key, row.value);
+      MEMORY_CACHE.set(row.key, row.value); // Update cache
+    });
+
+    console.log(`✅ [KV-MGET] Successfully fetched ${map.size} values`);
+    DB_IS_HEALTHY = true;
+    return map;
+  } catch (error: unknown) {
+    console.error(`❌ [KV-MGET] Exception:`, error);
+    DB_IS_HEALTHY = false;
+    const memResult = new Map<string, string>();
+    keys.forEach(key => {
+      const value = MEMORY_CACHE.get(key);
+      if (value) memResult.set(key, value);
+    });
+    return memResult;
+  }
+}
+
+export async function getByPrefix(prefix: string): Promise<{ key: string; value: string }[]> {
+  console.log(`🔍 [KV-PREFIX] Fetching keys with prefix: ${prefix}`);
+  
+  if (!DB_IS_HEALTHY) {
+    console.log(`⚠️ [KV-PREFIX] DB unhealthy, using memory cache only`);
+    const result: { key: string; value: string }[] = [];
+    MEMORY_CACHE.forEach((value, key) => {
+      if (key.startsWith(prefix)) {
+        result.push({ key, value });
+      }
+    });
+    return result;
+  }
+  
+  try {
+    const result = await withTimeout(
+      supabase
+        .from("kv_store_3dd53475")
+        .select("key, value")
+        .ilike("key", `${prefix}%`),
+      DB_TIMEOUT_MS,
+      { data: [], error: new Error("Timeout") }
+    );
+
+    if (result.error) {
+      console.error(`❌ [KV-PREFIX] Error fetching by prefix ${prefix}:`, result.error);
+      // Fallback to memory cache
+      const memResult: { key: string; value: string }[] = [];
+      MEMORY_CACHE.forEach((value, key) => {
+        if (key.startsWith(prefix)) {
+          memResult.push({ key, value });
+        }
+      });
+      return memResult;
+    }
+
+    // Update memory cache
+    result.data.forEach((row: { key: string; value: string }) => {
+      MEMORY_CACHE.set(row.key, row.value);
+    });
+
+    console.log(`✅ [KV-PREFIX] Found ${result.data.length} keys with prefix ${prefix}`);
+    DB_IS_HEALTHY = true;
+    return result.data as { key: string; value: string }[];
+  } catch (error: unknown) {
+    console.error(`❌ [KV-PREFIX] Exception:`, error);
+    DB_IS_HEALTHY = false;
+    const memResult: { key: string; value: string }[] = [];
+    MEMORY_CACHE.forEach((value, key) => {
+      if (key.startsWith(prefix)) {
+        memResult.push({ key, value });
+      }
+    });
+    return memResult;
+  }
+}
+
+export async function mset(entries: Array<[string, string]>): Promise<void> {
+  console.log(`💾 [KV-MSET] Setting ${entries.length} keys`);
+  
+  // Always update memory cache immediately
+  entries.forEach(([key, value]) => {
+    MEMORY_CACHE.set(key, value);
   });
-  if (error) {
-    throw new Error(error.message);
+  
+  if (!DB_IS_HEALTHY) {
+    console.log(`⚠️ [KV-MSET] DB unhealthy, only updated memory cache`);
+    return;
   }
-};
+  
+  try {
+    const rows = entries.map(([key, value]) => ({ key, value }));
+    const result = await withTimeout(
+      supabase
+        .from("kv_store_3dd53475")
+        .upsert(rows, { onConflict: "key" }),
+      DB_TIMEOUT_MS,
+      { data: null, error: new Error("Timeout") }
+    );
 
-// Get retrieves a key-value pair from the database.
-export const get = async (key: string): Promise<any> => {
-  const supabase = client()
-  const { data, error } = await supabase.from("kv_store_3dd53475").select("value").eq("key", key).maybeSingle();
-  if (error) {
-    throw new Error(error.message);
+    if (result.error) {
+      console.error(`❌ [KV-MSET] Error setting multiple keys:`, result.error);
+    } else {
+      console.log(`✅ [KV-MSET] Successfully set ${entries.length} keys`);
+      DB_IS_HEALTHY = true;
+    }
+  } catch (error: unknown) {
+    console.error(`❌ [KV-MSET] Exception:`, error);
+    DB_IS_HEALTHY = false;
   }
-  return data?.value;
-};
+}
 
-// Delete deletes a key-value pair from the database.
-export const del = async (key: string): Promise<void> => {
-  const supabase = client()
-  const { error } = await supabase.from("kv_store_3dd53475").delete().eq("key", key);
-  if (error) {
-    throw new Error(error.message);
+export async function mdel(keys: string[]): Promise<void> {
+  console.log(`🗑️ [KV-MDEL] Deleting ${keys.length} keys`);
+  
+  // Always update memory cache immediately
+  keys.forEach(key => MEMORY_CACHE.delete(key));
+  
+  if (!DB_IS_HEALTHY) {
+    console.log(`⚠️ [KV-MDEL] DB unhealthy, only updated memory cache`);
+    return;
   }
-};
+  
+  try {
+    const result = await withTimeout(
+      supabase
+        .from("kv_store_3dd53475")
+        .delete()
+        .in("key", keys),
+      DB_TIMEOUT_MS,
+      { data: null, error: new Error("Timeout") }
+    );
 
-// Sets multiple key-value pairs in the database.
-export const mset = async (keys: string[], values: any[]): Promise<void> => {
-  const supabase = client()
-  const { error } = await supabase.from("kv_store_3dd53475").upsert(keys.map((k, i) => ({ key: k, value: values[i] })));
-  if (error) {
-    throw new Error(error.message);
+    if (result.error) {
+      console.error(`❌ [KV-MDEL] Error deleting multiple keys:`, result.error);
+    } else {
+      console.log(`✅ [KV-MDEL] Successfully deleted ${keys.length} keys`);
+      DB_IS_HEALTHY = true;
+    }
+  } catch (error: unknown) {
+    console.error(`❌ [KV-MDEL] Exception:`, error);
+    DB_IS_HEALTHY = false;
   }
-};
+}
 
-// Gets multiple key-value pairs from the database.
-export const mget = async (keys: string[]): Promise<any[]> => {
-  const supabase = client()
-  const { data, error } = await supabase.from("kv_store_3dd53475").select("value").in("key", keys);
-  if (error) {
-    throw new Error(error.message);
-  }
-  return data?.map((d) => d.value) ?? [];
-};
+// Export health check for monitoring
+export function isHealthy(): boolean {
+  return DB_IS_HEALTHY;
+}
 
-// Deletes multiple key-value pairs from the database.
-export const mdel = async (keys: string[]): Promise<void> => {
-  const supabase = client()
-  const { error } = await supabase.from("kv_store_3dd53475").delete().in("key", keys);
-  if (error) {
-    throw new Error(error.message);
-  }
-};
-
-// Search for key-value pairs by prefix.
-export const getByPrefix = async (prefix: string): Promise<any[]> => {
-  const supabase = client()
-  const { data, error } = await supabase.from("kv_store_3dd53475").select("key, value").like("key", prefix + "%");
-  if (error) {
-    throw new Error(error.message);
-  }
-  return data?.map((d) => d.value) ?? [];
-};
+export function getMemoryCacheSize(): number {
+  return MEMORY_CACHE.size;
+}

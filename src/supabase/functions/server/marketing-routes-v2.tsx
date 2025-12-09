@@ -14,7 +14,8 @@ app.get("/promotions/active", async (c) => {
     const category = c.req.query("category");
     const applicableTo = c.req.query("applicableTo");
     
-    const allPromotions = await kv.get("promotions:list") || [];
+    const promotionsData = await kv.get("promotions:list");
+    const allPromotions: any[] = promotionsData ? (Array.isArray(promotionsData) ? promotionsData : []) : [];
     
     const now = new Date();
     
@@ -24,8 +25,7 @@ app.get("/promotions/active", async (c) => {
       if (p.validUntil && new Date(p.validUntil) < now) return false;
       
       if (category && p.targetIds && p.targetIds.length > 0 && !p.targetIds.includes(category)) {
-         // This is a simplistic check. In reality, category might be a property, not just targetId
-         // But sticking to handoff implied logic where targetIds might contain category IDs
+        return false;
       }
       
       if (applicableTo && applicableTo !== 'all' && p.applicableTo !== 'all' && p.applicableTo !== applicableTo) {
@@ -58,7 +58,8 @@ app.post("/coupons/validate", async (c) => {
     
     if (!code) return c.json({ success: false, error: "Code is required" }, 400);
     
-    const coupons = await kv.get("coupons:list") || [];
+    const couponsData = await kv.get("coupons:list");
+    const coupons: any[] = couponsData ? (Array.isArray(couponsData) ? couponsData : []) : [];
     const coupon = coupons.find((c: any) => c.code.toLowerCase() === code.toLowerCase());
     
     if (!coupon) {
@@ -87,7 +88,8 @@ app.post("/coupons/validate", async (c) => {
     
     // Validate User Limit
     if (customerId && coupon.userUsageLimit) {
-      const usages = await kv.get(`coupons:usage:${coupon.id}`) || [];
+      const usagesData = await kv.get(`coupons:usage:${coupon.id}`);
+      const usages: any[] = usagesData ? (Array.isArray(usagesData) ? usagesData : []) : [];
       const userUsage = usages.filter((u: any) => u.userId === customerId).length;
       if (userUsage >= coupon.userUsageLimit) {
         return c.json({ success: true, valid: false, error: "Coupon usage limit reached for this user" });
@@ -131,8 +133,8 @@ app.post("/coupons/apply", async (c) => {
     const body = await c.req.json();
     const { code, orderAmount, customerId, orderId, bookingId } = body;
     
-    // Re-validate logic first (simplified here, assuming client calls validate first, but backend should always double check)
-    const coupons = await kv.get("coupons:list") || [];
+    const couponsData = await kv.get("coupons:list");
+    const coupons: any[] = couponsData ? (Array.isArray(couponsData) ? couponsData : []) : [];
     const coupon = coupons.find((c: any) => c.code.toLowerCase() === code.toLowerCase());
     
     if (!coupon || !coupon.isActive) {
@@ -150,14 +152,14 @@ app.post("/coupons/apply", async (c) => {
       bookingId,
       orderAmount,
       usedAt: new Date().toISOString(),
-      // Recalculate discount for record
       discountAmount: coupon.type === 'percentage' 
         ? Math.min((orderAmount * coupon.value) / 100, coupon.maxDiscountAmount || Infinity)
         : coupon.value
     };
     
     // Store usage
-    const allUsages = await kv.get(`coupons:usage:${coupon.id}`) || [];
+    const allUsagesData = await kv.get(`coupons:usage:${coupon.id}`);
+    const allUsages: any[] = allUsagesData ? (Array.isArray(allUsagesData) ? allUsagesData : []) : [];
     allUsages.push(usageRecord);
     await kv.set(`coupons:usage:${coupon.id}`, allUsages);
     
@@ -166,8 +168,10 @@ app.post("/coupons/apply", async (c) => {
     
     // Update coupon in list
     const index = coupons.findIndex((c: any) => c.id === coupon.id);
-    coupons[index] = coupon;
-    await kv.set("coupons:list", coupons);
+    if (index !== -1) {
+      coupons[index] = coupon;
+      await kv.set("coupons:list", coupons);
+    }
     
     return c.json({
       success: true,
@@ -186,7 +190,6 @@ app.post("/admin/promotions/create", async (c) => {
   try {
     const body = await c.req.json();
     
-    // Basic Validation
     if (!body.name || !body.type || body.value === undefined || !body.validFrom || !body.validUntil) {
       return c.json({ success: false, error: "Missing required fields" }, 400);
     }
@@ -199,7 +202,8 @@ app.post("/admin/promotions/create", async (c) => {
       updatedAt: new Date().toISOString()
     };
     
-    const promotions = await kv.get("promotions:list") || [];
+    const promotionsData = await kv.get("promotions:list");
+    const promotions: any[] = promotionsData ? (Array.isArray(promotionsData) ? promotionsData : []) : [];
     promotions.unshift(promotion);
     await kv.set("promotions:list", promotions);
     
@@ -210,15 +214,15 @@ app.post("/admin/promotions/create", async (c) => {
 });
 
 // ==========================================
-// COMPONENT 5: Admin Promotion List
+// COMPONENT 5: Admin Promotion Management
 // ==========================================
 
-// UPDATE Promotion
 app.put("/admin/promotions/:id", async (c) => {
   try {
     const id = c.req.param("id");
     const body = await c.req.json();
-    let promotions = await kv.get("promotions:list") || [];
+    const promotionsData = await kv.get("promotions:list");
+    const promotions: any[] = promotionsData ? (Array.isArray(promotionsData) ? promotionsData : []) : [];
     
     const index = promotions.findIndex((p: any) => p.id === id);
     if (index === -1) {
@@ -234,11 +238,11 @@ app.put("/admin/promotions/:id", async (c) => {
   }
 });
 
-// DELETE Promotion
 app.delete("/admin/promotions/:id", async (c) => {
   try {
     const id = c.req.param("id");
-    let promotions = await kv.get("promotions:list") || [];
+    const promotionsData = await kv.get("promotions:list");
+    let promotions: any[] = promotionsData ? (Array.isArray(promotionsData) ? promotionsData : []) : [];
     
     promotions = promotions.filter((p: any) => p.id !== id);
     await kv.set("promotions:list", promotions);
@@ -257,7 +261,8 @@ app.get("/admin/promotions", async (c) => {
     const page = parseInt(c.req.query("page") || "1");
     const limit = parseInt(c.req.query("limit") || "50");
     
-    let promotions = await kv.get("promotions:list") || [];
+    const promotionsData = await kv.get("promotions:list");
+    let promotions: any[] = promotionsData ? (Array.isArray(promotionsData) ? promotionsData : []) : [];
     
     // Filtering
     if (status && status !== 'all') {
@@ -306,7 +311,6 @@ app.get("/admin/promotions", async (c) => {
 // COMPONENT 6: Admin Coupon Management
 // ==========================================
 
-// List Coupons
 app.get("/admin/coupons", async (c) => {
   try {
     const status = c.req.query("status");
@@ -314,10 +318,11 @@ app.get("/admin/coupons", async (c) => {
     const page = parseInt(c.req.query("page") || "1");
     const limit = parseInt(c.req.query("limit") || "50");
     
-    let coupons = await kv.get("coupons:list") || [];
+    const couponsData = await kv.get("coupons:list");
+    let coupons: any[] = couponsData ? (Array.isArray(couponsData) ? couponsData : []) : [];
     
     if (search) {
-       coupons = coupons.filter((c: any) => c.code.toLowerCase().includes(search.toLowerCase()));
+      coupons = coupons.filter((c: any) => c.code.toLowerCase().includes(search.toLowerCase()));
     }
     
     // Pagination
@@ -335,7 +340,6 @@ app.get("/admin/coupons", async (c) => {
   }
 });
 
-// Create Single Coupon
 app.post("/admin/coupons/create", async (c) => {
   try {
     const body = await c.req.json();
@@ -344,7 +348,8 @@ app.post("/admin/coupons/create", async (c) => {
       return c.json({ success: false, error: "Missing required fields" }, 400);
     }
     
-    const coupons = await kv.get("coupons:list") || [];
+    const couponsData = await kv.get("coupons:list");
+    const coupons: any[] = couponsData ? (Array.isArray(couponsData) ? couponsData : []) : [];
     
     // Check uniqueness
     if (coupons.some((c: any) => c.code.toLowerCase() === body.code.toLowerCase())) {
@@ -367,7 +372,6 @@ app.post("/admin/coupons/create", async (c) => {
   }
 });
 
-// Bulk Generate Coupons
 app.post("/admin/coupons/bulk-generate", async (c) => {
   try {
     const body = await c.req.json();
@@ -378,7 +382,8 @@ app.post("/admin/coupons/bulk-generate", async (c) => {
     }
     
     const generatedCoupons = [];
-    const coupons = await kv.get("coupons:list") || [];
+    const couponsData = await kv.get("coupons:list");
+    const coupons: any[] = couponsData ? (Array.isArray(couponsData) ? couponsData : []) : [];
     const existingCodes = new Set(coupons.map((c: any) => c.code));
     
     const chars = format === 'numeric' ? '0123456789' : 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -387,7 +392,6 @@ app.post("/admin/coupons/bulk-generate", async (c) => {
       let code = prefix || '';
       const randomLength = length || 8;
       
-      // Generate unique random part
       let randomPart = '';
       let attempts = 0;
       
@@ -399,7 +403,7 @@ app.post("/admin/coupons/bulk-generate", async (c) => {
         attempts++;
       } while (existingCodes.has(code + randomPart) && attempts < 10);
       
-      if (attempts >= 10) continue; // Skip if strict collision (rare)
+      if (attempts >= 10) continue;
       
       code += randomPart;
       existingCodes.add(code);
@@ -415,7 +419,6 @@ app.post("/admin/coupons/bulk-generate", async (c) => {
       generatedCoupons.push(coupon);
     }
     
-    // Merge with existing
     const newCouponList = [...generatedCoupons, ...coupons];
     await kv.set("coupons:list", newCouponList);
     

@@ -14,16 +14,20 @@ import {
   Clock,
   DollarSign,
   Star,
-  Settings
+  Settings,
+  Ambulance // ✅ NEW: For specialized services button
 } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
 import { DoctorManagement } from './DoctorManagement';
 
 interface ClinicDashboardProps {
-  clinicId: string;
-  clinicData: any;
+  clinicId?: string;
+  vendorId?: string; // ✅ Support both naming conventions
+  clinicData?: any;
+  vendorData?: any; // ✅ Support both naming conventions
   onNavigateToDoctorManagement?: () => void;
   onNavigateToSettings?: () => void;
+  onNavigateToSpecializedServices?: () => void; // ✅ NEW: Navigate to ambulance/diagnostics/emergency
 }
 
 interface AppointmentItem {
@@ -45,10 +49,17 @@ interface AppointmentItem {
 
 export function ClinicDashboard({ 
   clinicId, 
+  vendorId,
   clinicData,
+  vendorData,
   onNavigateToDoctorManagement,
-  onNavigateToSettings
+  onNavigateToSettings,
+  onNavigateToSpecializedServices
 }: ClinicDashboardProps) {
+  // ✅ Support both naming conventions
+  const actualClinicId = clinicId || vendorId;
+  const actualClinicData = clinicData || vendorData;
+  
   const [activeTab, setActiveTab] = useState<'today' | 'upcoming' | 'all'>('today');
   const [statusFilter, setStatusFilter] = useState<'all' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled'>('all');
   const [appointments, setAppointments] = useState<AppointmentItem[]>([]);
@@ -66,7 +77,7 @@ export function ClinicDashboard({
 
   useEffect(() => {
     fetchClinicData();
-  }, [clinicId]);
+  }, [actualClinicId]);
 
   const fetchClinicData = async () => {
     try {
@@ -74,7 +85,7 @@ export function ClinicDashboard({
 
       // Fetch clinic details and doctors
       const clinicResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/clinic/${clinicId}`,
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/clinic/${actualClinicId}`,
         {
           headers: {
             'Authorization': `Bearer ${publicAnonKey}`,
@@ -108,7 +119,7 @@ export function ClinicDashboard({
       const today = new Date().toISOString().split('T')[0];
       
       const appointmentsResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/clinic/${clinicId}/appointments?status=${statusFilter}&date=${activeTab === 'today' ? today : ''}`,
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/clinic/${actualClinicId}/appointments?status=${statusFilter}&date=${activeTab === 'today' ? today : ''}`,
         {
           headers: {
             'Authorization': `Bearer ${publicAnonKey}`,
@@ -141,7 +152,7 @@ export function ClinicDashboard({
   const notifyDoctorAtLobby = async (appointment: AppointmentItem) => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/clinic/${clinicId}/notify-doctor`,
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/clinic/${actualClinicId}/notify-doctor`,
         {
           method: 'POST',
           headers: {
@@ -215,7 +226,7 @@ export function ClinicDashboard({
       <div className="bg-[#FF8C42] text-white p-4">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h1 className="text-xl font-bold">{clinicData.businessName}</h1>
+            <h1 className="text-xl font-bold">{actualClinicData.businessName}</h1>
             <p className="text-sm opacity-90">Clinic Management</p>
           </div>
           <button
@@ -247,7 +258,7 @@ export function ClinicDashboard({
       </div>
 
       {/* Doctor Management Button */}
-      <div className="p-4">
+      <div className="p-4 space-y-3">
         <button
           onClick={() => setShowDoctorManagement(true)}
           className="w-full bg-white border-2 border-[#FF8C42] text-[#FF8C42] rounded-xl p-4 flex items-center justify-between hover:bg-[#FF8C42] hover:text-white transition-colors"
@@ -261,6 +272,23 @@ export function ClinicDashboard({
           </div>
           <span className="text-2xl">→</span>
         </button>
+
+        {/* ✅ NEW: Specialized Services Button */}
+        {onNavigateToSpecializedServices && (
+          <button
+            onClick={onNavigateToSpecializedServices}
+            className="w-full bg-white border-2 border-[#FF8C42] text-[#FF8C42] rounded-xl p-4 flex items-center justify-between hover:bg-[#FF8C42] hover:text-white transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <Ambulance className="w-6 h-6" />
+              <div className="text-left">
+                <p className="font-semibold">Specialized Services</p>
+                <p className="text-sm opacity-75">Ambulance, Diagnostics, Emergency</p>
+              </div>
+            </div>
+            <span className="text-2xl">→</span>
+          </button>
+        )}
       </div>
 
       {/* Tabs */}
@@ -424,8 +452,8 @@ export function ClinicDashboard({
       {showDoctorManagement && (
         <div className="fixed inset-0 z-50 bg-white">
           <DoctorManagement
-            clinicId={clinicId}
-            clinicData={clinicData}
+            clinicId={actualClinicId}
+            clinicData={actualClinicData}
             onBack={() => {
               setShowDoctorManagement(false);
               fetchClinicData(); // Refresh stats after managing doctors

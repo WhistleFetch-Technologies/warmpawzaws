@@ -124,6 +124,8 @@ export async function findOrCreateUser(phone: string, role?: 'customer' | 'vendo
     userId,
     phone: cleanedPhone,
     role: role || 'customer', // Default to customer if not specified
+    name: '', // Default empty string instead of undefined
+    email: '', // Default empty string instead of undefined
     isActive: true,
     isVerified: true, // Auto-verify for now (OTP would be here)
     createdAt: now,
@@ -181,7 +183,19 @@ export async function updateUser(userId: string, updates: Partial<User>): Promis
  * Create a new session for user
  */
 export async function createUserSession(userId: string, phone: string, role: string): Promise<Session> {
-  const session = createSession(userId, phone, role);
+  const sessionId = generateId('session');
+  const now = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(); // 30 days
+  
+  const session: Session = {
+    sessionId,
+    userId,
+    phone: normalizePhone(phone),
+    role: role as 'customer' | 'vendor' | 'staff' | 'admin',
+    token: createSession(userId, role as 'customer' | 'vendor' | 'staff' | 'admin'),
+    createdAt: now,
+    expiresAt
+  };
   
   // Store session
   await kv.set(`session:${session.sessionId}`, session);

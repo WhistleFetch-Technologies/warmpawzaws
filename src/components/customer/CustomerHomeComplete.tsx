@@ -187,6 +187,7 @@ export function CustomerHome({
     { icon: Bike, label: 'Walker', color: 'bg-green-100 text-green-600', screen: 'walker' },
     { icon: HomeIcon, label: 'Boarding', color: 'bg-indigo-100 text-indigo-600', screen: 'boarding' },
     { icon: Heart, label: 'Adoption', color: 'bg-red-100 text-red-600', screen: 'adoption' },
+    { icon: Heart, label: 'Mating & Dating', color: 'bg-pink-100 text-pink-600', screen: 'mating-dating-hub' },
     { icon: Coffee, label: 'Pet Cafes', color: 'bg-amber-100 text-amber-600', screen: 'cafes' },
     
     // SPECIALIZED SERVICES - NEW
