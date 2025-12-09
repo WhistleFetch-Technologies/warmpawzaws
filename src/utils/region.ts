@@ -93,16 +93,16 @@ export interface Region {
 
 const BASE_URL = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
 
-// Get current region from localStorage (default to 'india' for backward compatibility)
+// 🇮🇳 HARDCODED: Get current region - always returns 'india' for this deployment
 export function getCurrentRegionId(): string {
-  if (typeof window === 'undefined') return 'india';
-  return localStorage.getItem('warmpawz_region') || 'india';
+  // Force India region for this deployment instance
+  return 'india';
 }
 
-// Set current region
+// 🇮🇳 HARDCODED: Set current region - disabled for this deployment
 export function setCurrentRegionId(regionId: string): void {
-  if (typeof window === 'undefined') return;
-  localStorage.setItem('warmpawz_region', regionId);
+  console.warn('⚠️ Region switching is disabled. This deployment is hardcoded to India region.');
+  // Do nothing - region is hardcoded
 }
 
 // Fetch region configuration

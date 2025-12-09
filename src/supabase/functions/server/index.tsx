@@ -582,80 +582,152 @@ app.get('/', (c) => c.text('Warmpawz API Server Running'));
 app.get('/make-server-3dd53475/health', (c) => sendSuccess(c, { status: 'ok', timestamp: new Date().toISOString() }));
 
 // ------------------------------------------------------------------
-// REGION INITIALIZATION
+// 🇮🇳 CRITICAL: INITIALIZE INDIA REGION ON SERVER STARTUP
 // ------------------------------------------------------------------
-async function initializeDefaultRegion() {
+async function initializeIndiaRegionOnStartup() {
   try {
-    console.log('🌍 Initializing India region...');
+    console.log('🌍 Checking if India region exists...');
     
-    // Check if India region exists
-    const existingRegion = await kv.get('region_india');
-    
-    if (existingRegion) {
+    const existing = await kv.get('region_india');
+    if (existing) {
       console.log('✅ India region already exists');
       return;
     }
     
-    // Default India region configuration
+    console.log('🔄 India region not found. Creating...');
+    
+    // Create India region with comprehensive configuration
     const indiaRegion = {
       regionId: 'india',
       regionName: 'India',
       regionCode: 'IN',
       isActive: true,
+      launchDate: new Date().toISOString(),
+      phoneConfig: {
+        countryCode: '+91',
+        phoneLength: 10,
+        phoneFormat: '+91 XXXXX XXXXX',
+        validationRegex: '^[6-9]\\d{9}$',
+        placeholder: '98765 43210',
+        displayFormat: '+91 XXXXX XXXXX'
+      },
       currency: {
         code: 'INR',
         symbol: '₹',
-        name: 'Indian Rupee',
+        symbolPosition: 'before',
+        decimalPlaces: 2,
+        thousandsSeparator: ',',
+        decimalSeparator: '.'
       },
-      phoneConfig: {
-        countryCode: '+91',
-        format: '+91 XXXXX XXXXX',
-        length: 10,
-        validation: /^[6-9]\d{9}$/,
+      localization: {
+        primaryLanguage: 'en',
+        supportedLanguages: ['en', 'hi'],
+        dateFormat: 'DD/MM/YYYY',
+        timeFormat: '12h',
+        timezone: 'Asia/Kolkata',
+        rtlSupport: false
+      },
+      measurementSystem: {
+        system: 'metric',
+        weightUnit: 'kg',
+        distanceUnit: 'km',
+        heightUnit: 'cm'
       },
       serviceCatalog: {
         veterinary: true,
         grooming: true,
         training: true,
-        daycare: true,
-        boarding: true,
         walking: true,
-        sitting: true,
+        behavioral: true,
+        boarding: true,
         adoption: true,
-        ecommerce: true,
-        telemedicine: true,
-        emergency: true,
-        nutrition: true,
-        breeding: true,
-        photography: true,
+        sunset: true,
         insurance: true,
-        cremation: true,
-        spa: true,
-        cafe: true,
-        'mating-dating': true,
+        pharmacy: true,
+        petCafe: true
+      },
+      compliance: {
+        gdprEnabled: false,
+        dataRetentionDays: 730,
+        requiresPetLicense: false,
+        vaccinationMandatory: ['rabies'],
+        ageRestrictions: {
+          minAgeMonths: 2,
+          maxAgeMonths: 180
+        }
       },
       popularBreeds: {
-        dogs: ['Labrador Retriever', 'German Shepherd', 'Golden Retriever', 'Beagle', 'Pug', 'Indian Pariah Dog'],
-        cats: ['Persian', 'Siamese', 'Maine Coon', 'Indian Street Cat', 'British Shorthair'],
+        dogs: [
+          'Labrador Retriever',
+          'German Shepherd',
+          'Golden Retriever',
+          'Beagle',
+          'Pug',
+          'Indian Pariah Dog',
+          'Pomeranian',
+          'Shih Tzu'
+        ],
+        cats: [
+          'Persian',
+          'Siamese',
+          'Maine Coon',
+          'Indian Street Cat',
+          'British Shorthair',
+          'Himalayan'
+        ]
       },
-      timezone: 'Asia/Kolkata',
-      dateFormat: 'DD/MM/YYYY',
-      timeFormat: '12h',
+      business: {
+        taxRate: 18,
+        taxName: 'GST',
+        businessHours: {
+          start: '09:00',
+          end: '21:00'
+        },
+        holidays: [
+          '2024-01-26',
+          '2024-08-15',
+          '2024-10-02'
+        ]
+      },
+      payments: {
+        supportedMethods: ['razorpay', 'upi', 'card', 'wallet'],
+        paymentGateway: 'razorpay',
+        minBookingAmount: 100,
+        maxBookingAmount: 50000
+      },
+      regional: {
+        emergencyNumber: '112',
+        addressFormat: 'flat, building, street, area, city, state, pincode',
+        postalCodeRequired: true,
+        stateRequired: true
+      },
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     };
     
     await kv.set('region_india', indiaRegion);
-    console.log('✅ India region initialized successfully');
+    
+    console.log('✅ India region initialized successfully!');
+    console.log('   Region ID: india');
+    console.log('   Currency: ₹ INR');
+    console.log('   Phone: +91');
+    console.log('   Status: Active');
   } catch (error) {
-    console.error('❌ Error initializing India region:', error);
-    console.warn('⚠️ Region not found, using default India region');
+    console.error('❌ CRITICAL ERROR: Failed to initialize India region:', error);
+    console.error('   This may cause issues with the application.');
+    console.error('   Attempting to continue anyway...');
   }
 }
 
-// Initialize region before starting server
-await initializeDefaultRegion();
-
 // Start Server
 console.log("🚀 Server starting...");
+
+// Initialize India region before starting the server
+initializeIndiaRegionOnStartup().then(() => {
+  console.log("💡 India region initialization complete");
+  console.log("🎯 Server ready to accept requests");
+}).catch((error) => {
+  console.error("⚠️ India region initialization failed, but server will continue:", error);
+});
+
 Deno.serve(app.fetch);

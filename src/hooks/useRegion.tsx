@@ -42,12 +42,13 @@ interface RegionContextType {
 const RegionContext = createContext<RegionContextType | undefined>(undefined);
 
 export function RegionProvider({ children }: { children: ReactNode }) {
+  // 🇮🇳 Start with hardcoded India region as default
   const [region, setRegionState] = useState<Region>(DEFAULT_INDIA_REGION);
   const [regionId, setRegionId] = useState<string>('india');
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [activeRegions, setActiveRegions] = useState<Region[]>([]);
+  const [activeRegions, setActiveRegions] = useState<Region[]>([DEFAULT_INDIA_REGION]);
 
-  // Load region on mount
+  // Load region on mount with robust error handling
   useEffect(() => {
     loadRegion();
     loadActiveRegions();
@@ -56,29 +57,27 @@ export function RegionProvider({ children }: { children: ReactNode }) {
   const loadRegion = async () => {
     setIsLoading(true);
     try {
-      const currentRegionId = getCurrentRegionId();
+      const currentRegionId = getCurrentRegionId(); // Will always return 'india'
       
-      // First, try to initialize India region if it doesn't exist
-      if (currentRegionId === 'india') {
-        console.log('🌍 Initializing India region...');
-        await initializeIndiaRegion();
-      }
+      console.log('🌍 Loading region:', currentRegionId);
       
-      // Now fetch the region
+      // Try to fetch from backend
       const fetchedRegion = await fetchRegion(currentRegionId);
       
       if (fetchedRegion) {
-        console.log('✅ Region loaded:', fetchedRegion.regionName);
+        console.log('✅ Region loaded from backend:', fetchedRegion.regionName);
         setRegionState(fetchedRegion);
         setRegionId(currentRegionId);
       } else {
-        // Fallback to default India region
-        console.log('⚠️ Region not found, using default India region');
+        // Backend fetch failed - use hardcoded default
+        console.log('⚠️ Region not found in backend, using hardcoded India region');
         setRegionState(DEFAULT_INDIA_REGION);
         setRegionId('india');
       }
     } catch (error) {
-      console.log('⚠️ Error loading region, using default India region');
+      // Error during fetch - use hardcoded default
+      console.log('⚠️ Error loading region from backend, using hardcoded India region');
+      console.error('   Error details:', error);
       setRegionState(DEFAULT_INDIA_REGION);
       setRegionId('india');
     } finally {
@@ -89,17 +88,28 @@ export function RegionProvider({ children }: { children: ReactNode }) {
   const loadActiveRegions = async () => {
     try {
       const regions = await fetchActiveRegions();
-      setActiveRegions(regions);
-      if (regions.length > 0) {
-        console.log(`✅ Loaded ${regions.length} active region(s)`);
+      if (regions && regions.length > 0) {
+        setActiveRegions(regions);
+        console.log(`✅ Loaded ${regions.length} active region(s) from backend`);
+      } else {
+        // No regions from backend - use hardcoded India
+        setActiveRegions([DEFAULT_INDIA_REGION]);
+        console.log('⚠️ No regions from backend, using hardcoded India region');
       }
     } catch (error) {
-      // Silent fail - will keep empty array
-      setActiveRegions([]);
+      // Error during fetch - use hardcoded India
+      console.log('⚠️ Error loading active regions, using hardcoded India region');
+      setActiveRegions([DEFAULT_INDIA_REGION]);
     }
   };
 
   const setRegion = async (newRegionId: string) => {
+    // For India deployment, only allow 'india' region
+    if (newRegionId !== 'india') {
+      console.warn('⚠️ Only India region is supported in this deployment');
+      return;
+    }
+    
     setIsLoading(true);
     try {
       const fetchedRegion = await fetchRegion(newRegionId);
@@ -109,10 +119,12 @@ export function RegionProvider({ children }: { children: ReactNode }) {
         setRegionId(newRegionId);
         setCurrentRegionId(newRegionId);
       } else {
-        console.error(`Region ${newRegionId} not found`);
+        console.error(`Region ${newRegionId} not found, using default`);
+        setRegionState(DEFAULT_INDIA_REGION);
       }
     } catch (error) {
       console.error('Error setting region:', error);
+      setRegionState(DEFAULT_INDIA_REGION);
     } finally {
       setIsLoading(false);
     }

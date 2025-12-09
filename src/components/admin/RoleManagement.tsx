@@ -330,8 +330,8 @@ export function RoleManagement() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {roles.map((role) => (
-            <Card key={role.id} className="p-6 hover:shadow-lg transition-shadow">
+          {roles.map((role, index) => (
+            <Card key={role.id || `role-${index}`} className="p-6 hover:shadow-lg transition-shadow">
               {/* Role Header */}
               <div className="flex items-start justify-between mb-4">
                 <div className="flex items-center gap-3">

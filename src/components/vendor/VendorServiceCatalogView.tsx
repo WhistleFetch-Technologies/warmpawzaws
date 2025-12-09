@@ -5,7 +5,9 @@ import {
   ChevronRight, 
   Search, 
   Plus,
-  Package as PackageIcon
+  Package as PackageIcon,
+  CheckSquare,
+  Square
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
@@ -18,6 +20,7 @@ interface VendorServiceCatalogViewProps {
   vendorData: any;
   onBack: () => void;
   onSelectService?: (service: any) => void;
+  mode?: 'browse' | 'multi-select'; // ✅ NEW: Support multi-select mode
 }
 
 interface ServiceCatalogItem {
@@ -63,7 +66,8 @@ export function VendorServiceCatalogView({
   vendorId, 
   vendorData, 
   onBack,
-  onSelectService 
+  onSelectService,
+  mode = 'browse' // ✅ Default to browse mode
 }: VendorServiceCatalogViewProps) {
   const [services, setServices] = useState<ServiceCatalogItem[]>([]);
   const [groupedServices, setGroupedServices] = useState<CategoryGroup[]>([]);
@@ -74,6 +78,8 @@ export function VendorServiceCatalogView({
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const [expandedSubcategories, setExpandedSubcategories] = useState<Set<string>>(new Set());
   const [roles, setRoles] = useState<any[]>([]);
+  const [selectedServices, setSelectedServices] = useState<Set<string>>(new Set()); // ✅ NEW: Track selected services
+  const [adding, setAdding] = useState(false); // ✅ NEW: Track adding state
 
   useEffect(() => {
     loadCatalogData();
@@ -285,6 +291,142 @@ export function VendorServiceCatalogView({
       tele: '📞 Tele'
     };
     return labels[style] || style;
+  };
+
+  // ✅ NEW: Toggle service selection for multi-select mode
+  const toggleServiceSelection = (catalogId: string) => {
+    if (mode !== 'multi-select') return;
+    
+    const newSelected = new Set(selectedServices);
+    if (newSelected.has(catalogId)) {
+      newSelected.delete(catalogId);
+    } else {
+      newSelected.add(catalogId);
+    }
+    setSelectedServices(newSelected);
+  };
+
+  // ✅ NEW: Add all selected services to vendor
+  const handleAddAllSelected = async () => {
+    if (selectedServices.size === 0) {
+      toast.error('Please select at least one service');
+      return;
+    }
+
+    setAdding(true);
+    const successfullyAdded: string[] = [];
+    const failed: string[] = [];
+
+    try {
+      // Add each selected service
+      for (const catalogId of Array.from(selectedServices)) {
+        try {
+          const service = services.find(s => s.catalogId === catalogId);
+          if (!service) continue;
+
+          const response = await fetch(
+            `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/services`,
+            {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${publicAnonKey}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                vendorId,
+                catalogServiceCode: catalogId,
+                serviceName: service.serviceName,
+                serviceStyle: service.serviceStyle,
+                isEnabled: true,
+                vendorPrice: service.basePrice,
+                duration: service.duration || 30,
+                description: service.description,
+                isPackage: service.isPackage,
+                packageDetails: service.packageDetails,
+                status: 'active'
+              })
+            }
+          );
+
+          if (response.ok) {
+            successfullyAdded.push(service.serviceName);
+          } else {
+            failed.push(service.serviceName);
+          }
+        } catch (error) {
+          console.error('Error adding service:', catalogId, error);
+          failed.push(catalogId);
+        }
+      }
+
+      // Show results
+      if (successfullyAdded.length > 0) {
+        toast.success(`Added ${successfullyAdded.length} service(s) successfully!`);
+        setSelectedServices(new Set()); // Clear selection
+        await loadCatalogData(); // Reload to show updated state
+      }
+
+      if (failed.length > 0) {
+        toast.error(`Failed to add ${failed.length} service(s)`);
+      }
+
+    } catch (error) {
+      console.error('Error adding services:', error);
+      toast.error('Failed to add services');
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  // ✅ NEW: Handle single service add (for browse mode)
+  const handleAddSingleService = async (service: ServiceCatalogItem) => {
+    if (!service.catalogId) {
+      toast.error('Invalid service');
+      return;
+    }
+
+    setAdding(true);
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/services`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            vendorId,
+            catalogServiceCode: service.catalogId,
+            serviceName: service.serviceName,
+            serviceStyle: service.serviceStyle,
+            isEnabled: true,
+            vendorPrice: service.basePrice,
+            duration: service.duration || 30,
+            description: service.description,
+            isPackage: service.isPackage,
+            packageDetails: service.packageDetails,
+            status: 'active'
+          })
+        }
+      );
+
+      if (response.ok) {
+        toast.success(`${service.serviceName} added successfully!`);
+        await loadCatalogData(); // Reload to show updated state
+        
+        // Call onSelectService for further configuration
+        onSelectService?.(service);
+      } else {
+        const errorData = await response.json();
+        toast.error(errorData.error || 'Failed to add service');
+      }
+    } catch (error) {
+      console.error('Error adding service:', error);
+      toast.error('Failed to add service');
+    } finally {
+      setAdding(false);
+    }
   };
 
   if (loading) {
@@ -555,7 +697,7 @@ export function VendorServiceCatalogView({
                                                 </button>
                                               ) : (
                                                 <button
-                                                  onClick={() => onSelectService?.(service)}
+                                                  onClick={() => handleAddSingleService(service)}
                                                   className="px-3 py-1.5 bg-[#FF8C42] hover:bg-[#FF7829] text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1"
                                                 >
                                                   <Plus className="w-3 h-3" />

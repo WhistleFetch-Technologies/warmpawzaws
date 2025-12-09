@@ -33,6 +33,27 @@ export interface VendorCapabilities {
   staff_management: boolean;
 }
 
+// 🇮🇳 HARDCODED: Default capabilities for Veterinarian role (India deployment)
+const HARDCODED_VET_CAPABILITIES: VendorCapabilities = {
+  booking: true,
+  chat: true,
+  tele: true,
+  prescription: true,
+  medical_records: true,
+  emergency: true,
+  catalog: true,
+  orders: false,
+  inventory: false,
+  delivery: false,
+  photo_updates: true,
+  gallery: true,
+  portfolio: true,
+  progress_tracking: true,
+  cctv_access: false,
+  gps_tracking: false,
+  staff_management: true
+};
+
 const DEFAULT_CAPABILITIES: VendorCapabilities = {
   booking: true,
   chat: true,
@@ -53,9 +74,27 @@ const DEFAULT_CAPABILITIES: VendorCapabilities = {
   staff_management: false
 };
 
+// 🇮🇳 HARDCODED: Role name mapping (India deployment)
+const HARDCODED_ROLE_NAMES: Record<string, string> = {
+  'veterinarian': 'Veterinarian',
+  'veterinary_clinic': 'Veterinary Clinic',
+  'groomer': 'Pet Groomer',
+  'trainer': 'Pet Trainer',
+  'dog_walker': 'Dog Walker',
+  'pet_cafe': 'Pet Cafe',
+  'pet_resort': 'Pet Resort',
+  'nutritionist': 'Pet Nutritionist',
+  'behaviorist': 'Pet Behaviorist',
+  'boarding': 'Pet Boarding',
+  'sunset_services': 'Pet Memorial Services',
+  'insurance': 'Pet Insurance Provider',
+  'ambulance': 'Pet Ambulance Service',
+  'diagnostics': 'Pet Diagnostics Center',
+};
+
 export function useVendorCapabilities(roleId?: string) {
   const [capabilities, setCapabilities] = useState<VendorCapabilities>(DEFAULT_CAPABILITIES);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false); // Changed to false - using hardcoded capabilities
   const [roleName, setRoleName] = useState<string>('');
 
   useEffect(() => {
@@ -64,6 +103,29 @@ export function useVendorCapabilities(roleId?: string) {
       return;
     }
 
+    // 🇮🇳 HARDCODED: Use hardcoded capabilities instead of API call
+    console.log('🇮🇳 Using hardcoded role capabilities for India deployment');
+    console.log('   Role ID:', roleId);
+    
+    // Set role name from hardcoded mapping
+    const mappedRoleName = HARDCODED_ROLE_NAMES[roleId] || roleId;
+    setRoleName(mappedRoleName);
+    console.log('   Role Name:', mappedRoleName);
+    
+    // Use veterinarian capabilities for vet-related roles
+    if (roleId === 'veterinarian' || roleId === 'veterinary_clinic' || roleId.includes('vet')) {
+      setCapabilities(HARDCODED_VET_CAPABILITIES);
+      console.log('✅ Applied Veterinarian capabilities');
+    } else {
+      // For other roles, use defaults for now
+      setCapabilities(DEFAULT_CAPABILITIES);
+      console.log('✅ Applied Default capabilities');
+    }
+    
+    setLoading(false);
+
+    // 🚫 DISABLED: API call to fetch role config - using hardcoded values
+    /*
     const fetchRoleConfig = async () => {
       try {
         const response = await fetch(
@@ -78,10 +140,13 @@ export function useVendorCapabilities(roleId?: string) {
         if (response.ok) {
           const data = await response.json();
           const roles = data.roles || [];
-          const currentRole = roles.find((r: any) => r.id === roleId || r.name.toLowerCase() === roleId.toLowerCase());
+          const currentRole = roles.find((r: any) => 
+            r.id === roleId || 
+            (r.name && roleId && r.name.toLowerCase() === roleId.toLowerCase())
+          );
           
           if (currentRole) {
-            setRoleName(currentRole.name);
+            setRoleName(currentRole.name || '');
             
             // Map string capabilities to boolean object
             const newCapabilities = { ...DEFAULT_CAPABILITIES };
@@ -119,6 +184,7 @@ export function useVendorCapabilities(roleId?: string) {
     };
 
     fetchRoleConfig();
+    */
   }, [roleId]);
 
   return { capabilities, loading, roleName };
