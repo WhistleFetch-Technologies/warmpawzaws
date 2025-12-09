@@ -1,10 +1,31 @@
+import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
+import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { useVendorNotificationService } from './useVendorNotificationService';
 import { StaffManagement } from './StaffManagement';
 import { VendorBusinessHub } from './business/VendorBusinessHub'; // ✅ NEW
 import { VetSpecializedServicesManager } from './clinic/VetSpecializedServicesManager'; // ✅ NEW: Vet-specific services
 import { ResortManagementDashboard } from './resort/ResortManagementDashboard'; // ✅ NEW: Pet resort management
 import { NutritionistMealManager } from './NutritionistMealManager'; // ✅ NEW: Nutritionist meal plans
+import { VendorOnboarding } from './VendorOnboarding';
+import { VendorApplicationSubmitted } from './VendorApplicationSubmitted';
+import { VendorApplicationUnderReview } from './VendorApplicationUnderReview';
+import { VendorClarificationRequested } from './VendorClarificationRequested';
+import { VendorApprovedSetup } from './VendorApprovedSetup';
+import { VendorAvailabilitySetup } from './VendorAvailabilitySetup';
+import { VendorSetupCompleted } from './VendorSetupCompleted';
+import { VendorApplicationRejected } from './VendorApplicationRejected';
+import { VendorDashboard } from './VendorDashboard';
+import { VendorScheduleManagement } from './VendorScheduleManagement';
+import { VendorServiceManagementComplete } from './VendorServiceManagementComplete';
+import { VendorConsultationScreen } from './VendorConsultationScreen';
+import { VendorBookingManagement } from './VendorBookingManagement';
+import { VendorTeleConsultationFlow } from './VendorTeleConsultationFlow';
+import { FacilityManagement } from './FacilityManagement';
+import { ClinicDashboard } from './clinic/ClinicDashboard';
+import { CafeVendorDashboard } from './cafe/CafeVendorDashboard';
+import { SunsetServicesVendorDashboard } from './sunset/SunsetServicesVendorDashboard';
+import { InsuranceVendorContainer } from './insurance/InsuranceVendorContainer';
 
 interface VendorLandingPageProps {
   vendorId: string;
