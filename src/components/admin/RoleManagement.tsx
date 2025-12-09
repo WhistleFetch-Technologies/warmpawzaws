@@ -533,10 +533,81 @@ function RoleEditor({ role, onSave, onCancel }: {
     { value: 'tele', label: 'Tele Consultation' }
   ];
 
+  // ✅ COMPLETE CAPABILITY LIST - All 42 Capabilities Organized by Category
   const capabilityOptions = [
-    'booking', 'tele', 'chat', 'prescription', 'catalog', 'inventory',
-    'medical_records', 'gps_tracking', 'photo_updates', 'gallery',
-    'portfolio', 'cctv_access', 'progress_tracking', 'orders', 'delivery', 'emergency'
+    // 🌐 UNIVERSAL CAPABILITIES (All Roles)
+    { value: 'facility_management', label: 'Facility Management', category: 'Universal' },
+    { value: 'schedule_management', label: 'Schedule Management', category: 'Universal' },
+    { value: 'booking', label: 'Booking', category: 'Universal' },
+    { value: 'chat', label: 'Chat', category: 'Universal' },
+    
+    // 🛠️ SERVICE PROVIDER CAPABILITIES
+    { value: 'custom_services', label: 'Custom Services', category: 'Service Provider' },
+    { value: 'package_management', label: 'Package Management', category: 'Service Provider' },
+    { value: 'staff_management', label: 'Staff Management', category: 'Service Provider' },
+    
+    // 🏥 HEALTHCARE CAPABILITIES
+    { value: 'prescription', label: 'Prescription', category: 'Healthcare' },
+    { value: 'medical_records', label: 'Medical Records', category: 'Healthcare' },
+    { value: 'vet_summary', label: 'Vet Summary', category: 'Healthcare' },
+    { value: 'patient_monitoring', label: 'Patient Monitoring', category: 'Healthcare' },
+    { value: 'tele', label: 'Tele Consultation', category: 'Healthcare' },
+    { value: 'emergency', label: 'Emergency', category: 'Healthcare' },
+    
+    // 🏥 CLINIC-SPECIFIC CAPABILITIES
+    { value: 'multi_doctor_management', label: 'Multi-Doctor Management', category: 'Clinic' },
+    { value: 'ambulance_services', label: 'Ambulance Services', category: 'Clinic' },
+    { value: 'diagnostic_lab', label: 'Diagnostic Lab', category: 'Clinic' },
+    { value: 'emergency_protocols', label: 'Emergency Protocols', category: 'Clinic' },
+    
+    // 🏨 BOARDING/RESORT CAPABILITIES
+    { value: 'room_management', label: 'Room Management', category: 'Boarding/Resort' },
+    { value: 'nightly_pricing', label: 'Nightly Pricing', category: 'Boarding/Resort' },
+    { value: 'occupancy_tracking', label: 'Occupancy Tracking', category: 'Boarding/Resort' },
+    { value: 'cctv_access', label: 'CCTV Access', category: 'Boarding/Resort' },
+    { value: 'photo_updates', label: 'Photo Updates', category: 'Boarding/Resort' },
+    
+    // ☕ CAFE CAPABILITIES
+    { value: 'table_management', label: 'Table Management', category: 'Cafe' },
+    { value: 'pax_management', label: 'Pax Management', category: 'Cafe' },
+    { value: 'menu', label: 'Menu Management', category: 'Cafe' },
+    { value: 'events', label: 'Event Management', category: 'Cafe' },
+    
+    // 💊 PHARMACY CAPABILITIES
+    { value: 'prescription_verification', label: 'Prescription Verification', category: 'Pharmacy' },
+    { value: 'controlled_substances', label: 'Controlled Substances', category: 'Pharmacy' },
+    { value: 'expiry_management', label: 'Expiry Management', category: 'Pharmacy' },
+    
+    // 🥗 NUTRITIONIST CAPABILITIES
+    { value: 'meal_plans', label: 'Meal Plans', category: 'Nutritionist' },
+    { value: 'diet_charts', label: 'Diet Charts', category: 'Nutritionist' },
+    
+    // 🛡️ INSURANCE CAPABILITIES
+    { value: 'policy_management', label: 'Policy Management', category: 'Insurance' },
+    { value: 'claims_management', label: 'Claims Management', category: 'Insurance' },
+    
+    // 🛍️ E-COMMERCE CAPABILITIES
+    { value: 'catalog', label: 'Product Catalog', category: 'E-Commerce' },
+    { value: 'inventory', label: 'Inventory', category: 'E-Commerce' },
+    { value: 'orders', label: 'Order Management', category: 'E-Commerce' },
+    { value: 'delivery', label: 'Delivery', category: 'E-Commerce' },
+    
+    // 📍 TRACKING & MONITORING
+    { value: 'gps_tracking', label: 'GPS Tracking', category: 'Tracking' },
+    { value: 'progress_tracking', label: 'Progress Tracking', category: 'Tracking' },
+    { value: 'distance_pricing', label: 'Distance Pricing', category: 'Tracking' },
+    
+    // 🎨 VISUAL & PORTFOLIO
+    { value: 'portfolio', label: 'Portfolio', category: 'Visual' },
+    { value: 'gallery', label: 'Gallery', category: 'Visual' },
+    
+    // 🏠 SHELTER/NGO CAPABILITIES
+    { value: 'adoption', label: 'Pet Adoption', category: 'Shelter' },
+    { value: 'donation', label: 'Donation Management', category: 'Shelter' },
+    
+    // 🌅 MEMORIAL SERVICES
+    { value: 'memorial', label: 'Memorial Services', category: 'Memorial' },
+    { value: 'counseling', label: 'Grief Counseling', category: 'Memorial' }
   ];
 
   const handleSave = async () => {
@@ -690,18 +761,18 @@ function RoleEditor({ role, onSave, onCancel }: {
             <Label>Capabilities</Label>
             <div className="grid grid-cols-2 gap-2 mt-2">
               {capabilityOptions.map((cap) => (
-                <div key={cap} className="flex items-center gap-2">
+                <div key={cap.value} className="flex items-center gap-2">
                   <Checkbox
-                    id={`cap-${cap}`}
-                    checked={formData.capabilities.includes(cap)}
+                    id={`cap-${cap.value}`}
+                    checked={formData.capabilities.includes(cap.value)}
                     onCheckedChange={(checked) => {
                       const caps = checked
-                        ? [...formData.capabilities, cap]
-                        : formData.capabilities.filter((c: string) => c !== cap);
+                        ? [...formData.capabilities, cap.value]
+                        : formData.capabilities.filter((c: string) => c !== cap.value);
                       setFormData({ ...formData, capabilities: caps });
                     }}
                   />
-                  <Label htmlFor={`cap-${cap}`} className="text-sm cursor-pointer">{cap}</Label>
+                  <Label htmlFor={`cap-${cap.value}`} className="text-sm cursor-pointer">{cap.label}</Label>
                 </div>
               ))}
             </div>
