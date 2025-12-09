@@ -1,6 +1,6 @@
 import { Button } from '../ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
-import { CloudIntegrations } from './integrations/CloudIntegrations';
+import { AWSIntegrationsSettings } from './integrations/AWSIntegrationsSettings';
 import PaymentGatewayIntegration from './integrations/PaymentGatewayIntegration';
 import LogisticsIntegration from './integrations/LogisticsIntegration';
 import { CreditCard, Truck, Cloud, ArrowLeft, Settings } from 'lucide-react';
@@ -80,7 +80,7 @@ export function PlatformSettings({ onBack }: PlatformSettingsProps) {
 
           <div className="min-h-[500px]">
             <TabsContent value="cloud" className="m-0 focus-visible:ring-0 outline-none">
-              <CloudIntegrations />
+              <AWSIntegrationsSettings />
             </TabsContent>
             
             <TabsContent value="payments" className="m-0 focus-visible:ring-0 outline-none">

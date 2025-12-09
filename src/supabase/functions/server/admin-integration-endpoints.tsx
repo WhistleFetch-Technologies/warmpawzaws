@@ -100,6 +100,201 @@ export function adminIntegrationEndpoints(app: Hono) {
     }
   });
 
+  // ✅ NEW: Save AWS settings (S3, SNS, SQS, Chime, Bedrock)
+  app.post(`${BASE_PATH}/admin/settings/aws`, async (c) => {
+    try {
+      const settings = await c.req.json();
+      
+      const awsSettings = {
+        credentials: {
+          accessKeyId: settings.credentials?.accessKeyId || '',
+          secretAccessKey: settings.credentials?.secretAccessKey || '',
+          region: settings.credentials?.region || 'ap-south-1'
+        },
+        s3: {
+          enabled: settings.s3?.enabled || false,
+          bucket: settings.s3?.bucket || '',
+          region: settings.s3?.region || 'ap-south-1'
+        },
+        sns: {
+          enabled: settings.sns?.enabled || false,
+          region: settings.sns?.region || 'ap-south-1',
+          smsOriginationNumber: settings.sns?.smsOriginationNumber || '',
+          emailSourceAddress: settings.sns?.emailSourceAddress || ''
+        },
+        sqs: {
+          enabled: settings.sqs?.enabled || false,
+          queueUrl: settings.sqs?.queueUrl || '',
+          region: settings.sqs?.region || 'ap-south-1'
+        },
+        chime: {
+          enabled: settings.chime?.enabled || false,
+          region: settings.chime?.region || 'us-east-1'
+        },
+        bedrock: {
+          enabled: settings.bedrock?.enabled || false,
+          region: settings.bedrock?.region || 'us-east-1',
+          modelId: settings.bedrock?.modelId || 'anthropic.claude-v2'
+        },
+        updatedAt: new Date().toISOString()
+      };
+      
+      await kv.set('platform:settings:aws', awsSettings);
+      
+      console.log('✅ AWS settings saved');
+      return c.json({ 
+        success: true,
+        message: 'AWS settings saved successfully',
+        settings: awsSettings
+      });
+    } catch (error) {
+      console.error('Error saving AWS settings:', error);
+      return c.json({ success: false, error: String(error) }, 500);
+    }
+  });
+
+  // ✅ NEW: Get AWS settings
+  app.get(`${BASE_PATH}/admin/settings/aws`, async (c) => {
+    try {
+      const settings = await kv.get('platform:settings:aws');
+      
+      const defaultSettings = {
+        credentials: { accessKeyId: '', secretAccessKey: '', region: 'ap-south-1' },
+        s3: { enabled: false, bucket: '', region: 'ap-south-1' },
+        sns: { enabled: false, region: 'ap-south-1', smsOriginationNumber: '', emailSourceAddress: '' },
+        sqs: { enabled: false, queueUrl: '', region: 'ap-south-1' },
+        chime: { enabled: false, region: 'us-east-1' },
+        bedrock: { enabled: false, region: 'us-east-1', modelId: 'anthropic.claude-v2' }
+      };
+      
+      return c.json({
+        success: true,
+        settings: settings || defaultSettings
+      });
+    } catch (error) {
+      console.error('Error fetching AWS settings:', error);
+      return c.json({ success: false, error: String(error) }, 500);
+    }
+  });
+
+  // ✅ NEW: Save Google Maps settings
+  app.post(`${BASE_PATH}/admin/settings/google-maps`, async (c) => {
+    try {
+      const settings = await c.req.json();
+      
+      const googleMapsSettings = {
+        enabled: settings.enabled || false,
+        apiKey: settings.apiKey || '',
+        region: settings.region || 'IN',
+        updatedAt: new Date().toISOString()
+      };
+      
+      await kv.set('platform:settings:google_maps', googleMapsSettings);
+      
+      console.log('✅ Google Maps settings saved');
+      return c.json({ 
+        success: true,
+        message: 'Google Maps settings saved successfully',
+        settings: googleMapsSettings
+      });
+    } catch (error) {
+      console.error('Error saving Google Maps settings:', error);
+      return c.json({ success: false, error: String(error) }, 500);
+    }
+  });
+
+  // ✅ NEW: Get Google Maps settings
+  app.get(`${BASE_PATH}/admin/settings/google-maps`, async (c) => {
+    try {
+      const settings = await kv.get('platform:settings:google_maps');
+      
+      const defaultSettings = {
+        enabled: false,
+        apiKey: '',
+        region: 'IN'
+      };
+      
+      return c.json({
+        success: true,
+        settings: settings || defaultSettings
+      });
+    } catch (error) {
+      console.error('Error fetching Google Maps settings:', error);
+      return c.json({ success: false, error: String(error) }, 500);
+    }
+  });
+
+  // ✅ EXISTING: Save payment gateway settings (Razorpay, Stripe, etc.)
+  app.post(`${BASE_PATH}/admin/settings/payment-gateway`, async (c) => {
+    try {
+      const settings = await c.req.json();
+      
+      const paymentGatewaySettings = {
+        razorpay: {
+          enabled: settings.razorpay?.enabled || false,
+          key_id: settings.razorpay?.key_id || '',
+          key_secret: settings.razorpay?.key_secret || '',
+          webhook_secret: settings.razorpay?.webhook_secret || '',
+          auto_capture: settings.razorpay?.auto_capture !== false,
+          test_mode: settings.razorpay?.test_mode || false
+        },
+        stripe: {
+          enabled: settings.stripe?.enabled || false,
+          publishable_key: settings.stripe?.publishable_key || '',
+          secret_key: settings.stripe?.secret_key || '',
+          webhook_secret: settings.stripe?.webhook_secret || '',
+          test_mode: settings.stripe?.test_mode || false
+        },
+        paytm: {
+          enabled: settings.paytm?.enabled || false,
+          merchant_id: settings.paytm?.merchant_id || '',
+          merchant_key: settings.paytm?.merchant_key || '',
+          test_mode: settings.paytm?.test_mode || false
+        },
+        default_gateway: settings.default_gateway || 'razorpay',
+        commission_percentage: settings.commission_percentage || 15,
+        settlement_period_days: settings.settlement_period_days || 3,
+        updatedAt: new Date().toISOString()
+      };
+      
+      await kv.set('platform:settings:payment_gateway', paymentGatewaySettings);
+      
+      console.log('✅ Payment gateway settings updated');
+      return c.json({ 
+        success: true,
+        message: 'Payment gateway settings updated successfully',
+        settings: paymentGatewaySettings
+      });
+    } catch (error) {
+      console.error('Error updating payment gateway settings:', error);
+      return c.json({ error: String(error) }, 500);
+    }
+  });
+
+  // ✅ EXISTING: Get payment gateway settings
+  app.get(`${BASE_PATH}/admin/settings/payment-gateway`, async (c) => {
+    try {
+      const settings = await kv.get('platform:settings:payment_gateway');
+      
+      const defaultSettings = {
+        razorpay: { enabled: false, key_id: '', test_mode: true },
+        stripe: { enabled: false, test_mode: true },
+        paytm: { enabled: false, test_mode: true },
+        default_gateway: 'razorpay',
+        commission_percentage: 15,
+        settlement_period_days: 3
+      };
+      
+      return c.json({
+        success: true,
+        settings: settings || defaultSettings
+      });
+    } catch (error) {
+      console.error('Error fetching payment gateway settings:', error);
+      return c.json({ error: String(error) }, 500);
+    }
+  });
+
   // ==========================================
   // 2. PAYMENT GATEWAYS & RULES
   // ==========================================
@@ -178,77 +373,6 @@ export function adminIntegrationEndpoints(app: Hono) {
       return c.json({ success: true, rules });
     } catch (error) {
       return c.json({ success: false, error: String(error) }, 500);
-    }
-  });
-
-  // ✅ NEW: Save payment gateway settings (Razorpay, Stripe, etc.)
-  app.post(`${BASE_PATH}/admin/settings/payment-gateway`, async (c) => {
-    try {
-      const settings = await c.req.json();
-      
-      const paymentGatewaySettings = {
-        razorpay: {
-          enabled: settings.razorpay?.enabled || false,
-          key_id: settings.razorpay?.key_id || '',
-          key_secret: settings.razorpay?.key_secret || '',
-          webhook_secret: settings.razorpay?.webhook_secret || '',
-          auto_capture: settings.razorpay?.auto_capture !== false,
-          test_mode: settings.razorpay?.test_mode || false
-        },
-        stripe: {
-          enabled: settings.stripe?.enabled || false,
-          publishable_key: settings.stripe?.publishable_key || '',
-          secret_key: settings.stripe?.secret_key || '',
-          webhook_secret: settings.stripe?.webhook_secret || '',
-          test_mode: settings.stripe?.test_mode || false
-        },
-        paytm: {
-          enabled: settings.paytm?.enabled || false,
-          merchant_id: settings.paytm?.merchant_id || '',
-          merchant_key: settings.paytm?.merchant_key || '',
-          test_mode: settings.paytm?.test_mode || false
-        },
-        default_gateway: settings.default_gateway || 'razorpay',
-        commission_percentage: settings.commission_percentage || 15,
-        settlement_period_days: settings.settlement_period_days || 3,
-        updatedAt: new Date().toISOString()
-      };
-      
-      await kv.set('platform:settings:payment_gateway', paymentGatewaySettings);
-      
-      console.log('✅ Payment gateway settings updated');
-      return c.json({ 
-        success: true,
-        message: 'Payment gateway settings updated successfully',
-        settings: paymentGatewaySettings
-      });
-    } catch (error) {
-      console.error('Error updating payment gateway settings:', error);
-      return c.json({ error: String(error) }, 500);
-    }
-  });
-
-  // ✅ NEW: Get payment gateway settings
-  app.get(`${BASE_PATH}/admin/settings/payment-gateway`, async (c) => {
-    try {
-      const settings = await kv.get('platform:settings:payment_gateway');
-      
-      const defaultSettings = {
-        razorpay: { enabled: false, key_id: '', test_mode: true },
-        stripe: { enabled: false, test_mode: true },
-        paytm: { enabled: false, test_mode: true },
-        default_gateway: 'razorpay',
-        commission_percentage: 15,
-        settlement_period_days: 3
-      };
-      
-      return c.json({
-        success: true,
-        settings: settings || defaultSettings
-      });
-    } catch (error) {
-      console.error('Error fetching payment gateway settings:', error);
-      return c.json({ error: String(error) }, 500);
     }
   });
 
