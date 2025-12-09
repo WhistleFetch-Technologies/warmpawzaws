@@ -5,7 +5,8 @@ import {
   MessageSquare, Heart, Settings, ChevronRight, Package,
   Clock, MapPin, Star, Bell, CreditCard, HelpCircle, LogOut,
   ShoppingCart, Home as HomeIcon, FileText, Shield, AlertCircle, Mail,
-  Trash2, Plus, Check, ChevronDown, ArrowRight, Wallet, ShoppingBag
+  Trash2, Plus, Check, ChevronDown, ArrowRight, Wallet, ShoppingBag,
+  Gift, Users, Award
 } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 
@@ -726,6 +727,8 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
     { icon: User, label: 'My Profile', color: 'from-blue-100 to-blue-200 text-blue-600', view: 'profile' as const },
     { icon: ShoppingBag, label: 'My Orders', color: 'from-orange-100 to-orange-200 text-orange-600', action: 'orders', isExternal: true },
     { icon: Wallet, label: 'My Wallet', color: 'from-emerald-100 to-emerald-200 text-emerald-600', action: 'wallet', isExternal: true },
+    { icon: Award, label: 'Rewards & Loyalty', color: 'from-amber-100 to-amber-200 text-amber-600', action: 'rewards-loyalty', isExternal: true },
+    { icon: Users, label: 'Refer & Earn', color: 'from-cyan-100 to-cyan-200 text-cyan-600', action: 'referral-system', isExternal: true },
     { icon: Calendar, label: 'My Appointments', color: 'from-purple-100 to-purple-200 text-purple-600', action: 'appointments', isExternal: true },
     { icon: MapPin, label: 'Address Book', color: 'from-green-100 to-green-200 text-green-600', action: 'addresses', isExternal: true },
     { icon: Package, label: 'My Bookings', color: 'from-teal-100 to-teal-200 text-teal-600', view: 'bookings' as const, badge: activeBookings.length },
@@ -826,6 +829,16 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
                         handleClose();
                       } else if (item.action === 'wallet' && onViewWallet) {
                         onViewWallet();
+                        handleClose();
+                      } else if (item.action && onNavigate) {
+                        // Handle new navigation actions: rewards-loyalty, referral-system, orders, addresses
+                        if (item.action === 'orders') {
+                          onNavigate('account/orders');
+                        } else if (item.action === 'addresses') {
+                          onNavigate('account/addresses');
+                        } else {
+                          onNavigate(item.action);
+                        }
                         handleClose();
                       }
                     } else if (item.view) {
