@@ -18,113 +18,7 @@ import { vendorOnboardingEndpoints } from "./vendor-onboarding.tsx";
 import { vendorDashboardEndpoints } from "./vendor-dashboard-endpoints.tsx";
 import { reviewEndpoints } from "./review-endpoints.tsx";
 import { analyticsEndpoints } from "./analytics-endpoints.tsx";
-import { registerDynamicOnboarding } from "./dynamic-onboarding-management.tsx";
-import { registerAuthEndpoints } from "./auth-endpoints.tsx";
-import { bookingEndpoints } from "./booking-endpoints.tsx";
-import { registerAICRMRoutes } from "./ai-crm-routes.tsx";
-import { registerAIChatbotRoutes } from "./ai-chatbot-routes.tsx";
-import { vendorRoleConfigEndpoints } from "./vendor-role-config.tsx";
-import { registerVendorServiceEndpoints } from "./vendor-services-endpoints.tsx";
-import { registerVendorCatalogAPIV2 } from "./vendor-catalog-api-v2.tsx";
-import { vendorScheduleV2Endpoints } from "./vendor-schedule-v2.tsx";
-import { registerProblemGridSpecializationSystem } from "./problem-grid-specialization-system.tsx";
-import { registerAdminCatalogEndpoints } from "./admin-catalog-endpoints.tsx";
-import { adminIntegrationEndpoints } from "./admin-integration-endpoints.tsx";
-import { registerVendorSettingsRulesEndpoints } from "./vendor-settings-rules-endpoints.tsx";
-import { registerVideoCallEndpoints } from "./video-call-endpoints.tsx";
-import { regionEndpoints } from "./region-endpoints.tsx";
-import staffAvailabilityRoutes from "./staff-availability-routes.tsx";
-import staffScheduleRoutes from "./staff-schedule-endpoints.tsx";
-import staffCRUDRoutes from "./staff-crud-endpoints.tsx";
-import staffAuthRoutes from "./staff-auth-endpoints.tsx";
-import { paymentEndpoints } from "./payment-endpoints.tsx";
-import { marketplacePaymentEndpoints } from "./marketplace-payment-endpoints.tsx";
-import { criticalActionGuard } from "./critical-action-guard.tsx";
-import orderRoutes from "./order-management-endpoints.tsx";
-import ecommerceRoutes from "./ecommerce_routes.tsx";
-import marketingRoutesV2 from "./marketing-routes-v2.tsx";
-import customerEcommerceRoutes from "./customer-ecommerce-endpoints.tsx";
-import { registerGPSTrackingEndpoints } from "./gps-tracking.tsx";
-import { registerCafeFeatures } from "./cafe-features.tsx";
-import { registerResortInventory } from "./resort-inventory.tsx";
-import { registerBreederListings } from "./breeder-listings.tsx";
-import { registerAnalyticsIngestion } from "./analytics-events.tsx";
-import { registerLogisticsEndpoints } from "./logistics-adapter.tsx";
-import { registerChatEndpoints } from "./chat-endpoints.tsx";
-import { registerSubscriptionEndpoints } from "./subscription-endpoints.tsx";
-import { registerVideoConsultationEndpoints } from "./video-consultation-endpoints.tsx";
-import { registerMedicalHistoryEndpoints } from "./medical-history-endpoints.tsx";
-import { registerUniversalStaffSchedule } from "./universal-staff-schedule.tsx";
-import { registerCenterAvailabilityEndpoints } from "./center-availability-endpoints.tsx";
-import { registerBoardingRoomManagement } from "./boarding-room-management.tsx";
-import { registerPetListingManagement } from "./pet-listing-management.tsx";
-import { registerNutritionistMealManagement } from "./nutritionist-meal-management.tsx";
-import { registerServicePackageManagement } from "./service-package-management.tsx";
-import { registerMarketplaceProducts } from "./marketplace-products.tsx";
-import { registerUniversalServiceDiscovery } from "./universal-service-discovery.tsx";
-import { registerUniversalOTPSystem } from "./universal-otp-system.tsx";
-import { registerHomeServiceBookingFlow } from "./home-service-booking-flow.tsx";
-import { registerBookingLifecycleManagement } from "./booking-lifecycle-management.tsx";
-import { registerSmsOtpService } from "./sms-otp-service.tsx";
-import { registerRazorpayRefundProcessor } from "./razorpay-refund-processor.tsx";
-import { registerGooglePlacesService } from "./google-places-service.tsx";
-import { registerSettlementAutomation } from "./settlement-automation.tsx";
-import { registerS3AutoUploader } from "./s3-auto-uploader.tsx";
-import { registerSmsEventNotifications } from "./sms-event-notifications.tsx";
-
-// ✅ NEW: Payment & Logistics Integrations
-import { razorpayEndpoints } from "./razorpay-integration.tsx";
-import { registerShiprocketIntegration } from "./shiprocket-integration.tsx";
-import { registerIntegrationInitEndpoints } from "./init-integrations.tsx";
-import { agoraVideoEndpoints } from "./agora-video-integration.tsx";
-import { automatedPayoutEndpoints } from "./automated-vendor-payouts.tsx";
-
-// ✅ NEW: AWS Chime Video & Chat Integration
-import { registerAWSChimeVideoEndpoints } from "./aws-chime-video-integration.tsx";
-import { registerAWSChimeChatEndpoints } from "./aws-chime-chat-integration.tsx";
-
-// ✅ NEW: Enterprise Admin Capabilities
-import { analyticsAggregationEndpoints } from "./analytics-aggregation.tsx";
-import { rbacEndpoints } from "./rbac-endpoints.tsx";
-import { reportBuilderEndpoints } from "./report-builder-endpoints.tsx";
-import { petIntelligenceEndpoints } from "./pet-intelligence-endpoints.tsx";
-import { transactionMonitoringEndpoints } from "./transaction-monitoring-endpoints.tsx";
-
-// ✅ NEW: Priority 2 Enhanced Endpoints
-import enhancedServicePublishing from "./enhanced-service-publishing.tsx";
-import enhancedStaffAvailability from "./enhanced-staff-availability-with-conflicts.tsx";
-import enhancedGpsTracking from "./enhanced-gps-tracking.tsx";
-
-// ✅ NEW: Critical Flow Fixes (P0)
-import criticalFlowFixes from "./critical-flow-fixes.tsx";
-
-// ✅ NEW: P1 Vendor-Specific Features
-import groomerGallerySystem from "./groomer-gallery-system.tsx";
-import trainerProgressTracking from "./trainer-progress-tracking.tsx";
-import cafeTableManagement from "./cafe-table-management.tsx";
-import insuranceClaimManagement from "./insurance-claim-management.tsx";
-
-// ✅ NEW: Customer App Features (Manually Edited)
-import customerWalletTopup from "./customer-wallet-topup.tsx";
-import rewardsLoyaltySystem from "./rewards-loyalty-system.tsx";
-import referralSystem from "./referral-system.tsx";
-import customerMedicalRecords from "./customer-medical-records.tsx";
-
-// ✅ NEW: Customer App Enhancements
-import customerAppEnhancements from "./customer-app-enhancements.tsx";
-
-// ✅ NEW: P2 Features - Final 18% to reach 100%
-import profilePhotoManagement from "./profile-photo-management.tsx";
-import advancedFilteringSystem from "./advanced-filtering-system.tsx";
-import appointmentReminderSystem from "./appointment-reminder-system.tsx";
-import serviceComparisonSystem from "./service-comparison-system.tsx";
-
-// ✅ NEW: Platform Subscription Tiers & Mating/Dating Service
-import { registerPlatformSubscriptionTiers } from "./platform-subscription-tiers.tsx";
-import { registerMatingDatingService } from "./mating-dating-service.tsx";
-
-// ✅ Vendor Bookings
-import vendorBookings from "./vendor-bookings.tsx";
+import { registerP0Features } from "./p0-features-endpoints.tsx"; // ✅ NEW: P0 Features
 
 const app = new Hono();
 
@@ -600,6 +494,9 @@ if (vendorBookings && typeof vendorBookings === 'object') {
 } else {
   console.warn('⚠️ Vendor Bookings module undefined, skipping');
 }
+
+// ✅ NEW: P0 Features
+registerP0Features(app);
 
 // 5. Staff Routes
 if (staffAuthRoutes && typeof staffAuthRoutes === 'object') {

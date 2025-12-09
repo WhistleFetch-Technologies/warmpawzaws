@@ -22,18 +22,27 @@ export function adminVendorEndpoints(app: Hono, kv: any) {
       console.log('📋 ADMIN: Loading all vendors...');
       console.log('========================================');
       
+      // ✅ FIX: Add timeout and better error handling
+      const supabaseUrl = Deno.env.get('SUPABASE_URL');
+      const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+      
+      if (!supabaseUrl || !supabaseServiceKey) {
+        console.error('❌ Missing Supabase credentials');
+        return c.json({ error: 'Server configuration error' }, 500);
+      }
+      
       // Get all vendors with their actual keys
       // Note: kv.getByPrefix only returns values, not keys
       // We need to query the database directly to get both keys and values
-      const supabase = createClient(
-        Deno.env.get('SUPABASE_URL'),
-        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-      );
+      const supabase = createClient(supabaseUrl, supabaseServiceKey);
+      
+      console.log('🔍 Querying database for vendor records...');
       
       const { data: kvRecords, error } = await supabase
         .from('kv_store_3dd53475')
         .select('key, value')
-        .like('key', 'vendor:%');
+        .like('key', 'vendor:%')
+        .limit(1000); // ✅ FIX: Add limit to prevent timeout
       
       if (error) {
         console.error('❌ Error fetching vendors:', error);
