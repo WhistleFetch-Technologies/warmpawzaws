@@ -104,6 +104,15 @@ export function staffServiceEndpoints(app: Hono, kvStore: any) {
       // Save to KV store - ONLY save once with the staff prefix
       await kvStore.set(`staff:${staffId}:service:${staffServiceId}`, staffService);
       
+      // ✅ PERSISTENCE VERIFICATION
+      const verifyService = await kvStore.get(`staff:${staffId}:service:${staffServiceId}`);
+      if (verifyService) {
+        console.log(`   ✅ PERSISTENCE VERIFIED: Staff service successfully persisted`);
+      } else {
+        console.error(`   ❌ PERSISTENCE FAILED: Staff service not found after save`);
+        console.error(`      - Expected key: staff:${staffId}:service:${staffServiceId}`);
+      }
+      
       // ✅ AUTO-ENABLE SERVICE STYLE: When adding a service, automatically enable and make available the service style
       if (serviceStyle && ['at_home', 'at_center', 'tele'].includes(serviceStyle)) {
         try {
