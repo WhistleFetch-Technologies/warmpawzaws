@@ -151,6 +151,7 @@ export function RegionManager({ onBack }: RegionManagerProps = {}) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRegion, setSelectedRegion] = useState<Region | null>(null);
   const [editingRegion, setEditingRegion] = useState<Partial<Region> | null>(null);
+  const [autoInitAttempted, setAutoInitAttempted] = useState(false); // Guard against infinite loops
 
   useEffect(() => {
     loadRegions();
@@ -187,13 +188,28 @@ export function RegionManager({ onBack }: RegionManagerProps = {}) {
       }
       
       const data = await response.json();
+      console.log('🌍 [REGION] Response data:', data);
       
       if (data.success) {
+        // ✅ CRITICAL FIX: Handle KV format { key: "...", value: {...} }
+        // Extract the region objects from the KV wrapper
+        const regionsData = data.regions || [];
+        const extractedRegions: Region[] = [];
+        
+        regionsData.forEach((item: any) => {
+          // If item has 'value' property, it's wrapped by KV - extract it
+          // If item has 'regionId', it's already unwrapped - use it directly
+          const region = item.value || item;
+          
+          // Only add valid regions with regionId
+          if (region && region.regionId) {
+            extractedRegions.push(region);
+          }
+        });
+        
         // Deduplicate regions by regionId to prevent React key warnings
         const uniqueRegionsMap = new Map<string, Region>();
-        (data.regions || []).forEach((r: Region) => {
-          if (!r.regionId) return; // Skip invalid regions to prevent key warnings
-
+        extractedRegions.forEach((r: Region) => {
           const existing = uniqueRegionsMap.get(r.regionId);
           
           if (!existing) {
@@ -208,11 +224,15 @@ export function RegionManager({ onBack }: RegionManagerProps = {}) {
         const uniqueRegions = Array.from(uniqueRegionsMap.values());
         setRegions(uniqueRegions);
         
-        // 🇮🇳 CRITICAL FIX: If no regions found, auto-initialize India region
-        if (uniqueRegions.length === 0) {
-          console.log('🇮🇳 No regions found - auto-initializing India region...');
+        // 🛡️ GUARD: Only auto-initialize ONCE to prevent infinite loops
+        if (uniqueRegions.length === 0 && !autoInitAttempted) {
+          console.log('🇮🇳 No regions found - attempting one-time auto-initialization...');
+          setAutoInitAttempted(true); // Prevent future attempts
           toast.info('Initializing India region...');
           await handleCreateFromTemplate('india');
+        } else if (uniqueRegions.length === 0) {
+          console.warn('⚠️ Auto-initialization already attempted. KV store may be having issues.');
+          toast.warning('Region system unavailable. Using defaults.');
         } else {
           toast.success(`Loaded ${uniqueRegions.length} regions`);
         }
