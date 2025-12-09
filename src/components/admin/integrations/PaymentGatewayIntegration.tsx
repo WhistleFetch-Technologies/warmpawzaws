@@ -5,6 +5,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { Save, Check, AlertCircle, Key, CreditCard } from 'lucide-react';
+import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { toast } from 'sonner@2.0.3';
 
 interface PaymentSettings {
   razorpay: {
@@ -73,10 +75,10 @@ export default function PaymentGatewayIntegration() {
     try {
       setLoading(true);
       const response = await fetch(
-        'https://vpvpbdwtyugbknrntkho.supabase.co/functions/v1/make-server-3dd53475/admin/settings/payment-gateway',
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/settings/payment-gateway`,
         {
           headers: {
-            'Authorization': `Bearer ${localStorage.getItem('supabase_token')}`
+            'Authorization': `Bearer ${publicAnonKey}`
           }
         }
       );
@@ -84,11 +86,47 @@ export default function PaymentGatewayIntegration() {
       if (response.ok) {
         const data = await response.json();
         if (data.settings) {
-          setSettings(data.settings);
+          // Ensure all fields have values (no undefined)
+          const loadedSettings = {
+            razorpay: {
+              enabled: data.settings.razorpay?.enabled || false,
+              key_id: data.settings.razorpay?.key_id || '',
+              key_secret: data.settings.razorpay?.key_secret || '',
+              webhook_secret: data.settings.razorpay?.webhook_secret || '',
+              auto_capture: data.settings.razorpay?.auto_capture !== false,
+              test_mode: data.settings.razorpay?.test_mode || false
+            },
+            stripe: {
+              enabled: data.settings.stripe?.enabled || false,
+              publishable_key: data.settings.stripe?.publishable_key || '',
+              secret_key: data.settings.stripe?.secret_key || '',
+              webhook_secret: data.settings.stripe?.webhook_secret || '',
+              test_mode: data.settings.stripe?.test_mode || false
+            },
+            paytm: {
+              enabled: data.settings.paytm?.enabled || false,
+              merchant_id: data.settings.paytm?.merchant_id || '',
+              merchant_key: data.settings.paytm?.merchant_key || '',
+              test_mode: data.settings.paytm?.test_mode || false
+            },
+            default_gateway: data.settings.default_gateway || 'razorpay',
+            commission_percentage: data.settings.commission_percentage || 15,
+            settlement_period_days: data.settings.settlement_period_days || 3
+          };
+          setSettings(loadedSettings);
         }
+      } else {
+        const errorData = await response.json();
+        console.error('Error fetching settings:', errorData);
+        toast.error('Failed to load payment settings', {
+          description: errorData.error || 'Please try again'
+        });
       }
     } catch (error) {
       console.error('Error fetching settings:', error);
+      toast.error('Failed to load payment settings', {
+        description: 'Network error. Please check your connection.'
+      });
     } finally {
       setLoading(false);
     }
@@ -97,28 +135,43 @@ export default function PaymentGatewayIntegration() {
   const handleSave = async () => {
     try {
       setSaveStatus('saving');
+      toast.info('Saving payment settings...');
       
       const response = await fetch(
-        'https://vpvpbdwtyugbknrntkho.supabase.co/functions/v1/make-server-3dd53475/admin/settings/payment-gateway',
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/settings/payment-gateway`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('supabase_token')}`
+            'Authorization': `Bearer ${publicAnonKey}`
           },
           body: JSON.stringify(settings)
         }
       );
 
       if (response.ok) {
+        const data = await response.json();
         setSaveStatus('success');
-        setTimeout(() => setSaveStatus('idle'), 2000);
+        toast.success('Payment settings saved successfully!', {
+          description: 'Your payment gateway configuration has been updated.'
+        });
+        setTimeout(() => setSaveStatus('idle'), 3000);
       } else {
+        const errorData = await response.json();
+        console.error('Error saving settings:', errorData);
         setSaveStatus('error');
+        toast.error('Failed to save settings', {
+          description: errorData.error || 'Please try again'
+        });
+        setTimeout(() => setSaveStatus('idle'), 3000);
       }
     } catch (error) {
       console.error('Error saving settings:', error);
       setSaveStatus('error');
+      toast.error('Failed to save settings', {
+        description: 'Network error. Please check your connection.'
+      });
+      setTimeout(() => setSaveStatus('idle'), 3000);
     }
   };
 
