@@ -81,8 +81,40 @@ export function registerUniversalServiceDiscovery(app: Hono) {
         // Get services/offerings
         let offerings: any[] = [];
         
+        // ✅ GAP #1 FIX: Fetch both vendor services AND staff services
         if (vendor.roleId === 'vet_clinic') {
-          offerings = await kv.get(`vendor:${vendor.id}:services`) || [];
+          // Get vendor-level services
+          const vendorServiceIds = await kv.get(`vendor:${vendor.id}:services`) || [];
+          const vendorServices = await Promise.all(
+            vendorServiceIds.map(async (sid: string) => {
+              const service = await kv.get(`service:${sid}`);
+              return service || null;
+            })
+          );
+          
+          // ✅ NEW: Get staff-level services for this vendor
+          // First, get all staff members for this vendor
+          const vendorStaff = await kv.get(`vendor:${vendor.id}:staff`) || [];
+          
+          // Get services for each staff member
+          const staffServicesPromises = vendorStaff.map(async (staffId: string) => {
+            const staffServices = await kv.getByPrefix(`staff:${staffId}:service:`);
+            return staffServices || [];
+          });
+          
+          const allStaffServicesArrays = await Promise.all(staffServicesPromises);
+          const vendorStaffServices = allStaffServicesArrays
+            .flat()
+            .filter((s: any) => s && s.isActive);
+          
+          // Merge vendor services and staff services
+          offerings = [
+            ...vendorServices.filter(Boolean),
+            ...vendorStaffServices
+          ];
+          
+          console.log(`[DISCOVERY] Vendor ${vendor.id}: ${vendorServices.filter(Boolean).length} vendor services + ${vendorStaffServices.length} staff services = ${offerings.length} total`);
+          
         } else if (['grooming_salon', 'trainer', 'dog_walker'].includes(vendor.roleId)) {
           offerings = await kv.get(`vendor:${vendor.id}:service_packages`) || [];
         } else if (vendor.roleId === 'boarding_resort') {
@@ -135,8 +167,12 @@ export function registerUniversalServiceDiscovery(app: Hono) {
             .slice(0, 3)
             .map((o: any) => ({
               id: o.id,
-              name: o.name,
-              price: o.price || o.dayPrice || 0
+              name: o.serviceName || o.name,
+              price: o.price || o.dayPrice || 0,
+              // ✅ NEW: Include service style information
+              serviceStyle: o.serviceStyle || o.type || null,
+              staffId: o.staffId || null, // Indicates if this is a staff service
+              category: o.category || o.categoryName || null
             })),
           
           // Availability
@@ -241,7 +277,25 @@ export function registerUniversalServiceDiscovery(app: Hono) {
       let offerings: any[] = [];
       
       if (vendor.roleId === 'vet_clinic') {
-        offerings = services.filter((s: any) => s.isActive);
+        // ✅ GAP #1 FIX: Include both vendor services AND staff services in profile
+        const vendorServices = services.filter((s: any) => s.isActive);
+        
+        // Get staff-level services
+        const staffServicesPromises = staff.map(async (staffId: string) => {
+          const staffServices = await kv.getByPrefix(`staff:${staffId}:service:`);
+          return staffServices || [];
+        });
+        
+        const allStaffServicesArrays = await Promise.all(staffServicesPromises);
+        const staffServices = allStaffServicesArrays
+          .flat()
+          .filter((s: any) => s && s.isActive);
+        
+        // Merge both
+        offerings = [...vendorServices, ...staffServices];
+        
+        console.log(`[DISCOVERY] Profile ${vendorId}: ${vendorServices.length} vendor + ${staffServices.length} staff = ${offerings.length} total services`);
+        
       } else if (['grooming_salon', 'trainer', 'dog_walker'].includes(vendor.roleId)) {
         offerings = packages.filter((p: any) => p.isActive);
       } else if (vendor.roleId === 'boarding_resort') {

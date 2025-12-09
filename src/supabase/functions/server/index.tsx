@@ -50,6 +50,7 @@ import { registerBoardingRoomManagement } from "./boarding-room-management.tsx";
 import { registerPetListingManagement } from "./pet-listing-management.tsx";
 import { registerNutritionistMealManagement } from "./nutritionist-meal-management.tsx";
 import { registerServicePackageManagement } from "./service-package-management.tsx";
+import { registerCustomerPackageEndpoints } from "./customer-package-endpoints.tsx"; // ✅ GAP #3 FIX
 import { bookingEndpoints } from "./booking-endpoints.tsx";
 import { registerCafeFeatures } from "./cafe-features.tsx";
 import { registerResortInventory } from "./resort-inventory.tsx";
@@ -418,6 +419,7 @@ registerBoardingRoomManagement(app);
 registerPetListingManagement(app);
 registerNutritionistMealManagement(app);
 registerServicePackageManagement(app);
+registerCustomerPackageEndpoints(app); // ✅ GAP #3 FIX
 bookingEndpoints(app, kv);
 registerCafeFeatures(app);
 registerResortInventory(app);
