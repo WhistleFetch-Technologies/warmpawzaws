@@ -147,19 +147,42 @@ export function registerVendorServiceEndpoints(app: Hono) {
         isActive: true
       };
       
+      console.log(`\n💾 [SERVICE-PERSISTENCE] Creating service...`);
+      console.log(`   Service ID: ${serviceId}`);
+      console.log(`   Vendor ID: ${vendorId}`);
+      console.log(`   Service Type: ${serviceData.type || serviceData.serviceStyle}`);
+      
       // Save service object
       await kv.set(`service:${serviceId}`, newService);
+      console.log(`   ✅ Service object saved to KV: service:${serviceId}`);
       
       // Add to vendor's service list
       const serviceIds = await kv.get(`vendor:${vendorId}:services`) || [];
+      console.log(`   📋 Current service count for vendor: ${serviceIds.length}`);
+      
       if (!serviceIds.includes(serviceId)) {
         serviceIds.push(serviceId);
         await kv.set(`vendor:${vendorId}:services`, serviceIds);
+        console.log(`   ✅ Service ID added to vendor's service list`);
+      } else {
+        console.log(`   ⚠️  Service ID already in vendor's list (duplicate)`);
+      }
+      
+      // ✅ PERSISTENCE VERIFICATION
+      const verifyService = await kv.get(`service:${serviceId}`);
+      const verifyList = await kv.get(`vendor:${vendorId}:services`);
+      
+      if (verifyService && verifyList && verifyList.includes(serviceId)) {
+        console.log(`   ✅ PERSISTENCE VERIFIED: Service successfully persisted`);
+      } else {
+        console.error(`   ❌ PERSISTENCE FAILED: Service not found after save`);
+        console.error(`      - Service object exists: ${!!verifyService}`);
+        console.error(`      - Service in vendor list: ${verifyList?.includes(serviceId)}`);
       }
 
       return sendSuccess(c, { service: newService }, 'Service added successfully');
     } catch (error) {
-      console.error('Error adding vendor service:', error);
+      console.error('❌ [SERVICE-PERSISTENCE] Error adding vendor service:', error);
       return sendError(c, error, 500);
     }
   });

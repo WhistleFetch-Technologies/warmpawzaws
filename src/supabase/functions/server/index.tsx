@@ -3,8 +3,9 @@ import { cors } from "npm:hono/cors";
 import { logger } from "npm:hono/logger";
 import * as kv from "./kv_store.tsx";
 import { sendSuccess, sendError } from "./response-utils.ts";
+import { criticalActionGuard } from "./critical-action-guard.tsx";
 
-// Route registration functions
+// Core route registration functions
 import { registerCustomerRoutes } from "./customer-routes.tsx";
 import { registerCustomerServices } from "./customer-services.tsx";
 import { registerAdminVendorRoutes } from "./admin-vendor-routes.tsx";
@@ -16,9 +17,97 @@ import { registerCustomerBookingHistory } from "./customer-booking-history.tsx";
 import { registerCustomerSearchEndpoints } from "./customer-search-endpoints.tsx";
 import { vendorOnboardingEndpoints } from "./vendor-onboarding.tsx";
 import { vendorDashboardEndpoints } from "./vendor-dashboard-endpoints.tsx";
+import { vendorRoleConfigEndpoints } from "./vendor-role-config.tsx";
+import { registerDynamicOnboarding } from "./dynamic-onboarding-management.tsx";
+import { registerVendorServiceEndpoints } from "./vendor-services-endpoints.tsx";
+import { registerVendorCatalogAPIV2 } from "./vendor-catalog-api-v2.tsx";
 import { reviewEndpoints } from "./review-endpoints.tsx";
 import { analyticsEndpoints } from "./analytics-endpoints.tsx";
-import { registerP0Features } from "./p0-features-endpoints.tsx"; // ✅ NEW: P0 Features
+import { registerP0Features } from "./p0-features-endpoints.tsx";
+
+// Vendor & Admin modules
+import { vendorScheduleV2Endpoints } from "./vendor-schedule-v2.tsx";
+import { registerAdminCatalogEndpoints } from "./admin-catalog-endpoints.tsx";
+import { adminIntegrationEndpoints } from "./admin-integration-endpoints.tsx";
+import { registerVendorSettingsRulesEndpoints } from "./vendor-settings-rules-endpoints.tsx";
+import { registerVideoCallEndpoints } from "./video-call-endpoints.tsx";
+import { regionEndpoints } from "./region-endpoints.tsx";
+import { registerProblemGridSpecializationSystem } from "./problem-grid-specialization-system.tsx";
+
+// Auth & Core Features
+import { registerAuthEndpoints } from "./auth-endpoints.tsx";
+import { registerAICRMRoutes } from "./ai-crm-routes.tsx";
+import { registerAIChatbotRoutes } from "./ai-chatbot-routes.tsx";
+import { paymentEndpoints } from "./payment-endpoints.tsx";
+import { marketplacePaymentEndpoints } from "./marketplace-payment-endpoints.tsx";
+import { registerChatEndpoints } from "./chat-endpoints.tsx";
+import { registerSubscriptionEndpoints } from "./subscription-endpoints.tsx";
+import { registerVideoConsultationEndpoints } from "./video-consultation-endpoints.tsx";
+import { registerMedicalHistoryEndpoints } from "./medical-history-endpoints.tsx";
+import { registerUniversalStaffSchedule } from "./universal-staff-schedule.tsx";
+import { registerCenterAvailabilityEndpoints } from "./center-availability-endpoints.tsx";
+import { registerBoardingRoomManagement } from "./boarding-room-management.tsx";
+import { registerPetListingManagement } from "./pet-listing-management.tsx";
+import { registerNutritionistMealManagement } from "./nutritionist-meal-management.tsx";
+import { registerServicePackageManagement } from "./service-package-management.tsx";
+import { bookingEndpoints } from "./booking-endpoints.tsx";
+import { registerCafeFeatures } from "./cafe-features.tsx";
+import { registerResortInventory } from "./resort-inventory.tsx";
+import { registerBreederListings } from "./breeder-listings.tsx";
+import marketingRoutesV2 from "./marketing-routes-v2.tsx";
+import { registerMarketplaceProducts } from "./marketplace-products.tsx";
+import { registerUniversalServiceDiscovery } from "./universal-service-discovery.tsx";
+import { registerUniversalOTPSystem } from "./universal-otp-system.tsx";
+import { registerHomeServiceBookingFlow } from "./home-service-booking-flow.tsx";
+import { registerBookingLifecycleManagement } from "./booking-lifecycle-management.tsx";
+import { registerSmsOtpService } from "./sms-otp-service.tsx";
+import { registerRazorpayRefundProcessor } from "./razorpay-refund-processor.tsx";
+import { registerGooglePlacesService } from "./google-places-service.tsx";
+import { registerSettlementAutomation } from "./settlement-automation.tsx";
+import { registerS3AutoUploader } from "./s3-auto-uploader.tsx";
+import { registerSmsEventNotifications } from "./sms-event-notifications.tsx";
+import { registerShiprocketIntegration } from "./shiprocket-integration.tsx";
+
+// Enterprise & Analytics
+import { analyticsAggregationEndpoints } from "./analytics-aggregation.tsx";
+import { rbacEndpoints } from "./rbac-endpoints.tsx";
+import { reportBuilderEndpoints } from "./report-builder-endpoints.tsx";
+import { petIntelligenceEndpoints } from "./pet-intelligence-endpoints.tsx";
+import { transactionMonitoringEndpoints } from "./transaction-monitoring-endpoints.tsx";
+
+// Enhanced features - Import default exports
+import enhancedServicePublishing from "./enhanced-service-publishing.tsx";
+import enhancedStaffAvailability from "./enhanced-staff-availability-routes.tsx";
+import enhancedGpsTracking from "./enhanced-gps-tracking.tsx";
+import criticalFlowFixes from "./critical-flow-fixes.tsx";
+import { registerGroomerGalleryEndpoints } from "./groomer-gallery-system.tsx";
+import trainerProgressTracking from "./trainer-progress-tracking.tsx";
+import cafeTableManagement from "./cafe-table-management.tsx";
+import { registerInsuranceClaimEndpoints } from "./insurance-claim-management.tsx";
+import customerWalletTopup from "./customer-wallet-topup.tsx";
+import rewardsLoyaltySystem from "./rewards-loyalty-system.tsx";
+import referralSystem from "./referral-system.tsx";
+import { registerCustomerMedicalRecordsEndpoints } from "./customer-medical-records.tsx";
+import customerAppEnhancements from "./customer-app-enhancements.tsx";
+import { registerProfilePhotoEndpoints } from "./profile-photo-management.tsx";
+import advancedFilteringSystem from "./advanced-filtering-system.tsx";
+import appointmentReminderSystem from "./appointment-reminder-system.tsx";
+import serviceComparisonSystem from "./service-comparison-system.tsx";
+import { registerPlatformSubscriptionTiers } from "./platform-subscription-tiers.tsx";
+import { registerMatingDatingService } from "./mating-dating-service.tsx";
+import vendorBookings from "./vendor-bookings.tsx";
+
+// Staff routes - All export default app
+import staffAuthRoutes from "./staff-auth-endpoints.tsx";
+import staffAvailabilityRoutes from "./staff-availability-routes.tsx";
+import staffScheduleRoutes from "./staff-schedule-endpoints.tsx";
+import staffCRUDRoutes from "./staff-crud-endpoints.tsx";
+
+// ✅ CRITICAL: Staff service and discovery endpoints
+import { staffServiceEndpoints } from "./staff-service-endpoints.tsx";
+import staffDiscoveryEndpoints from "./staff-discovery-endpoints.tsx";
+import universalStaffSearch from "./universal-staff-search.tsx";
+import universalStaffProblemSearch from "./universal-staff-problem-search.tsx";
 
 const app = new Hono();
 
@@ -172,7 +261,7 @@ app.patch('/make-server-3dd53475/admin/regions/:regionId/status', async (c) => {
   }
 });
 
-// Initialize India region endpoint
+// Initialize India region endpoint - IDEMPOTENT, NO AUTO-CREATION
 app.post('/make-server-3dd53475/admin/regions/init-india', async (c) => {
   try {
     console.log('🌍 POST /admin/regions/init-india called');
@@ -329,16 +418,11 @@ registerBoardingRoomManagement(app);
 registerPetListingManagement(app);
 registerNutritionistMealManagement(app);
 registerServicePackageManagement(app);
-registerGPSTrackingEndpoints(app);
 bookingEndpoints(app, kv);
 registerCafeFeatures(app);
 registerResortInventory(app);
 registerBreederListings(app);
-registerAnalyticsIngestion(app);
-registerLogisticsEndpoints(app);
-app.route('/make-server-3dd53475/orders', orderRoutes);
-app.route('/make-server-3dd53475/ecommerce', ecommerceRoutes);
-app.route('/make-server-3dd53475', customerEcommerceRoutes);
+
 // Marketing routes with error handling
 if (marketingRoutesV2 && typeof marketingRoutesV2 === 'object') {
   console.log('✅ Registering marketing routes...');
@@ -346,6 +430,7 @@ if (marketingRoutesV2 && typeof marketingRoutesV2 === 'object') {
 } else {
   console.warn('⚠️ Marketing routes module is undefined or invalid, skipping registration');
 }
+
 registerMarketplaceProducts(app);
 registerUniversalServiceDiscovery(app);
 registerUniversalOTPSystem(app);
@@ -358,25 +443,17 @@ registerSettlementAutomation(app);
 registerS3AutoUploader(app);
 const smsNotifications = registerSmsEventNotifications(app);
 
-// ✅ NEW: Payment & Logistics Integrations
-razorpayEndpoints(app);
+// ✅ Payment & Logistics Integrations
 registerShiprocketIntegration(app);
-registerIntegrationInitEndpoints(app);
-agoraVideoEndpoints(app);
-automatedPayoutEndpoints(app);
 
-// ✅ NEW: AWS Chime Video & Chat Integration
-registerAWSChimeVideoEndpoints(app);
-registerAWSChimeChatEndpoints(app);
-
-// ✅ NEW: Enterprise Admin Capabilities
+// ✅ Enterprise Admin Capabilities
 analyticsAggregationEndpoints(app);
 rbacEndpoints(app);
 reportBuilderEndpoints(app);
 petIntelligenceEndpoints(app);
 transactionMonitoringEndpoints(app);
 
-// ✅ NEW: Priority 2 Enhanced Endpoints
+// ✅ Priority 2 Enhanced Endpoints
 if (enhancedServicePublishing && typeof enhancedServicePublishing === 'object') {
   app.route('/make-server-3dd53475', enhancedServicePublishing);
 } else {
@@ -395,16 +472,16 @@ if (enhancedGpsTracking && typeof enhancedGpsTracking === 'object') {
   console.warn('⚠️ Enhanced GPS Tracking module undefined, skipping');
 }
 
-// ✅ NEW: Critical Flow Fixes (P0)
+// ✅ Critical Flow Fixes (P0)
 if (criticalFlowFixes && typeof criticalFlowFixes === 'object') {
   app.route('/make-server-3dd53475', criticalFlowFixes);
 } else {
   console.warn('⚠️ Critical Flow Fixes module undefined, skipping');
 }
 
-// ✅ NEW: P1 Vendor-Specific Features
-if (groomerGallerySystem && typeof groomerGallerySystem === 'object') {
-  app.route('/make-server-3dd53475', groomerGallerySystem);
+// ✅ P1 Vendor-Specific Features
+if (registerGroomerGalleryEndpoints && typeof registerGroomerGalleryEndpoints === 'function') {
+  registerGroomerGalleryEndpoints(app);
 } else {
   console.warn('⚠️ Groomer Gallery System module undefined, skipping');
 }
@@ -421,13 +498,13 @@ if (cafeTableManagement && typeof cafeTableManagement === 'object') {
   console.warn('⚠️ Cafe Table Management module undefined, skipping');
 }
 
-if (insuranceClaimManagement && typeof insuranceClaimManagement === 'object') {
-  app.route('/make-server-3dd53475', insuranceClaimManagement);
+if (registerInsuranceClaimEndpoints && typeof registerInsuranceClaimEndpoints === 'function') {
+  registerInsuranceClaimEndpoints(app);
 } else {
   console.warn('⚠️ Insurance Claim Management module undefined, skipping');
 }
 
-// ✅ NEW: Customer App Features (Manually Edited)
+// ✅ Customer App Features (Manually Edited)
 if (customerWalletTopup && typeof customerWalletTopup === 'object') {
   app.route('/make-server-3dd53475', customerWalletTopup);
 } else {
@@ -446,22 +523,22 @@ if (referralSystem && typeof referralSystem === 'object') {
   console.warn('⚠️ Referral System module undefined, skipping');
 }
 
-if (customerMedicalRecords && typeof customerMedicalRecords === 'object') {
-  app.route('/make-server-3dd53475', customerMedicalRecords);
+if (registerCustomerMedicalRecordsEndpoints && typeof registerCustomerMedicalRecordsEndpoints === 'function') {
+  registerCustomerMedicalRecordsEndpoints(app);
 } else {
   console.warn('⚠️ Customer Medical Records module undefined, skipping');
 }
 
-// ✅ NEW: Customer App Enhancements
+// ✅ Customer App Enhancements
 if (customerAppEnhancements && typeof customerAppEnhancements === 'object') {
   app.route('/make-server-3dd53475', customerAppEnhancements);
 } else {
   console.warn('⚠️ Customer App Enhancements module undefined, skipping');
 }
 
-// ✅ NEW: P2 Features - Final 18% to reach 100%
-if (profilePhotoManagement && typeof profilePhotoManagement === 'object') {
-  app.route('/make-server-3dd53475', profilePhotoManagement);
+// ✅ P2 Features - Final 18% to reach 100%
+if (registerProfilePhotoEndpoints && typeof registerProfilePhotoEndpoints === 'function') {
+  registerProfilePhotoEndpoints(app);
 } else {
   console.warn('⚠️ Profile Photo Management module undefined, skipping');
 }
@@ -484,7 +561,7 @@ if (serviceComparisonSystem && typeof serviceComparisonSystem === 'object') {
   console.warn('⚠️ Service Comparison System module undefined, skipping');
 }
 
-// ✅ NEW: Platform Subscription Tiers & Mating/Dating Service
+// ✅ Platform Subscription Tiers & Mating/Dating Service
 registerPlatformSubscriptionTiers(app);
 registerMatingDatingService(app);
 
@@ -495,7 +572,7 @@ if (vendorBookings && typeof vendorBookings === 'object') {
   console.warn('⚠️ Vendor Bookings module undefined, skipping');
 }
 
-// ✅ NEW: P0 Features
+// ✅ P0 Features
 registerP0Features(app);
 
 // 5. Staff Routes
@@ -521,6 +598,32 @@ if (staffCRUDRoutes && typeof staffCRUDRoutes === 'object') {
   app.route('/', staffCRUDRoutes);
 } else {
   console.warn('⚠️ Staff CRUD Routes module undefined, skipping');
+}
+
+// ✅ CRITICAL: Staff service and discovery endpoints
+// Staff Service Endpoints - requires both app and kv parameters
+console.log('✅ Registering staff service endpoints...');
+staffServiceEndpoints(app, kv);
+
+if (staffDiscoveryEndpoints && typeof staffDiscoveryEndpoints === 'object') {
+  console.log('✅ Registering staff discovery endpoints...');
+  app.route('/make-server-3dd53475', staffDiscoveryEndpoints);
+} else {
+  console.warn('⚠️ Staff Discovery Endpoints module undefined, skipping');
+}
+
+if (universalStaffSearch && typeof universalStaffSearch === 'object') {
+  console.log('✅ Registering universal staff search...');
+  app.route('/make-server-3dd53475', universalStaffSearch);
+} else {
+  console.warn('⚠️ Universal Staff Search module undefined, skipping');
+}
+
+if (universalStaffProblemSearch && typeof universalStaffProblemSearch === 'object') {
+  console.log('✅ Registering universal staff problem search...');
+  app.route('/make-server-3dd53475', universalStaffProblemSearch);
+} else {
+  console.warn('⚠️ Universal Staff Problem Search module undefined, skipping');
 }
 
 // ------------------------------------------------------------------
