@@ -94,7 +94,7 @@ const HARDCODED_ROLE_NAMES: Record<string, string> = {
 
 export function useVendorCapabilities(roleId?: string) {
   const [capabilities, setCapabilities] = useState<VendorCapabilities>(DEFAULT_CAPABILITIES);
-  const [loading, setLoading] = useState(false); // Changed to false - using hardcoded capabilities
+  const [loading, setLoading] = useState(true); // ✅ FIXED: Set to true while fetching
   const [roleName, setRoleName] = useState<string>('');
 
   useEffect(() => {
@@ -103,31 +103,11 @@ export function useVendorCapabilities(roleId?: string) {
       return;
     }
 
-    // 🇮🇳 HARDCODED: Use hardcoded capabilities instead of API call
-    console.log('🇮🇳 Using hardcoded role capabilities for India deployment');
-    console.log('   Role ID:', roleId);
-    
-    // Set role name from hardcoded mapping
-    const mappedRoleName = HARDCODED_ROLE_NAMES[roleId] || roleId;
-    setRoleName(mappedRoleName);
-    console.log('   Role Name:', mappedRoleName);
-    
-    // Use veterinarian capabilities for vet-related roles
-    if (roleId === 'veterinarian' || roleId === 'veterinary_clinic' || roleId.includes('vet')) {
-      setCapabilities(HARDCODED_VET_CAPABILITIES);
-      console.log('✅ Applied Veterinarian capabilities');
-    } else {
-      // For other roles, use defaults for now
-      setCapabilities(DEFAULT_CAPABILITIES);
-      console.log('✅ Applied Default capabilities');
-    }
-    
-    setLoading(false);
-
-    // 🚫 DISABLED: API call to fetch role config - using hardcoded values
-    /*
+    // ✅ ENABLED: Fetch role config from API (was disabled!)
     const fetchRoleConfig = async () => {
       try {
+        console.log('🔌 [CAPABILITIES] Fetching role config for:', roleId);
+        
         const response = await fetch(
           `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/config/roles`,
           {
@@ -139,6 +119,8 @@ export function useVendorCapabilities(roleId?: string) {
 
         if (response.ok) {
           const data = await response.json();
+          console.log('🔌 [CAPABILITIES] API Response:', data);
+          
           const roles = data.roles || [];
           const currentRole = roles.find((r: any) => 
             r.id === roleId || 
@@ -146,15 +128,17 @@ export function useVendorCapabilities(roleId?: string) {
           );
           
           if (currentRole) {
-            setRoleName(currentRole.name || '');
+            console.log('✅ [CAPABILITIES] Found role config:', currentRole);
             
-            // Map string capabilities to boolean object
+            setRoleName(currentRole.name || currentRole.displayName || '');
+            
+            // Map string capabilities array to boolean object
             const newCapabilities = { ...DEFAULT_CAPABILITIES };
             
-            // Reset all to false first if we want strict mode, 
-            // but let's keep defaults for common things if the role config is missing capabilities
             if (currentRole.capabilities && currentRole.capabilities.length > 0) {
-              // If explicit capabilities exist, start with all false
+              console.log('🔑 [CAPABILITIES] Role capabilities:', currentRole.capabilities);
+              
+              // Start with all false for explicit control
               Object.keys(newCapabilities).forEach(key => {
                 (newCapabilities as any)[key] = false;
               });
@@ -163,28 +147,60 @@ export function useVendorCapabilities(roleId?: string) {
               currentRole.capabilities.forEach((cap: string) => {
                 if (cap in newCapabilities) {
                   (newCapabilities as any)[cap] = true;
+                  console.log(`   ✅ Enabled: ${cap}`);
                 }
               });
 
               // Explicit check for staff management object
               if (currentRole.staffManagement?.enabled) {
                 newCapabilities.staff_management = true;
+                console.log('   ✅ Enabled: staff_management (from staffManagement.enabled)');
               }
+            } else {
+              console.warn('⚠️ [CAPABILITIES] No capabilities array in role config, using defaults');
             }
             
             setCapabilities(newCapabilities);
+            console.log('✅ [CAPABILITIES] Final capabilities:', newCapabilities);
+          } else {
+            console.warn('⚠️ [CAPABILITIES] Role not found, falling back to hardcoded defaults');
+            
+            // Fallback to hardcoded for known roles
+            const mappedRoleName = HARDCODED_ROLE_NAMES[roleId] || roleId;
+            setRoleName(mappedRoleName);
+            
+            if (roleId === 'veterinarian' || roleId === 'veterinary_clinic' || roleId.includes('vet')) {
+              setCapabilities(HARDCODED_VET_CAPABILITIES);
+              console.log('✅ Applied hardcoded Veterinarian capabilities');
+            } else {
+              setCapabilities(DEFAULT_CAPABILITIES);
+              console.log('✅ Applied hardcoded Default capabilities');
+            }
           }
+        } else {
+          console.error('❌ [CAPABILITIES] API error:', response.status);
+          throw new Error(`API returned ${response.status}`);
         }
       } catch (error) {
-        console.error('Error fetching role capabilities:', error);
-        // Keep defaults on error
+        console.error('❌ [CAPABILITIES] Error fetching role capabilities:', error);
+        
+        // Fallback to hardcoded on error
+        const mappedRoleName = HARDCODED_ROLE_NAMES[roleId] || roleId;
+        setRoleName(mappedRoleName);
+        
+        if (roleId === 'veterinarian' || roleId === 'veterinary_clinic' || roleId.includes('vet')) {
+          setCapabilities(HARDCODED_VET_CAPABILITIES);
+          console.log('✅ Applied hardcoded Veterinarian capabilities (fallback)');
+        } else {
+          setCapabilities(DEFAULT_CAPABILITIES);
+          console.log('✅ Applied hardcoded Default capabilities (fallback)');
+        }
       } finally {
         setLoading(false);
       }
     };
 
     fetchRoleConfig();
-    */
   }, [roleId]);
 
   return { capabilities, loading, roleName };

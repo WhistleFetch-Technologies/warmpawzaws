@@ -59,92 +59,348 @@ const STANDARD_ROLE_DEFINITIONS: Record<string, any> = {
     vendorTypes: ['healthcare_provider'],
     serviceStyles: ['at_clinic', 'video_consultation', 'home_visit'],
     pricingControl: { canControlPrice: true, canControlDuration: true },
-    capabilities: ['prescription', 'medical_records', 'booking', 'chat'],
+    capabilities: [
+      'prescription', 
+      'medical_records', 
+      'booking', 
+      'chat', 
+      'staff_management', 
+      'tele', 
+      'emergency',
+      // ✅ NEW UNIVERSAL CAPABILITIES
+      'facility_management',
+      'schedule_management',
+      'custom_services',
+      'package_management',
+      // ✅ NEW VET-SPECIFIC CAPABILITIES
+      'vet_summary',
+      'patient_monitoring'
+    ],
     icon: '🩺'
+  },
+  'veterinary_clinic': {
+    vendorTypes: ['healthcare_provider'],
+    serviceStyles: ['at_clinic', 'video_consultation', 'home_visit'],
+    pricingControl: { canControlPrice: true, canControlDuration: true },
+    capabilities: [
+      'prescription', 
+      'medical_records', 
+      'booking', 
+      'chat', 
+      'staff_management', 
+      'tele', 
+      'emergency',
+      // ✅ NEW UNIVERSAL CAPABILITIES
+      'facility_management',
+      'schedule_management',
+      'custom_services',
+      'package_management',
+      // ✅ NEW CLINIC-SPECIFIC CAPABILITIES
+      'vet_summary',
+      'patient_monitoring',
+      'multi_doctor_management',
+      'ambulance_services',
+      'diagnostic_lab',
+      'emergency_protocols'
+    ],
+    icon: '🏥'
   },
   'pet_groomer': {
     vendorTypes: ['service_provider'],
     serviceStyles: ['at_center', 'at_home'],
     pricingControl: { canControlPrice: true, canControlDuration: true },
-    capabilities: ['booking', 'portfolio', 'gallery', 'chat'],
+    capabilities: [
+      'booking', 
+      'portfolio', 
+      'gallery', 
+      'chat', 
+      'staff_management',
+      // ✅ NEW UNIVERSAL CAPABILITIES
+      'facility_management',
+      'schedule_management',
+      'custom_services',
+      'package_management'
+    ],
     icon: '✂️'
   },
   'pet_boarding': {
     vendorTypes: ['service_provider'],
     serviceStyles: ['at_center'],
     pricingControl: { canControlPrice: true, canControlDuration: false },
-    capabilities: ['booking', 'cctv_access', 'photo_updates', 'chat'],
+    capabilities: [
+      'booking', 
+      'cctv_access', 
+      'photo_updates', 
+      'chat', 
+      'staff_management',
+      // ✅ NEW UNIVERSAL CAPABILITIES
+      'facility_management',
+      'schedule_management',
+      'custom_services',
+      'package_management',
+      // ✅ NEW BOARDING-SPECIFIC CAPABILITIES
+      'room_management',
+      'nightly_pricing',
+      'occupancy_tracking'
+    ],
     icon: '🏨'
+  },
+  'pet_resort': {
+    vendorTypes: ['service_provider'],
+    serviceStyles: ['at_center'],
+    pricingControl: { canControlPrice: true, canControlDuration: false },
+    capabilities: [
+      'booking', 
+      'cctv_access', 
+      'photo_updates', 
+      'chat', 
+      'staff_management',
+      // ✅ NEW UNIVERSAL CAPABILITIES
+      'facility_management',
+      'schedule_management',
+      'custom_services',
+      'package_management',
+      // ✅ NEW RESORT-SPECIFIC CAPABILITIES
+      'room_management',
+      'nightly_pricing',
+      'occupancy_tracking'
+    ],
+    icon: '🏝️'
   },
   'pet_walker': {
     vendorTypes: ['service_provider'],
     serviceStyles: ['at_home'],
     pricingControl: { canControlPrice: true, canControlDuration: true },
-    capabilities: ['gps_tracking', 'photo_updates', 'booking'],
+    capabilities: [
+      'gps_tracking', 
+      'photo_updates', 
+      'booking',
+      // ✅ NEW UNIVERSAL CAPABILITIES
+      'facility_management',
+      'schedule_management',
+      'custom_services',
+      'package_management',
+      'chat' // ✅ ADDED: Missing chat capability
+    ],
     icon: '🦮'
   },
   'pet_trainer': {
     vendorTypes: ['service_provider'],
     serviceStyles: ['at_home', 'at_center', 'online'],
     pricingControl: { canControlPrice: true, canControlDuration: true },
-    capabilities: ['booking', 'progress_tracking', 'chat'],
+    capabilities: [
+      'booking', 
+      'progress_tracking', 
+      'chat', 
+      'staff_management',
+      // ✅ NEW UNIVERSAL CAPABILITIES
+      'facility_management',
+      'schedule_management',
+      'custom_services',
+      'package_management'
+    ],
     icon: '🎾'
+  },
+  'pet_behaviorist': {
+    vendorTypes: ['service_provider'],
+    serviceStyles: ['at_home', 'at_center', 'video_consultation'],
+    pricingControl: { canControlPrice: true, canControlDuration: true },
+    capabilities: [
+      'booking', 
+      'progress_tracking', 
+      'chat', 
+      'staff_management',
+      // ✅ NEW UNIVERSAL CAPABILITIES
+      'facility_management',
+      'schedule_management',
+      'custom_services',
+      'package_management',
+      'tele'
+    ],
+    icon: '🧠'
   },
   'pet_sitter': {
     vendorTypes: ['service_provider'],
     serviceStyles: ['at_home'],
     pricingControl: { canControlPrice: true, canControlDuration: true },
-    capabilities: ['booking', 'photo_updates', 'chat'],
+    capabilities: [
+      'booking', 
+      'photo_updates', 
+      'chat',
+      // ✅ NEW UNIVERSAL CAPABILITIES
+      'facility_management',
+      'schedule_management',
+      'custom_services',
+      'package_management',
+      'staff_management' // ✅ ADDED: Agencies need staff management
+    ],
     icon: '🏠'
   },
   'pet_taxi': {
     vendorTypes: ['service_provider'],
     serviceStyles: ['at_home'],
     pricingControl: { canControlPrice: true, canControlDuration: false },
-    capabilities: ['booking', 'gps_tracking', 'emergency'],
+    capabilities: [
+      'booking', 
+      'gps_tracking', 
+      'emergency',
+      // ✅ NEW UNIVERSAL CAPABILITIES
+      'facility_management',
+      'schedule_management',
+      'custom_services',
+      'package_management',
+      'distance_pricing', // ✅ NEW: basePrice + pricePerKm model
+      'chat' // ✅ ADDED: Missing chat capability
+    ],
     icon: '🚕'
   },
   'pet_products_store': {
     vendorTypes: ['seller'],
     serviceStyles: ['delivery', 'pickup'],
     pricingControl: { canControlPrice: true, canControlDuration: false },
-    capabilities: ['catalog', 'inventory', 'orders', 'delivery'],
+    capabilities: [
+      'catalog', 
+      'inventory', 
+      'orders', 
+      'delivery', 
+      'staff_management',
+      // ✅ NEW UNIVERSAL CAPABILITIES
+      'facility_management',
+      'schedule_management'
+      // Note: No custom_services/package_management for product sellers
+    ],
     icon: '🛍️'
   },
   'pet_pharmacy': {
     vendorTypes: ['seller', 'healthcare_provider'],
     serviceStyles: ['delivery', 'pickup'],
     pricingControl: { canControlPrice: true, canControlDuration: false },
-    capabilities: ['catalog', 'inventory', 'prescription', 'delivery'],
+    capabilities: [
+      'catalog', 
+      'inventory', 
+      'prescription', 
+      'delivery', 
+      'staff_management',
+      // ✅ NEW UNIVERSAL CAPABILITIES
+      'facility_management',
+      'schedule_management',
+      // ✅ NEW PHARMACY-SPECIFIC CAPABILITIES
+      'prescription_verification',
+      'controlled_substances',
+      'expiry_management'
+    ],
     icon: '💊'
   },
   'pet_cafe': {
     vendorTypes: ['service_provider'],
     serviceStyles: ['at_center'],
     pricingControl: { canControlPrice: true, canControlDuration: false },
-    capabilities: ['booking', 'menu', 'events'],
+    capabilities: [
+      'booking', 
+      'menu', 
+      'events', 
+      'staff_management',
+      // ✅ NEW UNIVERSAL CAPABILITIES
+      'facility_management',
+      'schedule_management',
+      'custom_services',
+      'package_management',
+      // ✅ NEW CAFE-SPECIFIC CAPABILITIES
+      'table_management',
+      'pax_management',
+      'chat'
+    ],
     icon: '☕'
   },
   'pet_photographer': {
     vendorTypes: ['service_provider'],
     serviceStyles: ['at_center', 'at_home', 'outdoor'],
     pricingControl: { canControlPrice: true, canControlDuration: true },
-    capabilities: ['booking', 'portfolio', 'gallery'],
+    capabilities: [
+      'booking', 
+      'portfolio', 
+      'gallery', 
+      'staff_management',
+      // ✅ NEW UNIVERSAL CAPABILITIES
+      'facility_management',
+      'schedule_management',
+      'custom_services',
+      'package_management',
+      'chat'
+    ],
     icon: '📸'
   },
   'pet_shelter': {
     vendorTypes: ['service_provider', 'ngo'],
     serviceStyles: ['at_center'],
     pricingControl: { canControlPrice: false, canControlDuration: false },
-    capabilities: ['adoption', 'donation', 'events'],
+    capabilities: [
+      'adoption', 
+      'donation', 
+      'events', 
+      'staff_management',
+      // ✅ NEW UNIVERSAL CAPABILITIES
+      'facility_management',
+      'schedule_management',
+      'chat'
+      // Note: No custom_services/package_management for shelters
+    ],
     icon: '🏠'
   },
   'pet_sunset_services': {
     vendorTypes: ['service_provider'],
     serviceStyles: ['at_center', 'home_visit'],
     pricingControl: { canControlPrice: true, canControlDuration: false },
-    capabilities: ['booking', 'memorial', 'counseling'],
+    capabilities: [
+      'booking', 
+      'memorial', 
+      'counseling', 
+      'staff_management',
+      // ✅ NEW UNIVERSAL CAPABILITIES
+      'facility_management',
+      'schedule_management',
+      'custom_services',
+      'package_management',
+      'chat'
+    ],
     icon: '🌅'
+  },
+  'nutritionist': {
+    vendorTypes: ['healthcare_provider', 'service_provider'],
+    serviceStyles: ['at_center', 'video_consultation', 'home_visit'],
+    pricingControl: { canControlPrice: true, canControlDuration: true },
+    capabilities: [
+      'booking',
+      'chat',
+      'staff_management',
+      'tele',
+      // ✅ NEW UNIVERSAL CAPABILITIES
+      'facility_management',
+      'schedule_management',
+      'custom_services',
+      'package_management',
+      // ✅ NEW NUTRITIONIST-SPECIFIC CAPABILITIES
+      'meal_plans',
+      'diet_charts',
+      'progress_tracking'
+    ],
+    icon: '🥗'
+  },
+  'insurance': {
+    vendorTypes: ['service_provider'],
+    serviceStyles: ['online', 'at_center'],
+    pricingControl: { canControlPrice: true, canControlDuration: false },
+    capabilities: [
+      'chat',
+      'staff_management',
+      // ✅ NEW UNIVERSAL CAPABILITIES
+      'facility_management',
+      'schedule_management',
+      // ✅ NEW INSURANCE-SPECIFIC CAPABILITIES
+      'policy_management',
+      'claims_management'
+    ],
+    icon: '🛡️'
   }
 };
 
@@ -304,20 +560,44 @@ export function vendorRoleConfigEndpoints(app: Hono) {
   
   /**
    * GET /make-server-3dd53475/config/roles
-   * Fetches roles AND triggers auto-cleanup if things look messy
+   * Fetches roles WITHOUT auto-cleanup to avoid timeouts
    */
   app.get("/make-server-3dd53475/config/roles", async (c) => {
     try {
-      // Trigger cleanup first to ensure clean list (Fast enough for now)
-      await cleanupAndMergeRoles();
-
-      // Fetch fresh list
-      const allConfigs = await kv.getByPrefix('role:config:') || [];
+      console.log('📋 [ROLES] Fetching roles...');
+      
+      // Fetch roles WITHOUT triggering cleanup (cleanup was causing timeouts)
+      const allConfigs = await kv.getByPrefix('role:config:').catch(err => {
+        console.error('❌ [ROLES] KV timeout fetching roles:', err.message);
+        return [];
+      });
+      
+      console.log(`📋 [ROLES] Raw KV response count: ${allConfigs?.length || 0}`);
+      if (allConfigs && allConfigs.length > 0) {
+        console.log(`📋 [ROLES] First item structure:`, JSON.stringify(allConfigs[0], null, 2).substring(0, 300));
+      }
       
       // Filter & Transform
-      const rawRoles = allConfigs
-        .map((config: any) => {
+      const rawRoles = (allConfigs || [])
+        .map((item: any) => {
+          // KV store returns { key: string, value: string }
+          // The value is a JSON STRING that needs to be parsed!
+          let config;
+          try {
+            config = typeof item.value === 'string' ? JSON.parse(item.value) : item.value;
+          } catch (e) {
+            console.error('⚠️ [ROLES] Failed to parse role JSON:', e);
+            return null;
+          }
+          
           const id = config.roleId || config.id;
+          if (!id) {
+            console.warn('⚠️ [ROLES] Skipping role with no ID');
+            return null;
+          }
+          
+          console.log(`✅ [ROLES] Found role: ${id}`);
+          
           // Ensure Name is NEVER empty
           let name = config.roleName || config.displayName || config.name;
           
@@ -349,15 +629,18 @@ export function vendorRoleConfigEndpoints(app: Hono) {
             description: config.description || 'Vendor Role',
             icon: icon,
             version: config.version || 1,
-            status: 'active', // Enforce Active
-            isActive: true,   // Enforce Active
+            status: 'active', // Force active for all roles
+            isActive: true,   // Force active for all roles
             
             vendorTypes,
             serviceStyles,
             pricingControl,
             capabilities
           };
-        });
+        })
+        .filter(Boolean); // Remove nulls
+
+      console.log(`📋 [ROLES] Processed ${rawRoles.length} roles after mapping`);
 
       // EXPLICIT DEDUPLICATION (To prevent React Key Errors)
       const uniqueRoles = new Map();
@@ -379,10 +662,13 @@ export function vendorRoleConfigEndpoints(app: Hono) {
       // Sort
       roles.sort((a, b) => a.displayName.localeCompare(b.displayName));
 
+      console.log(`✅ [ROLES] Returning ${roles.length} roles to frontend`);
+      console.log(`✅ [ROLES] Role IDs:`, roles.map(r => r.id).join(', '));
+      
       return c.json({ success: true, roles });
 
     } catch (error) {
-      console.error('Error fetching roles:', error);
+      console.error('❌ [ROLES] Error fetching roles:', error);
       return c.json({ error: String(error) }, 500);
     }
   });
@@ -600,6 +886,83 @@ export function vendorRoleConfigEndpoints(app: Hono) {
     } catch (error) {
        console.error('Resurrection failed:', error);
        return c.json({ error: String(error) }, 500);
+    }
+  });
+
+  /**
+   * POST /make-server-3dd53475/admin/roles/update-capabilities
+   * Updates ALL existing roles to include the latest capabilities from STANDARD_ROLE_DEFINITIONS
+   * This is a NON-DESTRUCTIVE update - it only adds missing capabilities
+   */
+  app.post("/make-server-3dd53475/admin/roles/update-capabilities", async (c) => {
+    try {
+      console.log('🔄 [UPDATE-CAPS] Starting capability update for all roles...');
+      
+      const allConfigs = await kv.getByPrefix('role:config:') || [];
+      let updated = 0;
+      let skipped = 0;
+      
+      for (const item of allConfigs) {
+        // Parse the config
+        let config;
+        try {
+          config = typeof item.value === 'string' ? JSON.parse(item.value) : item.value;
+        } catch (e) {
+          console.error('⚠️ [UPDATE-CAPS] Failed to parse role JSON:', e);
+          skipped++;
+          continue;
+        }
+        
+        const roleId = config.roleId || config.id;
+        if (!roleId) {
+          skipped++;
+          continue;
+        }
+        
+        // Get standard definition for this role
+        const standardDef = STANDARD_ROLE_DEFINITIONS[roleId];
+        if (!standardDef) {
+          console.log(`⏩ [UPDATE-CAPS] No standard definition for ${roleId}, skipping`);
+          skipped++;
+          continue;
+        }
+        
+        // Check if capabilities need updating
+        const currentCaps = config.capabilities || [];
+        const standardCaps = standardDef.capabilities || [];
+        
+        // Only update if different
+        const needsUpdate = JSON.stringify(currentCaps) !== JSON.stringify(standardCaps);
+        
+        if (needsUpdate) {
+          console.log(`🔄 [UPDATE-CAPS] Updating ${roleId}:`);
+          console.log(`   Old: ${JSON.stringify(currentCaps)}`);
+          console.log(`   New: ${JSON.stringify(standardCaps)}`);
+          
+          const updatedConfig = {
+            ...config,
+            capabilities: standardCaps,
+            version: (config.version || 0) + 1,
+            updatedAt: new Date().toISOString(),
+            _capabilitiesUpdated: true
+          };
+          
+          await kv.set(`role:config:${roleId}`, updatedConfig);
+          updated++;
+        } else {
+          console.log(`✅ [UPDATE-CAPS] ${roleId} already has latest capabilities`);
+          skipped++;
+        }
+      }
+
+      return c.json({ 
+        success: true, 
+        message: `Capability update complete. Updated: ${updated}, Skipped: ${skipped}`,
+        stats: { updated, skipped }
+      });
+    } catch (error) {
+      console.error('Capability update failed:', error);
+      return c.json({ error: String(error) }, 500);
     }
   });
   
