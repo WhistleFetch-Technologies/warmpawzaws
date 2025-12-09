@@ -1,7 +1,7 @@
-import { Hono } from "npm:hono";
-import * as kv from "./kv_store.tsx";
-import { getProblemGridByRole } from "./problem-grid-catalog.tsx";
 import { sendSuccess, sendError } from "./response-utils.ts";
+import { cascadeDeleteVendorService, checkSafeDelete } from "./cascade-delete-service.tsx"; // ✅ GAP #14 FIX
+import * as kv from './kv_store.tsx';
+import { getProblemGridByRole } from "./problem-grid-catalog.tsx";
 
 export function registerVendorServiceEndpoints(app: Hono) {
   
@@ -218,31 +218,69 @@ export function registerVendorServiceEndpoints(app: Hono) {
 
   /**
    * DELETE /make-server-3dd53475/vendor/services/:serviceId
-   * Delete/Archive a service
+   * Delete/Archive a service with cascade delete
+   * ✅ GAP #14 FIX: Now uses cascade delete to remove staff assignments
    */
   app.delete("/make-server-3dd53475/vendor/services/:serviceId", async (c) => {
     try {
       const { serviceId } = c.req.param();
-      const { vendorId } = await c.req.query();
+      const vendorId = c.req.query('vendorId');
+      const force = c.req.query('force') === 'true';
+      const cancelBookings = c.req.query('cancelBookings') === 'true';
       
-      // Instead of hard delete, we might want to soft delete or just remove from list
-      // For now, we'll remove from list and mark inactive
-      
-      const service = await kv.get(`service:${serviceId}`);
-      if (service) {
-        service.isActive = false;
-        await kv.set(`service:${serviceId}`, service);
+      if (!vendorId) {
+        return sendError(c, 'vendorId is required', 400);
       }
 
-      if (vendorId) {
-        const serviceIds = await kv.get(`vendor:${vendorId}:services`) || [];
-        const updatedIds = serviceIds.filter((id: string) => id !== serviceId);
-        await kv.set(`vendor:${vendorId}:services`, updatedIds);
+      console.log(`\n🗑️ [SERVICE-DELETE] Request to delete service: ${serviceId}`);
+      console.log(`   Vendor ID: ${vendorId}`);
+      console.log(`   Force: ${force}`);
+      console.log(`   Cancel Bookings: ${cancelBookings}`);
+
+      // First, check if it's safe to delete
+      const safetyCheck = await checkSafeDelete('service', serviceId, vendorId);
+      
+      console.log(`   Safety Check Result:`);
+      console.log(`   - Can Delete: ${safetyCheck.canDelete}`);
+      console.log(`   - Blockers: ${safetyCheck.blockers.join(', ') || 'None'}`);
+      console.log(`   - Warnings: ${safetyCheck.warnings.join(', ') || 'None'}`);
+
+      // If not safe and force not specified, return error
+      if (!safetyCheck.canDelete && !force) {
+        return sendError(c, {
+          message: 'Cannot delete service',
+          blockers: safetyCheck.blockers,
+          warnings: safetyCheck.warnings,
+          suggestion: 'Use force=true to delete anyway, or cancelBookings=true to cancel active bookings'
+        }, 400);
       }
 
-      return sendSuccess(c, {}, 'Service removed successfully');
+      // Perform cascade delete
+      const result = await cascadeDeleteVendorService(vendorId, serviceId, {
+        force,
+        cancelBookings
+      });
+
+      if (!result.success) {
+        return sendError(c, {
+          message: 'Service deletion failed',
+          errors: result.errors
+        }, 500);
+      }
+
+      console.log(`✅ [SERVICE-DELETE] Service deleted successfully`);
+
+      return sendSuccess(c, {
+        deleted: result.deleted,
+        cancelled: result.cancelled,
+        summary: {
+          recordsDeleted: result.deleted.length,
+          bookingsCancelled: result.cancelled.length
+        }
+      }, 'Service deleted successfully with cascade cleanup');
+
     } catch (error) {
-      console.error('Error deleting service:', error);
+      console.error('❌ [SERVICE-DELETE] Error:', error);
       return sendError(c, error, 500);
     }
   });

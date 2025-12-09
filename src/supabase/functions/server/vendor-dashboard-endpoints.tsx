@@ -2,6 +2,7 @@ import { Hono } from "npm:hono";
 import { sendSuccess, sendError } from "./response-utils.ts";
 import * as kv from "./kv_store.tsx";
 import { tryGet, trySet, safeGetByPrefix } from "./kv-safe.tsx";
+import { cascadeDeleteStaff, cascadeDeleteServicePackage, checkSafeDelete, cleanOrphanedData } from "./cascade-delete-service.tsx"; // ✅ GAP #14 FIX
 
 /**
  * VENDOR DASHBOARD ENDPOINTS
@@ -733,28 +734,96 @@ export function vendorDashboardEndpoints(app: Hono, kv: any) {
 
   /**
    * DELETE /make-server-3dd53475/vendor/staff/:staffId
-   * Remove/Archive staff member
+   * Remove/Archive staff member with cascade delete
+   * ✅ GAP #14 FIX: Now uses cascade delete to remove service assignments and bookings
    */
   app.delete("/make-server-3dd53475/vendor/staff/:staffId", async (c) => {
     try {
       const { staffId } = c.req.param();
-      const { vendorId } = await c.req.query();
+      const vendorId = c.req.query('vendorId');
+      const force = c.req.query('force') === 'true';
+      const cancelBookings = c.req.query('cancelBookings') === 'true';
       
-      const staff = await kv.get(`staff:${staffId}`);
-      if (staff) {
-        staff.isActive = false;
-        await kv.set(`staff:${staffId}`, staff);
+      if (!vendorId) {
+        return sendError(c, 'vendorId is required', 400);
       }
+
+      console.log(`\n🗑️ [STAFF-DELETE] Request to delete staff: ${staffId}`);
+      console.log(`   Vendor ID: ${vendorId}`);
+      console.log(`   Force: ${force}`);
+      console.log(`   Cancel Bookings: ${cancelBookings}`);
+
+      // Check if it's safe to delete
+      const safetyCheck = await checkSafeDelete('staff', staffId, vendorId);
       
-      if (vendorId) {
-        const staffIds = await kv.get(`vendor:${vendorId}:staff`) || [];
-        const updatedIds = staffIds.filter((id: string) => id !== staffId);
-        await kv.set(`vendor:${vendorId}:staff`, updatedIds);
+      console.log(`   Safety Check:`);
+      console.log(`   - Can Delete: ${safetyCheck.canDelete}`);
+      console.log(`   - Blockers: ${safetyCheck.blockers.join(', ') || 'None'}`);
+      console.log(`   - Warnings: ${safetyCheck.warnings.join(', ') || 'None'}`);
+
+      if (!safetyCheck.canDelete && !force) {
+        return sendError(c, {
+          message: 'Cannot delete staff member',
+          blockers: safetyCheck.blockers,
+          warnings: safetyCheck.warnings,
+          suggestion: 'Use force=true and cancelBookings=true to proceed'
+        }, 400);
       }
-      
-      return sendSuccess(c, {}, 'Staff member removed successfully');
+
+      // Perform cascade delete
+      const result = await cascadeDeleteStaff(vendorId, staffId, {
+        force,
+        cancelBookings
+      });
+
+      if (!result.success) {
+        return sendError(c, {
+          message: 'Staff deletion failed',
+          errors: result.errors
+        }, 500);
+      }
+
+      console.log(`✅ [STAFF-DELETE] Staff deleted successfully`);
+
+      return sendSuccess(c, {
+        deleted: result.deleted,
+        cancelled: result.cancelled,
+        summary: {
+          recordsDeleted: result.deleted.length,
+          bookingsCancelled: result.cancelled.length
+        }
+      }, 'Staff member removed successfully with cascade cleanup');
+
     } catch (error) {
-      console.error('Error removing staff:', error);
+      console.error('❌ [STAFF-DELETE] Error:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  // ============================================
+  // ✅ GAP #14 FIX: ORPHANED DATA CLEANUP
+  // ============================================
+
+  /**
+   * POST /make-server-3dd53475/vendor/:vendorId/cleanup-orphaned-data
+   * Clean up orphaned data for a vendor
+   */
+  app.post("/make-server-3dd53475/vendor/:vendorId/cleanup-orphaned-data", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+
+      console.log(`\n🧹 [CLEANUP] Starting orphaned data cleanup for vendor: ${vendorId}`);
+
+      const result = await cleanOrphanedData();
+
+      return sendSuccess(c, {
+        cleaned: result.cleaned,
+        found: result.found,
+        summary: `Cleaned ${result.cleaned.length} orphaned records`
+      }, 'Orphaned data cleanup completed');
+
+    } catch (error) {
+      console.error('❌ [CLEANUP] Error:', error);
       return sendError(c, error, 500);
     }
   });

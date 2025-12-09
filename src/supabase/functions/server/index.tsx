@@ -51,6 +51,7 @@ import { registerPetListingManagement } from "./pet-listing-management.tsx";
 import { registerNutritionistMealManagement } from "./nutritionist-meal-management.tsx";
 import { registerServicePackageManagement } from "./service-package-management.tsx";
 import { registerCustomerPackageEndpoints } from "./customer-package-endpoints.tsx"; // ✅ GAP #3 FIX
+import { registerVendorMetricsEnhancement } from "./vendor-metrics-enhancement.tsx"; // ✅ GAP #8 FIX
 import { bookingEndpoints } from "./booking-endpoints.tsx";
 import { registerCafeFeatures } from "./cafe-features.tsx";
 import { registerResortInventory } from "./resort-inventory.tsx";
@@ -135,12 +136,24 @@ app.get('/make-server-3dd53475/regions', async (c) => {
   }
 });
 
-// Get active regions - MUST BE BEFORE /:regionId to avoid wildcard shadowing
+// Get active regions (non-blocking with timeout protection)
 app.get('/make-server-3dd53475/regions/active', async (c) => {
   try {
-    const regionsData = await kv.getByPrefix('region_');
-    const regions = (regionsData || []).map((item: any) => item.value || item);
-    const activeRegions = regions.filter((r: any) => r.isActive === true);
+    console.log('📍 [REGIONS] Fetching active regions...');
+    
+    // Use Promise.race to timeout after 2 seconds
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Request timeout')), 2000)
+    );
+    
+    const fetchPromise = (async () => {
+      const regionsData = await kv.getByPrefix('region_');
+      const regions = (regionsData || []).map((item: any) => item.value || item);
+      const activeRegions = regions.filter((r: any) => r.isActive === true);
+      return activeRegions;
+    })();
+    
+    const activeRegions = await Promise.race([fetchPromise, timeoutPromise]) as any[];
     
     console.log(`✅ Returning ${activeRegions.length} active regions from GET /regions/active`);
     
@@ -149,7 +162,18 @@ app.get('/make-server-3dd53475/regions/active', async (c) => {
       count: activeRegions.length
     });
   } catch (error) {
-    console.error('Error fetching active regions:', error);
+    console.error('❌ Error fetching active regions:', error);
+    
+    // Return empty array on timeout instead of failing
+    if (error instanceof Error && error.message === 'Request timeout') {
+      console.warn('⚠️ Region fetch timeout, returning empty array');
+      return sendSuccess(c, {
+        regions: [],
+        count: 0,
+        warning: 'Region data temporarily unavailable'
+      });
+    }
+    
     return sendError(c, error, 500);
   }
 });
@@ -420,6 +444,7 @@ registerPetListingManagement(app);
 registerNutritionistMealManagement(app);
 registerServicePackageManagement(app);
 registerCustomerPackageEndpoints(app); // ✅ GAP #3 FIX
+registerVendorMetricsEnhancement(app); // ✅ GAP #8 FIX
 bookingEndpoints(app, kv);
 registerCafeFeatures(app);
 registerResortInventory(app);
@@ -653,5 +678,9 @@ app.get('/make-server-3dd53475/health', (c) => sendSuccess(c, { status: 'ok', ti
 console.log("🚀 Server starting...");
 console.log("✅ Server is ready to accept requests immediately");
 console.log("💡 India region will be auto-created by frontend when needed");
+
+// ✅ GAP #5 FIX: Initialize Role Service
+import { initializeRoleService } from "./role-service.tsx";
+initializeRoleService().catch(err => console.error('❌ Role service initialization failed:', err));
 
 Deno.serve(app.fetch);
