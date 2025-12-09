@@ -75,6 +75,7 @@ export function AdminVendorManagementNew({ onNavigate }: AdminVendorManagementNe
   const [allVendors, setAllVendors] = useState<VendorApplication[]>([]); // NEW: Store all vendors
   const [qualityAlerts, setQualityAlerts] = useState<QualityAlert[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null); // ✅ ADD: Error state
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending_approval' | 'approved' | 'rejected' | 'pending_reverification'>('all'); // NEW: Status filter
@@ -224,8 +225,18 @@ export function AdminVendorManagementNew({ onNavigate }: AdminVendorManagementNe
       console.error('Error type:', error instanceof TypeError ? 'Network/Fetch Error' : 'Other Error');
       console.error('Error message:', error.message);
       
-      // Show user-friendly alert
-      alert(`Failed to load vendor data. Please check:\n\n1. Server is running\n2. Network connection\n3. Console for detailed error\n\nError: ${error.message}`);
+      // ✅ FIX: Better error message based on error type
+      let errorMessage = 'Failed to load vendor data. Please try again.';
+      
+      if (error instanceof TypeError && error.message === 'Failed to fetch') {
+        errorMessage = `Network error: Cannot connect to server.\n\nPossible causes:\n• Server is not responding\n• Network connectivity issue\n• CORS blocking request\n• Database query timeout\n\nPlease check the server logs and try again.`;
+      } else if (error.message) {
+        errorMessage = `${error.message}\n\nPlease check the console for more details.`;
+      }
+      
+      // Set error state instead of showing alert immediately
+      setError(errorMessage);
+      
     } finally {
       setLoading(false);
     }
@@ -800,6 +811,65 @@ export function AdminVendorManagementNew({ onNavigate }: AdminVendorManagementNe
       }
     });
   };
+
+  // ✅ ADD: Error Display
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-8">
+        <div className="max-w-2xl w-full bg-white rounded-lg shadow-lg p-8">
+          <div className="flex items-center justify-center w-16 h-16 bg-red-100 rounded-full mx-auto mb-6">
+            <AlertTriangle className="w-8 h-8 text-red-600" />
+          </div>
+          <h2 className="text-2xl font-bold text-center text-gray-900 mb-4">
+            Failed to Load Vendor Data
+          </h2>
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+            <pre className="text-sm text-red-800 whitespace-pre-wrap font-mono">{error}</pre>
+          </div>
+          <div className="flex gap-4 justify-center">
+            <Button 
+              onClick={() => {
+                setError(null);
+                loadData();
+              }}
+              className="bg-[#FF8C42] hover:bg-[#ff7a2e]"
+            >
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Retry
+            </Button>
+            <Button 
+              variant="outline"
+              onClick={() => window.location.reload()}
+            >
+              Reload Page
+            </Button>
+          </div>
+          <div className="mt-6 text-sm text-gray-600 text-center">
+            <p className="mb-2 font-semibold">If the problem persists:</p>
+            <ul className="text-left max-w-md mx-auto space-y-1">
+              <li>• Check if the backend server is deployed and running</li>
+              <li>• Verify your network connection</li>
+              <li>• Check browser console (F12) for detailed errors</li>
+              <li>• Contact support if the issue continues</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ✅ ADD: Loading Display
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-[#FF8C42] mx-auto mb-6"></div>
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Loading Vendor Data...</h2>
+          <p className="text-gray-600">Please wait while we fetch the latest information</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
