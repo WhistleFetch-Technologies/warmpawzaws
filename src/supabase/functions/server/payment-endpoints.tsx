@@ -44,12 +44,132 @@ export function paymentEndpoints(app: Hono, kv: any) {
         return sendError(c, 'Missing required fields: bookingId or orderId, and amount', 400);
       }
 
+      // ✅ GAP #7 FIX: Validate amount against actual service/order prices
+      let validatedAmount = amount;
+      let validationDetails: any = {};
+
+      if (bookingId) {
+        console.log(`💰 [PAYMENT] Validating amount for booking: ${bookingId}`);
+        
+        const booking = await kv.get(`booking:${bookingId}`);
+        if (!booking) {
+          console.error(`❌ [PAYMENT] Booking not found: ${bookingId}`);
+          return sendError(c, 'Booking not found', 404);
+        }
+
+        // Fetch actual service price from catalog
+        let actualPrice = 0;
+        
+        if (booking.serviceId) {
+          // Check if it's a staff service first
+          if (booking.staffId) {
+            const staffServices = await kv.getByPrefix(`staff:${booking.staffId}:service:`);
+            const staffService = staffServices.find((s: any) => 
+              s.serviceId === booking.serviceId || s.id === booking.serviceId
+            );
+            
+            if (staffService) {
+              actualPrice = staffService.price || 0;
+              validationDetails.source = 'staff_service';
+              validationDetails.staffId = booking.staffId;
+              console.log(`✅ [PAYMENT] Found staff service price: ₹${actualPrice}`);
+            }
+          }
+          
+          // Fallback to vendor service
+          if (actualPrice === 0) {
+            const service = await kv.get(`service:${booking.serviceId}`);
+            if (service) {
+              actualPrice = service.price || 0;
+              validationDetails.source = 'vendor_service';
+              console.log(`✅ [PAYMENT] Found vendor service price: ₹${actualPrice}`);
+            }
+          }
+        }
+        
+        // Handle package bookings
+        if (booking.isPackage && booking.packageDetails) {
+          actualPrice = booking.packageDetails.totalPrice || booking.packageDetails.price || 0;
+          validationDetails.source = 'package';
+          console.log(`✅ [PAYMENT] Package price: ₹${actualPrice}`);
+        }
+
+        // ✅ NEW: Handle package enrollment payments (GAP #3 FIX)
+        if (!actualPrice && booking.enrollmentId) {
+          // This is a package enrollment payment
+          const allVendorEnrollments = await kv.getByPrefix('vendor:');
+          
+          for (const vendorData of allVendorEnrollments) {
+            if (!vendorData || typeof vendorData !== 'object') continue;
+            if (!vendorData.id || !vendorData.id.includes(':package_enrollments')) continue;
+            
+            const vendorEnrollments = await kv.get(vendorData.id) || [];
+            const enrollment = vendorEnrollments.find((e: any) => e.id === booking.enrollmentId);
+            
+            if (enrollment) {
+              actualPrice = enrollment.totalPrice || 0;
+              validationDetails.source = 'package_enrollment';
+              validationDetails.enrollmentId = booking.enrollmentId;
+              validationDetails.packageId = enrollment.packageId;
+              console.log(`✅ [PAYMENT] Found package enrollment price: ₹${actualPrice}`);
+              break;
+            }
+          }
+        }
+
+        // Price validation with tolerance (for rounding, taxes, etc.)
+        const tolerance = 1; // ₹1 tolerance for rounding
+        const priceDifference = Math.abs(actualPrice - amount);
+        
+        if (actualPrice > 0 && priceDifference > tolerance) {
+          console.error(`❌ [PAYMENT] Price mismatch! Actual: ₹${actualPrice}, Requested: ₹${amount}, Diff: ₹${priceDifference}`);
+          return sendError(c, `Price validation failed. Expected: ₹${actualPrice}, Got: ₹${amount}`, 400);
+        }
+        
+        validatedAmount = actualPrice > 0 ? actualPrice : amount;
+        
+        validationDetails.requestedAmount = amount;
+        validationDetails.actualPrice = actualPrice;
+        validatedAmount = validatedAmount;
+        validationDetails.priceDifference = priceDifference;
+        
+        console.log(`✅ [PAYMENT] Price validated: ₹${validatedAmount}`, validationDetails);
+        
+      } else if (orderId) {
+        // Marketplace order validation
+        console.log(`🛒 [PAYMENT] Validating amount for order: ${orderId}`);
+        
+        const order = await kv.get(`order:${orderId}`);
+        if (!order) {
+          console.error(`❌ [PAYMENT] Order not found: ${orderId}`);
+          return sendError(c, 'Order not found', 404);
+        }
+        
+        const actualTotal = order.totalAmount || order.grandTotal || 0;
+        const tolerance = 1;
+        const priceDifference = Math.abs(actualTotal - amount);
+        
+        if (actualTotal > 0 && priceDifference > tolerance) {
+          console.error(`❌ [PAYMENT] Order price mismatch! Actual: ₹${actualTotal}, Requested: ₹${amount}`);
+          return sendError(c, `Price validation failed. Expected: ₹${actualTotal}, Got: ₹${amount}`, 400);
+        }
+        
+        validatedAmount = actualTotal > 0 ? actualTotal : amount;
+        
+        validationDetails.requestedAmount = amount;
+        validationDetails.actualTotal = actualTotal;
+        validationDetails.validatedAmount = validatedAmount;
+        validationDetails.priceDifference = priceDifference;
+        
+        console.log(`✅ [PAYMENT] Order price validated: ₹${validatedAmount}`, validationDetails);
+      }
+
       const paymentId = `pay_${Date.now()}_${Math.random().toString(36).substring(7)}`;
       
-      // Create REAL Razorpay Order
+      // Create REAL Razorpay Order with VALIDATED amount
       let razorpayOrder;
       try {
-        razorpayOrder = await createRazorpayOrder(amount, bookingId, orderId);
+        razorpayOrder = await createRazorpayOrder(validatedAmount, bookingId, orderId);
       } catch (error) {
         console.error('❌ Razorpay order creation failed:', error);
         return sendError(c, 'Payment gateway error. Please try again.', 500);
@@ -62,18 +182,20 @@ export function paymentEndpoints(app: Hono, kv: any) {
         orderId: orderId || null,
         customerId,
         vendorId,
-        amount,
+        amount: validatedAmount, // ✅ Use validated amount
         paymentMethod,
         status: 'pending',
         createdAt: new Date().toISOString(),
         // Real Razorpay Data
         razorpayOrderId: razorpayOrder.id,
         razorpayAmount: razorpayOrder.amount,
-        currency: razorpayOrder.currency
+        currency: razorpayOrder.currency,
+        // ✅ NEW: Price validation audit trail
+        priceValidation: validationDetails
       };
 
       await kv.set(`payment:${paymentId}`, payment);
-      console.log(`⏳ Payment Initiated with Razorpay: ${paymentId} | Order: ${razorpayOrder.id}`);
+      console.log(`⏳ Payment Initiated with Razorpay: ${paymentId} | Order: ${razorpayOrder.id} | Validated Amount: ₹${validatedAmount}`);
 
       return sendSuccess(c, { 
         paymentId, 
@@ -142,6 +264,42 @@ export function paymentEndpoints(app: Hono, kv: any) {
           note: 'Payment successful via Razorpay. Booking confirmed.'
         });
         await kv.set(`booking:${payment.bookingId}`, booking);
+        
+        // ✅ NEW: Activate package enrollment if this is a package booking (GAP #3 FIX)
+        if (booking.enrollmentId) {
+          console.log(`📦 [PAYMENT] Activating package enrollment: ${booking.enrollmentId}`);
+          
+          const allVendorEnrollments = await kv.getByPrefix('vendor:');
+          
+          for (const vendorData of allVendorEnrollments) {
+            if (!vendorData || typeof vendorData !== 'object') continue;
+            
+            const key = vendorData.id;
+            if (!key || !key.includes(':package_enrollments')) continue;
+            
+            const vendorEnrollments = await kv.get(key) || [];
+            const index = vendorEnrollments.findIndex((e: any) => e.id === booking.enrollmentId);
+            
+            if (index !== -1) {
+              const enrollment = vendorEnrollments[index];
+              
+              // Activate enrollment
+              enrollment.status = 'active';
+              enrollment.paymentStatus = 'paid';
+              enrollment.paidAmount = enrollment.totalPrice;
+              enrollment.paymentId = paymentId;
+              enrollment.enrolledAt = new Date().toISOString();
+              enrollment.updatedAt = new Date().toISOString();
+              
+              // Save
+              vendorEnrollments[index] = enrollment;
+              await kv.set(key, vendorEnrollments);
+              
+              console.log(`✅ [PAYMENT] Package enrollment activated: ${booking.enrollmentId}`);
+              break;
+            }
+          }
+        }
       }
 
       // Add to History Lists (Idempotent)
