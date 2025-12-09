@@ -148,6 +148,39 @@ app.get('/make-server-3dd53475/regions', async (c) => {
   }
 });
 
+// Get active regions - MUST BE BEFORE /:regionId to avoid wildcard shadowing
+app.get('/make-server-3dd53475/regions/active', async (c) => {
+  try {
+    const allRegions = await kv.getByPrefix('region_');
+    const activeRegions = (allRegions || []).filter((r: any) => r.isActive === true);
+    
+    return sendSuccess(c, {
+      regions: activeRegions,
+      count: activeRegions.length
+    });
+  } catch (error) {
+    console.error('Error fetching active regions:', error);
+    return sendError(c, error, 500);
+  }
+});
+
+// Get specific region by ID - MUST BE AFTER /active route
+app.get('/make-server-3dd53475/regions/:regionId', async (c) => {
+  try {
+    const regionId = c.req.param('regionId');
+    const region = await kv.get(`region_${regionId}`);
+    
+    if (!region) {
+      return sendError(c, 'Region not found', 404);
+    }
+    
+    return sendSuccess(c, { region });
+  } catch (error) {
+    console.error('Error fetching region:', error);
+    return sendError(c, error, 500);
+  }
+});
+
 app.get('/make-server-3dd53475/admin/regions', async (c) => {
   try {
     const regions = await kv.getByPrefix('region_');
@@ -582,152 +615,162 @@ app.get('/', (c) => c.text('Warmpawz API Server Running'));
 app.get('/make-server-3dd53475/health', (c) => sendSuccess(c, { status: 'ok', timestamp: new Date().toISOString() }));
 
 // ------------------------------------------------------------------
-// 🇮🇳 CRITICAL: INITIALIZE INDIA REGION ON SERVER STARTUP
+// 🇮🇳 NON-BLOCKING: Initialize India region in background (don't block server startup)
 // ------------------------------------------------------------------
-async function initializeIndiaRegionOnStartup() {
-  try {
-    console.log('🌍 Checking if India region exists...');
-    
-    const existing = await kv.get('region_india');
-    if (existing) {
-      console.log('✅ India region already exists');
-      return;
-    }
-    
-    console.log('🔄 India region not found. Creating...');
-    
-    // Create India region with comprehensive configuration
-    const indiaRegion = {
-      regionId: 'india',
-      regionName: 'India',
-      regionCode: 'IN',
-      isActive: true,
-      launchDate: new Date().toISOString(),
-      phoneConfig: {
-        countryCode: '+91',
-        phoneLength: 10,
-        phoneFormat: '+91 XXXXX XXXXX',
-        validationRegex: '^[6-9]\\d{9}$',
-        placeholder: '98765 43210',
-        displayFormat: '+91 XXXXX XXXXX'
-      },
-      currency: {
-        code: 'INR',
-        symbol: '₹',
-        symbolPosition: 'before',
-        decimalPlaces: 2,
-        thousandsSeparator: ',',
-        decimalSeparator: '.'
-      },
-      localization: {
-        primaryLanguage: 'en',
-        supportedLanguages: ['en', 'hi'],
-        dateFormat: 'DD/MM/YYYY',
-        timeFormat: '12h',
-        timezone: 'Asia/Kolkata',
-        rtlSupport: false
-      },
-      measurementSystem: {
-        system: 'metric',
-        weightUnit: 'kg',
-        distanceUnit: 'km',
-        heightUnit: 'cm'
-      },
-      serviceCatalog: {
-        veterinary: true,
-        grooming: true,
-        training: true,
-        walking: true,
-        behavioral: true,
-        boarding: true,
-        adoption: true,
-        sunset: true,
-        insurance: true,
-        pharmacy: true,
-        petCafe: true
-      },
-      compliance: {
-        gdprEnabled: false,
-        dataRetentionDays: 730,
-        requiresPetLicense: false,
-        vaccinationMandatory: ['rabies'],
-        ageRestrictions: {
-          minAgeMonths: 2,
-          maxAgeMonths: 180
-        }
-      },
-      popularBreeds: {
-        dogs: [
-          'Labrador Retriever',
-          'German Shepherd',
-          'Golden Retriever',
-          'Beagle',
-          'Pug',
-          'Indian Pariah Dog',
-          'Pomeranian',
-          'Shih Tzu'
-        ],
-        cats: [
-          'Persian',
-          'Siamese',
-          'Maine Coon',
-          'Indian Street Cat',
-          'British Shorthair',
-          'Himalayan'
-        ]
-      },
-      business: {
-        taxRate: 18,
-        taxName: 'GST',
-        businessHours: {
-          start: '09:00',
-          end: '21:00'
+function initializeIndiaRegionInBackground() {
+  // Run this asynchronously WITHOUT blocking server startup
+  setTimeout(async () => {
+    try {
+      console.log('🌍 [BACKGROUND] Checking if India region exists...');
+      
+      // Use a shorter timeout for this check
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Timeout')), 3000)
+      );
+      
+      const checkPromise = kv.get('region_india');
+      
+      const existing = await Promise.race([checkPromise, timeoutPromise]).catch(error => {
+        console.log('⚠️ [BACKGROUND] KV check timed out, will retry later');
+        return null;
+      });
+      
+      if (existing) {
+        console.log('✅ [BACKGROUND] India region already exists');
+        return;
+      }
+      
+      console.log('🔄 [BACKGROUND] India region not found. Creating...');
+      
+      // Create India region with comprehensive configuration
+      const indiaRegion = {
+        regionId: 'india',
+        regionName: 'India',
+        regionCode: 'IN',
+        isActive: true,
+        launchDate: new Date().toISOString(),
+        phoneConfig: {
+          countryCode: '+91',
+          phoneLength: 10,
+          phoneFormat: '+91 XXXXX XXXXX',
+          validationRegex: '^[6-9]\\d{9}$',
+          placeholder: '98765 43210',
+          displayFormat: '+91 XXXXX XXXXX'
         },
-        holidays: [
-          '2024-01-26',
-          '2024-08-15',
-          '2024-10-02'
-        ]
-      },
-      payments: {
-        supportedMethods: ['razorpay', 'upi', 'card', 'wallet'],
-        paymentGateway: 'razorpay',
-        minBookingAmount: 100,
-        maxBookingAmount: 50000
-      },
-      regional: {
-        emergencyNumber: '112',
-        addressFormat: 'flat, building, street, area, city, state, pincode',
-        postalCodeRequired: true,
-        stateRequired: true
-      },
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-    
-    await kv.set('region_india', indiaRegion);
-    
-    console.log('✅ India region initialized successfully!');
-    console.log('   Region ID: india');
-    console.log('   Currency: ₹ INR');
-    console.log('   Phone: +91');
-    console.log('   Status: Active');
-  } catch (error) {
-    console.error('❌ CRITICAL ERROR: Failed to initialize India region:', error);
-    console.error('   This may cause issues with the application.');
-    console.error('   Attempting to continue anyway...');
-  }
+        currency: {
+          code: 'INR',
+          symbol: '₹',
+          symbolPosition: 'before',
+          decimalPlaces: 2,
+          thousandsSeparator: ',',
+          decimalSeparator: '.'
+        },
+        localization: {
+          primaryLanguage: 'en',
+          supportedLanguages: ['en', 'hi'],
+          dateFormat: 'DD/MM/YYYY',
+          timeFormat: '12h',
+          timezone: 'Asia/Kolkata',
+          rtlSupport: false
+        },
+        measurementSystem: {
+          system: 'metric',
+          weightUnit: 'kg',
+          distanceUnit: 'km',
+          heightUnit: 'cm'
+        },
+        serviceCatalog: {
+          veterinary: true,
+          grooming: true,
+          training: true,
+          walking: true,
+          behavioral: true,
+          boarding: true,
+          adoption: true,
+          sunset: true,
+          insurance: true,
+          pharmacy: true,
+          petCafe: true
+        },
+        compliance: {
+          gdprEnabled: false,
+          dataRetentionDays: 730,
+          requiresPetLicense: false,
+          vaccinationMandatory: ['rabies'],
+          ageRestrictions: {
+            minAgeMonths: 2,
+            maxAgeMonths: 180
+          }
+        },
+        popularBreeds: {
+          dogs: [
+            'Labrador Retriever',
+            'German Shepherd',
+            'Golden Retriever',
+            'Beagle',
+            'Pug',
+            'Indian Pariah Dog',
+            'Pomeranian',
+            'Shih Tzu'
+          ],
+          cats: [
+            'Persian',
+            'Siamese',
+            'Maine Coon',
+            'Indian Street Cat',
+            'British Shorthair',
+            'Himalayan'
+          ]
+        },
+        business: {
+          taxRate: 18,
+          taxName: 'GST',
+          businessHours: {
+            start: '09:00',
+            end: '21:00'
+          },
+          holidays: [
+            '2024-01-26',
+            '2024-08-15',
+            '2024-10-02'
+          ]
+        },
+        payments: {
+          supportedMethods: ['razorpay', 'upi', 'card', 'wallet'],
+          paymentGateway: 'razorpay',
+          minBookingAmount: 100,
+          maxBookingAmount: 50000
+        },
+        regional: {
+          emergencyNumber: '112',
+          addressFormat: 'flat, building, street, area, city, state, pincode',
+          postalCodeRequired: true,
+          stateRequired: true
+        },
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      
+      await kv.set('region_india', indiaRegion);
+      
+      console.log('✅ [BACKGROUND] India region initialized successfully!');
+      console.log('   Region ID: india');
+      console.log('   Currency: ₹ INR');
+      console.log('   Phone: +91');
+      console.log('   Status: Active');
+    } catch (error) {
+      console.log('⚠️ [BACKGROUND] Failed to initialize India region:', error.message);
+      console.log('   This is OK - the region will be created when first accessed via API');
+    }
+  }, 2000); // Wait 2 seconds after server starts, then try in background
 }
 
 // Start Server
 console.log("🚀 Server starting...");
+console.log("💡 India region will be initialized in background (non-blocking)");
+console.log("🎯 Server is ready to accept requests immediately");
 
-// Initialize India region before starting the server
-initializeIndiaRegionOnStartup().then(() => {
-  console.log("💡 India region initialization complete");
-  console.log("🎯 Server ready to accept requests");
-}).catch((error) => {
-  console.error("⚠️ India region initialization failed, but server will continue:", error);
-});
+// Initialize India region in background (won't block server startup)
+initializeIndiaRegionInBackground();
 
 Deno.serve(app.fetch);

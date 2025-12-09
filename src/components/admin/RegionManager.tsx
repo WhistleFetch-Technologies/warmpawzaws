@@ -207,7 +207,15 @@ export function RegionManager({ onBack }: RegionManagerProps = {}) {
         
         const uniqueRegions = Array.from(uniqueRegionsMap.values());
         setRegions(uniqueRegions);
-        toast.success(`Loaded ${uniqueRegions.length} regions`);
+        
+        // 🇮🇳 CRITICAL FIX: If no regions found, auto-initialize India region
+        if (uniqueRegions.length === 0) {
+          console.log('🇮🇳 No regions found - auto-initializing India region...');
+          toast.info('Initializing India region...');
+          await handleCreateFromTemplate('india');
+        } else {
+          toast.success(`Loaded ${uniqueRegions.length} regions`);
+        }
       } else {
         toast.error(data.error || 'Failed to load regions');
       }
