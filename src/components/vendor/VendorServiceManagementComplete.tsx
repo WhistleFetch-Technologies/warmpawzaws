@@ -144,6 +144,12 @@ export function VendorServiceManagementComplete({
         vendorId={vendorId}
         vendorData={vendorData}
         onBack={() => setShowCatalogView(false)}
+        onSelectService={(service) => {
+          console.log('🎯 [SERVICE-MGMT] Service selected from catalog:', service);
+          // Navigate to configuration screen for this service's style
+          setSelectedServiceStyle(service.serviceStyle);
+          setShowCatalogView(false);
+        }}
       />
     );
   }

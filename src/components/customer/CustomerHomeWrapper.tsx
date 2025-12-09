@@ -80,6 +80,9 @@ import { CheckInCheckOutPage } from './CheckInCheckOutPage';
 import { MedicalRecordsPage } from './MedicalRecordsPage';
 import { WalletPage as CustomerWalletPage } from './WalletPage';
 
+// ✅ MATING & DATING SERVICE - P2P Matchmaking
+import { MatingDatingHub } from './MatingDatingHub';
+
 type ScreenType = 
   | 'home' 
   | 'user-profile' 
@@ -152,7 +155,8 @@ type ScreenType =
   | 'emergency-booking'
   | 'check-in-out'
   | 'medical-records'
-  | 'customer-wallet';
+  | 'customer-wallet'
+  | 'mating-dating-hub';
 
 export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phone: string; onNavigate: (screen: string) => void; initialScreen?: ScreenType }) {
   console.log('CustomerHomeWrapper: Rendering with phone:', phone);
@@ -253,6 +257,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     else if (service === 'relocation') setCurrentScreen('relocation');
     else if (service === 'resort') setCurrentScreen('resort');
     else if (service === 'holiday') setCurrentScreen('holiday');
+    else if (service === 'mating-dating-hub') setCurrentScreen('mating-dating-hub');
     else {
       setSelectedService(service);
       setCurrentScreen('coming-soon');
@@ -535,5 +540,11 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     customerId={phone}
   />;
 
-  return <ComingSoon onBack={handleBack} />;
+  // ✅ MATING & DATING SERVICE - P2P Matchmaking
+  if (currentScreen === 'mating-dating-hub') return <MatingDatingHub
+    phone={phone}
+    onBack={handleBack}
+  />;
+
+  return <ComingSoon serviceName="pet-marketplace" onBack={handleBack} />;
 }

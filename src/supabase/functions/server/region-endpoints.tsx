@@ -3,6 +3,7 @@
 
 import { Hono } from 'npm:hono';
 import * as kv from './kv_store.tsx';
+import { tryGet, safeGetByPrefix } from './kv-safe.tsx';
 import { Region, REGION_TEMPLATES } from './region-types.tsx';
 
 export function regionEndpoints(app: any, kvStore: any) {
@@ -23,7 +24,7 @@ export function regionEndpoints(app: any, kvStore: any) {
   app.get('/make-server-3dd53475/regions', async (c) => {
     try {
       console.log('🌍 [REGION] GET /regions called');
-      const regions = await kvStore.getByPrefix<Region>('region_');
+      const regions = await safeGetByPrefix<Region>('region_', { timeout: 10000, limit: 500 });
       console.log(`🌍 [REGION] Found ${regions?.length || 0} regions`);
       
       return c.json({
@@ -45,7 +46,7 @@ export function regionEndpoints(app: any, kvStore: any) {
   app.get('/make-server-3dd53475/regions/active', async (c) => {
     try {
       console.log('🌍 [REGION] GET /regions/active called');
-      const regions = await kvStore.getByPrefix<Region>('region_');
+      const regions = await safeGetByPrefix<Region>('region_', { timeout: 10000, limit: 500 });
       const activeRegions = regions?.filter(r => r.isActive) || [];
       
       return c.json({
@@ -65,7 +66,7 @@ export function regionEndpoints(app: any, kvStore: any) {
   app.get('/make-server-3dd53475/regions/:regionId', async (c) => {
     try {
       const regionId = c.req.param('regionId');
-      const region = await kvStore.get<Region>(`region_${regionId}`);
+      const region = await tryGet<Region>(`region_${regionId}`, null, { timeout: 5000 });
       
       if (!region) {
         return c.json({

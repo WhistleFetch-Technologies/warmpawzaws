@@ -28,6 +28,74 @@ export function createSession(userId: string, role: 'customer' | 'vendor' | 'sta
 // TYPE DEFINITIONS
 // ============================================
 
+// ============================================
+// AUTH & USER TYPES
+// ============================================
+
+export interface User {
+  userId: string;
+  phone: string;
+  role: 'customer' | 'vendor' | 'admin';
+  name?: string;
+  email?: string;
+  isActive: boolean;
+  isVerified: boolean;
+  createdAt: string;
+  lastLoginAt: string;
+  updatedAt?: string;
+}
+
+export interface Session {
+  sessionId: string;
+  userId: string;
+  phone: string;
+  role: 'customer' | 'vendor' | 'staff' | 'admin';
+  token?: string;
+  createdAt: string;
+  expiresAt: string;
+}
+
+export interface VendorProfile {
+  id: string;
+  userId?: string;
+  phone: string;
+  ownerName?: string;
+  businessName?: string;
+  email?: string;
+  status: 'pending' | 'approved' | 'rejected' | 'active' | 'inactive' | 'suspended';
+  setupCompleted?: boolean;
+  applicationStatus?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CustomerProfile {
+  id: string;
+  userId: string;
+  phone: string;
+  name?: string;
+  email?: string;
+  addresses?: Address[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminProfile {
+  id: string;
+  userId: string;
+  phone: string;
+  name: string;
+  email?: string;
+  role: 'super_admin' | 'admin' | 'moderator';
+  permissions?: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ============================================
+// CUSTOMER & PET TYPES
+// ============================================
+
 export interface Customer {
   id: string;
   phone: string;

@@ -1,28 +1,10 @@
-import { useState, useEffect } from 'react';
-import { VendorDashboard } from './VendorDashboard';
-import { VendorConsultationScreen } from './VendorConsultationScreen';
-import { VendorBookingManagement } from './VendorBookingManagement';
-import { VendorTeleConsultationFlow } from './VendorTeleConsultationFlow';
-import { VendorScheduleManagement } from './VendorScheduleManagement';
-import { FacilityManagement } from './FacilityManagement';
-import { ClinicDashboard } from './clinic/ClinicDashboard';
-import { VendorOnboarding } from './VendorOnboarding';
-import { VendorApplicationSubmitted } from './VendorApplicationSubmitted';
-import { VendorApplicationUnderReview } from './VendorApplicationUnderReview';
-import { VendorClarificationRequested } from './VendorClarificationRequested';
-import { VendorApprovedSetup } from './VendorApprovedSetup';
-import { VendorAvailabilitySetup } from './VendorAvailabilitySetup';
-import { VendorSetupCompleted } from './VendorSetupCompleted';
-import { VendorApplicationRejected } from './VendorApplicationRejected';
-import { VendorServiceManagementComplete } from './VendorServiceManagementComplete';
-import { InsuranceVendorContainer } from './insurance/InsuranceVendorContainer';
-import { CafeVendorDashboard } from './cafe/CafeVendorDashboard';
-import { SunsetServicesVendorDashboard } from './sunset/SunsetServicesVendorDashboard';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { toast } from 'sonner';
 import { useVendorNotificationService } from './useVendorNotificationService';
 import { StaffManagement } from './StaffManagement';
 import { VendorBusinessHub } from './business/VendorBusinessHub'; // ✅ NEW
+import { VetSpecializedServicesManager } from './clinic/VetSpecializedServicesManager'; // ✅ NEW: Vet-specific services
+import { ResortManagementDashboard } from './resort/ResortManagementDashboard'; // ✅ NEW: Pet resort management
+import { NutritionistMealManager } from './NutritionistMealManager'; // ✅ NEW: Nutritionist meal plans
 
 interface VendorLandingPageProps {
   vendorId: string;
@@ -96,6 +78,11 @@ export function VendorLandingPage({
   const [showFacilityManagement, setShowFacilityManagement] = useState(false);
   const [showStaffManagement, setShowStaffManagement] = useState(false);
   const [showBusinessHub, setShowBusinessHub] = useState(false); // ✅ NEW
+  
+  // ✅ NEW: Specialized vendor-specific screens
+  const [showVetSpecialized, setShowVetSpecialized] = useState(false); // Vet-specific services
+  const [showResortManagement, setShowResortManagement] = useState(false); // Pet resort management
+  const [showNutritionistMealManager, setShowNutritionistMealManager] = useState(false); // Nutritionist meal plans
   
   // ✅ NEW: Track navigation context for better UX flow
   const [returnToStaffManagement, setReturnToStaffManagement] = useState(false);
@@ -840,6 +827,28 @@ export function VendorLandingPage({
         );
       }
       
+      // ✅ NEW: Vet Specialized Services Manager
+      if (showVetSpecialized) {
+        return (
+          <VetSpecializedServicesManager
+            vendorId={vendorId}
+            vendorData={vendorData}
+            onBack={() => setShowVetSpecialized(false)}
+          />
+        );
+      }
+      
+      // ✅ NEW: Nutritionist Meal Manager
+      if (showNutritionistMealManager) {
+        return (
+          <NutritionistMealManager
+            vendorId={vendorId}
+            vendorName={vendorData?.fullName || vendorData?.businessName || 'Nutritionist'}
+            onBack={() => setShowNutritionistMealManager(false)}
+          />
+        );
+      }
+      
       // ⚡️ ROLE-SPECIFIC DASHBOARDS
       // Some roles have specialized dashboards with unique capabilities outside the universal config
       
@@ -850,6 +859,7 @@ export function VendorLandingPage({
           <ClinicDashboard
             vendorId={vendorId}
             vendorData={vendorData}
+            onNavigateToSpecializedServices={() => setShowVetSpecialized(true)} // ✅ NEW: Wire up specialized services
           />
         );
       }
@@ -864,7 +874,35 @@ export function VendorLandingPage({
         );
       }
 
-      // 3. Sunset Services (Memorial/Cremation)
+      // 3. Pet Resort
+      if (vendorData?.roleId === 'pet_resort') {
+        console.log('🏨 Rendering ResortManagementDashboard');
+        return (
+          <ResortManagementDashboard
+            vendorId={vendorId}
+            vendorData={vendorData}
+            onBack={() => {
+              // Handle logout or settings
+            }}
+          />
+        );
+      }
+
+      // 4. Nutritionist
+      if (vendorData?.roleId === 'nutritionist') {
+        console.log('🥗 Rendering NutritionistMealManager');
+        return (
+          <NutritionistMealManager
+            vendorId={vendorId}
+            vendorName={vendorData.fullName || vendorData.businessName || 'Nutritionist'}
+            onBack={() => {
+              // Handle logout
+            }}
+          />
+        );
+      }
+
+      // 5. Sunset Services (Memorial/Cremation)
       if (vendorData?.roleId === 'sunset_services') {
         console.log('🌅 Rendering SunsetServicesVendorDashboard');
         return (
@@ -874,7 +912,7 @@ export function VendorLandingPage({
         );
       }
 
-      // 4. Insurance Provider
+      // 6. Insurance Provider
       if (vendorData?.roleId === 'insurance') {
         console.log('🛡️ Rendering InsuranceVendorContainer');
         return (
@@ -883,7 +921,7 @@ export function VendorLandingPage({
           />
         );
       }
-
+      
       // Default: show universal VendorDashboard (matches vendor 9876543216 experience)
       return (
         <VendorDashboard

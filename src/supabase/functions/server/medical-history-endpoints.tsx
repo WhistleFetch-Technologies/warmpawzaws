@@ -1,54 +1,34 @@
 import { Hono } from "npm:hono";
-import { createClient } from "npm:@supabase/supabase-js@2";
-import * as kv from './kv_store.tsx';
-import { generateId, MedicalRecord, Prescription } from './database-schema.tsx';
+import * as kv from "./kv_store.tsx";
+import { createClient } from "jsr:@supabase/supabase-js@2.49.8";
+import { ensureBucket } from "./bucket-manager.tsx";
 
-const MEDICAL_RECORDS_BUCKET = 'make-3dd53475-medical-records';
-
-/**
- * Medical History Endpoints
- * Secure medical records management with strict appointment-based access control
- */
 export function registerMedicalHistoryEndpoints(app: Hono) {
+  const BASE_PATH = "/make-server-3dd53475";
   
-  // Initialize medical records storage bucket on startup
-  const initializeMedicalRecordsBucket = async () => {
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    );
+  const MEDICAL_RECORDS_BUCKET = 'make-3dd53475-medical-records';
 
+  // Initialize medical records bucket on module load (non-blocking)
+  const initializeMedicalRecordsBucket = async () => {
     try {
-      const { data: buckets } = await supabase.storage.listBuckets();
-      const bucketExists = buckets?.some(bucket => bucket.name === MEDICAL_RECORDS_BUCKET);
-      
-      if (!bucketExists) {
-        console.log(`📦 Creating medical records bucket: ${MEDICAL_RECORDS_BUCKET}`);
-        const { error } = await supabase.storage.createBucket(MEDICAL_RECORDS_BUCKET, {
-          public: false, // Private bucket - requires signed URLs
-          fileSizeLimit: 20971520 // 20MB limit for medical documents
-        });
-        
-        if (error && error.statusCode !== '409') {
-          console.error('❌ Error creating medical records bucket:', error);
-        } else {
-          console.log('✅ Medical records bucket created successfully');
-        }
-      } else {
-        console.log('✅ Medical records bucket already exists');
-      }
+      await ensureBucket(MEDICAL_RECORDS_BUCKET, {
+        public: false,
+        fileSizeLimit: 20971520 // 20MB limit
+      });
     } catch (error) {
-      console.error('❌ Error initializing medical records bucket:', error);
+      console.error('❌ Non-critical: Failed to initialize medical records bucket:', error);
     }
   };
 
-  // Initialize bucket
-  initializeMedicalRecordsBucket();
+  // Initialize bucket (fire and forget)
+  initializeMedicalRecordsBucket().catch(err => 
+    console.error('❌ Bucket init error (non-critical):', err)
+  );
 
   // ==========================================================================
   // GET MEDICAL HISTORY BY APPOINTMENT (WITH STRICT ACCESS CONTROL)
   // ==========================================================================
-  app.get("/make-server-3dd53475/appointments/:appointmentId/medical-records", async (c) => {
+  app.get(`${BASE_PATH}/appointments/:appointmentId/medical-records`, async (c) => {
     try {
       const { appointmentId } = c.req.param();
       const requesterId = c.req.header('X-User-Id'); // Vendor/Staff ID
@@ -232,7 +212,7 @@ export function registerMedicalHistoryEndpoints(app: Hono) {
   // ==========================================================================
   // UPLOAD MEDICAL DOCUMENT
   // ==========================================================================
-  app.post("/make-server-3dd53475/medical-records/upload", async (c) => {
+  app.post(`${BASE_PATH}/medical-records/upload`, async (c) => {
     try {
       const formData = await c.req.formData();
       const file = formData.get('file') as File;
@@ -327,7 +307,7 @@ export function registerMedicalHistoryEndpoints(app: Hono) {
   // ==========================================================================
   // ADD VET SUMMARY TO APPOINTMENT
   // ==========================================================================
-  app.post("/make-server-3dd53475/appointments/:appointmentId/vet-summary", async (c) => {
+  app.post(`${BASE_PATH}/appointments/:appointmentId/vet-summary`, async (c) => {
     try {
       const { appointmentId } = c.req.param();
       const body = await c.req.json();
@@ -409,7 +389,7 @@ export function registerMedicalHistoryEndpoints(app: Hono) {
   // ==========================================================================
   // GET PRESCRIPTION DETAILS
   // ==========================================================================
-  app.get("/make-server-3dd53475/medical-records/prescription/:prescriptionId", async (c) => {
+  app.get(`${BASE_PATH}/medical-records/prescription/:prescriptionId`, async (c) => {
     try {
       const { prescriptionId } = c.req.param();
       
@@ -457,7 +437,7 @@ export function registerMedicalHistoryEndpoints(app: Hono) {
   // ==========================================================================
   // CREATE PRESCRIPTION (Called by vets during appointments)
   // ==========================================================================
-  app.post("/make-server-3dd53475/appointments/:appointmentId/prescription", async (c) => {
+  app.post(`${BASE_PATH}/appointments/:appointmentId/prescription`, async (c) => {
     try {
       const { appointmentId } = c.req.param();
       const body = await c.req.json();

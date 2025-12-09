@@ -1,5 +1,6 @@
 import { Hono } from "npm:hono";
 import * as kv from "./kv_store.tsx";
+import { trySet, safeGet } from "./kv-safe.tsx";
 import type { Customer, Pet, Booking, ChatMessage, Review, Notification } from "./database-schema.tsx";
 import { sendSuccess, sendError } from "./response-utils.ts";
 
@@ -7,122 +8,12 @@ export function registerCustomerRoutes(app: Hono) {
   console.log('✅ Registering Customer Routes...');
 
 // ============================================
-// SEED TEST CUSTOMERS (Run on startup)
+// SEED TEST CUSTOMERS (DISABLED - Use API endpoint instead)
 // ============================================
 
-async function seedTestCustomers() {
-  console.log('🌱 Seeding test customers...');
-  
-  // Test Customer 1: Rajesh Kumar (9611377119) - Existing user with complete profile
-  const existingCustomerId = 'customer_1700000000000_rajesh';
-  const existingCustomer: Customer = {
-    id: existingCustomerId,
-    phone: '9611377119',
-    name: 'Rajesh Kumar',
-    email: 'rajesh.kumar@example.com',
-    address: '123 MG Road, Indiranagar, Bangalore, Karnataka 560038',
-    coordinates: { lat: 12.9716, lng: 77.5946 },
-    onboardingComplete: true,
-    onboardingStep: 'complete',
-    notificationsEnabled: true,
-    totalBookings: 5,
-    activeBookings: 0,
-    completedBookings: 5,
-    createdAt: new Date('2024-01-15').toISOString(),
-    updatedAt: new Date().toISOString(),
-    lastLoginAt: new Date().toISOString()
-  };
-  
-  // Check if already exists
-  const existingData = await kv.get(`customer:${existingCustomerId}`);
-  if (!existingData) {
-    await kv.set(`customer:${existingCustomerId}`, existingCustomer);
-    await kv.set(`customer:phone:9611377119`, existingCustomerId);
-    console.log('✅ Created test customer: Rajesh Kumar (9611377119)');
-    
-    // Add test pets for Rajesh
-    const pet1Id = 'pet_1700000000001_bruno';
-    const pet1: Pet = {
-      id: pet1Id,
-      customerId: existingCustomerId,
-      name: 'Bruno',
-      species: 'dog',
-      breed: 'Golden Retriever',
-      age: 3,
-      gender: 'male',
-      weight: 28,
-      photos: [],
-      vaccinated: true,
-      medicalConditions: [],
-      allergies: [],
-      createdAt: new Date('2024-01-15').toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-    
-    const pet2Id = 'pet_1700000000002_luna';
-    const pet2: Pet = {
-      id: pet2Id,
-      customerId: existingCustomerId,
-      name: 'Luna',
-      species: 'cat',
-      breed: 'Persian',
-      age: 2,
-      gender: 'female',
-      weight: 4,
-      photos: [],
-      vaccinated: true,
-      medicalConditions: [],
-      allergies: ['dairy'],
-      createdAt: new Date('2024-01-15').toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-    
-    await kv.set(`pet:${pet1Id}`, pet1);
-    await kv.set(`pet:${pet2Id}`, pet2);
-    await kv.set(`customer:${existingCustomerId}:pets`, [pet1Id, pet2Id]);
-    console.log('✅ Created test pets: Bruno & Luna');
-  } else {
-    console.log('ℹ️  Test customer already exists: Rajesh Kumar (9611377119)');
-  }
-
-  // Test Customer 2: E2E Test User (+919876543210)
-  const testPhone = '+919876543210';
-  const testCustomerId = 'customer_test_e2e';
-  
-  // ALWAYS overwrite/ensure test user exists with correct data
-  const testUser: Customer = {
-    id: testCustomerId,
-    phone: testPhone,
-    name: 'E2E Test User',
-    email: 'test.e2e@example.com',
-    address: 'Test Address, Bangalore',
-    coordinates: { lat: 12.9716, lng: 77.5946 },
-    onboardingComplete: true,
-    onboardingStep: 'complete',
-    notificationsEnabled: true,
-    totalBookings: 0,
-    activeBookings: 0,
-    completedBookings: 0,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    lastLoginAt: new Date().toISOString()
-  };
-  
-  await kv.set(`customer:${testCustomerId}`, testUser);
-  await kv.set(`customer:phone:${testPhone}`, testCustomerId);
-  // Also support format without +91 just in case
-  await kv.set(`customer:phone:9876543210`, testCustomerId);
-  
-  console.log('✅ Created/Updated E2E test customer: +919876543210');
-  
-  // Link pets to this test user as well for testing
-  const pet1Id = 'pet_1700000000001_bruno';
-  const pet2Id = 'pet_1700000000002_luna';
-  await kv.set(`customer:${testCustomerId}:pets`, [pet1Id, pet2Id]);
-}
-
-// Run seed on module load
-seedTestCustomers().catch(err => console.error('❌ Seed error:', err));
+// ✅ DISABLED: Seeding on startup causes database timeouts during high load
+// Seed customers manually via the /make-server-3dd53475/seed-customers endpoint if needed
+console.log('ℹ️  Customer seeding disabled on startup to prevent timeout errors.');
 
 // ============================================
 // OTP & AUTHENTICATION

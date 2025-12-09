@@ -1,5 +1,7 @@
 import { Hono } from "npm:hono";
 import { sendSuccess, sendError } from "./response-utils.ts";
+import * as kv from "./kv_store.tsx";
+import { tryGet, trySet, safeGetByPrefix } from "./kv-safe.tsx";
 
 /**
  * VENDOR DASHBOARD ENDPOINTS
@@ -23,7 +25,7 @@ export function vendorDashboardEndpoints(app: Hono, kv: any) {
       const timeframe = c.req.query('timeframe') || 'today'; // today, week, month
       
       // Get vendor profile
-      const vendor = await kv.get(`vendor:${vendorId}`);
+      const vendor = await tryGet(`vendor:${vendorId}`, null, { timeout: 5000 });
       if (!vendor) {
         console.log(`⚠️ Vendor not found: ${vendorId}, returning default dashboard`);
         // Return default dashboard for newly created vendors
@@ -433,7 +435,7 @@ export function vendorDashboardEndpoints(app: Hono, kv: any) {
       // This is an array of notification objects stored directly
       let adminNotifications = [];
       try {
-        adminNotifications = await kv.get(`vendor_notifications:${vendorId}`) || [];
+        adminNotifications = await tryGet(`vendor_notifications:${vendorId}`, [], { timeout: 5000 });
         console.log(`📬 [VENDOR-NOTIFICATIONS] Found ${adminNotifications.length} admin notifications`);
       } catch (kvError) {
         console.error(`⚠️ [VENDOR-NOTIFICATIONS] Error fetching admin notifications:`, kvError);
@@ -600,7 +602,7 @@ export function vendorDashboardEndpoints(app: Hono, kv: any) {
       // This fixes issues where new staff don't appear if the index is stale
       try {
         console.log(`🔍 Syncing staff list for vendor ${vendorId}...`);
-        const allStaff = await kv.getByPrefix('staff:') || [];
+        const allStaff = await safeGetByPrefix('staff:', { timeout: 10000, limit: 500 });
         
         // Find staff belonging to this vendor
         const vendorStaffRecords = allStaff.filter((s: any) => 
