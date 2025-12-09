@@ -113,6 +113,12 @@ import customerMedicalRecords from "./customer-medical-records.tsx";
 // ✅ NEW: Customer App Enhancements
 import customerAppEnhancements from "./customer-app-enhancements.tsx";
 
+// ✅ NEW: P2 Features - Final 18% to reach 100%
+import profilePhotoManagement from "./profile-photo-management.tsx";
+import advancedFilteringSystem from "./advanced-filtering-system.tsx";
+import appointmentReminderSystem from "./appointment-reminder-system.tsx";
+import serviceComparisonSystem from "./service-comparison-system.tsx";
+
 const app = new Hono();
 
 // Global Middleware
@@ -349,6 +355,12 @@ app.route('/make-server-3dd53475', customerMedicalRecords);
 
 // ✅ NEW: Customer App Enhancements
 app.route('/make-server-3dd53475', customerAppEnhancements);
+
+// ✅ NEW: P2 Features - Final 18% to reach 100%
+app.route('/make-server-3dd53475', profilePhotoManagement);
+app.route('/make-server-3dd53475', advancedFilteringSystem);
+app.route('/make-server-3dd53475', appointmentReminderSystem);
+app.route('/make-server-3dd53475', serviceComparisonSystem);
 
 // 5. Staff Routes
 app.route('/make-server-3dd53475', staffAuthRoutes); // Register Auth FIRST to avoid shadowing by /staff wildcard
