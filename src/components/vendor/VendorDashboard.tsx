@@ -22,7 +22,8 @@ import {
   FileText,
   ShoppingBag,
   Map as MapIcon,
-  Activity
+  Activity,
+  Building2
 } from 'lucide-react';
 import { Badge } from '../ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../ui/dialog';
@@ -358,6 +359,17 @@ export function VendorDashboard({
             </button>
           )}
           
+          {/* ✅ FIX: Facility Management - For Center-Style Vendors */}
+          {onNavigateToFacilityManagement && (vendorData?.serviceStyle === 'center' || vendorData?.vendorType?.includes('center')) && (
+            <button
+              onClick={onNavigateToFacilityManagement}
+              className="bg-white border-2 border-purple-500 text-purple-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-purple-500 hover:text-white transition-colors group text-center"
+            >
+              <Building2 className="w-6 h-6 mb-2" />
+              <span className="font-semibold text-sm">Center Profile & Timings</span>
+            </button>
+          )}
+          
           {/* Inventory/Store - For Pet Stores/Pharmacies */}
           {capabilities.inventory && onNavigateToBusinessHub && (
             <button
@@ -369,6 +381,47 @@ export function VendorDashboard({
             </button>
           )}
         </div>
+        
+        {/* ✅ FIX: VET-SPECIFIC SERVICES SECTION - For Veterinary Clinics */}
+        {(vendorData?.roleId?.includes('vet') || vendorData?.serviceCategory === 'veterinary') && (
+          <div className="p-4 border-b border-gray-100">
+            <h2 className="font-semibold text-gray-900 mb-3">Vet Center Services</h2>
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                onClick={() => onNavigateToBusinessHub?.()}
+                className="bg-teal-50 border border-teal-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-teal-100 transition-colors"
+              >
+                <svg className="w-6 h-6 text-teal-600 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinecap="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                </svg>
+                <span className="text-xs font-medium text-gray-900">Pharmacy</span>
+              </button>
+              
+              <button
+                onClick={() => onNavigateToBusinessHub?.()}
+                className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-blue-100 transition-colors"
+              >
+                <svg className="w-6 h-6 text-blue-600 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinecap="round" strokeWidth={2} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
+                </svg>
+                <span className="text-xs font-medium text-gray-900">Diagnostics</span>
+              </button>
+              
+              <button
+                onClick={() => onNavigateToBusinessHub?.()}
+                className="bg-red-50 border border-red-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-red-100 transition-colors"
+              >
+                <svg className="w-6 h-6 text-red-600 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinecap="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                <span className="text-xs font-medium text-gray-900">Ambulance</span>
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mt-2 text-center">
+              Manage specialized vet services, equipment, and protocols
+            </p>
+          </div>
+        )}
 
         {/* Stats Dashboard - Conditionally Rendered */}
         <div className="p-4 border-b border-gray-100">

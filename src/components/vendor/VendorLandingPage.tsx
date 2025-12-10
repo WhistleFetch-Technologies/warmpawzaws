@@ -843,6 +843,7 @@ export function VendorLandingPage({
         return (
           <VendorBusinessHub 
             vendorId={vendorId}
+            vendorData={vendorData}
             onBack={() => setShowBusinessHub(false)}
           />
         );

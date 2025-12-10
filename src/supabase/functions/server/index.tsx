@@ -16,6 +16,7 @@ import { notificationEndpoints } from "./notification-system.tsx";
 import { registerCustomerBookingHistory } from "./customer-booking-history.tsx";
 import { registerCustomerSearchEndpoints } from "./customer-search-endpoints.tsx";
 import { vendorOnboardingEndpoints } from "./vendor-onboarding.tsx";
+import { vendorApprovalWorkflowEndpoints } from "./vendor-approval-workflow.tsx";
 import { vendorDashboardEndpoints } from "./vendor-dashboard-endpoints.tsx";
 import { vendorRoleConfigEndpoints } from "./vendor-role-config.tsx";
 import { registerDynamicOnboarding } from "./dynamic-onboarding-management.tsx";
@@ -105,6 +106,8 @@ import automatedPayoutProcessing from "./automated-payout-processing.tsx";
 import enhancedRefundSystem from "./enhanced-refund-system.tsx";
 import tierUpgradeAutomation from "./tier-upgrade-automation.tsx";
 import systemHealthCheck from "./system-health-check.tsx";
+import adminCleanupDuplicates from "./admin-cleanup-duplicates.tsx";
+import vendorBankValidation from "./vendor-bank-validation.tsx";
 
 // Staff routes - All export default app
 import staffAuthRoutes from "./staff-auth-endpoints.tsx";
@@ -414,6 +417,7 @@ analyticsEndpoints(app, kv);
 // These must be registered BEFORE customer-routes because customer-routes
 // contains a generic /vendor/:vendorId wildcard that would shadow these.
 vendorOnboardingEndpoints(app, kv);
+vendorApprovalWorkflowEndpoints(app, kv);
 vendorDashboardEndpoints(app, kv);
 vendorRoleConfigEndpoints(app);
 registerDynamicOnboarding(app);
@@ -639,6 +643,22 @@ if (systemHealthCheck && typeof systemHealthCheck === 'object') {
   console.log('✅ System Health Check module registered');
 } else {
   console.warn('⚠️ System Health Check module undefined, skipping');
+}
+
+// ✅ ADMIN CLEANUP DUPLICATES
+if (adminCleanupDuplicates && typeof adminCleanupDuplicates === 'object') {
+  app.route('/make-server-3dd53475', adminCleanupDuplicates);
+  console.log('✅ Admin Cleanup Duplicates module registered');
+} else {
+  console.warn('⚠️ Admin Cleanup Duplicates module undefined, skipping');
+}
+
+// ✅ VENDOR BANK VALIDATION
+if (vendorBankValidation && typeof vendorBankValidation === 'object') {
+  app.route('/make-server-3dd53475', vendorBankValidation);
+  console.log('✅ Vendor Bank Validation module registered');
+} else {
+  console.warn('⚠️ Vendor Bank Validation module undefined, skipping');
 }
 
 // ✅ P0 Features
