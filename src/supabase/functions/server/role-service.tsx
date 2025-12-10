@@ -554,6 +554,26 @@ class RoleService {
             console.warn(`⚠️ Failed to sync role ${role.id}:`, err.message);
           })
         );
+        
+        // ✅ CRITICAL FIX: Also store role by config key for compatibility
+        syncPromises.push(
+          kv.set(`role:config:${role.id}`, {
+            ...role,
+            roleId: role.id,
+            roleName: role.displayName,
+            capabilities: role.permissions, // Map permissions to capabilities
+            vendorTypes: [role.category],
+            serviceStyles: [
+              ...(role.allowsAtHome ? ['at_home'] : []),
+              ...(role.allowsAtCenter ? ['at_center'] : []),
+              ...(role.allowsTele ? ['tele'] : [])
+            ],
+            status: 'active',
+            isActive: true
+          }).catch(err => {
+            console.warn(`⚠️ Failed to sync role config ${role.id}:`, err.message);
+          })
+        );
       }
 
       // Store role list
