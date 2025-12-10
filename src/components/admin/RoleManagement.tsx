@@ -444,9 +444,33 @@ export function RoleManagement() {
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => {
-                    if (confirm(`Delete role "${role.name}"?`)) {
-                      // Delete role
+                  onClick={async () => {
+                    if (!confirm(`⚠️ Delete role "${role.name}"?\n\nThis action cannot be undone. Any vendors using this role may experience issues.`)) {
+                      return;
+                    }
+                    
+                    try {
+                      const response = await fetch(
+                        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/config/roles/${role.id}`,
+                        {
+                          method: 'DELETE',
+                          headers: {
+                            'Authorization': `Bearer ${publicAnonKey}`
+                          }
+                        }
+                      );
+                      
+                      const data = await response.json();
+                      
+                      if (response.ok && data.success) {
+                        alert(`✅ ${data.message}`);
+                        fetchRoles(); // Reload roles list
+                      } else {
+                        alert(`❌ Failed to delete role: ${data.error || 'Unknown error'}`);
+                      }
+                    } catch (error) {
+                      console.error('Error deleting role:', error);
+                      alert(`❌ Error deleting role: ${error}`);
                     }
                   }}
                 >

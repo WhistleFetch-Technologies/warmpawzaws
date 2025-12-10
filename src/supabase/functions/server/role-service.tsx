@@ -537,71 +537,93 @@ class RoleService {
   }
 
   /**
-   * Sync roles to KV store (for backward compatibility)
-   * ✅ FIX: Non-blocking with retry logic
+   * Sync all roles to KV store (for backward compatibility)
+   * NON-BLOCKING - Fire and forget, runs in background
    */
-  async syncToKVStore(): Promise<void> {
-    try {
-      console.log('🔄 [ROLE SERVICE] Syncing roles to KV store (non-blocking)...');
-
-      // Sync in background without blocking
-      const syncPromises: Promise<void>[] = [];
-
-      // Store each role (batched, non-blocking)
-      for (const role of VENDOR_ROLES) {
-        syncPromises.push(
-          kv.set(`role:${role.id}`, role).catch(err => {
-            console.warn(`⚠️ Failed to sync role ${role.id}:`, err.message);
-          })
-        );
+  syncToKVStore(): void {
+    // ⚠️ CRITICAL: Disable auto-sync to prevent timeout issues
+    // Roles are now cached in memory for performance
+    console.log('ℹ️ [ROLE SERVICE] Auto-sync to KV disabled (using memory cache)');
+    return;
+    
+    // ORIGINAL CODE COMMENTED OUT TO PREVENT TIMEOUTS
+    /*
+    // Fire and forget - don't block server startup
+    setTimeout(async () => {
+      try {
+        console.log('🔄 [ROLE SERVICE] Starting background KV sync...');
         
-        // ✅ CRITICAL FIX: Also store role by config key for compatibility
-        syncPromises.push(
-          kv.set(`role:config:${role.id}`, {
-            ...role,
-            roleId: role.id,
-            roleName: role.displayName,
-            capabilities: role.permissions, // Map permissions to capabilities
-            vendorTypes: [role.category],
-            serviceStyles: [
-              ...(role.allowsAtHome ? ['at_home'] : []),
-              ...(role.allowsAtCenter ? ['at_center'] : []),
-              ...(role.allowsTele ? ['tele'] : [])
-            ],
-            status: 'active',
-            isActive: true
-          }).catch(err => {
-            console.warn(`⚠️ Failed to sync role config ${role.id}:`, err.message);
+        const BATCH_SIZE = 5; // Small batches to avoid timeouts
+        const BATCH_DELAY = 100; // ms between batches
+
+        // Helper function to batch operations
+        const processBatch = async (batch: any[], batchIndex: number) => {
+          await Promise.allSettled(batch);
+          if (batchIndex * BATCH_SIZE < VENDOR_ROLES.length) {
+            await new Promise(resolve => setTimeout(resolve, BATCH_DELAY));
+          }
+        };
+
+        // Store each role (batched, non-blocking)
+        const allOperations = [];
+        for (const role of VENDOR_ROLES) {
+          allOperations.push(
+            kv.set(`role:${role.id}`, role).catch((err) => {
+              console.warn(`⚠️ [ROLE SERVICE] Failed to sync role:${role.id}:`, err.message);
+            })
+          );
+          
+          // ✅ CRITICAL FIX: Also store role by config key for compatibility
+          allOperations.push(
+            kv.set(`role:config:${role.id}`, {
+              ...role,
+              roleId: role.id,
+              roleName: role.displayName,
+              capabilities: role.permissions, // Map permissions to capabilities
+              vendorTypes: [role.category],
+              serviceStyles: [
+                ...(role.allowsAtHome ? ['at_home'] : []),
+                ...(role.allowsAtCenter ? ['at_center'] : []),
+                ...(role.allowsTele ? ['tele'] : [])
+              ],
+              status: 'active',
+              isActive: true
+            }).catch((err) => {
+              console.warn(`⚠️ [ROLE SERVICE] Failed to sync role:config:${role.id}:`, err.message);
+            })
+          );
+        }
+
+        // Store role list
+        allOperations.push(
+          kv.set('vendor_roles', VENDOR_ROLES.map(r => r.name)).catch((err) => {
+            console.warn('⚠️ [ROLE SERVICE] Failed to sync vendor_roles:', err.message);
           })
         );
+
+        // Store role IDs
+        allOperations.push(
+          kv.set('vendor_role_ids', VENDOR_ROLES.map(r => r.id)).catch((err) => {
+            console.warn('⚠️ [ROLE SERVICE] Failed to sync vendor_role_ids:', err.message);
+          })
+        );
+
+        // Process in batches
+        for (let i = 0; i < allOperations.length; i += BATCH_SIZE) {
+          const batch = allOperations.slice(i, i + BATCH_SIZE);
+          await processBatch(batch, Math.floor(i / BATCH_SIZE));
+        }
+        
+        console.log(`✅ [ROLE SERVICE] Background KV sync complete (${VENDOR_ROLES.length} roles)`);
+      } catch (error) {
+        // Silent fail - not critical for operation
+        console.log('ℹ️ [ROLE SERVICE] KV sync skipped (using memory cache):', error);
       }
-
-      // Store role list
-      syncPromises.push(
-        kv.set('vendor_roles', VENDOR_ROLES.map(r => r.name)).catch(err => {
-          console.warn('⚠️ Failed to sync vendor_roles:', err.message);
-        })
-      );
-
-      // Store role IDs
-      syncPromises.push(
-        kv.set('vendor_role_ids', VENDOR_ROLES.map(r => r.id)).catch(err => {
-          console.warn('⚠️ Failed to sync vendor_role_ids:', err.message);
-        })
-      );
-
-      // Don't await - let it run in background
-      Promise.all(syncPromises).then(() => {
-        console.log(`✅ [ROLE SERVICE] Synced ${VENDOR_ROLES.length} roles to KV store`);
-      }).catch(error => {
-        console.error('❌ [ROLE SERVICE] Some roles failed to sync:', error.message);
-      });
-
-      // Return immediately without waiting
-      console.log('🚀 [ROLE SERVICE] Role sync initiated in background');
-    } catch (error) {
-      console.error('❌ [ROLE SERVICE] Error initiating KV sync:', error);
-    }
+    }, 500); // Increased delay to ensure server is fully ready
+    
+    // Return immediately
+    console.log('🚀 [ROLE SERVICE] KV sync scheduled in background');
+    */
   }
 
   /**
@@ -609,11 +631,20 @@ class RoleService {
    */
   async loadCustomRoles(): Promise<VendorRole[]> {
     try {
-      const customRoles = await kv.getByPrefix('role:custom:');
+      // Add timeout protection at the KV operation level
+      const customRolesPromise = kv.getByPrefix('role:custom:');
+      const timeoutPromise = new Promise<any[]>((resolve) => 
+        setTimeout(() => {
+          console.warn('⚠️ [ROLE SERVICE] Custom role loading timeout - continuing with defaults');
+          resolve([]);
+        }, 3000)
+      );
+      
+      const customRoles = await Promise.race([customRolesPromise, timeoutPromise]);
       console.log(`📥 [ROLE SERVICE] Loaded ${customRoles.length} custom roles`);
       return customRoles;
     } catch (error) {
-      console.error('❌ [ROLE SERVICE] Error loading custom roles:', error);
+      console.warn('⚠️ [ROLE SERVICE] Custom roles not loaded (using defaults only):', error.message);
       return [];
     }
   }
@@ -674,10 +705,8 @@ export async function initializeRoleService(): Promise<void> {
   console.log('🚀 [ROLE SERVICE] Initializing...');
   
   try {
-    // Sync to KV store for backward compatibility (non-blocking, fire and forget)
-    roleService.syncToKVStore().catch(err => {
-      console.warn('⚠️ [ROLE SERVICE] KV sync failed (non-critical):', err.message);
-    });
+    // Sync to KV store is now disabled (using memory cache only)
+    roleService.syncToKVStore();
     
     // Load any custom roles (with timeout protection)
     const customRolesPromise = Promise.race([

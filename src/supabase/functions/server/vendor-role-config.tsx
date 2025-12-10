@@ -619,7 +619,7 @@ export function vendorRoleConfigEndpoints(app: Hono) {
           const serviceStyles = (config.serviceStyles && config.serviceStyles.length > 0) ? config.serviceStyles : (standardDef.serviceStyles || []);
           const capabilities = (config.capabilities && config.capabilities.length > 0) ? config.capabilities : (standardDef.capabilities || []);
           const pricingControl = (config.pricingControl && Object.keys(config.pricingControl).length > 0) ? config.pricingControl : (standardDef.pricingControl || {});
-          const icon = config.icon || standardDef.icon || 'briefcase';
+          const icon = config.icon || standardDef.icon || '🔧'; // ✅ FIX: Use emoji instead of "briefcase" text
 
           return {
             ...config,
@@ -669,6 +669,41 @@ export function vendorRoleConfigEndpoints(app: Hono) {
 
     } catch (error) {
       console.error('❌ [ROLES] Error fetching roles:', error);
+      return c.json({ error: String(error) }, 500);
+    }
+  });
+
+  /**
+   * DELETE /make-server-3dd53475/config/roles/:roleId
+   * Delete a role configuration
+   */
+  app.delete("/make-server-3dd53475/config/roles/:roleId", async (c) => {
+    try {
+      const { roleId } = c.req.param();
+      
+      console.log(`🗑️ [DELETE ROLE] Attempting to delete role: ${roleId}`);
+      
+      // Check if role exists
+      const existingRole = await kv.get(`role:config:${roleId}`);
+      if (!existingRole) {
+        console.error(`❌ [DELETE ROLE] Role not found: ${roleId}`);
+        return c.json({ error: 'Role not found', roleId }, 404);
+      }
+      
+      console.log(`✅ [DELETE ROLE] Found role: ${existingRole.name || roleId}`);
+      
+      // Delete the role from KV store
+      await kv.del(`role:config:${roleId}`);
+      
+      console.log(`✅ [DELETE ROLE] Successfully deleted role: ${roleId}`);
+      
+      return c.json({ 
+        success: true, 
+        message: `Role "${existingRole.name || roleId}" deleted successfully`,
+        deletedRoleId: roleId
+      });
+    } catch (error) {
+      console.error('❌ [DELETE ROLE] Error deleting role:', error);
       return c.json({ error: String(error) }, 500);
     }
   });

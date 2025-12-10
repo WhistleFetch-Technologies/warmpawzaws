@@ -1,45 +1,6 @@
-import { useState, useEffect } from 'react';
-import { 
-  Calendar, 
-  Clock, 
-  Phone, 
-  Video, 
-  MessageSquare, 
-  Star, 
-  RefreshCw, 
-  ChevronRight, 
-  Plus, 
-  Package, 
-  DollarSign, 
-  Users,
-  Settings,
-  BarChart3,
-  Stethoscope,
-  Home,
-  Monitor,
-  MapPin,
-  Pill,
-  FileText,
-  ShoppingBag,
-  Map as MapIcon,
-  Activity,
-  Building2
-} from 'lucide-react';
-import { Badge } from '../ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../ui/dialog';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { VendorAnalytics } from './VendorAnalytics';
-import { VendorPaymentSettings } from './VendorPaymentSettings';
-import { DoctorManagement } from './clinic/DoctorManagement';
-import { getVendorIconTheme, getRoleIcon, getRoleColorScheme } from '../../utils/vendor-icon-themes';
-import { VendorNotificationModal } from './VendorNotificationModal';
-import { CommunicationHub } from '../communication/CommunicationHub';
-import { AppointmentDetailModal } from './AppointmentDetailModal';
-import { AIChatBot } from '../customer/AIChatBot';
-import { useVendorCapabilities } from './hooks/useVendorCapabilities';
-import { copyTextToClipboard } from '../../utils/shareUtils';
 import { CapabilityDebugOverlay } from './CapabilityDebugOverlay';
 import { ModuleDisabledMessage, ModuleMessages } from './ModuleDisabledMessage';
+import { SoloProviderDashboard } from './dashboard/SoloProviderDashboard'; // ✅ INTEGRATION: Solo provider dashboard
 
 interface VendorDashboardProps {
   vendorId: string;
@@ -49,10 +10,12 @@ interface VendorDashboardProps {
   onNavigateToBookingManagement?: () => void;
   onNavigateToTeleConsultation?: () => void;
   onNavigateToScheduleManagement?: () => void;
+  onNavigateToCenterProfile?: () => void; // ✅ NEW: Navigate to Center Profile Manager
   onNavigateToFacilityManagement?: () => void;
   onNavigateToStaffManagement?: () => void;
   onNavigateToBusinessHub?: () => void;
   onNavigateToLiveTracking?: () => void;
+  onNavigateToSpecializedServices?: () => void; // ✅ NEW: Navigate to Vet Specialized Services (Pharmacy, Diagnostics, Ambulance)
 }
 
 interface DashboardStats {
@@ -115,10 +78,12 @@ export function VendorDashboard({
   onNavigateToBookingManagement, 
   onNavigateToTeleConsultation, 
   onNavigateToScheduleManagement, 
+  onNavigateToCenterProfile, // ✅ NEW: Navigate to Center Profile Manager
   onNavigateToFacilityManagement, 
   onNavigateToStaffManagement, 
   onNavigateToBusinessHub,
-  onNavigateToLiveTracking
+  onNavigateToLiveTracking,
+  onNavigateToSpecializedServices // ✅ NEW: Navigate to Vet Specialized Services (Pharmacy, Diagnostics, Ambulance)
 }: VendorDashboardProps) {
   const [activeTab, setActiveTab] = useState<'today' | 'week' | 'month'>('today');
   const [activeBottomTab, setActiveBottomTab] = useState<'home' | 'bookings' | 'reporting' | 'settings'>('home');
@@ -150,6 +115,27 @@ export function VendorDashboard({
 
   const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
   const isVet = vendorData?.roleId === 'veterinarian' || vendorData?.roleId === 'vet';
+
+  // ✅ INTEGRATION: Check if solo provider and route to solo dashboard
+  if (vendorData?.isSoloProvider) {
+    const soloSession = {
+      vendorId: vendorData.id || vendorId,
+      centerId: vendorData.centerId,
+      staffId: vendorData.autoLinkedStaffId,
+      isSoloProvider: true,
+      ownerName: vendorData.ownerName,
+      businessName: vendorData.businessName,
+      roleName: vendorData.roleName || 'Service Provider',
+      defaultMode: 'CENTER' as const
+    };
+    
+    return (
+      <SoloProviderDashboard 
+        session={soloSession}
+        vendorData={vendorData}
+      />
+    );
+  }
 
   // Fetch dashboard data
   const fetchDashboardData = async (showRefresh = false) => {
@@ -359,10 +345,16 @@ export function VendorDashboard({
             </button>
           )}
           
-          {/* ✅ FIX: Facility Management - For Center-Style Vendors */}
-          {onNavigateToFacilityManagement && (vendorData?.serviceStyle === 'center' || vendorData?.vendorType?.includes('center')) && (
+          {/* ✅ FIX: Facility Management - For Center-Style Vendors and Vets */}
+          {onNavigateToCenterProfile && (
+            vendorData?.serviceStyle === 'center' || 
+            vendorData?.serviceStyle === 'at_center' || 
+            vendorData?.vendorType?.includes('center') ||
+            vendorData?.roleId?.includes('vet') ||
+            vendorData?.roleId === 'veterinarian'
+          ) && (
             <button
-              onClick={onNavigateToFacilityManagement}
+              onClick={onNavigateToCenterProfile}
               className="bg-white border-2 border-purple-500 text-purple-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-purple-500 hover:text-white transition-colors group text-center"
             >
               <Building2 className="w-6 h-6 mb-2" />
@@ -383,12 +375,17 @@ export function VendorDashboard({
         </div>
         
         {/* ✅ FIX: VET-SPECIFIC SERVICES SECTION - For Veterinary Clinics */}
-        {(vendorData?.roleId?.includes('vet') || vendorData?.serviceCategory === 'veterinary') && (
+        {(
+          vendorData?.roleId?.includes('vet') || 
+          vendorData?.roleId?.includes('veterinar') ||
+          vendorData?.serviceCategory === 'veterinary' ||
+          vendorData?.vendorType === 'veterinary'
+        ) && (
           <div className="p-4 border-b border-gray-100">
             <h2 className="font-semibold text-gray-900 mb-3">Vet Center Services</h2>
             <div className="grid grid-cols-3 gap-2">
               <button
-                onClick={() => onNavigateToBusinessHub?.()}
+                onClick={() => onNavigateToSpecializedServices?.()}
                 className="bg-teal-50 border border-teal-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-teal-100 transition-colors"
               >
                 <svg className="w-6 h-6 text-teal-600 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -398,7 +395,7 @@ export function VendorDashboard({
               </button>
               
               <button
-                onClick={() => onNavigateToBusinessHub?.()}
+                onClick={() => onNavigateToSpecializedServices?.()}
                 className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-blue-100 transition-colors"
               >
                 <svg className="w-6 h-6 text-blue-600 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -408,7 +405,7 @@ export function VendorDashboard({
               </button>
               
               <button
-                onClick={() => onNavigateToBusinessHub?.()}
+                onClick={() => onNavigateToSpecializedServices?.()}
                 className="bg-red-50 border border-red-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-red-100 transition-colors"
               >
                 <svg className="w-6 h-6 text-red-600 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -832,7 +829,7 @@ export function VendorDashboard({
             <h2 className="text-lg font-semibold text-gray-900">Settings & Payouts</h2>
           </div>
           <div className="p-4">
-            <VendorPaymentSettings vendorId={vendorId} />
+            <VendorPaymentSettings vendorId={vendorId} vendorData={vendor || vendorData} />
           </div>
         </div>
       )}

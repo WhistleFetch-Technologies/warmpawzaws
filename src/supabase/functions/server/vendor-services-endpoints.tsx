@@ -180,7 +180,40 @@ export function registerVendorServiceEndpoints(app: Hono) {
         console.error(`      - Service in vendor list: ${verifyList?.includes(serviceId)}`);
       }
 
-      return sendSuccess(c, { service: newService }, 'Service added successfully');
+      // ✅ INTEGRATION: Auto-sync to staff for solo providers
+      let autoSynced = false;
+      const vendor = await kv.get(`vendor:${vendorId}`);
+      if (vendor?.isSoloProvider) {
+        console.log(`   🔄 Solo provider detected - auto-syncing to staff...`);
+        const staffRecords = await kv.get(`vendor:${vendorId}:staff`);
+        if (staffRecords && staffRecords.length > 0) {
+          const staffId = staffRecords[0];
+          const staff = await kv.get(`staff:${staffId}`);
+          if (staff) {
+            // Get all updated services
+            const allServiceIds = await kv.get(`vendor:${vendorId}:services`) || [];
+            const allServices = [];
+            for (const sId of allServiceIds) {
+              const svc = await kv.get(`service:${sId}`);
+              if (svc && svc.isActive !== false) {
+                allServices.push(svc);
+              }
+            }
+            
+            staff.services = allServices;
+            staff.updatedAt = new Date().toISOString();
+            await kv.set(`staff:${staffId}`, staff);
+            autoSynced = true;
+            console.log(`   ✅ Auto-synced ${allServices.length} services to staff: ${staffId}`);
+          }
+        }
+      }
+
+      return sendSuccess(c, { 
+        service: newService, 
+        autoSynced,
+        message: autoSynced ? 'Service added and synced to your staff profile!' : 'Service added successfully'
+      });
     } catch (error) {
       console.error('❌ [SERVICE-PERSISTENCE] Error adding vendor service:', error);
       return sendError(c, error, 500);
@@ -209,7 +242,38 @@ export function registerVendorServiceEndpoints(app: Hono) {
       
       await kv.set(`service:${serviceId}`, updatedService);
       
-      return sendSuccess(c, { service: updatedService }, 'Service updated successfully');
+      // ✅ INTEGRATION: Auto-sync to staff for solo providers
+      let autoSynced = false;
+      const vendor = await kv.get(`vendor:${service.vendorId}`);
+      if (vendor?.isSoloProvider) {
+        const staffRecords = await kv.get(`vendor:${service.vendorId}:staff`);
+        if (staffRecords && staffRecords.length > 0) {
+          const staffId = staffRecords[0];
+          const staff = await kv.get(`staff:${staffId}`);
+          if (staff) {
+            // Get all updated services
+            const allServiceIds = await kv.get(`vendor:${service.vendorId}:services`) || [];
+            const allServices = [];
+            for (const sId of allServiceIds) {
+              const svc = await kv.get(`service:${sId}`);
+              if (svc && svc.isActive !== false) {
+                allServices.push(svc);
+              }
+            }
+            
+            staff.services = allServices;
+            staff.updatedAt = new Date().toISOString();
+            await kv.set(`staff:${staffId}`, staff);
+            autoSynced = true;
+            console.log(`   ✅ Auto-synced updated services to staff: ${staffId}`);
+          }
+        }
+      }
+      
+      return sendSuccess(c, { 
+        service: updatedService, 
+        autoSynced 
+      }, autoSynced ? 'Service updated and synced!' : 'Service updated successfully');
     } catch (error) {
       console.error('Error updating service:', error);
       return sendError(c, error, 500);

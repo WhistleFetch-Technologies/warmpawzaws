@@ -12,7 +12,8 @@ import {
   MapPin,
   Phone,
   Check,
-  X
+  X,
+  Pill // ✅ NEW: Pharmacy icon
 } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
@@ -20,6 +21,7 @@ import { Card } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import { toast } from 'sonner@2.0.3';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { VetPharmacyManager } from './VetPharmacyManager'; // ✅ NEW: Import pharmacy manager
 
 interface VetSpecializedServicesManagerProps {
   vendorId: string;
@@ -60,7 +62,7 @@ interface EmergencyProtocol {
   isActive: boolean;
 }
 
-type ActiveTab = 'ambulance' | 'diagnostics' | 'emergency';
+type ActiveTab = 'ambulance' | 'diagnostics' | 'emergency' | 'pharmacy'; // ✅ NEW: Add pharmacy tab
 
 export function VetSpecializedServicesManager({ 
   vendorId, 
@@ -404,6 +406,15 @@ export function VetSpecializedServicesManager({
     </div>
   );
 
+  const renderPharmacy = () => (
+    <VetPharmacyManager 
+      vendorId={vendorId} 
+      vendorData={vendorData}
+      onBack={() => {}} // Empty since we're in a tab
+      embedded={true} // ✅ NEW: Embedded mode - no header
+    />
+  );
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="w-full max-w-[430px] mx-auto bg-white min-h-screen">
@@ -454,6 +465,17 @@ export function VetSpecializedServicesManager({
               <AlertCircle className="w-4 h-4 mx-auto mb-1" />
               Emergency
             </button>
+            <button
+              onClick={() => setActiveTab('pharmacy')}
+              className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
+                activeTab === 'pharmacy'
+                  ? 'bg-white text-red-600'
+                  : 'bg-white/20 text-white hover:bg-white/30'
+              }`}
+            >
+              <Pill className="w-4 h-4 mx-auto mb-1" />
+              Pharmacy
+            </button>
           </div>
         </div>
 
@@ -470,6 +492,7 @@ export function VetSpecializedServicesManager({
             {activeTab === 'ambulance' && renderAmbulanceServices()}
             {activeTab === 'diagnostics' && renderDiagnosticTests()}
             {activeTab === 'emergency' && renderEmergencyProtocols()}
+            {activeTab === 'pharmacy' && renderPharmacy()}
           </>
         )}
       </div>

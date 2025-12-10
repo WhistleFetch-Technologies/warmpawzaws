@@ -466,6 +466,28 @@ export function VendorServiceCatalogView({
             />
           </div>
 
+          {/* ✅ Multi-Select Mode Header */}
+          {mode === 'multi-select' && (
+            <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CheckSquare className="w-5 h-5 text-blue-600" />
+                <div>
+                  <p className="text-sm font-semibold text-blue-900">Multi-Select Mode</p>
+                  <p className="text-xs text-blue-700">{selectedServices.size} service(s) selected</p>
+                </div>
+              </div>
+              {selectedServices.size > 0 && (
+                <Button
+                  onClick={handleAddAllSelected}
+                  disabled={adding}
+                  className="bg-blue-600 hover:bg-blue-700 text-white h-8 text-xs"
+                >
+                  {adding ? 'Adding...' : `Add ${selectedServices.size} Selected`}
+                </Button>
+              )}
+            </div>
+          )}
+
           {/* Service Style Filter */}
           <div className="flex gap-2 overflow-x-auto pb-2 mb-2 scrollbar-hide">
             <button
@@ -637,10 +659,36 @@ export function VendorServiceCatalogView({
                                         className={`bg-white p-3 mb-2 rounded-lg border-2 transition-colors ${
                                           isEnabled
                                             ? 'border-[#FF8C42] bg-orange-50'
+                                            : selectedServices.has(service.catalogId || '') && mode === 'multi-select'
+                                            ? 'border-blue-500 bg-blue-50'
                                             : 'border-gray-200 hover:border-[#FF8C42]'
                                         }`}
+                                        onClick={() => {
+                                          if (mode === 'multi-select' && !isEnabled && service.catalogId) {
+                                            toggleServiceSelection(service.catalogId);
+                                          }
+                                        }}
                                       >
                                         <div className="flex items-start justify-between">
+                                          {/* ✅ Multi-Select Checkbox */}
+                                          {mode === 'multi-select' && !isEnabled && service.catalogId && (
+                                            <div className="mr-3 flex-shrink-0 pt-1">
+                                              <button
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  toggleServiceSelection(service.catalogId!);
+                                                }}
+                                                className="w-6 h-6 rounded border-2 border-gray-300 flex items-center justify-center hover:border-blue-500 transition-colors"
+                                              >
+                                                {selectedServices.has(service.catalogId) ? (
+                                                  <CheckSquare className="w-5 h-5 text-blue-600" />
+                                                ) : (
+                                                  <Square className="w-5 h-5 text-gray-400" />
+                                                )}
+                                              </button>
+                                            </div>
+                                          )}
+
                                           <div className="flex-1">
                                             <div className="flex items-center gap-2 mb-1">
                                               <h4 className="font-medium text-gray-900">{service.serviceName}</h4>
@@ -686,26 +734,29 @@ export function VendorServiceCatalogView({
                                             )}
                                           </div>
 
-                                          <div className="flex gap-1 ml-4">
-                                            <div>
-                                              {isEnabled ? (
-                                                <button
-                                                  onClick={() => onSelectService?.(service)}
-                                                  className="px-3 py-1.5 bg-green-100 hover:bg-green-200 text-green-700 border border-green-200 rounded-lg text-xs font-medium transition-colors flex items-center gap-1"
-                                                >
-                                                  ✓ Added
-                                                </button>
-                                              ) : (
-                                                <button
-                                                  onClick={() => handleAddSingleService(service)}
-                                                  className="px-3 py-1.5 bg-[#FF8C42] hover:bg-[#FF7829] text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1"
-                                                >
-                                                  <Plus className="w-3 h-3" />
-                                                  Add
-                                                </button>
-                                              )}
+                                          {/* ✅ Action Button - Only show in browse mode */}
+                                          {mode !== 'multi-select' && (
+                                            <div className="flex gap-1 ml-4">
+                                              <div>
+                                                {isEnabled ? (
+                                                  <button
+                                                    onClick={() => onSelectService?.(service)}
+                                                    className="px-3 py-1.5 bg-green-100 hover:bg-green-200 text-green-700 border border-green-200 rounded-lg text-xs font-medium transition-colors flex items-center gap-1"
+                                                  >
+                                                    ✓ Added
+                                                  </button>
+                                                ) : (
+                                                  <button
+                                                    onClick={() => handleAddSingleService(service)}
+                                                    className="px-3 py-1.5 bg-[#FF8C42] hover:bg-[#FF7829] text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1"
+                                                  >
+                                                    <Plus className="w-3 h-3" />
+                                                    Add
+                                                  </button>
+                                                )}
+                                              </div>
                                             </div>
-                                          </div>
+                                          )}
                                         </div>
                                       </div>
                                     );
