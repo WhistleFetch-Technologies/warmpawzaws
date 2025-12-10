@@ -1,20 +1,25 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter } from '../../ui/card';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '../../ui/tabs';
+import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
 import { Label } from '../../ui/label';
-import { Button } from '../../ui/button';
 import { Switch } from '../../ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
-import { useAdminIntegrations } from '../../../hooks/useAdminIntegrations';
-import { Truck, MapPin, Plus, Settings2, Calculator, Check, X, Package, IndianRupee, Globe, Key, AlertCircle } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '../../ui/dialog';
-import { Checkbox } from '../../ui/checkbox';
+import { Card, CardHeader, CardTitle, CardContent } from '../../ui/card';
 import { Badge } from '../../ui/badge';
+import { Checkbox } from '../../ui/checkbox';
 import { ScrollArea } from '../../ui/scroll-area';
 import { Separator } from '../../ui/separator';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '../../ui/tabs';
+import { useAdminIntegrations } from '../../../hooks/useAdminIntegrations';
+import { 
+  Plus, Truck, Key, Globe, MapPin, Package, AlertCircle, 
+  Settings2, IndianRupee, Check, X, Calculator
+} from 'lucide-react';
 
 import { ShiprocketConfig } from './ShiprocketConfig';
+import { DelhiveryConfig } from './DelhiveryConfig';
+import { DeliveryRulesManager } from './DeliveryRulesManager';
 
 // Types
 type DeliveryType = 'last_mile' | 'intercity' | 'pan_india' | 'hyperlocal';
@@ -127,6 +132,7 @@ export function LogisticsSettings() {
           <TabsList>
             <TabsTrigger value="partners">Partners & Rules</TabsTrigger>
             <TabsTrigger value="shiprocket">Shiprocket Integration</TabsTrigger>
+            <TabsTrigger value="delhivery">Delhivery Integration</TabsTrigger>
             <TabsTrigger value="simulator">Cost Simulator</TabsTrigger>
           </TabsList>
           
@@ -176,6 +182,10 @@ export function LogisticsSettings() {
 
         <TabsContent value="shiprocket">
           <ShiprocketConfig />
+        </TabsContent>
+
+        <TabsContent value="delhivery">
+          <DelhiveryConfig />
         </TabsContent>
 
         <TabsContent value="simulator">

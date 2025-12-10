@@ -27,6 +27,7 @@ interface Role {
 
 interface Permission {
   id: string;
+  key?: string;
   name: string;
   description: string;
   category: string;
@@ -72,6 +73,7 @@ export function RBACManagement({ onBack }: RBACManagementProps) {
       });
       if (rolesRes.ok) {
         const rolesData = await rolesRes.json();
+        console.log('✅ Loaded roles:', rolesData.roles);
         setRoles(rolesData.roles || []);
       }
 
@@ -81,7 +83,13 @@ export function RBACManagement({ onBack }: RBACManagementProps) {
       });
       if (permsRes.ok) {
         const permsData = await permsRes.json();
-        setPermissions(permsData.permissions || []);
+        // Normalize permissions: use 'key' as 'id' if 'id' doesn't exist
+        const normalizedPermissions = (permsData.permissions || []).map((p: any) => ({
+          ...p,
+          id: p.id || p.key // Use key as id for compatibility
+        }));
+        console.log('✅ Loaded permissions:', normalizedPermissions);
+        setPermissions(normalizedPermissions);
       }
 
       // Load admin users
@@ -90,6 +98,7 @@ export function RBACManagement({ onBack }: RBACManagementProps) {
       });
       if (usersRes.ok) {
         const usersData = await usersRes.json();
+        console.log('✅ Loaded users:', usersData.users);
         setUsers(usersData.users || []);
       }
     } catch (err) {
@@ -105,7 +114,18 @@ export function RBACManagement({ onBack }: RBACManagementProps) {
       return;
     }
 
+    if (selectedPermissions.length === 0) {
+      alert('Please select at least one permission for this role');
+      return;
+    }
+
     try {
+      console.log('📤 Creating role:', {
+        name: roleName,
+        description: roleDescription,
+        permissions: selectedPermissions
+      });
+
       const response = await fetch(`${API_BASE}/admin/rbac/roles`, {
         method: 'POST',
         headers: {
@@ -119,21 +139,43 @@ export function RBACManagement({ onBack }: RBACManagementProps) {
         })
       });
 
-      if (response.ok) {
+      const result = await response.json();
+      console.log('📥 Create role response:', result);
+
+      if (response.ok && result.success) {
+        alert(`✅ Role "${roleName}" created successfully with ${selectedPermissions.length} permissions!`);
         setIsCreatingRole(false);
         resetForm();
         loadRBACData();
+      } else {
+        alert(`❌ Failed to create role: ${result.error || 'Unknown error'}`);
       }
     } catch (err) {
       console.error('Error creating role:', err);
-      alert('Failed to create role');
+      alert('Failed to create role: Network error');
     }
   };
 
   const handleUpdateRole = async () => {
     if (!editingRole) return;
 
+    if (!roleName.trim()) {
+      alert('Role name is required');
+      return;
+    }
+
+    if (selectedPermissions.length === 0) {
+      alert('Please select at least one permission for this role');
+      return;
+    }
+
     try {
+      console.log('📤 Updating role:', editingRole.id, {
+        name: roleName,
+        description: roleDescription,
+        permissions: selectedPermissions
+      });
+
       const response = await fetch(`${API_BASE}/admin/rbac/roles/${editingRole.id}`, {
         method: 'PUT',
         headers: {
@@ -147,14 +189,20 @@ export function RBACManagement({ onBack }: RBACManagementProps) {
         })
       });
 
-      if (response.ok) {
+      const result = await response.json();
+      console.log('📥 Update role response:', result);
+
+      if (response.ok && result.success) {
+        alert(`✅ Role "${roleName}" updated successfully!`);
         setEditingRole(null);
         resetForm();
         loadRBACData();
+      } else {
+        alert(`❌ Failed to update role: ${result.error || 'Unknown error'}`);
       }
     } catch (err) {
       console.error('Error updating role:', err);
-      alert('Failed to update role');
+      alert('Failed to update role: Network error');
     }
   };
 
@@ -303,7 +351,14 @@ export function RBACManagement({ onBack }: RBACManagementProps) {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium mb-2">Permissions</label>
+                    <label className="block text-sm font-medium mb-2">
+                      Permissions 
+                      {selectedPermissions.length > 0 && (
+                        <span className="ml-2 text-xs bg-[#FF8C42] text-white px-2 py-0.5 rounded">
+                          {selectedPermissions.length} selected
+                        </span>
+                      )}
+                    </label>
                     <div className="border border-gray-300 rounded-lg p-4 max-h-96 overflow-y-auto">
                       {Object.entries(permissionsByCategory).map(([category, perms]) => (
                         <div key={category} className="mb-4">
