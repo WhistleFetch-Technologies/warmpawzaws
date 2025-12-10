@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '../ui/dialog';
 import { Button } from '../ui/button';
 import { Textarea } from '../ui/textarea';
 import { Label } from '../ui/label';
@@ -111,6 +111,9 @@ export function WriteReviewModal({
       <DialogContent className="sm:max-w-[425px] bg-white">
         <DialogHeader>
           <DialogTitle>Write a Review</DialogTitle>
+          <DialogDescription>
+            Share your experience with this product or service.
+          </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
           <div>

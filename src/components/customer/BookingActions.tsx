@@ -175,7 +175,7 @@ export function BookingActions({ booking, phone, onSuccess }: BookingActionsProp
               Reschedule Booking
             </DialogTitle>
             <DialogDescription>
-              Select a new date and time for your booking
+              Select a new date and time for your booking.
             </DialogDescription>
           </DialogHeader>
 

@@ -46,7 +46,8 @@ export function soloProviderEndpoints(app: Hono, kv: any) {
         experience,
         specializations,
         bio,
-        profilePhoto
+        profilePhoto,
+        roleName // ✅ Accept roleName from request
       } = body;
 
       console.log(`🚀 Solo provider onboarding started:`);
@@ -78,10 +79,16 @@ export function soloProviderEndpoints(app: Hono, kv: any) {
         }, 409);
       }
 
-      // Get role configuration
-      const role = await kv.get(`role:config:${roleId}`);
+      // Get role configuration (OPTIONAL - fallback to roleName from request)
+      let role = await kv.get(`role:config:${roleId}`);
       if (!role) {
-        return c.json({ error: 'role_not_found' }, 400);
+        console.warn(`⚠️ Role config not found for ${roleId}, using defaults`);
+        role = {
+          id: roleId,
+          name: roleName || roleId.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
+          serviceCategory: 'general_services',
+          vendorTypes: ['service_provider']
+        };
       }
 
       // Generate IDs
@@ -265,6 +272,113 @@ export function soloProviderEndpoints(app: Hono, kv: any) {
 
     } catch (error) {
       console.error('❌ Solo provider onboarding error:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  /**
+   * GET /make-server-3dd53475/vendor/phone/:phone
+   * Lookup vendor by phone number (phone index)
+   * Used for quick solo provider login
+   */
+  app.get("/make-server-3dd53475/vendor/phone/:phone", async (c) => {
+    try {
+      const { phone } = c.req.param();
+      const cleanPhone = normalizePhone(phone);
+
+      console.log(`🔍 Phone lookup: ${cleanPhone}`);
+
+      const phoneIndex = await kv.get(`vendor:phone:${cleanPhone}`);
+      
+      if (!phoneIndex) {
+        return c.json({
+          error: 'phone_not_found',
+          message: 'No vendor found with this phone number'
+        }, 404);
+      }
+
+      return sendSuccess(c, {
+        ...phoneIndex,
+        phone: cleanPhone
+      });
+
+    } catch (error) {
+      console.error('❌ Phone lookup error:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  /**
+   * POST /make-server-3dd53475/vendor/solo-login
+   * Solo provider login by phone
+   * Returns session with vendor, center, and staff IDs
+   */
+  app.post("/make-server-3dd53475/vendor/solo-login", async (c) => {
+    try {
+      const { phone } = await c.req.json();
+      
+      if (!phone) {
+        return c.json({
+          error: 'missing_phone',
+          message: 'Phone number is required'
+        }, 400);
+      }
+
+      const cleanPhone = normalizePhone(phone);
+      console.log(`🔐 Solo provider login: ${cleanPhone}`);
+
+      // Lookup phone index
+      const phoneIndex = await kv.get(`vendor:phone:${cleanPhone}`);
+      
+      if (!phoneIndex) {
+        return c.json({
+          error: 'phone_not_found',
+          message: 'No vendor found with this phone number'
+        }, 404);
+      }
+
+      // Get vendor to verify solo provider status
+      const vendor = await kv.get(`vendor:${phoneIndex.vendorId}`);
+      
+      if (!vendor) {
+        return c.json({
+          error: 'vendor_not_found',
+          message: 'Vendor record not found'
+        }, 404);
+      }
+
+      if (!vendor.isSoloProvider) {
+        return c.json({
+          error: 'not_solo_provider',
+          message: 'This phone number is not registered as a solo provider. Please use the standard vendor login.'
+        }, 400);
+      }
+
+      // Create session
+      const session = {
+        vendorId: phoneIndex.vendorId,
+        centerId: phoneIndex.centerId,
+        staffId: phoneIndex.staffId,
+        isSoloProvider: true,
+        ownerName: phoneIndex.ownerName,
+        roleName: phoneIndex.roleName,
+        phone: cleanPhone,
+        defaultMode: 'CENTER', // Start in center mode
+        loginAt: new Date().toISOString()
+      };
+
+      console.log(`✅ Solo provider logged in successfully`);
+      console.log(`   Vendor: ${session.vendorId}`);
+      console.log(`   Center: ${session.centerId}`);
+      console.log(`   Staff: ${session.staffId}`);
+
+      return sendSuccess(c, {
+        session,
+        message: 'Logged in successfully'
+      });
+
+    } catch (error) {
+      console.error('❌ Solo provider login error:', error);
       return sendError(c, error, 500);
     }
   });
@@ -536,6 +650,61 @@ export function soloProviderEndpoints(app: Hono, kv: any) {
 
   // Export helper for use in other endpoints
   (app as any).autoSyncServiceToStaff = autoSyncServiceToStaff;
+
+  // ===============================
+  // GET ENDPOINTS FOR TESTING
+  // ===============================
+
+  // Get center by ID
+  app.get('/make-server-3dd53475/center/:centerId', async (c) => {
+    try {
+      const { centerId } = c.req.param();
+      
+      console.log(`📍 Fetching center: ${centerId}`);
+      
+      const center = await kv.get(`center:${centerId}`);
+      
+      if (!center) {
+        return c.json({ error: 'Center not found' }, 404);
+      }
+      
+      return c.json({ 
+        success: true,
+        center 
+      });
+    } catch (error: any) {
+      console.error('❌ Get center error:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  // Get staff by center and staff ID
+  app.get('/make-server-3dd53475/center/:centerId/staff/:staffId', async (c) => {
+    try {
+      const { centerId, staffId } = c.req.param();
+      
+      console.log(`👤 Fetching staff: ${staffId} from center: ${centerId}`);
+      
+      const staff = await kv.get(`staff:${staffId}`);
+      
+      if (!staff) {
+        return c.json({ error: 'Staff not found' }, 404);
+      }
+      
+      // Verify staff belongs to this center
+      if (staff.centerId !== centerId) {
+        return c.json({ error: 'Staff does not belong to this center' }, 403);
+      }
+      
+      return c.json({ 
+        success: true,
+        staff 
+      });
+    } catch (error: any) {
+      console.error('❌ Get staff error:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
 
   console.log('✅ Solo provider endpoints registered');
 }

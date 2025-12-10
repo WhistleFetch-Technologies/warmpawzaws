@@ -114,6 +114,9 @@ import vetSpecializedServices from "./vet-specialized-services.tsx"; // ✅ NEW:
 // ✅ NEW: Solo Provider System
 import { soloProviderEndpoints } from "./solo-provider-endpoints.tsx";
 
+// ✅ NEW: Role Consolidation Migration
+import roleConsolidationMigration from "./role-consolidation-migration.tsx";
+
 // Staff routes - All export default app
 import staffAuthRoutes from "./staff-auth-endpoints.tsx";
 import staffAvailabilityRoutes from "./staff-availability-routes.tsx";
@@ -677,6 +680,15 @@ if (vetSpecializedServices && typeof vetSpecializedServices === 'object') {
 // ✅ NEW: Solo Provider System
 console.log('✅ Registering Solo Provider Endpoints...');
 soloProviderEndpoints(app, kv);
+
+// ✅ NEW: Role Consolidation Migration
+console.log('✅ Registering Role Consolidation Migration...');
+if (roleConsolidationMigration && typeof roleConsolidationMigration === 'object') {
+  app.route('/make-server-3dd53475', roleConsolidationMigration);
+  console.log('✅ Role Consolidation Migration module registered');
+} else {
+  console.warn('⚠️ Role Consolidation Migration module undefined, skipping');
+}
 
 // ✅ P0 Features
 registerP0Features(app);
