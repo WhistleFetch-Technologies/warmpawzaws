@@ -70,7 +70,35 @@ export function roleConfigEndpoints(app: Hono, kvStore: any) {
    */
   app.get("/make-server-3dd53475/config/roles", async (c) => {
     try {
-      const roles = await kvStore.getByPrefix('role:config:');
+      const rawRoles = await kvStore.getByPrefix('role:config:');
+      
+      console.log(`📋 [GET ROLES] Raw KV response count: ${rawRoles.length}`);
+      
+      // Transform KV data: { key, value } -> parsed role object
+      const roles = rawRoles
+        .map((item: any) => {
+          try {
+            // Parse the JSON value
+            const roleData = typeof item.value === 'string' ? JSON.parse(item.value) : item.value;
+            
+            // Extract role ID from key: "role:config:veterinarian" -> "veterinarian"
+            const roleId = item.key.replace('role:config:', '');
+            
+            // Ensure the role has an ID field
+            return {
+              ...roleData,
+              id: roleData.id || roleId,
+              // Fix missing icons - use emoji instead of "briefcase" text
+              icon: roleData.icon && roleData.icon !== 'briefcase' ? roleData.icon : '🔧'
+            };
+          } catch (e) {
+            console.error('⚠️ [GET ROLES] Failed to parse role:', item.key, e);
+            return null;
+          }
+        })
+        .filter(Boolean); // Remove nulls
+      
+      console.log(`✅ [GET ROLES] Returning ${roles.length} parsed roles`);
       
       // Sort by order
       roles.sort((a: any, b: any) => (a.order || 0) - (b.order || 0));
@@ -98,6 +126,38 @@ export function roleConfigEndpoints(app: Hono, kvStore: any) {
       return c.json({ role });
     } catch (error) {
       console.error('Error fetching role:', error);
+      return c.json({ error: String(error) }, 500);
+    }
+  });
+
+  /**
+   * Delete a role
+   * DELETE /make-server-3dd53475/config/roles/:roleId
+   */
+  app.delete("/make-server-3dd53475/config/roles/:roleId", async (c) => {
+    try {
+      const { roleId } = c.req.param();
+      
+      console.log(`🗑️ [DELETE ROLE] Deleting role: ${roleId}`);
+      
+      // Check if role exists
+      const role = await kvStore.get(`role:config:${roleId}`);
+      if (!role) {
+        return c.json({ error: 'Role not found' }, 404);
+      }
+      
+      // Delete the role from KV store
+      await kvStore.del(`role:config:${roleId}`);
+      
+      console.log(`✅ [DELETE ROLE] Successfully deleted role: ${roleId}`);
+      
+      return c.json({ 
+        success: true, 
+        message: `Role "${role.name}" deleted successfully`,
+        deletedRoleId: roleId
+      });
+    } catch (error) {
+      console.error('Error deleting role:', error);
       return c.json({ error: String(error) }, 500);
     }
   });
@@ -315,41 +375,6 @@ export function roleConfigEndpoints(app: Hono, kvStore: any) {
       return c.json({ success: true, role: updatedRole });
     } catch (error) {
       console.error('Error updating role:', error);
-      return c.json({ error: String(error) }, 500);
-    }
-  });
-
-  /**
-   * Delete role
-   * DELETE /make-server-3dd53475/config/roles/:roleId
-   */
-  app.delete("/make-server-3dd53475/config/roles/:roleId", async (c) => {
-    try {
-      const { roleId } = c.req.param();
-
-      const role = await kvStore.get(`role:config:${roleId}`);
-      
-      if (!role) {
-        return c.json({ error: 'Role not found' }, 404);
-      }
-
-      // Check if any vendors are using this role
-      const allVendors = await kvStore.getByPrefix('vendor:vendor_');
-      const vendorsUsingRole = allVendors.filter((v: any) => v.role === roleId);
-
-      if (vendorsUsingRole.length > 0) {
-        return c.json({ 
-          error: 'Cannot delete role with active vendors',
-          vendorCount: vendorsUsingRole.length
-        }, 400);
-      }
-
-      await kvStore.del(`role:config:${roleId}`);
-
-      console.log(`🗑️ Role deleted: ${roleId}`);
-      return c.json({ success: true });
-    } catch (error) {
-      console.error('Error deleting role:', error);
       return c.json({ error: String(error) }, 500);
     }
   });

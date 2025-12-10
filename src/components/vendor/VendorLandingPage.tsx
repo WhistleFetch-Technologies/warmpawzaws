@@ -22,6 +22,7 @@ import { VendorConsultationScreen } from './VendorConsultationScreen';
 import { VendorBookingManagement } from './VendorBookingManagement';
 import { VendorTeleConsultationFlow } from './VendorTeleConsultationFlow';
 import { FacilityManagement } from './FacilityManagement';
+import { CenterProfileManager } from './CenterProfileManager'; // ✅ NEW: Center Profile with timing
 import { ClinicDashboard } from './clinic/ClinicDashboard';
 import { CafeVendorDashboard } from './cafe/CafeVendorDashboard';
 import { SunsetServicesVendorDashboard } from './sunset/SunsetServicesVendorDashboard';
@@ -97,6 +98,7 @@ export function VendorLandingPage({
   const [showTeleConsultation, setShowTeleConsultation] = useState(false);
   const [showScheduleManagement, setShowScheduleManagement] = useState(false);
   const [showFacilityManagement, setShowFacilityManagement] = useState(false);
+  const [showCenterProfile, setShowCenterProfile] = useState(false); // ✅ NEW: Center Profile Manager
   const [showStaffManagement, setShowStaffManagement] = useState(false);
   const [showBusinessHub, setShowBusinessHub] = useState(false); // ✅ NEW
   
@@ -822,6 +824,17 @@ export function VendorLandingPage({
         );
       }
       
+      // ✅ NEW: Show Center Profile Manager screen if requested
+      if (showCenterProfile) {
+        return (
+          <CenterProfileManager
+            vendorId={vendorId}
+            vendorData={vendorData}
+            onBack={() => setShowCenterProfile(false)}
+          />
+        );
+      }
+      
       // Show staff management screen if requested
       if (showStaffManagement) {
         return (
@@ -874,17 +887,9 @@ export function VendorLandingPage({
       // ⚡️ ROLE-SPECIFIC DASHBOARDS
       // Some roles have specialized dashboards with unique capabilities outside the universal config
       
-      // 1. Veterinary Clinic
-      if (vendorData?.roleId === 'veterinary_clinic') {
-        console.log('🏥 Rendering ClinicDashboard');
-        return (
-          <ClinicDashboard
-            vendorId={vendorId}
-            vendorData={vendorData}
-            onNavigateToSpecializedServices={() => setShowVetSpecialized(true)} // ✅ NEW: Wire up specialized services
-          />
-        );
-      }
+      // 1. Veterinary Clinic - NOW USES VendorDashboard for comprehensive features
+      // VendorDashboard includes: Quick Actions, Center Profile, Vet Services (Pharmacy/Diagnostics/Ambulance)
+      // Removed ClinicDashboard as it was too limited and missing key vet features
 
       // 2. Pet Cafe
       if (vendorData?.roleId === 'pet_cafe') {
@@ -954,10 +959,12 @@ export function VendorLandingPage({
           onNavigateToBookingManagement={() => setShowBookingManagement(true)}
           onNavigateToTeleConsultation={() => setShowTeleConsultation(true)}
           onNavigateToScheduleManagement={() => setShowScheduleManagement(true)}
+          onNavigateToCenterProfile={() => setShowCenterProfile(true)} // ✅ NEW: Navigate to Center Profile
           onNavigateToFacilityManagement={() => setShowFacilityManagement(true)}
           onNavigateToStaffManagement={() => setShowStaffManagement(true)}
           onNavigateToBusinessHub={() => setShowBusinessHub(true)} // ✅ NEW
           onNavigateToLiveTracking={() => setShowBookingManagement(true)} // ✅ Live tracking routes to bookings where active sessions are managed
+          onNavigateToSpecializedServices={() => setShowVetSpecialized(true)} // ✅ NEW: Navigate to Vet Specialized Services
         />
       );
 

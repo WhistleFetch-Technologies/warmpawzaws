@@ -5,23 +5,34 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Badge } from '../ui/badge';
 import { Separator } from '../ui/separator';
-import { Crown, Building2, Wallet, CheckCircle2, AlertCircle, ChevronRight, Edit2 } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
+import { Crown, Building2, Wallet, CheckCircle2, AlertCircle, ChevronRight, Edit2, Landmark, Settings as SettingsIcon } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { TierUpgradeModal } from './TierUpgradeModal';
+import { BankAccountValidation } from './BankAccountValidation';
+import { CenterProfileManager } from './CenterProfileManager';
+import { FacilityManagement } from './FacilityManagement';
+import { useVendorCapabilities } from './hooks/useVendorCapabilities';
 
 interface VendorPaymentSettingsProps {
   vendorId: string;
+  vendorData?: any;
 }
 
-export function VendorPaymentSettings({ vendorId }: VendorPaymentSettingsProps) {
+export function VendorPaymentSettings({ vendorId, vendorData }: VendorPaymentSettingsProps) {
   const [loading, setLoading] = useState(true);
   const [tier, setTier] = useState<any>(null);
   const [bankDetails, setBankDetails] = useState<any>({});
   const [earnings, setEarnings] = useState<any>({});
   const [isUpgradeOpen, setIsUpgradeOpen] = useState(false);
-  const [isEditingBank, setIsEditingBank] = useState(false);
-  const [savingBank, setSavingBank] = useState(false);
+  const [activeTab, setActiveTab] = useState('overview');
+  const [showCenterProfile, setShowCenterProfile] = useState(false);
+  const [showFacilityManagement, setShowFacilityManagement] = useState(false);
+
+  // 🔌 Load capabilities to determine if vendor has facility management
+  const { capabilities } = useVendorCapabilities(vendorData?.roleId);
+  const hasFacilityCapability = capabilities.facility || false;
 
   const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
 
@@ -58,31 +69,33 @@ export function VendorPaymentSettings({ vendorId }: VendorPaymentSettingsProps) 
     }
   };
 
-  const handleSaveBankDetails = async () => {
-    setSavingBank(true);
-    try {
-      const response = await fetch(`${API_BASE}/vendor/${vendorId}/bank-details`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
-        },
-        body: JSON.stringify(bankDetails)
-      });
-
-      if (response.ok) {
-        toast.success('Bank details updated successfully');
-        setIsEditingBank(false);
-      } else {
-        const error = await response.json();
-        toast.error(error.error || 'Failed to update bank details');
-      }
-    } catch (error) {
-      toast.error('Error saving bank details');
-    } finally {
-      setSavingBank(false);
-    }
+  const handleBankSaved = (data: any) => {
+    setBankDetails(data);
+    toast.success('Bank details verified and saved successfully!');
+    loadData(); // Reload to get updated data
   };
+
+  // ✅ If showing center profile manager
+  if (showCenterProfile && vendorData) {
+    return (
+      <CenterProfileManager
+        vendorId={vendorId}
+        vendorData={vendorData}
+        onBack={() => setShowCenterProfile(false)}
+      />
+    );
+  }
+
+  // ✅ If showing facility management
+  if (showFacilityManagement && vendorData) {
+    return (
+      <FacilityManagement
+        vendorId={vendorId}
+        vendorData={vendorData}
+        onBack={() => setShowFacilityManagement(false)}
+      />
+    );
+  }
 
   if (loading) {
     return (
@@ -117,141 +130,193 @@ export function VendorPaymentSettings({ vendorId }: VendorPaymentSettingsProps) 
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Current Tier */}
-        <Card className="border-2 border-[#FF8C42]/20 bg-orange-50/30">
-          <CardHeader className="pb-2">
-            <div className="flex justify-between items-start">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-orange-100 rounded-lg">
-                  <Crown className="w-6 h-6 text-[#FF8C42]" />
-                </div>
-                <div>
-                  <CardTitle className="text-lg">Current Plan</CardTitle>
-                  <p className="text-sm text-gray-600">{tier?.displayName || 'Basic Tier'}</p>
-                </div>
-              </div>
-              <Badge className="bg-[#FF8C42] text-white">Active</Badge>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="grid grid-cols-2 gap-4 py-4 border-t border-b border-gray-200/50">
-              <div>
-                <p className="text-xs text-gray-500 uppercase font-semibold">Commission</p>
-                <p className="text-xl font-bold text-gray-900">{tier?.commissionRate || 15}%</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500 uppercase font-semibold">Payout Speed</p>
-                <p className="text-xl font-bold text-gray-900">T+{tier?.payoutPeriodDays || 3} Days</p>
-              </div>
-            </div>
-            
-            <div className="space-y-2">
-              <p className="text-sm font-medium text-gray-900">Plan Features:</p>
-              <ul className="space-y-2">
-                {(tier?.features || ['Basic Support', 'Standard Listing']).map((feat: string, i: number) => (
-                  <li key={i} className="flex items-center gap-2 text-sm text-gray-600">
-                    <CheckCircle2 className="w-4 h-4 text-green-500" />
-                    {feat}
-                  </li>
-                ))}
-              </ul>
-            </div>
+      {/* Tabs for Payment Settings and Bank Verification */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="overview">
+            <Crown className="w-4 h-4 mr-2" />
+            Tier & Earnings
+          </TabsTrigger>
+          <TabsTrigger value="bank">
+            <Landmark className="w-4 h-4 mr-2" />
+            Bank Verification
+          </TabsTrigger>
+        </TabsList>
 
-            <Button onClick={() => setIsUpgradeOpen(true)} className="w-full bg-[#FF8C42] hover:bg-[#FF7A2E]">
-              Upgrade Plan <ChevronRight className="w-4 h-4 ml-1" />
-            </Button>
-          </CardContent>
-        </Card>
-
-        {/* Bank Details */}
-        <Card>
-          <CardHeader>
-            <div className="flex justify-between items-center">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-blue-100 rounded-lg">
-                  <Building2 className="w-6 h-6 text-blue-600" />
+        <TabsContent value="overview" className="space-y-6 mt-6">
+          {/* ✅ NEW: Facility Management Section (Only for vendors with facility capability) */}
+          {hasFacilityCapability && (
+            <Card className="border-2 border-blue-200 bg-blue-50/30">
+              <CardHeader>
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-blue-100 rounded-lg">
+                    <Building2 className="w-6 h-6 text-blue-600" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-lg">Center Profile & Facility</CardTitle>
+                    <p className="text-sm text-gray-600">Manage your center details, timing, and specializations</p>
+                  </div>
                 </div>
-                <div>
-                  <CardTitle className="text-lg">Bank Details</CardTitle>
-                  <p className="text-sm text-gray-600">For payouts and settlements</p>
-                </div>
-              </div>
-              {!isEditingBank && (
-                <Button variant="ghost" size="sm" onClick={() => setIsEditingBank(true)}>
-                  <Edit2 className="w-4 h-4 mr-2" /> Edit
-                </Button>
-              )}
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 gap-4">
-              <div className="space-y-2">
-                <Label>Account Holder Name</Label>
-                <Input 
-                  value={bankDetails.accountHolderName || ''} 
-                  onChange={e => setBankDetails({...bankDetails, accountHolderName: e.target.value})}
-                  readOnly={!isEditingBank}
-                  className={!isEditingBank ? 'bg-gray-50' : ''}
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <Label>Account Number</Label>
-                <Input 
-                  value={bankDetails.accountNumber || ''} 
-                  onChange={e => setBankDetails({...bankDetails, accountNumber: e.target.value})}
-                  readOnly={!isEditingBank}
-                  type={isEditingBank ? 'text' : 'password'}
-                  className={!isEditingBank ? 'bg-gray-50' : ''}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>IFSC Code</Label>
-                  <Input 
-                    value={bankDetails.ifsc || ''} 
-                    onChange={e => setBankDetails({...bankDetails, ifsc: e.target.value.toUpperCase()})}
-                    readOnly={!isEditingBank}
-                    className={!isEditingBank ? 'bg-gray-50' : ''}
-                    maxLength={11}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Account Type</Label>
-                  <Input 
-                    value={bankDetails.accountType || 'Current'} 
-                    onChange={e => setBankDetails({...bankDetails, accountType: e.target.value})}
-                    readOnly={!isEditingBank}
-                    className={!isEditingBank ? 'bg-gray-50' : ''}
-                  />
-                </div>
-              </div>
-
-              {isEditingBank && (
-                <div className="flex gap-2 pt-2">
-                  <Button variant="outline" className="flex-1" onClick={() => setIsEditingBank(false)}>Cancel</Button>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-sm text-gray-600">
+                  Configure your center profile with operating hours, specializations, amenities, and photos to attract more customers.
+                </p>
+                <div className="grid grid-cols-2 gap-3">
                   <Button 
-                    className="flex-1 bg-[#FF8C42] hover:bg-[#FF7A2E]" 
-                    onClick={handleSaveBankDetails}
-                    disabled={savingBank}
+                    onClick={() => setShowCenterProfile(true)}
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white"
                   >
-                    {savingBank ? 'Saving...' : 'Save Details'}
+                    <SettingsIcon className="w-4 h-4 mr-2" />
+                    Center Profile
+                  </Button>
+                  <Button 
+                    onClick={() => setShowFacilityManagement(true)}
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                  >
+                    <Building2 className="w-4 h-4 mr-2" />
+                    Facility Details
                   </Button>
                 </div>
-              )}
-
-              {!isEditingBank && bankDetails.accountNumber && (
-                <div className="flex items-center gap-2 mt-2 p-2 bg-green-50 text-green-700 text-xs rounded-md border border-green-200">
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>Bank details verified</span>
+                <div className="bg-blue-100 border border-blue-200 rounded-lg p-3 mt-3">
+                  <p className="text-xs text-blue-800">
+                    💡 <strong>Tip:</strong> Complete your center profile before adding services. This helps customers find and trust your business.
+                  </p>
                 </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+              </CardContent>
+            </Card>
+          )}
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Current Tier */}
+            <Card className="border-2 border-[#FF8C42]/20 bg-orange-50/30">
+              <CardHeader className="pb-2">
+                <div className="flex justify-between items-start">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-orange-100 rounded-lg">
+                      <Crown className="w-6 h-6 text-[#FF8C42]" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-lg">Current Plan</CardTitle>
+                      <p className="text-sm text-gray-600">{tier?.displayName || 'Basic Tier'}</p>
+                    </div>
+                  </div>
+                  <Badge className="bg-[#FF8C42] text-white">Active</Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="grid grid-cols-2 gap-4 py-4 border-t border-b border-gray-200/50">
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase font-semibold">Commission</p>
+                    <p className="text-xl font-bold text-gray-900">{tier?.commissionRate || 15}%</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase font-semibold">Payout Speed</p>
+                    <p className="text-xl font-bold text-gray-900">T+{tier?.payoutPeriodDays || 3} Days</p>
+                  </div>
+                </div>
+                
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-gray-900">Plan Features:</p>
+                  <ul className="space-y-2">
+                    {(tier?.features || ['Basic Support', 'Standard Listing']).map((feat: string, i: number) => (
+                      <li key={i} className="flex items-center gap-2 text-sm text-gray-600">
+                        <CheckCircle2 className="w-4 h-4 text-green-500" />
+                        {feat}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <Button onClick={() => setIsUpgradeOpen(true)} className="w-full bg-[#FF8C42] hover:bg-[#FF7A2E]">
+                  Upgrade Plan <ChevronRight className="w-4 h-4 ml-1" />
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Quick Bank Status Card */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-blue-100 rounded-lg">
+                    <Building2 className="w-6 h-6 text-blue-600" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-lg">Bank Account Status</CardTitle>
+                    <p className="text-sm text-gray-600">Payout account verification</p>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {bankDetails.accountNumber ? (
+                  <>
+                    <div className="flex items-center gap-2 p-3 bg-green-50 text-green-700 rounded-md border border-green-200">
+                      <CheckCircle2 className="w-5 h-5" />
+                      <span className="font-medium">Bank details verified</span>
+                    </div>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between py-2 border-b">
+                        <span className="text-gray-600">Account Holder</span>
+                        <span className="font-medium">{bankDetails.accountHolderName}</span>
+                      </div>
+                      <div className="flex justify-between py-2 border-b">
+                        <span className="text-gray-600">Bank Name</span>
+                        <span className="font-medium">{bankDetails.bankName || '-'}</span>
+                      </div>
+                      <div className="flex justify-between py-2 border-b">
+                        <span className="text-gray-600">IFSC Code</span>
+                        <span className="font-medium">{bankDetails.ifsc}</span>
+                      </div>
+                      <div className="flex justify-between py-2">
+                        <span className="text-gray-600">Account Number</span>
+                        <span className="font-medium">****{bankDetails.accountNumber?.slice(-4)}</span>
+                      </div>
+                    </div>
+                    <Button 
+                      variant="outline" 
+                      className="w-full" 
+                      onClick={() => setActiveTab('bank')}
+                    >
+                      Update Bank Details
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-2 p-3 bg-amber-50 text-amber-700 rounded-md border border-amber-200">
+                      <AlertCircle className="w-5 h-5" />
+                      <span className="font-medium">Bank details not verified</span>
+                    </div>
+                    <p className="text-sm text-gray-600">
+                      Complete bank verification to receive payouts directly to your account.
+                    </p>
+                    <Button 
+                      className="w-full bg-[#FF8C42] hover:bg-[#FF7A2E]" 
+                      onClick={() => setActiveTab('bank')}
+                    >
+                      <Landmark className="w-4 h-4 mr-2" />
+                      Complete Bank Verification
+                    </Button>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="bank" className="mt-6">
+          <BankAccountValidation 
+            vendorId={vendorId}
+            initialData={{
+              accountHolderName: bankDetails.accountHolderName,
+              accountNumber: bankDetails.accountNumber,
+              ifscCode: bankDetails.ifsc,
+              bankName: bankDetails.bankName,
+              branchName: bankDetails.branchName
+            }}
+            onSave={handleBankSaved}
+          />
+        </TabsContent>
+      </Tabs>
 
       <TierUpgradeModal 
         isOpen={isUpgradeOpen} 

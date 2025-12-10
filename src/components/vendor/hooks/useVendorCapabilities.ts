@@ -99,6 +99,7 @@ export function useVendorCapabilities(roleId?: string) {
 
   useEffect(() => {
     if (!roleId) {
+      console.log('⚠️ [CAPABILITIES] No roleId provided');
       setLoading(false);
       return;
     }
@@ -120,8 +121,20 @@ export function useVendorCapabilities(roleId?: string) {
         if (response.ok) {
           const data = await response.json();
           console.log('🔌 [CAPABILITIES] API Response:', data);
+          console.log('🔌 [CAPABILITIES] Total roles fetched:', data.roles?.length || 0);
           
           const roles = data.roles || [];
+          
+          // Log all available role IDs for debugging
+          console.log('🔌 [CAPABILITIES] Available role IDs:', roles.map((r: any) => r.id).join(', '));
+          
+          // If no roles exist, provide a helpful message
+          if (roles.length === 0) {
+            console.warn('⚠️ [CAPABILITIES] No roles found in database!');
+            console.warn('💡 [CAPABILITIES] Go to Admin Dashboard → Role Management → "Seed Initial Roles" to initialize the system');
+            toast.error('No roles configured. Please contact admin to initialize role system.');
+          }
+          
           const currentRole = roles.find((r: any) => 
             r.id === roleId || 
             (r.name && roleId && r.name.toLowerCase() === roleId.toLowerCase())

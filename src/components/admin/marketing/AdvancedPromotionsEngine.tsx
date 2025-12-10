@@ -266,9 +266,22 @@ export function AdvancedPromotionsEngine({ onBack }: AdvancedPromotionsEnginePro
     if (!confirm('Are you sure you want to delete this promotion?')) return;
 
     try {
-      // DELETE /make-server-3dd53475/admin/promotions/{id}
-      toast.success('Promotion deleted');
-      loadPromotions();
+      // ✅ FIXED: Actually call the backend endpoint
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/marketing/admin/promotions/${promotionId}`,
+        {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        }
+      );
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to delete promotion');
+      }
+
+      toast.success('Promotion deleted successfully');
+      loadPromotions(); // Reload the list
     } catch (error) {
       console.error('Error deleting promotion:', error);
       toast.error('Failed to delete promotion');

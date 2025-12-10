@@ -87,11 +87,31 @@ export function bookingEndpoints(app: Hono, kv: any) {
       // Generate booking ID
       const bookingId = `booking_${Date.now()}_${Math.random().toString(36).substring(7)}`;
 
+      // ✅ INTEGRATION: Auto-assign staff for solo providers
+      let assignedStaffId = null;
+      let autoAssigned = false;
+      
+      // Get vendor to check if solo provider
+      const vendor = await kv.get(`vendor:${vendorId}`);
+      
+      if (vendor?.isSoloProvider) {
+        console.log(`   🔄 Solo provider detected - auto-assigning staff...`);
+        const staffRecords = await kv.get(`vendor:${vendorId}:staff`);
+        if (staffRecords && staffRecords.length > 0) {
+          assignedStaffId = staffRecords[0];
+          autoAssigned = true;
+          console.log(`   ✅ Auto-assigned to solo provider staff: ${assignedStaffId}`);
+        }
+      }
+      // TODO: Add multi-staff assignment logic here for non-solo providers
+
       // Create booking object
       const booking = {
         id: bookingId,
         customerId,
         vendorId,
+        staffId: assignedStaffId, // ✅ INTEGRATION: Staff assignment
+        autoAssigned, // ✅ INTEGRATION: Track if auto-assigned
         petId: petId || null,
         serviceId,
         serviceName,

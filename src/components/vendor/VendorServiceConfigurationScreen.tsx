@@ -65,6 +65,7 @@ export function VendorServiceConfigurationScreen({
   const [expandedServices, setExpandedServices] = useState<Set<string>>(new Set());
   const [showAddCustomDialog, setShowAddCustomDialog] = useState(false);
   const [searchQuery, setSearchQuery] = useState(''); // ✅ NEW: Search state
+  const [showBulkActions, setShowBulkActions] = useState(false); // ✅ NEW: Bulk actions state
   
   // Custom service form
   const [customServiceForm, setCustomServiceForm] = useState({
@@ -176,6 +177,35 @@ export function VendorServiceConfigurationScreen({
       newExpanded.add(serviceId);
     }
     setExpandedServices(newExpanded);
+  };
+
+  // ✅ NEW: Bulk selection functions
+  const enableAllServices = () => {
+    setServices(services.map(s => ({ ...s, isEnabled: true })));
+    setHasChanges(true);
+    toast.success('All services enabled');
+  };
+
+  const disableAllServices = () => {
+    setServices(services.map(s => ({ ...s, isEnabled: false })));
+    setHasChanges(true);
+    toast.success('All services disabled');
+  };
+
+  const enableCategory = (category: string) => {
+    setServices(services.map(s => 
+      s.categoryName === category ? { ...s, isEnabled: true } : s
+    ));
+    setHasChanges(true);
+    toast.success(`All ${category} services enabled`);
+  };
+
+  const disableCategory = (category: string) => {
+    setServices(services.map(s => 
+      s.categoryName === category ? { ...s, isEnabled: false } : s
+    ));
+    setHasChanges(true);
+    toast.success(`All ${category} services disabled`);
   };
 
   const saveConfiguration = async () => {
@@ -648,6 +678,41 @@ export function VendorServiceConfigurationScreen({
               <div className="text-xs text-yellow-700">Pending</div>
             </div>
           </div>
+
+          {/* ✅ NEW: Bulk Selection Actions */}
+          {services.length > 0 && (
+            <div className="mt-3">
+              <button
+                onClick={() => setShowBulkActions(!showBulkActions)}
+                className="w-full text-xs font-medium text-[#FF8C42] py-2 bg-orange-50 rounded-lg hover:bg-orange-100 transition-colors"
+              >
+                {showBulkActions ? 'Hide Bulk Actions' : 'Show Bulk Actions'}
+              </button>
+              
+              {showBulkActions && (
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={enableAllServices}
+                    className="text-xs"
+                  >
+                    <Check className="w-3 h-3 mr-1" />
+                    Enable All
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={disableAllServices}
+                    className="text-xs"
+                  >
+                    <X className="w-3 h-3 mr-1" />
+                    Disable All
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Add Custom Service Button - Available for ALL at_center vendors */}
           {serviceStyle === 'at_center' && (

@@ -73,6 +73,7 @@ import { registerShiprocketIntegration } from "./shiprocket-integration.tsx";
 import { registerDelhiveryIntegration } from "./delhivery-integration.tsx";
 import { registerLogisticsRoutingEndpoints } from "./logistics-routing-engine.tsx";
 import { registerReturnsManagementEndpoints } from "./returns-management.tsx";
+import missingCrudEndpoints from "./missing-crud-endpoints.tsx"; // ✅ NEW: Missing CRUD endpoints
 
 // Enterprise & Analytics
 import { analyticsAggregationEndpoints } from "./analytics-aggregation.tsx";
@@ -108,6 +109,10 @@ import tierUpgradeAutomation from "./tier-upgrade-automation.tsx";
 import systemHealthCheck from "./system-health-check.tsx";
 import adminCleanupDuplicates from "./admin-cleanup-duplicates.tsx";
 import vendorBankValidation from "./vendor-bank-validation.tsx";
+import vetSpecializedServices from "./vet-specialized-services.tsx"; // ✅ NEW: Vet specialized services
+
+// ✅ NEW: Solo Provider System
+import { soloProviderEndpoints } from "./solo-provider-endpoints.tsx";
 
 // Staff routes - All export default app
 import staffAuthRoutes from "./staff-auth-endpoints.tsx";
@@ -661,6 +666,18 @@ if (vendorBankValidation && typeof vendorBankValidation === 'object') {
   console.warn('⚠️ Vendor Bank Validation module undefined, skipping');
 }
 
+// ✅ VET SPECIALIZED SERVICES
+if (vetSpecializedServices && typeof vetSpecializedServices === 'object') {
+  app.route('/make-server-3dd53475', vetSpecializedServices);
+  console.log('✅ Vet Specialized Services module registered');
+} else {
+  console.warn('⚠️ Vet Specialized Services module undefined, skipping');
+}
+
+// ✅ NEW: Solo Provider System
+console.log('✅ Registering Solo Provider Endpoints...');
+soloProviderEndpoints(app, kv);
+
 // ✅ P0 Features
 registerP0Features(app);
 
@@ -715,6 +732,14 @@ if (universalStaffProblemSearch && typeof universalStaffProblemSearch === 'objec
   console.warn('⚠️ Universal Staff Problem Search module undefined, skipping');
 }
 
+// ✅ NEW: Register missing CRUD endpoints
+if (missingCrudEndpoints && typeof missingCrudEndpoints === 'object') {
+  console.log('✅ Registering missing CRUD endpoints...');
+  app.route('/make-server-3dd53475', missingCrudEndpoints);
+} else {
+  console.warn('⚠️ Missing CRUD Endpoints module undefined, skipping');
+}
+
 // ------------------------------------------------------------------
 // GLOBAL ERROR HANDLERS
 // ------------------------------------------------------------------
@@ -741,8 +766,10 @@ console.log("🚀 Server starting...");
 console.log("✅ Server is ready to accept requests immediately");
 console.log("💡 India region will be auto-created by frontend when needed");
 
-// ✅ GAP #5 FIX: Initialize Role Service
-import { initializeRoleService } from "./role-service.tsx";
-initializeRoleService().catch(err => console.error('❌ Role service initialization failed:', err));
+// ✅ DISABLED: Role Service initialization to prevent KV store timeout on cold starts
+// The system has 84+ custom roles which causes getByPrefix to timeout
+// Roles are now cached in-memory and loaded on-demand by role-service.tsx
+// import { initializeRoleService } from "./role-service.tsx";
+// initializeRoleService().catch(err => console.error('❌ Role service initialization failed:', err));
 
 Deno.serve(app.fetch);

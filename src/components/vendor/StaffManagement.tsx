@@ -121,7 +121,7 @@ export function StaffManagement({ vendorId, vendorData, onBack, onNavigateToServ
           ['at_home', 'at_center', 'tele'].forEach(style => {
             if (data.services[style] && data.services[style].services) {
               const styleServices = data.services[style].services
-                .filter((s: any) => s.isEnabled && s.publishStatus === 'published')
+                .filter((s: any) => s.isEnabled) // ✅ FIX: Don't require publishStatus for staff assignment
                 .map((s: any) => ({
                   serviceId: s.serviceId,
                   name: s.serviceName,
