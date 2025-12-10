@@ -101,6 +101,10 @@ import serviceComparisonSystem from "./service-comparison-system.tsx";
 import { registerPlatformSubscriptionTiers } from "./platform-subscription-tiers.tsx";
 import { registerMatingDatingService } from "./mating-dating-service.tsx";
 import vendorBookings from "./vendor-bookings.tsx";
+import automatedPayoutProcessing from "./automated-payout-processing.tsx";
+import enhancedRefundSystem from "./enhanced-refund-system.tsx";
+import tierUpgradeAutomation from "./tier-upgrade-automation.tsx";
+import systemHealthCheck from "./system-health-check.tsx";
 
 // Staff routes - All export default app
 import staffAuthRoutes from "./staff-auth-endpoints.tsx";
@@ -603,6 +607,38 @@ if (vendorBookings && typeof vendorBookings === 'object') {
   app.route('/make-server-3dd53475', vendorBookings);
 } else {
   console.warn('⚠️ Vendor Bookings module undefined, skipping');
+}
+
+// ✅ P0 CRITICAL: Automated Payout Processing
+if (automatedPayoutProcessing && typeof automatedPayoutProcessing === 'object') {
+  app.route('/make-server-3dd53475', automatedPayoutProcessing);
+  console.log('✅ Automated Payout Processing module registered');
+} else {
+  console.warn('⚠️ Automated Payout Processing module undefined, skipping');
+}
+
+// ✅ P0 CRITICAL: Enhanced Refund System with Policy Enforcement
+if (enhancedRefundSystem && typeof enhancedRefundSystem === 'object') {
+  app.route('/make-server-3dd53475', enhancedRefundSystem);
+  console.log('✅ Enhanced Refund System module registered');
+} else {
+  console.warn('⚠️ Enhanced Refund System module undefined, skipping');
+}
+
+// ✅ P0 CRITICAL: Tier Upgrade Automation
+if (tierUpgradeAutomation && typeof tierUpgradeAutomation === 'object') {
+  app.route('/make-server-3dd53475', tierUpgradeAutomation);
+  console.log('✅ Tier Upgrade Automation module registered');
+} else {
+  console.warn('⚠️ Tier Upgrade Automation module undefined, skipping');
+}
+
+// ✅ SYSTEM HEALTH CHECK
+if (systemHealthCheck && typeof systemHealthCheck === 'object') {
+  app.route('/make-server-3dd53475', systemHealthCheck);
+  console.log('✅ System Health Check module registered');
+} else {
+  console.warn('⚠️ System Health Check module undefined, skipping');
 }
 
 // ✅ P0 Features

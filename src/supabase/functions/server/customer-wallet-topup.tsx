@@ -236,4 +236,109 @@ app.get('/customer/:customerId/wallet/topup-offers', async (c) => {
   }
 });
 
+/**
+ * GET /customer/:customerId/wallet
+ * Get wallet balance and information
+ * 
+ * P0 CRITICAL - Required for wallet display
+ */
+app.get('/customer/:customerId/wallet', async (c) => {
+  try {
+    const customerId = c.req.param('customerId');
+    
+    // Get wallet data
+    const wallet = await kv.get(`wallet:${customerId}`) || {
+      balance: 0,
+      totalEarned: 0,
+      totalSpent: 0
+    };
+    
+    // Get recent transactions (last 5)
+    const transactionIds = await kv.get(`wallet:${customerId}:transactions`) || [];
+    const recentTransactions = [];
+    
+    for (let i = 0; i < Math.min(5, transactionIds.length); i++) {
+      const txn = await kv.get(`wallet:transaction:${transactionIds[i]}`);
+      if (txn) {
+        recentTransactions.push({
+          id: txn.id,
+          type: txn.type,
+          amount: txn.amount,
+          status: txn.status,
+          createdAt: txn.createdAt
+        });
+      }
+    }
+    
+    console.log(`💰 [GET-WALLET] Customer ${customerId}: Balance ₹${wallet.balance}`);
+    
+    return c.json({
+      success: true,
+      wallet: {
+        balance: wallet.balance,
+        totalEarned: wallet.totalEarned || 0,
+        totalSpent: wallet.totalSpent || 0,
+        lastTopupAt: wallet.lastTopupAt,
+        lastTopupAmount: wallet.lastTopupAmount || 0
+      },
+      recentTransactions,
+      transactionCount: transactionIds.length
+    });
+    
+  } catch (error) {
+    console.error('❌ Error fetching wallet:', error);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
+/**
+ * GET /customer/:customerId/wallet/transactions
+ * Get complete wallet transaction history
+ * 
+ * P0 CRITICAL - Required for transaction history display
+ */
+app.get('/customer/:customerId/wallet/transactions', async (c) => {
+  try {
+    const customerId = c.req.param('customerId');
+    const limit = parseInt(c.req.query('limit') || '50');
+    const offset = parseInt(c.req.query('offset') || '0');
+    const type = c.req.query('type'); // Optional filter: topup, payment, refund
+    
+    // Get transaction IDs
+    const transactionIds = await kv.get(`wallet:${customerId}:transactions`) || [];
+    
+    // Get full transaction details
+    const transactions = [];
+    const startIdx = offset;
+    const endIdx = Math.min(offset + limit, transactionIds.length);
+    
+    for (let i = startIdx; i < endIdx; i++) {
+      const txn = await kv.get(`wallet:transaction:${transactionIds[i]}`);
+      if (txn) {
+        // Apply type filter if specified
+        if (!type || txn.type === type) {
+          transactions.push(txn);
+        }
+      }
+    }
+    
+    console.log(`💳 [WALLET-TRANSACTIONS] Customer ${customerId}: ${transactions.length} transactions`);
+    
+    return c.json({
+      success: true,
+      transactions,
+      pagination: {
+        total: transactionIds.length,
+        limit,
+        offset,
+        hasMore: endIdx < transactionIds.length
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Error fetching wallet transactions:', error);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
 export default app;
