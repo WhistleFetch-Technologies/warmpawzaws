@@ -69,6 +69,9 @@ import { registerSettlementAutomation } from "./settlement-automation.tsx";
 import { registerS3AutoUploader } from "./s3-auto-uploader.tsx";
 import { registerSmsEventNotifications } from "./sms-event-notifications.tsx";
 import { registerShiprocketIntegration } from "./shiprocket-integration.tsx";
+import { registerDelhiveryIntegration } from "./delhivery-integration.tsx";
+import { registerLogisticsRoutingEndpoints } from "./logistics-routing-engine.tsx";
+import { registerReturnsManagementEndpoints } from "./returns-management.tsx";
 
 // Enterprise & Analytics
 import { analyticsAggregationEndpoints } from "./analytics-aggregation.tsx";
@@ -472,6 +475,9 @@ const smsNotifications = registerSmsEventNotifications(app);
 
 // ✅ Payment & Logistics Integrations
 registerShiprocketIntegration(app);
+registerDelhiveryIntegration(app);
+registerLogisticsRoutingEndpoints(app);
+registerReturnsManagementEndpoints(app);
 
 // ✅ Enterprise Admin Capabilities
 analyticsAggregationEndpoints(app);

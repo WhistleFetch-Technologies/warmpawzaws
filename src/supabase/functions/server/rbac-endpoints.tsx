@@ -153,33 +153,30 @@ export function rbacEndpoints(app: Hono) {
   });
 
   /**
-   * POST /admin/rbac/permissions
-   * Add a new permission
+   * GET /admin/rbac/users
+   * Get all admin users
    */
-  app.post("/make-server-3dd53475/admin/rbac/permissions", async (c) => {
+  app.get("/make-server-3dd53475/admin/rbac/users", async (c) => {
     try {
-      const { key, name, description, category } = await c.req.json();
+      const adminUsers = await kv.getByPrefix('admin:');
       
-      if (!key || !name) {
-        return c.json({ error: 'Permission key and name are required' }, 400);
-      }
+      // Format users for display
+      const formattedUsers = adminUsers
+        .filter((u: any) => u.email) // Only return valid user objects
+        .map((u: any) => ({
+          id: u.id || u.userId,
+          name: u.name || u.email?.split('@')[0],
+          email: u.email,
+          role: u.role || 'admin',
+          roles: u.roles || [],
+          status: u.status || 'active',
+          lastLogin: u.lastLogin || u.createdAt,
+          createdAt: u.createdAt
+        }));
       
-      const permissions = await kv.get('rbac:permissions:list') || getDefaultPermissions();
-      
-      const newPermission = {
-        key,
-        name,
-        description: description || '',
-        category: category || 'custom'
-      };
-      
-      permissions.push(newPermission);
-      await kv.set('rbac:permissions:list', permissions);
-      
-      console.log(`✅ Permission created: ${key}`);
-      return c.json({ success: true, permission: newPermission });
+      return c.json({ success: true, users: formattedUsers });
     } catch (error) {
-      console.error('Create Permission Error:', error);
+      console.error('Get Admin Users Error:', error);
       return c.json({ error: String(error) }, 500);
     }
   });

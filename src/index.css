@@ -106,6 +106,7 @@
     --color-amber-600: oklch(.666 .179 58.318);
     --color-amber-700: oklch(.555 .163 48.998);
     --color-amber-800: oklch(.473 .137 46.201);
+    --color-amber-900: oklch(.414 .112 45.904);
     --color-yellow-50: oklch(.987 .026 102.212);
     --color-yellow-100: oklch(.973 .071 103.193);
     --color-yellow-200: oklch(.945 .129 101.54);
@@ -702,6 +703,10 @@
     top: calc(var(--spacing) * 4);
   }
 
+  .top-6 {
+    top: calc(var(--spacing) * 6);
+  }
+
   .top-8 {
     top: calc(var(--spacing) * 8);
   }
@@ -1102,6 +1107,10 @@
     margin-top: calc(var(--spacing) * -16);
   }
 
+  .mt-0 {
+    margin-top: calc(var(--spacing) * 0);
+  }
+
   .mt-0\.5 {
     margin-top: calc(var(--spacing) * .5);
   }
@@ -1256,6 +1265,10 @@
 
   .ml-8 {
     margin-left: calc(var(--spacing) * 8);
+  }
+
+  .ml-11 {
+    margin-left: calc(var(--spacing) * 11);
   }
 
   .ml-auto {
@@ -1520,6 +1533,10 @@
 
   .h-\[200px\] {
     height: 200px;
+  }
+
+  .h-\[240px\] {
+    height: 240px;
   }
 
   .h-\[250px\] {
@@ -2715,6 +2732,11 @@
     border-top-right-radius: calc(var(--radius)  - 4px);
   }
 
+  .rounded-b-lg {
+    border-bottom-right-radius: var(--radius);
+    border-bottom-left-radius: var(--radius);
+  }
+
   .rounded-bl-lg {
     border-bottom-left-radius: var(--radius);
   }
@@ -2906,10 +2928,6 @@
 
   .border-green-500 {
     border-color: var(--color-green-500);
-  }
-
-  .border-green-600 {
-    border-color: var(--color-green-600);
   }
 
   .border-indigo-100 {
@@ -4967,6 +4985,10 @@
     padding-right: calc(var(--spacing) * 12);
   }
 
+  .pr-24 {
+    padding-right: calc(var(--spacing) * 24);
+  }
+
   .pb-1 {
     padding-bottom: calc(var(--spacing) * 1);
   }
@@ -5266,6 +5288,10 @@
     color: var(--color-amber-800);
   }
 
+  .text-amber-900 {
+    color: var(--color-amber-900);
+  }
+
   .text-black {
     color: var(--color-black);
   }
@@ -5514,6 +5540,10 @@
 
   .text-purple-900 {
     color: var(--color-purple-900);
+  }
+
+  .text-red-300 {
+    color: var(--color-red-300);
   }
 
   .text-red-400 {
@@ -5894,6 +5924,10 @@
 
   .ring-gray-200 {
     --tw-ring-color: var(--color-gray-200);
+  }
+
+  .ring-green-500 {
+    --tw-ring-color: var(--color-green-500);
   }
 
   .ring-orange-300 {
@@ -6959,6 +6993,18 @@
   }
 
   @media (hover: hover) {
+    .hover\:bg-slate-50:hover {
+      background-color: var(--color-slate-50);
+    }
+  }
+
+  @media (hover: hover) {
+    .hover\:bg-slate-100:hover {
+      background-color: var(--color-slate-100);
+    }
+  }
+
+  @media (hover: hover) {
     .hover\:bg-slate-200:hover {
       background-color: var(--color-slate-200);
     }
@@ -7195,6 +7241,12 @@
   @media (hover: hover) {
     .hover\:text-accent-foreground:hover {
       color: var(--accent-foreground);
+    }
+  }
+
+  @media (hover: hover) {
+    .hover\:text-amber-700:hover {
+      color: var(--color-amber-700);
     }
   }
 
@@ -7521,10 +7573,6 @@
     --tw-ring-color: var(--color-purple-500);
   }
 
-  .focus\:ring-red-500:focus {
-    --tw-ring-color: var(--color-red-500);
-  }
-
   .focus\:ring-ring:focus {
     --tw-ring-color: var(--ring);
   }
@@ -7685,10 +7733,6 @@
 
   .disabled\:bg-gray-300:disabled {
     background-color: var(--color-gray-300);
-  }
-
-  .disabled\:bg-green-300:disabled {
-    background-color: var(--color-green-300);
   }
 
   .disabled\:text-gray-400:disabled {
@@ -8303,6 +8347,18 @@
   }
 
   @media (width >= 48rem) {
+    .md\:col-span-3 {
+      grid-column: span 3 / span 3;
+    }
+  }
+
+  @media (width >= 48rem) {
+    .md\:col-span-4 {
+      grid-column: span 4 / span 4;
+    }
+  }
+
+  @media (width >= 48rem) {
     .md\:block {
       display: block;
     }
@@ -8317,6 +8373,18 @@
   @media (width >= 48rem) {
     .md\:hidden {
       display: none;
+    }
+  }
+
+  @media (width >= 48rem) {
+    .md\:h-auto {
+      height: auto;
+    }
+  }
+
+  @media (width >= 48rem) {
+    .md\:w-1\.5 {
+      width: calc(var(--spacing) * 1.5);
     }
   }
 
@@ -8364,6 +8432,12 @@
   }
 
   @media (width >= 48rem) {
+    .md\:grid-cols-12 {
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+    }
+  }
+
+  @media (width >= 48rem) {
     .md\:flex-row {
       flex-direction: row;
     }
@@ -8391,6 +8465,12 @@
     .md\:text-sm {
       font-size: var(--text-sm);
       line-height: var(--tw-leading, var(--text-sm--line-height));
+    }
+  }
+
+  @media (width >= 48rem) {
+    .md\:opacity-0 {
+      opacity: 0;
     }
   }
 

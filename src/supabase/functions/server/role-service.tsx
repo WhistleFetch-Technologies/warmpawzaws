@@ -653,15 +653,30 @@ export function roleSupportsServiceStyle(
 export async function initializeRoleService(): Promise<void> {
   console.log('🚀 [ROLE SERVICE] Initializing...');
   
-  // Sync to KV store for backward compatibility
-  await roleService.syncToKVStore();
-  
-  // Load any custom roles
-  const customRoles = await roleService.loadCustomRoles();
-  
-  console.log('✅ [ROLE SERVICE] Initialization complete');
-  console.log(`   - Canonical roles: ${VENDOR_ROLES.length}`);
-  console.log(`   - Custom roles: ${customRoles.length}`);
+  try {
+    // Sync to KV store for backward compatibility (non-blocking, fire and forget)
+    roleService.syncToKVStore().catch(err => {
+      console.warn('⚠️ [ROLE SERVICE] KV sync failed (non-critical):', err.message);
+    });
+    
+    // Load any custom roles (with timeout protection)
+    const customRolesPromise = Promise.race([
+      roleService.loadCustomRoles(),
+      new Promise<VendorRole[]>((resolve) => setTimeout(() => {
+        console.warn('⚠️ [ROLE SERVICE] Custom role loading timed out, continuing with defaults');
+        resolve([]);
+      }, 2000))
+    ]);
+    
+    const customRoles = await customRolesPromise;
+    
+    console.log('✅ [ROLE SERVICE] Initialization complete');
+    console.log(`   - Canonical roles: ${VENDOR_ROLES.length}`);
+    console.log(`   - Custom roles: ${customRoles.length}`);
+  } catch (error) {
+    console.error('❌ [ROLE SERVICE] Initialization error (non-critical):', error);
+    console.log('✅ [ROLE SERVICE] Continuing with canonical roles only');
+  }
 }
 
 // =============================================
