@@ -116,6 +116,7 @@ import { soloProviderEndpoints } from "./solo-provider-endpoints.tsx";
 
 // ✅ NEW: Role Consolidation Migration
 import roleConsolidationMigration from "./role-consolidation-migration.tsx";
+import vendorRoleCleanupMigration from "./vendor-role-cleanup-migration.tsx";
 
 // Staff routes - All export default app
 import staffAuthRoutes from "./staff-auth-endpoints.tsx";
@@ -688,6 +689,15 @@ if (roleConsolidationMigration && typeof roleConsolidationMigration === 'object'
   console.log('✅ Role Consolidation Migration module registered');
 } else {
   console.warn('⚠️ Role Consolidation Migration module undefined, skipping');
+}
+
+// ✅ NEW: Vendor Role Cleanup Migration
+console.log('✅ Registering Vendor Role Cleanup Migration...');
+if (vendorRoleCleanupMigration && typeof vendorRoleCleanupMigration === 'object') {
+  app.route('/make-server-3dd53475', vendorRoleCleanupMigration);
+  console.log('✅ Vendor Role Cleanup Migration module registered');
+} else {
+  console.warn('⚠️ Vendor Role Cleanup Migration module undefined, skipping');
 }
 
 // ✅ P0 Features

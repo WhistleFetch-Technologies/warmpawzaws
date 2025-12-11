@@ -27,6 +27,9 @@ import { ApplicationDetailModal } from './ApplicationDetailModal';
 import { VendorSettingsTabNew } from './VendorSettingsTabNew';
 import { ClarificationRequestedTab } from './ClarificationRequestedTab';
 import { UnifiedAdminSidebar } from './layout/UnifiedAdminSidebar';
+import { toast } from 'sonner@2.0.3';
+import { RejectVendorModal } from './RejectVendorModal';
+import { RequestInfoModal } from './RequestInfoModal';
 
 interface VendorStats {
   activeVendors: { count: number; percentage: number };
@@ -95,6 +98,13 @@ export function AdminVendorManagementNew({ onNavigate }: AdminVendorManagementNe
   const [showApplicationDetail, setShowApplicationDetail] = useState(false);
   const [selectedApplication, setSelectedApplication] = useState<VendorApplication | null>(null);
   const [successMessage, setSuccessMessage] = useState('Renewal Sent!');
+  
+  // New modal states for UX improvement
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [showRequestInfoModal, setShowRequestInfoModal] = useState(false);
+  const [rejectingApplication, setRejectingApplication] = useState<VendorApplication | null>(null);
+  const [requestingInfoApplication, setRequestingInfoApplication] = useState<VendorApplication | null>(null);
+  const [loadingAction, setLoadingAction] = useState<{ type: 'approve' | 'reject' | 'info' | null; id: string | null }>({ type: null, id: null });
   
   // Platform settings state
   const [refundSettings, setRefundSettings] = useState({
@@ -410,6 +420,8 @@ export function AdminVendorManagementNew({ onNavigate }: AdminVendorManagementNe
   };
 
   const handleApprove = async (applicationId: string) => {
+    setLoadingAction({ type: 'approve', id: applicationId });
+    
     try {
       console.log('========================================');
       console.log('🔄 APPROVAL INITIATED');
@@ -422,7 +434,8 @@ export function AdminVendorManagementNew({ onNavigate }: AdminVendorManagementNe
         console.error('❌ VENDOR NOT FOUND IN LOCAL STATE');
         console.error('   Application ID:', applicationId);
         console.error('   Available applications:', applications.map(a => ({ id: a.id, vendorId: a.vendorId, name: a.fullName })));
-        alert('ERROR: Vendor not found in local state!');
+        toast.error('Vendor not found in local state!');
+        setLoadingAction({ type: null, id: null });
         return;
       }
       
@@ -468,34 +481,29 @@ export function AdminVendorManagementNew({ onNavigate }: AdminVendorManagementNe
         console.error('   Status:', response.status);
         console.error('   Error:', error);
         console.error('========================================');
-        alert('Failed to approve application: ' + error);
+        toast.error('Failed to approve application', { description: error });
       }
     } catch (error) {
       console.error('❌ APPROVAL EXCEPTION:', error);
       console.error('========================================');
-      alert('Error approving vendor: ' + error);
+      toast.error('Error approving vendor', { description: String(error) });
+    } finally {
+      setLoadingAction({ type: null, id: null });
     }
   };
 
-  const handleReject = async (applicationId: string) => {
+  const handleReject = async (reason: string, notes?: string) => {
+    if (!rejectingApplication) return;
+    
+    setLoadingAction({ type: 'reject', id: rejectingApplication.id });
+    
     try {
-      console.log('🔄 Rejecting application:', applicationId);
-      
-      // Find the vendor by application ID
-      const vendor = applications.find(app => app.id === applicationId);
-      if (!vendor) {
-        console.error('❌ Vendor not found');
-        return;
-      }
-      
+      console.log('🔄 Rejecting application:', rejectingApplication.id);
       console.log('📋 Found vendor for rejection:', { 
-        vendorId: vendor.vendorId, 
-        applicationId: vendor.applicationId,
-        fullName: vendor.fullName 
+        vendorId: rejectingApplication.vendorId, 
+        applicationId: rejectingApplication.applicationId,
+        fullName: rejectingApplication.fullName 
       });
-      
-      const reason = prompt('Enter rejection reason:');
-      if (!reason) return;
       
       const response = await fetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendor/reject`,
@@ -506,52 +514,45 @@ export function AdminVendorManagementNew({ onNavigate }: AdminVendorManagementNe
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            vendorId: vendor.vendorId, // Use vendorId, NOT id
+            vendorId: rejectingApplication.vendorId,
             rejectedBy: 'Admin',
-            reason: reason
+            reason: reason,
+            rejectionNotes: notes
           })
         }
       );
       
       if (response.ok) {
         console.log('✅ Application rejected successfully');
-        setSuccessMessage('Application Rejected');
-        setShowSuccessModal(true);
+        toast.success('Application rejected successfully');
+        setShowRejectModal(false);
+        setRejectingApplication(null);
         loadData(); // Reload data
       } else {
         const error = await response.text();
         console.error('❌ Failed to reject:', error);
-        alert('Failed to reject application: ' + error);
+        toast.error('Failed to reject application', { description: error });
       }
     } catch (error) {
       console.error('Error rejecting vendor:', error);
-      alert('Error rejecting vendor: ' + error);
+      toast.error('Error rejecting vendor', { description: String(error) });
+    } finally {
+      setLoadingAction({ type: null, id: null });
     }
   };
 
-  const handleRequestMoreInfo = async (applicationId: string) => {
+  const handleRequestMoreInfo = async (message: string, requiredFields: string[]) => {
+    if (!requestingInfoApplication) return;
+    
+    setLoadingAction({ type: 'info', id: requestingInfoApplication.id });
+    
     try {
-      console.log('🔄 Requesting more info for application:', applicationId);
-      
-      // Find the vendor by application ID
-      const vendor = applications.find(app => app.id === applicationId);
-      if (!vendor) {
-        console.error('❌ Vendor not found');
-        return;
-      }
-      
+      console.log('🔄 Requesting more info for application:', requestingInfoApplication.id);
       console.log('📋 Found vendor for info request:', { 
-        vendorId: vendor.vendorId, 
-        applicationId: vendor.applicationId,
-        fullName: vendor.fullName 
+        vendorId: requestingInfoApplication.vendorId, 
+        applicationId: requestingInfoApplication.applicationId,
+        fullName: requestingInfoApplication.fullName 
       });
-      
-      const message = prompt('Enter your message to the vendor (what information is needed):');
-      if (!message) return;
-      
-      // Optional: Ask which fields need attention
-      const fieldsInput = prompt('Enter field names that need attention (comma-separated, or leave blank):');
-      const requiredFields = fieldsInput ? fieldsInput.split(',').map(f => f.trim()) : [];
       
       const response = await fetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendor/request-info`,
@@ -562,7 +563,7 @@ export function AdminVendorManagementNew({ onNavigate }: AdminVendorManagementNe
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            vendorId: vendor.vendorId, // Use vendorId, NOT id
+            vendorId: requestingInfoApplication.vendorId,
             requestedBy: 'Admin',
             message: message,
             requiredFields: requiredFields
@@ -572,17 +573,20 @@ export function AdminVendorManagementNew({ onNavigate }: AdminVendorManagementNe
       
       if (response.ok) {
         console.log('✅ Info request sent successfully');
-        setSuccessMessage('Information Request Sent to Vendor');
-        setShowSuccessModal(true);
+        toast.success('Information request sent to vendor');
+        setShowRequestInfoModal(false);
+        setRequestingInfoApplication(null);
         loadData(); // Reload data
       } else {
         const error = await response.text();
         console.error('❌ Failed to request info:', error);
-        alert('Failed to send info request: ' + error);
+        toast.error('Failed to send info request', { description: error });
       }
     } catch (error) {
       console.error('Error requesting info:', error);
-      alert('Error requesting info: ' + error);
+      toast.error('Error requesting info', { description: String(error) });
+    } finally {
+      setLoadingAction({ type: null, id: null });
     }
   };
 
@@ -1225,26 +1229,51 @@ export function AdminVendorManagementNew({ onNavigate }: AdminVendorManagementNe
                             <div className="col-span-3 flex items-center gap-2">
                               <button 
                                 onClick={() => handleApprove(app.id)}
-                                className="p-1.5 hover:bg-green-50 rounded-lg"
+                                disabled={loadingAction.id === app.id}
+                                className="p-1.5 hover:bg-green-50 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                                 title="Approve Application"
                               >
-                                <Check className="w-4 h-4 text-green-600" />
+                                {loadingAction.type === 'approve' && loadingAction.id === app.id ? (
+                                  <RefreshCw className="w-4 h-4 text-green-600 animate-spin" />
+                                ) : (
+                                  <Check className="w-4 h-4 text-green-600" />
+                                )}
                               </button>
                               <button 
-                                onClick={() => handleReject(app.id)}
-                                className="p-1.5 hover:bg-red-50 rounded-lg"
+                                onClick={() => {
+                                  setRejectingApplication(app);
+                                  setShowRejectModal(true);
+                                }}
+                                disabled={loadingAction.id === app.id}
+                                className="p-1.5 hover:bg-red-50 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                                 title="Reject Application"
                               >
-                                <X className="w-4 h-4 text-red-600" />
+                                {loadingAction.type === 'reject' && loadingAction.id === app.id ? (
+                                  <RefreshCw className="w-4 h-4 text-red-600 animate-spin" />
+                                ) : (
+                                  <X className="w-4 h-4 text-red-600" />
+                                )}
                               </button>
                               <button 
-                                onClick={() => handleRequestMoreInfo(app.id)}
-                                className="p-1.5 hover:bg-orange-50 rounded-lg"
+                                onClick={() => {
+                                  setRequestingInfoApplication(app);
+                                  setShowRequestInfoModal(true);
+                                }}
+                                disabled={loadingAction.id === app.id}
+                                className="p-1.5 hover:bg-orange-50 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                                 title="Request More Information"
                               >
-                                <MessageCircle className="w-4 h-4 text-orange-600" />
+                                {loadingAction.type === 'info' && loadingAction.id === app.id ? (
+                                  <RefreshCw className="w-4 h-4 text-orange-600 animate-spin" />
+                                ) : (
+                                  <MessageCircle className="w-4 h-4 text-orange-600" />
+                                )}
                               </button>
-                              <button className="p-1.5 hover:bg-blue-50 rounded-lg" title="View Details" onClick={() => { setSelectedApplication(app); setShowApplicationDetail(true); }}>
+                              <button 
+                                className="p-1.5 hover:bg-blue-50 rounded-lg transition-all" 
+                                title="View Details" 
+                                onClick={() => { setSelectedApplication(app); setShowApplicationDetail(true); }}
+                              >
                                 <Eye className="w-4 h-4 text-blue-600" />
                               </button>
                             </div>
@@ -1410,6 +1439,27 @@ export function AdminVendorManagementNew({ onNavigate }: AdminVendorManagementNe
           setSuccessMessage('Clarification Requested');
           setShowSuccessModal(true);
           loadData();
+        }}
+      />
+
+      {/* New UX-improved modals */}
+      <RejectVendorModal
+        isOpen={showRejectModal}
+        vendorName={rejectingApplication?.fullName || rejectingApplication?.businessName || 'Vendor'}
+        onSubmit={handleReject}
+        onCancel={() => {
+          setShowRejectModal(false);
+          setRejectingApplication(null);
+        }}
+      />
+
+      <RequestInfoModal
+        isOpen={showRequestInfoModal}
+        vendorName={requestingInfoApplication?.fullName || requestingInfoApplication?.businessName || 'Vendor'}
+        onSubmit={handleRequestMoreInfo}
+        onCancel={() => {
+          setShowRequestInfoModal(false);
+          setRequestingInfoApplication(null);
         }}
       />
     </div>

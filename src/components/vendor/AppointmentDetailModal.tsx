@@ -521,7 +521,8 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                   <div className="text-center py-8 text-gray-500">
                     <Pill className="w-12 h-12 mx-auto mb-2 text-gray-300" />
                     <p className="mb-4">No prescriptions yet</p>
-                    {vendorData?.roleId === 'veterinarian' && (
+                    {/* ✅ CANONICAL: Only show for pet_clinic role */}
+                    {vendorData?.roleId === 'pet_clinic' && (
                       <button
                         onClick={() => setShowPrescriptionModal(true)}
                         className="px-4 py-2 bg-[#FF8C42] text-white rounded-lg font-medium"

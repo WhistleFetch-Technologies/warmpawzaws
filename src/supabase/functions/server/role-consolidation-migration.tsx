@@ -18,8 +18,10 @@
  * SOLUTION:
  * Migrate ALL vet vendors to use the canonical role ID: 'pet_clinic'
  * 
- * USAGE:
- * POST /make-server-3dd53475/admin/migrate-vet-roles
+ * ENDPOINTS:
+ * GET /make-server-3dd53475/admin/migration-status - Check current status
+ * POST /make-server-3dd53475/admin/migrate-vet-roles?dryRun=true - Preview changes
+ * POST /make-server-3dd53475/admin/migrate-vet-roles - Execute migration
  */
 
 import { Hono } from 'npm:hono';
@@ -56,124 +58,19 @@ const ROLE_MIGRATIONS = {
 
 /**
  * Migrate all vendor roles to canonical format
+ * DEPRECATED: Moved to vendor-role-cleanup-migration.tsx
  */
-app.post('/make-server-3dd53475/admin/migrate-vet-roles', async (c) => {
-  try {
-    console.log('\\n🔄 [ROLE-MIGRATION] Starting role consolidation migration...');
-    
-    const dryRun = c.req.query('dryRun') === 'true';
-    
-    if (dryRun) {
-      console.log('   📋 DRY RUN MODE - No changes will be made');
-    }
-    
-    // Get all vendors
-    const allVendors = await kv.getByPrefix('vendor:');
-    console.log(`   📊 Found ${allVendors.length} total vendors`);
-    
-    const updates: any[] = [];
-    const statistics = {
-      total: allVendors.length,
-      migrated: 0,
-      alreadyCorrect: 0,
-      byRole: {} as Record<string, number>
-    };
-    
-    // Process each vendor
-    for (const vendor of allVendors) {
-      const oldRoleId = vendor.roleId;
-      const newRoleId = ROLE_MIGRATIONS[oldRoleId];
-      
-      if (!newRoleId) {
-        // Role doesn't need migration
-        statistics.alreadyCorrect++;
-        continue;
-      }
-      
-      if (oldRoleId === newRoleId) {
-        // Already using canonical role
-        statistics.alreadyCorrect++;
-        continue;
-      }
-      
-      // Track migration
-      if (!statistics.byRole[oldRoleId]) {
-        statistics.byRole[oldRoleId] = 0;
-      }
-      statistics.byRole[oldRoleId]++;
-      statistics.migrated++;
-      
-      updates.push({
-        vendorId: vendor.id,
-        oldRoleId,
-        newRoleId,
-        businessName: vendor.businessName || vendor.fullName || 'Unknown',
-        phone: vendor.phone
-      });
-      
-      if (!dryRun) {
-        // Update vendor
-        vendor.roleId = newRoleId;
-        vendor.oldRoleId = oldRoleId; // Keep history
-        vendor.roleMigratedAt = new Date().toISOString();
-        await kv.set(`vendor:${vendor.id}`, vendor);
-        
-        console.log(`   ✅ Migrated vendor ${vendor.id}: ${oldRoleId} → ${newRoleId}`);
-        
-        // Update any related centers
-        const centers = await kv.getByPrefix(`center:${vendor.id}:`);
-        for (const center of centers) {
-          if (center.roleId === oldRoleId) {
-            center.roleId = newRoleId;
-            await kv.set(`center:${center.id}`, center);
-            console.log(`      ✅ Updated center ${center.id}`);
-          }
-        }
-        
-        // Update any related staff
-        const staff = await kv.getByPrefix(`staff:${vendor.id}:`);
-        for (const staffMember of staff) {
-          if (staffMember.roleType === oldRoleId) {
-            staffMember.roleType = newRoleId;
-            await kv.set(`staff:${staffMember.id}`, staffMember);
-            console.log(`      ✅ Updated staff ${staffMember.id}`);
-          }
-        }
-      }
-    }
-    
-    console.log('\\n📊 [ROLE-MIGRATION] Migration Summary:');
-    console.log(`   Total vendors: ${statistics.total}`);
-    console.log(`   Migrated: ${statistics.migrated}`);
-    console.log(`   Already correct: ${statistics.alreadyCorrect}`);
-    console.log('\\n   By role:');
-    Object.entries(statistics.byRole).forEach(([oldRole, count]) => {
-      console.log(`      ${oldRole} → ${ROLE_MIGRATIONS[oldRole]}: ${count} vendors`);
-    });
-    
-    return c.json({
-      success: true,
-      dryRun,
-      statistics,
-      updates,
-      message: dryRun 
-        ? `DRY RUN: Would migrate ${statistics.migrated} vendors` 
-        : `Successfully migrated ${statistics.migrated} vendors to canonical roles`
-    });
-    
-  } catch (error) {
-    console.error('❌ [ROLE-MIGRATION] Error:', error);
-    return c.json({ 
-      success: false, 
-      error: error instanceof Error ? error.message : 'Migration failed' 
-    }, 500);
-  }
+app.post('/admin/migrate-vet-roles-OLD-DEPRECATED', async (c) => {
+  return c.json({
+    success: false,
+    error: 'This endpoint is deprecated. Use /admin/migrate-vet-roles from vendor-role-cleanup-migration.tsx instead.'
+  }, 410);
 });
 
 /**
  * Get migration status
  */
-app.get('/make-server-3dd53475/admin/migration-status', async (c) => {
+app.get('/admin/migration-status', async (c) => {
   try {
     const allVendors = await kv.getByPrefix('vendor:');
     
@@ -181,20 +78,29 @@ app.get('/make-server-3dd53475/admin/migration-status', async (c) => {
       total: allVendors.length,
       byRole: {} as Record<string, number>,
       needsMigration: 0,
-      canonical: 0
+      canonical: 0,
+      invalid: 0 // Vendors without proper roleId
     };
     
     for (const vendor of allVendors) {
       const roleId = vendor.roleId;
       
-      if (!status.byRole[roleId]) {
-        status.byRole[roleId] = 0;
+      // Count by role (including undefined)
+      const roleKey = roleId || 'undefined';
+      if (!status.byRole[roleKey]) {
+        status.byRole[roleKey] = 0;
       }
-      status.byRole[roleId]++;
+      status.byRole[roleKey]++;
       
-      if (ROLE_MIGRATIONS[roleId] && ROLE_MIGRATIONS[roleId] !== roleId) {
+      // Categorize vendor
+      if (!roleId || roleId === 'undefined' || roleId === 'null') {
+        // Invalid - should be deleted by cleanup
+        status.invalid++;
+      } else if (ROLE_MIGRATIONS[roleId] && ROLE_MIGRATIONS[roleId] !== roleId) {
+        // Needs migration to canonical role
         status.needsMigration++;
       } else {
+        // Already canonical
         status.canonical++;
       }
     }

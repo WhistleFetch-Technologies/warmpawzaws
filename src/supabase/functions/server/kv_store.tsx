@@ -19,7 +19,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 // ⚠️ DATABASE TIMEOUT PROTECTION: Fallback to in-memory cache when DB is down
 const MEMORY_CACHE = new Map<string, string>();
-const DB_TIMEOUT_MS = 2000; // 2 second timeout for all DB operations
+const DB_TIMEOUT_MS = 15000; // 15 second timeout for all DB operations (increased for large vendor queries)
 let DB_IS_HEALTHY = true; // Track database health
 
 // Helper: Race a promise against timeout

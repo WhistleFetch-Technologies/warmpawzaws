@@ -532,6 +532,137 @@ app.post("/make-server-3dd53475/admin/vendors/applications/:vendorId/approve", a
     // Save using the actual key we found
     await kv.set(actualKey, vendor);
     
+    // ✅ FIX #1: AUTO-CREATE STAFF FOR INDIVIDUAL VENDORS (CRITICAL)
+    console.log('\n🔧 ===== AUTO-CREATING STAFF FOR APPROVED VENDOR =====');
+    console.log(`📝 Vendor ID: ${vendorId}`);
+    console.log(`👤 Vendor Type: ${vendor.vendorType}`);
+    console.log(`🏥 Role ID: ${vendor.roleId}`);
+    console.log(`📋 Service Category: ${vendor.serviceCategory}`);
+    
+    // Check if this is an individual vendor (not a business center)
+    const isIndividualVendor = vendor.vendorType === 'individual' || 
+                              vendor.vendorType === 'individual_professional' ||
+                              vendor.vendorType === 'individual_veterinarian' ||
+                              vendor.vendorType === 'individual_groomer' ||
+                              vendor.vendorType === 'individual_trainer' ||
+                              vendor.vendorType === 'individual_walker' ||
+                              vendor.vendorType === 'individual_behaviourist' ||
+                              !vendor.businessName; // Fallback: if no business name, assume individual
+    
+    console.log(`   Is Individual Vendor: ${isIndividualVendor}`);
+    
+    let staffCreated = false;
+    let staffId = null;
+    
+    // For individual vendors (veterinarians, groomers, trainers, etc.), auto-create staff profile
+    if (isIndividualVendor) {
+      staffId = `${vendorId}_staff_self`;
+      
+      // Check if staff already exists
+      const existingStaff = await kv.get(`staff:${staffId}`);
+      
+      if (!existingStaff) {
+        console.log(`✅ Creating staff profile for individual vendor...`);
+        
+        const staffProfile = {
+          id: staffId,
+          vendorId: vendorId,
+          fullName: vendor.fullName,
+          name: vendor.fullName,
+          phone: vendor.phone || vendor.mobile || '',
+          mobile: vendor.mobile || vendor.phone || '',
+          email: vendor.email || '',
+          
+          // Professional details (role-specific)
+          specialization: vendor.customFields?.specialization || vendor.specialization || '',
+          degree: vendor.customFields?.degree || vendor.degree || '',
+          experience: vendor.yearsOfExperience || vendor.experience || 0,
+          bio: vendor.customFields?.bio || vendor.bio || '',
+          consultationFee: vendor.customFields?.consultationFee || vendor.consultationFee || 0,
+          
+          // Personal details
+          gender: vendor.customFields?.gender || vendor.gender || '',
+          dateOfBirth: vendor.customFields?.dateOfBirth || vendor.dateOfBirth || '',
+          languages: vendor.customFields?.languages || vendor.languages || ['English', 'Hindi'],
+          
+          // Address
+          address: vendor.address || '',
+          city: vendor.city || '',
+          state: vendor.state || '',
+          pincode: vendor.pincode || '',
+          
+          // Role and category info
+          roleId: vendor.roleId,
+          roleName: vendor.roleName,
+          serviceCategory: vendor.serviceCategory,
+          
+          // Staff settings
+          isActive: true,
+          canAcceptBookings: true,
+          assignedServices: [], // Will be populated when services are configured
+          services: [], // Services array
+          
+          // Timestamps
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          
+          // Link to vendor
+          isVendorSelf: true, // Flag to indicate this is the vendor themselves
+          isAutoCreated: true, // Flag to indicate auto-creation during approval
+          vendorApplicationId: vendor.applicationId
+        };
+        
+        await kv.set(`staff:${staffId}`, staffProfile);
+        console.log(`✅ Staff profile created: ${staffId}`);
+        console.log(`   Name: ${staffProfile.fullName}`);
+        console.log(`   Role: ${staffProfile.roleName}`);
+        console.log(`   Service Category: ${staffProfile.serviceCategory}`);
+        
+        // Add staff to vendor's staff list
+        const vendorStaffList = await kv.get(`vendor:${vendorId}:staff`) || [];
+        if (!vendorStaffList.includes(staffId)) {
+          vendorStaffList.push(staffId);
+          await kv.set(`vendor:${vendorId}:staff`, vendorStaffList);
+          console.log(`✅ Added staff to vendor's staff list`);
+        }
+        
+        // ✅ FIX #2: CREATE STAFF PHONE INDEX
+        if (cleanPhone) {
+          await kv.set(`staff:phone:${cleanPhone}`, staffId);
+          console.log(`✅ Created staff phone index: ${cleanPhone} → ${staffId}`);
+        }
+        
+        staffCreated = true;
+      } else {
+        console.log(`ℹ️ Staff profile already exists: ${staffId}`);
+      }
+    } else {
+      console.log(`ℹ️ Business/Center vendor - staff profiles managed separately`);
+    }
+    
+    // ✅ FIX #2: CREATE VENDOR INDEXES FOR FAST LOOKUP
+    console.log('\n🔧 Creating vendor lookup indexes...');
+    
+    // Phone index
+    if (cleanPhone) {
+      await kv.set(`vendor:phone:${cleanPhone}`, vendorId);
+      console.log(`✅ Vendor phone index created: ${cleanPhone} → ${vendorId}`);
+    }
+    
+    // Email index
+    if (cleanEmail) {
+      await kv.set(`vendor:email:${cleanEmail}`, vendorId);
+      console.log(`✅ Vendor email index created: ${cleanEmail} → ${vendorId}`);
+    }
+    
+    // User index (if userId exists)
+    if (vendor.userId) {
+      await kv.set(`vendor:user:${vendor.userId}`, vendorId);
+      console.log(`✅ Vendor user index created: ${vendor.userId} → ${vendorId}`);
+    }
+    
+    console.log('🎉 ===== VENDOR APPROVAL COMPLETE WITH FULL SETUP =====\n');
+    
     // Remove from pending list and add to approved list
     const pendingList = await kv.get('vendor:pending_approvals') || [];
     const updatedPending = pendingList.filter((id: string) => id !== vendorId);
@@ -555,10 +686,44 @@ app.post("/make-server-3dd53475/admin/vendors/applications/:vendorId/approve", a
     
     console.log('✅ Vendor approved successfully:', vendorId);
     
+    // ✅ FIX #7: Enhanced response with detailed approval summary
+    const approvalSummary = {
+      vendorId,
+      vendorName: vendor.fullName || vendor.businessName,
+      roleName: vendor.roleName,
+      serviceCategory: vendor.serviceCategory,
+      approvedAt: vendor.reviewedAt,
+      staffAutoCreated: staffCreated,
+      staffId: staffId,
+      indexesCreated: {
+        phone: !!cleanPhone,
+        email: !!cleanEmail,
+        user: !!vendor.userId
+      },
+      nextSteps: isIndividualVendor 
+        ? [
+            '1. Log in to your vendor dashboard',
+            '2. Configure your service catalog',
+            '3. Publish services to start receiving bookings',
+            '4. Your staff profile has been automatically created'
+          ]
+        : [
+            '1. Log in to your vendor dashboard',
+            '2. Add staff members (doctors, groomers, trainers, etc.)',
+            '3. Configure services for each staff member',
+            '4. Publish services to start receiving bookings'
+          ]
+    };
+    
     return c.json({
       success: true,
-      message: 'Vendor approved successfully',
-      vendor
+      message: staffCreated 
+        ? 'Vendor approved successfully with staff auto-creation'
+        : 'Vendor approved successfully',
+      vendor,
+      staffCreated,
+      staffId,
+      approvalSummary
     });
   } catch (error) {
     console.error('Error approving vendor:', error);
@@ -733,6 +898,280 @@ app.post("/make-server-3dd53475/admin/vendors/applications/:vendorId/reject", as
     });
   } catch (error) {
     console.error('Error rejecting vendor:', error);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
+// ============================================
+// REQUEST CLARIFICATION FROM VENDOR
+// ============================================
+
+/**
+ * POST /make-server-3dd53475/admin/vendor/application/:vendorId/request-clarification
+ * Request additional information or clarification from vendor
+ * 
+ * ✅ NEW ENDPOINT: Implements the missing clarification request feature
+ */
+app.post("/make-server-3dd53475/admin/vendor/application/:vendorId/request-clarification", async (c) => {
+  try {
+    const { vendorId } = c.req.param();
+    const { adminId, adminName, reviewerName, notes, clarificationNotes } = await c.req.json();
+    
+    console.log('📝 Requesting clarification from vendor:', vendorId);
+    console.log('   Admin:', adminName || reviewerName);
+    console.log('   Notes:', notes || clarificationNotes);
+    
+    // Try direct lookup first
+    let vendor = await kv.get(`vendor:${vendorId}`);
+    let actualKey = `vendor:${vendorId}`;
+    
+    // If not found, search database
+    if (!vendor) {
+      console.log('⚠️ Direct lookup failed, searching database...');
+      
+      const { createClient } = await import('jsr:@supabase/supabase-js@2.49.8');
+      const supabase = createClient(
+        Deno.env.get('SUPABASE_URL'),
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+      );
+      
+      const { normalizePhone } = await import('./phone-utils.tsx');
+      const cleanPhone = vendorId.replace('vendor_', '');
+      
+      const { data: kvRecords, error } = await supabase
+        .from('kv_store_3dd53475')
+        .select('key, value')
+        .or(`key.eq.vendor:${vendorId},key.eq.vendor:vendor_${cleanPhone}`);
+      
+      if (!error && kvRecords && kvRecords.length > 0) {
+        const matchingRecord = kvRecords.find((r: any) => 
+          r.key === `vendor:${vendorId}` || r.value.id === vendorId
+        );
+        
+        if (matchingRecord) {
+          vendor = matchingRecord.value;
+          actualKey = matchingRecord.key;
+          console.log('✅ Found vendor with key:', actualKey);
+        }
+      }
+    }
+    
+    if (!vendor) {
+      console.error('❌ Vendor not found:', vendorId);
+      return c.json({ error: 'Vendor not found' }, 404);
+    }
+    
+    console.log('📋 Vendor found with status:', vendor.status);
+    
+    // Validate vendor is in a state where clarification can be requested
+    if (vendor.status !== 'pending_approval' && vendor.status !== 'pending') {
+      console.error('❌ Vendor status is not pending:', vendor.status);
+      return c.json({ 
+        error: 'Vendor is not pending approval', 
+        currentStatus: vendor.status 
+      }, 400);
+    }
+    
+    // Update vendor with clarification request
+    const clarificationRequest = {
+      requestedAt: new Date().toISOString(),
+      requestedBy: adminId,
+      requestedByName: adminName || reviewerName || 'Admin',
+      notes: notes || clarificationNotes,
+      status: 'pending_response'
+    };
+    
+    // Add to clarification history
+    vendor.clarificationHistory = vendor.clarificationHistory || [];
+    vendor.clarificationHistory.push(clarificationRequest);
+    
+    // Update current clarification request
+    vendor.clarificationRequest = clarificationRequest;
+    
+    // Update status to indicate clarification is needed
+    vendor.status = 'clarification_requested';
+    vendor.updatedAt = new Date().toISOString();
+    
+    // Save vendor
+    await kv.set(actualKey, vendor);
+    
+    console.log('✅ Clarification request saved to vendor record');
+    
+    // Create notification for vendor
+    const notificationId = `notification_${Date.now()}`;
+    await kv.set(`notification:vendor:${vendorId}:${notificationId}`, {
+      id: notificationId,
+      vendorId,
+      type: 'clarification_requested',
+      title: 'Clarification Required',
+      message: `Admin has requested clarification on your application: ${notes || clarificationNotes}`,
+      clarificationNotes: notes || clarificationNotes,
+      read: false,
+      createdAt: new Date().toISOString()
+    });
+    
+    console.log('✅ Notification created for vendor');
+    
+    // TODO: Send SMS notification
+    // const smsService = await import('./sms-otp-service.tsx');
+    // await smsService.sendSMS(vendor.phone, 
+    //   `WarmPawz: Admin has requested clarification on your vendor application. Please login to respond.`
+    // );
+    
+    // TODO: Send Email notification
+    // const emailService = await import('./email-service.tsx');
+    // await emailService.sendEmail(vendor.email, {
+    //   subject: 'Clarification Required - WarmPawz Vendor Application',
+    //   body: `Dear ${vendor.fullName || vendor.businessName},\n\nAdmin has requested clarification: ${notes}`
+    // });
+    
+    console.log('✅ Clarification requested successfully:', vendorId);
+    
+    return c.json({
+      success: true,
+      message: 'Clarification requested successfully. Vendor will be notified.',
+      vendor: {
+        id: vendor.id,
+        vendorId: vendorId,
+        status: vendor.status,
+        clarificationRequest: vendor.clarificationRequest
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Error requesting clarification:', error);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
+// ============================================
+// REQUEST INFO FROM VENDOR (Alternative endpoint)
+// ============================================
+
+/**
+ * POST /make-server-3dd53475/admin/vendor/request-info
+ * Request additional information from vendor
+ * 
+ * ✅ NEW ENDPOINT: Matches frontend expectations from AdminVendorManagementNew.tsx
+ * This is similar to request-clarification but with different URL pattern
+ * Frontend calls this with vendorId in body, not path
+ */
+app.post("/make-server-3dd53475/admin/vendor/request-info", async (c) => {
+  try {
+    const { vendorId, requestedBy, message, requiredFields } = await c.req.json();
+    
+    console.log('📝 Requesting info from vendor:', vendorId);
+    console.log('   Requested by:', requestedBy);
+    console.log('   Message:', message);
+    console.log('   Required fields:', requiredFields);
+    
+    // Try direct lookup first
+    let vendor = await kv.get(`vendor:${vendorId}`);
+    let actualKey = `vendor:${vendorId}`;
+    
+    // If not found, search database
+    if (!vendor) {
+      console.log('⚠️ Direct lookup failed, searching database...');
+      
+      const { createClient } = await import('jsr:@supabase/supabase-js@2.49.8');
+      const supabase = createClient(
+        Deno.env.get('SUPABASE_URL'),
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+      );
+      
+      const { data: kvRecords, error } = await supabase
+        .from('kv_store_3dd53475')
+        .select('key, value')
+        .like('key', 'vendor:%');
+      
+      if (!error && kvRecords && kvRecords.length > 0) {
+        const matchingRecord = kvRecords.find((r: any) => 
+          r.value.id === vendorId || r.value.vendorId === vendorId
+        );
+        
+        if (matchingRecord) {
+          vendor = matchingRecord.value;
+          actualKey = matchingRecord.key;
+          console.log('✅ Found vendor with key:', actualKey);
+        }
+      }
+    }
+    
+    if (!vendor) {
+      console.error('❌ Vendor not found:', vendorId);
+      return c.json({ error: 'Vendor not found' }, 404);
+    }
+    
+    console.log('📋 Vendor found with status:', vendor.status);
+    
+    // Validate vendor is in a state where info can be requested
+    if (vendor.status !== 'pending_approval' && vendor.status !== 'pending') {
+      console.error('❌ Vendor status is not pending:', vendor.status);
+      return c.json({ 
+        error: 'Vendor is not pending approval', 
+        currentStatus: vendor.status 
+      }, 400);
+    }
+    
+    // Create info request
+    const infoRequest = {
+      requestedAt: new Date().toISOString(),
+      requestedBy: requestedBy || 'Admin',
+      message: message,
+      requiredFields: requiredFields || [],
+      status: 'pending_response'
+    };
+    
+    // Add to info request history
+    vendor.infoRequestHistory = vendor.infoRequestHistory || [];
+    vendor.infoRequestHistory.push(infoRequest);
+    
+    // Update current info request
+    vendor.infoRequest = infoRequest;
+    
+    // Update status
+    vendor.status = 'info_requested';
+    vendor.updatedAt = new Date().toISOString();
+    
+    // Save vendor
+    await kv.set(actualKey, vendor);
+    
+    console.log('✅ Info request saved to vendor record');
+    
+    // Create notification for vendor
+    const notificationId = `notification_${Date.now()}`;
+    await kv.set(`notification:vendor:${vendorId}:${notificationId}`, {
+      id: notificationId,
+      vendorId,
+      type: 'info_requested',
+      title: 'Additional Information Required',
+      message: `Admin has requested additional information: ${message}`,
+      requiredFields: requiredFields,
+      infoMessage: message,
+      read: false,
+      createdAt: new Date().toISOString()
+    });
+    
+    console.log('✅ Notification created for vendor');
+    
+    // TODO: Send SMS notification
+    // TODO: Send Email notification
+    
+    console.log('✅ Info requested successfully:', vendorId);
+    
+    return c.json({
+      success: true,
+      message: 'Information request sent successfully. Vendor will be notified.',
+      vendor: {
+        id: vendor.id,
+        vendorId: vendorId,
+        status: vendor.status,
+        infoRequest: vendor.infoRequest
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Error requesting info:', error);
     return c.json({ error: String(error) }, 500);
   }
 });
@@ -1501,6 +1940,219 @@ app.post("/make-server-3dd53475/admin/vendors/duplicates/cleanup", async (c) => 
     });
   } catch (error) {
     console.error('Error during cleanup:', error);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
+// ============================================
+// ✅ FIX #4: MIGRATION - CREATE STAFF FOR EXISTING APPROVED VENDORS
+// ============================================
+
+/**
+ * POST /make-server-3dd53475/admin/migrate/create-staff-and-indexes
+ * One-time migration to create staff records and indexes for existing approved vendors
+ */
+app.post("/make-server-3dd53475/admin/migrate/create-staff-and-indexes", async (c) => {
+  try {
+    console.log('\n🚀 ===== MIGRATION: CREATE STAFF & INDEXES FOR EXISTING VENDORS =====\n');
+    
+    // Import phone normalization
+    const { normalizePhone } = await import('./phone-utils.tsx');
+    
+    // Query database directly to get all vendor records
+    const { createClient } = await import('jsr:@supabase/supabase-js@2.49.8');
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL'),
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+    );
+    
+    const { data: kvRecords, error } = await supabase
+      .from('kv_store_3dd53475')
+      .select('key, value')
+      .like('key', 'vendor:vendor_%');
+    
+    if (error) {
+      console.error('❌ Database query error:', error);
+      return c.json({ error: 'Database error' }, 500);
+    }
+    
+    console.log(`📊 Total vendor records found: ${kvRecords?.length || 0}`);
+    
+    // Filter to only approved vendors
+    const approvedVendors = kvRecords?.filter((record: any) => {
+      const v = record.value;
+      const key = record.key;
+      
+      // Must match exact pattern vendor:vendor_xxx
+      const keyParts = key.split(':');
+      if (keyParts.length !== 2 || keyParts[0] !== 'vendor') return false;
+      if (!keyParts[1].startsWith('vendor_')) return false;
+      
+      // Must be approved
+      if (v.status !== 'approved') return false;
+      
+      return true;
+    }) || [];
+    
+    console.log(`✅ Approved vendors to process: ${approvedVendors.length}\n`);
+    
+    const results = {
+      total: approvedVendors.length,
+      staffCreated: 0,
+      staffAlreadyExists: 0,
+      indexesCreated: 0,
+      errors: [] as any[]
+    };
+    
+    for (const record of approvedVendors) {
+      const vendor = record.value;
+      const vendorId = vendor.id;
+      
+      try {
+        console.log(`\n📦 Processing vendor: ${vendorId}`);
+        console.log(`   Name: ${vendor.fullName || vendor.businessName}`);
+        console.log(`   Role: ${vendor.roleName}`);
+        console.log(`   Status: ${vendor.status}`);
+        
+        // Determine if individual vendor
+        const isIndividualVendor = vendor.vendorType === 'individual' || 
+                                  vendor.vendorType === 'individual_professional' ||
+                                  vendor.vendorType === 'individual_veterinarian' ||
+                                  vendor.vendorType === 'individual_groomer' ||
+                                  vendor.vendorType === 'individual_trainer' ||
+                                  vendor.vendorType === 'individual_walker' ||
+                                  vendor.vendorType === 'individual_behaviourist' ||
+                                  !vendor.businessName;
+        
+        console.log(`   Individual Vendor: ${isIndividualVendor}`);
+        
+        // Create staff if individual vendor
+        if (isIndividualVendor) {
+          const staffId = `${vendorId}_staff_self`;
+          const existingStaff = await kv.get(`staff:${staffId}`);
+          
+          if (!existingStaff) {
+            const staffProfile = {
+              id: staffId,
+              vendorId: vendorId,
+              fullName: vendor.fullName,
+              name: vendor.fullName,
+              phone: vendor.phone || '',
+              mobile: vendor.mobile || vendor.phone || '',
+              email: vendor.email || '',
+              specialization: vendor.customFields?.specialization || vendor.specialization || '',
+              degree: vendor.customFields?.degree || vendor.degree || '',
+              experience: vendor.yearsOfExperience || vendor.experience || 0,
+              bio: vendor.customFields?.bio || vendor.bio || '',
+              consultationFee: vendor.customFields?.consultationFee || vendor.consultationFee || 0,
+              gender: vendor.customFields?.gender || vendor.gender || '',
+              dateOfBirth: vendor.customFields?.dateOfBirth || vendor.dateOfBirth || '',
+              languages: vendor.customFields?.languages || vendor.languages || ['English', 'Hindi'],
+              address: vendor.address || '',
+              city: vendor.city || '',
+              state: vendor.state || '',
+              pincode: vendor.pincode || '',
+              roleId: vendor.roleId,
+              roleName: vendor.roleName,
+              serviceCategory: vendor.serviceCategory,
+              isActive: true,
+              canAcceptBookings: true,
+              assignedServices: [],
+              services: [],
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              isVendorSelf: true,
+              isAutoCreated: true,
+              isMigrated: true, // Flag to indicate created by migration
+              vendorApplicationId: vendor.applicationId
+            };
+            
+            await kv.set(`staff:${staffId}`, staffProfile);
+            console.log(`   ✅ Staff created: ${staffId}`);
+            
+            // Add to vendor's staff list
+            const vendorStaffList = await kv.get(`vendor:${vendorId}:staff`) || [];
+            if (!vendorStaffList.includes(staffId)) {
+              vendorStaffList.push(staffId);
+              await kv.set(`vendor:${vendorId}:staff`, vendorStaffList);
+            }
+            
+            // Create staff phone index
+            if (vendor.phone) {
+              const cleanPhone = normalizePhone(vendor.phone);
+              await kv.set(`staff:phone:${cleanPhone}`, staffId);
+              console.log(`   ✅ Staff phone index: ${cleanPhone}`);
+            }
+            
+            results.staffCreated++;
+          } else {
+            console.log(`   ℹ️  Staff already exists`);
+            results.staffAlreadyExists++;
+          }
+        }
+        
+        // Create vendor indexes (for all vendors)
+        let indexCount = 0;
+        
+        // Phone index
+        if (vendor.phone) {
+          const cleanPhone = normalizePhone(vendor.phone);
+          const existingPhoneIndex = await kv.get(`vendor:phone:${cleanPhone}`);
+          if (!existingPhoneIndex) {
+            await kv.set(`vendor:phone:${cleanPhone}`, vendorId);
+            console.log(`   ✅ Vendor phone index: ${cleanPhone}`);
+            indexCount++;
+          }
+        }
+        
+        // Email index
+        if (vendor.email) {
+          const cleanEmail = vendor.email.toLowerCase().trim();
+          const existingEmailIndex = await kv.get(`vendor:email:${cleanEmail}`);
+          if (!existingEmailIndex) {
+            await kv.set(`vendor:email:${cleanEmail}`, vendorId);
+            console.log(`   ✅ Vendor email index: ${cleanEmail}`);
+            indexCount++;
+          }
+        }
+        
+        // User index
+        if (vendor.userId) {
+          const existingUserIndex = await kv.get(`vendor:user:${vendor.userId}`);
+          if (!existingUserIndex) {
+            await kv.set(`vendor:user:${vendor.userId}`, vendorId);
+            console.log(`   ✅ Vendor user index: ${vendor.userId}`);
+            indexCount++;
+          }
+        }
+        
+        results.indexesCreated += indexCount;
+        
+      } catch (err) {
+        console.error(`   ❌ Error processing ${vendorId}:`, err);
+        results.errors.push({
+          vendorId,
+          error: String(err)
+        });
+      }
+    }
+    
+    console.log('\n🎉 ===== MIGRATION COMPLETE =====');
+    console.log(`📊 Results:`);
+    console.log(`   Total vendors processed: ${results.total}`);
+    console.log(`   Staff created: ${results.staffCreated}`);
+    console.log(`   Staff already existed: ${results.staffAlreadyExists}`);
+    console.log(`   Indexes created: ${results.indexesCreated}`);
+    console.log(`   Errors: ${results.errors.length}\n`);
+    
+    return c.json({
+      success: true,
+      results,
+      message: `Migration completed. Created ${results.staffCreated} staff records and ${results.indexesCreated} indexes.`
+    });
+    
+  } catch (error) {
+    console.error('❌ Migration error:', error);
     return c.json({ error: String(error) }, 500);
   }
 });

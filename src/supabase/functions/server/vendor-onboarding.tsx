@@ -195,7 +195,8 @@ export function vendorOnboardingEndpoints(app: Hono, kv: any) {
         customFields: formData,
         
         // Status & Timestamps
-        status: 'pending', // Will be 'pending', 'approved', 'rejected', 'more_info_required'
+        // ✅ FIX #3: Standardized status terminology
+        status: 'pending_approval', // Will be 'pending_approval', 'approved', 'rejected', 'more_info_required'
         setupCompleted: false,
         isActive: false,
         submittedAt: new Date().toISOString(),
@@ -209,38 +210,18 @@ export function vendorOnboardingEndpoints(app: Hono, kv: any) {
       
       await kv.set(vendorKey, vendor);
       
-      // Store separate application record (for backward compatibility)
-      const application = {
-        id: applicationId,
-        applicationId,
-        vendorId,
-        roleId,
-        roleName,
-        serviceCategory,
-        vendorType,
-        
-        businessName: formData.businessName || null,
-        fullName: formData.fullName || null,
-        displayName: displayName,
-        phone: phone || formData.phone,
-        email: email || formData.email || null,
-        
-        formData,
-        documentsRaw: documents,
-        documents: documentsArray,
-        
-        status: 'pending',
-        submittedAt: new Date().toISOString()
-      };
+      // ✅ FIX #6: REMOVED DUPLICATE APPLICATION RECORD STORAGE
+      // The vendor record itself contains all application data (applicationId, status, documents, etc.)
+      // No need to store a separate application record - reduces data redundancy
       
-      await kv.set(`vendor:application:${applicationId}`, application);
-      
-      // Add to pending applications list
-      const pendingApps = await kv.get('vendor:applications:pending') || [];
-      if (!pendingApps.includes(applicationId)) {
-        pendingApps.push(applicationId);
-        await kv.set('vendor:applications:pending', pendingApps);
+      // Add vendorId (not applicationId) to pending list
+      const pendingVendors = await kv.get('vendor:pending_approvals') || [];
+      if (!pendingVendors.includes(vendorId)) {
+        pendingVendors.push(vendorId);
+        await kv.set('vendor:pending_approvals', pendingVendors);
       }
+      
+      console.log(`✅ Added to pending approvals list: ${vendorId}`);
       
       console.log(`🎉 Application created successfully!`);
       console.log(`   Application ID: ${applicationId}`);

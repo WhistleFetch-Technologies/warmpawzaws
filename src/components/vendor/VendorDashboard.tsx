@@ -1,7 +1,39 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { CapabilityDebugOverlay } from './CapabilityDebugOverlay';
 import { ModuleDisabledMessage, ModuleMessages } from './ModuleDisabledMessage';
 import { SoloProviderDashboard } from './dashboard/SoloProviderDashboard'; // ✅ INTEGRATION: Solo provider dashboard
+import { useVendorCapabilities } from './hooks/useVendorCapabilities';
+import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getVendorIconTheme, getRoleIcon, getRoleColorScheme } from '../../utils/vendor-icon-themes';
+import { 
+  Calendar, 
+  Clock, 
+  Star, 
+  MessageSquare, 
+  Phone, 
+  Video, 
+  ChevronRight, 
+  Plus, 
+  Activity, 
+  Package, 
+  Home, 
+  Settings, 
+  BarChart3, 
+  Bell, 
+  RefreshCw,
+  Stethoscope,
+  Monitor,
+  Users,
+  Building2,
+  ShoppingBag
+} from 'lucide-react';
+import { Badge } from '../ui/badge';
+import { VendorNotificationModal } from './VendorNotificationModal';
+import { CommunicationHub } from './CommunicationHub';
+import { AppointmentDetailModal } from './AppointmentDetailModal';
+import { VendorAnalytics } from './VendorAnalytics';
+import { VendorPaymentSettings } from './VendorPaymentSettings';
+import { AIChatBot } from '../customer/AIChatBot';
 
 interface VendorDashboardProps {
   vendorId: string;
@@ -115,7 +147,9 @@ export function VendorDashboard({
   const { capabilities, loading: capsLoading, roleName } = useVendorCapabilities(vendorData?.roleId);
 
   const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
-  const isVet = vendorData?.roleId === 'veterinarian' || vendorData?.roleId === 'vet';
+  
+  // ✅ CANONICAL ROLE CHECK: Only check for pet_clinic (consolidated from veterinarian, vet_clinic, etc.)
+  const isVet = vendorData?.roleId === 'pet_clinic';
 
   // ✅ INTEGRATION: Check if solo provider and route to solo dashboard
   if (vendorData?.isSoloProvider) {
@@ -145,84 +179,95 @@ export function VendorDashboard({
       else setLoading(true);
 
       console.log('📊 Fetching vendor dashboard data for:', vendorId);
+      console.log('⚡ Using parallel API calls for better performance');
 
-      // Fetch main dashboard stats
-      const dashboardRes = await fetch(`${API_BASE}/vendor/dashboard/${vendorId}?timeframe=${activeTab}`, {
-        headers: {
-          'Authorization': `Bearer ${publicAnonKey}`
-        }
-      });
-
-      if (dashboardRes.ok) {
+      // Prepare all fetch promises based on capabilities
+      const today = new Date().toISOString().split('T')[0];
+      
+      const fetchPromises: Promise<Response | null>[] = [
+        // 1. Always fetch dashboard stats
+        fetch(`${API_BASE}/vendor/dashboard/${vendorId}?timeframe=${activeTab}`, {
+          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        }),
+        
+        // 2. Fetch schedule if booking enabled
+        capabilities.booking 
+          ? fetch(`${API_BASE}/vendor/schedule/${vendorId}?date=${today}`, {
+              headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+            })
+          : Promise.resolve(null),
+        
+        // 3. Fetch watchlist if medical records enabled
+        capabilities.medical_records
+          ? fetch(`${API_BASE}/vendor/watchlist/${vendorId}`, {
+              headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+            })
+          : Promise.resolve(null),
+        
+        // 4. Always fetch notifications
+        fetch(`${API_BASE}/vendor/notifications/${vendorId}?limit=5`, {
+          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        }),
+        
+        // 5. Fetch services if catalog or booking enabled
+        (capabilities.catalog || capabilities.booking)
+          ? fetch(`${API_BASE}/vendor/services/${vendorId}`, {
+              headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+            })
+          : Promise.resolve(null)
+      ];
+      
+      // Execute all fetches in parallel for 2-3x faster load time
+      const [
+        dashboardRes,
+        scheduleRes,
+        watchlistRes,
+        notificationsRes,
+        servicesRes
+      ] = await Promise.all(fetchPromises);
+      
+      // Process dashboard stats
+      if (dashboardRes && dashboardRes.ok) {
         const dashboardData = await dashboardRes.json();
         if (dashboardData.success) {
           setStats(dashboardData.stats);
           setVendor(dashboardData.vendor);
         }
       }
-
-      // Only fetch schedule if booking capability is enabled
-      if (capabilities.booking) {
-        const today = new Date().toISOString().split('T')[0];
-        const scheduleRes = await fetch(`${API_BASE}/vendor/schedule/${vendorId}?date=${today}`, {
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
-          }
-        });
-
-        if (scheduleRes.ok) {
-          const scheduleData = await scheduleRes.json();
-          if (scheduleData.success) {
-            setTodaySchedule(scheduleData.schedule || []);
-          }
+      
+      // Process schedule
+      if (scheduleRes && scheduleRes.ok) {
+        const scheduleData = await scheduleRes.json();
+        if (scheduleData.success) {
+          setTodaySchedule(scheduleData.schedule || []);
         }
       }
-
-      // Only fetch watchlist if medical_records is enabled
-      if (capabilities.medical_records) {
-        const watchlistRes = await fetch(`${API_BASE}/vendor/watchlist/${vendorId}`, {
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
-          }
-        });
-
-        if (watchlistRes.ok) {
-          const watchlistData = await watchlistRes.json();
-          if (watchlistData.success) {
-            setWatchlist(watchlistData.watchlist || []);
-          }
+      
+      // Process watchlist
+      if (watchlistRes && watchlistRes.ok) {
+        const watchlistData = await watchlistRes.json();
+        if (watchlistData.success) {
+          setWatchlist(watchlistData.watchlist || []);
         }
       }
-
-      // Fetch notifications (Always)
-      const notificationsRes = await fetch(`${API_BASE}/vendor/notifications/${vendorId}?limit=5`, {
-        headers: {
-          'Authorization': `Bearer ${publicAnonKey}`
-        }
-      });
-
-      if (notificationsRes.ok) {
+      
+      // Process notifications
+      if (notificationsRes && notificationsRes.ok) {
         const notificationsData = await notificationsRes.json();
         if (notificationsData.success) {
           setNotifications(notificationsData.notifications || []);
         }
       }
-
-      // Fetch services/products
-      if (capabilities.catalog || capabilities.booking) {
-        const servicesRes = await fetch(`${API_BASE}/vendor/services/${vendorId}`, {
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
-          }
-        });
-
-        if (servicesRes.ok) {
-          const servicesData = await servicesRes.json();
-          if (servicesData.success) {
-            setServices(servicesData.services || []);
-          }
+      
+      // Process services
+      if (servicesRes && servicesRes.ok) {
+        const servicesData = await servicesRes.json();
+        if (servicesData.success) {
+          setServices(servicesData.services || []);
         }
       }
+
+      console.log('✅ Dashboard data loaded successfully (parallel fetch)');
 
     } catch (error) {
       console.error('❌ Error fetching dashboard data:', error);
@@ -375,13 +420,8 @@ export function VendorDashboard({
           )}
         </div>
         
-        {/* ✅ FIX: VET-SPECIFIC SERVICES SECTION - For Veterinary Clinics */}
-        {(
-          vendorData?.roleId?.includes('vet') || 
-          vendorData?.roleId?.includes('veterinar') ||
-          vendorData?.serviceCategory === 'veterinary' ||
-          vendorData?.vendorType === 'veterinary'
-        ) && (
+        {/* ✅ CANONICAL: VET-SPECIFIC SERVICES SECTION - Only for pet_clinic role */}
+        {vendorData?.roleId === 'pet_clinic' && (
           <div className="p-4 border-b border-gray-100">
             <h2 className="font-semibold text-gray-900 mb-3">Vet Center Services</h2>
             <div className="grid grid-cols-3 gap-2">
@@ -390,7 +430,7 @@ export function VendorDashboard({
                 className="bg-teal-50 border border-teal-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-teal-100 transition-colors"
               >
                 <svg className="w-6 h-6 text-teal-600 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinecap="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
                 </svg>
                 <span className="text-xs font-medium text-gray-900">Pharmacy</span>
               </button>
@@ -400,7 +440,7 @@ export function VendorDashboard({
                 className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-blue-100 transition-colors"
               >
                 <svg className="w-6 h-6 text-blue-600 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinecap="round" strokeWidth={2} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
                 </svg>
                 <span className="text-xs font-medium text-gray-900">Diagnostics</span>
               </button>
@@ -410,7 +450,7 @@ export function VendorDashboard({
                 className="bg-red-50 border border-red-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-red-100 transition-colors"
               >
                 <svg className="w-6 h-6 text-red-600 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinecap="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                 </svg>
                 <span className="text-xs font-medium text-gray-900">Ambulance</span>
               </button>
