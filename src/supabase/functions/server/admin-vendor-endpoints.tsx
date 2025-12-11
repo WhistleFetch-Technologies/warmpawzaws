@@ -51,48 +51,72 @@ export function adminVendorEndpoints(app: Hono, kv: any) {
       
       console.log(`📦 Raw vendor records from KV: ${kvRecords?.length || 0}`);
       
-      // Filter to only main vendor records (not indexes, applications, or other metadata)
+      // ✅ CRITICAL FIX: Filter to ONLY approved vendor records (vendor:vendor_xxx)
+      // EXCLUDE all application records, lookup keys, and metadata
       const vendors = kvRecords?.filter((record: any) => {
         const v = record.value;
         const key = record.key;
         
-        // 1. Check if it's an object
-        if (!v || typeof v !== 'object') return false;
-        
-        // 2. Exclude based on content (since we don't have keys)
-        // Exclude Application records
-        if (v.applicationId === v.id || (v.id && String(v.id).startsWith('APP'))) {
-           return false;
+        // ✅ PRIMARY CHECK: Key must match EXACT pattern vendor:vendor_xxx
+        // This excludes:
+        // - vendor:application:xxx
+        // - vendor:phone:xxx
+        // - vendor:email:xxx
+        // - vendor:user:xxx
+        // - vendor_application:xxx
+        const keyParts = key.split(':');
+        if (keyParts.length !== 2) {
+          console.log(`   ❌ EXCLUDE: Invalid key structure: ${key}`);
+          return false;
         }
         
-        // Exclude specific metadata types if identifiable
-        if (v.type === 'index' || v.type === 'metadata') return false;
-
-        // 3. Check for ID pattern
-        const id = v.id || v.vendorId;
-        
-        // Strict check: Must have 'vendor_' prefix
-        if (id && String(id).startsWith('vendor_')) {
-          return true;
+        if (keyParts[0] !== 'vendor') {
+          console.log(`   ❌ EXCLUDE: Not a vendor key: ${key}`);
+          return false;
         }
         
-        // 4. Fallback: Check for structural validity
-        // A valid vendor usually has businessName OR fullName AND phone AND role
-        const hasName = !!(v.businessName || v.fullName);
-        const hasPhone = !!v.phone;
-        const hasRole = !!v.role || !!v.roleId || !!v.roleName;
-        
-        // Safest bet: If it doesn't have vendor_ prefix, rely on it NOT being an APP
-        if (hasName && hasPhone && hasRole) {
-            // Double check it's not an application
-            if (v.documents && v.documents.length > 0 && v.formData) {
-                // High chance this is an application object if it has formData
-                return false;
-            }
-            return true;
+        const vendorId = keyParts[1];
+        if (!vendorId.startsWith('vendor_')) {
+          console.log(`   ❌ EXCLUDE: ID doesn't start with vendor_: ${key}`);
+          return false;
         }
         
-        return false;
+        // 2. Check if value is an object
+        if (!v || typeof v !== 'object') {
+          console.log(`   ❌ EXCLUDE: Not an object: ${key}`);
+          return false;
+        }
+        
+        // 3. Exclude Application records by checking if ID starts with APP_
+        // ✅ FIX: Don't exclude by applicationId field - approved vendors also have this
+        // Only exclude if the ID itself starts with APP (meaning it's an application, not a vendor)
+        if (v.id && String(v.id).startsWith('APP')) {
+          console.log(`   ❌ EXCLUDE: Application record (ID starts with APP): ${key}`);
+          return false;
+        }
+        
+        // 4. Exclude specific metadata types
+        if (v.type === 'index' || v.type === 'metadata' || v.type === 'application') {
+          console.log(`   ❌ EXCLUDE: Metadata type: ${key}`);
+          return false;
+        }
+        
+        // 5. Exclude records with formData (these are applications)
+        if (v.formData && v.documents) {
+          console.log(`   ❌ EXCLUDE: Has formData (application): ${key}`);
+          return false;
+        }
+        
+        // 6. ✅ CRITICAL FIX: Exclude rejected and deleted vendors
+        // These should NOT appear in any admin panel
+        if (v.status === 'rejected' || v.status === 'deleted' || v.isDeleted === true) {
+          console.log(`   ❌ EXCLUDE: Rejected/Deleted vendor: ${key}`);
+          return false;
+        }
+        
+        // ✅ PASS: This is a valid vendor record
+        console.log(`   ✅ INCLUDE: Valid vendor: ${key} - ${v.businessName || v.fullName}`);
+        return true;
       }) || [];
       
       console.log(`✅ Filtered main vendor records: ${vendors.length}`);

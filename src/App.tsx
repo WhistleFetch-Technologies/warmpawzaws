@@ -2,16 +2,14 @@ import { useState } from 'react';
 import { CustomerApp } from './components/CustomerApp';
 import { VendorApp } from './components/VendorApp';
 import { AdminApp } from './components/AdminApp';
-import { SoloProviderTestSuite } from './components/testing/SoloProviderTestSuite'; // ✅ TEST SUITE
-import { DiagnosticTest } from './components/testing/DiagnosticTest'; // ✅ DIAGNOSTIC
-import { SimpleBackendTest } from './components/testing/SimpleBackendTest'; // ✅ SIMPLE TEST
+import { RoleMigrationPanel } from './components/admin/RoleMigrationPanel';
 import { Button } from './components/ui/button';
 import { Toaster } from './components/ui/sonner';
 import { RegionProvider } from './hooks/useRegion';
 import { CartProvider } from './context/CartContext';
 
 export default function App() {
-  const [activeApp, setActiveApp] = useState<'customer' | 'vendor' | 'admin' | 'test' | 'diagnostic' | 'simple'>('customer'); // ✅ ADD SIMPLE
+  const [activeApp, setActiveApp] = useState<'customer' | 'vendor' | 'admin' | 'migration'>('customer');
 
   return (
     <RegionProvider>
@@ -47,27 +45,11 @@ export default function App() {
           </Button>
           <Button
             size="sm"
-            variant={activeApp === 'test' ? 'default' : 'outline'}
-            onClick={() => setActiveApp('test')}
-            className={activeApp === 'test' ? 'bg-blue-600' : ''}
+            variant={activeApp === 'migration' ? 'default' : 'outline'}
+            onClick={() => setActiveApp('migration')}
+            className={activeApp === 'migration' ? 'bg-purple-600 hover:bg-purple-700' : ''}
           >
-            🧪 Test Suite
-          </Button>
-          <Button
-            size="sm"
-            variant={activeApp === 'diagnostic' ? 'default' : 'outline'}
-            onClick={() => setActiveApp('diagnostic')}
-            className={activeApp === 'diagnostic' ? 'bg-green-600' : ''}
-          >
-            🧪 Diagnostic
-          </Button>
-          <Button
-            size="sm"
-            variant={activeApp === 'simple' ? 'default' : 'outline'}
-            onClick={() => setActiveApp('simple')}
-            className={activeApp === 'simple' ? 'bg-red-600' : ''}
-          >
-            🧪 Simple Test
+            🔄 Migration
           </Button>
         </div>
 
@@ -75,9 +57,7 @@ export default function App() {
         {activeApp === 'customer' && <CustomerApp />}
         {activeApp === 'vendor' && <VendorApp />}
         {activeApp === 'admin' && <AdminApp />}
-        {activeApp === 'test' && <SoloProviderTestSuite />}
-        {activeApp === 'diagnostic' && <DiagnosticTest />}
-        {activeApp === 'simple' && <SimpleBackendTest />}
+        {activeApp === 'migration' && <RoleMigrationPanel />}
         </div>
       </CartProvider>
     </RegionProvider>

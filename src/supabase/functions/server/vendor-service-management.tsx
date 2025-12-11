@@ -535,6 +535,20 @@ export function registerVendorServiceManagementRoutes(app: Hono) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
       
+      // ✅ FIX #5: VALIDATE VENDOR HAS STAFF BEFORE PUBLISHING
+      const vendorStaffList = await kv.get(`vendor:${vendorId}:staff`) || [];
+      
+      if (vendorStaffList.length === 0) {
+        console.error(`❌ [VENDOR-SERVICES] Cannot publish: Vendor ${vendorId} has no staff members`);
+        return c.json({ 
+          error: 'Cannot publish services without staff',
+          message: 'You must add at least one staff member before publishing services. Staff members are automatically created when your vendor account is approved. If you do not see any staff, please contact support.',
+          requiresStaff: true
+        }, 400);
+      }
+      
+      console.log(`✅ [VENDOR-SERVICES] Vendor has ${vendorStaffList.length} staff member(s)`);
+      
       // Get vendor services
       const vendorServicesKey = `vendor_services:${vendorId}:${serviceStyle}`;
       const vendorServices = await kv.get(vendorServicesKey);
