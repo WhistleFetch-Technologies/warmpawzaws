@@ -72,86 +72,28 @@ export function ReturnsManagement({ onBack }: ReturnsManagementProps) {
     filterReturns();
   }, [searchQuery, statusFilter, returns]);
 
+  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+
   const loadReturns = async () => {
     setLoading(true);
     try {
       // GET /make-server-3dd53475/admin/returns
-      // Mock data
-      const mockReturns: ReturnRequest[] = [
+      const response = await fetch(
+        `${API_BASE}/admin/returns`,
         {
-          id: 'return_1',
-          orderId: 'order_123',
-          orderNumber: 'ORD-2024-0123',
-          customerId: 'cust_1',
-          customerName: 'Rahul Sharma',
-          customerPhone: '+919876543210',
-          productId: 'prod_1',
-          productName: 'Royal Canin Dog Food 5kg',
-          productImage: '🍖',
-          quantity: 1,
-          amount: 2499,
-          reason: 'Product arrived damaged',
-          reasonCategory: 'damaged',
-          description: 'The package was torn and the product inside was damaged',
-          images: [],
-          requestType: 'return',
-          status: 'pending',
-          createdAt: '2024-12-02T10:30:00Z',
-          vendorId: 'vendor_1',
-          vendorName: 'Pet Supplies Pro'
-        },
-        {
-          id: 'return_2',
-          orderId: 'order_124',
-          orderNumber: 'ORD-2024-0124',
-          customerId: 'cust_2',
-          customerName: 'Priya Patel',
-          customerPhone: '+919876543211',
-          productId: 'prod_2',
-          productName: 'Pet Grooming Kit',
-          productImage: '✂️',
-          quantity: 1,
-          amount: 1599,
-          reason: 'Received wrong item',
-          reasonCategory: 'wrong_item',
-          description: 'I ordered a grooming kit but received a different product',
-          images: [],
-          requestType: 'exchange',
-          status: 'approved',
-          createdAt: '2024-12-01T14:20:00Z',
-          approvedAt: '2024-12-01T16:00:00Z',
-          vendorId: 'vendor_2',
-          vendorName: 'Pet Mart India'
-        },
-        {
-          id: 'return_3',
-          orderId: 'order_125',
-          orderNumber: 'ORD-2024-0125',
-          customerId: 'cust_3',
-          customerName: 'Amit Kumar',
-          customerPhone: '+919876543212',
-          productId: 'prod_3',
-          productName: 'Pet Bed Premium',
-          productImage: '🛏️',
-          quantity: 1,
-          amount: 3499,
-          reason: 'Product not as described',
-          reasonCategory: 'not_as_described',
-          description: 'The size is much smaller than shown in the pictures',
-          images: [],
-          requestType: 'return',
-          status: 'refunded',
-          createdAt: '2024-11-28T09:15:00Z',
-          approvedAt: '2024-11-28T11:00:00Z',
-          refundedAt: '2024-11-30T10:00:00Z',
-          refundAmount: 3499,
-          refundMethod: 'Original Payment Method',
-          vendorId: 'vendor_1',
-          vendorName: 'Pet Supplies Pro'
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`,
+            'apikey': publicAnonKey
+          }
         }
-      ];
+      );
 
-      setReturns(mockReturns);
+      if (!response.ok) {
+        throw new Error('Failed to fetch returns');
+      }
+
+      const data = await response.json();
+      setReturns(data.returns || []);
     } catch (error) {
       console.error('Error loading returns:', error);
       toast.error('Failed to load return requests');
@@ -163,12 +105,25 @@ export function ReturnsManagement({ onBack }: ReturnsManagementProps) {
   const loadStats = async () => {
     try {
       // GET /make-server-3dd53475/admin/returns/stats
-      setStats({
-        pendingCount: 15,
-        approvedCount: 42,
-        rejectedCount: 8,
-        totalRefundAmount: 234500
-      });
+      const response = await fetch(
+        `${API_BASE}/admin/returns/stats`,
+        {
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`,
+            'apikey': publicAnonKey
+          }
+        }
+      );
+
+      if (!response.ok) {
+        console.warn('Stats endpoint might not be available yet');
+        return;
+      }
+
+      const data = await response.json();
+      if (data.success && data.stats) {
+        setStats(data.stats);
+      }
     } catch (error) {
       console.error('Error loading stats:', error);
     }
