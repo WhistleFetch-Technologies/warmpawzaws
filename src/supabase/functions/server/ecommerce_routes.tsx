@@ -822,4 +822,268 @@ ecommerce.get('/analytics/platform', async (c) => {
   }
 });
 
+// Get detailed ecommerce analytics with time series data
+ecommerce.get('/analytics', async (c) => {
+  try {
+    const days = parseInt(c.req.query('days') || '30');
+    const now = Date.now();
+    const startDate = now - (days * 24 * 60 * 60 * 1000);
+    
+    const allOrders = await kv.getByPrefix('order:');
+    const allProducts = await kv.getByPrefix('product:');
+    const allSellers = await kv.getByPrefix('seller:');
+    const allReturns = await kv.getByPrefix('return:') || [];
+    
+    // Filter orders within date range
+    const recentOrders = allOrders.filter((order: any) => {
+      const orderDate = new Date(order.createdAt).getTime();
+      return orderDate >= startDate && orderDate <= now;
+    });
+    
+    // Calculate revenue metrics
+    const totalRevenue = recentOrders.reduce((sum: number, order: any) => 
+      sum + (order.totalAmount || 0), 0
+    );
+    
+    const settings = await kv.get('ecommerce:commission_settings') || { defaultRate: 15 };
+    const totalCommission = (totalRevenue * (settings.defaultRate || 15)) / 100;
+    
+    // Calculate growth compared to previous period
+    const prevStartDate = startDate - (days * 24 * 60 * 60 * 1000);
+    const prevOrders = allOrders.filter((order: any) => {
+      const orderDate = new Date(order.createdAt).getTime();
+      return orderDate >= prevStartDate && orderDate < startDate;
+    });
+    const prevRevenue = prevOrders.reduce((sum: number, order: any) => 
+      sum + (order.totalAmount || 0), 0
+    );
+    
+    const revenueGrowth = prevRevenue > 0 ? 
+      ((totalRevenue - prevRevenue) / prevRevenue) * 100 : 0;
+    const ordersGrowth = prevOrders.length > 0 ?
+      ((recentOrders.length - prevOrders.length) / prevOrders.length) * 100 : 0;
+    
+    // Product metrics
+    const activeProducts = allProducts.filter((p: any) => p.status === 'active').length;
+    const pendingProducts = allProducts.filter((p: any) => p.status === 'pending_approval').length;
+    const outOfStockProducts = allProducts.filter((p: any) => (p.stock || 0) === 0).length;
+    
+    // Seller metrics
+    const activeSellers = allSellers.filter((s: any) => s.status === 'active').length;
+    const newSellers = allSellers.filter((s: any) => {
+      const createdDate = new Date(s.createdAt || s.registrationDate).getTime();
+      return createdDate >= startDate;
+    }).length;
+    
+    // Returns metrics
+    const recentReturns = allReturns.filter((ret: any) => {
+      const returnDate = new Date(ret.createdAt).getTime();
+      return returnDate >= startDate && returnDate <= now;
+    });
+    const returnRate = recentOrders.length > 0 ?
+      (recentReturns.length / recentOrders.length) * 100 : 0;
+    
+    // Order status breakdown
+    const ordersByStatus = {
+      pending: recentOrders.filter((o: any) => o.status === 'pending').length,
+      confirmed: recentOrders.filter((o: any) => o.status === 'confirmed').length,
+      processing: recentOrders.filter((o: any) => o.status === 'processing').length,
+      shipped: recentOrders.filter((o: any) => o.status === 'shipped').length,
+      delivered: recentOrders.filter((o: any) => o.status === 'delivered').length,
+      cancelled: recentOrders.filter((o: any) => o.status === 'cancelled').length,
+    };
+    
+    // Average order value
+    const avgOrderValue = recentOrders.length > 0 ?
+      totalRevenue / recentOrders.length : 0;
+    
+    // Top performing products
+    const productSales: Record<string, { count: number; revenue: number; name: string }> = {};
+    recentOrders.forEach((order: any) => {
+      order.items?.forEach((item: any) => {
+        if (!productSales[item.productId]) {
+          productSales[item.productId] = {
+            count: 0,
+            revenue: 0,
+            name: item.productName || 'Unknown Product'
+          };
+        }
+        productSales[item.productId].count += item.quantity;
+        productSales[item.productId].revenue += item.price * item.quantity;
+      });
+    });
+    
+    const topProducts = Object.entries(productSales)
+      .map(([id, data]) => ({ productId: id, ...data }))
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 5);
+    
+    return c.json({
+      success: true,
+      dateRange: { start: new Date(startDate).toISOString(), end: new Date(now).toISOString(), days },
+      revenue: {
+        total: totalRevenue,
+        growth: revenueGrowth,
+        commission: totalCommission,
+        avgOrderValue: Math.round(avgOrderValue),
+      },
+      orders: {
+        total: recentOrders.length,
+        growth: ordersGrowth,
+        byStatus: ordersByStatus,
+      },
+      products: {
+        total: allProducts.length,
+        active: activeProducts,
+        pending: pendingProducts,
+        outOfStock: outOfStockProducts,
+        topPerforming: topProducts,
+      },
+      sellers: {
+        total: allSellers.length,
+        active: activeSellers,
+        new: newSellers,
+      },
+      returns: {
+        total: recentReturns.length,
+        rate: Math.round(returnRate * 10) / 10,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching ecommerce analytics:', error);
+    return c.json({ error: 'Failed to fetch analytics' }, 500);
+  }
+});
+
+// ============================================
+// RETURNS MANAGEMENT
+// ============================================
+
+// Get all return requests (Admin)
+ecommerce.get('/admin/returns', async (c) => {
+  try {
+    const status = c.req.query('status');
+    let returns = await kv.getByPrefix('return:') || [];
+    
+    if (status && status !== 'all') {
+      returns = returns.filter((r: any) => r.status === status);
+    }
+    
+    // Sort by creation date (newest first)
+    returns.sort((a: any, b: any) => 
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+    
+    return c.json({ success: true, returns, total: returns.length });
+  } catch (error) {
+    console.error('Error fetching returns:', error);
+    return c.json({ error: 'Failed to fetch returns' }, 500);
+  }
+});
+
+// Get return statistics
+ecommerce.get('/admin/returns/stats', async (c) => {
+  try {
+    const returns = await kv.getByPrefix('return:') || [];
+    
+    const stats = {
+      pendingCount: returns.filter((r: any) => r.status === 'pending').length,
+      approvedCount: returns.filter((r: any) => r.status === 'approved').length,
+      rejectedCount: returns.filter((r: any) => r.status === 'rejected').length,
+      refundedCount: returns.filter((r: any) => r.status === 'refunded').length,
+      totalRefundAmount: returns
+        .filter((r: any) => r.status === 'refunded')
+        .reduce((sum: number, r: any) => sum + (r.refundAmount || 0), 0),
+    };
+    
+    return c.json({ success: true, stats });
+  } catch (error) {
+    console.error('Error fetching return stats:', error);
+    return c.json({ error: 'Failed to fetch return statistics' }, 500);
+  }
+});
+
+// Approve return request
+ecommerce.post('/admin/returns/:returnId/approve', async (c) => {
+  try {
+    const returnId = c.req.param('returnId');
+    const returnRequest = await kv.get(`return:${returnId}`);
+    
+    if (!returnRequest) {
+      return c.json({ error: 'Return request not found' }, 404);
+    }
+    
+    const updated = {
+      ...returnRequest,
+      status: 'approved',
+      approvedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    
+    await kv.set(`return:${returnId}`, updated);
+    
+    return c.json({ success: true, return: updated });
+  } catch (error) {
+    console.error('Error approving return:', error);
+    return c.json({ error: 'Failed to approve return' }, 500);
+  }
+});
+
+// Reject return request
+ecommerce.post('/admin/returns/:returnId/reject', async (c) => {
+  try {
+    const returnId = c.req.param('returnId');
+    const { reason } = await c.req.json();
+    const returnRequest = await kv.get(`return:${returnId}`);
+    
+    if (!returnRequest) {
+      return c.json({ error: 'Return request not found' }, 404);
+    }
+    
+    const updated = {
+      ...returnRequest,
+      status: 'rejected',
+      rejectionReason: reason,
+      rejectedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    
+    await kv.set(`return:${returnId}`, updated);
+    
+    return c.json({ success: true, return: updated });
+  } catch (error) {
+    console.error('Error rejecting return:', error);
+    return c.json({ error: 'Failed to reject return' }, 500);
+  }
+});
+
+// Process refund
+ecommerce.post('/admin/returns/:returnId/refund', async (c) => {
+  try {
+    const returnId = c.req.param('returnId');
+    const { refundAmount, refundMethod } = await c.req.json();
+    const returnRequest = await kv.get(`return:${returnId}`);
+    
+    if (!returnRequest) {
+      return c.json({ error: 'Return request not found' }, 404);
+    }
+    
+    const updated = {
+      ...returnRequest,
+      status: 'refunded',
+      refundAmount,
+      refundMethod: refundMethod || 'Original Payment Method',
+      refundedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    
+    await kv.set(`return:${returnId}`, updated);
+    
+    return c.json({ success: true, return: updated });
+  } catch (error) {
+    console.error('Error processing refund:', error);
+    return c.json({ error: 'Failed to process refund' }, 500);
+  }
+});
+
 export default ecommerce;

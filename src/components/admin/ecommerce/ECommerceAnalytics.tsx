@@ -34,6 +34,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../..
 import { Button } from '../../ui/button';
 import { authenticatedGet } from '../../../utils/authenticatedFetch';
 import { projectId } from '../../../utils/supabase/info';
+import { publicAnonKey } from '../../../utils/supabase/info';
 
 interface AnalyticsData {
   revenue: {
@@ -75,64 +76,16 @@ export function ECommerceAnalytics() {
     setError(null);
 
     try {
-      // Call analytics API (or use mock data if endpoint doesn't exist yet)
+      // Call analytics API
       const data = await authenticatedGet(
         `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/ecommerce/analytics?days=${dateRange}`,
-        true
+        publicAnonKey
       );
 
       setAnalytics(data);
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error fetching analytics:', err);
-      
-      // Fallback to mock data for demonstration
-      setAnalytics({
-        revenue: {
-          total: 45680,
-          growth: 12.5,
-          byPeriod: [
-            { period: 'Week 1', amount: 10200 },
-            { period: 'Week 2', amount: 11500 },
-            { period: 'Week 3', amount: 12300 },
-            { period: 'Week 4', amount: 11680 }
-          ]
-        },
-        orders: {
-          total: 324,
-          growth: 8.3,
-          byStatus: {
-            pending: 45,
-            confirmed: 120,
-            shipped: 89,
-            delivered: 65,
-            cancelled: 5
-          }
-        },
-        sellers: {
-          total: 156,
-          active: 142,
-          growth: 15.2
-        },
-        products: {
-          total: 1243,
-          active: 1180,
-          lowStock: 23
-        },
-        topSellers: [
-          { name: 'Happy Paws Store', revenue: 12500, orders: 89 },
-          { name: 'Pet Paradise', revenue: 10200, orders: 76 },
-          { name: 'Furry Friends', revenue: 8900, orders: 64 },
-          { name: 'Paw Palace', revenue: 7800, orders: 58 },
-          { name: 'Pet Care Plus', revenue: 6500, orders: 45 }
-        ],
-        topProducts: [
-          { name: 'Premium Dog Food 20kg', sales: 156, revenue: 8900 },
-          { name: 'Cat Litter Box', sales: 134, revenue: 6700 },
-          { name: 'Pet Grooming Kit', sales: 112, revenue: 5600 },
-          { name: 'Dog Leash & Collar Set', sales: 98, revenue: 4900 },
-          { name: 'Cat Scratching Post', sales: 87, revenue: 4350 }
-        ]
-      });
+      setError('Failed to load analytics data');
     } finally {
       setLoading(false);
     }

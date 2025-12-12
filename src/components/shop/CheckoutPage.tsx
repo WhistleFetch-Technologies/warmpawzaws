@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Check, MapPin, CreditCard, ClipboardList, Truck, Plus, Home, Briefcase, Wallet, Banknote, Loader2, ArrowRight } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -11,6 +11,9 @@ import { useNavigate } from 'react-router-dom';
 import { ImageWithFallback } from '../figma/ImageWithFallback';
 import { Badge } from '../ui/badge';
 import { Checkbox } from '../ui/checkbox';
+import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { authenticatedGet, authenticatedPost } from '../../utils/authenticatedFetch';
+import { toast } from 'sonner';
 
 const STEPS = [
   { id: 'address', title: 'Delivery Address', icon: MapPin },

@@ -35,7 +35,7 @@ export function OrderManagementAdmin() {
       setError(null);
       
       const response = await fetch(
-        `${API_BASE}/ecommerce/orders`, // Assuming this endpoint exists or similar
+        `${API_BASE}/ecommerce/orders`, // Using the actual orders endpoint
         {
           headers: {
             'Authorization': `Bearer ${publicAnonKey}`,
@@ -45,21 +45,14 @@ export function OrderManagementAdmin() {
       );
 
       if (!response.ok) {
-        // Fallback or mock if endpoint is 404 (common in dev/handoff)
-         console.warn('Orders endpoint might be missing, using mock data if failed');
-         // throw new Error('Failed to fetch orders');
-         // Mock data for demo if API fails
-         setOrders([
-           { id: 'ord_123', orderNumber: 'ORD-001', customerName: 'John Doe', amount: 1250, status: 'pending', date: '2023-12-01' },
-           { id: 'ord_124', orderNumber: 'ORD-002', customerName: 'Jane Smith', amount: 850, status: 'processing', date: '2023-12-02', shiprocketOrderId: 'SR_123' },
-         ]);
-         return;
+        throw new Error('Failed to fetch orders');
       }
       
       const data = await response.json();
       setOrders(data.orders || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load orders');
+      console.error('Error fetching orders:', err);
     } finally {
       setLoading(false);
     }
@@ -67,13 +60,9 @@ export function OrderManagementAdmin() {
 
   const fetchOrderDetails = async (id: string) => {
      try {
-       // Ideally fetch full details
-       // For now, find in list or mock fetch
-       const found = orders.find(o => o.id === id);
-       
-       // Mock fetch details from API
+       // Fetch full order details from API
        const response = await fetch(
-        `${API_BASE}/ecommerce/orders/${id}`,
+        `${API_BASE}/ecommerce/order/${id}`,
         {
           headers: {
             'Authorization': `Bearer ${publicAnonKey}`,
@@ -86,26 +75,12 @@ export function OrderManagementAdmin() {
         const data = await response.json();
         setSelectedOrder(data.order);
       } else {
-         // Fallback to found basic info + mock items
-         setSelectedOrder({
-           ...found,
-           items: [
-             { id: '1', name: 'Premium Dog Food', quantity: 2, price: 500 },
-             { id: '2', name: 'Chew Toy', quantity: 1, price: 250 }
-           ],
-           address: {
-             fullName: found?.customerName || 'John Doe',
-             street: '123 Main St',
-             city: 'Bangalore',
-             zipCode: '560001',
-             phone: '9876543210'
-           }
-         });
+        throw new Error('Failed to fetch order details');
       }
-
-     } catch (err) {
-       console.error(err);
-     }
+    } catch (err) {
+      console.error('Error fetching order details:', err);
+      setError('Failed to load order details');
+    }
   };
 
   if (selectedOrderId && selectedOrder) {
