@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
-import { Minus, Plus, Trash2, ArrowRight, ShieldCheck, Bookmark, ArrowLeft, Tag, Gift, ShoppingCart } from 'lucide-react';
+import { X, Plus, Minus, Heart, Trash2, ShoppingBag, AlertCircle, Gift, Truck } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Separator } from '../ui/separator';
 import { ImageWithFallback } from '../figma/ImageWithFallback';
 import { ShopLayout } from './ShopLayout';
-import { useNavigate, Link } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Input } from '../ui/input';
 import { Badge } from '../ui/badge';
 import { Checkbox } from '../ui/checkbox';
@@ -48,12 +48,23 @@ const MOCK_SAVED_ITEMS = [
   }
 ];
 
-export function CartPage() {
-  const navigate = useNavigate();
+interface CartPageProps {
+  onNavigate?: (path: string) => void;
+}
+
+export function CartPage({ onNavigate }: CartPageProps = {}) {
   const [items, setItems] = useState(MOCK_CART_ITEMS);
   const [savedItems, setSavedItems] = useState(MOCK_SAVED_ITEMS);
   const [coupon, setCoupon] = useState('');
   const [couponApplied, setCouponApplied] = useState(false);
+
+  const handleNavigation = (path: string) => {
+    if (onNavigate) {
+      onNavigate(path);
+    } else {
+      window.location.href = path;
+    }
+  };
 
   const subtotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
   const savings = items.reduce((sum, item) => sum + ((item.originalPrice || item.price) - item.price) * item.quantity, 0);
@@ -102,12 +113,12 @@ export function CartPage() {
       <ShopLayout>
         <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 text-center">
           <div className="w-32 h-32 bg-gray-100 rounded-full flex items-center justify-center text-gray-300">
-            <ShoppingCart className="h-16 w-16" />
+            <ShoppingBag className="h-16 w-16" />
           </div>
           <div>
             <h2 className="text-2xl font-bold mb-2">Your Cart is Empty</h2>
             <p className="text-muted-foreground mb-6">Looks like you haven't added anything to your cart yet.</p>
-            <Button size="lg" onClick={() => navigate('/shop')}>
+            <Button size="lg" onClick={() => handleNavigation('/shop')}>
               Start Shopping
             </Button>
           </div>
@@ -119,8 +130,8 @@ export function CartPage() {
   return (
     <ShopLayout>
       <div className="mb-6 flex items-center gap-2">
-         <Button variant="ghost" size="sm" className="gap-1" onClick={() => navigate('/shop')}>
-           <ArrowLeft className="h-4 w-4" /> Back
+         <Button variant="ghost" size="sm" className="gap-1" onClick={() => handleNavigation('/shop')}>
+           <X className="h-4 w-4" /> Back
          </Button>
       </div>
 
@@ -261,7 +272,7 @@ export function CartPage() {
               {/* Coupon Input */}
               <div className="space-y-2">
                 <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-                  <Tag className="h-3 w-3" /> Apply Coupon
+                  <AlertCircle className="h-3 w-3" /> Apply Coupon
                 </Label>
                 <div className="flex gap-2">
                   <Input 
@@ -325,14 +336,14 @@ export function CartPage() {
               <Button 
                 className="w-full h-12 text-base" 
                 size="lg" 
-                onClick={() => navigate('/shop/checkout')}
+                onClick={() => handleNavigation('/shop/checkout')}
                 disabled={items.length === 0}
               >
-                Proceed to Checkout <ArrowRight className="ml-2 h-4 w-4" />
+                Proceed to Checkout <Truck className="ml-2 h-4 w-4" />
               </Button>
 
               <div className="flex items-center gap-3 justify-center text-xs text-muted-foreground bg-gray-50 p-3 rounded-md border">
-                <ShieldCheck className="h-4 w-4 text-green-600" />
+                <Heart className="h-4 w-4 text-green-600" />
                 <span>Safe and Secure Payments. 100% Authentic products.</span>
               </div>
             </CardContent>
