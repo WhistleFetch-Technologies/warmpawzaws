@@ -228,13 +228,13 @@ export async function getSession(sessionId: string): Promise<Session | null> {
 }
 
 /**
- * Get session by user ID
+ * ✅ SECURITY FIX: Get session by user ID
  */
 export async function getSessionByUserId(userId: string): Promise<Session | null> {
   const sessionId = await kv.get(`session:user:${userId}`);
   if (!sessionId) return null;
   
-  return getSession(sessionId);
+  return await getSession(sessionId);
 }
 
 /**
@@ -247,6 +247,84 @@ export async function deleteSession(sessionId: string): Promise<void> {
     await kv.del(`session:${sessionId}`);
     await kv.del(`session:user:${session.userId}`);
     await kv.del(`session:phone:${session.phone}`);
+  }
+}
+
+/**
+ * ✅ SECURITY FIX: Generate access token for authenticated API calls
+ * Tokens are stored in KV and validated on each API call
+ * 
+ * Token format: {userId}_{phone}_{timestamp}_{random}
+ */
+export async function generateAccessToken(userId: string, phone: string, role: string): Promise<string> {
+  const cleanedPhone = normalizePhone(phone);
+  const timestamp = Date.now();
+  const randomPart = Math.random().toString(36).substring(2, 15);
+  
+  // Create token with user info embedded
+  const token = `${userId}_${cleanedPhone}_${timestamp}_${randomPart}`;
+  
+  // Store token in KV for validation (expires in 24 hours)
+  const expiresAt = timestamp + (24 * 60 * 60 * 1000);
+  const tokenData = {
+    token,
+    userId,
+    phone: cleanedPhone,
+    role,
+    createdAt: new Date().toISOString(),
+    expiresAt: new Date(expiresAt).toISOString()
+  };
+  
+  await kv.set(`token:${token}`, tokenData);
+  await kv.set(`token:user:${userId}`, token); // For quick user→token lookup
+  
+  console.log(`🔐 Access token created: ${token.substring(0, 20)}... for user ${userId}`);
+  
+  return token;
+}
+
+/**
+ * ✅ SECURITY FIX: Validate access token
+ * Returns token data if valid, null if invalid/expired
+ */
+export async function validateAccessToken(token: string): Promise<any | null> {
+  if (!token) {
+    return null;
+  }
+  
+  // Get token data from KV
+  const tokenData = await kv.get(`token:${token}`);
+  
+  if (!tokenData) {
+    console.log(`❌ Invalid token: not found in KV store`);
+    return null;
+  }
+  
+  // Check if expired
+  const now = Date.now();
+  const expiresAt = new Date(tokenData.expiresAt).getTime();
+  
+  if (now > expiresAt) {
+    console.log(`❌ Token expired: ${token.substring(0, 20)}...`);
+    // Clean up expired token
+    await kv.del(`token:${token}`);
+    return null;
+  }
+  
+  console.log(`✅ Token validated for user ${tokenData.userId}`);
+  return tokenData;
+}
+
+/**
+ * Delete (invalidate) access token
+ */
+export async function deleteAccessToken(token: string): Promise<void> {
+  const tokenData = await kv.get(`token:${token}`);
+  
+  if (tokenData) {
+    await kv.del(`token:${token}`);
+    await kv.del(`token:user:${tokenData.userId}`);
+    console.log(`🗑️ Token deleted: ${token.substring(0, 20)}...`);
   }
 }
 

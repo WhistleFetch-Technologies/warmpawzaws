@@ -7,6 +7,7 @@ import { createClient } from '../../utils/supabase/client';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { ChevronLeft, CheckCircle2 } from 'lucide-react';
 import logoImage from 'figma:asset/da6636b92da744b3db8eed5288ca6da9ab889afe.png';
+import { storeSession } from '../../utils/session-manager'; // ✅ SECURITY FIX
 
 interface VendorAuthProps {
   onAuthSuccess: (session: any) => void;
@@ -200,6 +201,17 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
       .then(({ ok, data }) => {
         if (ok && data.success && data.session) {
           console.log('✅ [VendorAuth] Vendor login successful!');
+          
+          // ✅ SECURITY FIX: Store session with access token
+          storeSession({
+            phone: phoneNumber,
+            accessToken: data.session.accessToken,
+            user: data.user,
+            profile: data.profile,
+            vendorId: data.profile?.id || data.profile?.vendorId
+          });
+          console.log('🔐 [VendorAuth] Session stored with access token');
+          
           onAuthSuccess({
             ...data.session,
             user: data.user,

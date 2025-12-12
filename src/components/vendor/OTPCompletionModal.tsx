@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Button } from '../ui/button';
 import { X, CheckCircle, AlertCircle, Loader } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { authenticatedFetch } from '../../utils/session-manager'; // ✅ SECURITY FIX
 
 interface OTPCompletionModalProps {
   bookingId: string;
@@ -94,14 +95,10 @@ export function OTPCompletionModal({
           : `/booking/${bookingId}/complete`;
       }
 
-      const response = await fetch(
+      const response = await authenticatedFetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475${endpoint}`,
         {
           method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify({
             otp: otpValue,
             staffId

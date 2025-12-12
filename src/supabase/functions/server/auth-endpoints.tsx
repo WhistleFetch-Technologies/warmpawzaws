@@ -160,6 +160,10 @@ export function registerAuthEndpoints(app: Hono) {
       // Create session
       const session = await authService.createUserSession(user.userId, user.phone, user.role);
       
+      // ✅ SECURITY FIX: Generate access token for authenticated API calls
+      const accessToken = await authService.generateAccessToken(user.userId, user.phone, user.role);
+      console.log(`🔐 Generated access token for user ${user.userId}`);
+      
       // Get role-specific state
       let profileData: any = null;
       let currentState: any = 'new';
@@ -221,7 +225,8 @@ export function registerAuthEndpoints(app: Hono) {
           userId: session.userId,
           phone: session.phone,
           role: session.role,
-          expiresAt: session.expiresAt
+          expiresAt: session.expiresAt,
+          accessToken: accessToken  // ✅ SECURITY FIX: Include access token
         },
         user: {
           userId: user.userId,

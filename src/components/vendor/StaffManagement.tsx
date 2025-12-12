@@ -1,26 +1,10 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
+import { Plus, Trash2, Edit, Save, X, User, Phone, Mail, MapPin, Calendar, Clock, UserCheck, Upload, CheckCircle } from 'lucide-react';
 import { Button } from '../ui/button';
-import {
-  ArrowLeft,
-  Plus,
-  User,
-  Mail,
-  Phone,
-  Award,
-  Edit,
-  Trash2,
-  Star,
-  Clock,
-  DollarSign,
-  Upload,
-  Camera,
-  Check,
-  X,
-  Settings,
-  Calendar
-} from 'lucide-react';
+import { Input } from '../ui/input';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { toast } from 'sonner';
+import { toast } from 'sonner@2.0.3';
+import { authenticatedFetch } from '../../utils/session-manager'; // ✅ SECURITY FIX
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../ui/dialog';
 import { StaffScheduleManagement } from './StaffScheduleManagement'; // ✅ NEW: Staff schedule management
 
@@ -203,14 +187,11 @@ export function StaffManagement({ vendorId, vendorData, onBack, onNavigateToServ
     }
 
     try {
-      const response = await fetch(
+      // ✅ SECURITY FIX: Use authenticated fetch
+      const response = await authenticatedFetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/${staffId}`,
         {
-          method: 'DELETE',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          }
+          method: 'DELETE'
         }
       );
 
@@ -603,24 +584,23 @@ function StaffFormModal({ vendorId, vendorData, staff, onClose, onSuccess }: Sta
     }
   };
 
-  const uploadPhoto = async (): Promise<string> => {
+  // Helper function to upload staff photo
+  const uploadStaffPhoto = async (photoFile: File): Promise<string> => {
     if (!photoFile) {
-      if (staff?.photo) return staff.photo;
-      throw new Error('Photo is required');
+      throw new Error('No photo file provided');
     }
 
     const formData = new FormData();
     formData.append('vendorId', vendorId);
     formData.append('staff_photo', photoFile);
 
-    const uploadResponse = await fetch(
+    // ✅ SECURITY FIX: Use authenticatedFetch for photo upload
+    const uploadResponse = await authenticatedFetch(
       `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/storage/upload-multiple`,
       {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${publicAnonKey}`
-        },
         body: formData
+        // Note: Don't set Content-Type header - browser handles it for FormData
       }
     );
 
@@ -678,7 +658,7 @@ function StaffFormModal({ vendorId, vendorData, staff, onClose, onSuccess }: Sta
 
       // Upload photo
       console.log('[STAFF FORM] Uploading photo...');
-      const photoUrl = await uploadPhoto();
+      const photoUrl = await uploadStaffPhoto(photoFile);
       console.log('[STAFF FORM] Photo uploaded:', photoUrl);
 
       // Determine role based on vendor type
@@ -714,12 +694,9 @@ function StaffFormModal({ vendorId, vendorData, staff, onClose, onSuccess }: Sta
 
       console.log(`[STAFF FORM] Making ${method} request to:`, url);
 
-      const response = await fetch(url, {
+      // ✅ SECURITY FIX: Use authenticatedFetch for staff CREATE/UPDATE
+      const response = await authenticatedFetch(url, {
         method,
-        headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
-          'Content-Type': 'application/json'
-        },
         body: JSON.stringify(staffData)
       });
 
@@ -1040,14 +1017,11 @@ function ServiceAssignmentModal({ vendorId, staff, availableServices, onClose, o
     try {
       setSubmitting(true);
 
-      const response = await fetch(
+      // ✅ SECURITY FIX: Use authenticatedFetch for service assignment
+      const response = await authenticatedFetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/${staff.id}/services`,
         {
           method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify({ serviceIds: selectedServices })
         }
       );

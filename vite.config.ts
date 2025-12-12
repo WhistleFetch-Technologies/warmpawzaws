@@ -19,6 +19,7 @@
         'input-otp@1.4.2': 'input-otp',
         'hono@4.6.14': 'hono',
         'hono@4': 'hono',
+        'fuse.js@7.0.0': 'fuse.js',
         'figma:asset/da6636b92da744b3db8eed5288ca6da9ab889afe.png': path.resolve(__dirname, './src/assets/da6636b92da744b3db8eed5288ca6da9ab889afe.png'),
         'figma:asset/1ee3459260cb17d9119000df586f10f31d016a25.png': path.resolve(__dirname, './src/assets/1ee3459260cb17d9119000df586f10f31d016a25.png'),
         'embla-carousel-react@8.6.0': 'embla-carousel-react',

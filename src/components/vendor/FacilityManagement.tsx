@@ -20,6 +20,7 @@ import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { getAmenitiesForVendorType } from '../../utils/master-amenities';
 import { toast } from 'sonner';
 import { SpecializationSelector } from './SpecializationSelector'; // ✅ NEW
+import { authenticatedFetch } from '../../utils/session-manager'; // ✅ SECURITY FIX
 
 interface FacilityManagementProps {
   vendorId: string;
@@ -168,14 +169,13 @@ export function FacilityManagement({ vendorId, vendorData, onBack }: FacilityMan
         });
 
         console.log('📤 Uploading facility photos...');
-        const uploadResponse = await fetch(
+        // ✅ SECURITY FIX: Use authenticatedFetch for photo upload
+        const uploadResponse = await authenticatedFetch(
           `${API_BASE}/storage/upload-facility-photos`,
           {
             method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${publicAnonKey}`
-            },
             body: formData
+            // Note: Don't set Content-Type - browser handles multipart/form-data
           }
         );
 
@@ -200,12 +200,9 @@ export function FacilityManagement({ vendorId, vendorData, onBack }: FacilityMan
       const allPhotos = [...facility.photos, ...uploadedUrls];
 
       // Save facility data
-      const response = await fetch(`${API_BASE}/vendor/facility/${vendorId}`, {
+      // ✅ SECURITY FIX: Use authenticatedFetch for facility update
+      const response = await authenticatedFetch(`${API_BASE}/vendor/facility/${vendorId}`, {
         method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
-          'Content-Type': 'application/json'
-        },
         body: JSON.stringify({
           description: facility.description,
           photos: allPhotos,

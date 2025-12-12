@@ -1,19 +1,10 @@
 import { useState, useEffect } from 'react';
-import { 
-  ArrowLeft, 
-  ChevronDown, 
-  ChevronRight, 
-  Search, 
-  Plus,
-  Package as PackageIcon,
-  CheckSquare,
-  Square
-} from 'lucide-react';
+import { ArrowLeft, Plus, Check, Search, X } from 'lucide-react';
 import { Button } from '../ui/button';
-import { Badge } from '../ui/badge';
 import { Input } from '../ui/input';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { toast } from 'sonner@2.0.3';
+import { authenticatedFetch } from '../../utils/session-manager'; // ✅ SECURITY FIX
 
 interface VendorServiceCatalogViewProps {
   vendorId: string;
@@ -350,15 +341,10 @@ export function VendorServiceCatalogView({
           if (!service) continue;
 
           // ✅ FIX: Call correct endpoint /vendor/services/add
-          const response = await fetch(
+          const response = await authenticatedFetch(
             `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/services/add`,
             {
               method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${publicAnonKey}`,
-                'Content-Type': 'application/json'
-              },
-              // ✅ FIX: Send data in format backend expects { vendorId, serviceData }
               body: JSON.stringify({
                 vendorId,
                 serviceData: {
@@ -427,26 +413,26 @@ export function VendorServiceCatalogView({
 
     setAdding(true);
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/services`,
+      // ✅ FIX: Use correct endpoint /vendor/services/add (not /vendor/services)
+      const response = await authenticatedFetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/services/add`,
         {
           method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify({
             vendorId,
-            catalogServiceCode: service.catalogId,
-            serviceName: service.serviceName,
-            serviceStyle: service.serviceStyle,
-            isEnabled: true,
-            vendorPrice: service.basePrice,
-            duration: service.duration || 30,
-            description: service.description,
-            isPackage: service.isPackage,
-            packageDetails: service.packageDetails,
-            status: 'active'
+            serviceData: {
+              catalogServiceCode: service.catalogId,
+              serviceName: service.serviceName,
+              serviceStyle: service.serviceStyle,
+              isEnabled: true,
+              vendorPrice: service.basePrice,
+              duration: service.duration || 30,
+              description: service.description,
+              isPackage: service.isPackage,
+              packageDetails: service.packageDetails,
+              status: 'active',
+              type: service.serviceStyle // Add type for backend compatibility
+            }
           })
         }
       );
