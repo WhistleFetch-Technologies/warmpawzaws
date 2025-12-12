@@ -27,6 +27,14 @@ import { ClinicDashboard } from './clinic/ClinicDashboard';
 import { CafeVendorDashboard } from './cafe/CafeVendorDashboard';
 import { SunsetServicesVendorDashboard } from './sunset/SunsetServicesVendorDashboard';
 import { InsuranceVendorContainer } from './insurance/InsuranceVendorContainer';
+import { VendorGalleryManagement } from './VendorGalleryManagement'; // ✅ FIX: Gallery component
+import { VendorPortfolioManagement } from './VendorPortfolioManagement'; // ✅ FIX: Portfolio component
+import { VendorCCTVAccess } from './VendorCCTVAccess'; // ✅ FIX: CCTV component
+import { VendorControlledSubstances } from './VendorControlledSubstances'; // ✅ FIX: Controlled substances component
+import { VendorPrescriptionBuilder } from './VendorPrescriptionBuilder'; // ✅ FIX: Prescription builder
+import { ProgressTrackingDashboard } from './training/ProgressTrackingDashboard'; // ✅ FIX: Progress tracking
+import { PackageManagementContainer } from './packages/PackageManagementContainer'; // ✅ FIX: Package management
+import { VendorCustomServiceCreation } from './VendorCustomServiceCreation'; // ✅ FIX: Custom services
 
 interface VendorLandingPageProps {
   vendorId: string;
@@ -106,6 +114,16 @@ export function VendorLandingPage({
   const [showVetSpecialized, setShowVetSpecialized] = useState(false); // Vet-specific services
   const [showResortManagement, setShowResortManagement] = useState(false); // Pet resort management
   const [showNutritionistMealManager, setShowNutritionistMealManager] = useState(false); // Nutritionist meal plans
+  
+  // ✅ FIX: Additional capability screens (Gallery, Portfolio, CCTV, Controlled Substances)
+  const [showGallery, setShowGallery] = useState(false);
+  const [showPortfolio, setShowPortfolio] = useState(false);
+  const [showCCTV, setShowCCTV] = useState(false);
+  const [showControlledSubstances, setShowControlledSubstances] = useState(false);
+  const [showPrescription, setShowPrescription] = useState(false);
+  const [showProgressTracking, setShowProgressTracking] = useState(false);
+  const [showPackages, setShowPackages] = useState(false);
+  const [showCustomServices, setShowCustomServices] = useState(false);
   
   // ✅ NEW: Track navigation context for better UX flow
   const [returnToStaffManagement, setReturnToStaffManagement] = useState(false);
@@ -884,6 +902,94 @@ export function VendorLandingPage({
         );
       }
       
+      // ✅ FIX: Gallery Management
+      if (showGallery) {
+        return (
+          <VendorGalleryManagement
+            vendorId={vendorId}
+            vendorData={vendorData}
+            onBack={() => setShowGallery(false)}
+          />
+        );
+      }
+      
+      // ✅ FIX: Portfolio Management
+      if (showPortfolio) {
+        return (
+          <VendorPortfolioManagement
+            vendorId={vendorId}
+            vendorData={vendorData}
+            onBack={() => setShowPortfolio(false)}
+          />
+        );
+      }
+      
+      // ✅ FIX: CCTV Access
+      if (showCCTV) {
+        return (
+          <VendorCCTVAccess
+            vendorId={vendorId}
+            vendorData={vendorData}
+            onBack={() => setShowCCTV(false)}
+          />
+        );
+      }
+      
+      // ✅ FIX: Controlled Substances Management
+      if (showControlledSubstances) {
+        return (
+          <VendorControlledSubstances
+            vendorId={vendorId}
+            vendorData={vendorData}
+            onBack={() => setShowControlledSubstances(false)}
+          />
+        );
+      }
+      
+      // ✅ FIX: Prescription Builder
+      if (showPrescription) {
+        return (
+          <VendorPrescriptionBuilder
+            vendorId={vendorId}
+            vendorData={vendorData}
+            onBack={() => setShowPrescription(false)}
+          />
+        );
+      }
+      
+      // ✅ FIX: Progress Tracking Dashboard
+      if (showProgressTracking) {
+        return (
+          <ProgressTrackingDashboard
+            vendorId={vendorId}
+            vendorData={vendorData}
+            onBack={() => setShowProgressTracking(false)}
+          />
+        );
+      }
+      
+      // ✅ FIX: Package Management
+      if (showPackages) {
+        return (
+          <PackageManagementContainer
+            vendorId={vendorId}
+            vendorData={vendorData}
+            onBack={() => setShowPackages(false)}
+          />
+        );
+      }
+      
+      // ✅ FIX: Custom Service Creation
+      if (showCustomServices) {
+        return (
+          <VendorCustomServiceCreation
+            vendorId={vendorId}
+            vendorData={vendorData}
+            onBack={() => setShowCustomServices(false)}
+          />
+        );
+      }
+      
       // ⚡️ ROLE-SPECIFIC DASHBOARDS
       // Some roles have specialized dashboards with unique capabilities outside the universal config
       
@@ -965,6 +1071,14 @@ export function VendorLandingPage({
           onNavigateToBusinessHub={() => setShowBusinessHub(true)} // ✅ NEW
           onNavigateToLiveTracking={() => setShowBookingManagement(true)} // ✅ Live tracking routes to bookings where active sessions are managed
           onNavigateToSpecializedServices={() => setShowVetSpecialized(true)} // ✅ NEW: Navigate to Vet Specialized Services
+          onNavigateToGallery={() => setShowGallery(true)} // ✅ FIX: Gallery navigation
+          onNavigateToPortfolio={() => setShowPortfolio(true)} // ✅ FIX: Portfolio navigation
+          onNavigateToCCTV={() => setShowCCTV(true)} // ✅ FIX: CCTV navigation
+          onNavigateToControlledSubstances={() => setShowControlledSubstances(true)} // ✅ FIX: Controlled substances navigation
+          onNavigateToPrescription={() => setShowPrescription(true)} // ✅ FIX: Prescription builder navigation
+          onNavigateToProgressTracking={() => setShowProgressTracking(true)} // ✅ FIX: Progress tracking navigation
+          onNavigateToPackages={() => setShowPackages(true)} // ✅ FIX: Packages navigation
+          onNavigateToCustomServices={() => setShowCustomServices(true)} // ✅ FIX: Custom services navigation
         />
       );
 

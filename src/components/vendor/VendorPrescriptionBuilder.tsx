@@ -194,16 +194,16 @@ export function VendorPrescriptionBuilder({
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between rounded-t-[32px] z-10">
           <div>
-            <h2 className=\"font-bold text-gray-800\">
+            <h2 className="font-bold text-gray-800">
               {isVet ? 'Add Prescription' : 'Add Service Notes'}
             </h2>
             <p className="text-sm text-gray-600">{petName} - {customerName}</p>
           </div>
           <button
             onClick={onClose}
-            className=\"w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 transition-colors\"
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
           >
-            <X className=\"w-5 h-5 text-gray-600\" />
+            <X className="w-5 h-5 text-gray-600" />
           </button>
         </div>
 
