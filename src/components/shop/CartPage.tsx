@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Plus, Minus, Heart, Trash2, ShoppingBag, AlertCircle, Gift, Truck } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
@@ -10,53 +10,21 @@ import { Input } from '../ui/input';
 import { Badge } from '../ui/badge';
 import { Checkbox } from '../ui/checkbox';
 import { Label } from '../ui/label';
-
-// Mock Data (Initial State)
-const MOCK_CART_ITEMS = [
-  {
-    id: '1',
-    title: 'Royal Canin Adult Golden Retriever Dog Food (3kg)',
-    price: 2400,
-    originalPrice: 2800,
-    quantity: 1,
-    image: 'https://images.unsplash.com/photo-1764249453874-46864677b10e?q=80&w=200&auto=format&fit=crop',
-    variant: '3kg',
-    stock: true
-  },
-  {
-    id: '2',
-    title: 'Interactive Cat Laser Toy Automatic',
-    price: 899,
-    originalPrice: 0,
-    quantity: 2,
-    image: 'https://images.unsplash.com/photo-1729008764855-9b5257318beb?q=80&w=200&auto=format&fit=crop',
-    variant: 'Red',
-    stock: true
-  }
-];
-
-const MOCK_SAVED_ITEMS = [
-   {
-    id: '3',
-    title: 'Pet Grooming Glove Kit',
-    price: 499,
-    originalPrice: 999,
-    quantity: 1,
-    image: 'https://images.unsplash.com/photo-1583337130417-3346a1be7dee?q=80&w=200&auto=format&fit=crop',
-    variant: 'Blue',
-    stock: true
-  }
-];
+import { projectId } from '../../utils/supabase/info';
+import { authenticatedGet, authenticatedPost, authenticatedDelete, authenticatedPut } from '../../utils/authenticatedFetch'; // ✅ FIX: Add authenticated fetch
+import { toast } from 'sonner';
 
 interface CartPageProps {
   onNavigate?: (path: string) => void;
 }
 
 export function CartPage({ onNavigate }: CartPageProps = {}) {
-  const [items, setItems] = useState(MOCK_CART_ITEMS);
-  const [savedItems, setSavedItems] = useState(MOCK_SAVED_ITEMS);
+  // ✅ FIX: Remove mock data, use real API
+  const [items, setItems] = useState<any[]>([]);
+  const [savedItems, setSavedItems] = useState<any[]>([]);
   const [coupon, setCoupon] = useState('');
   const [couponApplied, setCouponApplied] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const handleNavigation = (path: string) => {
     if (onNavigate) {
@@ -107,6 +75,50 @@ export function CartPage({ onNavigate }: CartPageProps = {}) {
       setCouponApplied(true);
     }
   };
+
+  useEffect(() => {
+    const fetchCartItems = async () => {
+      try {
+        setLoading(true);
+        // ✅ FIX: Use correct API endpoint matching backend pattern
+        const response = await authenticatedGet(
+          `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/cart`
+        );
+        
+        if (response.ok) {
+          const data = await response.json();
+          setItems(data.items || []);
+          setSavedItems(data.savedItems || []);
+        } else {
+          console.error('Failed to fetch cart items');
+          // Keep items empty on error (user sees empty cart instead of error)
+        }
+      } catch (error) {
+        console.error('Error fetching cart:', error);
+        // Keep items empty on error (user sees empty cart instead of error)
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchCartItems();
+  }, []);
+
+  if (loading) {
+    return (
+      <ShopLayout>
+        <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 text-center">
+          <div className="w-32 h-32 bg-gray-100 rounded-full flex items-center justify-center text-gray-300">
+            <ShoppingBag className="h-16 w-16" />
+          </div>
+          <div>
+            <h2 className="text-2xl font-bold mb-2">Loading Cart</h2>
+            <p className="text-muted-foreground mb-6">Please wait while we load your cart items.</p>
+          </div>
+        </div>
+      </ShopLayout>
+    );
+  }
 
   if (items.length === 0 && savedItems.length === 0) {
     return (

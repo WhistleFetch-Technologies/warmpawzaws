@@ -4,6 +4,7 @@ import {
   Grid, List, ChevronDown, X, Upload, DollarSign, Tag
 } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { authenticatedPost, authenticatedPut, authenticatedDelete } from '../../../utils/authenticatedFetch'; // ✅ FIX: Add authenticated fetch
 import { toast } from 'sonner@2.0.3';
 import {
   Table,
@@ -78,20 +79,13 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
     if (!confirm('Are you sure you want to delete this product?')) return;
     
     try {
-      const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/ecommerce/product/${productId}`,
-        {
-          method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
+      // ✅ FIX: Use authenticatedDelete instead of fetch with publicAnonKey
+      await authenticatedDelete(
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/ecommerce/product/${productId}`
       );
       
-      if (res.ok) {
-        toast.success('Product deleted successfully');
-        loadProducts();
-      } else {
-        toast.error('Failed to delete product');
-      }
+      toast.success('Product deleted successfully');
+      loadProducts();
     } catch (error) {
       console.error('Error deleting product:', error);
       toast.error('Failed to delete product');
@@ -388,21 +382,14 @@ function ProductModal({ product, sellerId, categories, onClose, onSave }: any) {
         ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/ecommerce/product/${product.id}`
         : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/ecommerce/product`;
 
-      const res = await fetch(url, {
-        method: product ? 'PUT' : 'POST',
-        headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          ...formData,
-          sellerId,
-          price: parseFloat(formData.price),
-          originalPrice: formData.originalPrice ? parseFloat(formData.originalPrice) : null,
-          stock: parseInt(formData.stock),
-          lowStockThreshold: parseInt(formData.lowStockThreshold),
-          image: formData.images[0] || '' // Set primary image for backward compatibility
-        })
+      const res = await (product ? authenticatedPut : authenticatedPost)(url, {
+        ...formData,
+        sellerId,
+        price: parseFloat(formData.price),
+        originalPrice: formData.originalPrice ? parseFloat(formData.originalPrice) : null,
+        stock: parseInt(formData.stock),
+        lowStockThreshold: parseInt(formData.lowStockThreshold),
+        image: formData.images[0] || '' // Set primary image for backward compatibility
       });
 
       if (res.ok) {

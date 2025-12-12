@@ -4,6 +4,7 @@ import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
 import { Label } from '../../ui/label';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { authenticatedPost } from '../../../utils/authenticatedFetch'; // ✅ FIX: Add authenticated fetch
 
 interface CreateBulkOperationModalProps {
   isOpen: boolean;
@@ -28,19 +29,13 @@ export function CreateBulkOperationModal({ isOpen, onClose, onSuccess }: CreateB
     try {
       setLoading(true);
       
-      const response = await fetch(
+      // ✅ FIX: Use authenticatedPost instead of fetch with publicAnonKey
+      const response = await authenticatedPost(
         `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/catalog/bulk-operations/create`,
         {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            ...formData,
-            items: parseInt(formData.items) || 0,
-            createdAt: new Date().toISOString()
-          })
+          ...formData,
+          items: parseInt(formData.items) || 0,
+          createdAt: new Date().toISOString()
         }
       );
 

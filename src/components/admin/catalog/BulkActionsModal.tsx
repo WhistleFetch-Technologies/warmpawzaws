@@ -2,6 +2,7 @@ import { X, Check, Slash, DollarSign, MoveRight, Download, Trash2 } from 'lucide
 import { useState } from 'react';
 import { Button } from '../../ui/button';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { authenticatedPost } from '../../../utils/authenticatedFetch'; // ✅ FIX: Add authenticated fetch
 
 interface BulkActionsModalProps {
   isOpen: boolean;
@@ -28,20 +29,14 @@ export function BulkActionsModal({ isOpen, onClose, categories, onRefresh }: Bul
       const operationName = getOperationName(selectedAction);
       const operationType = getOperationType(selectedAction);
       
-      const response = await fetch(
+      // ✅ FIX: Use authenticatedPost instead of fetch with publicAnonKey
+      const response = await authenticatedPost(
         `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/catalog/bulk-operations/create`,
         {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            name: operationName,
-            type: operationType,
-            items: 0, // Will be updated when items are selected
-            action: selectedAction
-          })
+          name: operationName,
+          type: operationType,
+          items: 0, // Will be updated when items are selected
+          action: selectedAction
         }
       );
 

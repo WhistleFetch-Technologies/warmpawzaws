@@ -29,7 +29,13 @@ import {
   Monitor,
   Users,
   Building2,
-  ShoppingBag
+  ShoppingBag,
+  Camera,
+  Briefcase,
+  Pill,
+  TrendingUp,
+  FileText,
+  Gift
 } from 'lucide-react';
 import { Badge } from '../ui/badge';
 import { VendorNotificationModal } from './VendorNotificationModal';
@@ -53,6 +59,15 @@ interface VendorDashboardProps {
   onNavigateToBusinessHub?: () => void;
   onNavigateToLiveTracking?: () => void;
   onNavigateToSpecializedServices?: () => void; // ✅ NEW: Navigate to Vet Specialized Services (Pharmacy, Diagnostics, Ambulance)
+  // ✅ NEW: Additional navigation handlers for all capabilities
+  onNavigateToGallery?: () => void;
+  onNavigateToPortfolio?: () => void;
+  onNavigateToCCTV?: () => void;
+  onNavigateToControlledSubstances?: () => void;
+  onNavigateToPrescription?: () => void;
+  onNavigateToProgressTracking?: () => void;
+  onNavigateToPackages?: () => void;
+  onNavigateToCustomServices?: () => void;
 }
 
 interface DashboardStats {
@@ -120,7 +135,16 @@ export function VendorDashboard({
   onNavigateToStaffManagement, 
   onNavigateToBusinessHub,
   onNavigateToLiveTracking,
-  onNavigateToSpecializedServices // ✅ NEW: Navigate to Vet Specialized Services (Pharmacy, Diagnostics, Ambulance)
+  onNavigateToSpecializedServices, // ✅ NEW: Navigate to Vet Specialized Services (Pharmacy, Diagnostics, Ambulance)
+  // ✅ NEW: Additional navigation handlers for all capabilities
+  onNavigateToGallery,
+  onNavigateToPortfolio,
+  onNavigateToCCTV,
+  onNavigateToControlledSubstances,
+  onNavigateToPrescription,
+  onNavigateToProgressTracking,
+  onNavigateToPackages,
+  onNavigateToCustomServices
 }: VendorDashboardProps) {
   const [activeTab, setActiveTab] = useState<'today' | 'week' | 'month'>('today');
   const [activeBottomTab, setActiveBottomTab] = useState<'home' | 'bookings' | 'reporting' | 'settings'>('home');
@@ -506,6 +530,103 @@ export function VendorDashboard({
             <p className="text-xs text-gray-500 mt-2 text-center">
               Manage specialized vet services, equipment, and protocols
             </p>
+          </div>
+        )}
+
+        {/* ✅ NEW: ADDITIONAL CAPABILITIES QUICK ACTIONS */}
+        {(capabilities.gallery || capabilities.portfolio || capabilities.cctv_access || capabilities.controlled_substances || 
+          capabilities.prescription || capabilities.progress_tracking || capabilities.package_management || capabilities.custom_services) && (
+          <div className="p-4 border-b border-gray-100">
+            <h2 className="font-semibold text-gray-900 mb-3">Additional Features</h2>
+            <div className="grid grid-cols-3 gap-2">
+              {/* Gallery Management */}
+              {onNavigateToGallery && capabilities.gallery && (
+                <button
+                  onClick={onNavigateToGallery}
+                  className="bg-pink-50 border border-pink-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-pink-100 transition-colors"
+                >
+                  <Camera className="w-6 h-6 text-pink-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Gallery</span>
+                </button>
+              )}
+              
+              {/* Portfolio Management */}
+              {onNavigateToPortfolio && capabilities.portfolio && (
+                <button
+                  onClick={onNavigateToPortfolio}
+                  className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-indigo-100 transition-colors"
+                >
+                  <Briefcase className="w-6 h-6 text-indigo-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Portfolio</span>
+                </button>
+              )}
+              
+              {/* CCTV Access */}
+              {onNavigateToCCTV && capabilities.cctv_access && (
+                <button
+                  onClick={onNavigateToCCTV}
+                  className="bg-gray-50 border border-gray-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-gray-100 transition-colors"
+                >
+                  <Monitor className="w-6 h-6 text-gray-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">CCTV</span>
+                </button>
+              )}
+              
+              {/* Controlled Substances */}
+              {onNavigateToControlledSubstances && capabilities.controlled_substances && (
+                <button
+                  onClick={onNavigateToControlledSubstances}
+                  className="bg-red-50 border border-red-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-red-100 transition-colors"
+                >
+                  <Pill className="w-6 h-6 text-red-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Substances</span>
+                </button>
+              )}
+              
+              {/* Prescription Builder */}
+              {onNavigateToPrescription && capabilities.prescription && (
+                <button
+                  onClick={onNavigateToPrescription}
+                  className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-blue-100 transition-colors"
+                >
+                  <FileText className="w-6 h-6 text-blue-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Rx</span>
+                </button>
+              )}
+              
+              {/* Progress Tracking */}
+              {onNavigateToProgressTracking && capabilities.progress_tracking && (
+                <button
+                  onClick={onNavigateToProgressTracking}
+                  className="bg-green-50 border border-green-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-green-100 transition-colors"
+                >
+                  <TrendingUp className="w-6 h-6 text-green-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Progress</span>
+                </button>
+              )}
+              
+              {/* Package Management */}
+              {onNavigateToPackages && capabilities.package_management && (
+                <button
+                  onClick={onNavigateToPackages}
+                  className="bg-purple-50 border border-purple-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-purple-100 transition-colors"
+                >
+                  <Gift className="w-6 h-6 text-purple-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Packages</span>
+                </button>
+              )}
+              
+              {/* Custom Services */}
+              {onNavigateToCustomServices && capabilities.custom_services && (
+                <button
+                  onClick={onNavigateToCustomServices}
+                  className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-yellow-100 transition-colors"
+                >
+                  <Plus className="w-6 h-6 text-yellow-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Custom</span>
+                </button>
+              )}
+            </div>
           </div>
         )}
 

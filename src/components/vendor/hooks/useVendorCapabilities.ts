@@ -300,6 +300,12 @@ export function useVendorCapabilities(roleId?: string) {
                 if (cap in newCapabilities) {
                   (newCapabilities as any)[cap] = true;
                   console.log(`   ✅ Enabled: ${cap}`);
+                } else {
+                  console.warn(`   ⚠️ MISSING CAPABILITY: "${cap}" exists in role config but NOT in TypeScript interface!`);
+                  console.warn(`   Add this to VendorCapabilities interface: ${cap}: boolean;`);
+                  // Enable it anyway for runtime, but flag the issue
+                  (newCapabilities as any)[cap] = true;
+                  console.log(`   ✅ Enabled (runtime): ${cap}`);
                 }
               });
 
