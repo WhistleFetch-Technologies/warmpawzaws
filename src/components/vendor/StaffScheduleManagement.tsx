@@ -23,23 +23,18 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import {
   Calendar,
   Clock,
-  Coffee,
   Plus,
   Trash2,
-  Edit2,
-  Save,
+  Edit,
   X,
+  Coffee,
+  Sun,
   AlertCircle,
-  CheckCircle,
-  Settings,
-  Palmtree,
-  Moon,
-  Heart,
-  AlertTriangle,
-  Timer
+  Check
 } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { toast } from 'sonner@2.0.3';
+import { authenticatedFetch } from '../../utils/session-manager'; // ✅ SECURITY FIX
 
 interface StaffScheduleManagementProps {
   staffId: string;
@@ -79,8 +74,8 @@ type TabType = 'breaks' | 'buffer' | 'holidays';
 const BREAK_TYPES = [
   { value: 'lunch', label: 'Lunch Break', icon: Coffee, color: 'bg-orange-100 text-orange-600' },
   { value: 'tea', label: 'Tea Break', icon: Coffee, color: 'bg-green-100 text-green-600' },
-  { value: 'personal', label: 'Personal', icon: Heart, color: 'bg-blue-100 text-blue-600' },
-  { value: 'emergency', label: 'Emergency', icon: AlertTriangle, color: 'bg-red-100 text-red-600' }
+  { value: 'personal', label: 'Personal', icon: Sun, color: 'bg-blue-100 text-blue-600' },
+  { value: 'emergency', label: 'Emergency', icon: AlertCircle, color: 'bg-red-100 text-red-600' }
 ];
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -183,14 +178,11 @@ export function StaffScheduleManagement({ staffId, staffName, vendorId, onClose 
         recurringDay: breakData.recurringDay
       };
 
-      const response = await fetch(
+      // ✅ SECURITY FIX: Use authenticatedFetch
+      const response = await authenticatedFetch(
         `${API_BASE}/staff/${staffId}/breaks`,
         {
           method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify({ break: newBreak })
         }
       );
@@ -211,14 +203,11 @@ export function StaffScheduleManagement({ staffId, staffName, vendorId, onClose 
 
   const handleUpdateBreak = async (breakId: string, breakData: Partial<Break>) => {
     try {
-      const response = await fetch(
+      // ✅ SECURITY FIX: Use authenticatedFetch
+      const response = await authenticatedFetch(
         `${API_BASE}/staff/${staffId}/breaks/${breakId}`,
         {
           method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify({ break: breakData })
         }
       );
@@ -241,11 +230,11 @@ export function StaffScheduleManagement({ staffId, staffName, vendorId, onClose 
     if (!confirm('Are you sure you want to delete this break?')) return;
 
     try {
-      const response = await fetch(
+      // ✅ SECURITY FIX: Use authenticatedFetch
+      const response = await authenticatedFetch(
         `${API_BASE}/staff/${staffId}/breaks/${breakId}`,
         {
-          method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          method: 'DELETE'
         }
       );
 
@@ -268,14 +257,11 @@ export function StaffScheduleManagement({ staffId, staffName, vendorId, onClose 
 
   const handleSavePreferences = async () => {
     try {
-      const response = await fetch(
+      // ✅ SECURITY FIX: Use authenticatedFetch
+      const response = await authenticatedFetch(
         `${API_BASE}/staff/${staffId}/preferences`,
         {
           method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify({ preferences })
         }
       );
@@ -307,14 +293,11 @@ export function StaffScheduleManagement({ staffId, staffName, vendorId, onClose 
         recurringDay: holidayData.recurringDay
       };
 
-      const response = await fetch(
+      // ✅ SECURITY FIX: Use authenticatedFetch
+      const response = await authenticatedFetch(
         `${API_BASE}/staff/${staffId}/holidays`,
         {
           method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify({ holiday: newHoliday })
         }
       );
@@ -337,11 +320,11 @@ export function StaffScheduleManagement({ staffId, staffName, vendorId, onClose 
     if (!confirm('Are you sure you want to delete this holiday?')) return;
 
     try {
-      const response = await fetch(
+      // ✅ SECURITY FIX: Use authenticatedFetch
+      const response = await authenticatedFetch(
         `${API_BASE}/staff/${staffId}/holidays/${holidayId}`,
         {
-          method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          method: 'DELETE'
         }
       );
 

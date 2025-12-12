@@ -433,16 +433,12 @@ export function VendorDashboard({
               </button>
             )}
             
-            {/* ✅ FIX: Center Profile - For ANY center-style vendor or vet */}
+            {/* ✅ FIX: Center Profile - Use capability-based check with fallbacks */}
             {onNavigateToCenterProfile && (
-              // Check multiple conditions with fallbacks
-              vendorData?.serviceStyle === 'center' || 
-              vendorData?.serviceStyle === 'at_center' ||
-              vendorData?.serviceStyle === 'both' ||  // ✅ FIX: Added 'both' option
-              vendorData?.serviceStyles?.includes('at_center') ||  // ✅ FIX: Check array
-              vendorData?.vendorType?.includes('center') ||
-              VendorUtils.isVet(vendorData?.roleId) ||  // ✅ FIX: Use utility function
-              VendorUtils.canOfferCenter(vendorData?.roleId)  // ✅ FIX: Check if role allows center
+              capabilities.facility_management ||  // ✅ PRIMARY: Check capability
+              VendorUtils.canOfferCenter(vendorData?.roleId) ||  // ✅ FALLBACK: Check if role can offer center services
+              vendorData?.serviceStyle === 'at_center' ||  // ✅ FALLBACK: Check service style
+              vendorData?.serviceStyles?.includes('at_center')  // ✅ FALLBACK: Check if array includes at_center
             ) && (
               <button
                 onClick={onNavigateToCenterProfile}
@@ -466,8 +462,14 @@ export function VendorDashboard({
           </div>
         </div>
         
-        {/* ✅ CANONICAL: VET-SPECIFIC SERVICES SECTION - Only for pet_clinic role */}
-        {vendorData?.roleId === 'pet_clinic' && (
+        {/* ✅ CANONICAL: VET-SPECIFIC SERVICES SECTION - For all veterinary roles */}
+        {(
+          vendorData?.roleId === 'pet_clinic' || 
+          vendorData?.roleId === 'veterinarian' || 
+          vendorData?.roleId === 'veterinary_clinic' ||
+          vendorData?.roleId?.includes('vet') || 
+          vendorData?.serviceCategory === 'veterinary'
+        ) && (
           <div className="p-4 border-b border-gray-100">
             <h2 className="font-semibold text-gray-900 mb-3">Vet Center Services</h2>
             <div className="grid grid-cols-3 gap-2">

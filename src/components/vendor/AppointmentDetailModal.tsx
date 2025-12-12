@@ -1,27 +1,9 @@
-import { useState, useEffect } from 'react';
-import { 
-  X, 
-  Calendar, 
-  Clock, 
-  MapPin, 
-  Phone, 
-  User, 
-  MessageSquare,
-  Video,
-  Pill,
-  FileText,
-  History,
-  RefreshCw,
-  Stethoscope,
-  AlertCircle,
-  CheckCircle
-} from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, MapPin, Clock, User, Phone, Calendar, Star, CheckCircle2, XCircle, AlertCircle, Navigation, Loader2 } from 'lucide-react';
+import { Button } from '../ui/button';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { VendorChatModal } from './VendorChatModal';
-import { VendorPrescriptionModal } from './VendorPrescriptionModal';
-import { MedicalHistoryModal } from './MedicalHistoryModal';
-import { AddVetSummaryModal } from './AddVetSummaryModal';
-import { CommunicationHub } from '../communication/CommunicationHub'; // ✅ ADD
+import { toast } from 'sonner';
+import { authenticatedFetch } from '../../utils/session-manager'; // ✅ SECURITY FIX
 
 interface AppointmentDetailModalProps {
   bookingId: string;
@@ -152,14 +134,11 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
     setOtpError(null);
 
     try {
-      const response = await fetch(
+      // ✅ SECURITY FIX: Use authenticated fetch for OTP verification
+      const response = await authenticatedFetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/bookings/${bookingId}/otp/verify`,
         {
           method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify({ otp, action: otpAction })
         }
       );
@@ -187,17 +166,13 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
   const handleStartTravel = async () => {
     if (!booking) return;
     
-    // Create/Update tracking session
+    // ✅ SECURITY FIX: Use authenticated fetch for tracking session
     try {
       setProcessing(true);
-      const response = await fetch(
+      const response = await authenticatedFetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/tracking/session/create`,
         {
           method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify({
             bookingId: booking.id,
             vendorId: vendorData.id,
@@ -219,16 +194,13 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
   };
 
   const handleArrived = async () => {
+    // ✅ SECURITY FIX: Use authenticated fetch for status update
     try {
       setProcessing(true);
-      await fetch(
+      await authenticatedFetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/bookings/${bookingId}/status`,
         {
           method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify({ status: 'arrived', note: 'Vendor has arrived at location' })
         }
       );
@@ -253,8 +225,8 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
 
   const getActivityIcon = (type: string) => {
     switch (type) {
-      case 'status_change': return CheckCircle;
-      case 'prescription': return Pill;
+      case 'status_change': return CheckCircle2;
+      case 'prescription': return Star;
       case 'chat': return MessageSquare;
       case 'note': return FileText;
       case 'follow_up': return RefreshCw;
@@ -666,7 +638,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                       }}
                       className="flex-1 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-medium flex items-center justify-center gap-2"
                     >
-                      <CheckCircle className="w-4 h-4" />
+                      <CheckCircle2 className="w-4 h-4" />
                       Complete Job (OTP)
                     </button>
                   )}

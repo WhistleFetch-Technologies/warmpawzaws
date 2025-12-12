@@ -26,6 +26,7 @@ import { reviewEndpoints } from "./review-endpoints.tsx";
 import { analyticsEndpoints } from "./analytics-endpoints.tsx";
 import { registerP0Features } from "./p0-features-endpoints.tsx";
 import { customServiceEndpoints } from "./custom-service-endpoints.tsx"; // ✅ FIX: Add custom service endpoints
+import { advancedSearchEngine } from "./advanced-search-engine.tsx"; // ✅ NEW: Advanced search with Fuse.js
 
 // Vendor & Admin modules
 import { vendorScheduleV2Endpoints } from "./vendor-schedule-v2.tsx";
@@ -425,6 +426,10 @@ registerCustomerSearchEndpoints(app);
 notificationEndpoints(app, kv);
 reviewEndpoints(app, kv);
 analyticsEndpoints(app, kv);
+
+// ✅ NEW: Advanced Search Engine with Fuse.js
+console.log('🔍 Registering Advanced Search Engine...');
+advancedSearchEngine(app, kv);
 
 // 2. Vendor Specific Routes (Dashboard, Onboarding, Config, Services)
 // These must be registered BEFORE customer-routes because customer-routes
