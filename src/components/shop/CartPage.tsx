@@ -80,19 +80,14 @@ export function CartPage({ onNavigate }: CartPageProps = {}) {
     const fetchCartItems = async () => {
       try {
         setLoading(true);
-        // ✅ FIX: Use correct API endpoint matching backend pattern
-        const response = await authenticatedGet(
-          `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/cart`
+        // ✅ FIX: Use authenticatedGet properly (it returns data directly, not Response object)
+        const data = await authenticatedGet(
+          `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/cart`,
+          true // Requires auth
         );
         
-        if (response.ok) {
-          const data = await response.json();
-          setItems(data.items || []);
-          setSavedItems(data.savedItems || []);
-        } else {
-          console.error('Failed to fetch cart items');
-          // Keep items empty on error (user sees empty cart instead of error)
-        }
+        setItems(data.items || []);
+        setSavedItems(data.savedItems || []);
       } catch (error) {
         console.error('Error fetching cart:', error);
         // Keep items empty on error (user sees empty cart instead of error)
