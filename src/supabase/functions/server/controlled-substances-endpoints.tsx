@@ -1,393 +1,434 @@
+/**
+ * Controlled Substances Management Endpoints
+ * Handles controlled substances inventory, compliance, and tracking
+ */
+
 import { Hono } from 'npm:hono';
 import * as kv from './kv_store.tsx';
 
 const app = new Hono();
 
-/**
- * 💊 CONTROLLED SUBSTANCES MANAGEMENT ENDPOINTS
- * For pharmacies and veterinary clinics managing controlled drugs
- * 
- * Features:
- * - Track controlled substance inventory
- * - Prescription verification
- * - Audit trail for compliance
- * - Stock level monitoring
- * - Expiry tracking
- */
-
-// ==================== INTERFACES ====================
-
+// Controlled Substance structure
 interface ControlledSubstance {
   id: string;
   vendorId: string;
-  drugName: string;
+  name: string;
   genericName?: string;
-  scheduleClass: 'I' | 'II' | 'III' | 'IV' | 'V'; // DEA schedule classification
+  schedule: 'I' | 'II' | 'III' | 'IV' | 'V'; // DEA Schedule
+  form: 'tablet' | 'injection' | 'liquid' | 'powder' | 'other';
   strength: string;
-  unit: string; // mg, ml, tablets, etc.
+  unit: string;
   currentStock: number;
-  minStockLevel: number;
-  maxStockLevel: number;
-  manufacturer: string;
-  batchNumber: string;
-  manufacturingDate: string;
+  minimumStock: number;
+  maximumStock: number;
+  location: string;
+  lockNumber?: string;
   expiryDate: string;
-  storageLocation: string;
-  requiresPrescription: boolean;
-  restrictedAccess: boolean;
+  batchNumber: string;
+  supplier: string;
+  licenseRequired: boolean;
   createdAt: string;
   updatedAt: string;
 }
 
-interface ControlledSubstanceTransaction {
+// Transaction log for controlled substances
+interface SubstanceTransaction {
   id: string;
-  vendorId: string;
   substanceId: string;
-  transactionType: 'stock_in' | 'stock_out' | 'adjustment' | 'expired' | 'damaged';
+  vendorId: string;
+  type: 'dispensed' | 'received' | 'destroyed' | 'lost' | 'returned' | 'transferred';
   quantity: number;
-  balanceBefore: number;
-  balanceAfter: number;
+  previousStock: number;
+  newStock: number;
   prescriptionId?: string;
-  customerId?: string;
-  customerName?: string;
-  petName?: string;
-  staffId: string;
-  staffName: string;
+  patientId?: string;
+  patientName?: string;
+  authorizedBy: string;
+  authorizedById: string;
   reason: string;
   notes?: string;
   timestamp: string;
+  witnessName?: string;
+  witnessId?: string;
 }
 
-interface PrescriptionVerification {
+// Audit log for compliance
+interface ComplianceAudit {
   id: string;
   vendorId: string;
-  prescriptionId: string;
-  substanceId: string;
-  prescribedBy: string;
-  prescribedByLicenseNo: string;
-  verifiedBy: string;
-  verifiedByLicenseNo: string;
-  patientName: string;
-  quantity: number;
-  dosage: string;
-  frequency: string;
-  duration: string;
-  isVerified: boolean;
-  verifiedAt?: string;
-  dispensedAt?: string;
-  status: 'pending' | 'verified' | 'dispensed' | 'rejected';
-  rejectionReason?: string;
-  createdAt: string;
+  auditDate: string;
+  auditorName: string;
+  auditorId: string;
+  findings: string[];
+  discrepancies: {
+    substanceId: string;
+    substanceName: string;
+    expectedStock: number;
+    actualStock: number;
+    difference: number;
+  }[];
+  status: 'passed' | 'failed' | 'pending';
+  notes?: string;
+  nextAuditDate?: string;
 }
 
-// ==================== GET ALL CONTROLLED SUBSTANCES ====================
-
-app.get('/controlled-substances/:vendorId', async (c) => {
+/**
+ * GET /vendor/controlled-substances/:vendorId
+ * Get all controlled substances for a vendor
+ */
+app.get('/:vendorId', async (c) => {
   try {
     const vendorId = c.req.param('vendorId');
-
-    const substances = await kv.getByPrefix<ControlledSubstance>(`controlled_substance:${vendorId}:`);
-
-    // Sort by schedule class and name
+    
+    const substances = await kv.getByPrefix<ControlledSubstance>(`substance:${vendorId}:`);
+    
+    // Sort by schedule (most controlled first) then by name
+    const scheduleOrder = { 'I': 1, 'II': 2, 'III': 3, 'IV': 4, 'V': 5 };
     substances.sort((a, b) => {
-      if (a.scheduleClass !== b.scheduleClass) {
-        return a.scheduleClass.localeCompare(b.scheduleClass);
-      }
-      return a.drugName.localeCompare(b.drugName);
+      const scheduleCompare = scheduleOrder[a.schedule] - scheduleOrder[b.schedule];
+      if (scheduleCompare !== 0) return scheduleCompare;
+      return a.name.localeCompare(b.name);
     });
-
-    // Calculate low stock items
-    const lowStock = substances.filter(s => s.currentStock <= s.minStockLevel);
+    
+    // Calculate statistics
+    const lowStock = substances.filter(s => s.currentStock <= s.minimumStock);
     const expiringSoon = substances.filter(s => {
-      const daysUntilExpiry = Math.floor((new Date(s.expiryDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+      const daysUntilExpiry = (new Date(s.expiryDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24);
       return daysUntilExpiry <= 30 && daysUntilExpiry > 0;
     });
-
+    
     return c.json({
       success: true,
       substances,
-      stats: {
-        total: substances.length,
-        lowStock: lowStock.length,
-        expiringSoon: expiringSoon.length
-      }
+      total: substances.length,
+      lowStock: lowStock.length,
+      expiringSoon: expiringSoon.length
     });
   } catch (error) {
-    console.error('❌ Error fetching controlled substances:', error);
-    return c.json({ success: false, error: 'Failed to fetch controlled substances' }, 500);
+    console.error('Error fetching controlled substances:', error);
+    return c.json({ 
+      success: false, 
+      error: 'Failed to fetch controlled substances',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
   }
 });
 
-// ==================== ADD CONTROLLED SUBSTANCE ====================
-
-app.post('/controlled-substances/:vendorId', async (c) => {
+/**
+ * GET /vendor/controlled-substances/:vendorId/:substanceId
+ * Get a specific controlled substance
+ */
+app.get('/:vendorId/:substanceId', async (c) => {
   try {
-    const vendorId = c.req.param('vendorId');
-    const body = await c.req.json();
-
-    const substance: ControlledSubstance = {
-      id: `CS-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      vendorId,
-      drugName: body.drugName,
-      genericName: body.genericName,
-      scheduleClass: body.scheduleClass,
-      strength: body.strength,
-      unit: body.unit,
-      currentStock: body.currentStock || 0,
-      minStockLevel: body.minStockLevel || 10,
-      maxStockLevel: body.maxStockLevel || 100,
-      manufacturer: body.manufacturer,
-      batchNumber: body.batchNumber,
-      manufacturingDate: body.manufacturingDate,
-      expiryDate: body.expiryDate,
-      storageLocation: body.storageLocation,
-      requiresPrescription: body.requiresPrescription !== false,
-      restrictedAccess: body.scheduleClass === 'I' || body.scheduleClass === 'II',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-
-    await kv.set(`controlled_substance:${vendorId}:${substance.id}`, substance);
-
-    // Create initial stock-in transaction
-    if (substance.currentStock > 0) {
-      const transaction: ControlledSubstanceTransaction = {
-        id: `TXN-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        vendorId,
-        substanceId: substance.id,
-        transactionType: 'stock_in',
-        quantity: substance.currentStock,
-        balanceBefore: 0,
-        balanceAfter: substance.currentStock,
-        staffId: body.staffId || 'system',
-        staffName: body.staffName || 'System',
-        reason: 'Initial stock',
-        timestamp: new Date().toISOString()
-      };
-
-      await kv.set(`cs_transaction:${vendorId}:${transaction.id}`, transaction);
+    const { vendorId, substanceId } = c.req.param();
+    
+    const substance = await kv.get<ControlledSubstance>(`substance:${vendorId}:${substanceId}`);
+    
+    if (!substance) {
+      return c.json({ 
+        success: false, 
+        error: 'Controlled substance not found' 
+      }, 404);
     }
-
+    
     return c.json({
       success: true,
       substance
     });
   } catch (error) {
-    console.error('❌ Error adding controlled substance:', error);
-    return c.json({ success: false, error: 'Failed to add controlled substance' }, 500);
+    console.error('Error fetching controlled substance:', error);
+    return c.json({ 
+      success: false, 
+      error: 'Failed to fetch controlled substance',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
   }
 });
 
-// ==================== UPDATE CONTROLLED SUBSTANCE ====================
-
-app.put('/controlled-substances/:vendorId/:substanceId', async (c) => {
+/**
+ * POST /vendor/controlled-substances/:vendorId
+ * Add a new controlled substance
+ */
+app.post('/:vendorId', async (c) => {
   try {
     const vendorId = c.req.param('vendorId');
-    const substanceId = c.req.param('substanceId');
     const body = await c.req.json();
+    
+    const substanceId = `sub-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const now = new Date().toISOString();
+    
+    const substance: ControlledSubstance = {
+      id: substanceId,
+      vendorId,
+      name: body.name,
+      genericName: body.genericName,
+      schedule: body.schedule,
+      form: body.form,
+      strength: body.strength,
+      unit: body.unit,
+      currentStock: body.currentStock || 0,
+      minimumStock: body.minimumStock || 0,
+      maximumStock: body.maximumStock || 1000,
+      location: body.location,
+      lockNumber: body.lockNumber,
+      expiryDate: body.expiryDate,
+      batchNumber: body.batchNumber,
+      supplier: body.supplier,
+      licenseRequired: body.licenseRequired !== false,
+      createdAt: now,
+      updatedAt: now
+    };
+    
+    await kv.set(`substance:${vendorId}:${substanceId}`, substance);
+    
+    // Log initial stock receipt
+    const transactionId = `txn-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const transaction: SubstanceTransaction = {
+      id: transactionId,
+      substanceId,
+      vendorId,
+      type: 'received',
+      quantity: substance.currentStock,
+      previousStock: 0,
+      newStock: substance.currentStock,
+      authorizedBy: body.authorizedBy || 'System',
+      authorizedById: body.authorizedById || 'system',
+      reason: 'Initial stock',
+      timestamp: now
+    };
+    
+    await kv.set(`substance:transaction:${vendorId}:${transactionId}`, transaction);
+    
+    return c.json({
+      success: true,
+      substance,
+      message: 'Controlled substance added successfully'
+    });
+  } catch (error) {
+    console.error('Error adding controlled substance:', error);
+    return c.json({ 
+      success: false, 
+      error: 'Failed to add controlled substance',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
 
-    const key = `controlled_substance:${vendorId}:${substanceId}`;
-    const existing = await kv.get<ControlledSubstance>(key);
-
+/**
+ * PUT /vendor/controlled-substances/:vendorId/:substanceId
+ * Update a controlled substance
+ */
+app.put('/:vendorId/:substanceId', async (c) => {
+  try {
+    const { vendorId, substanceId } = c.req.param();
+    const body = await c.req.json();
+    
+    const existing = await kv.get<ControlledSubstance>(`substance:${vendorId}:${substanceId}`);
+    
     if (!existing) {
-      return c.json({ success: false, error: 'Controlled substance not found' }, 404);
+      return c.json({ 
+        success: false, 
+        error: 'Controlled substance not found' 
+      }, 404);
     }
-
+    
     const updated: ControlledSubstance = {
       ...existing,
       ...body,
-      id: substanceId, // Prevent ID change
-      vendorId: vendorId, // Prevent vendor change
+      id: substanceId,
+      vendorId,
       updatedAt: new Date().toISOString()
     };
-
-    await kv.set(key, updated);
-
+    
+    await kv.set(`substance:${vendorId}:${substanceId}`, updated);
+    
     return c.json({
       success: true,
-      substance: updated
+      substance: updated,
+      message: 'Controlled substance updated successfully'
     });
   } catch (error) {
-    console.error('❌ Error updating controlled substance:', error);
-    return c.json({ success: false, error: 'Failed to update controlled substance' }, 500);
+    console.error('Error updating controlled substance:', error);
+    return c.json({ 
+      success: false, 
+      error: 'Failed to update controlled substance',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
   }
 });
 
-// ==================== RECORD TRANSACTION ====================
-
-app.post('/controlled-substances/:vendorId/:substanceId/transaction', async (c) => {
+/**
+ * POST /vendor/controlled-substances/:vendorId/:substanceId/dispense
+ * Dispense a controlled substance (record transaction)
+ */
+app.post('/:vendorId/:substanceId/dispense', async (c) => {
   try {
-    const vendorId = c.req.param('vendorId');
-    const substanceId = c.req.param('substanceId');
+    const { vendorId, substanceId } = c.req.param();
     const body = await c.req.json();
-
-    const substanceKey = `controlled_substance:${vendorId}:${substanceId}`;
-    const substance = await kv.get<ControlledSubstance>(substanceKey);
-
+    
+    const substance = await kv.get<ControlledSubstance>(`substance:${vendorId}:${substanceId}`);
+    
     if (!substance) {
-      return c.json({ success: false, error: 'Controlled substance not found' }, 404);
+      return c.json({ 
+        success: false, 
+        error: 'Controlled substance not found' 
+      }, 404);
     }
-
-    const quantity = body.transactionType === 'stock_in' || body.transactionType === 'adjustment'
-      ? Math.abs(body.quantity)
-      : -Math.abs(body.quantity);
-
-    const newStock = substance.currentStock + quantity;
-
-    if (newStock < 0) {
-      return c.json({ success: false, error: 'Insufficient stock' }, 400);
+    
+    if (substance.currentStock < body.quantity) {
+      return c.json({ 
+        success: false, 
+        error: 'Insufficient stock' 
+      }, 400);
     }
-
-    // Create transaction record
-    const transaction: ControlledSubstanceTransaction = {
-      id: `TXN-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      vendorId,
-      substanceId,
-      transactionType: body.transactionType,
-      quantity: Math.abs(body.quantity),
-      balanceBefore: substance.currentStock,
-      balanceAfter: newStock,
-      prescriptionId: body.prescriptionId,
-      customerId: body.customerId,
-      customerName: body.customerName,
-      petName: body.petName,
-      staffId: body.staffId,
-      staffName: body.staffName,
-      reason: body.reason,
-      notes: body.notes,
-      timestamp: new Date().toISOString()
+    
+    // Update stock
+    const previousStock = substance.currentStock;
+    const newStock = previousStock - body.quantity;
+    
+    const updated: ControlledSubstance = {
+      ...substance,
+      currentStock: newStock,
+      updatedAt: new Date().toISOString()
     };
-
-    // Update substance stock
-    substance.currentStock = newStock;
-    substance.updatedAt = new Date().toISOString();
-
-    await kv.set(substanceKey, substance);
-    await kv.set(`cs_transaction:${vendorId}:${transaction.id}`, transaction);
-
+    
+    await kv.set(`substance:${vendorId}:${substanceId}`, updated);
+    
+    // Log transaction
+    const transactionId = `txn-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const transaction: SubstanceTransaction = {
+      id: transactionId,
+      substanceId,
+      vendorId,
+      type: 'dispensed',
+      quantity: body.quantity,
+      previousStock,
+      newStock,
+      prescriptionId: body.prescriptionId,
+      patientId: body.patientId,
+      patientName: body.patientName,
+      authorizedBy: body.authorizedBy,
+      authorizedById: body.authorizedById,
+      reason: body.reason || 'Dispensed to patient',
+      notes: body.notes,
+      timestamp: new Date().toISOString(),
+      witnessName: body.witnessName,
+      witnessId: body.witnessId
+    };
+    
+    await kv.set(`substance:transaction:${vendorId}:${transactionId}`, transaction);
+    
     return c.json({
       success: true,
+      substance: updated,
       transaction,
-      newStock
+      message: 'Controlled substance dispensed successfully'
     });
   } catch (error) {
-    console.error('❌ Error recording transaction:', error);
-    return c.json({ success: false, error: 'Failed to record transaction' }, 500);
+    console.error('Error dispensing controlled substance:', error);
+    return c.json({ 
+      success: false, 
+      error: 'Failed to dispense controlled substance',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
   }
 });
 
-// ==================== GET TRANSACTION HISTORY ====================
+/**
+ * GET /vendor/controlled-substances/:vendorId/:substanceId/transactions
+ * Get transaction history for a substance
+ */
+app.get('/:vendorId/:substanceId/transactions', async (c) => {
+  try {
+    const { vendorId, substanceId } = c.req.param();
+    
+    const allTransactions = await kv.getByPrefix<SubstanceTransaction>(`substance:transaction:${vendorId}:`);
+    const transactions = allTransactions.filter(t => t.substanceId === substanceId);
+    
+    // Sort by timestamp (most recent first)
+    transactions.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    
+    return c.json({
+      success: true,
+      transactions,
+      total: transactions.length
+    });
+  } catch (error) {
+    console.error('Error fetching transactions:', error);
+    return c.json({ 
+      success: false, 
+      error: 'Failed to fetch transactions',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
 
-app.get('/controlled-substances/:vendorId/:substanceId/transactions', async (c) => {
+/**
+ * GET /vendor/controlled-substances/:vendorId/audit-history
+ * Get audit history for a vendor
+ */
+app.get('/:vendorId/audit-history', async (c) => {
   try {
     const vendorId = c.req.param('vendorId');
-    const substanceId = c.req.param('substanceId');
-
-    const allTransactions = await kv.getByPrefix<ControlledSubstanceTransaction>(`cs_transaction:${vendorId}:`);
-    const transactions = allTransactions.filter(t => t.substanceId === substanceId);
-
-    // Sort by timestamp descending
-    transactions.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-
+    
+    const audits = await kv.getByPrefix<ComplianceAudit>(`substance:audit:${vendorId}:`);
+    
+    // Sort by date (most recent first)
+    audits.sort((a, b) => new Date(b.auditDate).getTime() - new Date(a.auditDate).getTime());
+    
     return c.json({
       success: true,
-      transactions
+      audits,
+      total: audits.length
     });
   } catch (error) {
-    console.error('❌ Error fetching transactions:', error);
-    return c.json({ success: false, error: 'Failed to fetch transactions' }, 500);
+    console.error('Error fetching audit history:', error);
+    return c.json({ 
+      success: false, 
+      error: 'Failed to fetch audit history',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
   }
 });
 
-// ==================== PRESCRIPTION VERIFICATION ====================
-
-app.post('/controlled-substances/:vendorId/verify-prescription', async (c) => {
+/**
+ * POST /vendor/controlled-substances/:vendorId/audit
+ * Create a new compliance audit
+ */
+app.post('/:vendorId/audit', async (c) => {
   try {
     const vendorId = c.req.param('vendorId');
     const body = await c.req.json();
-
-    const verification: PrescriptionVerification = {
-      id: `VERIFY-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    
+    const auditId = `audit-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    const audit: ComplianceAudit = {
+      id: auditId,
       vendorId,
-      prescriptionId: body.prescriptionId,
-      substanceId: body.substanceId,
-      prescribedBy: body.prescribedBy,
-      prescribedByLicenseNo: body.prescribedByLicenseNo,
-      verifiedBy: body.verifiedBy,
-      verifiedByLicenseNo: body.verifiedByLicenseNo,
-      patientName: body.patientName,
-      quantity: body.quantity,
-      dosage: body.dosage,
-      frequency: body.frequency,
-      duration: body.duration,
-      isVerified: body.isVerified || false,
-      verifiedAt: body.isVerified ? new Date().toISOString() : undefined,
+      auditDate: new Date().toISOString(),
+      auditorName: body.auditorName,
+      auditorId: body.auditorId,
+      findings: body.findings || [],
+      discrepancies: body.discrepancies || [],
       status: body.status || 'pending',
-      rejectionReason: body.rejectionReason,
-      createdAt: new Date().toISOString()
+      notes: body.notes,
+      nextAuditDate: body.nextAuditDate
     };
-
-    await kv.set(`cs_verification:${vendorId}:${verification.id}`, verification);
-
+    
+    await kv.set(`substance:audit:${vendorId}:${auditId}`, audit);
+    
     return c.json({
       success: true,
-      verification
+      audit,
+      message: 'Audit created successfully'
     });
   } catch (error) {
-    console.error('❌ Error verifying prescription:', error);
-    return c.json({ success: false, error: 'Failed to verify prescription' }, 500);
-  }
-});
-
-// ==================== GET AUDIT REPORT ====================
-
-app.get('/controlled-substances/:vendorId/audit-report', async (c) => {
-  try {
-    const vendorId = c.req.param('vendorId');
-    const { startDate, endDate } = c.req.query();
-
-    const substances = await kv.getByPrefix<ControlledSubstance>(`controlled_substance:${vendorId}:`);
-    const transactions = await kv.getByPrefix<ControlledSubstanceTransaction>(`cs_transaction:${vendorId}:`);
-
-    // Filter by date if provided
-    let filteredTransactions = transactions;
-    if (startDate && endDate) {
-      filteredTransactions = transactions.filter(t => {
-        const txnDate = new Date(t.timestamp);
-        return txnDate >= new Date(startDate) && txnDate <= new Date(endDate);
-      });
-    }
-
-    // Group by substance
-    const report = substances.map(substance => {
-      const substanceTransactions = filteredTransactions.filter(t => t.substanceId === substance.id);
-      const stockIn = substanceTransactions
-        .filter(t => t.transactionType === 'stock_in')
-        .reduce((sum, t) => sum + t.quantity, 0);
-      const stockOut = substanceTransactions
-        .filter(t => t.transactionType === 'stock_out')
-        .reduce((sum, t) => sum + t.quantity, 0);
-
-      return {
-        substance: substance.drugName,
-        scheduleClass: substance.scheduleClass,
-        currentStock: substance.currentStock,
-        stockIn,
-        stockOut,
-        transactionCount: substanceTransactions.length,
-        lastTransaction: substanceTransactions[0]?.timestamp
-      };
-    });
-
-    return c.json({
-      success: true,
-      report,
-      period: startDate && endDate ? { startDate, endDate } : 'all-time',
-      generatedAt: new Date().toISOString()
-    });
-  } catch (error) {
-    console.error('❌ Error generating audit report:', error);
-    return c.json({ success: false, error: 'Failed to generate audit report' }, 500);
+    console.error('Error creating audit:', error);
+    return c.json({ 
+      success: false, 
+      error: 'Failed to create audit',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
   }
 });
 

@@ -98,43 +98,14 @@ import cafeTableManagement from "./cafe-table-management.tsx";
 import { registerInsuranceClaimEndpoints } from "./insurance-claim-management.tsx";
 import customerWalletTopup from "./customer-wallet-topup.tsx";
 import rewardsLoyaltySystem from "./rewards-loyalty-system.tsx";
-import referralSystem from "./referral-system.tsx";
-import { registerCustomerMedicalRecordsEndpoints } from "./customer-medical-records.tsx";
-import customerAppEnhancements from "./customer-app-enhancements.tsx";
-import { registerProfilePhotoEndpoints } from "./profile-photo-management.tsx";
-import advancedFilteringSystem from "./advanced-filtering-system.tsx";
-import appointmentReminderSystem from "./appointment-reminder-system.tsx";
-import serviceComparisonSystem from "./service-comparison-system.tsx";
-import { registerPlatformSubscriptionTiers } from "./platform-subscription-tiers.tsx";
-import { registerMatingDatingService } from "./mating-dating-service.tsx";
-import vendorBookings from "./vendor-bookings.tsx";
-import automatedPayoutProcessing from "./automated-payout-processing.tsx";
-import enhancedRefundSystem from "./enhanced-refund-system.tsx";
-import tierUpgradeAutomation from "./tier-upgrade-automation.tsx";
-import systemHealthCheck from "./system-health-check.tsx";
-import adminCleanupDuplicates from "./admin-cleanup-duplicates.tsx";
-import vendorBankValidation from "./vendor-bank-validation.tsx";
-import vetSpecializedServices from "./vet-specialized-services.tsx"; // ✅ NEW: Vet specialized services
-import controlledSubstancesEndpoints from "./controlled-substances-endpoints.tsx"; // ✅ NEW: Controlled substances for pharmacies
 
-// ✅ NEW: Solo Provider System
-import { soloProviderEndpoints } from "./solo-provider-endpoints.tsx";
-
-// ✅ NEW: Role Consolidation Migration
-import roleConsolidationMigration from "./role-consolidation-migration.tsx";
-import vendorRoleCleanupMigration from "./vendor-role-cleanup-migration.tsx";
-
-// Staff routes - All export default app
-import staffAuthRoutes from "./staff-auth-endpoints.tsx";
-import staffAvailabilityRoutes from "./staff-availability-routes.tsx";
-import staffScheduleRoutes from "./staff-schedule-endpoints.tsx";
-import staffCRUDRoutes from "./staff-crud-endpoints.tsx";
-
-// ✅ CRITICAL: Staff service and discovery endpoints
-import { staffServiceEndpoints } from "./staff-service-endpoints.tsx";
-import staffDiscoveryEndpoints from "./staff-discovery-endpoints.tsx";
-import universalStaffSearch from "./universal-staff-search.tsx";
-import universalStaffProblemSearch from "./universal-staff-problem-search.tsx";
+// ✅ NEW: Missing API Endpoints (Priority 1 Critical Fixes)
+import portfolioEndpoints from "./portfolio-endpoints.tsx";
+import cctvAccessEndpoints from "./cctv-access-endpoints.tsx";
+import controlledSubstancesEndpoints from "./controlled-substances-endpoints.tsx";
+import vetSummaryEndpoints from "./vet-summary-endpoints.tsx";
+import adoptionEndpoints from "./adoption-endpoints.tsx";
+import memorialEndpoints from "./memorial-endpoints.tsx";
 
 const app = new Hono();
 
@@ -578,200 +549,103 @@ if (rewardsLoyaltySystem && typeof rewardsLoyaltySystem === 'object') {
   console.warn('⚠️ Rewards Loyalty System module undefined, skipping');
 }
 
-if (referralSystem && typeof referralSystem === 'object') {
-  app.route('/make-server-3dd53475', referralSystem);
+// ✅ NEW: Missing API Endpoints (Priority 1 Critical Fixes)
+if (portfolioEndpoints && typeof portfolioEndpoints === 'object') {
+  app.route('/make-server-3dd53475/vendor/portfolio', portfolioEndpoints);
+  console.log('✅ Registered Portfolio Endpoints');
 } else {
-  console.warn('⚠️ Referral System module undefined, skipping');
+  console.warn('⚠️ Portfolio Endpoints module undefined, skipping');
 }
 
-if (registerCustomerMedicalRecordsEndpoints && typeof registerCustomerMedicalRecordsEndpoints === 'function') {
-  registerCustomerMedicalRecordsEndpoints(app);
+if (cctvAccessEndpoints && typeof cctvAccessEndpoints === 'object') {
+  app.route('/make-server-3dd53475/vendor/cctv', cctvAccessEndpoints);
+  console.log('✅ Registered CCTV Access Endpoints');
 } else {
-  console.warn('⚠️ Customer Medical Records module undefined, skipping');
+  console.warn('⚠️ CCTV Access Endpoints module undefined, skipping');
 }
 
-// ✅ Customer App Enhancements
-if (customerAppEnhancements && typeof customerAppEnhancements === 'object') {
-  app.route('/make-server-3dd53475', customerAppEnhancements);
-} else {
-  console.warn('⚠️ Customer App Enhancements module undefined, skipping');
-}
-
-// ✅ P2 Features - Final 18% to reach 100%
-if (registerProfilePhotoEndpoints && typeof registerProfilePhotoEndpoints === 'function') {
-  registerProfilePhotoEndpoints(app);
-} else {
-  console.warn('⚠️ Profile Photo Management module undefined, skipping');
-}
-
-if (advancedFilteringSystem && typeof advancedFilteringSystem === 'object') {
-  app.route('/make-server-3dd53475', advancedFilteringSystem);
-} else {
-  console.warn('⚠️ Advanced Filtering System module undefined, skipping');
-}
-
-if (appointmentReminderSystem && typeof appointmentReminderSystem === 'object') {
-  app.route('/make-server-3dd53475', appointmentReminderSystem);
-} else {
-  console.warn('⚠️ Appointment Reminder System module undefined, skipping');
-}
-
-if (serviceComparisonSystem && typeof serviceComparisonSystem === 'object') {
-  app.route('/make-server-3dd53475', serviceComparisonSystem);
-} else {
-  console.warn('⚠️ Service Comparison System module undefined, skipping');
-}
-
-// ✅ Platform Subscription Tiers & Mating/Dating Service
-registerPlatformSubscriptionTiers(app);
-registerMatingDatingService(app);
-
-// ✅ Vendor Bookings
-if (vendorBookings && typeof vendorBookings === 'object') {
-  app.route('/make-server-3dd53475', vendorBookings);
-} else {
-  console.warn('⚠️ Vendor Bookings module undefined, skipping');
-}
-
-// ✅ P0 CRITICAL: Automated Payout Processing
-if (automatedPayoutProcessing && typeof automatedPayoutProcessing === 'object') {
-  app.route('/make-server-3dd53475', automatedPayoutProcessing);
-  console.log('✅ Automated Payout Processing module registered');
-} else {
-  console.warn('⚠️ Automated Payout Processing module undefined, skipping');
-}
-
-// ✅ P0 CRITICAL: Enhanced Refund System with Policy Enforcement
-if (enhancedRefundSystem && typeof enhancedRefundSystem === 'object') {
-  app.route('/make-server-3dd53475', enhancedRefundSystem);
-  console.log('✅ Enhanced Refund System module registered');
-} else {
-  console.warn('⚠️ Enhanced Refund System module undefined, skipping');
-}
-
-// ✅ P0 CRITICAL: Tier Upgrade Automation
-if (tierUpgradeAutomation && typeof tierUpgradeAutomation === 'object') {
-  app.route('/make-server-3dd53475', tierUpgradeAutomation);
-  console.log('✅ Tier Upgrade Automation module registered');
-} else {
-  console.warn('⚠️ Tier Upgrade Automation module undefined, skipping');
-}
-
-// ✅ SYSTEM HEALTH CHECK
-if (systemHealthCheck && typeof systemHealthCheck === 'object') {
-  app.route('/make-server-3dd53475', systemHealthCheck);
-  console.log('✅ System Health Check module registered');
-} else {
-  console.warn('⚠️ System Health Check module undefined, skipping');
-}
-
-// ✅ ADMIN CLEANUP DUPLICATES
-if (adminCleanupDuplicates && typeof adminCleanupDuplicates === 'object') {
-  app.route('/make-server-3dd53475', adminCleanupDuplicates);
-  console.log('✅ Admin Cleanup Duplicates module registered');
-} else {
-  console.warn('⚠️ Admin Cleanup Duplicates module undefined, skipping');
-}
-
-// ✅ VENDOR BANK VALIDATION
-if (vendorBankValidation && typeof vendorBankValidation === 'object') {
-  app.route('/make-server-3dd53475', vendorBankValidation);
-  console.log('✅ Vendor Bank Validation module registered');
-} else {
-  console.warn('⚠️ Vendor Bank Validation module undefined, skipping');
-}
-
-// ✅ VET SPECIALIZED SERVICES
-if (vetSpecializedServices && typeof vetSpecializedServices === 'object') {
-  app.route('/make-server-3dd53475', vetSpecializedServices);
-  console.log('✅ Vet Specialized Services module registered');
-} else {
-  console.warn('⚠️ Vet Specialized Services module undefined, skipping');
-}
-
-// ✅ NEW: Controlled Substances Endpoints
 if (controlledSubstancesEndpoints && typeof controlledSubstancesEndpoints === 'object') {
-  app.route('/make-server-3dd53475', controlledSubstancesEndpoints);
-  console.log('✅ Controlled Substances Endpoints module registered');
+  app.route('/make-server-3dd53475/vendor/controlled-substances', controlledSubstancesEndpoints);
+  console.log('✅ Registered Controlled Substances Endpoints');
 } else {
   console.warn('⚠️ Controlled Substances Endpoints module undefined, skipping');
 }
 
-// ✅ NEW: Solo Provider System
-console.log('✅ Registering Solo Provider Endpoints...');
-soloProviderEndpoints(app, kv);
-
-// ✅ NEW: Role Consolidation Migration
-console.log('✅ Registering Role Consolidation Migration...');
-if (roleConsolidationMigration && typeof roleConsolidationMigration === 'object') {
-  app.route('/make-server-3dd53475', roleConsolidationMigration);
-  console.log('✅ Role Consolidation Migration module registered');
+if (vetSummaryEndpoints && typeof vetSummaryEndpoints === 'object') {
+  app.route('/make-server-3dd53475/vendor/vet-summary', vetSummaryEndpoints);
+  console.log('✅ Registered Vet Summary Endpoints');
 } else {
-  console.warn('⚠️ Role Consolidation Migration module undefined, skipping');
+  console.warn('⚠️ Vet Summary Endpoints module undefined, skipping');
 }
 
-// ✅ NEW: Vendor Role Cleanup Migration
-console.log('✅ Registering Vendor Role Cleanup Migration...');
-if (vendorRoleCleanupMigration && typeof vendorRoleCleanupMigration === 'object') {
-  app.route('/make-server-3dd53475', vendorRoleCleanupMigration);
-  console.log('✅ Vendor Role Cleanup Migration module registered');
+if (adoptionEndpoints && typeof adoptionEndpoints === 'object') {
+  app.route('/make-server-3dd53475/vendor/adoption', adoptionEndpoints);
+  console.log('✅ Registered Adoption Endpoints');
 } else {
-  console.warn('⚠️ Vendor Role Cleanup Migration module undefined, skipping');
+  console.warn('⚠️ Adoption Endpoints module undefined, skipping');
+}
+
+if (memorialEndpoints && typeof memorialEndpoints === 'object') {
+  app.route('/make-server-3dd53475/vendor/memorial', memorialEndpoints);
+  console.log('✅ Registered Memorial Endpoints');
+} else {
+  console.warn('⚠️ Memorial Endpoints module undefined, skipping');
 }
 
 // ✅ P0 Features
 registerP0Features(app);
 
-// 5. Staff Routes
-if (staffAuthRoutes && typeof staffAuthRoutes === 'object') {
-  app.route('/make-server-3dd53475', staffAuthRoutes); // Register Auth FIRST to avoid shadowing by /staff wildcard
-} else {
-  console.warn('⚠️ Staff Auth Routes module undefined, skipping');
-}
+// 5. Staff Routes - COMMENTED OUT: These modules are not imported/defined
+// if (staffAuthRoutes && typeof staffAuthRoutes === 'object') {
+//   app.route('/make-server-3dd53475', staffAuthRoutes); // Register Auth FIRST to avoid shadowing by /staff wildcard
+// } else {
+//   console.warn('⚠️ Staff Auth Routes module undefined, skipping');
+// }
 
-if (staffAvailabilityRoutes && typeof staffAvailabilityRoutes === 'object') {
-  app.route('/make-server-3dd53475/staff', staffAvailabilityRoutes);
-} else {
-  console.warn('⚠️ Staff Availability Routes module undefined, skipping');
-}
+// if (staffAvailabilityRoutes && typeof staffAvailabilityRoutes === 'object') {
+//   app.route('/make-server-3dd53475/staff', staffAvailabilityRoutes);
+// } else {
+//   console.warn('⚠️ Staff Availability Routes module undefined, skipping');
+// }
 
-if (staffScheduleRoutes && typeof staffScheduleRoutes === 'object') {
-  app.route('/', staffScheduleRoutes);
-} else {
-  console.warn('⚠️ Staff Schedule Routes module undefined, skipping');
-}
+// if (staffScheduleRoutes && typeof staffScheduleRoutes === 'object') {
+//   app.route('/', staffScheduleRoutes);
+// } else {
+//   console.warn('⚠️ Staff Schedule Routes module undefined, skipping');
+// }
 
-if (staffCRUDRoutes && typeof staffCRUDRoutes === 'object') {
-  app.route('/', staffCRUDRoutes);
-} else {
-  console.warn('⚠️ Staff CRUD Routes module undefined, skipping');
-}
+// if (staffCRUDRoutes && typeof staffCRUDRoutes === 'object') {
+//   app.route('/', staffCRUDRoutes);
+// } else {
+//   console.warn('⚠️ Staff CRUD Routes module undefined, skipping');
+// }
 
 // ✅ CRITICAL: Staff service and discovery endpoints
 // Staff Service Endpoints - requires both app and kv parameters
-console.log('✅ Registering staff service endpoints...');
-staffServiceEndpoints(app, kv);
+// COMMENTED OUT: staffServiceEndpoints is not imported/defined
+// console.log('✅ Registering staff service endpoints...');
+// staffServiceEndpoints(app, kv);
 
-if (staffDiscoveryEndpoints && typeof staffDiscoveryEndpoints === 'object') {
-  console.log('✅ Registering staff discovery endpoints...');
-  app.route('/make-server-3dd53475', staffDiscoveryEndpoints);
-} else {
-  console.warn('⚠️ Staff Discovery Endpoints module undefined, skipping');
-}
+// if (staffDiscoveryEndpoints && typeof staffDiscoveryEndpoints === 'object') {
+//   console.log('✅ Registering staff discovery endpoints...');
+//   app.route('/make-server-3dd53475', staffDiscoveryEndpoints);
+// } else {
+//   console.warn('⚠️ Staff Discovery Endpoints module undefined, skipping');
+// }
 
-if (universalStaffSearch && typeof universalStaffSearch === 'object') {
-  console.log('✅ Registering universal staff search...');
-  app.route('/make-server-3dd53475', universalStaffSearch);
-} else {
-  console.warn('⚠️ Universal Staff Search module undefined, skipping');
-}
+// if (universalStaffSearch && typeof universalStaffSearch === 'object') {
+//   console.log('✅ Registering universal staff search...');
+//   app.route('/make-server-3dd53475', universalStaffSearch);
+// } else {
+//   console.warn('⚠️ Universal Staff Search module undefined, skipping');
+// }
 
-if (universalStaffProblemSearch && typeof universalStaffProblemSearch === 'object') {
-  console.log('✅ Registering universal staff problem search...');
-  app.route('/make-server-3dd53475', universalStaffProblemSearch);
-} else {
-  console.warn('⚠️ Universal Staff Problem Search module undefined, skipping');
-}
+// if (universalStaffProblemSearch && typeof universalStaffProblemSearch === 'object') {
+//   console.log('✅ Registering universal staff problem search...');
+//   app.route('/make-server-3dd53475', universalStaffProblemSearch);
+// } else {
+//   console.warn('⚠️ Universal Staff Problem Search module undefined, skipping');
+// }
 
 // ✅ NEW: Register missing CRUD endpoints
 if (missingCrudEndpoints && typeof missingCrudEndpoints === 'object') {
