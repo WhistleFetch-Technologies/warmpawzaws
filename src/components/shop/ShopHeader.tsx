@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Search, ShoppingCart, Heart, User, Menu, MapPin } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -21,10 +21,21 @@ import {
 } from "../ui/dropdown-menu";
 import { Separator } from '../ui/separator';
 
-export function ShopHeader() {
-  const navigate = useNavigate();
+interface ShopHeaderProps {
+  onNavigate?: (path: string) => void;
+}
+
+export function ShopHeader({ onNavigate }: ShopHeaderProps = {}) {
   // Mock cart count - will be connected to store later
   const cartCount = 2;
+
+  const handleNavigation = (path: string) => {
+    if (onNavigate) {
+      onNavigate(path);
+    } else {
+      window.location.href = path;
+    }
+  };
 
   return (
     <header className="w-full">
@@ -105,16 +116,16 @@ export function ShopHeader() {
             <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuLabel>My Account</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => navigate('/customer/profile')}>Profile</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate('/customer/orders')}>Orders</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate('/customer/wishlist')}>Wishlist</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleNavigation('/customer/profile')}>Profile</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleNavigation('/customer/orders')}>Orders</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleNavigation('/customer/wishlist')}>Wishlist</DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem className="text-red-600">Log out</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
 
           {/* Cart */}
-          <Button onClick={() => navigate('/shop/cart')} className="relative">
+          <Button onClick={() => handleNavigation('/shop/cart')} className="relative">
             <ShoppingCart className="h-5 w-5 mr-2" />
             <span className="hidden sm:inline">Cart</span>
             {cartCount > 0 && (
