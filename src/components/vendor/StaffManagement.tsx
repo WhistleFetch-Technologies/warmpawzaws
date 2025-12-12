@@ -115,27 +115,63 @@ export function StaffManagement({ vendorId, vendorData, onBack, onNavigateToServ
         const data = await servicesResponse.json();
         console.log('[STAFF MANAGEMENT] Services API response:', data);
         
-        // ✅ FIXED: Extract services and PRESERVE service style
+        // ✅ FIXED: Extract services from NEW vendor_services system
         const allServices: Service[] = [];
+        
+        // First, try to get from the new 'services' object (grouped by style)
         if (data.success && data.services) {
           ['at_home', 'at_center', 'tele'].forEach(style => {
             if (data.services[style] && data.services[style].services) {
               const styleServices = data.services[style].services
-                .filter((s: any) => s.isEnabled) // ✅ FIX: Don't require publishStatus for staff assignment
+                .filter((s: any) => s.isEnabled) // Only enabled services
                 .map((s: any) => ({
                   serviceId: s.serviceId,
                   name: s.serviceName,
                   category: s.categoryName || 'General',
-                  price: s.customPrice || s.price || 0,
+                  price: s.customPrice || s.price || s.vendorPrice || 0,
                   duration: s.customDuration || s.duration || 30,
-                  serviceStyle: style // ✅ PRESERVE STYLE!
+                  serviceStyle: style // PRESERVE STYLE!
                 }));
               allServices.push(...styleServices);
             }
           });
         }
         
-        console.log('[STAFF MANAGEMENT] Processed services with styles:', allServices);
+        // Also check allServices flat array (alternative format)
+        if (data.allServices && Array.isArray(data.allServices)) {
+          const flatServices = data.allServices
+            .filter((s: any) => s.isEnabled)
+            .map((s: any) => ({
+              serviceId: s.serviceId,
+              name: s.serviceName,
+              category: s.categoryName || 'General',
+              price: s.customPrice || s.price || s.vendorPrice || 0,
+              duration: s.customDuration || s.duration || 30,
+              serviceStyle: s.serviceStyle || 'at_center'
+            }));
+          
+          // Merge and deduplicate
+          flatServices.forEach(fs => {
+            if (!allServices.find(s => s.serviceId === fs.serviceId)) {
+              allServices.push(fs);
+            }
+          });
+        }
+        
+        // Fallback to legacy services if available
+        if (allServices.length === 0 && data.legacyServices && Array.isArray(data.legacyServices)) {
+          const legacyMapped = data.legacyServices.map((s: any) => ({
+            serviceId: s.id,
+            name: s.serviceName || s.name,
+            category: s.category || 'General',
+            price: s.price || 0,
+            duration: s.duration || 30,
+            serviceStyle: s.serviceStyle || s.type || 'at_center'
+          }));
+          allServices.push(...legacyMapped);
+        }
+        
+        console.log('[STAFF MANAGEMENT] Processed services:', allServices.length, allServices);
         setServices(allServices);
       }
     } catch (error) {

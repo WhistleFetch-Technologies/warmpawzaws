@@ -7,15 +7,17 @@ import { Button } from './components/ui/button';
 import { Toaster } from './components/ui/sonner';
 import { RegionProvider } from './hooks/useRegion';
 import { CartProvider } from './context/CartContext';
+import { QueryProvider } from './providers/QueryProvider';
 
 export default function App() {
   const [activeApp, setActiveApp] = useState<'customer' | 'vendor' | 'admin' | 'migration'>('customer');
 
   return (
-    <RegionProvider>
-      <CartProvider>
-        <div className="min-h-screen bg-gray-50">
-          <Toaster position="top-right" />
+    <QueryProvider>
+      <RegionProvider>
+        <CartProvider>
+          <div className="min-h-screen bg-gray-50">
+            <Toaster position="top-right" />
       
         {/* App Switcher - Development Only */}
         <div className="fixed top-4 right-4 z-50 flex gap-2 bg-white p-2 rounded-lg shadow-lg border">
@@ -61,5 +63,6 @@ export default function App() {
         </div>
       </CartProvider>
     </RegionProvider>
+    </QueryProvider>
   );
 }

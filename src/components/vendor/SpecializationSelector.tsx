@@ -18,7 +18,7 @@ interface SpecializationSelectorProps {
 
 export function SpecializationSelector({ 
   roleId, 
-  selected, 
+  selected = [], // ✅ FIX: Default to empty array
   onChange 
 }: SpecializationSelectorProps) {
   const [specializations, setSpecializations] = useState<any[]>([]);

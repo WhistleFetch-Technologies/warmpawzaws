@@ -12,12 +12,20 @@ export interface VendorCapabilities {
   prescription: boolean;
   medical_records: boolean;
   emergency: boolean;
+  diagnostic_lab: boolean;
+  patient_monitoring: boolean;
+  emergency_protocols: boolean;
+  ambulance_services: boolean;
+  controlled_substances: boolean;
+  prescription_verification: boolean;
+  vet_summary: boolean;
   
   // Commerce
   catalog: boolean;
   orders: boolean;
   inventory: boolean;
   delivery: boolean;
+  expiry_management: boolean;
   
   // Media/Content
   photo_updates: boolean;
@@ -28,50 +36,181 @@ export interface VendorCapabilities {
   
   // Location
   gps_tracking: boolean;
+  distance_pricing: boolean;
 
-  // Admin
+  // Admin & Management
   staff_management: boolean;
+  schedule_management: boolean;
+  facility_management: boolean;
+  multi_doctor_management: boolean;
+  
+  // Service Management
+  custom_services: boolean;
+  package_management: boolean;
+  
+  // Hospitality
+  room_management: boolean;
+  table_management: boolean;
+  pax_management: boolean;
+  occupancy_tracking: boolean;
+  nightly_pricing: boolean;
+  menu: boolean;
+  
+  // Specialized Services
+  meal_plans: boolean;
+  diet_charts: boolean;
+  counseling: boolean;
+  
+  // Social & Community
+  adoption: boolean;
+  donation: boolean;
+  events: boolean;
+  memorial: boolean;
+  
+  // Insurance
+  claims_management: boolean;
+  policy_management: boolean;
 }
 
 // 🇮🇳 HARDCODED: Default capabilities for Veterinarian role (India deployment)
 const HARDCODED_VET_CAPABILITIES: VendorCapabilities = {
+  // Core
   booking: true,
   chat: true,
   tele: true,
+  
+  // Medical/Clinical
   prescription: true,
   medical_records: true,
   emergency: true,
+  diagnostic_lab: true,
+  patient_monitoring: true,
+  emergency_protocols: true,
+  ambulance_services: true,
+  controlled_substances: true,
+  prescription_verification: true,
+  vet_summary: true,
+  
+  // Commerce
   catalog: true,
   orders: false,
   inventory: false,
   delivery: false,
+  expiry_management: false,
+  
+  // Media/Content
   photo_updates: true,
   gallery: true,
   portfolio: true,
   progress_tracking: true,
   cctv_access: false,
+  
+  // Location
   gps_tracking: false,
-  staff_management: true
+  distance_pricing: false,
+  
+  // Admin & Management
+  staff_management: true,
+  schedule_management: true,
+  facility_management: true,
+  multi_doctor_management: true,
+  
+  // Service Management
+  custom_services: true,
+  package_management: true,
+  
+  // Hospitality
+  room_management: false,
+  table_management: false,
+  pax_management: false,
+  occupancy_tracking: false,
+  nightly_pricing: false,
+  menu: false,
+  
+  // Specialized Services
+  meal_plans: false,
+  diet_charts: true,
+  counseling: true,
+  
+  // Social & Community
+  adoption: false,
+  donation: false,
+  events: false,
+  memorial: false,
+  
+  // Insurance
+  claims_management: false,
+  policy_management: false,
 };
 
 const DEFAULT_CAPABILITIES: VendorCapabilities = {
+  // Core
   booking: true,
   chat: true,
   tele: false,
+  
+  // Medical/Clinical
   prescription: false,
   medical_records: false,
   emergency: false,
+  diagnostic_lab: false,
+  patient_monitoring: false,
+  emergency_protocols: false,
+  ambulance_services: false,
+  controlled_substances: false,
+  prescription_verification: false,
+  vet_summary: false,
+  
+  // Commerce
   catalog: true,
   orders: true,
   inventory: false,
   delivery: false,
+  expiry_management: false,
+  
+  // Media/Content
   photo_updates: false,
   gallery: true,
   portfolio: true,
   progress_tracking: false,
   cctv_access: false,
+  
+  // Location
   gps_tracking: false,
-  staff_management: false
+  distance_pricing: false,
+  
+  // Admin & Management
+  staff_management: false,
+  schedule_management: true,
+  facility_management: false,
+  multi_doctor_management: false,
+  
+  // Service Management
+  custom_services: false,
+  package_management: false,
+  
+  // Hospitality
+  room_management: false,
+  table_management: false,
+  pax_management: false,
+  occupancy_tracking: false,
+  nightly_pricing: false,
+  menu: false,
+  
+  // Specialized Services
+  meal_plans: false,
+  diet_charts: false,
+  counseling: false,
+  
+  // Social & Community
+  adoption: false,
+  donation: false,
+  events: false,
+  memorial: false,
+  
+  // Insurance
+  claims_management: false,
+  policy_management: false,
 };
 
 // 🇮🇳 HARDCODED: Role name mapping (India deployment)
