@@ -115,6 +115,7 @@ import systemHealthCheck from "./system-health-check.tsx";
 import adminCleanupDuplicates from "./admin-cleanup-duplicates.tsx";
 import vendorBankValidation from "./vendor-bank-validation.tsx";
 import vetSpecializedServices from "./vet-specialized-services.tsx"; // ✅ NEW: Vet specialized services
+import controlledSubstancesEndpoints from "./controlled-substances-endpoints.tsx"; // ✅ NEW: Controlled substances for pharmacies
 
 // ✅ NEW: Solo Provider System
 import { soloProviderEndpoints } from "./solo-provider-endpoints.tsx";
@@ -686,6 +687,14 @@ if (vetSpecializedServices && typeof vetSpecializedServices === 'object') {
   console.log('✅ Vet Specialized Services module registered');
 } else {
   console.warn('⚠️ Vet Specialized Services module undefined, skipping');
+}
+
+// ✅ NEW: Controlled Substances Endpoints
+if (controlledSubstancesEndpoints && typeof controlledSubstancesEndpoints === 'object') {
+  app.route('/make-server-3dd53475', controlledSubstancesEndpoints);
+  console.log('✅ Controlled Substances Endpoints module registered');
+} else {
+  console.warn('⚠️ Controlled Substances Endpoints module undefined, skipping');
 }
 
 // ✅ NEW: Solo Provider System

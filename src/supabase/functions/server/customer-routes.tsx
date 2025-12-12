@@ -1330,13 +1330,41 @@ const handleGetNotifications = async (c: any) => {
     const { userId } = c.req.param();
     const { limit = 20, unreadOnly } = c.req.query();
     
-    const notificationIds = unreadOnly === 'true' 
-      ? await kv.get(`notification:unread:${userId}`) || []
-      : await kv.get(`notification:user:${userId}`) || [];
+    // ✅ FIX: Add timeout protection and graceful fallback for missing keys
+    let notificationIds: string[] = [];
     
-    const notifications = await Promise.all(
-      notificationIds.slice(0, parseInt(limit as string)).map((id: string) => kv.get(`notification:${id}`))
-    );
+    try {
+      if (unreadOnly === 'true') {
+        const unreadIds = await kv.get(`notification:unread:${userId}`);
+        notificationIds = unreadIds || [];
+      } else {
+        const userNotificationIds = await kv.get(`notification:user:${userId}`);
+        notificationIds = userNotificationIds || [];
+      }
+    } catch (kvError) {
+      // ✅ FIX: Log error but continue with empty array instead of failing
+      console.error(`❌ [KV-GET] Error fetching notifications for user ${userId}:`, kvError);
+      notificationIds = []; // Fallback to empty array
+    }
+    
+    // ✅ FIX: If no notification IDs, return early with empty array
+    if (!notificationIds || notificationIds.length === 0) {
+      return sendSuccess(c, { notifications: [] });
+    }
+    
+    // ✅ FIX: Fetch notifications with individual error handling
+    const notificationPromises = notificationIds
+      .slice(0, parseInt(limit as string))
+      .map(async (id: string) => {
+        try {
+          return await kv.get(`notification:${id}`);
+        } catch (error) {
+          console.error(`❌ [KV-GET] Error fetching notification ${id}:`, error);
+          return null; // Return null for failed fetches
+        }
+      });
+    
+    const notifications = await Promise.all(notificationPromises);
     
     return sendSuccess(c, { notifications: notifications.filter(Boolean) });
   } catch (error) {
