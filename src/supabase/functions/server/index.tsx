@@ -106,6 +106,10 @@ import controlledSubstancesEndpoints from "./controlled-substances-endpoints.tsx
 import vetSummaryEndpoints from "./vet-summary-endpoints.tsx";
 import adoptionEndpoints from "./adoption-endpoints.tsx";
 import memorialEndpoints from "./memorial-endpoints.tsx";
+import expiryManagementEndpoints from "./expiry-management-endpoints.tsx";
+import donationManagementEndpoints from "./donation-management-endpoints.tsx";
+import eventManagementEndpoints from "./event-management-endpoints.tsx";
+import patientMonitoringEndpoints from "./patient-monitoring-endpoints.tsx";
 
 const app = new Hono();
 
@@ -590,6 +594,34 @@ if (memorialEndpoints && typeof memorialEndpoints === 'object') {
   console.log('✅ Registered Memorial Endpoints');
 } else {
   console.warn('⚠️ Memorial Endpoints module undefined, skipping');
+}
+
+if (expiryManagementEndpoints && typeof expiryManagementEndpoints === 'object') {
+  app.route('/make-server-3dd53475/vendor/expiry-management', expiryManagementEndpoints);
+  console.log('✅ Registered Expiry Management Endpoints');
+} else {
+  console.warn('⚠️ Expiry Management Endpoints module undefined, skipping');
+}
+
+if (donationManagementEndpoints && typeof donationManagementEndpoints === 'object') {
+  app.route('/make-server-3dd53475/vendor/donation-management', donationManagementEndpoints);
+  console.log('✅ Registered Donation Management Endpoints');
+} else {
+  console.warn('⚠️ Donation Management Endpoints module undefined, skipping');
+}
+
+if (eventManagementEndpoints && typeof eventManagementEndpoints === 'object') {
+  app.route('/make-server-3dd53475/vendor/event-management', eventManagementEndpoints);
+  console.log('✅ Registered Event Management Endpoints');
+} else {
+  console.warn('⚠️ Event Management Endpoints module undefined, skipping');
+}
+
+if (patientMonitoringEndpoints && typeof patientMonitoringEndpoints === 'object') {
+  app.route('/make-server-3dd53475/vendor/patient-monitoring', patientMonitoringEndpoints);
+  console.log('✅ Registered Patient Monitoring Endpoints');
+} else {
+  console.warn('⚠️ Patient Monitoring Endpoints module undefined, skipping');
 }
 
 // ✅ P0 Features
