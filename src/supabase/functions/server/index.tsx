@@ -25,6 +25,7 @@ import { registerVendorCatalogAPIV2 } from "./vendor-catalog-api-v2.tsx";
 import { reviewEndpoints } from "./review-endpoints.tsx";
 import { analyticsEndpoints } from "./analytics-endpoints.tsx";
 import { registerP0Features } from "./p0-features-endpoints.tsx";
+import { customServiceEndpoints } from "./custom-service-endpoints.tsx"; // ✅ FIX: Add custom service endpoints
 
 // Vendor & Admin modules
 import { vendorScheduleV2Endpoints } from "./vendor-schedule-v2.tsx";
@@ -59,6 +60,9 @@ import { registerResortInventory } from "./resort-inventory.tsx";
 import { registerBreederListings } from "./breeder-listings.tsx";
 import marketingRoutesV2 from "./marketing-routes-v2.tsx";
 import { registerMarketplaceProducts } from "./marketplace-products.tsx";
+// ✅ CRITICAL FIX: Import missing endpoints
+import facilityEndpoints from "./facility-endpoints.tsx"; // Default export (Hono app)
+import { packageEndpoints } from "./package-endpoints.tsx"; // Named export (function)
 import { registerUniversalServiceDiscovery } from "./universal-service-discovery.tsx";
 import { registerUniversalOTPSystem } from "./universal-otp-system.tsx";
 import { registerHomeServiceBookingFlow } from "./home-service-booking-flow.tsx";
@@ -432,6 +436,7 @@ vendorRoleConfigEndpoints(app);
 registerDynamicOnboarding(app);
 registerVendorServiceEndpoints(app);
 registerVendorCatalogAPIV2(app);
+customServiceEndpoints(app, kv); // ✅ FIX: Register custom service endpoints
 app.route('/make-server-3dd53475', vendorScheduleV2Endpoints);
 
 // 3. Admin Routes
@@ -760,6 +765,22 @@ if (missingCrudEndpoints && typeof missingCrudEndpoints === 'object') {
   app.route('/make-server-3dd53475', missingCrudEndpoints);
 } else {
   console.warn('⚠️ Missing CRUD Endpoints module undefined, skipping');
+}
+
+// ✅ NEW: Register facility endpoints
+if (facilityEndpoints && typeof facilityEndpoints === 'object') {
+  console.log('✅ Registering facility endpoints...');
+  app.route('/make-server-3dd53475', facilityEndpoints);
+} else {
+  console.warn('⚠️ Facility Endpoints module undefined, skipping');
+}
+
+// ✅ NEW: Register package endpoints
+if (packageEndpoints && typeof packageEndpoints === 'function') {
+  console.log('✅ Registering package endpoints...');
+  packageEndpoints(app, kv); // ✅ FIX: Pass kv parameter
+} else {
+  console.warn('⚠️ Package Endpoints module undefined, skipping');
 }
 
 // ------------------------------------------------------------------

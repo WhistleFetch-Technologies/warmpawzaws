@@ -443,7 +443,32 @@ function StaffFormModal({ clinicId, clinicData, staff, onClose, onSuccess }: Sta
 
       if (response.ok) {
         const data = await response.json();
-        setVendorServices(data.services || []);
+        
+        // ✅ FIXED: Parse new response format from updated endpoint
+        let servicesList: any[] = [];
+        
+        // New format: data.allServices (flat array of all enabled services)
+        if (data.allServices && Array.isArray(data.allServices)) {
+          servicesList = data.allServices;
+        }
+        // Alternative: data.services (grouped by style)
+        else if (data.services && typeof data.services === 'object') {
+          ['at_home', 'at_center', 'tele'].forEach(style => {
+            if (data.services[style] && data.services[style].services) {
+              servicesList.push(...data.services[style].services);
+            }
+          });
+        }
+        // Legacy fallback
+        else if (data.legacyServices && Array.isArray(data.legacyServices)) {
+          servicesList = data.legacyServices;
+        }
+        else if (Array.isArray(data.services)) {
+          servicesList = data.services;
+        }
+        
+        console.log('✅ [DOCTOR-MGMT] Parsed vendor services:', servicesList.length, servicesList);
+        setVendorServices(servicesList);
       }
     } catch (error) {
       console.error('Error fetching services:', error);

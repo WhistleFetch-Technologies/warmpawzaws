@@ -120,20 +120,35 @@ export function StaffServiceManagement({ staff, onBack }: StaffServiceManagement
 
         if (clinicServicesRes.ok) {
           const data = await clinicServicesRes.json();
-          // Extract enabled services from all service styles
-          const allServices: any[] = []
-;
-          if (data.success && data.services) {
+          
+          // ✅ FIXED: Parse new response format from updated endpoint
+          let servicesList: any[] = [];
+          
+          // New format: data.allServices (flat array of all enabled services)
+          if (data.allServices && Array.isArray(data.allServices)) {
+            servicesList = data.allServices.filter((s: any) => s.isEnabled);
+          }
+          // Alternative: data.services (grouped by style)
+          else if (data.success && data.services && typeof data.services === 'object') {
             ['at_home', 'at_center', 'tele'].forEach(style => {
               if (data.services[style] && data.services[style].services) {
                 const styleServices = data.services[style].services
-                  .filter((s: any) => s.isEnabled && s.publishStatus === 'published')
+                  .filter((s: any) => s.isEnabled)
                   .map((s: any) => ({ ...s, serviceStyle: style })); // Add serviceStyle to each service
-                allServices.push(...styleServices);
+                servicesList.push(...styleServices);
               }
             });
           }
-          setAvailableClinicServices(allServices);
+          // Legacy fallback
+          else if (data.legacyServices && Array.isArray(data.legacyServices)) {
+            servicesList = data.legacyServices.filter((s: any) => s.isActive !== false);
+          }
+          else if (Array.isArray(data.services)) {
+            servicesList = data.services.filter((s: any) => s.isActive !== false);
+          }
+          
+          console.log('✅ [STAFF-SERVICE-MGMT] Parsed clinic services:', servicesList.length, servicesList);
+          setAvailableClinicServices(servicesList);
         }
       }
 

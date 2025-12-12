@@ -1,10 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { CapabilityDebugOverlay } from './CapabilityDebugOverlay';
 import { ModuleDisabledMessage, ModuleMessages } from './ModuleDisabledMessage';
 import { SoloProviderDashboard } from './dashboard/SoloProviderDashboard'; // ✅ INTEGRATION: Solo provider dashboard
 import { useVendorCapabilities } from './hooks/useVendorCapabilities';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { getVendorIconTheme, getRoleIcon, getRoleColorScheme } from '../../utils/vendor-icon-themes';
+import VendorUtils from '../../utils/vendor-utils';
+import CapabilityHelper from '../../utils/capability-helper';
+import PerformanceMonitor from '../../utils/performance-monitor';
+import Analytics from '../../utils/analytics';
 import { 
   Calendar, 
   Clock, 
@@ -148,11 +152,11 @@ export function VendorDashboard({
 
   const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
   
-  // ✅ CANONICAL ROLE CHECK: Only check for pet_clinic (consolidated from veterinarian, vet_clinic, etc.)
-  const isVet = vendorData?.roleId === 'pet_clinic';
+  // ✅ USE UTILITY: Replace duplicated role check with centralized utility
+  const isVet = VendorUtils.isVet(vendorData?.roleId);
 
   // ✅ INTEGRATION: Check if solo provider and route to solo dashboard
-  if (vendorData?.isSoloProvider) {
+  if (VendorUtils.isSoloProvider(vendorData)) {
     const soloSession = {
       vendorId: vendorData.id || vendorId,
       centerId: vendorData.centerId,
@@ -181,24 +185,32 @@ export function VendorDashboard({
       console.log('📊 Fetching vendor dashboard data for:', vendorId);
       console.log('⚡ Using parallel API calls for better performance');
 
+      // ✅ PERFORMANCE: Start tracking dashboard load time
+      PerformanceMonitor.markStart('dashboard-load');
+
       // Prepare all fetch promises based on capabilities
       const today = new Date().toISOString().split('T')[0];
       
-      const fetchPromises: Promise<Response | null>[] = [
+      // ✅ OPTIMIZATION: Split critical and non-critical data
+      // Critical data: dashboard stats + schedule (needed for initial render)
+      const criticalPromises: Promise<Response | null>[] = [
         // 1. Always fetch dashboard stats
         fetch(`${API_BASE}/vendor/dashboard/${vendorId}?timeframe=${activeTab}`, {
           headers: { 'Authorization': `Bearer ${publicAnonKey}` }
         }),
         
-        // 2. Fetch schedule if booking enabled
-        capabilities.booking 
+        // 2. Fetch schedule if booking enabled - USE UTILITY
+        CapabilityHelper.hasBooking(capabilities)
           ? fetch(`${API_BASE}/vendor/schedule/${vendorId}?date=${today}`, {
               headers: { 'Authorization': `Bearer ${publicAnonKey}` }
             })
-          : Promise.resolve(null),
-        
-        // 3. Fetch watchlist if medical records enabled
-        capabilities.medical_records
+          : Promise.resolve(null)
+      ];
+      
+      // Non-critical data: notifications, watchlist, services (can load after)
+      const nonCriticalPromises: Promise<Response | null>[] = [
+        // 3. Fetch watchlist if medical records enabled - USE UTILITY
+        CapabilityHelper.hasMedicalRecords(capabilities)
           ? fetch(`${API_BASE}/vendor/watchlist/${vendorId}`, {
               headers: { 'Authorization': `Bearer ${publicAnonKey}` }
             })
@@ -209,69 +221,98 @@ export function VendorDashboard({
           headers: { 'Authorization': `Bearer ${publicAnonKey}` }
         }),
         
-        // 5. Fetch services if catalog or booking enabled
-        (capabilities.catalog || capabilities.booking)
+        // 5. Fetch services if catalog or booking enabled - USE UTILITY
+        (CapabilityHelper.hasCatalog(capabilities) || CapabilityHelper.hasBooking(capabilities))
           ? fetch(`${API_BASE}/vendor/services/${vendorId}`, {
               headers: { 'Authorization': `Bearer ${publicAnonKey}` }
             })
           : Promise.resolve(null)
       ];
       
-      // Execute all fetches in parallel for 2-3x faster load time
-      const [
-        dashboardRes,
-        scheduleRes,
-        watchlistRes,
-        notificationsRes,
-        servicesRes
-      ] = await Promise.all(fetchPromises);
+      // ✅ OPTIMIZATION: Execute critical fetches first, hide loading screen ASAP
+      const [dashboardRes, scheduleRes] = await Promise.all(criticalPromises);
       
-      // Process dashboard stats
+      // ✅ OPTIMIZATION: Parse JSON responses in parallel
+      const criticalParsing = [];
+      
       if (dashboardRes && dashboardRes.ok) {
-        const dashboardData = await dashboardRes.json();
-        if (dashboardData.success) {
-          setStats(dashboardData.stats);
-          setVendor(dashboardData.vendor);
-        }
+        criticalParsing.push(
+          dashboardRes.json().then(data => {
+            if (data.success) {
+              setStats(data.stats);
+              setVendor(data.vendor);
+            }
+          })
+        );
       }
       
-      // Process schedule
       if (scheduleRes && scheduleRes.ok) {
-        const scheduleData = await scheduleRes.json();
-        if (scheduleData.success) {
-          setTodaySchedule(scheduleData.schedule || []);
-        }
+        criticalParsing.push(
+          scheduleRes.json().then(data => {
+            if (data.success) {
+              setTodaySchedule(data.schedule || []);
+            }
+          })
+        );
       }
       
-      // Process watchlist
-      if (watchlistRes && watchlistRes.ok) {
-        const watchlistData = await watchlistRes.json();
-        if (watchlistData.success) {
-          setWatchlist(watchlistData.watchlist || []);
-        }
-      }
+      // Wait for critical parsing to complete
+      await Promise.all(criticalParsing);
       
-      // Process notifications
-      if (notificationsRes && notificationsRes.ok) {
-        const notificationsData = await notificationsRes.json();
-        if (notificationsData.success) {
-          setNotifications(notificationsData.notifications || []);
-        }
-      }
+      // ✅ PERFORMANCE: End tracking for critical path
+      PerformanceMonitor.markEnd('dashboard-load');
       
-      // Process services
-      if (servicesRes && servicesRes.ok) {
-        const servicesData = await servicesRes.json();
-        if (servicesData.success) {
-          setServices(servicesData.services || []);
+      // Hide loading screen now (critical data is ready)
+      setLoading(false);
+      setRefreshing(false);
+      
+      console.log('✅ Critical dashboard data loaded (fast path)');
+      
+      // ✅ OPTIMIZATION: Load non-critical data in background
+      Promise.all(nonCriticalPromises).then(async ([watchlistRes, notificationsRes, servicesRes]) => {
+        const backgroundParsing = [];
+        
+        // Process watchlist
+        if (watchlistRes && watchlistRes.ok) {
+          backgroundParsing.push(
+            watchlistRes.json().then(data => {
+              if (data.success) {
+                setWatchlist(data.watchlist || []);
+              }
+            })
+          );
         }
-      }
-
-      console.log('✅ Dashboard data loaded successfully (parallel fetch)');
+        
+        // Process notifications
+        if (notificationsRes && notificationsRes.ok) {
+          backgroundParsing.push(
+            notificationsRes.json().then(data => {
+              if (data.success) {
+                setNotifications(data.notifications || []);
+              }
+            })
+          );
+        }
+        
+        // Process services
+        if (servicesRes && servicesRes.ok) {
+          backgroundParsing.push(
+            servicesRes.json().then(data => {
+              if (data.success) {
+                setServices(data.services || []);
+              }
+            })
+          );
+        }
+        
+        await Promise.all(backgroundParsing);
+        console.log('✅ Non-critical dashboard data loaded (background)');
+      }).catch(error => {
+        console.error('⚠️ Error loading non-critical data:', error);
+      });
 
     } catch (error) {
       console.error('❌ Error fetching dashboard data:', error);
-    } finally {
       setLoading(false);
       setRefreshing(false);
     }
@@ -379,45 +420,50 @@ export function VendorDashboard({
         </div>
 
         {/* 🧱 DYNAMIC QUICK ACTIONS */}
-        <div className="p-4 border-b border-gray-100 grid grid-cols-2 gap-3">
-          {/* Staff Management - For Clinics/Hospitals */}
-          {onNavigateToStaffManagement && capabilities.staff_management && (
-            <button
-              onClick={onNavigateToStaffManagement}
-              className="bg-white border-2 border-[#FF8C42] text-[#FF8C42] rounded-xl p-4 flex flex-col items-center justify-center hover:bg-[#FF8C42] hover:text-white transition-colors group text-center"
-            >
-              <Users className="w-6 h-6 mb-2" />
-              <span className="font-semibold text-sm">Manage Staff</span>
-            </button>
-          )}
-          
-          {/* ✅ FIX: Facility Management - For Center-Style Vendors and Vets */}
-          {onNavigateToCenterProfile && (
-            vendorData?.serviceStyle === 'center' || 
-            vendorData?.serviceStyle === 'at_center' || 
-            vendorData?.vendorType?.includes('center') ||
-            vendorData?.roleId?.includes('vet') ||
-            vendorData?.roleId === 'veterinarian'
-          ) && (
-            <button
-              onClick={onNavigateToCenterProfile}
-              className="bg-white border-2 border-purple-500 text-purple-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-purple-500 hover:text-white transition-colors group text-center"
-            >
-              <Building2 className="w-6 h-6 mb-2" />
-              <span className="font-semibold text-sm">Center Profile & Timings</span>
-            </button>
-          )}
-          
-          {/* Inventory/Store - For Pet Stores/Pharmacies */}
-          {capabilities.inventory && onNavigateToBusinessHub && (
-            <button
-              onClick={onNavigateToBusinessHub}
-              className="bg-white border-2 border-blue-500 text-blue-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-blue-500 hover:text-white transition-colors group text-center"
-            >
-              <Package className="w-6 h-6 mb-2" />
-              <span className="font-semibold text-sm">Inventory & Store</span>
-            </button>
-          )}
+        <div className="p-4 border-b border-gray-100">
+          <div className="flex flex-wrap gap-3">
+            {/* Staff Management - For Clinics/Hospitals */}
+            {onNavigateToStaffManagement && (capabilities.staff_management || VendorUtils.isHealthcareProvider(vendorData?.roleId)) && (
+              <button
+                onClick={onNavigateToStaffManagement}
+                className="flex-1 min-w-[140px] bg-white border-2 border-[#FF8C42] text-[#FF8C42] rounded-xl p-4 flex flex-col items-center justify-center hover:bg-[#FF8C42] hover:text-white transition-colors group text-center"
+              >
+                <Users className="w-6 h-6 mb-2" />
+                <span className="font-semibold text-sm">Manage Staff</span>
+              </button>
+            )}
+            
+            {/* ✅ FIX: Center Profile - For ANY center-style vendor or vet */}
+            {onNavigateToCenterProfile && (
+              // Check multiple conditions with fallbacks
+              vendorData?.serviceStyle === 'center' || 
+              vendorData?.serviceStyle === 'at_center' ||
+              vendorData?.serviceStyle === 'both' ||  // ✅ FIX: Added 'both' option
+              vendorData?.serviceStyles?.includes('at_center') ||  // ✅ FIX: Check array
+              vendorData?.vendorType?.includes('center') ||
+              VendorUtils.isVet(vendorData?.roleId) ||  // ✅ FIX: Use utility function
+              VendorUtils.canOfferCenter(vendorData?.roleId)  // ✅ FIX: Check if role allows center
+            ) && (
+              <button
+                onClick={onNavigateToCenterProfile}
+                className="flex-1 min-w-[140px] bg-white border-2 border-purple-500 text-purple-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-purple-500 hover:text-white transition-colors group text-center"
+              >
+                <Building2 className="w-6 h-6 mb-2" />
+                <span className="font-semibold text-sm">Center Profile</span>
+              </button>
+            )}
+            
+            {/* Inventory/Store - For Pet Stores/Pharmacies */}
+            {onNavigateToBusinessHub && (capabilities.inventory || VendorUtils.isStore(vendorData?.roleId)) && (
+              <button
+                onClick={onNavigateToBusinessHub}
+                className="flex-1 min-w-[140px] bg-white border-2 border-blue-500 text-blue-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-blue-500 hover:text-white transition-colors group text-center"
+              >
+                <Package className="w-6 h-6 mb-2" />
+                <span className="font-semibold text-sm">Inventory & Store</span>
+              </button>
+            )}
+          </div>
         </div>
         
         {/* ✅ CANONICAL: VET-SPECIFIC SERVICES SECTION - Only for pet_clinic role */}
@@ -481,7 +527,7 @@ export function VendorDashboard({
           <div className="grid grid-cols-3 gap-3">
             {/* Appointments Stat */}
             {capabilities.booking && (
-              <div className={`text-center p-3 ${colorScheme.light} rounded-lg`}>
+              <div key="stat-appointments" className={`text-center p-3 ${colorScheme.light} rounded-lg`}>
                 <iconTheme.stats.bookings className={`w-5 h-5 ${colorScheme.dark} mx-auto mb-1`} />
                 <div className="text-2xl font-bold text-gray-900">{stats.appointments}</div>
                 <div className="text-xs text-gray-500">Appointments</div>
@@ -490,7 +536,7 @@ export function VendorDashboard({
 
             {/* Orders Stat (if booking is disabled or orders enabled) */}
             {capabilities.orders && (
-              <div className={`text-center p-3 bg-blue-50 rounded-lg`}>
+              <div key="stat-orders" className={`text-center p-3 bg-blue-50 rounded-lg`}>
                 <ShoppingBag className={`w-5 h-5 text-blue-600 mx-auto mb-1`} />
                 <div className="text-2xl font-bold text-gray-900">{stats.activeOrders || 0}</div>
                 <div className="text-xs text-gray-500">Orders</div>
@@ -499,7 +545,7 @@ export function VendorDashboard({
 
             {/* Consultations Stat */}
             {(capabilities.tele || capabilities.booking) && (
-              <div className={`text-center p-3 ${colorScheme.light} rounded-lg`}>
+              <div key="stat-consultations" className={`text-center p-3 ${colorScheme.light} rounded-lg`}>
                 <iconTheme.stats.customers className={`w-5 h-5 ${colorScheme.dark} mx-auto mb-1`} />
                 <div className="text-2xl font-bold text-gray-900">{stats.consultations}</div>
                 <div className="text-xs text-gray-500">Consultations</div>
@@ -507,7 +553,7 @@ export function VendorDashboard({
             )}
 
             {/* Earnings Stat - Always show */}
-            <div className="text-center p-3 bg-green-50 rounded-lg">
+            <div key="stat-earnings" className="text-center p-3 bg-green-50 rounded-lg">
               <iconTheme.stats.revenue className="w-5 h-5 text-green-600 mx-auto mb-1" />
               <div className="text-2xl font-bold text-green-600">₹{stats.earnings.toLocaleString()}</div>
               <div className="text-xs text-gray-500">Earnings</div>
@@ -735,7 +781,7 @@ export function VendorDashboard({
                 <div key={patient.watchlistId} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
                   <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
                     <span className="text-sm font-semibold text-blue-600">
-                      {patient.customerName.split(' ').map(n => n[0]).join('')}
+                      {patient.customerName.split(' ').map((n, idx) => n[0]).join('')}
                     </span>
                   </div>
                   <div className="flex-1">

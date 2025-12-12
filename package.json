@@ -38,6 +38,8 @@
           "@radix-ui/react-tooltip": "^1.1.8",
           "@smithy/node-http-handler": "*",
           "@supabase/supabase-js": "^2",
+          "@tanstack/react-query": "*",
+          "@tanstack/react-query-devtools": "*",
           "amazon-chime-sdk-js": "*",
           "class-variance-authority": "^0.7.1",
           "clsx": "*",

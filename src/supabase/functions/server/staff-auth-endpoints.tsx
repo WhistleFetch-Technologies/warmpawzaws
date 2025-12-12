@@ -92,24 +92,30 @@ app.post("/staff/auth/login", async (c) => {
     
     console.log(`🔐 [STAFF LOGIN] Login attempt: ${phone}`);
     
-    // Find staff by phone
-    const allStaffKeys = await kv.getByPrefix("staff:");
-    console.log(`📋 [STAFF LOGIN] Total staff records: ${allStaffKeys.length}`);
+    // ✅ FIX: Use phone index instead of scanning all staff
+    const normalizedPhone = phone.replace(/[^0-9]/g, '');
+    const staffId = await kv.get(`staff:phone:${normalizedPhone}`);
     
-    // The KV store returns objects directly, not wrapped in .value
-    const staffProfile = allStaffKeys.find((item: any) => {
-      const staffPhone = item?.phone;
-      const staffStatus = item?.status;
-      const staffIsActive = item?.isActive;
-      console.log(`   Login check: ${staffPhone} === ${phone}, status: ${staffStatus}, isActive: ${staffIsActive}`);
-      // ✅ CRITICAL FIX: Check BOTH status==='active' (old staff) AND isActive===true (new staff)
-      const isActiveStaff = staffStatus === 'active' || staffIsActive === true;
-      return staffPhone === phone && isActiveStaff;
-    });
+    if (!staffId) {
+      console.log(`❌ [STAFF LOGIN] No staff phone index found for: ${normalizedPhone}`);
+      return c.json({ error: "Staff not found or inactive" }, 404);
+    }
+    
+    console.log(`📋 [STAFF LOGIN] Found staff ID from phone index: ${staffId}`);
+    
+    // Get staff profile
+    const staffProfile = await kv.get(`staff:${staffId}`);
     
     if (!staffProfile) {
-      console.log(`❌ [STAFF LOGIN] Staff not found or inactive for phone: ${phone}`);
-      return c.json({ error: "Staff not found or inactive" }, 404);
+      console.log(`❌ [STAFF LOGIN] Staff profile not found for ID: ${staffId}`);
+      return c.json({ error: "Staff profile not found" }, 404);
+    }
+    
+    // Check if staff is active
+    const isActiveStaff = staffProfile.status === 'active' || staffProfile.isActive === true;
+    if (!isActiveStaff) {
+      console.log(`❌ [STAFF LOGIN] Staff is inactive: ${staffId}`);
+      return c.json({ error: "Staff account is inactive" }, 403);
     }
     
     const staff = staffProfile;

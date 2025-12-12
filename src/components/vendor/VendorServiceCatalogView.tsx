@@ -118,7 +118,32 @@ export function VendorServiceCatalogView({
       if (vendorServicesRes.ok) {
         const data = await vendorServicesRes.json();
         console.log('✅ [VENDOR] Loaded vendor services:', data);
-        setVendorServices(data.services || []);
+        
+        // ✅ FIXED: Parse new response format from updated endpoint
+        let vendorServicesList: any[] = [];
+        
+        // New format: data.allServices (flat array of all enabled services)
+        if (data.allServices && Array.isArray(data.allServices)) {
+          vendorServicesList = data.allServices;
+        }
+        // Alternative: data.services (grouped by style)
+        else if (data.services && typeof data.services === 'object') {
+          ['at_home', 'at_center', 'tele'].forEach(style => {
+            if (data.services[style] && data.services[style].services) {
+              vendorServicesList.push(...data.services[style].services);
+            }
+          });
+        }
+        // Legacy fallback
+        else if (data.legacyServices && Array.isArray(data.legacyServices)) {
+          vendorServicesList = data.legacyServices;
+        }
+        else if (Array.isArray(data.services)) {
+          vendorServicesList = data.services;
+        }
+        
+        console.log('✅ [VENDOR] Parsed vendor services:', vendorServicesList.length, vendorServicesList);
+        setVendorServices(vendorServicesList);
       }
 
       // Load roles
@@ -324,38 +349,53 @@ export function VendorServiceCatalogView({
           const service = services.find(s => s.catalogId === catalogId);
           if (!service) continue;
 
+          // ✅ FIX: Call correct endpoint /vendor/services/add
           const response = await fetch(
-            `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/services`,
+            `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/services/add`,
             {
               method: 'POST',
               headers: {
                 'Authorization': `Bearer ${publicAnonKey}`,
                 'Content-Type': 'application/json'
               },
+              // ✅ FIX: Send data in format backend expects { vendorId, serviceData }
               body: JSON.stringify({
                 vendorId,
-                catalogServiceCode: catalogId,
-                serviceName: service.serviceName,
-                serviceStyle: service.serviceStyle,
-                isEnabled: true,
-                vendorPrice: service.basePrice,
-                duration: service.duration || 30,
-                description: service.description,
-                isPackage: service.isPackage,
-                packageDetails: service.packageDetails,
-                status: 'active'
+                serviceData: {
+                  catalogServiceCode: catalogId,
+                  serviceName: service.serviceName,
+                  serviceStyle: service.serviceStyle,
+                  isEnabled: true,
+                  vendorPrice: service.basePrice,
+                  duration: service.duration || 30,
+                  description: service.description,
+                  isPackage: service.isPackage,
+                  packageDetails: service.packageDetails,
+                  status: 'active',
+                  type: service.serviceStyle // Add type for backend compatibility
+                }
               })
             }
           );
 
+          // ✅ FIX: Better error handling with detailed logging
           if (response.ok) {
+            const data = await response.json();
+            console.log('✅ Service added successfully:', service.serviceName, data);
             successfullyAdded.push(service.serviceName);
           } else {
+            const errorText = await response.text();
+            console.error('❌ Failed to add service:', service.serviceName, {
+              status: response.status,
+              statusText: response.statusText,
+              error: errorText
+            });
             failed.push(service.serviceName);
           }
         } catch (error) {
-          console.error('Error adding service:', catalogId, error);
-          failed.push(catalogId);
+          console.error('❌ Error adding service:', catalogId, error);
+          const service = services.find(s => s.catalogId === catalogId);
+          failed.push(service?.serviceName || catalogId);
         }
       }
 
@@ -367,7 +407,7 @@ export function VendorServiceCatalogView({
       }
 
       if (failed.length > 0) {
-        toast.error(`Failed to add ${failed.length} service(s)`);
+        toast.error(`Failed to add ${failed.length} service(s). Check console for details.`);
       }
 
     } catch (error) {

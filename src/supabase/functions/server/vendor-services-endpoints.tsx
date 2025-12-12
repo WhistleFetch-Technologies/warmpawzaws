@@ -8,6 +8,7 @@ export function registerVendorServiceEndpoints(app: Hono) {
   /**
    * GET /make-server-3dd53475/vendor/services/:vendorId
    * Get all services for a vendor
+   * ✅ FIXED: Now reads from BOTH old and new service storage systems
    */
   app.get("/make-server-3dd53475/vendor/services/:vendorId", async (c) => {
     try {
@@ -19,44 +20,59 @@ export function registerVendorServiceEndpoints(app: Hono) {
         return sendError(c, 'Vendor not found', 404);
       }
 
-      // Get vendor services
-      // Services are stored in a list: vendor:{vendorId}:services -> [serviceId1, serviceId2, ...]
-      // And detailed service objects: service:{serviceId}
+      // ✅ NEW: Read from vendor_services system (primary source)
+      const serviceStyles = ['at_home', 'at_center', 'tele'];
+      const servicesByStyle: any = {};
+      let allEnabledServices: any[] = [];
       
-      let serviceIds = await kv.get(`vendor:${vendorId}:services`) || [];
-      
-      // ✅ SELF-HEALING: Check for orphaned services if list is empty
-      if (serviceIds.length === 0) {
-        console.log(`🔍 No services found in index for ${vendorId}. Checking for orphaned services...`);
-        try {
-          const allServices = await kv.getByPrefix('service:');
-          const orphanedServices = allServices.filter((s: any) => 
-            s.vendorId === vendorId && 
-            s.isActive !== false
+      for (const style of serviceStyles) {
+        const vendorServicesKey = `vendor_services:${vendorId}:${style}`;
+        const vendorServicesData = await kv.get(vendorServicesKey);
+        
+        if (vendorServicesData && vendorServicesData.services) {
+          // Filter for enabled services
+          const enabledServices = vendorServicesData.services.filter(
+            (s: any) => s.isEnabled === true
           );
           
-          if (orphanedServices.length > 0) {
-            console.log(`🔧 Found ${orphanedServices.length} orphaned services. Rebuilding index...`);
-            serviceIds = orphanedServices.map((s: any) => s.id);
-            await kv.set(`vendor:${vendorId}:services`, serviceIds);
-          }
-        } catch (err) {
-          console.warn('⚠️ Error checking for orphaned services:', err);
+          servicesByStyle[style] = {
+            services: enabledServices,
+            count: enabledServices.length
+          };
+          
+          allEnabledServices.push(...enabledServices);
+        } else {
+          servicesByStyle[style] = {
+            services: [],
+            count: 0
+          };
         }
       }
+      
+      console.log(`📋 Found ${allEnabledServices.length} enabled services from vendor_services system`);
 
-      const services = [];
-      for (const id of serviceIds) {
-        const service = await kv.get(`service:${id}`);
-        if (service && service.isActive !== false) {
-          services.push(service);
+      // ✅ LEGACY SUPPORT: Also check old system for backward compatibility
+      let legacyServices: any[] = [];
+      let serviceIds = await kv.get(`vendor:${vendorId}:services`) || [];
+      
+      if (serviceIds.length > 0) {
+        console.log(`🔍 Found ${serviceIds.length} services in legacy system`);
+        for (const id of serviceIds) {
+          const service = await kv.get(`service:${id}`);
+          if (service && service.isActive !== false) {
+            legacyServices.push(service);
+          }
         }
       }
 
       return sendSuccess(c, {
-        services,
+        success: true,
+        services: servicesByStyle, // NEW system format (grouped by style)
+        allServices: allEnabledServices, // Flat array of all enabled services
+        legacyServices, // OLD system services for backward compatibility
         vendorId,
-        count: services.length
+        totalEnabled: allEnabledServices.length,
+        totalLegacy: legacyServices.length
       });
     } catch (error) {
       console.error('Error fetching vendor services:', error);
