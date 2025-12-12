@@ -35,6 +35,8 @@ import { VendorPrescriptionBuilder } from './VendorPrescriptionBuilder'; // ✅ 
 import { ProgressTrackingDashboard } from './training/ProgressTrackingDashboard'; // ✅ FIX: Progress tracking
 import { PackageManagementContainer } from './packages/PackageManagementContainer'; // ✅ FIX: Package management
 import { VendorCustomServiceCreation } from './VendorCustomServiceCreation'; // ✅ FIX: Custom services
+import { ShelterAdoptionSystem } from './ShelterAdoptionSystem'; // ✅ FIX: Adoption management
+import { VendorMemorialServices } from './VendorMemorialServices'; // ✅ FIX: Memorial services
 
 interface VendorLandingPageProps {
   vendorId: string;
@@ -124,6 +126,8 @@ export function VendorLandingPage({
   const [showProgressTracking, setShowProgressTracking] = useState(false);
   const [showPackages, setShowPackages] = useState(false);
   const [showCustomServices, setShowCustomServices] = useState(false);
+  const [showAdoptionSystem, setShowAdoptionSystem] = useState(false);
+  const [showMemorialServices, setShowMemorialServices] = useState(false);
   
   // ✅ NEW: Track navigation context for better UX flow
   const [returnToStaffManagement, setReturnToStaffManagement] = useState(false);
@@ -990,6 +994,28 @@ export function VendorLandingPage({
         );
       }
       
+      // ✅ FIX: Adoption System
+      if (showAdoptionSystem) {
+        return (
+          <ShelterAdoptionSystem
+            vendorId={vendorId}
+            vendorData={vendorData}
+            onBack={() => setShowAdoptionSystem(false)}
+          />
+        );
+      }
+      
+      // ✅ FIX: Memorial Services
+      if (showMemorialServices) {
+        return (
+          <VendorMemorialServices
+            vendorId={vendorId}
+            vendorData={vendorData}
+            onBack={() => setShowMemorialServices(false)}
+          />
+        );
+      }
+      
       // ⚡️ ROLE-SPECIFIC DASHBOARDS
       // Some roles have specialized dashboards with unique capabilities outside the universal config
       
@@ -1079,6 +1105,8 @@ export function VendorLandingPage({
           onNavigateToProgressTracking={() => setShowProgressTracking(true)} // ✅ FIX: Progress tracking navigation
           onNavigateToPackages={() => setShowPackages(true)} // ✅ FIX: Packages navigation
           onNavigateToCustomServices={() => setShowCustomServices(true)} // ✅ FIX: Custom services navigation
+          onNavigateToAdoptionSystem={() => setShowAdoptionSystem(true)} // ✅ FIX: Adoption system navigation
+          onNavigateToMemorialServices={() => setShowMemorialServices(true)} // ✅ FIX: Memorial services navigation
         />
       );
 

@@ -35,7 +35,8 @@ import {
   Pill,
   TrendingUp,
   FileText,
-  Gift
+  Gift,
+  Heart
 } from 'lucide-react';
 import { Badge } from '../ui/badge';
 import { VendorNotificationModal } from './VendorNotificationModal';
@@ -68,6 +69,13 @@ interface VendorDashboardProps {
   onNavigateToProgressTracking?: () => void;
   onNavigateToPackages?: () => void;
   onNavigateToCustomServices?: () => void;
+  onNavigateToAdoptionSystem?: () => void;
+  onNavigateToMemorialServices?: () => void;
+  onNavigateToExpiryManagement?: () => void;
+  onNavigateToDonationManagement?: () => void;
+  onNavigateToEventManagement?: () => void;
+  onNavigateToPatientMonitoring?: () => void;
+  onNavigateToCafeMenuManagement?: () => void;
 }
 
 interface DashboardStats {
@@ -144,7 +152,14 @@ export function VendorDashboard({
   onNavigateToPrescription,
   onNavigateToProgressTracking,
   onNavigateToPackages,
-  onNavigateToCustomServices
+  onNavigateToCustomServices,
+  onNavigateToAdoptionSystem,
+  onNavigateToMemorialServices,
+  onNavigateToExpiryManagement,
+  onNavigateToDonationManagement,
+  onNavigateToEventManagement,
+  onNavigateToPatientMonitoring,
+  onNavigateToCafeMenuManagement
 }: VendorDashboardProps) {
   const [activeTab, setActiveTab] = useState<'today' | 'week' | 'month'>('today');
   const [activeBottomTab, setActiveBottomTab] = useState<'home' | 'bookings' | 'reporting' | 'settings'>('home');
@@ -624,6 +639,91 @@ export function VendorDashboard({
                 >
                   <Plus className="w-6 h-6 text-yellow-600 mb-1" />
                   <span className="text-xs font-medium text-gray-900">Custom</span>
+                </button>
+              )}
+              
+              {/* Adoption Management */}
+              {onNavigateToAdoptionSystem && capabilities.adoption && (
+                <button
+                  onClick={onNavigateToAdoptionSystem}
+                  className="bg-rose-50 border border-rose-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-rose-100 transition-colors"
+                >
+                  <Heart className="w-6 h-6 text-rose-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Adoption</span>
+                </button>
+              )}
+              
+              {/* Memorial Services */}
+              {onNavigateToMemorialServices && capabilities.memorial && (
+                <button
+                  onClick={onNavigateToMemorialServices}
+                  className="bg-purple-50 border border-purple-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-purple-100 transition-colors"
+                >
+                  <Heart className="w-6 h-6 text-purple-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Memorial</span>
+                </button>
+              )}
+              
+              {/* Expiry Management */}
+              {onNavigateToExpiryManagement && capabilities.expiry_management && (
+                <button
+                  onClick={onNavigateToExpiryManagement}
+                  className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-amber-100 transition-colors"
+                >
+                  <svg className="w-6 h-6 text-amber-600 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="text-xs font-medium text-gray-900">Expiry</span>
+                </button>
+              )}
+              
+              {/* Donation Management */}
+              {onNavigateToDonationManagement && capabilities.donation_management && (
+                <button
+                  onClick={onNavigateToDonationManagement}
+                  className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-emerald-100 transition-colors"
+                >
+                  <svg className="w-6 h-6 text-emerald-600 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="text-xs font-medium text-gray-900">Donations</span>
+                </button>
+              )}
+              
+              {/* Event Management */}
+              {onNavigateToEventManagement && capabilities.event_management && (
+                <button
+                  onClick={onNavigateToEventManagement}
+                  className="bg-sky-50 border border-sky-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-sky-100 transition-colors"
+                >
+                  <svg className="w-6 h-6 text-sky-600 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  <span className="text-xs font-medium text-gray-900">Events</span>
+                </button>
+              )}
+              
+              {/* Patient Monitoring */}
+              {onNavigateToPatientMonitoring && capabilities.patient_monitoring && (
+                <button
+                  onClick={onNavigateToPatientMonitoring}
+                  className="bg-red-50 border border-red-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-red-100 transition-colors"
+                >
+                  <Activity className="w-6 h-6 text-red-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Monitor</span>
+                </button>
+              )}
+              
+              {/* Cafe Menu Management */}
+              {onNavigateToCafeMenuManagement && capabilities.cafe_menu && (
+                <button
+                  onClick={onNavigateToCafeMenuManagement}
+                  className="bg-orange-50 border border-orange-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-orange-100 transition-colors"
+                >
+                  <svg className="w-6 h-6 text-orange-600 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                  </svg>
+                  <span className="text-xs font-medium text-gray-900">Menu</span>
                 </button>
               )}
             </div>
