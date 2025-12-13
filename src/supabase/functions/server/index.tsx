@@ -111,6 +111,7 @@ import expiryManagementEndpoints from "./expiry-management-endpoints.tsx";
 import donationManagementEndpoints from "./donation-management-endpoints.tsx";
 import eventManagementEndpoints from "./event-management-endpoints.tsx";
 import patientMonitoringEndpoints from "./patient-monitoring-endpoints.tsx";
+import customerEcommerceEndpoints from "./customer-ecommerce-endpoints.tsx"; // ✅ QA FIX: E-commerce endpoints
 
 const app = new Hono();
 
@@ -616,6 +617,13 @@ if (patientMonitoringEndpoints && typeof patientMonitoringEndpoints === 'object'
   console.log('✅ Registered Patient Monitoring Endpoints');
 } else {
   console.warn('⚠️ Patient Monitoring Endpoints module undefined, skipping');
+}
+
+if (customerEcommerceEndpoints && typeof customerEcommerceEndpoints === 'object') {
+  app.route('/make-server-3dd53475', customerEcommerceEndpoints);
+  console.log('✅ Registered Customer E-commerce Endpoints');
+} else {
+  console.warn('⚠️ Customer E-commerce Endpoints module undefined, skipping');
 }
 
 // ✅ P0 Features
