@@ -2,6 +2,7 @@ import { Hono } from "npm:hono";
 import { cors } from "npm:hono/cors";
 import { logger } from "npm:hono/logger";
 import * as kv from "./kv_store.tsx";
+import { safeGetByPrefix } from "./kv-safe.tsx";
 import { sendSuccess, sendError } from "./response-utils.ts";
 import { criticalActionGuard } from "./critical-action-guard.tsx";
 
@@ -122,7 +123,8 @@ app.use('*', logger(console.log));
 // ------------------------------------------------------------------
 app.get('/make-server-3dd53475/regions', async (c) => {
   try {
-    const regionsData = await kv.getByPrefix('region_');
+    console.log('📍 [REGIONS] Fetching all regions...');
+    const regionsData = await safeGetByPrefix('region_', { timeout: 10000, limit: 500 });
     
     console.log(`✅ Returning ${regionsData?.length || 0} regions from GET /regions`);
     
@@ -131,8 +133,13 @@ app.get('/make-server-3dd53475/regions', async (c) => {
       count: regionsData?.length || 0
     });
   } catch (error) {
-    console.error('Error fetching regions:', error);
-    return sendError(c, error, 500);
+    console.error('❌ Error fetching regions:', error);
+    // Return empty array on error instead of failing
+    return sendSuccess(c, {
+      regions: [],
+      count: 0,
+      warning: 'Region data temporarily unavailable'
+    });
   }
 });
 
@@ -141,19 +148,10 @@ app.get('/make-server-3dd53475/regions/active', async (c) => {
   try {
     console.log('📍 [REGIONS] Fetching active regions...');
     
-    // Use Promise.race to timeout after 2 seconds
-    const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('Request timeout')), 2000)
-    );
-    
-    const fetchPromise = (async () => {
-      const regionsData = await kv.getByPrefix('region_');
-      const regions = (regionsData || []).map((item: any) => item.value || item);
-      const activeRegions = regions.filter((r: any) => r.isActive === true);
-      return activeRegions;
-    })();
-    
-    const activeRegions = await Promise.race([fetchPromise, timeoutPromise]) as any[];
+    // Use safeGetByPrefix which has built-in timeout protection and retry logic
+    const regionsData = await safeGetByPrefix('region_', { timeout: 10000, limit: 500 });
+    const regions = (regionsData || []).map((item: any) => item.value || item);
+    const activeRegions = regions.filter((r: any) => r.isActive === true);
     
     console.log(`✅ Returning ${activeRegions.length} active regions from GET /regions/active`);
     
@@ -164,17 +162,13 @@ app.get('/make-server-3dd53475/regions/active', async (c) => {
   } catch (error) {
     console.error('❌ Error fetching active regions:', error);
     
-    // Return empty array on timeout instead of failing
-    if (error instanceof Error && error.message === 'Request timeout') {
-      console.warn('⚠️ Region fetch timeout, returning empty array');
-      return sendSuccess(c, {
-        regions: [],
-        count: 0,
-        warning: 'Region data temporarily unavailable'
-      });
-    }
-    
-    return sendError(c, error, 500);
+    // Return empty array on error instead of failing
+    console.warn('⚠️ Region fetch failed, returning empty array');
+    return sendSuccess(c, {
+      regions: [],
+      count: 0,
+      warning: 'Region data temporarily unavailable'
+    });
   }
 });
 

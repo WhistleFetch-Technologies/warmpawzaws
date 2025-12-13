@@ -44,10 +44,11 @@ interface Campaign {
 
 interface VendorDonationManagementProps {
   vendorId: string;
+  vendorData?: any;
   onBack?: () => void;
 }
 
-export function VendorDonationManagement({ vendorId, onBack }: VendorDonationManagementProps) {
+export function VendorDonationManagement({ vendorId, vendorData, onBack }: VendorDonationManagementProps) {
   const [activeTab, setActiveTab] = useState<'donations' | 'donors' | 'campaigns'>('donations');
   const [donations, setDonations] = useState<Donation[]>([]);
   const [donors, setDonors] = useState<Donor[]>([]);

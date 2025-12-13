@@ -54,11 +54,12 @@ interface EventRegistration {
 
 interface VendorEventManagementProps {
   vendorId: string;
-  vendorType: 'shelter' | 'cafe' | 'other';
+  vendorData?: any;
+  vendorType?: 'shelter' | 'cafe' | 'other';
   onBack?: () => void;
 }
 
-export function VendorEventManagement({ vendorId, vendorType, onBack }: VendorEventManagementProps) {
+export function VendorEventManagement({ vendorId, vendorData, vendorType = 'other', onBack }: VendorEventManagementProps) {
   const [activeTab, setActiveTab] = useState<'events' | 'registrations'>('events');
   const [events, setEvents] = useState<Event[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
