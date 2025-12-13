@@ -474,4 +474,102 @@ app.get('/:vendorId/dashboard', async (c) => {
   }
 });
 
+/**
+ * POST /vendor/donation-management/:vendorId/donations/:donationId/generate-receipt
+ * Generate and issue receipt for a donation
+ */
+app.post('/:vendorId/donations/:donationId/generate-receipt', async (c) => {
+  try {
+    const { vendorId, donationId } = c.req.param();
+    
+    const donation = await kv.get<Donation>(`donation:${vendorId}:${donationId}`);
+    
+    if (!donation) {
+      return c.json({
+        success: false,
+        error: 'Donation not found'
+      }, 404);
+    }
+    
+    // Generate receipt URL (in production, this would generate a PDF)
+    const receiptUrl = `https://warmpawz.com/receipts/${donationId}`;
+    const certificateUrl = donation.taxBenefit 
+      ? `https://warmpawz.com/certificates/80G/${donationId}`
+      : undefined;
+    
+    const updatedDonation: Donation = {
+      ...donation,
+      receiptIssued: true,
+      receiptUrl,
+      certificateUrl,
+      status: 'acknowledged',
+      updatedAt: new Date().toISOString()
+    };
+    
+    await kv.set(`donation:${vendorId}:${donationId}`, updatedDonation);
+    
+    return c.json({
+      success: true,
+      donation: updatedDonation,
+      receiptUrl,
+      certificateUrl,
+      message: 'Receipt generated successfully'
+    });
+  } catch (error) {
+    console.error('Error generating receipt:', error);
+    return c.json({
+      success: false,
+      error: 'Failed to generate receipt',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * GET /vendor/donation-management/:vendorId/donations/:donationId/receipt
+ * Get receipt details for a donation
+ */
+app.get('/:vendorId/donations/:donationId/receipt', async (c) => {
+  try {
+    const { vendorId, donationId } = c.req.param();
+    
+    const donation = await kv.get<Donation>(`donation:${vendorId}:${donationId}`);
+    
+    if (!donation) {
+      return c.json({
+        success: false,
+        error: 'Donation not found'
+      }, 404);
+    }
+    
+    if (!donation.receiptIssued) {
+      return c.json({
+        success: false,
+        error: 'Receipt not yet generated'
+      }, 404);
+    }
+    
+    return c.json({
+      success: true,
+      receipt: {
+        receiptNumber: donation.receiptNumber,
+        receiptUrl: donation.receiptUrl,
+        certificateUrl: donation.certificateUrl,
+        donorName: donation.donorName,
+        amount: donation.amount,
+        type: donation.type,
+        date: donation.createdAt,
+        taxBenefit: donation.taxBenefit
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching receipt:', error);
+    return c.json({
+      success: false,
+      error: 'Failed to fetch receipt',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
 export default app;

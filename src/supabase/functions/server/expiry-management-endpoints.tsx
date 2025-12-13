@@ -560,4 +560,182 @@ app.get('/:vendorId/dashboard', async (c) => {
   }
 });
 
+/**
+ * POST /vendor/expiry/:vendorId/batches/bulk-import
+ * Import multiple product batches from CSV/JSON
+ */
+app.post('/:vendorId/batches/bulk-import', async (c) => {
+  try {
+    const vendorId = c.req.param('vendorId');
+    const body = await c.req.json();
+    const { batches } = body; // Array of batch objects
+    
+    if (!Array.isArray(batches) || batches.length === 0) {
+      return c.json({
+        success: false,
+        error: 'Invalid import data - batches array required'
+      }, 400);
+    }
+    
+    const imported: ProductBatch[] = [];
+    const errors: string[] = [];
+    const now = new Date().toISOString();
+    
+    for (const batchData of batches) {
+      try {
+        const batchId = `batch-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        
+        // Validate required fields
+        if (!batchData.productName || !batchData.expiryDate) {
+          errors.push(`Batch ${batchData.productName || 'unknown'}: Missing required fields`);
+          continue;
+        }
+        
+        const batch: ProductBatch = {
+          id: batchId,
+          vendorId,
+          productName: batchData.productName,
+          productId: batchData.productId || `prod-${Date.now()}`,
+          category: batchData.category || 'other',
+          batchNumber: batchData.batchNumber || `BATCH-${Date.now()}`,
+          manufacturer: batchData.manufacturer || 'Unknown',
+          manufacturingDate: batchData.manufacturingDate || now,
+          expiryDate: batchData.expiryDate,
+          initialQuantity: batchData.initialQuantity || 0,
+          remainingQuantity: batchData.remainingQuantity || batchData.initialQuantity || 0,
+          unit: batchData.unit || 'units',
+          costPrice: batchData.costPrice || 0,
+          sellingPrice: batchData.sellingPrice || 0,
+          alertDays: batchData.alertDays || 30,
+          location: batchData.location || 'Default',
+          status: determineBatchStatus(
+            batchData.expiryDate,
+            batchData.remainingQuantity || batchData.initialQuantity || 0,
+            batchData.alertDays || 30
+          ),
+          notes: batchData.notes,
+          createdAt: now,
+          updatedAt: now
+        };
+        
+        await kv.set(`expiry:batch:${vendorId}:${batchId}`, batch);
+        imported.push(batch);
+        
+        // Create alert if needed
+        const daysUntilExpiry = calculateDaysUntilExpiry(batch.expiryDate);
+        if (daysUntilExpiry >= 0 && daysUntilExpiry <= batch.alertDays && batch.remainingQuantity > 0) {
+          const alertId = `alert-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+          const alert: ExpiryAlert = {
+            id: alertId,
+            vendorId,
+            batchId,
+            productName: batch.productName,
+            batchNumber: batch.batchNumber,
+            expiryDate: batch.expiryDate,
+            remainingQuantity: batch.remainingQuantity,
+            unit: batch.unit,
+            estimatedLoss: batch.remainingQuantity * batch.costPrice,
+            daysUntilExpiry,
+            severity: determineAlertSeverity(daysUntilExpiry),
+            status: 'active',
+            notificationSent: false,
+            acknowledgedBy: '',
+            actionTaken: '',
+            createdAt: now,
+            updatedAt: now
+          };
+          await kv.set(`expiry:alert:${vendorId}:${alertId}`, alert);
+        }
+      } catch (error) {
+        errors.push(`Batch ${batchData.productName}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    }
+    
+    return c.json({
+      success: true,
+      imported: imported.length,
+      total: batches.length,
+      errors: errors.length > 0 ? errors : undefined,
+      batches: imported,
+      message: `Successfully imported ${imported.length} of ${batches.length} batches`
+    });
+  } catch (error) {
+    console.error('Error importing batches:', error);
+    return c.json({
+      success: false,
+      error: 'Failed to import batches',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
+ * GET /vendor/expiry/:vendorId/batches/export
+ * Export all batches to JSON/CSV format
+ */
+app.get('/:vendorId/batches/export', async (c) => {
+  try {
+    const vendorId = c.req.param('vendorId');
+    const format = c.req.query('format') || 'json'; // json or csv
+    
+    const batches = await kv.getByPrefix<ProductBatch>(`expiry:batch:${vendorId}:`);
+    
+    // Update statuses before export
+    const exportData = batches.map(batch => ({
+      ...batch,
+      status: determineBatchStatus(batch.expiryDate, batch.remainingQuantity, batch.alertDays)
+    }));
+    
+    if (format === 'csv') {
+      // Generate CSV
+      const headers = [
+        'Product Name', 'Batch Number', 'Category', 'Manufacturer',
+        'Manufacturing Date', 'Expiry Date', 'Initial Quantity', 
+        'Remaining Quantity', 'Unit', 'Cost Price', 'Selling Price',
+        'Location', 'Status', 'Alert Days', 'Notes'
+      ];
+      
+      const csvRows = exportData.map(batch => [
+        batch.productName,
+        batch.batchNumber,
+        batch.category,
+        batch.manufacturer,
+        batch.manufacturingDate,
+        batch.expiryDate,
+        batch.initialQuantity,
+        batch.remainingQuantity,
+        batch.unit,
+        batch.costPrice,
+        batch.sellingPrice,
+        batch.location,
+        batch.status,
+        batch.alertDays,
+        batch.notes || ''
+      ].map(field => `"${String(field).replace(/"/g, '""')}"`).join(','));
+      
+      const csv = [headers.join(','), ...csvRows].join('\n');
+      
+      return c.text(csv, 200, {
+        'Content-Type': 'text/csv',
+        'Content-Disposition': `attachment; filename="expiry-batches-${vendorId}-${Date.now()}.csv"`
+      });
+    }
+    
+    // Default JSON format
+    return c.json({
+      success: true,
+      batches: exportData,
+      exportDate: new Date().toISOString(),
+      total: exportData.length
+    });
+  } catch (error) {
+    console.error('Error exporting batches:', error);
+    return c.json({
+      success: false,
+      error: 'Failed to export batches',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
 export default app;
