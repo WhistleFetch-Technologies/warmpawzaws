@@ -1,5 +1,5 @@
 import { X, Upload, Check } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
@@ -15,6 +15,8 @@ interface AddVendorModalProps {
 export function AddVendorModal({ isOpen, onClose, onSuccess }: AddVendorModalProps) {
   const [currentStep, setCurrentStep] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [rolesLoading, setRolesLoading] = useState(true);
+  const [availableRoles, setAvailableRoles] = useState<any[]>([]);
   
   // Form data
   const [formData, setFormData] = useState({
@@ -26,7 +28,8 @@ export function AddVendorModal({ isOpen, onClose, onSuccess }: AddVendorModalPro
     alternatePhone: '',
     
     // Step 2: Business Details
-    category: '',
+    roleId: '', // ✅ FIX: Use roleId instead of category
+    category: '', // Keep for backward compatibility
     services: [] as string[],
     experience: '',
     registrationNumber: '',
@@ -58,6 +61,37 @@ export function AddVendorModal({ isOpen, onClose, onSuccess }: AddVendorModalPro
     commission: '15',
     status: 'active'
   });
+
+  // ✅ NEW: Load available roles on mount
+  useEffect(() => {
+    if (isOpen) {
+      loadRoles();
+    }
+  }, [isOpen]);
+
+  const loadRoles = async () => {
+    try {
+      setRolesLoading(true);
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/config/roles`,
+        {
+          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        setAvailableRoles(data.roles || []);
+        console.log('✅ Loaded roles:', data.roles?.length || 0);
+      } else {
+        console.error('❌ Failed to load roles');
+      }
+    } catch (error) {
+      console.error('Error loading roles:', error);
+    } finally {
+      setRolesLoading(false);
+    }
+  };
 
   const handleChange = (field: string, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -116,6 +150,7 @@ export function AddVendorModal({ isOpen, onClose, onSuccess }: AddVendorModalPro
       email: '',
       phone: '',
       alternatePhone: '',
+      roleId: '', // ✅ CRITICAL: Reset roleId
       category: '',
       services: [],
       experience: '',
@@ -155,7 +190,8 @@ export function AddVendorModal({ isOpen, onClose, onSuccess }: AddVendorModalPro
       case 1:
         return formData.businessName && formData.ownerName && formData.email && formData.phone;
       case 2:
-        return formData.category && formData.services.length > 0 && formData.experience;
+        // ✅ CRITICAL: Require roleId for step 2 validation
+        return formData.roleId && formData.category && formData.services.length > 0 && formData.experience;
       case 3:
         return formData.address && formData.city && formData.state && formData.pincode;
       case 4:
@@ -264,8 +300,59 @@ export function AddVendorModal({ isOpen, onClose, onSuccess }: AddVendorModalPro
             <div className="space-y-4">
               <h3 className="text-sm mb-4">Business Details</h3>
               
+              {/* ✅ NEW: Role Selector (Primary) */}
               <div>
-                <Label>Category *</Label>
+                <Label>Vendor Role * <span className="text-xs text-gray-500">(This determines available features)</span></Label>
+                {rolesLoading ? (
+                  <div className="flex items-center justify-center py-3 text-sm text-gray-500">
+                    Loading roles...
+                  </div>
+                ) : (
+                  <Select 
+                    value={formData.roleId} 
+                    onValueChange={(value) => {
+                      handleChange('roleId', value);
+                      // Auto-set category based on role for backward compatibility
+                      const role = availableRoles.find(r => r.id === value);
+                      if (role) {
+                        const categoryMap: Record<string, string> = {
+                          'veterinarian': 'healthcare',
+                          'veterinary_clinic': 'healthcare',
+                          'pet_groomer': 'grooming',
+                          'pet_walker': 'walking',
+                          'pet_boarding': 'boarding',
+                          'pet_shelter': 'boarding',
+                          'pet_trainer': 'training',
+                          'pet_cafe': 'grooming',
+                          'pet_pharmacy': 'healthcare'
+                        };
+                        handleChange('category', categoryMap[value] || 'healthcare');
+                      }
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select vendor role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableRoles.length === 0 ? (
+                        <SelectItem value="none" disabled>No roles available - Please seed roles in Role Management</SelectItem>
+                      ) : (
+                        availableRoles.map((role) => (
+                          <SelectItem key={role.id} value={role.id}>
+                            {role.icon} {role.name || role.displayName}
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                )}
+                {formData.roleId && (
+                  <p className="text-xs text-green-600 mt-1">✓ Role selected. Features will be configured automatically.</p>
+                )}
+              </div>
+
+              <div>
+                <Label>Category * <span className="text-xs text-gray-500">(For organization)</span></Label>
                 <Select value={formData.category} onValueChange={(value) => handleChange('category', value)}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select category" />

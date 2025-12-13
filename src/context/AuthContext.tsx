@@ -1,6 +1,14 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { createClient } from '../utils/supabase/client';
-import type { User } from '../types';
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { supabase } from '../utils/supabase/client';
+import { projectId, publicAnonKey } from '../utils/supabase/info';
+
+interface User {
+  id: string;
+  phone: string;
+  name: string;
+  email?: string;
+  role: 'customer' | 'vendor' | 'admin';
+}
 
 interface AuthContextType {
   user: User | null;
@@ -22,16 +30,15 @@ interface SignUpData {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
+export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [accessToken, setAccessToken] = useState<string | null>(null);
-  const supabase = createClient();
 
   const fetchUser = async (token: string) => {
     try {
       const response = await fetch(
-        `https://${import.meta.env.VITE_SUPABASE_PROJECT_ID || ''}.supabase.co/functions/v1/make-server-3dd53475/users/me`,
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/users/me`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -84,7 +91,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signIn = async (phone: string, password: string) => {
     const response = await fetch(
-      `https://${import.meta.env.VITE_SUPABASE_PROJECT_ID || ''}.supabase.co/functions/v1/make-server-3dd53475/auth/signin`,
+      `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/auth/signin`,
       {
         method: 'POST',
         headers: {
@@ -112,7 +119,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signUp = async (signUpData: SignUpData) => {
     const response = await fetch(
-      `https://${import.meta.env.VITE_SUPABASE_PROJECT_ID || ''}.supabase.co/functions/v1/make-server-3dd53475/auth/signup`,
+      `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/auth/signup`,
       {
         method: 'POST',
         headers: {

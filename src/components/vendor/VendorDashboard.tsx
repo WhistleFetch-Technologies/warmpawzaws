@@ -76,6 +76,14 @@ interface VendorDashboardProps {
   onNavigateToEventManagement?: () => void;
   onNavigateToPatientMonitoring?: () => void;
   onNavigateToCafeMenuManagement?: () => void;
+  // ✅ NEW: Additional capability navigation handlers (Phase 2)
+  onNavigateToPrescriptionVerification?: () => void;
+  onNavigateToDeliveryManagement?: () => void;
+  onNavigateToDietCharts?: () => void;
+  onNavigateToCounseling?: () => void;
+  onNavigateToDistancePricing?: () => void;
+  onNavigateToMultiDoctorManagement?: () => void;
+  onNavigateToPolicyManagement?: () => void;
 }
 
 interface DashboardStats {
@@ -159,7 +167,15 @@ export function VendorDashboard({
   onNavigateToDonationManagement,
   onNavigateToEventManagement,
   onNavigateToPatientMonitoring,
-  onNavigateToCafeMenuManagement
+  onNavigateToCafeMenuManagement,
+  // ✅ NEW: Additional capability navigation handlers (Phase 2)
+  onNavigateToPrescriptionVerification,
+  onNavigateToDeliveryManagement,
+  onNavigateToDietCharts,
+  onNavigateToCounseling,
+  onNavigateToDistancePricing,
+  onNavigateToMultiDoctorManagement,
+  onNavigateToPolicyManagement
 }: VendorDashboardProps) {
   const [activeTab, setActiveTab] = useState<'today' | 'week' | 'month'>('today');
   const [activeBottomTab, setActiveBottomTab] = useState<'home' | 'bookings' | 'reporting' | 'settings'>('home');
@@ -338,8 +354,12 @@ export function VendorDashboard({
           backgroundParsing.push(
             servicesRes.json().then(data => {
               if (data.success) {
-                setServices(data.services || []);
+                const servicesData = Array.isArray(data.services) ? data.services : [];
+                setServices(servicesData);
               }
+            }).catch(error => {
+              console.error('Error parsing services data:', error);
+              setServices([]);
             })
           );
         }
@@ -975,7 +995,7 @@ export function VendorDashboard({
                 <Plus className="w-6 h-6 text-purple-600 mb-1" />
                 <span className="text-xs">Add</span>
               </button>
-              {services.slice(0, 4).map((service) => (
+              {Array.isArray(services) && services.slice(0, 4).map((service) => (
                 <div key={service.serviceId} className="flex-shrink-0 w-16 h-16 bg-blue-100 rounded-xl flex flex-col items-center justify-center">
                   {capabilities.catalog && !capabilities.booking ? (
                      <Package className="w-6 h-6 text-blue-600 mb-1" />

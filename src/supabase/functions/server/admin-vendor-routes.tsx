@@ -1177,6 +1177,141 @@ app.post("/make-server-3dd53475/admin/vendor/request-info", async (c) => {
 });
 
 // ============================================
+// VENDOR RESPONDS TO CLARIFICATION REQUEST
+// ============================================
+
+/**
+ * POST /make-server-3dd53475/vendor/respond-to-clarification
+ * Vendor submits response to admin clarification request
+ * 
+ * ✅ NEW ENDPOINT: Allows vendors to respond to clarification requests
+ */
+app.post("/make-server-3dd53475/vendor/respond-to-clarification", async (c) => {
+  try {
+    const { vendorId, response, updatedFormData, updatedDocuments } = await c.req.json();
+    
+    console.log('📝 Vendor responding to clarification:', vendorId);
+    console.log('   Response provided:', !!response);
+    console.log('   Updated form data:', !!updatedFormData);
+    console.log('   Updated documents:', updatedDocuments ? Object.keys(updatedDocuments).length : 0);
+    
+    // Try direct lookup first
+    let vendor = await kv.get(`vendor:${vendorId}`);
+    let actualKey = `vendor:${vendorId}`;
+    
+    // If not found, search database
+    if (!vendor) {
+      console.log('⚠️ Direct lookup failed, searching database...');
+      
+      const { createClient } = await import('jsr:@supabase/supabase-js@2.49.8');
+      const supabase = createClient(
+        Deno.env.get('SUPABASE_URL'),
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+      );
+      
+      const { data: kvRecords, error } = await supabase
+        .from('kv_store_3dd53475')
+        .select('key, value')
+        .like('key', 'vendor:%');
+      
+      if (!error && kvRecords && kvRecords.length > 0) {
+        const matchingRecord = kvRecords.find((r: any) => 
+          r.value.id === vendorId || r.value.vendorId === vendorId
+        );
+        
+        if (matchingRecord) {
+          vendor = matchingRecord.value;
+          actualKey = matchingRecord.key;
+          console.log('✅ Found vendor with key:', actualKey);
+        }
+      }
+    }
+    
+    if (!vendor) {
+      console.error('❌ Vendor not found:', vendorId);
+      return c.json({ error: 'Vendor not found' }, 404);
+    }
+    
+    console.log('📋 Vendor found with status:', vendor.status);
+    
+    // Validate vendor has a pending clarification request
+    if (vendor.status !== 'clarification_requested') {
+      console.error('❌ Vendor does not have pending clarification request:', vendor.status);
+      return c.json({ 
+        error: 'No pending clarification request', 
+        currentStatus: vendor.status 
+      }, 400);
+    }
+    
+    // Update vendor with clarification response
+    if (vendor.clarificationRequest) {
+      vendor.clarificationRequest.response = response;
+      vendor.clarificationRequest.respondedAt = new Date().toISOString();
+      vendor.clarificationRequest.status = 'responded';
+    }
+    
+    // Update form data if provided
+    if (updatedFormData) {
+      vendor.formData = {
+        ...vendor.formData,
+        ...updatedFormData
+      };
+      console.log('✅ Updated form data');
+    }
+    
+    // Update documents if provided
+    if (updatedDocuments) {
+      vendor.documents = {
+        ...vendor.documents,
+        ...updatedDocuments
+      };
+      console.log('✅ Updated documents');
+    }
+    
+    // Change status back to pending for admin review
+    vendor.status = 'pending';
+    vendor.updatedAt = new Date().toISOString();
+    
+    // Save vendor
+    await kv.set(actualKey, vendor);
+    
+    console.log('✅ Clarification response saved to vendor record');
+    
+    // Create notification for admin
+    const notificationId = `notification_admin_${Date.now()}`;
+    await kv.set(`notification:admin:${notificationId}`, {
+      id: notificationId,
+      type: 'admin_vendor_clarification_submitted',
+      title: 'Vendor Clarification Received',
+      message: `${vendor.fullName || vendor.businessName} has responded to your clarification request.`,
+      vendorId: vendorId,
+      vendorName: vendor.fullName || vendor.businessName,
+      roleName: vendor.roleName || vendor.vendorType,
+      read: false,
+      createdAt: new Date().toISOString()
+    });
+    
+    console.log('✅ Admin notification created');
+    console.log('✅ Clarification response submitted successfully:', vendorId);
+    
+    return c.json({
+      success: true,
+      message: 'Clarification response submitted successfully. Your application will be reviewed again.',
+      vendor: {
+        id: vendor.id,
+        vendorId: vendorId,
+        status: vendor.status,
+        clarificationRequest: vendor.clarificationRequest
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Error submitting clarification response:', error);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
+// ============================================
 // VENDOR SETTINGS & POLICIES
 // ============================================
 

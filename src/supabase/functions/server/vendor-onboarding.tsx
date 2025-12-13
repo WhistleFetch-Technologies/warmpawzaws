@@ -52,31 +52,50 @@ export function vendorOnboardingEndpoints(app: Hono, kv: any) {
       });
       
       if (existingVendor) {
-        console.error(`❌ DUPLICATE PHONE NUMBER DETECTED!`);
-        console.error(`   Existing Vendor: ${existingVendor.id}`);
-        console.error(`   Name: ${existingVendor.fullName || existingVendor.businessName}`);
-        console.error(`   Status: ${existingVendor.status}`);
+        console.log(`⚠️ EXISTING VENDOR FOUND WITH THIS PHONE`);
+        console.log(`   Existing Vendor: ${existingVendor.id}`);
+        console.log(`   Name: ${existingVendor.fullName || existingVendor.businessName}`);
+        console.log(`   Status: ${existingVendor.status}`);
         
-        // Return user-friendly error with existing application info
-        return c.json({ 
-          error: 'duplicate_phone',
-          message: `An application with this phone number already exists.`,
-          existingApplication: {
-            id: existingVendor.id,
-            applicationId: existingVendor.applicationId,
-            name: existingVendor.businessName || existingVendor.fullName,
-            status: existingVendor.status,
-            submittedAt: existingVendor.submittedAt || existingVendor.createdAt,
-            role: existingVendor.roleName
-          }
-        }, 409); // 409 Conflict status code
+        // ✅ FIX GAP #3: Allow rejected vendors to reapply
+        if (existingVendor.status === 'rejected') {
+          console.log(`✅ Vendor was REJECTED - allowing reapplication`);
+          console.log(`   Previous rejection reason: ${existingVendor.rejectionReason || 'N/A'}`);
+          // We'll update the existing vendor record below instead of creating a new one
+        } else {
+          // Block duplicate for non-rejected vendors
+          console.error(`❌ DUPLICATE PHONE NUMBER - Vendor status: ${existingVendor.status}`);
+          
+          return c.json({ 
+            error: 'duplicate_phone',
+            message: `An application with this phone number already exists.`,
+            existingApplication: {
+              id: existingVendor.id,
+              applicationId: existingVendor.applicationId,
+              name: existingVendor.businessName || existingVendor.fullName,
+              status: existingVendor.status,
+              submittedAt: existingVendor.submittedAt || existingVendor.createdAt,
+              role: existingVendor.roleName
+            }
+          }, 409); // 409 Conflict status code
+        }
       }
       
-      console.log(`✅ No duplicate phone found, proceeding with application...`);
+      console.log(`✅ No blocking issues found, proceeding with application...`);
       
       // Generate IDs
       const vendorId = createVendorId(cleanPhone);
       const applicationId = `APP${Date.now()}${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+      
+      // ✅ FIX GAP #3: Check if this is a reapplication from rejected vendor
+      const isReapplication = existingVendor && existingVendor.status === 'rejected';
+      
+      if (isReapplication) {
+        console.log(`🔄 This is a REAPPLICATION from a rejected vendor`);
+        console.log(`   Keeping existing vendorId: ${existingVendor.id}`);
+        console.log(`   Previous applicationId: ${existingVendor.applicationId}`);
+        console.log(`   New applicationId: ${applicationId}`);
+      }
       
       // Get role configuration
       const role = await kv.get(`role:config:${roleId}`);
@@ -149,6 +168,24 @@ export function vendorOnboardingEndpoints(app: Hono, kv: any) {
       // Determine display name (Business Name takes priority)
       const displayName = formData.businessName || formData.fullName || 'Unnamed Vendor';
       
+      // ✅ FIX GAP #3: For reapplications, preserve history and original creation date
+      const baseVendor = isReapplication ? {
+        // Keep original creation date and history
+        createdAt: existingVendor.createdAt,
+        originalApplicationId: existingVendor.applicationId,
+        rejectionHistory: [
+          ...(existingVendor.rejectionHistory || []),
+          {
+            applicationId: existingVendor.applicationId,
+            rejectedAt: existingVendor.reviewedAt,
+            rejectionReason: existingVendor.rejectionReason,
+            reviewedBy: existingVendor.reviewedBy
+          }
+        ]
+      } : {
+        createdAt: new Date().toISOString()
+      };
+      
       const vendor = {
         id: vendorId,
         applicationId,
@@ -200,12 +237,16 @@ export function vendorOnboardingEndpoints(app: Hono, kv: any) {
         setupCompleted: false,
         isActive: false,
         submittedAt: new Date().toISOString(),
-        createdAt: new Date().toISOString(),
+        ...baseVendor, // ✅ Merge history for reapplications
         updatedAt: new Date().toISOString(),
         
         // Progress tracking
         onboardingProgress: 100, // Application is complete
-        applicationComplete: true
+        applicationComplete: true,
+        
+        // ✅ FIX GAP #3: Mark as reapplication if applicable
+        isReapplication: isReapplication || false,
+        reapplicationCount: isReapplication ? (existingVendor.reapplicationCount || 0) + 1 : 0
       };
       
       await kv.set(vendorKey, vendor);

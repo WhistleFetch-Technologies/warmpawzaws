@@ -823,4 +823,210 @@ export function adminVendorEndpoints(app: Hono, kv: any) {
       return sendError(c, error, 500);
     }
   });
+
+  // ============================================
+  // CREATE VENDOR (Direct admin creation)
+  // ============================================
+
+  /**
+   * POST /admin/vendors/create
+   * Create a new vendor directly from admin panel
+   * CRITICAL: This endpoint must properly set roleId for capability detection
+   */
+  app.post("/make-server-3dd53475/admin/vendors/create", async (c) => {
+    try {
+      console.log('🆕 ========== ADMIN VENDOR CREATION ==========');
+      const body = await c.req.json();
+      
+      const {
+        // Basic Information
+        businessName,
+        ownerName,
+        email,
+        phone,
+        alternatePhone,
+        
+        // Business Details
+        roleId,  // ✅ CRITICAL: This is the primary role identifier
+        category,
+        services,
+        experience,
+        registrationNumber,
+        gstNumber,
+        panNumber,
+        
+        // Location
+        address,
+        city,
+        state,
+        pincode,
+        landmark,
+        serviceAreas,
+        
+        // Banking
+        bankName,
+        accountNumber,
+        ifscCode,
+        accountHolderName,
+        
+        // Additional
+        operatingHours,
+        capacity,
+        certifications,
+        specialization,
+        
+        // Admin settings
+        tier,
+        commission,
+        status,
+        
+        // Metadata
+        createdBy,
+        createdAt
+      } = body;
+      
+      console.log('📋 Creating vendor with role:', roleId);
+      console.log('📞 Phone:', phone);
+      console.log('📧 Email:', email);
+      
+      // ✅ VALIDATION: roleId is required
+      if (!roleId) {
+        console.error('❌ Missing roleId in vendor creation request');
+        return sendError(c, 'roleId is required for vendor creation', 400);
+      }
+      
+      // Normalize phone number
+      const { normalizePhone } = await import('./phone-utils.tsx');
+      const cleanPhone = normalizePhone(phone);
+      
+      // Generate vendor ID
+      const vendorId = `vendor_${cleanPhone}`;
+      
+      // Check if vendor already exists
+      const existingVendor = await kv.get(`vendor:${vendorId}`);
+      if (existingVendor) {
+        console.error('❌ Vendor already exists with this phone:', vendorId);
+        return sendError(c, 'A vendor with this phone number already exists', 409);
+      }
+      
+      // ✅ FETCH ROLE DETAILS from role configuration
+      console.log('🔍 Fetching role details for roleId:', roleId);
+      const roleConfig = await kv.get(`role:${roleId}`);
+      
+      let roleName = roleId; // Fallback to roleId if not found
+      let roleDisplayName = roleId;
+      
+      if (roleConfig) {
+        roleName = roleConfig.name || roleConfig.displayName || roleId;
+        roleDisplayName = roleConfig.displayName || roleConfig.name || roleId;
+        console.log('✅ Role config found:', { roleName, roleDisplayName });
+      } else {
+        console.warn('⚠️ Role config not found for:', roleId, '- using roleId as name');
+      }
+      
+      // Create vendor object with ALL required fields
+      const newVendor = {
+        id: vendorId,
+        vendorId: vendorId,
+        
+        // ✅ CRITICAL: Set roleId for capability detection
+        roleId: roleId,
+        roleName: roleName,
+        roleDisplayName: roleDisplayName,
+        
+        // Basic information
+        businessName: businessName || '',
+        fullName: ownerName,
+        ownerName: ownerName,
+        email: email,
+        phone: cleanPhone,
+        alternatePhone: alternatePhone || '',
+        
+        // Business details
+        category: category || '',
+        serviceCategory: category || '',
+        services: services || [],
+        experience: experience || '',
+        registrationNumber: registrationNumber || '',
+        gstNumber: gstNumber || '',
+        panNumber: panNumber || '',
+        
+        // Location
+        address: address || '',
+        city: city || '',
+        state: state || '',
+        pincode: pincode || '',
+        landmark: landmark || '',
+        serviceAreas: serviceAreas || [],
+        
+        // Banking
+        bankDetails: {
+          bankName: bankName || '',
+          accountNumber: accountNumber || '',
+          ifscCode: ifscCode || '',
+          accountHolderName: accountHolderName || ''
+        },
+        
+        // Additional
+        operatingHours: operatingHours || '',
+        capacity: capacity || '',
+        certifications: certifications || [],
+        specialization: specialization || '',
+        
+        // Admin settings
+        tier: tier || 'Bronze',
+        commission: parseFloat(commission) || 15,
+        
+        // ✅ Set status based on admin choice (default: approved and active)
+        status: status === 'pending' ? 'pending_approval' : 'approved',
+        isActive: status !== 'pending', // Active unless pending review
+        isVerified: status !== 'pending',
+        setupCompleted: false, // Vendor needs to complete setup
+        
+        // Timestamps
+        createdAt: createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        approvedAt: status !== 'pending' ? new Date().toISOString() : null,
+        
+        // Admin metadata
+        createdBy: createdBy || 'admin',
+        approvedBy: status !== 'pending' ? createdBy || 'admin' : null,
+        
+        // Vendor type (default to business)
+        vendorType: 'business',
+        
+        // Default values
+        rating: null,
+        totalBookings: 0,
+        revenue: 0
+      };
+      
+      console.log('💾 Saving vendor to database...');
+      console.log('   Vendor ID:', vendorId);
+      console.log('   Role ID:', newVendor.roleId);
+      console.log('   Role Name:', newVendor.roleName);
+      console.log('   Status:', newVendor.status);
+      
+      // ✅ Save vendor using utility that creates all indexes
+      const { saveVendor } = await import('./vendor-utils.tsx');
+      await saveVendor(newVendor);
+      
+      console.log('✅ Vendor created successfully with all indexes');
+      console.log('🎉 ========== VENDOR CREATION COMPLETE ==========');
+      
+      return sendSuccess(c, {
+        vendor: newVendor,
+        message: 'Vendor created successfully',
+        credentials: {
+          phone: cleanPhone,
+          defaultOTP: '123456', // For testing - in production use SMS
+          loginUrl: '/vendor'
+        }
+      }, 'Vendor created successfully');
+      
+    } catch (error) {
+      console.error('❌ Error creating vendor:', error);
+      return sendError(c, error, 500);
+    }
+  });
 }

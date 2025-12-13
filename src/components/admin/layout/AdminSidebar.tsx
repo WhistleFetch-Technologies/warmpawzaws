@@ -17,7 +17,7 @@ import {
   Settings,
   LogOut
 } from 'lucide-react';
-import { createClient } from '../../../utils/supabase/client';
+import { supabase } from '../../../utils/supabase/client';
 
 interface AdminSidebarProps {
   activeView: string;
@@ -25,8 +25,6 @@ interface AdminSidebarProps {
 }
 
 export function AdminSidebar({ activeView, onNavigate }: AdminSidebarProps) {
-  const supabase = createClient();
-
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     window.location.reload();
