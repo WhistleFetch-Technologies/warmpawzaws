@@ -63,7 +63,7 @@ import {
   Database,
   Briefcase
 } from 'lucide-react';
-import { createClient } from '../../utils/supabase/client';
+import { supabase } from '../../utils/supabase/client';
 import { projectId } from '../../utils/supabase/info';
 import { toast } from 'sonner@2.0.3';
 
@@ -88,7 +88,6 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [activeView, setActiveView] = useState(initialView || 'vendor-admin');
-  const supabase = createClient();
 
   useEffect(() => {
     loadVendors();

@@ -3,7 +3,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Checkbox } from '../ui/checkbox';
-import { createClient } from '../../utils/supabase/client';
+import { supabase } from '../../utils/supabase/client';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { ChevronLeft, CheckCircle2 } from 'lucide-react';
 import logoImage from 'figma:asset/da6636b92da744b3db8eed5288ca6da9ab889afe.png';
@@ -41,8 +41,6 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
     ifsc: '',
     agreedToTerms: false
   });
-
-  const supabase = createClient();
 
   const serviceOptions = [
     'Pet Walking',

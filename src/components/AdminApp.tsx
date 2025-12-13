@@ -15,13 +15,12 @@ import { PetInformationDashboard } from './admin/pets/PetInformationDashboard';
 import { RBACDashboard } from './admin/rbac/RBACDashboard';
 import { ReportsDashboard } from './admin/reports/ReportsDashboard';
 import { AdminOperationsDashboard } from './admin/operations/AdminOperationsDashboard';
-import { createClient } from '../utils/supabase/client';
+import { supabase } from '../utils/supabase/client';
 
 export function AdminApp() {
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [currentView, setCurrentView] = useState<string>('vendor-management');
-  const supabase = createClient();
 
   useEffect(() => {
     // Check for existing session

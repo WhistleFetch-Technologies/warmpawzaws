@@ -1,3 +1,7 @@
+/**
+ * Vendor Landing Page - Main Entry Point for Vendor Portal
+ * Handles all vendor lifecycle states from onboarding to active operations
+ */
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
@@ -42,6 +46,12 @@ import { VendorDonationManagement } from './VendorDonationManagement'; // ✅ NE
 import { VendorEventManagement } from './VendorEventManagement'; // ✅ NEW: Event management
 import { VendorPatientMonitoring } from './VendorPatientMonitoring'; // ✅ NEW: Patient monitoring
 import { VendorCafeMenuManagement } from './VendorCafeMenuManagement'; // ✅ NEW: Cafe menu management
+import { VendorPrescriptionVerification } from './VendorPrescriptionVerification'; // ✅ NEW: Prescription verification
+import { VendorDeliveryManagement } from './VendorDeliveryManagement'; // ✅ NEW: Delivery management
+import { VendorDietCharts } from './VendorDietCharts'; // ✅ NEW: Diet charts
+import { VendorCounseling } from './VendorCounseling'; // ✅ NEW: Counseling services
+import { VendorPolicyManagement } from './VendorPolicyManagement'; // ✅ NEW: Policy management
+import { VendorDistancePricing } from './VendorDistancePricing'; // ✅ NEW: Distance pricing
 
 interface VendorLandingPageProps {
   vendorId: string;
@@ -138,6 +148,12 @@ export function VendorLandingPage({
   const [showEventManagement, setShowEventManagement] = useState(false); // ✅ NEW: Event management
   const [showPatientMonitoring, setShowPatientMonitoring] = useState(false); // ✅ NEW: Patient monitoring
   const [showCafeMenuManagement, setShowCafeMenuManagement] = useState(false); // ✅ NEW: Cafe menu management
+  const [showPrescriptionVerification, setShowPrescriptionVerification] = useState(false); // ✅ NEW: Prescription verification
+  const [showDeliveryManagement, setShowDeliveryManagement] = useState(false); // ✅ NEW: Delivery management
+  const [showDietCharts, setShowDietCharts] = useState(false); // ✅ NEW: Diet charts
+  const [showCounseling, setShowCounseling] = useState(false); // ✅ NEW: Counseling services
+  const [showPolicyManagement, setShowPolicyManagement] = useState(false); // ✅ NEW: Policy management
+  const [showDistancePricing, setShowDistancePricing] = useState(false); // ✅ NEW: Distance pricing
   
   // ✅ NEW: Track navigation context for better UX flow
   const [returnToStaffManagement, setReturnToStaffManagement] = useState(false);
@@ -1081,6 +1097,66 @@ export function VendorLandingPage({
         );
       }
       
+      // ✅ NEW: Prescription Verification
+      if (showPrescriptionVerification) {
+        return (
+          <VendorPrescriptionVerification
+            vendorId={vendorId}
+            onClose={() => setShowPrescriptionVerification(false)}
+          />
+        );
+      }
+      
+      // ✅ NEW: Delivery Management
+      if (showDeliveryManagement) {
+        return (
+          <VendorDeliveryManagement
+            vendorId={vendorId}
+            onClose={() => setShowDeliveryManagement(false)}
+          />
+        );
+      }
+      
+      // ✅ NEW: Diet Charts
+      if (showDietCharts) {
+        return (
+          <VendorDietCharts
+            vendorId={vendorId}
+            onClose={() => setShowDietCharts(false)}
+          />
+        );
+      }
+      
+      // ✅ NEW: Counseling
+      if (showCounseling) {
+        return (
+          <VendorCounseling
+            vendorId={vendorId}
+            onClose={() => setShowCounseling(false)}
+          />
+        );
+      }
+      
+      // ✅ NEW: Policy Management
+      if (showPolicyManagement) {
+        return (
+          <VendorPolicyManagement
+            vendorId={vendorId}
+            onClose={() => setShowPolicyManagement(false)}
+          />
+        );
+      }
+      
+      // ✅ NEW: Distance Pricing
+      if (showDistancePricing) {
+        return (
+          <VendorDistancePricing
+            vendorId={vendorId}
+            onClose={() => setShowDistancePricing(false)}
+          />
+        );
+      }
+      
       // ⚡️ ROLE-SPECIFIC DASHBOARDS
       // Some roles have specialized dashboards with unique capabilities outside the universal config
       
@@ -1177,6 +1253,12 @@ export function VendorLandingPage({
           onNavigateToEventManagement={() => setShowEventManagement(true)} // ✅ NEW: Event management navigation
           onNavigateToPatientMonitoring={() => setShowPatientMonitoring(true)} // ✅ NEW: Patient monitoring navigation
           onNavigateToCafeMenuManagement={() => setShowCafeMenuManagement(true)} // ✅ NEW: Cafe menu management navigation
+          onNavigateToPrescriptionVerification={() => setShowPrescriptionVerification(true)} // ✅ NEW: Prescription verification navigation
+          onNavigateToDeliveryManagement={() => setShowDeliveryManagement(true)} // ✅ NEW: Delivery management navigation
+          onNavigateToDietCharts={() => setShowDietCharts(true)} // ✅ NEW: Diet charts navigation
+          onNavigateToCounseling={() => setShowCounseling(true)} // ✅ NEW: Counseling services navigation
+          onNavigateToPolicyManagement={() => setShowPolicyManagement(true)} // ✅ NEW: Policy management navigation
+          onNavigateToDistancePricing={() => setShowDistancePricing(true)} // ✅ NEW: Distance pricing navigation
         />
       );
 

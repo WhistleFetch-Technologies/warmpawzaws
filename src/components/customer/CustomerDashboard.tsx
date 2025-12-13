@@ -1,36 +1,6 @@
-import { useState, useEffect } from 'react';
-import { Button } from '../ui/button';
-import { Card } from '../ui/card';
-import { Input } from '../ui/input';
-import { 
-  Search, 
-  Bell, 
-  User,
-  Dog,
-  Scissors,
-  Stethoscope,
-  ShoppingBag,
-  GraduationCap,
-  Home,
-  MapPin,
-  Calendar,
-  Heart,
-  Coffee,
-  Bike,
-  Plus,
-  Users,
-  ShoppingCart
-} from 'lucide-react';
-import { createClient } from '../../utils/supabase/client';
+import { supabase } from '../../utils/supabase/client';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { VetServiceRouter } from './VetServiceRouter';
-import { CustomerAIChatbot } from './CustomerAIChatbot'; // ✅ NEW ENHANCED BOT
-import { ProductBrowsing } from './shop/ProductBrowsing';
-import { CartPage } from './shop/CartPage';
-import { CheckoutPage } from './shop/CheckoutPage';
-import { OrderSuccess } from './shop/OrderSuccess';
-import { OrderHistory } from './shop/OrderHistory';
-import { OrderDetail } from './shop/OrderDetail';
 
 interface CustomerDashboardProps {
   session: any;
@@ -45,7 +15,6 @@ export function CustomerDashboard({ session, journeyStage }: CustomerDashboardPr
   const [currentView, setCurrentView] = useState<'dashboard' | 'vet_services' | 'shop' | 'cart' | 'checkout' | 'order_success' | 'order_history' | 'order_detail'>('dashboard');
   const [lastOrder, setLastOrder] = useState<any>(null);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
-  const supabase = createClient();
 
   useEffect(() => {
     loadProfile();

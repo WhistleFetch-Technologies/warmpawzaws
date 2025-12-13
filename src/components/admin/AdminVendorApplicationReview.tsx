@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react';
-import { 
-  ArrowLeft, Check, X, AlertCircle, FileText, MapPin, Phone, Mail,
-  Building, Calendar, Clock, User, Briefcase, RefreshCw, Eye
-} from 'lucide-react';
 import { Button } from '../ui/button';
+import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
+import { Badge } from '../ui/badge';
+import { X, Check, AlertCircle, Mail, Phone, MapPin, FileText, Calendar, User, Building, CreditCard, Eye, ArrowLeft, Download, RefreshCw, Clock, Briefcase } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { toast } from 'sonner@2.0.3';
 
@@ -184,6 +183,41 @@ export function AdminVendorApplicationReview({ onBack }: AdminVendorApplicationR
     }
   };
 
+  const handleDownloadDocument = async (doc: any, index: number) => {
+    try {
+      if (!doc.url) {
+        toast.error('Document URL not available');
+        return;
+      }
+
+      toast.info('Downloading document...');
+      
+      // Fetch the document
+      const response = await fetch(doc.url);
+      if (!response.ok) {
+        throw new Error('Failed to fetch document');
+      }
+
+      // Convert to blob
+      const blob = await response.blob();
+      
+      // Create download link
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = doc.name || doc.fileName || `document_${index + 1}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      toast.success('Document downloaded successfully');
+    } catch (error) {
+      console.error('Error downloading document:', error);
+      toast.error('Failed to download document');
+    }
+  };
+
   const getTimeSince = (dateString: string) => {
     const now = new Date();
     const submitted = new Date(dateString);
@@ -336,14 +370,24 @@ export function AdminVendorApplicationReview({ onBack }: AdminVendorApplicationR
                           </div>
                         </div>
                         {doc.url ? (
-                          <Button 
-                            size="sm" 
-                            variant="ghost"
-                            onClick={() => window.open(doc.url, '_blank')}
-                            title="View Document"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </Button>
+                          <div className="flex gap-2">
+                            <Button 
+                              size="sm" 
+                              variant="ghost"
+                              onClick={() => window.open(doc.url, '_blank')}
+                              title="View Document"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </Button>
+                            <Button 
+                              size="sm" 
+                              variant="ghost"
+                              onClick={() => handleDownloadDocument(doc, index)}
+                              title="Download Document"
+                            >
+                              <Download className="w-4 h-4" />
+                            </Button>
+                          </div>
                         ) : (
                           <Button size="sm" variant="ghost" disabled title="Document URL not available">
                             <Eye className="w-4 h-4 text-gray-300" />

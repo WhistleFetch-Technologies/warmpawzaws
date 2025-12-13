@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
-import { createClient } from '../../utils/supabase/client';
+import { supabase } from '../../utils/supabase/client';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { Shield } from 'lucide-react';
 
@@ -22,8 +22,6 @@ export function AdminAuth({ onAuthSuccess }: AdminAuthProps) {
     name: '',
     masterKey: ''
   });
-
-  const supabase = createClient();
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();

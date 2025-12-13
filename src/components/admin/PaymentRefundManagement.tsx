@@ -1,12 +1,6 @@
-import { useState } from 'react';
-import { Grid3x3, Package, Megaphone, HeadphonesIcon, ClipboardList, Calendar, Newspaper, DollarSign, Wallet, CreditCard, Settings as SettingsIcon, LogOut, Clock, RotateCcw } from 'lucide-react';
-import logoImage from '../../public/logo.png';
-import { RefundPoliciesManagementNew } from './settings/RefundPoliciesManagementNew';
-import { PaymentSettingsManagementNew } from './settings/PaymentSettingsManagementNew';
-import { ScheduleSettingsManagement } from './settings/ScheduleSettingsManagement';
 import { ReturnsManagement } from './ecommerce/ReturnsManagement';
 import { Button } from '../ui/button';
-import { createClient } from '../../utils/supabase/client';
+import { supabase } from '../../utils/supabase/client';
 import { UnifiedAdminSidebar } from './layout/UnifiedAdminSidebar';
 
 interface PaymentRefundManagementProps {
@@ -45,7 +39,6 @@ function NavItem({
 
 export function PaymentRefundManagement({ onNavigate }: PaymentRefundManagementProps) {
   const [activeTab, setActiveTab] = useState<'overview' | 'payment' | 'refund' | 'schedule' | 'returns'>('overview');
-  const supabase = createClient();
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
