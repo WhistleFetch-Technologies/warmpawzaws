@@ -678,7 +678,7 @@ export function VendorDashboard({
               )}
               
               {/* Donation Management */}
-              {onNavigateToDonationManagement && capabilities.donation_management && (
+              {onNavigateToDonationManagement && capabilities.donation && (
                 <button
                   onClick={onNavigateToDonationManagement}
                   className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-emerald-100 transition-colors"
@@ -691,7 +691,7 @@ export function VendorDashboard({
               )}
               
               {/* Event Management */}
-              {onNavigateToEventManagement && capabilities.event_management && (
+              {onNavigateToEventManagement && capabilities.events && (
                 <button
                   onClick={onNavigateToEventManagement}
                   className="bg-sky-50 border border-sky-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-sky-100 transition-colors"
@@ -715,7 +715,7 @@ export function VendorDashboard({
               )}
               
               {/* Cafe Menu Management */}
-              {onNavigateToCafeMenuManagement && capabilities.cafe_menu && (
+              {onNavigateToCafeMenuManagement && capabilities.menu && (
                 <button
                   onClick={onNavigateToCafeMenuManagement}
                   className="bg-orange-50 border border-orange-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-orange-100 transition-colors"
