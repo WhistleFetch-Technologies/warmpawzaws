@@ -56,10 +56,11 @@ interface DisposalRecord {
 
 interface VendorExpiryManagementProps {
   vendorId: string;
+  vendorData?: any;
   onBack?: () => void;
 }
 
-export function VendorExpiryManagement({ vendorId, onBack }: VendorExpiryManagementProps) {
+export function VendorExpiryManagement({ vendorId, vendorData, onBack }: VendorExpiryManagementProps) {
   const [activeTab, setActiveTab] = useState<'batches' | 'alerts' | 'disposal'>('batches');
   const [batches, setBatches] = useState<ProductBatch[]>([]);
   const [alerts, setAlerts] = useState<ExpiryAlert[]>([]);

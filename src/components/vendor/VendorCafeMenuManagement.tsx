@@ -34,10 +34,11 @@ interface TableConfig {
 
 interface VendorCafeMenuManagementProps {
   vendorId: string;
+  vendorData?: any;
   onBack?: () => void;
 }
 
-export function VendorCafeMenuManagement({ vendorId, onBack }: VendorCafeMenuManagementProps) {
+export function VendorCafeMenuManagement({ vendorId, vendorData, onBack }: VendorCafeMenuManagementProps) {
   const [activeTab, setActiveTab] = useState<'menu' | 'tables'>('menu');
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [categories, setCategories] = useState<MenuCategory[]>([

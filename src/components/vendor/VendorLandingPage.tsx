@@ -37,6 +37,11 @@ import { PackageManagementContainer } from './packages/PackageManagementContaine
 import { VendorCustomServiceCreation } from './VendorCustomServiceCreation'; // ✅ FIX: Custom services
 import { ShelterAdoptionSystem } from './ShelterAdoptionSystem'; // ✅ FIX: Adoption management
 import { VendorMemorialServices } from './VendorMemorialServices'; // ✅ FIX: Memorial services
+import { VendorExpiryManagement } from './VendorExpiryManagement'; // ✅ NEW: Expiry management
+import { VendorDonationManagement } from './VendorDonationManagement'; // ✅ NEW: Donation management
+import { VendorEventManagement } from './VendorEventManagement'; // ✅ NEW: Event management
+import { VendorPatientMonitoring } from './VendorPatientMonitoring'; // ✅ NEW: Patient monitoring
+import { VendorCafeMenuManagement } from './VendorCafeMenuManagement'; // ✅ NEW: Cafe menu management
 
 interface VendorLandingPageProps {
   vendorId: string;
@@ -128,6 +133,11 @@ export function VendorLandingPage({
   const [showCustomServices, setShowCustomServices] = useState(false);
   const [showAdoptionSystem, setShowAdoptionSystem] = useState(false);
   const [showMemorialServices, setShowMemorialServices] = useState(false);
+  const [showExpiryManagement, setShowExpiryManagement] = useState(false); // ✅ NEW: Expiry management
+  const [showDonationManagement, setShowDonationManagement] = useState(false); // ✅ NEW: Donation management
+  const [showEventManagement, setShowEventManagement] = useState(false); // ✅ NEW: Event management
+  const [showPatientMonitoring, setShowPatientMonitoring] = useState(false); // ✅ NEW: Patient monitoring
+  const [showCafeMenuManagement, setShowCafeMenuManagement] = useState(false); // ✅ NEW: Cafe menu management
   
   // ✅ NEW: Track navigation context for better UX flow
   const [returnToStaffManagement, setReturnToStaffManagement] = useState(false);
@@ -1016,6 +1026,61 @@ export function VendorLandingPage({
         );
       }
       
+      // ✅ NEW: Expiry Management
+      if (showExpiryManagement) {
+        return (
+          <VendorExpiryManagement
+            vendorId={vendorId}
+            vendorData={vendorData}
+            onBack={() => setShowExpiryManagement(false)}
+          />
+        );
+      }
+      
+      // ✅ NEW: Donation Management
+      if (showDonationManagement) {
+        return (
+          <VendorDonationManagement
+            vendorId={vendorId}
+            vendorData={vendorData}
+            onBack={() => setShowDonationManagement(false)}
+          />
+        );
+      }
+      
+      // ✅ NEW: Event Management
+      if (showEventManagement) {
+        return (
+          <VendorEventManagement
+            vendorId={vendorId}
+            vendorData={vendorData}
+            onBack={() => setShowEventManagement(false)}
+          />
+        );
+      }
+      
+      // ✅ NEW: Patient Monitoring
+      if (showPatientMonitoring) {
+        return (
+          <VendorPatientMonitoring
+            vendorId={vendorId}
+            vendorData={vendorData}
+            onBack={() => setShowPatientMonitoring(false)}
+          />
+        );
+      }
+      
+      // ✅ NEW: Cafe Menu Management
+      if (showCafeMenuManagement) {
+        return (
+          <VendorCafeMenuManagement
+            vendorId={vendorId}
+            vendorData={vendorData}
+            onBack={() => setShowCafeMenuManagement(false)}
+          />
+        );
+      }
+      
       // ⚡️ ROLE-SPECIFIC DASHBOARDS
       // Some roles have specialized dashboards with unique capabilities outside the universal config
       
@@ -1107,6 +1172,11 @@ export function VendorLandingPage({
           onNavigateToCustomServices={() => setShowCustomServices(true)} // ✅ FIX: Custom services navigation
           onNavigateToAdoptionSystem={() => setShowAdoptionSystem(true)} // ✅ FIX: Adoption system navigation
           onNavigateToMemorialServices={() => setShowMemorialServices(true)} // ✅ FIX: Memorial services navigation
+          onNavigateToExpiryManagement={() => setShowExpiryManagement(true)} // ✅ NEW: Expiry management navigation
+          onNavigateToDonationManagement={() => setShowDonationManagement(true)} // ✅ NEW: Donation management navigation
+          onNavigateToEventManagement={() => setShowEventManagement(true)} // ✅ NEW: Event management navigation
+          onNavigateToPatientMonitoring={() => setShowPatientMonitoring(true)} // ✅ NEW: Patient monitoring navigation
+          onNavigateToCafeMenuManagement={() => setShowCafeMenuManagement(true)} // ✅ NEW: Cafe menu management navigation
         />
       );
 
