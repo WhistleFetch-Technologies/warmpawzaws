@@ -572,4 +572,54 @@ app.get('/:vendorId/donations/:donationId/receipt', async (c) => {
   }
 });
 
+/**
+ * DELETE /vendor/donations/:vendorId/:donationId
+ * Delete a donation
+ * ✅ FIX: Priority 1 Gap #2 - Add DELETE endpoint
+ */
+app.delete('/:vendorId/:donationId', async (c) => {
+  try {
+    const { vendorId, donationId } = c.req.param();
+    
+    const donation = await kv.get<Donation>(`donation:${vendorId}:${donationId}`);
+    
+    if (!donation) {
+      return c.json({ 
+        success: false, 
+        error: 'Donation not found' 
+      }, 404);
+    }
+    
+    // Delete the donation
+    await kv.del(`donation:${vendorId}:${donationId}`);
+    
+    // Update donor stats if needed
+    if (donation.donorEmail || donation.donorPhone) {
+      const donorKey = `donor:${vendorId}:${donation.donorEmail || donation.donorPhone}`;
+      const donor = await kv.get<Donor>(donorKey);
+      if (donor) {
+        donor.totalDonations = Math.max(0, donor.totalDonations - donation.totalValue);
+        donor.totalAmount = Math.max(0, donor.totalAmount - donation.totalValue);
+        donor.donationCount = Math.max(0, donor.donationCount - 1);
+        donor.updatedAt = new Date().toISOString();
+        await kv.set(donorKey, donor);
+      }
+    }
+    
+    console.log(`✅ Donation deleted successfully: ${donationId}`);
+    
+    return c.json({
+      success: true,
+      message: 'Donation deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting donation:', error);
+    return c.json({ 
+      success: false, 
+      error: 'Failed to delete donation',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
 export default app;
