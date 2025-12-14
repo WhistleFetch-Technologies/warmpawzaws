@@ -75,6 +75,11 @@ export function VetSpecializedServicesManager({
   const [emergencyProtocols, setEmergencyProtocols] = useState<EmergencyProtocol[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
+  
+  // ✅ FIX: Add state for editing
+  const [editingAmbulance, setEditingAmbulance] = useState<AmbulanceService | null>(null);
+  const [editingDiagnostic, setEditingDiagnostic] = useState<DiagnosticTest | null>(null);
+  const [editingProtocol, setEditingProtocol] = useState<EmergencyProtocol | null>(null);
 
   useEffect(() => {
     loadServices();
@@ -122,6 +127,114 @@ export function VetSpecializedServicesManager({
       toast.error('Failed to load specialized services');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // ✅ FIX: Add edit handler for ambulance
+  const handleEditAmbulance = (ambulance: AmbulanceService) => {
+    setEditingAmbulance(ambulance);
+    setShowAddModal(true);
+    toast.info('Edit functionality coming soon');
+    // TODO: Implement edit modal with pre-filled data
+  };
+
+  // ✅ FIX: Add delete handler for ambulance
+  const handleDeleteAmbulance = async (ambulanceId: string) => {
+    if (!confirm('Are you sure you want to delete this ambulance? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/ambulance-services/${ambulanceId}`,
+        {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        }
+      );
+
+      if (response.ok) {
+        toast.success('Ambulance deleted successfully');
+        loadServices();
+      } else {
+        const error = await response.json();
+        toast.error(error.error || 'Failed to delete ambulance');
+      }
+    } catch (error) {
+      console.error('Error deleting ambulance:', error);
+      toast.error('Error deleting ambulance');
+    }
+  };
+
+  // ✅ FIX: Add edit handler for diagnostic test
+  const handleEditDiagnostic = (diagnostic: DiagnosticTest) => {
+    setEditingDiagnostic(diagnostic);
+    setShowAddModal(true);
+    toast.info('Edit functionality coming soon');
+    // TODO: Implement edit modal with pre-filled data
+  };
+
+  // ✅ FIX: Add delete handler for diagnostic test
+  const handleDeleteDiagnostic = async (testId: string) => {
+    if (!confirm('Are you sure you want to delete this diagnostic test? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/diagnostic-tests/${testId}`,
+        {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        }
+      );
+
+      if (response.ok) {
+        toast.success('Diagnostic test deleted successfully');
+        loadServices();
+      } else {
+        const error = await response.json();
+        toast.error(error.error || 'Failed to delete diagnostic test');
+      }
+    } catch (error) {
+      console.error('Error deleting diagnostic test:', error);
+      toast.error('Error deleting diagnostic test');
+    }
+  };
+
+  // ✅ FIX: Add edit handler for emergency protocol
+  const handleEditProtocol = (protocol: EmergencyProtocol) => {
+    setEditingProtocol(protocol);
+    setShowAddModal(true);
+    toast.info('Edit functionality coming soon');
+    // TODO: Implement edit modal with pre-filled data
+  };
+
+  // ✅ FIX: Add delete handler for emergency protocol
+  const handleDeleteProtocol = async (protocolId: string) => {
+    if (!confirm('Are you sure you want to delete this emergency protocol? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/emergency-protocols/${protocolId}`,
+        {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        }
+      );
+
+      if (response.ok) {
+        toast.success('Emergency protocol deleted successfully');
+        loadServices();
+      } else {
+        const error = await response.json();
+        toast.error(error.error || 'Failed to delete emergency protocol');
+      }
+    } catch (error) {
+      console.error('Error deleting emergency protocol:', error);
+      toast.error('Error deleting emergency protocol');
     }
   };
 
@@ -197,11 +310,11 @@ export function VetSpecializedServicesManager({
               </div>
 
               <div className="flex gap-2 mt-3 pt-3 border-t">
-                <Button variant="outline" size="sm" className="flex-1">
+                <Button variant="outline" size="sm" className="flex-1" onClick={() => handleEditAmbulance(ambulance)}>
                   <Edit2 className="w-3 h-3 mr-1" />
                   Edit
                 </Button>
-                <Button variant="outline" size="sm" className="flex-1 text-red-600 hover:text-red-700">
+                <Button variant="outline" size="sm" className="flex-1 text-red-600 hover:text-red-700" onClick={() => handleDeleteAmbulance(ambulance.id)}>
                   <Trash2 className="w-3 h-3 mr-1" />
                   Remove
                 </Button>
@@ -287,11 +400,11 @@ export function VetSpecializedServicesManager({
               )}
 
               <div className="flex gap-2 pt-3 border-t">
-                <Button variant="outline" size="sm" className="flex-1">
+                <Button variant="outline" size="sm" className="flex-1" onClick={() => handleEditDiagnostic(test)}>
                   <Edit2 className="w-3 h-3 mr-1" />
                   Edit
                 </Button>
-                <Button variant="outline" size="sm" className="flex-1 text-red-600 hover:text-red-700">
+                <Button variant="outline" size="sm" className="flex-1 text-red-600 hover:text-red-700" onClick={() => handleDeleteDiagnostic(test.id)}>
                   <Trash2 className="w-3 h-3 mr-1" />
                   Remove
                 </Button>
@@ -390,11 +503,11 @@ export function VetSpecializedServicesManager({
               </div>
 
               <div className="flex gap-2 pt-3 border-t">
-                <Button variant="outline" size="sm" className="flex-1">
+                <Button variant="outline" size="sm" className="flex-1" onClick={() => handleEditProtocol(protocol)}>
                   <Edit2 className="w-3 h-3 mr-1" />
                   Edit
                 </Button>
-                <Button variant="outline" size="sm" className="flex-1 text-red-600 hover:text-red-700">
+                <Button variant="outline" size="sm" className="flex-1 text-red-600 hover:text-red-700" onClick={() => handleDeleteProtocol(protocol.id)}>
                   <Trash2 className="w-3 h-3 mr-1" />
                   Remove
                 </Button>

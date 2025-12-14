@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Heart, Users, TrendingUp, Award, Plus, Download, Calendar } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { toast } from 'react-toastify';
 
 interface Donation {
   id: string;
@@ -264,9 +265,41 @@ export function VendorDonationManagement({ vendorId, vendorData, onBack }: Vendo
       const data = await response.json();
       if (data.success) {
         loadDonations();
+        loadDashboard();
       }
     } catch (error) {
       console.error('Error updating donation status:', error);
+    }
+  };
+
+  // ✅ FIX: Priority 1 Gap #2 - Add DELETE handler
+  const handleDeleteDonation = async (donationId: string) => {
+    if (!confirm('Are you sure you want to delete this donation? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/donation-management/${vendorId}/${donationId}`,
+        {
+          method: 'DELETE',
+          headers: {
+            Authorization: `Bearer ${publicAnonKey}`
+          }
+        }
+      );
+
+      const data = await response.json();
+      if (data.success) {
+        toast.success('Donation deleted successfully');
+        loadDonations();
+        loadDashboard();
+      } else {
+        toast.error(data.error || 'Failed to delete donation');
+      }
+    } catch (error) {
+      console.error('Error deleting donation:', error);
+      toast.error('Error deleting donation');
     }
   };
 
@@ -503,6 +536,12 @@ export function VendorDonationManagement({ vendorId, vendorData, onBack }: Vendo
                               Send Thank You
                             </button>
                           )}
+                          <button
+                            onClick={() => handleDeleteDonation(donation.id)}
+                            className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm"
+                          >
+                            Delete
+                          </button>
                         </div>
                       </div>
                     </div>
