@@ -526,4 +526,47 @@ app.get('/:vendorId/dashboard', async (c) => {
   }
 });
 
+/**
+ * DELETE /vendor/events/:vendorId/:eventId
+ * Delete an event
+ * ✅ FIX: Priority 2 Gap #1 - Add DELETE endpoint
+ */
+app.delete('/:vendorId/:eventId', async (c) => {
+  try {
+    const { vendorId, eventId } = c.req.param();
+    
+    const event = await kv.get<Event>(`event:${vendorId}:${eventId}`);
+    
+    if (!event) {
+      return c.json({ 
+        success: false, 
+        error: 'Event not found' 
+      }, 404);
+    }
+    
+    // Delete the event
+    await kv.del(`event:${vendorId}:${eventId}`);
+    
+    // Delete all registrations for this event
+    const registrations = await kv.getByPrefix<EventRegistration>(`event-registration:${eventId}:`);
+    for (const registration of registrations) {
+      await kv.del(`event-registration:${eventId}:${registration.id}`);
+    }
+    
+    console.log(`✅ Event deleted successfully: ${eventId} with ${registrations.length} registrations`);
+    
+    return c.json({
+      success: true,
+      message: 'Event deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting event:', error);
+    return c.json({ 
+      success: false, 
+      error: 'Failed to delete event',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
 export default app;

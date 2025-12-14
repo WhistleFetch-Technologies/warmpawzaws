@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Users, CheckCircle, XCircle, MapPin, Clock, Plus, Edit2 } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { toast } from 'react-toastify';
 
 interface Event {
   id: string;
@@ -219,13 +220,44 @@ export function VendorEventManagement({ vendorId, vendorData, vendorType = 'othe
           body: JSON.stringify({ status })
         }
       );
-
       const data = await response.json();
       if (data.success) {
         loadEvents();
+        loadDashboard();
       }
     } catch (error) {
       console.error('Error updating event status:', error);
+    }
+  };
+
+  // ✅ FIX: Priority 2 Gap #1 - Add DELETE handler
+  const handleDeleteEvent = async (eventId: string) => {
+    if (!confirm('Are you sure you want to delete this event? This will also delete all registrations. This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/event-management/${vendorId}/${eventId}`,
+        {
+          method: 'DELETE',
+          headers: {
+            Authorization: `Bearer ${publicAnonKey}`
+          }
+        }
+      );
+
+      const data = await response.json();
+      if (data.success) {
+        toast.success('Event deleted successfully');
+        loadEvents();
+        loadDashboard();
+      } else {
+        toast.error(data.error || 'Failed to delete event');
+      }
+    } catch (error) {
+      console.error('Error deleting event:', error);
+      toast.error('Error deleting event');
     }
   };
 
@@ -519,6 +551,12 @@ export function VendorEventManagement({ vendorId, vendorData, vendorType = 'othe
                               Complete
                             </button>
                           )}
+                          <button
+                            onClick={() => handleDeleteEvent(event.id)}
+                            className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm"
+                          >
+                            Delete
+                          </button>
                         </div>
                       </div>
                     </div>
