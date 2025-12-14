@@ -738,4 +738,41 @@ app.get('/:vendorId/batches/export', async (c) => {
   }
 });
 
+/**
+ * DELETE /vendor/expiry/:vendorId/batches/:batchId
+ * Delete a product batch
+ * ✅ FIX: Priority 2 Gap #2 - Add DELETE endpoint
+ */
+app.delete('/:vendorId/batches/:batchId', async (c) => {
+  try {
+    const { vendorId, batchId } = c.req.param();
+    
+    const batch = await kv.get<ProductBatch>(`expiry:batch:${vendorId}:${batchId}`);
+    
+    if (!batch) {
+      return c.json({ 
+        success: false, 
+        error: 'Batch not found' 
+      }, 404);
+    }
+    
+    // Delete the batch
+    await kv.del(`expiry:batch:${vendorId}:${batchId}`);
+    
+    console.log(`✅ Product batch deleted successfully: ${batchId}`);
+    
+    return c.json({
+      success: true,
+      message: 'Batch deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting batch:', error);
+    return c.json({ 
+      success: false, 
+      error: 'Failed to delete batch',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
 export default app;

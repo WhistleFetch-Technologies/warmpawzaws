@@ -345,6 +345,44 @@ app.put('/vendor/counseling/:vendorId/:sessionId/status', async (c) => {
   }
 });
 
+/**
+ * DELETE /vendor/counseling/:vendorId/:sessionId
+ * Delete a counseling session
+ * ✅ FIX: Priority 2 Gap #4 - Add DELETE endpoint for counseling
+ */
+app.delete('/vendor/counseling/:vendorId/:sessionId', async (c) => {
+  try {
+    const vendorId = c.req.param('vendorId');
+    const sessionId = c.req.param('sessionId');
+    
+    const sessionKey = `counseling:${vendorId}:${sessionId}`;
+    const session = await kv.get(sessionKey);
+    
+    if (!session) {
+      return c.json({ 
+        success: false, 
+        error: 'Session not found' 
+      }, 404);
+    }
+    
+    await kv.del(sessionKey);
+    
+    console.log(`✅ Counseling session deleted successfully: ${sessionId}`);
+    
+    return c.json({
+      success: true,
+      message: 'Counseling session deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting session:', error);
+    return c.json({ 
+      success: false, 
+      error: 'Failed to delete session',
+      details: error instanceof Error ? error.message : 'Unknown error' 
+    }, 500);
+  }
+});
+
 // ============================================
 // POLICY MANAGEMENT ENDPOINTS
 // ============================================

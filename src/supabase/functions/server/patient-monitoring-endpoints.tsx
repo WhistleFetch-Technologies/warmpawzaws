@@ -667,4 +667,47 @@ app.get('/:vendorId/dashboard', async (c) => {
   }
 });
 
+/**
+ * DELETE /vendor/patient-monitoring/:vendorId/monitors/:monitorId
+ * Delete a patient monitoring record
+ * ✅ FIX: Priority 2 Gap #3 - Add DELETE endpoint
+ */
+app.delete('/:vendorId/monitors/:monitorId', async (c) => {
+  try {
+    const { vendorId, monitorId } = c.req.param();
+    
+    const monitor = await kv.get<PatientMonitor>(`patient-monitor:${vendorId}:${monitorId}`);
+    
+    if (!monitor) {
+      return c.json({ 
+        success: false, 
+        error: 'Patient monitoring record not found' 
+      }, 404);
+    }
+    
+    // Delete the monitor
+    await kv.del(`patient-monitor:${vendorId}:${monitorId}`);
+    
+    // Delete all vitals records associated with this monitor
+    const vitals = await kv.getByPrefix<VitalRecord>(`patient-vital:${monitorId}:`);
+    for (const vital of vitals) {
+      await kv.del(`patient-vital:${monitorId}:${vital.id}`);
+    }
+    
+    console.log(`✅ Patient monitor deleted successfully: ${monitorId} with ${vitals.length} vital records`);
+    
+    return c.json({
+      success: true,
+      message: 'Patient monitoring record deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting patient monitor:', error);
+    return c.json({ 
+      success: false, 
+      error: 'Failed to delete patient monitoring record',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
 export default app;
