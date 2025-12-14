@@ -138,6 +138,37 @@ export function VetSpecializedServicesManager({
     // TODO: Implement edit modal with pre-filled data
   };
 
+  // ✅ FIX: Implement EDIT functionality for ambulance
+  const handleSaveAmbulance = async (ambulanceData: Partial<AmbulanceService>) => {
+    try {
+      const url = editingAmbulance
+        ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/ambulance-services/${editingAmbulance.id}`
+        : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/ambulance-services`;
+
+      const response = await fetch(url, {
+        method: editingAmbulance ? 'PUT' : 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${publicAnonKey}`
+        },
+        body: JSON.stringify(ambulanceData)
+      });
+
+      if (response.ok) {
+        toast.success(editingAmbulance ? 'Ambulance updated successfully' : 'Ambulance added successfully');
+        setEditingAmbulance(null);
+        setShowAddModal(false);
+        loadServices();
+      } else {
+        const error = await response.json();
+        toast.error(error.error || `Failed to ${editingAmbulance ? 'update' : 'add'} ambulance`);
+      }
+    } catch (error) {
+      console.error('Error saving ambulance:', error);
+      toast.error('Error saving ambulance');
+    }
+  };
+
   // ✅ FIX: Add delete handler for ambulance
   const handleDeleteAmbulance = async (ambulanceId: string) => {
     if (!confirm('Are you sure you want to delete this ambulance? This action cannot be undone.')) {
