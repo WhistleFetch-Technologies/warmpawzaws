@@ -85,6 +85,9 @@ import { smsNotificationServiceEnhanced } from './sms-notification-service-enhan
 import { tierSystemIntegration } from './tier-system-integration.tsx';
 import { hyperlocalDeliveryEndpoints } from './hyperlocal-delivery-endpoints.tsx';
 import { marketplaceSettlementEnhanced } from './marketplace-settlement-enhanced.tsx';
+import { elasticsearchIntegration } from './elasticsearch-integration.tsx';
+import { integratedServicesEndpoints } from './integrated-services-endpoints.tsx';
+import { specializedServicesBooking } from './specialized-services-booking.tsx';
 import criticalFlowFixes from './critical-flow-fixes.tsx';
 import { registerGroomerGalleryEndpoints } from './groomer-gallery-system.tsx';
 import trainerProgressTracking from './trainer-progress-tracking.tsx';
@@ -757,6 +760,30 @@ if (marketplaceSettlementEnhanced && typeof marketplaceSettlementEnhanced === 'f
   marketplaceSettlementEnhanced(app, kv);
 } else {
   console.warn('⚠️ Marketplace Settlement Enhanced module undefined, skipping');
+}
+
+// ✅ NEW: Elasticsearch Integration
+if (elasticsearchIntegration && typeof elasticsearchIntegration === 'function') {
+  console.log('✅ Registering Elasticsearch Integration...');
+  elasticsearchIntegration(app, kv);
+} else {
+  console.warn('⚠️ Elasticsearch Integration module undefined, skipping');
+}
+
+// ✅ NEW: Integrated Services Endpoints
+if (integratedServicesEndpoints && typeof integratedServicesEndpoints === 'function') {
+  console.log('✅ Registering Integrated Services Endpoints...');
+  integratedServicesEndpoints(app, kv);
+} else {
+  console.warn('⚠️ Integrated Services Endpoints module undefined, skipping');
+}
+
+// ✅ NEW: Specialized Services Booking
+if (specializedServicesBooking && typeof specializedServicesBooking === 'function') {
+  console.log('✅ Registering Specialized Services Booking...');
+  specializedServicesBooking(app, kv);
+} else {
+  console.warn('⚠️ Specialized Services Booking module undefined, skipping');
 }
 
 // ------------------------------------------------------------------
