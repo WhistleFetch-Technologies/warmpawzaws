@@ -80,6 +80,11 @@ import enhancedServicePublishing from './enhanced-service-publishing.tsx';
 import enhancedStaffAvailability from './enhanced-staff-availability-routes.tsx';
 import { pharmacyPrescriptionEndpoints } from './pharmacy-prescription-endpoints.tsx';
 import { homeSampleCollectionEndpoints } from './home-sample-collection-endpoints.tsx';
+import { holidayPackageEndpoints } from './holiday-package-endpoints.tsx';
+import { smsNotificationServiceEnhanced } from './sms-notification-service-enhanced.tsx';
+import { tierSystemIntegration } from './tier-system-integration.tsx';
+import { hyperlocalDeliveryEndpoints } from './hyperlocal-delivery-endpoints.tsx';
+import { marketplaceSettlementEnhanced } from './marketplace-settlement-enhanced.tsx';
 import criticalFlowFixes from './critical-flow-fixes.tsx';
 import { registerGroomerGalleryEndpoints } from './groomer-gallery-system.tsx';
 import trainerProgressTracking from './trainer-progress-tracking.tsx';
@@ -712,6 +717,46 @@ if (homeSampleCollectionEndpoints && typeof homeSampleCollectionEndpoints === 'f
   homeSampleCollectionEndpoints(app, kv);
 } else {
   console.warn('⚠️ Home Sample Collection Endpoints module undefined, skipping');
+}
+
+// ✅ NEW: Holiday Package Endpoints
+if (holidayPackageEndpoints && typeof holidayPackageEndpoints === 'function') {
+  console.log('✅ Registering Holiday Package Endpoints...');
+  holidayPackageEndpoints(app, kv);
+} else {
+  console.warn('⚠️ Holiday Package Endpoints module undefined, skipping');
+}
+
+// ✅ NEW: SMS Notification Service Enhanced
+if (smsNotificationServiceEnhanced && typeof smsNotificationServiceEnhanced === 'function') {
+  console.log('✅ Registering SMS Notification Service Enhanced...');
+  smsNotificationServiceEnhanced(app, kv);
+} else {
+  console.warn('⚠️ SMS Notification Service Enhanced module undefined, skipping');
+}
+
+// ✅ NEW: Tier System Integration
+if (tierSystemIntegration && typeof tierSystemIntegration === 'function') {
+  console.log('✅ Registering Tier System Integration...');
+  tierSystemIntegration(app, kv);
+} else {
+  console.warn('⚠️ Tier System Integration module undefined, skipping');
+}
+
+// ✅ NEW: Hyperlocal Delivery Endpoints
+if (hyperlocalDeliveryEndpoints && typeof hyperlocalDeliveryEndpoints === 'function') {
+  console.log('✅ Registering Hyperlocal Delivery Endpoints...');
+  hyperlocalDeliveryEndpoints(app, kv);
+} else {
+  console.warn('⚠️ Hyperlocal Delivery Endpoints module undefined, skipping');
+}
+
+// ✅ NEW: Marketplace Settlement Enhanced
+if (marketplaceSettlementEnhanced && typeof marketplaceSettlementEnhanced === 'function') {
+  console.log('✅ Registering Marketplace Settlement Enhanced...');
+  marketplaceSettlementEnhanced(app, kv);
+} else {
+  console.warn('⚠️ Marketplace Settlement Enhanced module undefined, skipping');
 }
 
 // ------------------------------------------------------------------
