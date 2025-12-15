@@ -153,6 +153,10 @@ import elasticsearchComplete from './elasticsearch-complete.tsx';
 import refundReschedulingComplete from './refund-rescheduling-complete.tsx';
 import homeServicesEnhanced from './home-services-enhanced.tsx';
 import integratedServicesComplete from './integrated-services-complete.tsx';
+import { elasticsearchProxyEndpoints } from './elasticsearch-proxy.tsx';
+import { refundPolicyEndpoints } from './refund-policy-engine-enhanced.tsx';
+import { settlementTierSystemEndpoints } from './settlement-tier-system-enhanced.tsx';
+import { integratedServicesManagerEndpoints } from './integrated-services-manager.tsx';
 
 const app = new Hono();
 
@@ -1135,6 +1139,26 @@ if (integratedServicesComplete && typeof integratedServicesComplete === 'object'
   app.route('/make-server-3dd53475', integratedServicesComplete);
 } else {
   console.warn('⚠️ Integrated Services Complete Endpoints module undefined, skipping');
+}
+
+if (typeof elasticsearchProxyEndpoints === 'function') {
+  console.log('✅ Registering Elasticsearch Proxy Endpoints...');
+  elasticsearchProxyEndpoints(app, kv);
+}
+
+if (typeof refundPolicyEndpoints === 'function') {
+  console.log('✅ Registering Refund Policy Engine Endpoints...');
+  refundPolicyEndpoints(app, kv);
+}
+
+if (typeof settlementTierSystemEndpoints === 'function') {
+  console.log('✅ Registering Settlement Tier System Endpoints...');
+  settlementTierSystemEndpoints(app, kv);
+}
+
+if (typeof integratedServicesManagerEndpoints === 'function') {
+  console.log('✅ Registering Integrated Services Manager Endpoints...');
+  integratedServicesManagerEndpoints(app, kv);
 }
 
 // ------------------------------------------------------------------

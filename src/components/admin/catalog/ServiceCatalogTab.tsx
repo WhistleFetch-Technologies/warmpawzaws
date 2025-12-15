@@ -63,7 +63,7 @@ interface CategoryGroup {
   }[];
 }
 
-export function ServiceCatalogTabNew() {
+export function ServiceCatalogTab() {
   const [services, setServices] = useState<ServiceCatalogItem[]>([]);
   const [groupedServices, setGroupedServices] = useState<CategoryGroup[]>([]);
   const [loading, setLoading] = useState(true);
@@ -788,29 +788,64 @@ export function ServiceCatalogTabNew() {
                 </div>
 
                 <div className="col-span-2">
-                  <h5 className="text-sm font-medium mb-2">Pricing by Pet Size *</h5>
-                  <div className="grid grid-cols-4 gap-3">
-                    {(['small', 'medium', 'large', 'extraLarge'] as const).map((size) => (
-                      <div key={size}>
-                        <label className="block text-xs text-gray-600 mb-1 capitalize">{size} (₹)</label>
-                        <Input
-                          type="number"
-                          value={formData.packageDetails!.pricingBySize[size]}
-                          onChange={(e) => {
-                            setFormData({
-                              ...formData,
-                              packageDetails: {
-                                ...formData.packageDetails!,
-                                pricingBySize: {
-                                  ...formData.packageDetails!.pricingBySize,
-                                  [size]: parseFloat(e.target.value) || 0
-                                }
-                              }
-                            });
-                          }}
-                        />
-                      </div>
-                    ))}
+                  <label className="block text-sm font-medium mb-2">Pricing by Pet Size (₹) *</label>
+                  <div className="grid grid-cols-4 gap-4">
+                    <div>
+                      <span className="text-xs text-gray-500 mb-1 block">Small</span>
+                      <Input
+                        type="number"
+                        value={formData.packageDetails.pricingBySize.small}
+                        onChange={(e) => setFormData({
+                          ...formData,
+                          packageDetails: {
+                            ...formData.packageDetails!,
+                            pricingBySize: { ...formData.packageDetails!.pricingBySize, small: parseInt(e.target.value) || 0 }
+                          }
+                        })}
+                      />
+                    </div>
+                    <div>
+                      <span className="text-xs text-gray-500 mb-1 block">Medium</span>
+                      <Input
+                        type="number"
+                        value={formData.packageDetails.pricingBySize.medium}
+                        onChange={(e) => setFormData({
+                          ...formData,
+                          packageDetails: {
+                            ...formData.packageDetails!,
+                            pricingBySize: { ...formData.packageDetails!.pricingBySize, medium: parseInt(e.target.value) || 0 }
+                          }
+                        })}
+                      />
+                    </div>
+                    <div>
+                      <span className="text-xs text-gray-500 mb-1 block">Large</span>
+                      <Input
+                        type="number"
+                        value={formData.packageDetails.pricingBySize.large}
+                        onChange={(e) => setFormData({
+                          ...formData,
+                          packageDetails: {
+                            ...formData.packageDetails!,
+                            pricingBySize: { ...formData.packageDetails!.pricingBySize, large: parseInt(e.target.value) || 0 }
+                          }
+                        })}
+                      />
+                    </div>
+                    <div>
+                      <span className="text-xs text-gray-500 mb-1 block">Extra Large</span>
+                      <Input
+                        type="number"
+                        value={formData.packageDetails.pricingBySize.extraLarge}
+                        onChange={(e) => setFormData({
+                          ...formData,
+                          packageDetails: {
+                            ...formData.packageDetails!,
+                            pricingBySize: { ...formData.packageDetails!.pricingBySize, extraLarge: parseInt(e.target.value) || 0 }
+                          }
+                        })}
+                      />
+                    </div>
                   </div>
                 </div>
               </>
@@ -818,196 +853,177 @@ export function ServiceCatalogTabNew() {
 
             <div className="col-span-2">
               <label className="block text-sm font-medium mb-2">Applicable Roles *</label>
-              <div className="grid grid-cols-4 gap-2">
-                {roles.map(role => {
+              <div className="flex flex-wrap gap-2">
+                {roles.map((role) => {
+                  const isSelected = formData.applicableRoles.includes(role.id);
                   const allowedStyles = getAllowedStylesForRole(role.id);
-                  const isStyleAllowed = allowedStyles.length === 0 || allowedStyles.includes(formData.serviceStyle);
+                  const isAllowed = allowedStyles.length === 0 || allowedStyles.includes(formData.serviceStyle);
+                  
                   return (
-                    <label
+                    <div
                       key={role.id}
-                      className={`flex items-center gap-2 text-sm ${
-                        !isStyleAllowed ? 'opacity-50' : ''
+                      onClick={() => isAllowed && toggleRole(role.id)}
+                      className={`px-3 py-1 rounded-full text-sm border cursor-pointer transition-all ${
+                        isSelected
+                          ? 'bg-[#FF8C42] text-white border-[#FF8C42]'
+                          : isAllowed 
+                            ? 'bg-white text-gray-700 border-gray-200 hover:border-gray-300'
+                            : 'bg-gray-100 text-gray-400 border-gray-100 cursor-not-allowed'
                       }`}
-                      title={!isStyleAllowed ? `${role.name} doesn't allow ${getServiceStyleLabel(formData.serviceStyle)}` : ''}
                     >
-                      <input
-                        type="checkbox"
-                        checked={formData.applicableRoles.includes(role.id)}
-                        onChange={() => toggleRole(role.id)}
-                        disabled={!isStyleAllowed}
-                      />
-                      {role.name}
-                      {!isStyleAllowed && <span className="text-red-500">🚫</span>}
-                    </label>
+                      {role.label || role.name}
+                    </div>
                   );
                 })}
               </div>
             </div>
           </div>
 
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={resetForm}>Cancel</Button>
+          <div className="flex justify-end gap-3 pt-4 border-t">
+            <Button variant="outline" onClick={resetForm}>
+              Cancel
+            </Button>
             <Button
               onClick={handleCreateOrUpdate}
               disabled={saving}
               className="bg-[#FF8C42] hover:bg-[#ff7a28]"
             >
-              <Save className="w-4 h-4 mr-2" />
-              {saving ? 'Saving...' : editingService ? 'Update' : 'Create'}
+              {saving ? 'Saving...' : editingService ? 'Update Service' : 'Create Service'}
             </Button>
           </div>
         </div>
       )}
 
-      {/* Hierarchical Services List */}
-      {groupedServices.length === 0 ? (
-        <div className="text-center py-12 text-gray-500 bg-gray-50 rounded-lg">
-          <PackageIcon className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-          <p className="font-medium">No services found</p>
-          <p className="text-sm text-gray-400 mt-1">
-            {services.length === 0 ? 'Click "Seed All Services" to populate with 150+ services' : 'Try adjusting your search'}
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {groupedServices.map((category) => {
-            const isExpanded = expandedCategories.has(category.categoryId);
-            const totalServices = category.subcategories.reduce((sum, sub) => sum + sub.services.length, 0);
+      {/* Categories List */}
+      <div className="space-y-4">
+        {groupedServices.map((group) => {
+          const isExpanded = expandedCategories.has(group.categoryId);
+          
+          return (
+            <div key={group.categoryId} className="border border-gray-200 rounded-lg bg-white overflow-hidden">
+              <div
+                className="flex items-center p-4 bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors"
+                onClick={() => toggleCategory(group.categoryId)}
+              >
+                {isExpanded ? (
+                  <ChevronDown className="w-5 h-5 text-gray-500 mr-2" />
+                ) : (
+                  <ChevronRight className="w-5 h-5 text-gray-500 mr-2" />
+                )}
+                
+                <h3 className="text-lg font-medium text-gray-900 flex-1">
+                  {group.categoryName}
+                </h3>
+                
+                <Badge variant="secondary" className="bg-white">
+                  {group.subcategories.reduce((acc, sub) => acc + sub.services.length, 0)} Services
+                </Badge>
+              </div>
 
-            return (
-              <div key={category.categoryId} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-                {/* Category Header */}
-                <button
-                  onClick={() => toggleCategory(category.categoryId)}
-                  className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    {isExpanded ? (
-                      <ChevronDown className="w-5 h-5 text-gray-400" />
-                    ) : (
-                      <ChevronRight className="w-5 h-5 text-gray-400" />
-                    )}
-                    <h3 className="font-semibold text-gray-900">{category.categoryName}</h3>
-                    <Badge className="bg-gray-100 text-gray-700">
-                      {totalServices} services
-                    </Badge>
-                  </div>
-                </button>
+              {isExpanded && (
+                <div className="p-4 space-y-4">
+                  {group.subcategories.map((sub) => {
+                    const subKey = `${group.categoryId}-${sub.subCategoryId}`;
+                    const isSubExpanded = expandedSubcategories.has(subKey);
+                    
+                    return (
+                      <div key={subKey} className="border border-gray-100 rounded-lg">
+                        <div
+                          className="flex items-center p-3 cursor-pointer hover:bg-gray-50"
+                          onClick={() => toggleSubcategory(subKey)}
+                        >
+                          {isSubExpanded ? (
+                            <ChevronDown className="w-4 h-4 text-gray-400 mr-2" />
+                          ) : (
+                            <ChevronRight className="w-4 h-4 text-gray-400 mr-2" />
+                          )}
+                          <h4 className="text-md font-medium text-gray-700 flex-1">
+                            {sub.subCategoryName}
+                          </h4>
+                          <span className="text-xs text-gray-500">
+                            {sub.services.length} items
+                          </span>
+                        </div>
 
-                {/* Subcategories */}
-                {isExpanded && (
-                  <div className="border-t border-gray-200">
-                    {category.subcategories.map((subcategory) => {
-                      const subKey = `${category.categoryId}-${subcategory.subCategoryId}`;
-                      const isSubExpanded = expandedSubcategories.has(subKey);
-
-                      return (
-                        <div key={subKey} className="border-b border-gray-100 last:border-0">
-                          {/* Subcategory Header */}
-                          <button
-                            onClick={() => toggleSubcategory(subKey)}
-                            className="w-full flex items-center justify-between p-3 pl-12 hover:bg-gray-50 transition-colors"
-                          >
-                            <div className="flex items-center gap-2">
-                              {isSubExpanded ? (
-                                <ChevronDown className="w-4 h-4 text-gray-400" />
-                              ) : (
-                                <ChevronRight className="w-4 h-4 text-gray-400" />
-                              )}
-                              <span className="font-medium text-gray-700">{subcategory.subCategoryName}</span>
-                              <Badge className="bg-blue-50 text-blue-700 text-xs">
-                                {subcategory.services.length}
-                              </Badge>
-                            </div>
-                          </button>
-
-                          {/* Services */}
-                          {isSubExpanded && (
-                            <div className="bg-gray-50 px-4 py-2">
-                              {subcategory.services.map((service, idx) => (
-                                <div
-                                  key={service.catalogId || idx}
-                                  className="bg-white p-3 mb-2 rounded-lg border border-gray-200 hover:border-[#FF8C42] transition-colors"
-                                >
-                                  <div className="flex items-start justify-between">
-                                    <div className="flex-1">
-                                      <div className="flex items-center gap-2 mb-1">
-                                        <h4 className="font-medium text-gray-900">{service.serviceName}</h4>
-                                        <Badge className={
-                                          service.serviceStyle === 'at_home' ? 'bg-blue-100 text-blue-700 text-xs' :
-                                          service.serviceStyle === 'at_center' ? 'bg-green-100 text-green-700 text-xs' :
-                                          'bg-purple-100 text-purple-700 text-xs'
-                                        }>
-                                          {getServiceStyleLabel(service.serviceStyle)}
-                                        </Badge>
-                                        {service.isPackage && (
-                                          <Badge className="bg-orange-100 text-orange-700 text-xs">📦 Package</Badge>
-                                        )}
-                                      </div>
-
-                                      <p className="text-sm text-gray-600 mb-2">{service.description}</p>
-
-                                      <div className="flex flex-wrap gap-2 mb-2">
-                                        {!service.isPackage && (
-                                          <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded">
-                                            ₹{service.basePrice}
-                                          </span>
-                                        )}
-                                        <span className="text-xs bg-gray-100 px-2 py-1 rounded">
-                                          {service.duration || 30} min
-                                        </span>
-                                      </div>
-
-                                      <div className="flex flex-wrap gap-1">
-                                        {service.applicableRoles.map(roleId => {
-                                          const role = roles.find(r => r.id === roleId);
-                                          return (
-                                            <span key={roleId} className="text-xs bg-orange-50 text-orange-700 px-2 py-0.5 rounded">
-                                              {role?.name || roleId}
-                                            </span>
-                                          );
-                                        })}
-                                      </div>
-                                    </div>
-
-                                    <div className="flex gap-1 ml-4">
-                                      <button
-                                        onClick={() => handleCopy(service)}
-                                        className="p-2 text-green-600 hover:bg-green-50 rounded"
-                                        title="Copy service"
-                                      >
-                                        <Copy className="w-4 h-4" />
-                                      </button>
-                                      <button
-                                        onClick={() => handleEdit(service)}
-                                        className="p-2 text-blue-600 hover:bg-blue-50 rounded"
-                                        title="Edit service"
-                                      >
-                                        <Edit2 className="w-4 h-4" />
-                                      </button>
-                                      <button
-                                        onClick={() => service.catalogId && handleDelete(service.catalogId)}
-                                        className="p-2 text-red-600 hover:bg-red-50 rounded"
-                                        title="Delete service"
-                                      >
-                                        <Trash2 className="w-4 h-4" />
-                                      </button>
-                                    </div>
+                        {isSubExpanded && (
+                          <div className="p-3 grid gap-3">
+                            {sub.services.map((service) => (
+                              <div
+                                key={service.catalogId}
+                                className="flex items-start justify-between p-3 bg-white border border-gray-100 rounded-md hover:border-orange-200 transition-all shadow-sm"
+                              >
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <h5 className="font-medium text-gray-900">{service.serviceName}</h5>
+                                    {service.isPackage && (
+                                      <Badge variant="outline" className="text-orange-600 border-orange-200 bg-orange-50 text-[10px]">
+                                        <PackageIcon className="w-3 h-3 mr-1" />
+                                        Package
+                                      </Badge>
+                                    )}
+                                    <Badge variant="outline" className="text-blue-600 border-blue-200 bg-blue-50 text-[10px]">
+                                      {getServiceStyleLabel(service.serviceStyle)}
+                                    </Badge>
+                                  </div>
+                                  <p className="text-sm text-gray-500 mt-1">{service.description}</p>
+                                  <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
+                                    <span>⏱️ {service.duration} mins</span>
+                                    <span className="font-medium text-gray-900">₹{service.basePrice}</span>
+                                    <span>
+                                      👥 {service.applicableRoles.length} Roles Allowed
+                                    </span>
                                   </div>
                                 </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
+
+                                <div className="flex items-center gap-2">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-8 w-8 p-0"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleCopy(service);
+                                    }}
+                                    title="Copy Service"
+                                  >
+                                    <Copy className="w-4 h-4 text-gray-500" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-8 w-8 p-0"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleEdit(service);
+                                    }}
+                                  >
+                                    <Edit2 className="w-4 h-4 text-blue-600" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-8 w-8 p-0"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDelete(service.catalogId!);
+                                    }}
+                                  >
+                                    <Trash2 className="w-4 h-4 text-red-600" />
+                                  </Button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

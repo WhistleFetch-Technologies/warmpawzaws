@@ -1,7 +1,12 @@
+import { useState } from 'react';
 import { ReturnsManagement } from './ecommerce/ReturnsManagement';
 import { Button } from '../ui/button';
 import { supabase } from '../../utils/supabase/client';
 import { UnifiedAdminSidebar } from './layout/UnifiedAdminSidebar';
+import { PaymentRulesSection } from './finance/PaymentRulesSection';
+import { RefundPoliciesSection } from './finance/RefundPoliciesSection';
+import { ScheduleSettingsManagement } from './settings/ScheduleSettingsManagement';
+import { CreditCard, DollarSign, Package, ClipboardList, Clock, RotateCcw, Settings as SettingsIcon, ArrowLeft } from 'lucide-react';
 
 interface PaymentRefundManagementProps {
   onNavigate?: (view: string) => void;
@@ -54,8 +59,15 @@ export function PaymentRefundManagement({ onNavigate }: PaymentRefundManagementP
           onNavigate={(view) => onNavigate?.(view)} 
         />
         {/* Main Content */}
-        <div className="flex-1 overflow-auto">
-          <PaymentSettingsManagementNew onBack={() => setActiveTab('overview')} />
+        <div className="flex-1 overflow-auto p-6">
+          <div className="mb-4">
+            <Button variant="ghost" onClick={() => setActiveTab('overview')} className="gap-2">
+              <ArrowLeft className="w-4 h-4" /> Back to Overview
+            </Button>
+          </div>
+          <div className="bg-white rounded-lg border border-gray-200 p-6">
+            <PaymentRulesSection />
+          </div>
         </div>
       </div>
     );
@@ -69,8 +81,15 @@ export function PaymentRefundManagement({ onNavigate }: PaymentRefundManagementP
           onNavigate={(view) => onNavigate?.(view)} 
         />
         {/* Main Content */}
-        <div className="flex-1 overflow-auto">
-          <RefundPoliciesManagementNew onBack={() => setActiveTab('overview')} />
+        <div className="flex-1 overflow-auto p-6">
+          <div className="mb-4">
+            <Button variant="ghost" onClick={() => setActiveTab('overview')} className="gap-2">
+              <ArrowLeft className="w-4 h-4" /> Back to Overview
+            </Button>
+          </div>
+          <div className="bg-white rounded-lg border border-gray-200 p-6">
+            <RefundPoliciesSection />
+          </div>
         </div>
       </div>
     );

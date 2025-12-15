@@ -950,10 +950,6 @@
     grid-column: span 4 / span 4;
   }
 
-  .col-span-6 {
-    grid-column: span 6 / span 6;
-  }
-
   .col-span-9 {
     grid-column: span 9 / span 9;
   }
@@ -1622,6 +1618,10 @@
     max-height: calc(var(--spacing) * 60);
   }
 
+  .max-h-80 {
+    max-height: calc(var(--spacing) * 80);
+  }
+
   .max-h-96 {
     max-height: calc(var(--spacing) * 96);
   }
@@ -2060,10 +2060,6 @@
 
   .min-w-\[200px\] {
     min-width: 200px;
-  }
-
-  .min-w-\[240px\] {
-    min-width: 240px;
   }
 
   .min-w-\[260px\] {
@@ -2821,10 +2817,6 @@
     border-color: oklab(75.3572% .104318 .126103 / .2);
   }
 
-  .border-\[\#FF8C42\]\/30 {
-    border-color: oklab(75.3572% .104318 .126103 / .3);
-  }
-
   .border-amber-100 {
     border-color: var(--color-amber-100);
   }
@@ -3203,10 +3195,6 @@
     background-color: oklab(75.3572% .104318 .126103 / .1);
   }
 
-  .bg-\[\#FF9F66\] {
-    background-color: #ff9f66;
-  }
-
   .bg-\[\#FFF5F1\] {
     background-color: #fff5f1;
   }
@@ -3252,16 +3240,6 @@
   @supports (color: color-mix(in lab, red, red)) {
     .bg-black\/20 {
       background-color: color-mix(in oklab, var(--color-black) 20%, transparent);
-    }
-  }
-
-  .bg-black\/30 {
-    background-color: #0000004d;
-  }
-
-  @supports (color: color-mix(in lab, red, red)) {
-    .bg-black\/30 {
-      background-color: color-mix(in oklab, var(--color-black) 30%, transparent);
     }
   }
 
@@ -5324,16 +5302,6 @@
     color: var(--color-black);
   }
 
-  .text-black\/70 {
-    color: #000000b3;
-  }
-
-  @supports (color: color-mix(in lab, red, red)) {
-    .text-black\/70 {
-      color: color-mix(in oklab, var(--color-black) 70%, transparent);
-    }
-  }
-
   .text-blue-100 {
     color: var(--color-blue-100);
   }
@@ -7177,12 +7145,6 @@
   }
 
   @media (hover: hover) {
-    .hover\:bg-yellow-500:hover {
-      background-color: var(--color-yellow-500);
-    }
-  }
-
-  @media (hover: hover) {
     .hover\:bg-yellow-700:hover {
       background-color: var(--color-yellow-700);
     }
@@ -7963,6 +7925,10 @@
     border-color: var(--color-orange-200);
   }
 
+  .data-\[state\=active\]\:bg-\[\#FF8C42\][data-state="active"] {
+    background-color: #ff8c42;
+  }
+
   .data-\[state\=active\]\:bg-card[data-state="active"] {
     background-color: var(--card);
   }
@@ -7977,6 +7943,10 @@
 
   .data-\[state\=active\]\:text-orange-700[data-state="active"] {
     color: var(--color-orange-700);
+  }
+
+  .data-\[state\=active\]\:text-white[data-state="active"] {
+    color: var(--color-white);
   }
 
   .data-\[state\=active\]\:shadow-sm[data-state="active"] {

@@ -1,11 +1,9 @@
 import { useState, useEffect } from 'react';
 import { AdminDashboard } from './admin/AdminDashboard';
 import { AdminAuth } from './admin/AdminAuth';
-import { AdminVendorManagementNew } from './admin/AdminVendorManagementNew';
-import { EnhancedVendorAdministration } from './admin/EnhancedVendorAdministration';
+import { AdminVendorManagement } from './admin/AdminVendorManagement';
 import { CatalogServicesManagement } from './admin/CatalogServicesManagement';
 import { PaymentRefundManagement } from './admin/PaymentRefundManagement';
-import { AdminServiceCatalog } from './admin/AdminServiceCatalog';
 import { ECommerceManagement } from './admin/ecommerce/ECommerceManagement';
 import { SupportCRM } from './admin/SupportCRM';
 import { RegionManager } from './admin/RegionManager';
@@ -89,14 +87,10 @@ export function AdminApp() {
 
   // Show vendor management by default for this demo
   if (currentView === 'vendor-management') {
-    return <AdminVendorManagementNew onNavigate={handleNavigation} />;
+    return <AdminVendorManagement onNavigate={handleNavigation} />;
   }
 
   // EXISTING ROUTES
-  if (currentView === 'service-catalog') {
-    return <AdminServiceCatalog session={session} onBack={() => setCurrentView('dashboard')} />;
-  }
-
   if (currentView === 'catalog') {
     return <CatalogServicesManagement onNavigate={handleNavigation} />;
   }

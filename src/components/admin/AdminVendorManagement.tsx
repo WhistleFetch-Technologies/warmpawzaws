@@ -24,7 +24,7 @@ import { ActiveVendorsTab } from './ActiveVendorsTab';
 import { SuperAdminProfileModal } from './SuperAdminProfileModal';
 import { AddVendorModal } from './AddVendorModal';
 import { ApplicationDetailModal } from './ApplicationDetailModal';
-import { VendorSettingsTabNew } from './VendorSettingsTabNew';
+import { VendorSettingsTab } from './VendorSettingsTab';
 import { ClarificationRequestedTab } from './ClarificationRequestedTab';
 import { UnifiedAdminSidebar } from './layout/UnifiedAdminSidebar';
 import { toast } from 'sonner@2.0.3';
@@ -67,11 +67,11 @@ interface QualityAlert {
   complaintCount: number;
 }
 
-interface AdminVendorManagementNewProps {
+interface AdminVendorManagementProps {
   onNavigate?: (view: string) => void;
 }
 
-export function AdminVendorManagementNew({ onNavigate }: AdminVendorManagementNewProps = {}) {
+export function AdminVendorManagement({ onNavigate }: AdminVendorManagementProps = {}) {
   const [activeTab, setActiveTab] = useState<'applications' | 'deactivation' | 'rate-changes' | 'reverification' | 'support' | 'compliance' | 'payment-disputes' | 'active-vendors' | 'settings' | 'clarification'>('applications');
   const [stats, setStats] = useState<VendorStats | null>(null);
   const [applications, setApplications] = useState<VendorApplication[]>([]);
@@ -1106,232 +1106,6 @@ export function AdminVendorManagementNew({ onNavigate }: AdminVendorManagementNe
                 />
               )}
 
-              {/* OLD TAB - Keeping for reference but hidden */}
-              {false && activeTab === 'applications-old' && (
-                <div className="flex gap-6">
-                  {/* Applications List */}
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-base">
-                        New Vendor Applications 
-                        <span className="ml-2 text-sm text-gray-500">
-                          (Showing {applications.length} of {allVendors.length} vendors)
-                        </span>
-                      </h3>
-                      <div className="flex gap-3">
-                        <CustomDropdown
-                          options={[
-                            { value: 'all', label: 'All Statuses' },
-                            { value: 'pending_approval', label: '🟠 Pending' },
-                            { value: 'approved', label: '🟢 Approved' },
-                            { value: 'rejected', label: '🔴 Rejected' },
-                            { value: 'pending_reverification', label: '🟡 Re-verification' }
-                          ]}
-                          value={statusFilter}
-                          onChange={filterVendorsByStatus}
-                          placeholder="Status"
-                        />
-                        <CustomDropdown
-                          options={[
-                            { value: 'all', label: 'All Categories' },
-                            { value: 'healthcare', label: 'Healthcare Providers' },
-                            { value: 'grooming', label: 'Grooming & Day-care' },
-                            { value: 'walking', label: 'Walkers & Sitters' },
-                            { value: 'boarding', label: 'Boarding & Adoption' },
-                            { value: 'sunset', label: 'Sunset Services' }
-                          ]}
-                          value={categoryFilter}
-                          onChange={setCategoryFilter}
-                          placeholder="All Categories"
-                        />
-                        <CustomDropdown
-                          options={[
-                            { value: 'all', label: 'All Priorities' },
-                            { value: 'high', label: 'High' },
-                            { value: 'medium', label: 'Medium' },
-                            { value: 'low', label: 'Low' }
-                          ]}
-                          value={priorityFilter}
-                          onChange={setPriorityFilter}
-                          placeholder="Priority"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Table Header */}
-                    <div className="grid grid-cols-12 gap-4 px-4 py-2 bg-gray-50 rounded-lg text-xs text-gray-600 mb-2">
-                      <div className="col-span-3">Vendor Details</div>
-                      <div className="col-span-2">Service Category</div>
-                      <div className="col-span-2">Type</div>
-                      <div className="col-span-2">Progress</div>
-                      <div className="col-span-3">Actions</div>
-                    </div>
-
-                    {/* Applications */}
-                    <div className="space-y-2">
-                      {applications.map((app, idx) => {
-                        const priority = app.daysSinceSubmission > 7 ? 'high' : 
-                                       app.daysSinceSubmission > 3 ? 'medium' : 'low';
-                        
-                        // Service Category = Broad category (Healthcare Providers, Service Providers, etc.)
-                        // This is determined from role.vendorTypes using centralized mapping
-                        const serviceCategory = app.serviceCategory || app.category || 'N/A';
-                        
-                        // Type = Specific role name (Veterinarian, Groomer, Dog Walker, etc.)
-                        // This is the actual role the vendor is applying for
-                        const roleName = app.roleName || app.vendorType || 'N/A';
-                        
-                        const displayAddress = app.address ? app.address.split(',')[0] : (app.city || 'N/A');
-                        const experience = app.experience || 'N/A';
-                        const progressPercentage = app.progressPercentage || 75;
-                        const daysSinceSubmission = app.daysSinceSubmission || 0;
-                        
-                        return (
-                          <div key={app.id || idx} className="grid grid-cols-12 gap-4 px-4 py-3 bg-white border border-gray-200 rounded-lg items-center hover:bg-gray-50">
-                            <div className="col-span-3">
-                              <div className="flex items-center gap-2">
-                                <span className={`w-2 h-2 rounded-full ${priority === 'high' ? 'bg-red-500' : priority === 'medium' ? 'bg-orange-500' : 'bg-green-500'}`}></span>
-                                <div>
-                                  <div className="text-sm">{app.fullName || app.businessName}</div>
-                                  <div className="text-xs text-gray-500">
-                                    {displayAddress} | {experience}
-                                  </div>
-                                </div>
-                              </div>
-                              <span className={`inline-block mt-1 px-2 py-0.5 text-xs rounded-full ${getPriorityColor(priority)}`}>
-                                {priority.charAt(0).toUpperCase() + priority.slice(1)}
-                              </span>
-                            </div>
-                            
-                            <div className="col-span-2">
-                              <div className="text-sm">{serviceCategory}</div>
-                              <div className="text-xs text-gray-500">{daysSinceSubmission}h ago</div>
-                            </div>
-                            
-                            <div className="col-span-2">
-                              <span className={`inline-block px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-700`}>
-                                {roleName}
-                              </span>
-                            </div>
-                            
-                            <div className="col-span-2">
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm">{progressPercentage}%</span>
-                                <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
-                                  <div 
-                                    className="h-full bg-gray-900 rounded-full" 
-                                    style={{ width: `${progressPercentage}%` }}
-                                  ></div>
-                                </div>
-                              </div>
-                            </div>
-                            
-                            <div className="col-span-3 flex items-center gap-2">
-                              <button 
-                                onClick={() => handleApprove(app.id)}
-                                disabled={loadingAction.id === app.id}
-                                className="p-1.5 hover:bg-green-50 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                                title="Approve Application"
-                              >
-                                {loadingAction.type === 'approve' && loadingAction.id === app.id ? (
-                                  <RefreshCw className="w-4 h-4 text-green-600 animate-spin" />
-                                ) : (
-                                  <Check className="w-4 h-4 text-green-600" />
-                                )}
-                              </button>
-                              <button 
-                                onClick={() => {
-                                  setRejectingApplication(app);
-                                  setShowRejectModal(true);
-                                }}
-                                disabled={loadingAction.id === app.id}
-                                className="p-1.5 hover:bg-red-50 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                                title="Reject Application"
-                              >
-                                {loadingAction.type === 'reject' && loadingAction.id === app.id ? (
-                                  <RefreshCw className="w-4 h-4 text-red-600 animate-spin" />
-                                ) : (
-                                  <X className="w-4 h-4 text-red-600" />
-                                )}
-                              </button>
-                              <button 
-                                onClick={() => {
-                                  setRequestingInfoApplication(app);
-                                  setShowRequestInfoModal(true);
-                                }}
-                                disabled={loadingAction.id === app.id}
-                                className="p-1.5 hover:bg-orange-50 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                                title="Request More Information"
-                              >
-                                {loadingAction.type === 'info' && loadingAction.id === app.id ? (
-                                  <RefreshCw className="w-4 h-4 text-orange-600 animate-spin" />
-                                ) : (
-                                  <MessageCircle className="w-4 h-4 text-orange-600" />
-                                )}
-                              </button>
-                              <button 
-                                className="p-1.5 hover:bg-blue-50 rounded-lg transition-all" 
-                                title="View Details" 
-                                onClick={() => { setSelectedApplication(app); setShowApplicationDetail(true); }}
-                              >
-                                <Eye className="w-4 h-4 text-blue-600" />
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                      
-                      {applications.length === 0 && !loading && (
-                        <div className="text-center py-8 text-gray-500">
-                          No pending applications found
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Quality Alerts Sidebar */}
-                  <div className="w-80">
-                    <div className="bg-white border border-gray-200 rounded-xl p-4">
-                      <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-sm">Quality Alerts</h3>
-                        <select className="px-2 py-1 border border-gray-200 rounded-lg text-xs" value={alertFilter} onChange={(e) => setAlertFilter(e.target.value)}>
-                          <option value="all">All Alerts</option>
-                          <option value="high">High Priority</option>
-                          <option value="medium">Medium Priority</option>
-                        </select>
-                      </div>
-                      
-                      <div className="space-y-3">
-                        {qualityAlerts.slice(0, 5).map((alert, idx) => (
-                          <div key={idx} className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
-                            <span className={`w-2 h-2 rounded-full mt-1 ${alert.priority === 'high' ? 'bg-red-500' : alert.priority === 'medium' ? 'bg-orange-500' : 'bg-yellow-500'}`}></span>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-start justify-between gap-2">
-                                <div className="flex-1 min-w-0">
-                                  <div className="text-sm truncate">{alert.vendorName}</div>
-                                  <span className={`inline-block mt-1 px-1.5 py-0.5 text-xs rounded ${getPriorityColor(alert.priority)}`}>
-                                    {alert.priority.charAt(0).toUpperCase() + alert.priority.slice(1)}
-                                  </span>
-                                </div>
-                              </div>
-                              <div className="text-xs text-gray-600 mt-1">{alert.alertMessage}</div>
-                            </div>
-                            <div className="flex gap-1 flex-shrink-0">
-                              <button className="p-1 hover:bg-white rounded">
-                                <Eye className="w-3 h-3 text-blue-600" />
-                              </button>
-                              <button className="p-1 hover:bg-white rounded">
-                                <Phone className="w-3 h-3 text-green-600" />
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
               {activeTab === 'deactivation' && (
                 <DeactivationRequestsTab />
               )}
@@ -1361,7 +1135,7 @@ export function AdminVendorManagementNew({ onNavigate }: AdminVendorManagementNe
               )}
 
               {activeTab === 'settings' && (
-                <VendorSettingsTabNew />
+                <VendorSettingsTab />
               )}
 
               {activeTab === 'clarification' && (

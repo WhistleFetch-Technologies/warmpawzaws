@@ -3,7 +3,7 @@ import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
 import { Label } from '../../ui/label';
 import { Checkbox } from '../../ui/checkbox';
-import { ArrowLeft, Plus, Edit, Trash2, Check, X, RefreshCw } from 'lucide-react';
+import { Plus, Edit, Trash2, Check, X, RefreshCw } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
 import { toast } from 'sonner@2.0.3';
 
@@ -24,12 +24,6 @@ const VENDOR_TYPES = [
   { id: 'pet-products-seller', name: 'Food, Medicine & Pet Products Sellers', icon: '🛒' }
 ];
 
-interface VendorType {
-  id: string;
-  name: string;
-  icon: string;
-}
-
 interface RefundTier {
   id: string;
   name: string;
@@ -42,11 +36,7 @@ interface RefundTier {
   createdAt?: string;
 }
 
-interface RefundPoliciesManagementNewProps {
-  onBack: () => void;
-}
-
-export function RefundPoliciesManagementNew({ onBack }: RefundPoliciesManagementNewProps) {
+export function RefundPoliciesSection() {
   const [tiers, setTiers] = useState<RefundTier[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -203,17 +193,12 @@ export function RefundPoliciesManagementNew({ onBack }: RefundPoliciesManagement
   }
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-6">
+    <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6 pb-4 border-b-2 border-gray-200">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" onClick={onBack}>
-            <ArrowLeft className="w-4 h-4" />
-          </Button>
-          <div>
-            <h2 className="text-xl font-semibold text-gray-900">Refund Policies Management</h2>
-            <p className="text-sm text-gray-500">Configure cancellation and refund tiers per vendor type & location</p>
-          </div>
+      <div className="flex items-center justify-between pb-4 border-b border-gray-200">
+        <div>
+          <h3 className="text-lg font-medium text-gray-900">Refund Policies</h3>
+          <p className="text-sm text-gray-500">Configure cancellation and refund tiers per vendor type & location</p>
         </div>
         <div className="flex items-center gap-3">
           <Button variant="outline" size="sm" onClick={loadData}>
@@ -222,12 +207,12 @@ export function RefundPoliciesManagementNew({ onBack }: RefundPoliciesManagement
           </Button>
           {!editingTier && (
             <Button 
-              size="default" 
+              size="sm" 
               onClick={handleCreateTier}
-              className="bg-green-600 hover:bg-green-700 text-white font-semibold px-6 shadow-lg"
+              className="bg-green-600 hover:bg-green-700 text-white"
             >
-              <Plus className="w-5 h-5 mr-2" />
-              Create Refund Tier
+              <Plus className="w-4 h-4 mr-2" />
+              Create Tier
             </Button>
           )}
         </div>
@@ -235,7 +220,7 @@ export function RefundPoliciesManagementNew({ onBack }: RefundPoliciesManagement
 
       {/* Editing Tier Form */}
       {editingTier && (
-        <div className="bg-gradient-to-r from-orange-50 to-white border-2 border-[#FF8C42] rounded-lg p-6 mb-6">
+        <div className="bg-gradient-to-r from-orange-50 to-white border border-orange-200 rounded-lg p-6 mb-6">
           <div className="flex items-center justify-between mb-6">
             <h3 className="font-semibold text-gray-900">
               {isCreatingNew ? 'Create New Refund Tier' : 'Edit Refund Tier'}
@@ -433,7 +418,9 @@ export function RefundPoliciesManagementNew({ onBack }: RefundPoliciesManagement
       {/* Tiers List */}
       {!editingTier && (
         <div className="space-y-4">
-          <h3 className="font-semibold text-gray-900">Active Refund Tiers ({tiers.length})</h3>
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold text-gray-900">Active Refund Tiers ({tiers.length})</h3>
+          </div>
           
           {tiers.length === 0 ? (
             <div className="text-center py-12 border-2 border-dashed border-gray-300 rounded-lg">
@@ -449,7 +436,7 @@ export function RefundPoliciesManagementNew({ onBack }: RefundPoliciesManagement
               {tiers.map(tier => (
                 <div
                   key={tier.id}
-                  className="border border-gray-200 rounded-lg p-5 hover:border-[#FF8C42] transition-all"
+                  className="border border-gray-200 rounded-lg p-5 hover:border-[#FF8C42] transition-all bg-white"
                 >
                   <div className="flex items-start justify-between mb-3">
                     <div>
