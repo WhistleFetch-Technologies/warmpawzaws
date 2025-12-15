@@ -36,7 +36,10 @@ import {
   TrendingUp,
   FileText,
   Gift,
-  Heart
+  Heart,
+  Shield,
+  Truck,
+  MapPin
 } from 'lucide-react';
 import { Badge } from '../ui/badge';
 import { VendorNotificationModal } from './VendorNotificationModal';
@@ -570,7 +573,9 @@ export function VendorDashboard({
 
         {/* ✅ NEW: ADDITIONAL CAPABILITIES QUICK ACTIONS */}
         {(capabilities.gallery || capabilities.portfolio || capabilities.cctv_access || capabilities.controlled_substances || 
-          capabilities.prescription || capabilities.progress_tracking || capabilities.package_management || capabilities.custom_services) && (
+          capabilities.prescription || capabilities.progress_tracking || capabilities.package_management || capabilities.custom_services ||
+          capabilities.prescription_verification || capabilities.delivery || capabilities.diet_charts || 
+          capabilities.counseling || capabilities.policy_management || capabilities.distance_pricing) && (
           <div className="p-4 border-b border-gray-100">
             <h2 className="font-semibold text-gray-900 mb-3">Additional Features</h2>
             <div className="grid grid-cols-3 gap-2">
@@ -731,6 +736,76 @@ export function VendorDashboard({
                 >
                   <Activity className="w-6 h-6 text-red-600 mb-1" />
                   <span className="text-xs font-medium text-gray-900">Monitor</span>
+                </button>
+              )}
+              
+              {/* ✅ NEW: Prescription Verification */}
+              {onNavigateToPrescriptionVerification && capabilities.prescription_verification && (
+                <button
+                  onClick={onNavigateToPrescriptionVerification}
+                  className="bg-teal-50 border border-teal-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-teal-100 transition-colors"
+                >
+                  <FileText className="w-6 h-6 text-teal-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Rx Verify</span>
+                </button>
+              )}
+              
+              {/* ✅ NEW: Delivery Management */}
+              {onNavigateToDeliveryManagement && capabilities.delivery && (
+                <button
+                  onClick={onNavigateToDeliveryManagement}
+                  className="bg-orange-50 border border-orange-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-orange-100 transition-colors"
+                >
+                  <Truck className="w-6 h-6 text-orange-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Delivery</span>
+                </button>
+              )}
+              
+              {/* ✅ NEW: Diet Charts */}
+              {onNavigateToDietCharts && capabilities.diet_charts && (
+                <button
+                  onClick={onNavigateToDietCharts}
+                  className="bg-lime-50 border border-lime-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-lime-100 transition-colors"
+                >
+                  <svg className="w-6 h-6 text-lime-600 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <span className="text-xs font-medium text-gray-900">Diet</span>
+                </button>
+              )}
+              
+              {/* ✅ NEW: Counseling */}
+              {onNavigateToCounseling && capabilities.counseling && (
+                <button
+                  onClick={onNavigateToCounseling}
+                  className="bg-violet-50 border border-violet-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-violet-100 transition-colors"
+                >
+                  <svg className="w-6 h-6 text-violet-600 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2v4l-4-4H9a1.994 1.994 0 01-1.414-.586m0 0L11 14h4a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2v4l.586-.586z" />
+                  </svg>
+                  <span className="text-xs font-medium text-gray-900">Counsel</span>
+                </button>
+              )}
+              
+              {/* ✅ NEW: Policy Management */}
+              {onNavigateToPolicyManagement && capabilities.policy_management && (
+                <button
+                  onClick={onNavigateToPolicyManagement}
+                  className="bg-cyan-50 border border-cyan-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-cyan-100 transition-colors"
+                >
+                  <Shield className="w-6 h-6 text-cyan-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Policies</span>
+                </button>
+              )}
+              
+              {/* ✅ NEW: Distance Pricing */}
+              {onNavigateToDistancePricing && capabilities.distance_pricing && (
+                <button
+                  onClick={onNavigateToDistancePricing}
+                  className="bg-fuchsia-50 border border-fuchsia-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-fuchsia-100 transition-colors"
+                >
+                  <MapPin className="w-6 h-6 text-fuchsia-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Pricing</span>
                 </button>
               )}
               
