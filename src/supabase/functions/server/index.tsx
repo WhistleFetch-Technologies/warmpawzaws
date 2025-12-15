@@ -145,6 +145,14 @@ import { automatedBankVerificationEndpoints } from './automated-bank-verificatio
 import { marketplaceSettlementAutomationEndpoints } from './marketplace-settlement-automation.tsx';
 import { tierCommissionIntegrationEndpoints } from './tier-commission-integration.tsx';
 import { reschedulingPoliciesEndpoints } from './rescheduling-policies.tsx';
+import qaGapFixesEndpoints from './qa-gap-fixes.tsx';
+import performanceOptimizationEndpoints from './performance-optimization-endpoints.tsx';
+import analyticsDashboardSprint2 from './analytics-dashboard-sprint2.tsx';
+import settlementTierSystem from './settlement-tier-system.tsx';
+import elasticsearchComplete from './elasticsearch-complete.tsx';
+import refundReschedulingComplete from './refund-rescheduling-complete.tsx';
+import homeServicesEnhanced from './home-services-enhanced.tsx';
+import integratedServicesComplete from './integrated-services-complete.tsx';
 
 const app = new Hono();
 
@@ -1063,6 +1071,70 @@ if (reschedulingPoliciesEndpoints && typeof reschedulingPoliciesEndpoints === 'f
   reschedulingPoliciesEndpoints(app, kv);
 } else {
   console.warn('⚠️ Rescheduling Policies Endpoints module undefined, skipping');
+}
+
+// ✅ NEW: QA Gap Fixes Endpoints
+if (qaGapFixesEndpoints && typeof qaGapFixesEndpoints === 'object') {
+  console.log('✅ Registering QA Gap Fixes Endpoints...');
+  app.route('/make-server-3dd53475', qaGapFixesEndpoints);
+} else {
+  console.warn('⚠️ QA Gap Fixes Endpoints module undefined, skipping');
+}
+
+// ✅ NEW: Performance Optimization Endpoints
+if (performanceOptimizationEndpoints && typeof performanceOptimizationEndpoints === 'object') {
+  console.log('✅ Registering Performance Optimization Endpoints...');
+  app.route('/make-server-3dd53475', performanceOptimizationEndpoints);
+} else {
+  console.warn('⚠️ Performance Optimization Endpoints module undefined, skipping');
+}
+
+// ✅ NEW: Analytics Dashboard Sprint 2 Endpoints
+if (analyticsDashboardSprint2 && typeof analyticsDashboardSprint2 === 'object') {
+  console.log('✅ Registering Analytics Dashboard Sprint 2 Endpoints...');
+  app.route('/make-server-3dd53475', analyticsDashboardSprint2);
+} else {
+  console.warn('⚠️ Analytics Dashboard Sprint 2 Endpoints module undefined, skipping');
+}
+
+// ✅ NEW: Settlement Tier System Endpoints
+if (settlementTierSystem && typeof settlementTierSystem === 'object') {
+  console.log('✅ Registering Settlement Tier System Endpoints...');
+  app.route('/make-server-3dd53475', settlementTierSystem);
+} else {
+  console.warn('⚠️ Settlement Tier System Endpoints module undefined, skipping');
+}
+
+// ✅ NEW: Elasticsearch Complete Endpoints
+if (elasticsearchComplete && typeof elasticsearchComplete === 'object') {
+  console.log('✅ Registering Elasticsearch Complete Endpoints...');
+  app.route('/make-server-3dd53475', elasticsearchComplete);
+} else {
+  console.warn('⚠️ Elasticsearch Complete Endpoints module undefined, skipping');
+}
+
+// ✅ NEW: Refund Rescheduling Complete Endpoints
+if (refundReschedulingComplete && typeof refundReschedulingComplete === 'object') {
+  console.log('✅ Registering Refund Rescheduling Complete Endpoints...');
+  app.route('/make-server-3dd53475', refundReschedulingComplete);
+} else {
+  console.warn('⚠️ Refund Rescheduling Complete Endpoints module undefined, skipping');
+}
+
+// ✅ NEW: Home Services Enhanced Endpoints
+if (homeServicesEnhanced && typeof homeServicesEnhanced === 'object') {
+  console.log('✅ Registering Home Services Enhanced Endpoints...');
+  app.route('/make-server-3dd53475', homeServicesEnhanced);
+} else {
+  console.warn('⚠️ Home Services Enhanced Endpoints module undefined, skipping');
+}
+
+// ✅ NEW: Integrated Services Complete Endpoints
+if (integratedServicesComplete && typeof integratedServicesComplete === 'object') {
+  console.log('✅ Registering Integrated Services Complete Endpoints...');
+  app.route('/make-server-3dd53475', integratedServicesComplete);
+} else {
+  console.warn('⚠️ Integrated Services Complete Endpoints module undefined, skipping');
 }
 
 // ------------------------------------------------------------------

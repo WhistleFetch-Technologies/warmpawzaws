@@ -6,18 +6,21 @@ import { Badge } from '../ui/badge';
 import { Input } from '../ui/input';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { toast } from 'sonner@2.0.3';
+import { AdoptionNudge } from './AdoptionNudge';
 
 interface BreederCatalogViewProps {
   phone: string;
   onBack: () => void;
   onViewDetails?: (animalId: string) => void;
+  onNavigateToAdoption?: () => void;
 }
 
-export function BreederCatalogView({ phone, onBack, onViewDetails }: BreederCatalogViewProps) {
+export function BreederCatalogView({ phone, onBack, onViewDetails, onNavigateToAdoption }: BreederCatalogViewProps) {
   const [loading, setLoading] = useState(true);
   const [animals, setAnimals] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedBreed, setSelectedBreed] = useState<string | null>(null);
+  const [showAdoptionNudge, setShowAdoptionNudge] = useState(true);
 
   const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
 
@@ -206,6 +209,16 @@ export function BreederCatalogView({ phone, onBack, onViewDetails }: BreederCata
             </div>
         )}
       </div>
+
+      {/* Adoption Nudge */}
+      {showAdoptionNudge && onNavigateToAdoption && (
+        <div className="fixed bottom-20 left-0 right-0 px-4 z-20">
+          <AdoptionNudge 
+            onDismiss={() => setShowAdoptionNudge(false)} 
+            onViewAdoption={onNavigateToAdoption} 
+          />
+        </div>
+      )}
     </div>
   );
 }
