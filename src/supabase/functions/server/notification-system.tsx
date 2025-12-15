@@ -180,25 +180,126 @@ export function notificationEndpoints(app: Hono, kv: any) {
    * Send email notification
    */
   async function sendEmailNotification(notification: Notification): Promise<boolean> {
-    // TODO: Integrate with email service (SendGrid, AWS SES, etc.)
-    console.log(`📧 [EMAIL] To: ${notification.recipientEmail}`);
-    console.log(`    Subject: ${notification.title}`);
-    console.log(`    Body: ${notification.message}`);
-    
-    // Placeholder - would actually send email here
-    return true;
+    try {
+      // Get AWS SES settings from platform settings
+      const awsSettings = await kv.get('platform:settings:aws');
+      
+      if (!awsSettings?.ses?.enabled) {
+        console.log(`📧 [EMAIL] AWS SES not enabled - skipping email to: ${notification.recipientEmail}`);
+        return false;
+      }
+
+      // Import AWS SDK for SES
+      const { SESClient, SendEmailCommand } = await import("npm:@aws-sdk/client-ses");
+      
+      const sesClient = new SESClient({
+        region: awsSettings.ses.region || awsSettings.credentials.region,
+        credentials: {
+          accessKeyId: awsSettings.credentials.accessKeyId,
+          secretAccessKey: awsSettings.credentials.secretAccessKey
+        }
+      });
+
+      const command = new SendEmailCommand({
+        Source: awsSettings.sns.emailSourceAddress || 'noreply@warmpawz.com',
+        Destination: {
+          ToAddresses: [notification.recipientEmail]
+        },
+        Message: {
+          Subject: {
+            Data: notification.title,
+            Charset: 'UTF-8'
+          },
+          Body: {
+            Text: {
+              Data: notification.message,
+              Charset: 'UTF-8'
+            },
+            Html: {
+              Data: `
+                <html>
+                  <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+                    <div style="max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9;">
+                      <div style="background-color: #fff; padding: 30px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h2 style="color: #FF6B35; margin-bottom: 20px;">${notification.title}</h2>
+                        <p style="font-size: 16px; margin-bottom: 15px;">${notification.message}</p>
+                        ${notification.data?.actionUrl ? `
+                          <div style="text-align: center; margin-top: 30px;">
+                            <a href="${notification.data.actionUrl}" style="background-color: #FF6B35; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">View Details</a>
+                          </div>
+                        ` : ''}
+                        <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; font-size: 12px; color: #999;">
+                          <p>This is an automated message from Warmpawz. Please do not reply to this email.</p>
+                        </div>
+                      </div>
+                    </div>
+                  </body>
+                </html>
+              `,
+              Charset: 'UTF-8'
+            }
+          }
+        }
+      });
+
+      const response = await sesClient.send(command);
+      console.log(`✅ [EMAIL] Sent to: ${notification.recipientEmail}`, response.MessageId);
+      return true;
+    } catch (error) {
+      console.error(`❌ [EMAIL] Failed to send to ${notification.recipientEmail}:`, error);
+      return false;
+    }
   }
 
   /**
    * Send SMS notification
    */
   async function sendSMSNotification(notification: Notification): Promise<boolean> {
-    // TODO: Integrate with SMS service (Twilio, AWS SNS, etc.)
-    console.log(`📱 [SMS] To: ${notification.recipientPhone}`);
-    console.log(`    Message: ${notification.message}`);
-    
-    // Placeholder - would actually send SMS here
-    return true;
+    try {
+      // Get AWS SNS settings from platform settings
+      const awsSettings = await kv.get('platform:settings:aws');
+      
+      if (!awsSettings?.sns?.enabled) {
+        console.log(`📱 [SMS] AWS SNS not enabled - skipping SMS to: ${notification.recipientPhone}`);
+        return false;
+      }
+
+      // Import AWS SDK for SNS
+      const { SNSClient, PublishCommand } = await import("npm:@aws-sdk/client-sns");
+      
+      const snsClient = new SNSClient({
+        region: awsSettings.sns.region || awsSettings.credentials.region,
+        credentials: {
+          accessKeyId: awsSettings.credentials.accessKeyId,
+          secretAccessKey: awsSettings.credentials.secretAccessKey
+        }
+      });
+
+      // Format phone number to E.164 format if needed
+      let phoneNumber = notification.recipientPhone;
+      if (!phoneNumber.startsWith('+')) {
+        // Assume Indian number if no country code
+        phoneNumber = '+91' + phoneNumber.replace(/[^0-9]/g, '');
+      }
+
+      const command = new PublishCommand({
+        PhoneNumber: phoneNumber,
+        Message: `${notification.title}\n\n${notification.message}`,
+        MessageAttributes: {
+          'AWS.SNS.SMS.SMSType': {
+            DataType: 'String',
+            StringValue: notification.priority === 'urgent' || notification.priority === 'high' ? 'Transactional' : 'Promotional'
+          }
+        }
+      });
+
+      const response = await snsClient.send(command);
+      console.log(`✅ [SMS] Sent to: ${phoneNumber}`, response.MessageId);
+      return true;
+    } catch (error) {
+      console.error(`❌ [SMS] Failed to send to ${notification.recipientPhone}:`, error);
+      return false;
+    }
   }
 
   /**

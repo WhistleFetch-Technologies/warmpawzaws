@@ -78,7 +78,8 @@ import { petIntelligenceEndpoints } from './pet-intelligence-endpoints.tsx';
 import { transactionMonitoringEndpoints } from './transaction-monitoring-endpoints.tsx';
 import enhancedServicePublishing from './enhanced-service-publishing.tsx';
 import enhancedStaffAvailability from './enhanced-staff-availability-routes.tsx';
-import enhancedGpsTracking from './enhanced-gps-tracking.tsx';
+import { pharmacyPrescriptionEndpoints } from './pharmacy-prescription-endpoints.tsx';
+import { homeSampleCollectionEndpoints } from './home-sample-collection-endpoints.tsx';
 import criticalFlowFixes from './critical-flow-fixes.tsx';
 import { registerGroomerGalleryEndpoints } from './groomer-gallery-system.tsx';
 import trainerProgressTracking from './trainer-progress-tracking.tsx';
@@ -487,19 +488,6 @@ if (enhancedStaffAvailability && typeof enhancedStaffAvailability === 'object') 
   console.warn('⚠️ Enhanced Staff Availability module undefined, skipping');
 }
 
-if (enhancedGpsTracking && typeof enhancedGpsTracking === 'object') {
-  app.route('/make-server-3dd53475', enhancedGpsTracking);
-} else {
-  console.warn('⚠️ Enhanced GPS Tracking module undefined, skipping');
-}
-
-// ✅ Critical Flow Fixes (P0)
-if (criticalFlowFixes && typeof criticalFlowFixes === 'object') {
-  app.route('/make-server-3dd53475', criticalFlowFixes);
-} else {
-  console.warn('⚠️ Critical Flow Fixes module undefined, skipping');
-}
-
 // ✅ P1 Vendor-Specific Features
 if (registerGroomerGalleryEndpoints && typeof registerGroomerGalleryEndpoints === 'function') {
   registerGroomerGalleryEndpoints(app);
@@ -708,6 +696,22 @@ if (additionalCapabilitiesEndpoints && typeof additionalCapabilitiesEndpoints ==
   console.log('✅ Registered Additional Capabilities Endpoints (Prescription Verification, Delivery, Diet Charts, Counseling, Policy Management)');
 } else {
   console.warn('⚠️ Additional Capabilities Endpoints module undefined, skipping');
+}
+
+// ✅ NEW: Pharmacy Prescription Endpoints
+if (pharmacyPrescriptionEndpoints && typeof pharmacyPrescriptionEndpoints === 'function') {
+  console.log('✅ Registering Pharmacy Prescription Endpoints...');
+  pharmacyPrescriptionEndpoints(app, kv);
+} else {
+  console.warn('⚠️ Pharmacy Prescription Endpoints module undefined, skipping');
+}
+
+// ✅ NEW: Home Sample Collection Endpoints
+if (homeSampleCollectionEndpoints && typeof homeSampleCollectionEndpoints === 'function') {
+  console.log('✅ Registering Home Sample Collection Endpoints...');
+  homeSampleCollectionEndpoints(app, kv);
+} else {
+  console.warn('⚠️ Home Sample Collection Endpoints module undefined, skipping');
 }
 
 // ------------------------------------------------------------------
