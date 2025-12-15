@@ -47,52 +47,24 @@ export function PetCafeListingEnhanced({ cafeId, onBack }: PetCafeListingEnhance
   const loadCafeDetails = async () => {
     try {
       setLoading(true);
-      // In real implementation, fetch from backend. Mocking for now as per "Full Implementation" constraints without DB
-      // const response = await fetch(...);
       
-      // Mock Data
-      setTimeout(() => {
-        setCafe({
-          id: cafeId,
-          name: 'The Wagging Tail Cafe',
-          description: 'A cozy spot for you and your furry friends. Enjoy gourmet coffee while your pet plays in our dedicated play area.',
-          address: '123, Pet Street, Indiranagar, Bangalore',
-          rating: 4.8,
-          reviewsCount: 342,
-          costForTwo: 800,
-          cuisines: ['Cafe', 'Continental', 'Desserts'],
-          photos: [
-            'https://images.unsplash.com/photo-1554118811-1e0d58224f24?auto=format&fit=crop&q=80&w=800',
-            'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&q=80&w=800',
-            'https://images.unsplash.com/photo-1559339352-11d035aa65de?auto=format&fit=crop&q=80&w=800'
-          ],
-          amenities: ['Pet Menu', 'Play Area', 'WiFi', 'Parking', 'Outdoor Seating'],
-          menu: [
-            { 
-              category: 'Human Treats', 
-              items: [
-                { name: 'Cappuccino', price: 150, desc: 'Freshly brewed' },
-                { name: 'Avocado Toast', price: 250, desc: 'Sourdough with fresh guacamole' }
-              ] 
-            },
-            {
-              category: 'Pet Delights',
-              items: [
-                { name: 'Chicken Pup-sicle', price: 120, desc: 'Frozen chicken broth treat' },
-                { name: 'Doggie Pizza', price: 200, desc: 'Meat-based crust with cheese' }
-              ]
-            }
-          ],
-          openHours: '10:00 AM - 10:00 PM',
-          phone: '+91 98765 43210',
-          coordinates: { lat: 12.9716, lng: 77.5946 }
-        });
-        setLoading(false);
-      }, 1000);
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/cafe/profile/${cafeId}`,
+        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        setCafe(data.profile);
+      } else {
+        toast.error('Failed to load cafe details');
+      }
 
     } catch (error) {
       console.error(error);
-      toast.error('Failed to load cafe details');
+      toast.error('Error loading cafe details');
+    } finally {
+      setLoading(false);
     }
   };
 

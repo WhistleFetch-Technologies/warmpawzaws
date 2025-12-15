@@ -235,4 +235,75 @@ export function registerCafeFeatures(app: Hono) {
     }
   });
 
+  // ==========================================
+  // 4. CAFE PROFILE MANAGEMENT
+  // ==========================================
+
+  /**
+   * GET /make-server-3dd53475/cafe/profile/:vendorId
+   * Get detailed cafe profile
+   */
+  app.get("/make-server-3dd53475/cafe/profile/:vendorId", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      
+      const vendor = await kv.get(`vendor:${vendorId}`);
+      if (!vendor) return c.json({ error: 'Vendor not found' }, 404);
+
+      const cafeProfile = await kv.get(`cafe:profile:${vendorId}`) || {};
+      const menu = await kv.get(`cafe:menu:${vendorId}`) || [];
+
+      return c.json({
+        success: true,
+        profile: {
+          id: vendorId,
+          name: vendor.businessName || vendor.fullName,
+          description: cafeProfile.description || vendor.description || 'Welcome to our pet cafe!',
+          address: vendor.address || 'Address not available',
+          rating: vendor.rating || 5.0,
+          reviewsCount: vendor.reviewsCount || 0,
+          costForTwo: cafeProfile.costForTwo || 500,
+          cuisines: cafeProfile.cuisines || ['Cafe', 'Snacks'],
+          photos: cafeProfile.photos || vendor.gallery || [],
+          amenities: cafeProfile.amenities || ['Pet Friendly', 'WiFi'],
+          openHours: cafeProfile.openHours || '9:00 AM - 9:00 PM',
+          phone: vendor.phone,
+          coordinates: vendor.location || { lat: 0, lng: 0 },
+          menu: menu
+        }
+      });
+    } catch (error) {
+      return c.json({ error: String(error) }, 500);
+    }
+  });
+
+  /**
+   * POST /make-server-3dd53475/cafe/profile/:vendorId
+   */
+  app.post("/make-server-3dd53475/cafe/profile/:vendorId", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const body = await c.req.json();
+      const profile = { ...body, updatedAt: new Date().toISOString() };
+      await kv.set(`cafe:profile:${vendorId}`, profile);
+      return c.json({ success: true, profile });
+    } catch (error) {
+      return c.json({ error: String(error) }, 500);
+    }
+  });
+
+  /**
+   * POST /make-server-3dd53475/cafe/menu/:vendorId
+   */
+  app.post("/make-server-3dd53475/cafe/menu/:vendorId", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const { menu } = await c.req.json();
+      await kv.set(`cafe:menu:${vendorId}`, menu);
+      return c.json({ success: true });
+    } catch (error) {
+      return c.json({ error: String(error) }, 500);
+    }
+  });
+
 }

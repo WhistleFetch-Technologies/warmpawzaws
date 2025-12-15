@@ -1161,6 +1161,22 @@ if (typeof integratedServicesManagerEndpoints === 'function') {
   integratedServicesManagerEndpoints(app, kv);
 }
 
+// ✅ NEW: Critical Flow Fixes Endpoints
+if (criticalFlowFixes && typeof criticalFlowFixes === 'object') {
+  console.log('✅ Registering Critical Flow Fixes Endpoints...');
+  app.route('/make-server-3dd53475', criticalFlowFixes);
+} else {
+  console.warn('⚠️ Critical Flow Fixes module undefined, skipping');
+}
+
+// ✅ NEW: Cafe Table Management Endpoints
+if (cafeTableManagement && typeof cafeTableManagement === 'object') {
+  console.log('✅ Registering Cafe Table Management Endpoints...');
+  app.route('/make-server-3dd53475', cafeTableManagement);
+} else {
+  console.warn('⚠️ Cafe Table Management module undefined, skipping');
+}
+
 // ------------------------------------------------------------------
 // GLOBAL ERROR HANDLERS
 // ------------------------------------------------------------------

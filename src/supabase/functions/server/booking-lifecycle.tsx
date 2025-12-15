@@ -1,6 +1,7 @@
 import { Hono } from "npm:hono";
 import * as kv from "./kv_store.tsx";
 import { sendSuccess, sendError } from "./response-utils.ts";
+import { triggerBookingNotification } from "./sms-notification-service-enhanced.tsx";
 
 export function registerBookingLifecycleEndpoints(app: Hono) {
 
@@ -53,6 +54,10 @@ export function registerBookingLifecycleEndpoints(app: Hono) {
 
       await kv.set(`booking:${bookingId}`, booking);
 
+      // 🔔 NOTIFICATION
+      const customer = await kv.get(`customer:${booking.customerId}`);
+      await triggerBookingNotification(kv, 'booking.rescheduled', { booking, customer });
+
       console.log(`✅ Booking ${bookingId} rescheduled to ${newDate} ${newTimeSlot}`);
       return sendSuccess(c, { booking });
 
@@ -89,6 +94,10 @@ export function registerBookingLifecycleEndpoints(app: Hono) {
       
       await kv.set(`booking:${bookingId}`, booking);
 
+      // 🔔 NOTIFICATION
+      const customer = await kv.get(`customer:${booking.customerId}`);
+      await triggerBookingNotification(kv, 'booking.confirmed', { booking, customer });
+
       console.log(`✅ Booking ${bookingId} accepted by vendor ${vendorId}`);
       return sendSuccess(c, { booking });
 
@@ -119,6 +128,10 @@ export function registerBookingLifecycleEndpoints(app: Hono) {
       booking.refundStatus = 'pending';
 
       await kv.set(`booking:${bookingId}`, booking);
+
+      // 🔔 NOTIFICATION
+      const customer = await kv.get(`customer:${booking.customerId}`);
+      await triggerBookingNotification(kv, 'booking.cancelled', { booking, customer });
 
       return sendSuccess(c, { booking });
     } catch (error) {
