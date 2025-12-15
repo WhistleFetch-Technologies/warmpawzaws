@@ -128,6 +128,23 @@ import { tierUpgradeEndpoints } from './tier-upgrade-endpoints.tsx';
 import { analyticsDashboardEndpoints } from './analytics-dashboard-endpoints.tsx';
 import { performanceMonitoringEndpoints } from './performance-monitoring-endpoints.tsx';
 import { systemOptimizationEndpoints } from './system-optimization-endpoints.tsx';
+import { elasticsearchCoreEndpoints } from './elasticsearch-core.tsx';
+import { advancedSearchAPI } from './advanced-search-api.tsx';
+import { searchAnalyticsAPI } from './search-analytics-api.tsx';
+import { nutritionistSystemEndpoints } from './nutritionist-system.tsx';
+import { foodDeliveryHyperlocalEndpoints } from './food-delivery-hyperlocal.tsx';
+import { holidayPackageSystemEndpoints } from './holiday-package-system.tsx';
+import { previousProvidersEndpoints } from './previous-providers.tsx';
+import { radarLocationSystemEndpoints } from './radar-location-system.tsx';
+import { multiServiceSchedulingEndpoints } from './multi-service-scheduling.tsx';
+import { timeWindowSubscriptionEndpoints } from './time-window-subscription.tsx';
+import { independentVendorSystemEndpoints } from './independent-vendor-system.tsx';
+import { unifiedServiceDiscoveryEndpoints } from './unified-service-discovery.tsx';
+import { logisticsPartnerIntegrationEndpoints } from './logistics-partner-integration.tsx';
+import { automatedBankVerificationEndpoints } from './automated-bank-verification.tsx';
+import { marketplaceSettlementAutomationEndpoints } from './marketplace-settlement-automation.tsx';
+import { tierCommissionIntegrationEndpoints } from './tier-commission-integration.tsx';
+import { reschedulingPoliciesEndpoints } from './rescheduling-policies.tsx';
 
 const app = new Hono();
 
@@ -615,6 +632,48 @@ if (systemOptimizationEndpoints && typeof systemOptimizationEndpoints === 'funct
   console.warn('⚠️ System Optimization Endpoints module undefined, skipping');
 }
 
+if (elasticsearchCoreEndpoints && typeof elasticsearchCoreEndpoints === 'function') {
+  console.log('✅ Registering Elasticsearch Core Endpoints...');
+  elasticsearchCoreEndpoints(app, kv);
+} else {
+  console.warn('⚠️ Elasticsearch Core Endpoints module undefined, skipping');
+}
+
+if (advancedSearchAPI && typeof advancedSearchAPI === 'function') {
+  console.log('✅ Registering Advanced Search API...');
+  advancedSearchAPI(app, kv);
+} else {
+  console.warn('⚠️ Advanced Search API module undefined, skipping');
+}
+
+if (searchAnalyticsAPI && typeof searchAnalyticsAPI === 'function') {
+  console.log('✅ Registering Search Analytics API...');
+  searchAnalyticsAPI(app, kv);
+} else {
+  console.warn('⚠️ Search Analytics API module undefined, skipping');
+}
+
+if (nutritionistSystemEndpoints && typeof nutritionistSystemEndpoints === 'function') {
+  console.log('✅ Registering Nutritionist System Endpoints...');
+  nutritionistSystemEndpoints(app, kv);
+} else {
+  console.warn('⚠️ Nutritionist System Endpoints module undefined, skipping');
+}
+
+if (foodDeliveryHyperlocalEndpoints && typeof foodDeliveryHyperlocalEndpoints === 'function') {
+  console.log('✅ Registering Food Delivery Hyperlocal Endpoints...');
+  foodDeliveryHyperlocalEndpoints(app, kv);
+} else {
+  console.warn('⚠️ Food Delivery Hyperlocal Endpoints module undefined, skipping');
+}
+
+if (holidayPackageSystemEndpoints && typeof holidayPackageSystemEndpoints === 'function') {
+  console.log('✅ Registering Holiday Package System Endpoints...');
+  holidayPackageSystemEndpoints(app, kv);
+} else {
+  console.warn('⚠️ Holiday Package System Endpoints module undefined, skipping');
+}
+
 // ✅ Priority 2 Enhanced Endpoints
 if (enhancedServicePublishing && typeof enhancedServicePublishing === 'object') {
   app.route('/make-server-3dd53475', enhancedServicePublishing);
@@ -916,6 +975,94 @@ if (specializedServicesBooking && typeof specializedServicesBooking === 'functio
   specializedServicesBooking(app, kv);
 } else {
   console.warn('⚠️ Specialized Services Booking module undefined, skipping');
+}
+
+// ✅ NEW: Previous Providers Endpoints
+if (previousProvidersEndpoints && typeof previousProvidersEndpoints === 'function') {
+  console.log('✅ Registering Previous Providers Endpoints...');
+  previousProvidersEndpoints(app, kv);
+} else {
+  console.warn('⚠️ Previous Providers Endpoints module undefined, skipping');
+}
+
+// ✅ NEW: Radar Location System Endpoints
+if (radarLocationSystemEndpoints && typeof radarLocationSystemEndpoints === 'function') {
+  console.log('✅ Registering Radar Location System Endpoints...');
+  radarLocationSystemEndpoints(app, kv);
+} else {
+  console.warn('⚠️ Radar Location System Endpoints module undefined, skipping');
+}
+
+// ✅ NEW: Multi-Service Scheduling Endpoints
+if (multiServiceSchedulingEndpoints && typeof multiServiceSchedulingEndpoints === 'function') {
+  console.log('✅ Registering Multi-Service Scheduling Endpoints...');
+  multiServiceSchedulingEndpoints(app, kv);
+} else {
+  console.warn('⚠️ Multi-Service Scheduling Endpoints module undefined, skipping');
+}
+
+// ✅ NEW: Time Window Subscription Endpoints
+if (timeWindowSubscriptionEndpoints && typeof timeWindowSubscriptionEndpoints === 'function') {
+  console.log('✅ Registering Time Window Subscription Endpoints...');
+  timeWindowSubscriptionEndpoints(app, kv);
+} else {
+  console.warn('⚠️ Time Window Subscription Endpoints module undefined, skipping');
+}
+
+// ✅ NEW: Independent Vendor System Endpoints
+if (independentVendorSystemEndpoints && typeof independentVendorSystemEndpoints === 'function') {
+  console.log('✅ Registering Independent Vendor System Endpoints...');
+  independentVendorSystemEndpoints(app, kv);
+} else {
+  console.warn('⚠️ Independent Vendor System Endpoints module undefined, skipping');
+}
+
+// ✅ NEW: Unified Service Discovery Endpoints
+if (unifiedServiceDiscoveryEndpoints && typeof unifiedServiceDiscoveryEndpoints === 'function') {
+  console.log('✅ Registering Unified Service Discovery Endpoints...');
+  unifiedServiceDiscoveryEndpoints(app, kv);
+} else {
+  console.warn('⚠️ Unified Service Discovery Endpoints module undefined, skipping');
+}
+
+// ✅ NEW: Logistics Partner Integration Endpoints
+if (logisticsPartnerIntegrationEndpoints && typeof logisticsPartnerIntegrationEndpoints === 'function') {
+  console.log('✅ Registering Logistics Partner Integration Endpoints...');
+  logisticsPartnerIntegrationEndpoints(app, kv);
+} else {
+  console.warn('⚠️ Logistics Partner Integration Endpoints module undefined, skipping');
+}
+
+// ✅ NEW: Automated Bank Verification Endpoints
+if (automatedBankVerificationEndpoints && typeof automatedBankVerificationEndpoints === 'function') {
+  console.log('✅ Registering Automated Bank Verification Endpoints...');
+  automatedBankVerificationEndpoints(app, kv);
+} else {
+  console.warn('⚠️ Automated Bank Verification Endpoints module undefined, skipping');
+}
+
+// ✅ NEW: Marketplace Settlement Automation Endpoints
+if (marketplaceSettlementAutomationEndpoints && typeof marketplaceSettlementAutomationEndpoints === 'function') {
+  console.log('✅ Registering Marketplace Settlement Automation Endpoints...');
+  marketplaceSettlementAutomationEndpoints(app, kv);
+} else {
+  console.warn('⚠️ Marketplace Settlement Automation Endpoints module undefined, skipping');
+}
+
+// ✅ NEW: Tier Commission Integration Endpoints
+if (tierCommissionIntegrationEndpoints && typeof tierCommissionIntegrationEndpoints === 'function') {
+  console.log('✅ Registering Tier Commission Integration Endpoints...');
+  tierCommissionIntegrationEndpoints(app, kv);
+} else {
+  console.warn('⚠️ Tier Commission Integration Endpoints module undefined, skipping');
+}
+
+// ✅ NEW: Rescheduling Policies Endpoints
+if (reschedulingPoliciesEndpoints && typeof reschedulingPoliciesEndpoints === 'function') {
+  console.log('✅ Registering Rescheduling Policies Endpoints...');
+  reschedulingPoliciesEndpoints(app, kv);
+} else {
+  console.warn('⚠️ Rescheduling Policies Endpoints module undefined, skipping');
 }
 
 // ------------------------------------------------------------------
