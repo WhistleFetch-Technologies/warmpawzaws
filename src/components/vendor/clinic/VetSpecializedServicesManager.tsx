@@ -22,6 +22,9 @@ import { Badge } from '../../ui/badge';
 import { toast } from 'sonner@2.0.3';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
 import { VetPharmacyManager } from './VetPharmacyManager'; // ✅ NEW: Import pharmacy manager
+import { AmbulanceEditModal } from './modals/AmbulanceEditModal'; // ✅ Import edit modals
+import { DiagnosticEditModal } from './modals/DiagnosticEditModal';
+import { EmergencyProtocolEditModal } from './modals/EmergencyProtocolEditModal';
 
 interface VetSpecializedServicesManagerProps {
   vendorId: string;
@@ -134,8 +137,6 @@ export function VetSpecializedServicesManager({
   const handleEditAmbulance = (ambulance: AmbulanceService) => {
     setEditingAmbulance(ambulance);
     setShowAddModal(true);
-    toast.info('Edit functionality coming soon');
-    // TODO: Implement edit modal with pre-filled data
   };
 
   // ✅ FIX: Implement EDIT functionality for ambulance
@@ -201,8 +202,37 @@ export function VetSpecializedServicesManager({
   const handleEditDiagnostic = (diagnostic: DiagnosticTest) => {
     setEditingDiagnostic(diagnostic);
     setShowAddModal(true);
-    toast.info('Edit functionality coming soon');
-    // TODO: Implement edit modal with pre-filled data
+  };
+
+  // ✅ ADD: Save handler for diagnostic tests
+  const handleSaveDiagnostic = async (diagnosticData: Partial<DiagnosticTest>) => {
+    try {
+      const url = editingDiagnostic
+        ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/diagnostic-tests/${editingDiagnostic.id}`
+        : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/diagnostic-tests`;
+
+      const response = await fetch(url, {
+        method: editingDiagnostic ? 'PUT' : 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${publicAnonKey}`
+        },
+        body: JSON.stringify(diagnosticData)
+      });
+
+      if (response.ok) {
+        toast.success(editingDiagnostic ? 'Diagnostic test updated successfully' : 'Diagnostic test added successfully');
+        setEditingDiagnostic(null);
+        setShowAddModal(false);
+        loadServices();
+      } else {
+        const error = await response.json();
+        toast.error(error.error || `Failed to ${editingDiagnostic ? 'update' : 'add'} diagnostic test`);
+      }
+    } catch (error) {
+      console.error('Error saving diagnostic test:', error);
+      toast.error('Error saving diagnostic test');
+    }
   };
 
   // ✅ FIX: Add delete handler for diagnostic test
@@ -237,8 +267,37 @@ export function VetSpecializedServicesManager({
   const handleEditProtocol = (protocol: EmergencyProtocol) => {
     setEditingProtocol(protocol);
     setShowAddModal(true);
-    toast.info('Edit functionality coming soon');
-    // TODO: Implement edit modal with pre-filled data
+  };
+
+  // ✅ ADD: Save handler for emergency protocols
+  const handleSaveProtocol = async (protocolData: Partial<EmergencyProtocol>) => {
+    try {
+      const url = editingProtocol
+        ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/emergency-protocols/${editingProtocol.id}`
+        : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/emergency-protocols`;
+
+      const response = await fetch(url, {
+        method: editingProtocol ? 'PUT' : 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${publicAnonKey}`
+        },
+        body: JSON.stringify(protocolData)
+      });
+
+      if (response.ok) {
+        toast.success(editingProtocol ? 'Emergency protocol updated successfully' : 'Emergency protocol added successfully');
+        setEditingProtocol(null);
+        setShowAddModal(false);
+        loadServices();
+      } else {
+        const error = await response.json();
+        toast.error(error.error || `Failed to ${editingProtocol ? 'update' : 'add'} emergency protocol`);
+      }
+    } catch (error) {
+      console.error('Error saving emergency protocol:', error);
+      toast.error('Error saving emergency protocol');
+    }
   };
 
   // ✅ FIX: Add delete handler for emergency protocol
@@ -640,6 +699,43 @@ export function VetSpecializedServicesManager({
           </>
         )}
       </div>
+
+      {/* ✅ MODALS: Render edit modals based on active tab */}
+      {activeTab === 'ambulance' && (
+        <AmbulanceEditModal
+          ambulance={editingAmbulance}
+          isOpen={showAddModal}
+          onClose={() => {
+            setShowAddModal(false);
+            setEditingAmbulance(null);
+          }}
+          onSave={handleSaveAmbulance}
+        />
+      )}
+
+      {activeTab === 'diagnostics' && (
+        <DiagnosticEditModal
+          diagnostic={editingDiagnostic}
+          isOpen={showAddModal}
+          onClose={() => {
+            setShowAddModal(false);
+            setEditingDiagnostic(null);
+          }}
+          onSave={handleSaveDiagnostic}
+        />
+      )}
+
+      {activeTab === 'emergency' && (
+        <EmergencyProtocolEditModal
+          protocol={editingProtocol}
+          isOpen={showAddModal}
+          onClose={() => {
+            setShowAddModal(false);
+            setEditingProtocol(null);
+          }}
+          onSave={handleSaveProtocol}
+        />
+      )}
     </div>
   );
 }
