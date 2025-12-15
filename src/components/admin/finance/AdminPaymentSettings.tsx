@@ -5,11 +5,14 @@ import { Input } from '../../ui/input';
 import { Label } from '../../ui/label';
 import { Switch } from '../../ui/switch';
 import { Separator } from '../../ui/separator';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../ui/tabs';
 import { 
-  CreditCard, RefreshCcw, ShieldCheck, AlertCircle, Save, CheckCircle2 
+  CreditCard, RefreshCcw, ShieldCheck, AlertCircle, Save, CheckCircle2, Settings, Receipt 
 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { PaymentRulesSection } from './PaymentRulesSection';
+import { RefundPoliciesSection } from './RefundPoliciesSection';
 
 interface RefundRule {
   hours: number;
@@ -25,6 +28,7 @@ interface RefundConfig {
 }
 
 export function AdminPaymentSettings() {
+  const [activeTab, setActiveTab] = useState('general');
   const [refundConfig, setRefundConfig] = useState<RefundConfig>({
     enabled: true,
     schedule: [],
@@ -106,140 +110,134 @@ export function AdminPaymentSettings() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-semibold text-slate-900">Payment Settings</h2>
-        <p className="text-sm text-slate-500">Configure gateway integration and refund policies</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-semibold text-slate-900">Payment & Refund Settings</h2>
+          <p className="text-sm text-slate-500">Configure gateways, payment rules, and refund policies</p>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Gateway Configuration */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <div className="p-2 bg-blue-100 rounded-lg">
-                <CreditCard className="w-5 h-5 text-blue-600" />
-              </div>
-              <div>
-                <CardTitle className="text-lg">Gateway Configuration</CardTitle>
-                <CardDescription>Razorpay Marketplace Integration</CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border">
-              <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${razorpayConfig.enabled ? 'bg-green-500' : 'bg-slate-300'}`}></div>
-                <span className="font-medium">Status</span>
-              </div>
-              <Badge variant={razorpayConfig.enabled ? 'default' : 'secondary'} className={razorpayConfig.enabled ? 'bg-green-100 text-green-700 hover:bg-green-200' : ''}>
-                {razorpayConfig.enabled ? 'Active' : 'Disabled'}
-              </Badge>
-            </div>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+        <TabsList className="bg-white border border-gray-200 p-1">
+          <TabsTrigger value="general" className="data-[state=active]:bg-[#FF8C42] data-[state=active]:text-white">
+            <Settings className="w-4 h-4 mr-2" />
+            General & Gateway
+          </TabsTrigger>
+          <TabsTrigger value="payment-rules" className="data-[state=active]:bg-[#FF8C42] data-[state=active]:text-white">
+            <Receipt className="w-4 h-4 mr-2" />
+            Payment Rules
+          </TabsTrigger>
+          <TabsTrigger value="refund-policies" className="data-[state=active]:bg-[#FF8C42] data-[state=active]:text-white">
+            <RefreshCcw className="w-4 h-4 mr-2" />
+            Refund Policies
+          </TabsTrigger>
+        </TabsList>
 
-            <div className="space-y-2">
-              <Label>API Key ID</Label>
-              <Input value={razorpayConfig.keyId} readOnly className="bg-slate-50 font-mono" />
-            </div>
-            
-            <div className="space-y-2">
-              <Label>Key Secret</Label>
-              <Input type="password" value={razorpayConfig.keySecret} readOnly className="bg-slate-50 font-mono" />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Webhook Secret</Label>
-              <Input type="password" value={razorpayConfig.webhookSecret} readOnly className="bg-slate-50 font-mono" />
-            </div>
-
-            <div className="pt-2">
-              <Button variant="outline" className="w-full" onClick={() => toast.info('Gateway configuration is managed via Environment Variables')}>
-                Edit Configuration
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Refund Rules */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <div className="p-2 bg-orange-100 rounded-lg">
-                <RefreshCcw className="w-5 h-5 text-orange-600" />
-              </div>
-              <div>
-                <CardTitle className="text-lg">Refund & Reconciliation</CardTitle>
-                <CardDescription>Automated refund policies</CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>Enable Automated Refunds</Label>
-                <p className="text-xs text-slate-500">Process refunds based on cancellation time</p>
-              </div>
-              <Switch 
-                checked={refundConfig.enabled}
-                onCheckedChange={(c) => setRefundConfig({...refundConfig, enabled: c})}
-              />
-            </div>
-
-            <Separator />
-
-            <div className="space-y-4">
-              <Label>Refund Schedule</Label>
-              {refundConfig.schedule.map((rule, index) => (
-                <div key={index} className="grid grid-cols-12 gap-2 items-center bg-slate-50 p-2 rounded-md border">
-                  <div className="col-span-3">
-                    <div className="relative">
-                      <Input 
-                        type="number" 
-                        value={rule.hours}
-                        onChange={(e) => updateRule(index, 'hours', parseInt(e.target.value))}
-                        className="h-8 text-xs"
-                      />
-                      <span className="absolute right-2 top-2 text-[10px] text-slate-400">Hrs</span>
-                    </div>
+        <TabsContent value="general">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Gateway Configuration */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-blue-100 rounded-lg">
+                    <CreditCard className="w-5 h-5 text-blue-600" />
                   </div>
-                  <div className="col-span-3">
-                    <div className="relative">
-                      <Input 
-                        type="number" 
-                        value={rule.refundPercent}
-                        onChange={(e) => updateRule(index, 'refundPercent', parseInt(e.target.value))}
-                        className="h-8 text-xs"
-                      />
-                      <span className="absolute right-2 top-2 text-[10px] text-slate-400">%</span>
-                    </div>
-                  </div>
-                  <div className="col-span-6">
-                    <Input 
-                      value={rule.description}
-                      onChange={(e) => updateRule(index, 'description', e.target.value)}
-                      className="h-8 text-xs"
-                    />
+                  <div>
+                    <CardTitle className="text-lg">Gateway Configuration</CardTitle>
+                    <CardDescription>Razorpay Marketplace Integration</CardDescription>
                   </div>
                 </div>
-              ))}
-            </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border">
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full ${razorpayConfig.enabled ? 'bg-green-500' : 'bg-slate-300'}`}></div>
+                    <span className="font-medium">Status</span>
+                  </div>
+                  <div className={`px-2 py-1 rounded-full text-xs font-medium ${razorpayConfig.enabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>
+                    {razorpayConfig.enabled ? 'Active' : 'Disabled'}
+                  </div>
+                </div>
 
-            <div className="flex items-center justify-between pt-2">
-              <div className="space-y-0.5">
-                <Label>Auto Reconciliation</Label>
-                <p className="text-xs text-slate-500">Reconcile payments every {refundConfig.reconcilePeriod} days</p>
-              </div>
-              <Switch 
-                checked={refundConfig.autoReconcile}
-                onCheckedChange={(c) => setRefundConfig({...refundConfig, autoReconcile: c})}
-              />
-            </div>
+                <div className="space-y-2">
+                  <Label>API Key ID</Label>
+                  <Input value={razorpayConfig.keyId} readOnly className="bg-slate-50 font-mono" />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label>Key Secret</Label>
+                  <Input type="password" value={razorpayConfig.keySecret} readOnly className="bg-slate-50 font-mono" />
+                </div>
 
-            <Button onClick={handleSaveRules} disabled={saving || loading} className="w-full bg-[#FF8C42] hover:bg-[#FF7A2E]">
-              {saving ? 'Saving...' : 'Save Refund Rules'}
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
+                <div className="space-y-2">
+                  <Label>Webhook Secret</Label>
+                  <Input type="password" value={razorpayConfig.webhookSecret} readOnly className="bg-slate-50 font-mono" />
+                </div>
+
+                <div className="pt-2">
+                  <Button variant="outline" className="w-full" onClick={() => toast.info('Gateway configuration is managed via Environment Variables')}>
+                    Edit Configuration
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Global Refund Settings */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-orange-100 rounded-lg">
+                    <RefreshCcw className="w-5 h-5 text-orange-600" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-lg">Global Refund Settings</CardTitle>
+                    <CardDescription>Automated processing & reconciliation</CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label>Enable Automated Refunds</Label>
+                    <p className="text-xs text-slate-500">Process refunds based on cancellation time</p>
+                  </div>
+                  <Switch 
+                    checked={refundConfig.enabled}
+                    onCheckedChange={(c) => setRefundConfig({...refundConfig, enabled: c})}
+                  />
+                </div>
+
+                <Separator />
+
+                <div className="flex items-center justify-between pt-2">
+                  <div className="space-y-0.5">
+                    <Label>Auto Reconciliation</Label>
+                    <p className="text-xs text-slate-500">Reconcile payments every {refundConfig.reconcilePeriod} days</p>
+                  </div>
+                  <Switch 
+                    checked={refundConfig.autoReconcile}
+                    onCheckedChange={(c) => setRefundConfig({...refundConfig, autoReconcile: c})}
+                  />
+                </div>
+
+                <div className="pt-4">
+                  <Button onClick={handleSaveRules} disabled={saving || loading} className="w-full bg-[#FF8C42] hover:bg-[#FF7A2E]">
+                    {saving ? 'Saving...' : 'Save Global Settings'}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="payment-rules">
+          <PaymentRulesSection />
+        </TabsContent>
+
+        <TabsContent value="refund-policies">
+          <RefundPoliciesSection />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

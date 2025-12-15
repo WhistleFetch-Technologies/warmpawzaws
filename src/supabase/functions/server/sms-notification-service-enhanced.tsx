@@ -136,6 +136,26 @@ export function smsNotificationServiceEnhanced(app: Hono, kv: any) {
       event: 'vendor_payment_received',
       message: 'Payment of ₹{amount} received for booking {bookingId}',
       variables: ['amount', 'bookingId']
+    },
+    // ✅ NEW: Settlement Events
+    payout_processed: {
+      id: 'payout_processed',
+      event: 'payout_processed',
+      message: 'Payout of ₹{amount} has been processed to your bank account. Transaction ID: {transactionId}',
+      variables: ['amount', 'transactionId']
+    },
+    // ✅ NEW: Integrated Service Events
+    ambulance_request_confirmed: {
+      id: 'ambulance_request_confirmed',
+      event: 'ambulance_request_confirmed',
+      message: 'Ambulance request confirmed. {providerName} is dispatching vehicle {vehicleNumber}. ETA: {eta} mins.',
+      variables: ['providerName', 'vehicleNumber', 'eta']
+    },
+    integrated_service_update: {
+      id: 'integrated_service_update',
+      event: 'integrated_service_update',
+      message: 'Update for your {serviceType} request: {statusMessage}.',
+      variables: ['serviceType', 'statusMessage']
     }
   };
 

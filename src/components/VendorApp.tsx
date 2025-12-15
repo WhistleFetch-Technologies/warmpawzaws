@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { VendorAuth } from './vendor/VendorAuth';
 import { VendorRoleSelection } from './vendor/VendorRoleSelection';
-import { VendorOnboarding } from './vendor/VendorOnboarding';
+import { EnhancedVendorOnboarding } from './vendor/onboarding/EnhancedVendorOnboarding';
 import { VendorLandingPage } from './vendor/VendorLandingPage';
 import { StaffDashboard } from './staff/StaffDashboard';
 import { SellerPortal } from './vendor/seller/SellerPortal';
@@ -339,7 +339,7 @@ export function VendorApp() {
   // New vendor going through onboarding
   if (showOnboarding && isNewVendor) {
     return (
-      <VendorOnboarding 
+      <EnhancedVendorOnboarding 
         roleId={vendorRole || ''} 
         roleName={vendorRoleName || 'Vendor'} 
         phone={session.phone} 

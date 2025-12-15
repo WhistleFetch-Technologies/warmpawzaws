@@ -30,7 +30,7 @@ interface RefundPolicies {
   };
 }
 
-export function VendorSettingsTabNew() {
+export function VendorSettingsTab() {
   const [expandedSection, setExpandedSection] = useState<string | null>('refund-policies');
   const [refundPolicies, setRefundPolicies] = useState<RefundPolicies | null>(null);
   const [loading, setLoading] = useState(true);

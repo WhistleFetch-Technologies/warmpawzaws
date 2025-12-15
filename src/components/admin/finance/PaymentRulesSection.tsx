@@ -4,7 +4,7 @@ import { Input } from '../../ui/input';
 import { Label } from '../../ui/label';
 import { Switch } from '../../ui/switch';
 import { Checkbox } from '../../ui/checkbox';
-import { ArrowLeft, Save, RotateCcw, CreditCard, Plus, Edit, Trash2, Check, X } from 'lucide-react';
+import { Save, RotateCcw, CreditCard, Plus, Edit, Trash2, Check, X } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
 import { toast } from 'sonner@2.0.3';
 
@@ -46,11 +46,7 @@ interface PaymentRule {
   createdAt?: string;
 }
 
-interface PaymentSettingsManagementNewProps {
-  onBack: () => void;
-}
-
-export function PaymentSettingsManagementNew({ onBack }: PaymentSettingsManagementNewProps) {
+export function PaymentRulesSection() {
   const [rules, setRules] = useState<PaymentRule[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -206,17 +202,12 @@ export function PaymentSettingsManagementNew({ onBack }: PaymentSettingsManageme
   }
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-6">
+    <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6 pb-4 border-b-2 border-gray-200">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" onClick={onBack}>
-            <ArrowLeft className="w-4 h-4" />
-          </Button>
-          <div>
-            <h2 className="text-xl font-semibold text-gray-900">Payment Settings Management</h2>
-            <p className="text-sm text-gray-500">Configure payment rules per vendor type & service location</p>
-          </div>
+      <div className="flex items-center justify-between pb-4 border-b border-gray-200">
+        <div>
+          <h3 className="text-lg font-medium text-gray-900">Payment Rules</h3>
+          <p className="text-sm text-gray-500">Configure payment rules per vendor type & service location</p>
         </div>
         <div className="flex items-center gap-3">
           <Button variant="outline" size="sm" onClick={loadData}>
@@ -225,12 +216,12 @@ export function PaymentSettingsManagementNew({ onBack }: PaymentSettingsManageme
           </Button>
           {!editingRule && (
             <Button 
-              size="default" 
+              size="sm" 
               onClick={handleCreateRule}
-              className="bg-green-600 hover:bg-green-700 text-white font-semibold px-6 shadow-lg"
+              className="bg-green-600 hover:bg-green-700 text-white"
             >
-              <Plus className="w-5 h-5 mr-2" />
-              Create Payment Rule
+              <Plus className="w-4 h-4 mr-2" />
+              Create Rule
             </Button>
           )}
         </div>
@@ -238,7 +229,7 @@ export function PaymentSettingsManagementNew({ onBack }: PaymentSettingsManageme
 
       {/* Editing Rule Form */}
       {editingRule && (
-        <div className="bg-gradient-to-r from-blue-50 to-white border-2 border-blue-500 rounded-lg p-6 mb-6">
+        <div className="bg-gradient-to-r from-blue-50 to-white border border-blue-200 rounded-lg p-6 mb-6">
           <div className="flex items-center justify-between mb-6">
             <h3 className="font-semibold text-gray-900">
               {isCreatingNew ? 'Create New Payment Rule' : 'Edit Payment Rule'}
@@ -542,7 +533,9 @@ export function PaymentSettingsManagementNew({ onBack }: PaymentSettingsManageme
       {/* Rules List */}
       {!editingRule && (
         <div className="space-y-4">
-          <h3 className="font-semibold text-gray-900">Active Payment Rules ({rules.length})</h3>
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold text-gray-900">Active Payment Rules ({rules.length})</h3>
+          </div>
           
           {rules.length === 0 ? (
             <div className="text-center py-12 border-2 border-dashed border-gray-300 rounded-lg">
@@ -558,7 +551,7 @@ export function PaymentSettingsManagementNew({ onBack }: PaymentSettingsManageme
               {rules.map(rule => (
                 <div
                   key={rule.id}
-                  className="border border-gray-200 rounded-lg p-5 hover:border-[#FF8C42] transition-all"
+                  className="border border-gray-200 rounded-lg p-5 hover:border-[#FF8C42] transition-all bg-white"
                 >
                   <div className="flex items-start justify-between mb-3">
                     <div>

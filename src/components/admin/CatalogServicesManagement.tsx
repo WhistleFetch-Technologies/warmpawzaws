@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { RoleManagement } from './RoleManagement';
 import { EnhancedOnboardingFormBuilder } from './EnhancedOnboardingFormBuilder';
-import { ServiceCatalogTabNew } from './catalog/ServiceCatalogTabNew';
+import { ServiceCatalogTab } from './catalog/ServiceCatalogTab';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { Button } from '../ui/button';
 import { 
@@ -268,7 +268,7 @@ export function CatalogServicesManagement({ onNavigate }: CatalogServicesManagem
               {activeTab === 'bulk' && <BulkOperationsTab />}
               {activeTab === 'roles' && <RoleManagement />}
               {activeTab === 'onboarding' && <EnhancedOnboardingFormBuilder />}
-              {activeTab === 'servicecatalog' && <ServiceCatalogTabNew />}
+              {activeTab === 'servicecatalog' && <ServiceCatalogTab />}
             </div>
           </div>
         </div>

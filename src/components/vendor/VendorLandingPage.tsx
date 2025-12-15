@@ -11,7 +11,7 @@ import { VendorBusinessHub } from './business/VendorBusinessHub'; // ✅ NEW
 import { VetSpecializedServicesManager } from './clinic/VetSpecializedServicesManager'; // ✅ NEW: Vet-specific services
 import { ResortManagementDashboard } from './resort/ResortManagementDashboard'; // ✅ NEW: Pet resort management
 import { NutritionistMealManager } from './NutritionistMealManager'; // ✅ NEW: Nutritionist meal plans
-import { VendorOnboarding } from './VendorOnboarding';
+import { EnhancedVendorOnboarding } from './onboarding/EnhancedVendorOnboarding';
 import { VendorApplicationSubmitted } from './VendorApplicationSubmitted';
 import { VendorApplicationUnderReview } from './VendorApplicationUnderReview';
 import { VendorClarificationRequested } from './VendorClarificationRequested';
@@ -681,7 +681,7 @@ export function VendorLandingPage({
           </div>
         </div>
         
-        <VendorOnboarding
+        <EnhancedVendorOnboarding
           phone={phone}
           roleId={vendorData?.roleId} // ✅ Pass roleId for re-submissions
           onComplete={handleResubmitComplete}
@@ -719,7 +719,7 @@ export function VendorLandingPage({
             </div>
           )}
           
-          <VendorOnboarding
+          <EnhancedVendorOnboarding
             phone={phone}
             roleId={vendorData?.roleId} // ✅ Pass roleId even for new vendors
             onComplete={handleProfileSubmit}
