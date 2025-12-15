@@ -1,84 +1,98 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Search, X, TrendingUp, MapPin, Star, Package, User, Briefcase } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Search, X, Filter, MapPin, Star, ChevronRight, Building, User, Package, ShoppingBag, TrendingUp, Clock } from 'lucide-react';
+import { Button } from '../ui/button';
 import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 
+const BASE_URL = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+
 interface SearchResult {
   id: string;
-  type: 'vendor' | 'service' | 'product' | 'staff';
+  type: 'centers' | 'staff' | 'services' | 'products';
   score: number;
-  data: any;
-  highlights?: string[];
+  name?: string;
+  businessName?: string;
+  serviceName?: string;
+  productName?: string;
+  description?: string;
+  rating?: number;
+  location?: string;
+  city?: string;
+  price?: number;
+  category?: string;
+  highlight?: any;
+  vendorId?: string;
+  isActive?: boolean;
 }
 
-export function EnhancedSearchInterface() {
-  const [query, setQuery] = useState('');
+interface SearchFilters {
+  types: string[];
+  category?: string;
+  city?: string;
+  priceMin?: number;
+  priceMax?: number;
+  ratingMin?: number;
+  lat?: number;
+  lng?: number;
+  radius?: number;
+  sort: string;
+}
+
+interface EnhancedSearchInterfaceProps {
+  onResultSelect?: (result: SearchResult) => void;
+  defaultQuery?: string;
+  showFilters?: boolean;
+}
+
+export function EnhancedSearchInterface({
+  onResultSelect,
+  defaultQuery = '',
+  showFilters = true
+}: EnhancedSearchInterfaceProps) {
+  const [query, setQuery] = useState(defaultQuery);
   const [results, setResults] = useState<SearchResult[]>([]);
-  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [suggestions, setSuggestions] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [selectedType, setSelectedType] = useState<string>('all');
-  const searchInputRef = useRef<HTMLInputElement>(null);
-  const debounceTimerRef = useRef<any>(null);
+  const [showFilterPanel, setShowFilterPanel] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(-1);
+  const [searchHistory, setSearchHistory] = useState<string[]>([]);
+  const [totalResults, setTotalResults] = useState(0);
+  const [responseTime, setResponseTime] = useState('');
 
+  const [filters, setFilters] = useState<SearchFilters>({
+    types: ['centers', 'staff', 'services', 'products'],
+    sort: 'relevance'
+  });
+
+  // Load search history from localStorage
   useEffect(() => {
-    // Initialize search indices on mount
-    initializeSearch();
+    const history = localStorage.getItem('searchHistory');
+    if (history) {
+      setSearchHistory(JSON.parse(history));
+    }
   }, []);
 
-  const initializeSearch = async () => {
+  // Fetch autocomplete suggestions with debounce
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      if (query.length >= 2) {
+        await fetchAutocomplete(query);
+      } else {
+        setSuggestions([]);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  const fetchAutocomplete = async (searchQuery: string) => {
     try {
-      await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/elasticsearch/init`,
+      const response = await fetch(
+        `${BASE_URL}/elasticsearch/autocomplete?q=${encodeURIComponent(searchQuery)}&type=centers`,
         {
-          method: 'POST',
           headers: { 'Authorization': `Bearer ${publicAnonKey}` }
         }
-      );
-      console.log('✅ Search indices initialized');
-    } catch (error) {
-      console.error('Error initializing search:', error);
-    }
-  };
-
-  const handleSearch = async (searchQuery: string) => {
-    if (!searchQuery.trim()) {
-      setResults([]);
-      return;
-    }
-
-    try {
-      setLoading(true);
-
-      const types = selectedType === 'all' ? '' : `&types=${selectedType}`;
-      
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/elasticsearch/search?q=${encodeURIComponent(searchQuery)}${types}`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        setResults(data.results || []);
-      }
-    } catch (error) {
-      console.error('Error searching:', error);
-      toast.error('Search failed');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleAutocomplete = async (searchQuery: string) => {
-    if (!searchQuery.trim() || searchQuery.length < 2) {
-      setSuggestions([]);
-      return;
-    }
-
-    try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/elasticsearch/autocomplete?q=${encodeURIComponent(searchQuery)}`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
       );
 
       if (response.ok) {
@@ -86,272 +100,426 @@ export function EnhancedSearchInterface() {
         setSuggestions(data.suggestions || []);
       }
     } catch (error) {
-      console.error('Error getting suggestions:', error);
+      console.error('Error fetching autocomplete:', error);
     }
   };
 
-  const handleQueryChange = (value: string) => {
-    setQuery(value);
-    setShowSuggestions(true);
-
-    // Debounce autocomplete
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
+  const handleSearch = async () => {
+    if (!query.trim()) {
+      toast.error('Please enter a search query');
+      return;
     }
 
-    debounceTimerRef.current = setTimeout(() => {
-      handleAutocomplete(value);
-    }, 300);
-
-    // Debounce search
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-    }
-
-    debounceTimerRef.current = setTimeout(() => {
-      handleSearch(value);
-    }, 500);
-  };
-
-  const selectSuggestion = (suggestion: string) => {
-    setQuery(suggestion);
+    setLoading(true);
     setShowSuggestions(false);
-    handleSearch(suggestion);
+
+    try {
+      // Build query params
+      const params = new URLSearchParams({
+        q: query,
+        types: filters.types.join(','),
+        sort: filters.sort
+      });
+
+      if (filters.category) params.append('category', filters.category);
+      if (filters.city) params.append('city', filters.city);
+      if (filters.priceMin !== undefined) params.append('priceMin', filters.priceMin.toString());
+      if (filters.priceMax !== undefined) params.append('priceMax', filters.priceMax.toString());
+      if (filters.ratingMin !== undefined) params.append('ratingMin', filters.ratingMin.toString());
+      if (filters.lat !== undefined) params.append('lat', filters.lat.toString());
+      if (filters.lng !== undefined) params.append('lng', filters.lng.toString());
+      if (filters.radius !== undefined) params.append('radius', filters.radius.toString());
+
+      const response = await fetch(
+        `${BASE_URL}/elasticsearch/search?${params}`,
+        {
+          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        
+        // Flatten results from all types
+        const allResults: SearchResult[] = [];
+        Object.entries(data.results || {}).forEach(([type, typeData]: [string, any]) => {
+          if (typeData.hits) {
+            allResults.push(...typeData.hits);
+          }
+        });
+
+        // Sort by score
+        allResults.sort((a, b) => (b.score || 0) - (a.score || 0));
+
+        setResults(allResults);
+        setTotalResults(data.total || 0);
+        setResponseTime(data.responseTime || '');
+
+        // Add to search history
+        addToSearchHistory(query);
+
+        if (allResults.length === 0) {
+          toast.info('No results found. Try different keywords.');
+        }
+      } else {
+        toast.error('Search failed. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error performing search:', error);
+      toast.error('Search error. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const clearSearch = () => {
-    setQuery('');
-    setResults([]);
-    setSuggestions([]);
-    searchInputRef.current?.focus();
+  const addToSearchHistory = (searchQuery: string) => {
+    const newHistory = [searchQuery, ...searchHistory.filter(q => q !== searchQuery)].slice(0, 10);
+    setSearchHistory(newHistory);
+    localStorage.setItem('searchHistory', JSON.stringify(newHistory));
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSelectedIndex(prev => Math.min(prev + 1, suggestions.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSelectedIndex(prev => Math.max(prev - 1, -1));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (selectedIndex >= 0 && suggestions[selectedIndex]) {
+        setQuery(suggestions[selectedIndex].text);
+        setShowSuggestions(false);
+        setTimeout(() => handleSearch(), 100);
+      } else {
+        handleSearch();
+      }
+    } else if (e.key === 'Escape') {
+      setShowSuggestions(false);
+    }
+  };
+
+  const getResultName = (result: SearchResult) => {
+    return result.businessName || result.name || result.serviceName || result.productName || 'Unknown';
   };
 
   const getResultIcon = (type: string) => {
     switch (type) {
-      case 'vendor':
-        return <Briefcase className="w-5 h-5 text-orange-600" />;
-      case 'service':
-        return <Star className="w-5 h-5 text-blue-600" />;
-      case 'product':
-        return <Package className="w-5 h-5 text-green-600" />;
-      case 'staff':
-        return <User className="w-5 h-5 text-purple-600" />;
-      default:
-        return <Search className="w-5 h-5 text-gray-600" />;
+      case 'centers': return <Building className="w-6 h-6 text-orange-600" />;
+      case 'staff': return <User className="w-6 h-6 text-orange-600" />;
+      case 'services': return <Package className="w-6 h-6 text-orange-600" />;
+      case 'products': return <ShoppingBag className="w-6 h-6 text-orange-600" />;
+      default: return <Search className="w-6 h-6 text-orange-600" />;
     }
   };
 
-  const getResultTypeBadge = (type: string) => {
-    const colors = {
-      vendor: 'bg-orange-100 text-orange-700',
-      service: 'bg-blue-100 text-blue-700',
-      product: 'bg-green-100 text-green-700',
-      staff: 'bg-purple-100 text-purple-700'
-    };
-
-    return (
-      <span className={`text-xs px-2 py-1 rounded-full ${colors[type as keyof typeof colors] || 'bg-gray-100 text-gray-700'}`}>
-        {type.charAt(0).toUpperCase() + type.slice(1)}
-      </span>
-    );
-  };
-
-  const renderResult = (result: SearchResult) => {
-    const { type, data, highlights } = result;
-
-    return (
-      <button
-        key={result.id}
-        onClick={() => {
-          // Navigate to result
-          if (type === 'vendor') {
-            window.location.href = `/vendor/${data.id}`;
-          } else if (type === 'service') {
-            window.location.href = `/service/${data.id}`;
-          } else if (type === 'product') {
-            window.location.href = `/product/${data.id}`;
-          } else if (type === 'staff') {
-            window.location.href = `/staff/${data.id}`;
-          }
-        }}
-        className="w-full p-4 border-b border-gray-200 hover:bg-gray-50 transition-colors text-left"
-      >
-        <div className="flex items-start gap-3">
-          <div className="mt-1">
-            {getResultIcon(type)}
-          </div>
-          <div className="flex-1">
-            <div className="flex items-center gap-2 mb-1">
-              <h3 className="font-semibold text-gray-900">
-                {type === 'vendor' ? (data.businessName || data.fullName) :
-                 type === 'service' ? data.name :
-                 type === 'product' ? data.name :
-                 type === 'staff' ? data.name : 'Unknown'}
-              </h3>
-              {getResultTypeBadge(type)}
-            </div>
-
-            {/* Description */}
-            {data.description && (
-              <p className="text-sm text-gray-600 mb-2">
-                {data.description.substring(0, 150)}
-                {data.description.length > 150 ? '...' : ''}
-              </p>
-            )}
-
-            {/* Highlights */}
-            {highlights && highlights.length > 0 && (
-              <div className="text-xs text-gray-500 italic">
-                "{highlights[0]}"
-              </div>
-            )}
-
-            {/* Type-specific metadata */}
-            <div className="flex items-center gap-3 mt-2 text-sm text-gray-600">
-              {type === 'vendor' && (
-                <>
-                  {data.rating && (
-                    <div className="flex items-center gap-1">
-                      <Star className="w-4 h-4 text-yellow-500 fill-current" />
-                      <span>{data.rating.toFixed(1)}</span>
-                    </div>
-                  )}
-                  {data.city && (
-                    <div className="flex items-center gap-1">
-                      <MapPin className="w-4 h-4" />
-                      <span>{data.city}</span>
-                    </div>
-                  )}
-                </>
-              )}
-
-              {type === 'product' && (
-                <>
-                  {data.price && <span className="font-semibold text-orange-600">₹{data.price}</span>}
-                  {data.brand && <span>Brand: {data.brand}</span>}
-                </>
-              )}
-
-              {type === 'service' && (
-                <>
-                  {data.price && <span className="font-semibold text-orange-600">From ₹{data.price}</span>}
-                  {data.duration && <span>{data.duration} min</span>}
-                </>
-              )}
-
-              {type === 'staff' && (
-                <>
-                  {data.role && <span>{data.role}</span>}
-                  {data.specialization && <span>• {data.specialization}</span>}
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      </button>
-    );
+  const highlightText = (text: string, highlight: any) => {
+    if (!highlight) return text;
+    
+    // Simple highlighting - in production, use proper HTML sanitization
+    return text;
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Search Header */}
-      <div className="bg-white shadow-sm sticky top-0 z-10">
-        <div className="max-w-4xl mx-auto p-4">
-          {/* Search Input */}
-          <div className="relative">
-            <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-4 py-3">
-              <Search className="w-5 h-5 text-gray-500" />
-              <input
-                ref={searchInputRef}
-                type="text"
-                value={query}
-                onChange={(e) => handleQueryChange(e.target.value)}
-                onFocus={() => setShowSuggestions(true)}
-                placeholder="Search for services, products, vendors..."
-                className="flex-1 bg-transparent border-none outline-none text-gray-900"
-              />
-              {query && (
-                <button onClick={clearSearch} className="text-gray-500 hover:text-gray-700">
-                  <X className="w-5 h-5" />
-                </button>
-              )}
-            </div>
+    <div className="w-full">
+      {/* Search Bar */}
+      <div className="relative mb-6">
+        <div className="flex items-center gap-2 bg-white rounded-lg border-2 border-gray-300 focus-within:border-orange-500 px-4 py-3 shadow-sm">
+          <Search className="w-5 h-5 text-gray-400 flex-shrink-0" />
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onFocus={() => setShowSuggestions(true)}
+            onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+            placeholder="Search for services, centers, staff, or products..."
+            className="flex-1 outline-none text-gray-900 placeholder-gray-500"
+          />
+          {query && (
+            <button
+              onClick={() => {
+                setQuery('');
+                setResults([]);
+              }}
+              className="flex-shrink-0"
+            >
+              <X className="w-4 h-4 text-gray-400 hover:text-gray-600" />
+            </button>
+          )}
+          <Button
+            onClick={handleSearch}
+            disabled={loading || !query.trim()}
+            className="bg-orange-600 hover:bg-orange-700"
+          >
+            {loading ? 'Searching...' : 'Search'}
+          </Button>
+        </div>
 
-            {/* Autocomplete Suggestions */}
-            {showSuggestions && suggestions.length > 0 && (
-              <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-lg mt-2 shadow-lg z-20">
-                {suggestions.map((suggestion, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => selectSuggestion(suggestion)}
-                    className="w-full px-4 py-2 text-left hover:bg-gray-50 flex items-center gap-2"
+        {/* Autocomplete Suggestions */}
+        {showSuggestions && (suggestions.length > 0 || searchHistory.length > 0) && (
+          <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-lg border border-gray-200 shadow-lg z-50 max-h-96 overflow-y-auto">
+            {/* Recent Searches */}
+            {searchHistory.length > 0 && query.length === 0 && (
+              <div className="border-b border-gray-200">
+                <div className="px-4 py-2 text-xs text-gray-500 flex items-center gap-2">
+                  <Clock className="w-3 h-3" />
+                  Recent Searches
+                </div>
+                {searchHistory.map((historyQuery, index) => (
+                  <div
+                    key={index}
+                    className="px-4 py-3 cursor-pointer hover:bg-gray-50"
+                    onClick={() => {
+                      setQuery(historyQuery);
+                      setShowSuggestions(false);
+                      setTimeout(() => handleSearch(), 100);
+                    }}
                   >
-                    <TrendingUp className="w-4 h-4 text-gray-400" />
-                    <span className="text-gray-700">{suggestion}</span>
-                  </button>
+                    <div className="flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-gray-400" />
+                      <span className="text-gray-700">{historyQuery}</span>
+                    </div>
+                  </div>
                 ))}
               </div>
             )}
-          </div>
 
-          {/* Filter Tabs */}
-          <div className="flex items-center gap-2 mt-3 overflow-x-auto">
-            {[
-              { id: 'all', label: 'All' },
-              { id: 'vendor', label: 'Vendors' },
-              { id: 'service', label: 'Services' },
-              { id: 'product', label: 'Products' },
-              { id: 'staff', label: 'Staff' }
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => {
-                  setSelectedType(tab.id);
-                  if (query) handleSearch(query);
-                }}
-                className={`px-4 py-2 rounded-full text-sm whitespace-nowrap transition-colors ${
-                  selectedType === tab.id
-                    ? 'bg-orange-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Search Results */}
-      <div className="max-w-4xl mx-auto p-4">
-        {loading ? (
-          <div className="text-center py-12">
-            <div className="animate-spin w-8 h-8 border-4 border-orange-600 border-t-transparent rounded-full mx-auto mb-2"></div>
-            <p className="text-gray-600">Searching...</p>
-          </div>
-        ) : results.length > 0 ? (
-          <div className="bg-white rounded-xl shadow-md overflow-hidden">
-            <div className="p-4 border-b border-gray-200">
-              <p className="text-sm text-gray-600">
-                Found <span className="font-semibold">{results.length}</span> results for "{query}"
-              </p>
-            </div>
-            {results.map(renderResult)}
-          </div>
-        ) : query ? (
-          <div className="bg-white rounded-xl shadow-md p-12 text-center">
-            <Search className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">No results found</h3>
-            <p className="text-gray-600">Try adjusting your search or filters</p>
-          </div>
-        ) : (
-          <div className="bg-white rounded-xl shadow-md p-12 text-center">
-            <Search className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Search Warmpawz</h3>
-            <p className="text-gray-600">Find vendors, services, products, and staff</p>
+            {/* Autocomplete Suggestions */}
+            {suggestions.length > 0 && (
+              <>
+                <div className="px-4 py-2 text-xs text-gray-500 flex items-center gap-2">
+                  <TrendingUp className="w-3 h-3" />
+                  Suggestions
+                </div>
+                {suggestions.map((suggestion, index) => (
+                  <div
+                    key={index}
+                    className={`px-4 py-3 cursor-pointer hover:bg-gray-50 ${
+                      index === selectedIndex ? 'bg-orange-50' : ''
+                    }`}
+                    onClick={() => {
+                      setQuery(suggestion.text);
+                      setShowSuggestions(false);
+                      setTimeout(() => handleSearch(), 100);
+                    }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Search className="w-4 h-4 text-gray-400" />
+                      <span className="text-gray-900">{suggestion.text}</span>
+                      <span className="ml-auto text-xs text-gray-500 capitalize">{suggestion.type}</span>
+                    </div>
+                  </div>
+                ))}
+              </>
+            )}
           </div>
         )}
       </div>
+
+      {/* Filters & Sort */}
+      {showFilters && (
+        <div className="mb-6 bg-white rounded-lg border border-gray-200 p-4">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-medium text-gray-900 flex items-center gap-2">
+              <Filter className="w-4 h-4" />
+              Filters
+            </h3>
+            <button
+              onClick={() => setShowFilterPanel(!showFilterPanel)}
+              className="text-sm text-orange-600 hover:text-orange-700"
+            >
+              {showFilterPanel ? 'Hide' : 'Show'} Filters
+            </button>
+          </div>
+
+          {showFilterPanel && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Type Filter */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Search In
+                </label>
+                <div className="space-y-2">
+                  {['centers', 'staff', 'services', 'products'].map(type => (
+                    <label key={type} className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={filters.types.includes(type)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setFilters(prev => ({ ...prev, types: [...prev.types, type] }));
+                          } else {
+                            setFilters(prev => ({
+                              ...prev,
+                              types: prev.types.filter(t => t !== type)
+                            }));
+                          }
+                        }}
+                        className="w-4 h-4 text-orange-600 rounded focus:ring-orange-500"
+                      />
+                      <span className="text-sm text-gray-700 capitalize">{type}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Price Filter */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Price Range
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    placeholder="Min"
+                    value={filters.priceMin || ''}
+                    onChange={(e) => setFilters(prev => ({
+                      ...prev,
+                      priceMin: e.target.value ? parseFloat(e.target.value) : undefined
+                    }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  />
+                  <span className="text-gray-500">to</span>
+                  <input
+                    type="number"
+                    placeholder="Max"
+                    value={filters.priceMax || ''}
+                    onChange={(e) => setFilters(prev => ({
+                      ...prev,
+                      priceMax: e.target.value ? parseFloat(e.target.value) : undefined
+                    }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  />
+                </div>
+              </div>
+
+              {/* Sort */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Sort By
+                </label>
+                <select
+                  value={filters.sort}
+                  onChange={(e) => setFilters(prev => ({ ...prev, sort: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                >
+                  <option value="relevance">Relevance</option>
+                  <option value="rating">Highest Rated</option>
+                  <option value="price_low">Price: Low to High</option>
+                  <option value="price_high">Price: High to Low</option>
+                  <option value="newest">Newest First</option>
+                </select>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Results Header */}
+      {(results.length > 0 || loading) && (
+        <div className="mb-4 flex items-center justify-between">
+          <p className="text-sm text-gray-600">
+            {loading ? 'Searching...' : `${totalResults} results found`}
+            {responseTime && ` in ${responseTime}`}
+          </p>
+        </div>
+      )}
+
+      {/* Results */}
+      {loading ? (
+        <div className="space-y-4">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="bg-white rounded-xl border border-gray-200 p-6 animate-pulse">
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 bg-gray-200 rounded-full flex-shrink-0" />
+                <div className="flex-1 space-y-3">
+                  <div className="h-4 bg-gray-200 rounded w-1/3" />
+                  <div className="h-3 bg-gray-200 rounded w-2/3" />
+                  <div className="h-3 bg-gray-200 rounded w-1/2" />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : results.length > 0 ? (
+        <div className="space-y-4">
+          {results.map((result) => (
+            <div
+              key={result.id}
+              className="bg-white rounded-xl border border-gray-200 p-6 hover:shadow-lg transition-shadow cursor-pointer"
+              onClick={() => onResultSelect?.(result)}
+            >
+              <div className="flex items-start gap-4">
+                {/* Icon */}
+                <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center flex-shrink-0">
+                  {getResultIcon(result.type)}
+                </div>
+
+                {/* Content */}
+                <div className="flex-1">
+                  <div className="flex items-start justify-between mb-2">
+                    <div>
+                      <h3 className="font-semibold text-gray-900 mb-1">
+                        {highlightText(getResultName(result), result.highlight)}
+                      </h3>
+                      <p className="text-sm text-gray-600 capitalize">{result.type.replace('_', ' ')}</p>
+                    </div>
+                    {result.rating && (
+                      <div className="flex items-center gap-1">
+                        <Star className="w-4 h-4 fill-current text-yellow-500" />
+                        <span className="font-medium text-gray-900">{result.rating.toFixed(1)}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {result.description && (
+                    <p className="text-sm text-gray-600 mb-3 line-clamp-2">
+                      {result.description}
+                    </p>
+                  )}
+
+                  {/* Metadata */}
+                  <div className="flex flex-wrap gap-2">
+                    {result.category && (
+                      <span className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded-full">
+                        {result.category}
+                      </span>
+                    )}
+                    {result.city && (
+                      <span className="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded-full flex items-center gap-1">
+                        <MapPin className="w-3 h-3" />
+                        {result.city}
+                      </span>
+                    )}
+                    {result.price && (
+                      <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full font-medium">
+                        ₹{result.price.toLocaleString()}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Action */}
+                <ChevronRight className="w-5 h-5 text-gray-400 flex-shrink-0" />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : query && !loading ? (
+        <div className="text-center py-12">
+          <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Search className="w-8 h-8 text-gray-400" />
+          </div>
+          <h3 className="font-medium text-gray-900 mb-2">No results found</h3>
+          <p className="text-sm text-gray-600 mb-4">
+            We couldn't find any results for "{query}"
+          </p>
+          <p className="text-sm text-gray-600">
+            Try different keywords or check your spelling
+          </p>
+        </div>
+      ) : null}
     </div>
   );
 }

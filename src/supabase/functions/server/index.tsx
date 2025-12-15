@@ -112,6 +112,23 @@ import missingCrudEndpoints from './missing-crud-endpoints.tsx';
 import facilityEndpoints from './facility-endpoints.tsx';
 import { packageEndpoints } from './package-endpoints.tsx';
 
+import { ambulanceServiceEndpoints } from './ambulance-service-endpoints.tsx';
+import { diagnosticsCenterEndpoints } from './diagnostics-center-endpoints.tsx';
+import { razorpayPaymentEndpoints } from './razorpay-payment-endpoints.tsx';
+import { specializedServicesEndpoints } from './specialized-services-endpoints.tsx';
+import { insuranceEndpoints } from './insurance-endpoints.tsx';
+import { trainingProgressEndpoints } from './training-progress-endpoints.tsx';
+import { instantTeleEndpoints } from './instant-tele-endpoints.tsx';
+import { petProfilePublishingEndpoints } from './pet-profile-publishing-endpoints.tsx';
+import { deliveryIntegrationEndpoints } from './delivery-integration-endpoints.tsx';
+import { resortPreCheckEndpoints } from './resort-precheck-endpoints.tsx';
+import { notificationTemplateSystem } from './notification-template-system.tsx';
+import { bankVerificationEndpoints } from './bank-verification-endpoints.tsx';
+import { tierUpgradeEndpoints } from './tier-upgrade-endpoints.tsx';
+import { analyticsDashboardEndpoints } from './analytics-dashboard-endpoints.tsx';
+import { performanceMonitoringEndpoints } from './performance-monitoring-endpoints.tsx';
+import { systemOptimizationEndpoints } from './system-optimization-endpoints.tsx';
+
 const app = new Hono();
 
 // Global Middleware
@@ -482,6 +499,121 @@ rbacEndpoints(app);
 reportBuilderEndpoints(app);
 petIntelligenceEndpoints(app);
 transactionMonitoringEndpoints(app);
+
+// ✅ NEW: Phase 2 & 3 Endpoints
+if (ambulanceServiceEndpoints && typeof ambulanceServiceEndpoints === 'function') {
+  console.log('✅ Registering Ambulance Service Endpoints...');
+  ambulanceServiceEndpoints(app, kv);
+} else {
+  console.warn('⚠️ Ambulance Service Endpoints module undefined, skipping');
+}
+
+if (diagnosticsCenterEndpoints && typeof diagnosticsCenterEndpoints === 'function') {
+  console.log('✅ Registering Diagnostics Center Endpoints...');
+  diagnosticsCenterEndpoints(app, kv);
+} else {
+  console.warn('⚠️ Diagnostics Center Endpoints module undefined, skipping');
+}
+
+if (razorpayPaymentEndpoints && typeof razorpayPaymentEndpoints === 'function') {
+  console.log('✅ Registering Razorpay Payment Endpoints...');
+  razorpayPaymentEndpoints(app, kv);
+} else {
+  console.warn('⚠️ Razorpay Payment Endpoints module undefined, skipping');
+}
+
+if (specializedServicesEndpoints && typeof specializedServicesEndpoints === 'function') {
+  console.log('✅ Registering Specialized Services Endpoints...');
+  specializedServicesEndpoints(app, kv);
+} else {
+  console.warn('⚠️ Specialized Services Endpoints module undefined, skipping');
+}
+
+if (insuranceEndpoints && typeof insuranceEndpoints === 'function') {
+  console.log('✅ Registering Insurance Endpoints...');
+  insuranceEndpoints(app, kv);
+} else {
+  console.warn('⚠️ Insurance Endpoints module undefined, skipping');
+}
+
+if (trainingProgressEndpoints && typeof trainingProgressEndpoints === 'function') {
+  console.log('✅ Registering Training Progress Endpoints...');
+  trainingProgressEndpoints(app, kv);
+} else {
+  console.warn('⚠️ Training Progress Endpoints module undefined, skipping');
+}
+
+// ✅ NEW: Phase 4 Endpoints
+if (instantTeleEndpoints && typeof instantTeleEndpoints === 'function') {
+  console.log('✅ Registering Instant Tele-Consultation Endpoints...');
+  instantTeleEndpoints(app, kv);
+} else {
+  console.warn('⚠️ Instant Tele Endpoints module undefined, skipping');
+}
+
+if (petProfilePublishingEndpoints && typeof petProfilePublishingEndpoints === 'function') {
+  console.log('✅ Registering Pet Profile Publishing Endpoints...');
+  petProfilePublishingEndpoints(app, kv);
+} else {
+  console.warn('⚠️ Pet Profile Publishing Endpoints module undefined, skipping');
+}
+
+if (deliveryIntegrationEndpoints && typeof deliveryIntegrationEndpoints === 'function') {
+  console.log('✅ Registering Delivery Integration Endpoints...');
+  deliveryIntegrationEndpoints(app, kv);
+} else {
+  console.warn('⚠️ Delivery Integration Endpoints module undefined, skipping');
+}
+
+if (resortPreCheckEndpoints && typeof resortPreCheckEndpoints === 'function') {
+  console.log('✅ Registering Resort Pre-Check Endpoints...');
+  resortPreCheckEndpoints(app, kv);
+} else {
+  console.warn('⚠️ Resort Pre-Check Endpoints module undefined, skipping');
+}
+
+// ✅ NEW: Phase 5 Endpoints
+if (notificationTemplateSystem && typeof notificationTemplateSystem === 'function') {
+  console.log('✅ Registering Notification Template System...');
+  notificationTemplateSystem(app, kv);
+} else {
+  console.warn('⚠️ Notification Template System module undefined, skipping');
+}
+
+if (bankVerificationEndpoints && typeof bankVerificationEndpoints === 'function') {
+  console.log('✅ Registering Bank Verification Endpoints...');
+  bankVerificationEndpoints(app, kv);
+} else {
+  console.warn('⚠️ Bank Verification Endpoints module undefined, skipping');
+}
+
+if (tierUpgradeEndpoints && typeof tierUpgradeEndpoints === 'function') {
+  console.log('✅ Registering Tier Upgrade Endpoints...');
+  tierUpgradeEndpoints(app, kv);
+} else {
+  console.warn('⚠️ Tier Upgrade Endpoints module undefined, skipping');
+}
+
+if (analyticsDashboardEndpoints && typeof analyticsDashboardEndpoints === 'function') {
+  console.log('✅ Registering Analytics Dashboard Endpoints...');
+  analyticsDashboardEndpoints(app, kv);
+} else {
+  console.warn('⚠️ Analytics Dashboard Endpoints module undefined, skipping');
+}
+
+if (performanceMonitoringEndpoints && typeof performanceMonitoringEndpoints === 'function') {
+  console.log('✅ Registering Performance Monitoring Endpoints...');
+  performanceMonitoringEndpoints(app, kv);
+} else {
+  console.warn('⚠️ Performance Monitoring Endpoints module undefined, skipping');
+}
+
+if (systemOptimizationEndpoints && typeof systemOptimizationEndpoints === 'function') {
+  console.log('✅ Registering System Optimization Endpoints...');
+  systemOptimizationEndpoints(app, kv);
+} else {
+  console.warn('⚠️ System Optimization Endpoints module undefined, skipping');
+}
 
 // ✅ Priority 2 Enhanced Endpoints
 if (enhancedServicePublishing && typeof enhancedServicePublishing === 'object') {
