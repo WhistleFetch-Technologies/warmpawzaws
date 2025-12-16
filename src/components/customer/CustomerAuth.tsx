@@ -16,6 +16,8 @@ export function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
   const [showOtpScreen, setShowOtpScreen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [referralCode, setReferralCode] = useState(''); // ✅ NEW: Referral code state
+  const [showReferralInput, setShowReferralInput] = useState(false); // ✅ NEW: Toggle referral input
 
   const handleSendCode = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -98,6 +100,41 @@ export function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
       const data = await response.json();
       console.log('✅ OTP verified:', data);
       
+      // ✅ NEW: Apply referral code if provided
+      if (referralCode && data.isNewUser) {
+        try {
+          console.log('🎁 Applying referral code:', referralCode);
+          const referralResponse = await fetch(
+            `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/loyalty/referral/apply`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${publicAnonKey}`
+              },
+              body: JSON.stringify({
+                referralCode: referralCode,
+                newUserId: data.customer.id,
+                userType: 'customer'
+              })
+            }
+          );
+
+          if (referralResponse.ok) {
+            const referralData = await referralResponse.json();
+            console.log('✅ Referral code applied:', referralData);
+            toast.success('🎉 Referral code applied! You\'ll earn bonus points!', { duration: 4000 });
+          } else {
+            const errorData = await referralResponse.json();
+            console.log('⚠️ Referral code failed:', errorData.error);
+            toast.error(errorData.error || 'Invalid referral code', { duration: 3000 });
+          }
+        } catch (refError: any) {
+          console.error('❌ Referral code error:', refError);
+          // Don't block signup if referral fails
+        }
+      }
+      
       // Check if user has completed onboarding
       const hasCompletedOnboarding = data.customer.onboardingComplete;
       const hasPets = data.customer.petIds && data.customer.petIds.length > 0;
@@ -177,7 +214,7 @@ export function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
             <img src={logoImage} alt="Warmpawz" className="w-full h-full object-contain" />
           </div>
 
-          <h1 className="text-2xl text-gray-900 mb-2 text-center">
+          <h1 className="text-gray-900 mb-2 text-center">
             Enter verification code
           </h1>
           <p className="text-gray-600 text-center mb-8">
@@ -262,7 +299,7 @@ export function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
           <img src={logoImage} alt="Warmpawz" className="w-full h-full object-contain" />
         </div>
 
-        <h1 className="text-3xl text-gray-900 mb-2 text-center">
+        <h1 className="text-gray-900 mb-2 text-center">
           Welcome to Warmpawz
         </h1>
         <p className="text-gray-600 text-center mb-10">
@@ -310,6 +347,57 @@ export function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
           >
             {loading ? 'Sending code...' : 'Continue'}
           </Button>
+
+          {/* ✅ NEW: Referral Code Section */}
+          <div className="mt-6">
+            {!showReferralInput ? (
+              <button
+                type="button"
+                onClick={() => setShowReferralInput(true)}
+                className="w-full text-[#FF8C42] hover:text-[#FF7A29] text-sm flex items-center justify-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+                Have a referral code?
+              </button>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="referral" className="text-gray-700 text-sm">
+                    Referral Code (Optional)
+                  </Label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowReferralInput(false);
+                      setReferralCode('');
+                    }}
+                    className="text-xs text-gray-500 hover:text-gray-700"
+                  >
+                    Cancel
+                  </button>
+                </div>
+                <Input
+                  id="referral"
+                  type="text"
+                  value={referralCode}
+                  onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
+                  className="h-12 border-gray-300 focus:border-yellow-500 focus:ring-yellow-500 uppercase"
+                  placeholder="Enter referral code"
+                  maxLength={20}
+                />
+                {referralCode && (
+                  <p className="text-xs text-green-600 flex items-center gap-1">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    You'll earn bonus points after signup!
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
         </form>
 
         <p className="text-xs text-gray-400 text-center mt-10 max-w-xs">

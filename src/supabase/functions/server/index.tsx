@@ -14,7 +14,7 @@ import { registerCustomerSearchEndpoints } from './customer-search-endpoints.tsx
 import { notificationEndpoints } from './notification-system.tsx';
 import { reviewEndpoints } from './review-endpoints.tsx';
 import { analyticsEndpoints } from './analytics-endpoints.tsx';
-import { advancedSearchEngine } from './advanced-search-engine.tsx';
+import { enhancedSearchEngineEndpoints } from './enhanced-search-engine.tsx';
 import { vendorOnboardingEndpoints } from './vendor-onboarding.tsx';
 import { vendorApprovalWorkflowEndpoints } from './vendor-approval-workflow.tsx';
 import { vendorDashboardEndpoints } from './vendor-dashboard-endpoints.tsx';
@@ -46,7 +46,6 @@ import { registerMedicalHistoryEndpoints } from './medical-history-endpoints.tsx
 import { registerUniversalStaffSchedule } from './universal-staff-schedule.tsx';
 import { registerCenterAvailabilityEndpoints } from './center-availability-endpoints.tsx';
 import { registerBoardingRoomManagement } from './boarding-room-management.tsx';
-import { registerPetListingManagement } from './pet-listing-management.tsx';
 import { registerNutritionistMealManagement } from './nutritionist-meal-management.tsx';
 import { registerServicePackageManagement } from './service-package-management.tsx';
 import { registerCustomerPackageEndpoints } from './customer-package-endpoints.tsx';
@@ -54,7 +53,6 @@ import { registerVendorMetricsEnhancement } from './vendor-metrics-enhancement.t
 import { bookingEndpoints } from './booking-endpoints.tsx';
 import { registerCafeFeatures } from './cafe-features.tsx';
 import { registerResortInventory } from './resort-inventory.tsx';
-import { registerBreederListings } from './breeder-listings.tsx';
 import marketingRoutesV2 from './marketing-routes-v2.tsx';
 import { registerMarketplaceProducts } from './marketplace-products.tsx';
 import { registerUniversalServiceDiscovery } from './universal-service-discovery.tsx';
@@ -148,6 +146,8 @@ import { automatedBankVerificationEndpoints } from './automated-bank-verificatio
 import { marketplaceSettlementAutomationEndpoints } from './marketplace-settlement-automation.tsx';
 import { tierCommissionIntegrationEndpoints } from './tier-commission-integration.tsx';
 import { reschedulingPoliciesEndpoints } from './rescheduling-policies.tsx';
+import { servicesByProblemEndpoints } from './services-by-problem.tsx';
+import { searchSuggestionsEndpoints } from './search-suggestions.tsx';
 import qaGapFixesEndpoints from './qa-gap-fixes.tsx';
 import performanceOptimizationEndpoints from './performance-optimization-endpoints.tsx';
 import analyticsDashboardSprint2 from './analytics-dashboard-sprint2.tsx';
@@ -160,6 +160,16 @@ import { elasticsearchProxyEndpoints } from './elasticsearch-proxy.tsx';
 import { refundPolicyEndpoints } from './refund-policy-engine-enhanced.tsx';
 import { settlementTierSystemEndpoints } from './settlement-tier-system-enhanced.tsx';
 import { integratedServicesManagerEndpoints } from './integrated-services-manager.tsx';
+
+import { tierSystemEndpoints } from './tier-system.tsx';
+import { razorpayMarketplaceSettlement } from './razorpay-marketplace-settlement.tsx';
+
+// ✅ RULE 15: Production-ready integrations
+import { automatedSettlementProcessor } from './automated-settlement-processor.tsx';
+import { bankVerificationIntegration } from './bank-verification-integration.tsx';
+
+// ✅ RULE 16 & 17: Vendor onboarding and schedule management
+import { scheduleValidationTemplates } from './schedule-validation-templates.tsx';
 
 const app = new Hono();
 
@@ -432,11 +442,6 @@ app.use('/make-server-3dd53475/admin/catalog/clear', criticalActionGuard());
 app.use('/make-server-3dd53475/admin/catalog/seed', criticalActionGuard());
 app.use('/make-server-3dd53475/admin/onboarding-fields/sync', criticalActionGuard());
 
-import { tierSystemEndpoints } from './tier-system.tsx';
-import { razorpayMarketplaceSettlement } from './razorpay-marketplace-settlement.tsx';
-
-import { adminCleanupDuplicatesEndpoints } from './admin-cleanup-duplicates.tsx';
-
 // ------------------------------------------------------------------
 // REGISTER ROUTES
 // IMPORTANT: Order matters! Specific routes must be registered before generic wildcards.
@@ -453,7 +458,7 @@ analyticsEndpoints(app, kv);
 
 // ✅ NEW: Advanced Search Engine with Fuse.js
 console.log('🔍 Registering Advanced Search Engine...');
-advancedSearchEngine(app, kv);
+enhancedSearchEngineEndpoints(app, kv);
 
 // 2. Vendor Specific Routes (Dashboard, Onboarding, Config, Services)
 // These must be registered BEFORE customer-routes because customer-routes
@@ -494,7 +499,6 @@ registerMedicalHistoryEndpoints(app);
 registerUniversalStaffSchedule(app);
 registerCenterAvailabilityEndpoints(app);
 registerBoardingRoomManagement(app);
-registerPetListingManagement(app);
 registerNutritionistMealManagement(app);
 registerServicePackageManagement(app);
 registerCustomerPackageEndpoints(app); // ✅ GAP #3 FIX
@@ -502,7 +506,6 @@ registerVendorMetricsEnhancement(app); // ✅ GAP #8 FIX
 bookingEndpoints(app, kv);
 registerCafeFeatures(app);
 registerResortInventory(app);
-registerBreederListings(app);
 
 // Marketing routes with error handling
 if (marketingRoutesV2 && typeof marketingRoutesV2 === 'object') {
@@ -1107,6 +1110,30 @@ if (reschedulingPoliciesEndpoints && typeof reschedulingPoliciesEndpoints === 'f
   console.warn('⚠️ Rescheduling Policies Endpoints module undefined, skipping');
 }
 
+// ✅ NEW: Services By Problem Endpoints (Rule 4)
+if (servicesByProblemEndpoints && typeof servicesByProblemEndpoints === 'function') {
+  console.log('✅ Registering Services By Problem Endpoints...');
+  servicesByProblemEndpoints(app, kv);
+} else {
+  console.warn('⚠️ Services By Problem Endpoints module undefined, skipping');
+}
+
+// ✅ NEW: Search Suggestions Endpoints (Rule 4)
+if (searchSuggestionsEndpoints && typeof searchSuggestionsEndpoints === 'function') {
+  console.log('✅ Registering Search Suggestions Endpoints...');
+  searchSuggestionsEndpoints(app, kv);
+} else {
+  console.warn('⚠️ Search Suggestions Endpoints module undefined, skipping');
+}
+
+// ✅ NEW: Enhanced Search Engine Endpoints (Rule 5)
+if (enhancedSearchEngineEndpoints && typeof enhancedSearchEngineEndpoints === 'function') {
+  console.log('✅ Registering Enhanced Search Engine Endpoints...');
+  enhancedSearchEngineEndpoints(app, kv);
+} else {
+  console.warn('⚠️ Enhanced Search Engine Endpoints module undefined, skipping');
+}
+
 // ✅ NEW: QA Gap Fixes Endpoints
 if (qaGapFixesEndpoints && typeof qaGapFixesEndpoints === 'object') {
   console.log('✅ Registering QA Gap Fixes Endpoints...');
@@ -1219,10 +1246,22 @@ if (razorpayMarketplaceSettlement && typeof razorpayMarketplaceSettlement === 'f
   razorpayMarketplaceSettlement(app, kv);
 }
 
-// ✅ NEW: Admin Cleanup Duplicates (Rule 18)
-if (adminCleanupDuplicatesEndpoints && typeof adminCleanupDuplicatesEndpoints === 'function') {
-  console.log('✅ Registering Admin Cleanup Duplicates...');
-  adminCleanupDuplicatesEndpoints(app, kv);
+// ✅ NEW: Automated Settlement Processor (Rule 15)
+if (automatedSettlementProcessor && typeof automatedSettlementProcessor === 'function') {
+  console.log('✅ Registering Automated Settlement Processor...');
+  automatedSettlementProcessor(app, kv);
+}
+
+// ✅ NEW: Bank Verification Integration (Rule 15)
+if (bankVerificationIntegration && typeof bankVerificationIntegration === 'function') {
+  console.log('✅ Registering Bank Verification Integration...');
+  bankVerificationIntegration(app, kv);
+}
+
+// ✅ NEW: Schedule Validation Templates (Rule 16 & 17)
+if (scheduleValidationTemplates && typeof scheduleValidationTemplates === 'function') {
+  console.log('✅ Registering Schedule Validation Templates...');
+  scheduleValidationTemplates(app, kv);
 }
 
 // ------------------------------------------------------------------

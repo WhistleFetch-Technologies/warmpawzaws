@@ -459,33 +459,314 @@ export const boardingNeeds = [
     icon: '☀️',
     color: '#F59E0B',
     gradient: 'from-amber-500 to-amber-600',
-    description: 'Day-time care while you work',
-    keywords: ['daycare', 'daily', 'day', 'work'],
+    description: 'Daily daycare services',
+    keywords: ['daycare', 'daily', 'care'],
     mappedSubCategories: ['sub_daycare'],
     order: 3
   },
   {
     id: 'luxury_boarding',
     name: 'Luxury Boarding',
-    displayName: 'Premium Stay',
+    displayName: 'Premium Care',
     icon: '⭐',
     color: '#8B5CF6',
     gradient: 'from-purple-500 to-purple-600',
-    description: 'Premium facilities and amenities',
-    keywords: ['luxury', 'premium', 'vip', 'deluxe'],
+    description: 'Premium luxury boarding with special amenities',
+    keywords: ['luxury', 'premium', 'spa', 'vip'],
     mappedSubCategories: ['sub_daycare'],
     order: 4
   },
   {
     id: 'medical_boarding',
     name: 'Medical Boarding',
-    displayName: 'Special Care',
-    icon: '💊',
+    displayName: 'Special Needs',
+    icon: '🏥',
     color: '#EF4444',
     gradient: 'from-red-500 to-red-600',
-    description: 'For pets needing medication or special care',
-    keywords: ['medical', 'medication', 'special', 'care'],
+    description: 'Boarding for pets with medical conditions',
+    keywords: ['medical', 'special needs', 'elderly', 'medication'],
     mappedSubCategories: ['sub_daycare'],
+    order: 5
+  }
+];
+
+/**
+ * NUTRITION & DIET NEEDS
+ * Maps to Nutritionist subcategories
+ */
+export const nutritionNeeds = [
+  {
+    id: 'weight_management',
+    name: 'Weight Management',
+    displayName: 'Weight Loss/Gain',
+    icon: '⚖️',
+    color: '#10B981',
+    gradient: 'from-green-500 to-green-600',
+    description: 'Customized diet plans for healthy weight',
+    keywords: ['weight', 'obesity', 'diet', 'overweight', 'underweight'],
+    mappedSubCategories: ['sub_nutrition_consultation', 'sub_diet_planning'],
+    serviceTypes: ['nutrition_consultation', 'diet_planning', 'weight_management'],
+    order: 1
+  },
+  {
+    id: 'allergies_sensitivities',
+    name: 'Food Allergies',
+    displayName: 'Allergies & Sensitivities',
+    icon: '🚫',
+    color: '#EF4444',
+    gradient: 'from-red-500 to-red-600',
+    description: 'Managing food allergies and sensitivities',
+    keywords: ['allergy', 'sensitive', 'intolerance', 'reaction'],
+    mappedSubCategories: ['sub_nutrition_consultation', 'sub_special_diets'],
+    serviceTypes: ['nutrition_consultation', 'allergy_diet', 'elimination_diet'],
+    order: 2
+  },
+  {
+    id: 'digestive_issues',
+    name: 'Digestive Problems',
+    displayName: 'Digestive Health',
+    icon: '🥗',
+    color: '#F59E0B',
+    gradient: 'from-amber-500 to-amber-600',
+    description: 'Diet plans for digestive issues',
+    keywords: ['digestion', 'stomach', 'diarrhea', 'constipation', 'ibd'],
+    mappedSubCategories: ['sub_nutrition_consultation', 'sub_special_diets'],
+    serviceTypes: ['nutrition_consultation', 'digestive_diet', 'gut_health'],
+    order: 3
+  },
+  {
+    id: 'puppy_kitten_nutrition',
+    name: 'Puppy/Kitten Nutrition',
+    displayName: 'Growth & Development',
+    icon: '🍼',
+    color: '#3B82F6',
+    gradient: 'from-blue-500 to-blue-600',
+    description: 'Nutrition for growing pets',
+    keywords: ['puppy', 'kitten', 'growth', 'development', 'young'],
+    mappedSubCategories: ['sub_nutrition_consultation', 'sub_diet_planning'],
+    serviceTypes: ['nutrition_consultation', 'growth_diet', 'puppy_nutrition'],
+    order: 4
+  },
+  {
+    id: 'senior_nutrition',
+    name: 'Senior Pet Nutrition',
+    displayName: 'Senior Care Diet',
+    icon: '👴',
+    color: '#8B5CF6',
+    gradient: 'from-purple-500 to-purple-600',
+    description: 'Special diets for senior pets',
+    keywords: ['senior', 'elderly', 'aging', 'old'],
+    mappedSubCategories: ['sub_nutrition_consultation', 'sub_diet_planning'],
+    serviceTypes: ['nutrition_consultation', 'senior_diet', 'aging_pet_nutrition'],
+    order: 5
+  },
+  {
+    id: 'medical_conditions',
+    name: 'Medical Condition Diets',
+    displayName: 'Therapeutic Nutrition',
+    icon: '💊',
+    color: '#06B6D4',
+    gradient: 'from-cyan-500 to-cyan-600',
+    description: 'Specialized diets for medical conditions',
+    keywords: ['medical', 'disease', 'kidney', 'diabetes', 'liver', 'therapeutic'],
+    mappedSubCategories: ['sub_nutrition_consultation', 'sub_special_diets'],
+    serviceTypes: ['nutrition_consultation', 'therapeutic_diet', 'medical_nutrition'],
+    order: 6
+  },
+  {
+    id: 'raw_fresh_food',
+    name: 'Raw/Fresh Food Diet',
+    displayName: 'Natural Feeding',
+    icon: '🥩',
+    color: '#DC2626',
+    gradient: 'from-red-600 to-red-700',
+    description: 'Raw and fresh food diet planning',
+    keywords: ['raw', 'fresh', 'natural', 'barf', 'homemade'],
+    mappedSubCategories: ['sub_nutrition_consultation', 'sub_diet_planning'],
+    serviceTypes: ['nutrition_consultation', 'raw_diet', 'fresh_food_plan'],
+    order: 7
+  },
+  {
+    id: 'performance_nutrition',
+    name: 'Performance Nutrition',
+    displayName: 'Active Pet Diets',
+    icon: '🏃',
+    color: '#14B8A6',
+    gradient: 'from-teal-500 to-teal-600',
+    description: 'Nutrition for working and athletic pets',
+    keywords: ['performance', 'athletic', 'working', 'active', 'energy'],
+    mappedSubCategories: ['sub_nutrition_consultation', 'sub_diet_planning'],
+    serviceTypes: ['nutrition_consultation', 'performance_diet', 'athletic_nutrition'],
+    order: 8
+  }
+];
+
+/**
+ * PHARMACY & MEDICATION NEEDS
+ * Maps to Pet Pharmacy subcategories
+ */
+export const pharmacyNeeds = [
+  {
+    id: 'prescription_refill',
+    name: 'Prescription Refill',
+    displayName: 'Medication Refill',
+    icon: '💊',
+    color: '#2196F3',
+    gradient: 'from-blue-600 to-blue-700',
+    description: 'Refill existing prescriptions',
+    keywords: ['refill', 'prescription', 'medication', 'medicine'],
+    mappedSubCategories: ['sub_pharmacy_prescription'],
+    serviceTypes: ['prescription_fulfillment', 'medication_refill'],
+    order: 1
+  },
+  {
+    id: 'flea_tick',
+    name: 'Flea & Tick Prevention',
+    displayName: 'Parasite Prevention',
+    icon: '🦟',
+    color: '#10B981',
+    gradient: 'from-green-500 to-green-600',
+    description: 'Flea, tick, and parasite prevention medications',
+    keywords: ['flea', 'tick', 'parasite', 'prevention'],
+    mappedSubCategories: ['sub_pharmacy_otc', 'sub_preventive_meds'],
+    serviceTypes: ['otc_medications', 'preventive_care'],
+    order: 2
+  },
+  {
+    id: 'heartworm_prevention',
+    name: 'Heartworm Prevention',
+    displayName: 'Heartworm Meds',
+    icon: '❤️',
+    color: '#EF4444',
+    gradient: 'from-red-500 to-red-600',
+    description: 'Heartworm prevention medications',
+    keywords: ['heartworm', 'prevention', 'cardiac'],
+    mappedSubCategories: ['sub_pharmacy_prescription', 'sub_preventive_meds'],
+    serviceTypes: ['prescription_fulfillment', 'preventive_care'],
+    order: 3
+  },
+  {
+    id: 'pain_management',
+    name: 'Pain Relief',
+    displayName: 'Pain Management',
+    icon: '🩹',
+    color: '#F59E0B',
+    gradient: 'from-amber-500 to-amber-600',
+    description: 'Pain relief and management medications',
+    keywords: ['pain', 'relief', 'arthritis', 'inflammation'],
+    mappedSubCategories: ['sub_pharmacy_prescription'],
+    serviceTypes: ['prescription_fulfillment', 'pain_medications'],
+    order: 4
+  },
+  {
+    id: 'antibiotics',
+    name: 'Antibiotics',
+    displayName: 'Infection Treatment',
+    icon: '💉',
+    color: '#8B5CF6',
+    gradient: 'from-purple-500 to-purple-600',
+    description: 'Antibiotic medications for infections',
+    keywords: ['antibiotic', 'infection', 'bacterial'],
+    mappedSubCategories: ['sub_pharmacy_prescription'],
+    serviceTypes: ['prescription_fulfillment'],
+    order: 5
+  },
+  {
+    id: 'skin_ear_meds',
+    name: 'Skin & Ear Medications',
+    displayName: 'Topical Treatments',
+    icon: '🧴',
+    color: '#06B6D4',
+    gradient: 'from-cyan-500 to-cyan-600',
+    description: 'Skin and ear treatment medications',
+    keywords: ['skin', 'ear', 'topical', 'ointment', 'drops'],
+    mappedSubCategories: ['sub_pharmacy_prescription', 'sub_pharmacy_otc'],
+    serviceTypes: ['prescription_fulfillment', 'otc_medications'],
+    order: 6
+  },
+  {
+    id: 'vitamins_supplements',
+    name: 'Vitamins & Supplements',
+    displayName: 'Nutritional Support',
+    icon: '🌿',
+    color: '#14B8A6',
+    gradient: 'from-teal-500 to-teal-600',
+    description: 'Vitamins and dietary supplements',
+    keywords: ['vitamin', 'supplement', 'nutritional', 'health'],
+    mappedSubCategories: ['sub_pharmacy_otc'],
+    serviceTypes: ['otc_medications', 'supplements'],
+    order: 7
+  }
+];
+
+/**
+ * ADOPTION & RESCUE NEEDS
+ * Maps to Adoption Center subcategories
+ */
+export const adoptionNeeds = [
+  {
+    id: 'adopt_puppy_kitten',
+    name: 'Adopt Puppy/Kitten',
+    displayName: 'Young Pets',
+    icon: '🐶',
+    color: '#EC4899',
+    gradient: 'from-pink-500 to-pink-600',
+    description: 'Adopt young puppies or kittens',
+    keywords: ['puppy', 'kitten', 'young', 'baby'],
+    mappedSubCategories: ['sub_adoption'],
+    serviceTypes: ['pet_adoption'],
+    order: 1
+  },
+  {
+    id: 'adopt_adult',
+    name: 'Adopt Adult Pet',
+    displayName: 'Mature Pets',
+    icon: '🐕',
+    color: '#3B82F6',
+    gradient: 'from-blue-500 to-blue-600',
+    description: 'Adopt adult dogs or cats',
+    keywords: ['adult', 'mature', 'trained'],
+    mappedSubCategories: ['sub_adoption'],
+    serviceTypes: ['pet_adoption'],
+    order: 2
+  },
+  {
+    id: 'adopt_senior',
+    name: 'Adopt Senior Pet',
+    displayName: 'Senior Companions',
+    icon: '👴',
+    color: '#8B5CF6',
+    gradient: 'from-purple-500 to-purple-600',
+    description: 'Adopt senior pets needing loving homes',
+    keywords: ['senior', 'elderly', 'old', 'mature'],
+    mappedSubCategories: ['sub_adoption'],
+    serviceTypes: ['pet_adoption'],
+    order: 3
+  },
+  {
+    id: 'adopt_special_needs',
+    name: 'Special Needs Pets',
+    displayName: 'Special Care Required',
+    icon: '❤️',
+    color: '#EF4444',
+    gradient: 'from-red-500 to-red-600',
+    description: 'Pets with special medical or behavioral needs',
+    keywords: ['special needs', 'disability', 'medical', 'care'],
+    mappedSubCategories: ['sub_adoption'],
+    serviceTypes: ['pet_adoption'],
+    order: 4
+  },
+  {
+    id: 'foster_to_adopt',
+    name: 'Foster to Adopt',
+    displayName: 'Trial Period',
+    icon: '🏠',
+    color: '#10B981',
+    gradient: 'from-green-500 to-green-600',
+    description: 'Foster a pet before committing to adoption',
+    keywords: ['foster', 'trial', 'temporary'],
+    mappedSubCategories: ['sub_adoption'],
+    serviceTypes: ['pet_adoption', 'fostering'],
     order: 5
   }
 ];
@@ -540,6 +821,30 @@ export function getProblemGridByRole(roleId: string): any[] {
     'role_pet_boarding': boardingNeeds,
     'boarding_center': boardingNeeds,
     'role_boarding_center': boardingNeeds,
+    
+    // ✅ NUTRITION - All variations
+    'nutritionist': nutritionNeeds,
+    'role_nutritionist': nutritionNeeds,
+    'pet_nutritionist': nutritionNeeds,
+    'role_pet_nutritionist': nutritionNeeds,
+    'nutrition_center': nutritionNeeds,
+    'role_nutrition_center': nutritionNeeds,
+    
+    // ✅ PHARMACY - All variations
+    'pharmacist': pharmacyNeeds,
+    'role_pharmacist': pharmacyNeeds,
+    'pet_pharmacist': pharmacyNeeds,
+    'role_pet_pharmacist': pharmacyNeeds,
+    'pharmacy_center': pharmacyNeeds,
+    'role_pharmacy_center': pharmacyNeeds,
+    
+    // ✅ ADOPTION - All variations
+    'adoption_center': adoptionNeeds,
+    'role_adoption_center': adoptionNeeds,
+    'pet_adoption_center': adoptionNeeds,
+    'role_pet_adoption_center': adoptionNeeds,
+    'adoption_agency': adoptionNeeds,
+    'role_adoption_agency': adoptionNeeds,
   };
   
   return roleMapping[roleId] || [];
@@ -555,7 +860,10 @@ export function getAllProblemGrids() {
     training: trainingGoals,
     walking: walkingNeeds,
     behavioral: behavioralIssues,
-    boarding: boardingNeeds
+    boarding: boardingNeeds,
+    nutrition: nutritionNeeds,
+    pharmacy: pharmacyNeeds,
+    adoption: adoptionNeeds
   };
 }
 

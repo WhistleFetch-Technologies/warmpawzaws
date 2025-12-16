@@ -192,17 +192,18 @@ export function VetServicesLanding({ onBack, onNavigate, customerId, phone }: Ve
 
   return (
     <div className="min-h-screen bg-[#FF8C42] max-w-md mx-auto pb-24">
-      {/* Header - Orange Background */}
-      <div className="px-6 pt-12 pb-6">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <button 
+      {/* HEADER with Teal gradient (Veterinary service color) */}
+      <div className="bg-gradient-to-r from-teal-500 to-cyan-500 px-6 py-6 rounded-b-3xl shadow-lg">
+        <div className="max-w-7xl mx-auto">
+          {/* Top bar */}
+          <div className="flex items-center justify-between mb-4">
+            <button
               onClick={onBack}
-              className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center hover:bg-white/30 transition-colors"
+              className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm hover:bg-white/30 transition-colors"
             >
               <ArrowLeft className="w-5 h-5 text-white" />
             </button>
-            <h1 className="text-2xl font-bold text-white">Vet Services</h1>
+            <h1 className="text-white">Vet Services</h1>
           </div>
           
           <div className="flex items-center gap-2">
@@ -223,15 +224,15 @@ export function VetServicesLanding({ onBack, onNavigate, customerId, phone }: Ve
         {/* Stats / Quick Info in Header */}
         <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
           <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-3 min-w-[100px] border border-white/10">
-            <div className="text-2xl font-bold text-white">500+</div>
+            <div className="font-medium text-white">500+</div>
             <div className="text-xs text-white/80">Expert Vets</div>
           </div>
           <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-3 min-w-[100px] border border-white/10">
-             <div className="text-2xl font-bold text-white">24/7</div>
+             <div className="font-medium text-white">24/7</div>
              <div className="text-xs text-white/80">Support</div>
           </div>
           <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-3 min-w-[100px] border border-white/10">
-             <div className="flex items-center gap-1 text-2xl font-bold text-white">
+             <div className="flex items-center gap-1 font-medium text-white">
                4.9 <Star className="w-4 h-4 fill-white" />
              </div>
              <div className="text-xs text-white/80">Rating</div>

@@ -230,7 +230,7 @@ export function ShopDashboard({ onBack, onNavigate, phone }: ShopDashboardProps)
             <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-full">
               <ArrowLeft className="w-5 h-5" />
             </button>
-            <h1 className="text-xl font-bold text-gray-900 flex-1">Shop</h1>
+            <h1 className="text-gray-900 flex-1">Shop</h1>
             <button 
               onClick={() => onNavigate?.('cart')}
               className="relative p-2 hover:bg-gray-100 rounded-full"
@@ -238,7 +238,7 @@ export function ShopDashboard({ onBack, onNavigate, phone }: ShopDashboardProps)
               <ShoppingCart className="w-5 h-5 text-gray-700" />
               {itemCount > 0 && (
                 <div className="absolute -top-1 -right-1 w-5 h-5 bg-[#FF8C42] rounded-full flex items-center justify-center">
-                  <span className="text-white text-xs font-bold">{itemCount}</span>
+                  <span className="text-white text-xs">{itemCount}</span>
                 </div>
               )}
             </button>
@@ -298,7 +298,7 @@ export function ShopDashboard({ onBack, onNavigate, phone }: ShopDashboardProps)
                 >
                   <div className="h-full flex items-center justify-between px-6">
                     <div className="flex-1">
-                      <h2 className="text-white text-2xl font-bold mb-1">{banner.title}</h2>
+                      <h2 className="text-white mb-1">{banner.title}</h2>
                       <p className="text-white/90 mb-3">{banner.subtitle}</p>
                       <button className="bg-white text-gray-900 px-6 py-2 rounded-full font-medium hover:shadow-lg transition-shadow">
                         {banner.cta}

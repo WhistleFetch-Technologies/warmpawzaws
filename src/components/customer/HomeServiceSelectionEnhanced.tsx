@@ -57,12 +57,21 @@ export function HomeServiceSelectionEnhanced({
   const [viewMode, setViewMode] = useState<'list' | 'radar'>('list');
   const [selectedTimeWindow, setSelectedTimeWindow] = useState<string>('');
   const [providers, setProviders] = useState<Provider[]>([]);
+  const [previousProviders, setPreviousProviders] = useState<Provider[]>([]);
   const [selectedProvider, setSelectedProvider] = useState<string>('');
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedSlot, setSelectedSlot] = useState('');
   const [loading, setLoading] = useState(false);
   const [loadingProviders, setLoadingProviders] = useState(false);
+  const [loadingPrevious, setLoadingPrevious] = useState(false);
   const [userLocation, setUserLocation] = useState({ lat: 28.6139, lng: 77.2090 }); // Default Delhi
+  
+  // Subscription-specific state
+  const [subscriptionFrequency, setSubscriptionFrequency] = useState<'daily' | 'weekly' | 'monthly'>('weekly');
+  const [selectedDays, setSelectedDays] = useState<string[]>([]);
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [totalSessions, setTotalSessions] = useState(0);
 
   const timeWindows: TimeWindow[] = [
     { id: 'morning', label: 'Morning', time: '8:00 AM - 12:00 PM', icon: 'morning', isPackageEligible: true },

@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { CustomerApp } from './components/CustomerApp';
 import { VendorApp } from './components/VendorApp';
 import { AdminApp } from './components/AdminApp';
-import { RoleMigrationPanel } from './components/admin/RoleMigrationPanel';
 import { Button } from './components/ui/button';
 import { Toaster } from './components/ui/sonner';
 import { RegionProvider } from './hooks/useRegion';
@@ -10,7 +9,7 @@ import { CartProvider } from './context/CartContext';
 import { QueryProvider } from './providers/QueryProvider';
 
 export default function App() {
-  const [activeApp, setActiveApp] = useState<'customer' | 'vendor' | 'admin' | 'migration'>('customer');
+  const [activeApp, setActiveApp] = useState<'customer' | 'vendor' | 'admin'>('customer');
 
   return (
     <QueryProvider>
@@ -45,21 +44,12 @@ export default function App() {
           >
             Admin Portal
           </Button>
-          <Button
-            size="sm"
-            variant={activeApp === 'migration' ? 'default' : 'outline'}
-            onClick={() => setActiveApp('migration')}
-            className={activeApp === 'migration' ? 'bg-purple-600 hover:bg-purple-700' : ''}
-          >
-            🔄 Migration
-          </Button>
         </div>
 
         {/* Render Active App */}
         {activeApp === 'customer' && <CustomerApp />}
         {activeApp === 'vendor' && <VendorApp />}
         {activeApp === 'admin' && <AdminApp />}
-        {activeApp === 'migration' && <RoleMigrationPanel />}
         </div>
       </CartProvider>
     </RegionProvider>

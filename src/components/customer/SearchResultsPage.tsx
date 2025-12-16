@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Star, MapPin, DollarSign, Filter, X } from 'lucide-react';
+import { Star, MapPin, DollarSign, Filter, X, Award, Briefcase } from 'lucide-react';
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
-import { ElasticSearchBar } from './ElasticSearchBar';
+import { Badge } from '../ui/badge';
+import { SearchAutocomplete } from './SearchAutocomplete';
+import { SearchFilters, FilterValues } from './SearchFilters';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 
 export function SearchResultsPage() {
@@ -10,26 +12,35 @@ export function SearchResultsPage() {
   const [results, setResults] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(0);
-  const [filters, setFilters] = useState({
-    type: '',
-    city: '',
-    area: '',
-    minRating: '',
-    minPrice: '',
-    maxPrice: '',
-    tags: [] as string[]
-  });
-  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState<FilterValues>({});
   const [page, setPage] = useState(0);
+  const [userLocation, setUserLocation] = useState<{lat: number; lng: number} | null>(null);
   const limit = 20;
 
   const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+
+  // Get user location
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setUserLocation({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          });
+        },
+        (error) => {
+          console.log('Location access denied:', error);
+        }
+      );
+    }
+  }, []);
 
   useEffect(() => {
     if (query) {
       performSearch();
     }
-  }, [query, filters, page]);
+  }, [query, filters, page, userLocation]);
 
   const performSearch = async () => {
     setLoading(true);
@@ -41,23 +52,29 @@ export function SearchResultsPage() {
         offset: (page * limit).toString()
       });
 
-      if (filters.type) params.append('type', filters.type);
-      if (filters.city) params.append('city', filters.city);
-      if (filters.area) params.append('area', filters.area);
-      if (filters.minRating) params.append('minRating', filters.minRating);
-      if (filters.minPrice) params.append('minPrice', filters.minPrice);
-      if (filters.maxPrice) params.append('maxPrice', filters.maxPrice);
-      if (filters.tags.length > 0) params.append('tags', filters.tags.join(','));
+      // Add location if available
+      if (userLocation) {
+        params.append('lat', userLocation.lat.toString());
+        params.append('lng', userLocation.lng.toString());
+      }
 
-      const response = await fetch(`${API_BASE}/search/elastic?${params}`, {
+      // Add filters
+      if (filters.city) params.append('city', filters.city);
+      if (filters.specialization) params.append('specialization', filters.specialization);
+      if (filters.minRating) params.append('minRating', filters.minRating.toString());
+      if (filters.priceRange?.min) params.append('minPrice', filters.priceRange.min.toString());
+      if (filters.priceRange?.max) params.append('maxPrice', filters.priceRange.max.toString());
+
+      // Use enhanced search endpoint
+      const response = await fetch(`${API_BASE}/search/enhanced?${params}`, {
         headers: { 'Authorization': `Bearer ${publicAnonKey}` }
       });
 
       if (response.ok) {
         const data = await response.json();
-        if (data.success) {
-          setResults(data.results || []);
-          setTotal(data.total || 0);
+        if (data.success || data.data) {
+          setResults(data.data?.results || data.results || []);
+          setTotal(data.data?.total || data.total || 0);
         }
       }
     } catch (error) {
@@ -72,27 +89,10 @@ export function SearchResultsPage() {
     setPage(0);
   };
 
-  const handleFilterChange = (key: string, value: any) => {
-    setFilters(prev => ({ ...prev, [key]: value }));
+  const handleFilterChange = (newFilters: FilterValues) => {
+    setFilters(newFilters);
     setPage(0);
   };
-
-  const clearFilters = () => {
-    setFilters({
-      type: '',
-      city: '',
-      area: '',
-      minRating: '',
-      minPrice: '',
-      maxPrice: '',
-      tags: []
-    });
-    setPage(0);
-  };
-
-  const activeFiltersCount = Object.values(filters).filter(v => 
-    Array.isArray(v) ? v.length > 0 : v !== ''
-  ).length;
 
   const renderResult = (result: any) => {
     const { type, data, score } = result;
@@ -204,7 +204,7 @@ export function SearchResultsPage() {
       <div className="max-w-7xl mx-auto px-4">
         {/* Search Bar */}
         <div className="mb-8 flex justify-center">
-          <ElasticSearchBar onSearch={handleSearch} />
+          <SearchAutocomplete onSearch={handleSearch} />
         </div>
 
         {/* Results Header */}
