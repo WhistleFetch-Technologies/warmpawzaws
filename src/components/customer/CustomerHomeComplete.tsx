@@ -83,16 +83,19 @@ export function CustomerHome({
     try {
       setLoading(true);
       
-      // Load user profile
-      const profileResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/profile/${phone}`,
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
+      // Load user profile and pets in parallel
+      const [profileResult, petsResult] = await Promise.all([
+        fetch(
+          `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/profile/${phone}`,
+          { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        ).then(res => res.ok ? res.json() : null),
+        fetch(
+          `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/pets/${phone}`,
+          { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        ).then(res => res.ok ? res.json() : null)
+      ]);
 
-      if (profileResponse.ok) {
-        const profileResult = await profileResponse.json();
+      if (profileResult) {
         setUserData(prev => ({
           ...prev,
           name: profileResult.profile?.firstName || 'User',
@@ -102,17 +105,7 @@ export function CustomerHome({
         setUserProfilePhoto(profileResult.profile?.photo || '');
       }
 
-      // Load pets
-      const petsResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/pets/${phone}`,
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
-
-      if (petsResponse.ok) {
-        const petsResult = await petsResponse.json();
-        
+      if (petsResult) {
         // ✅ Robust response parsing
         let pets = [];
         if (Array.isArray(petsResult)) {
