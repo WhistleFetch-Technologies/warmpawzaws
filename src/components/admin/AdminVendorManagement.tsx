@@ -896,11 +896,16 @@ export function AdminVendorManagement({ onNavigate }: AdminVendorManagementProps
                   onChange={(e) => setActiveTab(e.target.value as any)}
                   value={activeTab}
                 >
-                  <option value="settings">/All Vendors</option>
-                  <option value="active-vendors">/Active Vendors</option>
-                  <option value="support">/Support Vendor</option>
-                  <option value="compliance">/Compliance Issues</option>
-                  <option value="pending">/Pending Applications</option>
+                  <option value="applications">Pending Applications</option>
+                  <option value="active-vendors">Active Vendors</option>
+                  <option value="clarification">Clarification Requested</option>
+                  <option value="deactivation">Deactivation Requests</option>
+                  <option value="rate-changes">Rate Changes</option>
+                  <option value="reverification">Re-verification</option>
+                  <option value="support">Support Vendor</option>
+                  <option value="compliance">Compliance Issues</option>
+                  <option value="payment-disputes">Payment Disputes</option>
+                  <option value="settings">Vendor Settings</option>
                 </select>
               </div>
               <p className="text-sm text-gray-500">Complete vendor lifecycle management and administration</p>
@@ -1131,7 +1136,7 @@ export function AdminVendorManagement({ onNavigate }: AdminVendorManagementProps
               )}
 
               {activeTab === 'active-vendors' && (
-                <ActiveVendorsTab />
+                <ActiveVendorsTab onAddVendor={() => setShowAddVendor(true)} />
               )}
 
               {activeTab === 'settings' && (
@@ -1153,7 +1158,11 @@ export function AdminVendorManagement({ onNavigate }: AdminVendorManagementProps
 
       {/* Floating Add Button */}
       {activeTab === 'applications' && (
-        <button className="fixed bottom-8 right-8 w-14 h-14 bg-[#FF8C42] hover:bg-[#FF7A2E] rounded-full flex items-center justify-center shadow-lg">
+        <button 
+          onClick={() => setShowAddVendor(true)}
+          className="fixed bottom-8 right-8 w-14 h-14 bg-[#FF8C42] hover:bg-[#FF7A2E] rounded-full flex items-center justify-center shadow-lg transition-transform hover:scale-110 z-50"
+          title="Add New Vendor Application"
+        >
           <Plus className="w-6 h-6 text-white" />
         </button>
       )}

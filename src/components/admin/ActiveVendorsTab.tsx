@@ -23,7 +23,11 @@ interface ActiveVendor {
   lastActiveDate: string;
 }
 
-export function ActiveVendorsTab() {
+interface ActiveVendorsTabProps {
+  onAddVendor?: () => void;
+}
+
+export function ActiveVendorsTab({ onAddVendor }: ActiveVendorsTabProps = {}) {
   const [vendors, setVendors] = useState<ActiveVendor[]>([]);
   const [loading, setLoading] = useState(true);
   const [categoryFilter, setCategoryFilter] = useState('all');
@@ -131,7 +135,16 @@ export function ActiveVendorsTab() {
               <RefreshCw className="w-4 h-4" />
               Refresh
             </Button>
-            <Button className="bg-[#FF8C42] hover:bg-[#FF7A2E] gap-2">
+            <Button 
+              className="bg-[#FF8C42] hover:bg-[#FF7A2E] gap-2"
+              onClick={() => {
+                if (onAddVendor) {
+                  onAddVendor();
+                } else {
+                  console.warn('onAddVendor callback not provided');
+                }
+              }}
+            >
               <Plus className="w-4 h-4" />
               Add Vendor
             </Button>

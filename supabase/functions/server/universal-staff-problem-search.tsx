@@ -1,0 +1,442 @@
+/**
+ * ✅ UNIVERSAL STAFF PROBLEM SEARCH - FIXED VERSION
+ * 
+ * CORRECT APPROACH:
+ * 1. First search ALL staff with minimum 1 active and published service
+ * 2. Then check if their specialization matches the problem grid
+ * 3. Show doctors list and associated clinic dynamically for all roles/vendors
+ * 
+ * This approach ensures we only show staff who can actually provide services,
+ * and properly filter by their specialization.
+ */
+
+import { Hono } from 'npm:hono';
+import * as kv from './kv_store.tsx';
+import { calculateDistance } from './schedule-utils.tsx';
+import { getPrimarySpecialization, getAllSpecializations } from './specialization-mapping.tsx';
+
+const app = new Hono();
+
+/**
+ * GET /make-server-3dd53475/customer/staff-by-problem/:roleId/:problemId
+ * 
+ * Search for staff members by problem category
+ * - Works for ALL vendor types (vet, groomer, trainer, walker, behaviorist, boarding)
+ * - Returns staff with at least 1 active published service
+ * - Filters by specialization matching problem grid
+ * - Includes parent clinic/vendor information
+ */
+app.get('/make-server-3dd53475/customer/staff-by-problem/:roleId/:problemId', async (c) => {
+  try {
+    const roleId = c.req.param('roleId');
+    const problemId = c.req.param('problemId');
+    const lat = parseFloat(c.req.query('lat') || '0');
+    const lng = parseFloat(c.req.query('lng') || '0');
+    // ✅ BUSINESS RULE: Maximum radius for home services staff discovery is 20KM
+    let radius = parseInt(c.req.query('radius') || '20');
+    if (radius > 20) {
+      radius = 20; // Cap at 20KM maximum
+    }
+    const limit = parseInt(c.req.query('limit') || '20');
+    const offset = parseInt(c.req.query('offset') || '0');
+    
+    console.log(`\n🔍 [STAFF-BY-PROBLEM] Starting search...`);
+    console.log(`   Role: ${roleId}`);
+    console.log(`   Problem: ${problemId}`);
+    console.log(`   Location: ${lat},${lng} (radius: ${radius}km)`);
+    
+    // ✅ STEP 1: Get problem details and mapped subcategories
+    const { findProblemById } = await import('./problem-grid-catalog.tsx');
+    const problem = findProblemById(problemId);
+    
+    if (!problem) {
+      return c.json({ 
+        success: false, 
+        error: 'Problem not found',
+        problemId 
+      }, 404);
+    }
+    
+    console.log(`   Problem: "${problem.name}"`);
+    console.log(`   Mapped Subcategories:`, problem.mappedSubCategories);
+    
+    if (!problem.mappedSubCategories || problem.mappedSubCategories.length === 0) {
+      return c.json({ 
+        success: false, 
+        error: 'Problem has no mapped subcategories',
+        problem 
+      }, 400);
+    }
+    
+    // ✅ STEP 2: Get all approved and active vendors for this role
+    const allVendors = await kv.getByPrefix('vendor:vendor_') || [];
+    
+    // Normalize role ID for matching (handle both 'role_veterinarian' and 'veterinarian')
+    const normalizedRoleId = roleId.replace(/^role_/, '');
+    
+    const eligibleVendors = allVendors.filter((vendor: any) => {
+      const isApproved = vendor.status === 'approved';
+      const isActive = vendor.isActive !== false;
+      
+      // Match role ID (with and without 'role_' prefix)
+      const vendorRoleNormalized = (vendor.roleId || '').replace(/^role_/, '');
+      const roleMatch = vendorRoleNormalized === normalizedRoleId;
+      
+      return isApproved && isActive && roleMatch;
+    });
+    
+    console.log(`   Total vendors: ${allVendors.length}`);
+    console.log(`   Eligible vendors (approved, active, role match): ${eligibleVendors.length}`);
+    
+    if (eligibleVendors.length === 0) {
+      return c.json({
+        success: true,
+        staff: [],
+        clinics: [],
+        total: 0,
+        message: 'No eligible vendors found for this role'
+      });
+    }
+    
+    // ✅ STEP 3: Build subcategory matching sets for specialization check
+    const { subcategoryIdToNames } = await import('./problem-subcategory-mapping.tsx');
+    const allSubcategoryVariations = new Set<string>();
+    
+    // Add all name variations for each mapped subcategory
+    problem.mappedSubCategories.forEach((subCatId: string) => {
+      allSubcategoryVariations.add(subCatId); // Add ID itself
+      const names = subcategoryIdToNames[subCatId] || [];
+      names.forEach((name: string) => allSubcategoryVariations.add(name));
+    });
+    
+    console.log(`   Subcategory variations to match:`, Array.from(allSubcategoryVariations).slice(0, 10));
+    
+    // ✅ STEP 4: Search through all staff across eligible vendors
+    const staffResults: any[] = [];
+    const clinicMap = new Map<string, any>(); // Track unique clinics
+    
+    for (const vendor of eligibleVendors) {
+      const staffIds = await kv.get(`vendor:${vendor.id}:staff`) || [];
+      
+      console.log(`\n   🏢 Vendor: ${vendor.businessName || vendor.fullName} (${vendor.id})`);
+      console.log(`      Staff count: ${staffIds.length}`);
+      
+      if (staffIds.length === 0) continue;
+      
+      for (const staffId of staffIds) {
+        const staff = await kv.get(`staff:${staffId}`);
+        
+        if (!staff) {
+          console.log(`      ⚠️ Staff ${staffId} not found`);
+          continue;
+        }
+        
+        if (!staff.isActive) {
+          console.log(`      ❌ ${staff.fullName} - INACTIVE`);
+          continue;
+        }
+        
+        console.log(`      👤 ${staff.fullName}:`);
+        
+        // ✅ NEW ARCHITECTURE: Check staff.services array directly (has full service objects with isActive flags)
+        const staffServices = staff.services || [];
+        const activePublishedServices = staffServices.filter((s: any) => s.isActive === true);
+        
+        console.log(`         Services: ${staffServices.length} total, ${activePublishedServices.length} active`);
+        
+        if (activePublishedServices.length === 0) {
+          console.log(`         ❌ SKIPPED - No active published services`);
+          continue;
+        }
+        
+        // ✅ STEP 5: Check specialization match
+        const specializationMatch = checkStaffSpecialization(
+          staff,
+          problem.mappedSubCategories,
+          allSubcategoryVariations
+        );
+        
+        console.log(`         Specialization: ${staff.specialization || 'None'}`);
+        console.log(`         Specializations array: ${staff.specializations?.join(', ') || 'None'}`);
+        console.log(`         Match: ${specializationMatch ? '✅ YES' : '❌ NO'}`);
+        
+        if (!specializationMatch) {
+          continue;
+        }
+        
+        // ✅ Calculate distance if location provided
+        let distance = null;
+        if (lat !== 0 && lng !== 0 && vendor.latitude && vendor.longitude) {
+          const vendorLat = parseFloat(vendor.latitude);
+          const vendorLon = parseFloat(vendor.longitude);
+          
+          if (vendorLat && vendorLon) {
+            distance = calculateDistance(lat, lng, vendorLat, vendorLon);
+            
+            // Skip if outside radius
+            if (distance > radius) {
+              console.log(`         ❌ SKIPPED - Outside radius (${distance.toFixed(1)}km > ${radius}km)`);
+              continue;
+            }
+          }
+        }
+        
+        console.log(`         ✅ INCLUDED - Has services and matching specialization`);
+        
+        // Build staff result
+        const staffResult = {
+          entityType: 'staff',
+          id: staff.id,
+          staffId: staff.id,
+          fullName: staff.fullName,
+          name: staff.fullName,
+          photo: staff.photo || staff.profilePhoto,
+          
+          // Specialization
+          specialization: getPrimarySpecialization(staff), // ✅ FIXED: Show actual specialization
+          specializations: getAllSpecializations(staff), // ✅ FIXED: All specializations with proper formatting
+          
+          // Professional info
+          qualification: staff.qualification,
+          degree: staff.degree || staff.qualification,
+          yearsOfExperience: staff.yearsOfExperience || staff.experience || 0,
+          experience: staff.yearsOfExperience || staff.experience || 0,
+          bio: staff.bio || staff.about || '',
+          languages: staff.languages || ['English', 'Hindi'],
+          
+          // Consultation fee
+          consultationFee: staff.consultationFee || vendor.consultationFee || 500,
+          
+          // Ratings
+          rating: staff.rating || vendor.rating || 4.5,
+          totalReviews: staff.totalReviews || 0,
+          reviewCount: staff.totalReviews || 0,
+          
+          // Gender
+          gender: staff.gender || '',
+          
+          // Services
+          services: activePublishedServices.map((s: any) => ({
+            id: s.id || s.serviceId,
+            serviceId: s.serviceId || s.id,
+            name: s.serviceName || s.name,
+            category: s.category,
+            categoryName: s.categoryName,
+            price: s.price || 0,
+            duration: s.duration || 30,
+            serviceStyle: s.serviceStyle || 'at_center',
+            description: s.description || ''
+          })),
+          serviceCount: activePublishedServices.length,
+          
+          // Parent clinic/vendor info
+          clinicId: vendor.id,
+          vendorId: vendor.id,
+          clinicName: vendor.businessName || vendor.fullName,
+          centerName: vendor.businessName || vendor.fullName,
+          clinicAddress: vendor.address,
+          centerAddress: vendor.address,
+          clinicCity: vendor.city,
+          clinicState: vendor.state,
+          clinicPincode: vendor.pincode,
+          clinicPhone: vendor.phone,
+          location: vendor.address,
+          
+          // Distance
+          distance,
+          
+          // Availability
+          availableToday: true, // Placeholder
+          availability: staff.availability || [],
+          nextAvailableSlot: 'Today 2:00 PM', // Placeholder
+          
+          // Match info
+          matchReason: 'specialization',
+          problemMatched: problem.name
+        };
+        
+        staffResults.push(staffResult);
+        
+        // Add clinic to clinic map
+        if (!clinicMap.has(vendor.id)) {
+          clinicMap.set(vendor.id, {
+            entityType: 'clinic',
+            id: vendor.id,
+            vendorId: vendor.id,
+            name: vendor.businessName || vendor.fullName,
+            businessName: vendor.businessName || vendor.fullName,
+            address: vendor.address,
+            city: vendor.city,
+            state: vendor.state,
+            pincode: vendor.pincode,
+            phone: vendor.phone,
+            email: vendor.email,
+            photo: vendor.photos?.[0] || vendor.logo || '',
+            
+            rating: vendor.rating || 4.5,
+            reviewCount: vendor.totalReviews || 0,
+            totalReviews: vendor.totalReviews || 0,
+            
+            roleId: vendor.roleId,
+            roleName: vendor.roleName,
+            
+            isPremium: vendor.isPremium || false,
+            isVerified: vendor.isVerified !== false,
+            
+            distance,
+            
+            // Will be populated below
+            staffCount: 0,
+            matchingStaffCount: 0,
+            serviceCount: 0,
+            doctors: []
+          });
+        }
+      }
+    }
+    
+    console.log(`\n📊 Found ${staffResults.length} matching staff members`);
+    
+    // ✅ STEP 6: Enrich clinics with staff counts and service counts
+    const clinics = Array.from(clinicMap.values());
+    
+    for (const clinic of clinics) {
+      // Count all staff
+      const allStaffIds = await kv.get(`vendor:${clinic.id}:staff`) || [];
+      clinic.staffCount = allStaffIds.length;
+      
+      // Count matching staff
+      const matchingStaff = staffResults.filter(s => s.clinicId === clinic.id);
+      clinic.matchingStaffCount = matchingStaff.length;
+      
+      // Add top 3 matching staff as doctors preview
+      clinic.doctors = matchingStaff.slice(0, 3).map((s: any) => ({
+        id: s.id,
+        name: s.fullName,
+        specialization: s.specialization,
+        photo: s.photo
+      }));
+      
+      // Count services
+      const servicesAtCenter = await kv.get(`vendor_services:${clinic.id}:at_center`) || { services: [] };
+      const servicesAtHome = await kv.get(`vendor_services:${clinic.id}:at_home`) || { services: [] };
+      const servicesTele = await kv.get(`vendor_services:${clinic.id}:tele`) || { services: [] };
+      
+      const allServices = [
+        ...(servicesAtCenter.services || []),
+        ...(servicesAtHome.services || []),
+        ...(servicesTele.services || [])
+      ];
+      
+      const publishedServices = allServices.filter((s: any) => 
+        s.isEnabled === true && (s.publishStatus === 'published' || s.publishStatus === 'auto_published')
+      );
+      
+      clinic.serviceCount = publishedServices.length;
+    }
+    
+    console.log(`📊 Found ${clinics.length} associated clinics`);
+    
+    // ✅ STEP 7: Sort results
+    if (lat !== 0 && lng !== 0) {
+      // Sort by distance
+      staffResults.sort((a, b) => (a.distance || 999) - (b.distance || 999));
+      clinics.sort((a, b) => (a.distance || 999) - (b.distance || 999));
+    } else {
+      // Sort by rating
+      staffResults.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+      clinics.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+    }
+    
+    // ✅ STEP 8: Paginate staff results
+    const total = staffResults.length;
+    const paginatedStaff = staffResults.slice(offset, offset + limit);
+    
+    console.log(`✅ Returning ${paginatedStaff.length} staff members (page ${Math.floor(offset / limit) + 1})`);
+    console.log(`✅ Returning ${clinics.length} associated clinics`);
+    
+    return c.json({
+      success: true,
+      problem,
+      roleId,
+      staff: paginatedStaff,
+      clinics,
+      total,
+      count: paginatedStaff.length,
+      limit,
+      offset,
+      breakdown: {
+        totalStaff: staffResults.length,
+        totalClinics: clinics.length
+      },
+      filters: { lat, lng, radius }
+    });
+    
+  } catch (error) {
+    console.error('❌ [STAFF-BY-PROBLEM] Error:', error);
+    return c.json({ 
+      success: false, 
+      error: String(error),
+      message: 'Failed to search staff by problem'
+    }, 500);
+  }
+});
+
+/**
+ * Check if staff has matching specialization
+ * Supports both new array format and legacy string format
+ */
+function checkStaffSpecialization(
+  staff: any,
+  mappedSubCategories: string[],
+  allVariations: Set<string>
+): boolean {
+  // ✅ METHOD 1: Check new specializations array (recommended)
+  if (staff.specializations && Array.isArray(staff.specializations)) {
+    const hasMatch = staff.specializations.some((spec: string) => {
+      // Check if spec matches any subcategory ID or name variation
+      return mappedSubCategories.includes(spec) || allVariations.has(spec);
+    });
+    
+    if (hasMatch) {
+      console.log(`         Match via specializations array: ${staff.specializations.join(', ')}`);
+      return true;
+    }
+  }
+  
+  // ✅ METHOD 2: Check legacy specialization string field
+  if (staff.specialization && typeof staff.specialization === 'string') {
+    const specializationLower = staff.specialization.toLowerCase();
+    
+    // Check exact match with variations
+    if (allVariations.has(staff.specialization)) {
+      console.log(`         Match via specialization string (exact): ${staff.specialization}`);
+      return true;
+    }
+    
+    // Check partial match with subcategory IDs
+    const hasPartialMatch = mappedSubCategories.some((subCatId: string) => {
+      const subCatNormalized = subCatId.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+      const specNormalized = specializationLower.replace(/[^a-z0-9]+/g, '_');
+      return specNormalized.includes(subCatNormalized) || subCatNormalized.includes(specNormalized);
+    });
+    
+    if (hasPartialMatch) {
+      console.log(`         Match via specialization string (partial): ${staff.specialization}`);
+      return true;
+    }
+    
+    // Check partial match with variation names
+    for (const variation of allVariations) {
+      const variationLower = variation.toLowerCase();
+      if (specializationLower.includes(variationLower) || variationLower.includes(specializationLower)) {
+        console.log(`         Match via specialization string (variation): ${staff.specialization} ~ ${variation}`);
+        return true;
+      }
+    }
+  }
+  
+  return false;
+}
+
+export default app;
