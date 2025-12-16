@@ -58,6 +58,8 @@ import { RescheduleAppointmentView } from './RescheduleAppointmentView';
 // import { WalletView } from './WalletView';
 
 // ✅ NEW IMPORTS FOR GAP FIXES
+import { PetCafeListingZomatoStyle } from './PetCafeListingZomatoStyle';
+import { ResortBoardingBookingEnhanced } from './ResortBoardingBookingEnhanced';
 import { ResortBookingFlow } from './ResortBookingFlow';
 import { CafeReservationFlow } from './CafeReservationFlow';
 import { BreederCatalogView } from './BreederCatalogView';
@@ -112,6 +114,7 @@ type ScreenType =
   | 'insurance'
   | 'insurance_provider'
   | 'cafes'
+  | 'cafe_detail'
   | 'cafe_reservation'
   | 'shop'
   | 'product_detail'
@@ -397,9 +400,13 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   
   // ✅ UPDATED LANDING PAGES & FLOWS
   if (currentScreen === 'resort') return <ResortServicesLanding phone={phone} onBack={handleBack} onNavigate={(screen, data) => { if (screen === 'resort_booking') { setSelectedVendorId(data?.vendorId); setCurrentScreen('resort_booking'); } }} />;
-  if (currentScreen === 'resort_booking') return <ResortBookingFlow phone={phone} preSelectedVendorId={selectedVendorId} onBack={() => setCurrentScreen('resort')} onSuccess={() => setCurrentScreen('my-bookings')} />;
+  if (currentScreen === 'resort_booking') return <ResortBoardingBookingEnhanced phone={phone} preSelectedVendorId={selectedVendorId} onBack={() => setCurrentScreen('resort')} onSuccess={() => setCurrentScreen('my-bookings')} />;
   
-  if (currentScreen === 'cafes') return <PetCafeServicesLanding phone={phone} onBack={handleBack} onNavigate={(screen, data) => { if (screen === 'cafe_reservation') { setSelectedVendorId(data?.vendorId); setCurrentScreen('cafe_reservation'); } }} />;
+  if (currentScreen === 'cafes') return <PetCafeServicesLanding phone={phone} onBack={handleBack} onNavigate={(screen, data) => { 
+      if (screen === 'cafe_reservation') { setSelectedVendorId(data?.vendorId); setCurrentScreen('cafe_reservation'); }
+      else if (screen === 'cafe_detail') { setSelectedVendorId(data?.vendorId); setCurrentScreen('cafe_detail'); }
+  }} />;
+  if (currentScreen === 'cafe_detail') return <PetCafeListingZomatoStyle cafeId={selectedVendorId || ''} onBack={() => setCurrentScreen('cafes')} />;
   if (currentScreen === 'cafe_reservation') return <CafeReservationFlow phone={phone} preSelectedVendorId={selectedVendorId} onBack={() => setCurrentScreen('cafes')} />;
   
   if (currentScreen === 'breeder') return <BreederServicesLanding phone={phone} onBack={handleBack} onNavigate={(screen, data) => { if (screen === 'breeder_catalog') setCurrentScreen('breeder_catalog'); }} />;

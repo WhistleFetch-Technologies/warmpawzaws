@@ -13,6 +13,7 @@ interface InstantTeleBookingFlowProps {
   serviceId: string;
   serviceName: string;
   basePrice: number;
+  roleName?: string; // e.g. "Doctor", "Vet", "Trainer", "Insurance Agent"
   onPaymentComplete: (bookingId: string) => void;
   onBack: () => void;
 }
@@ -20,6 +21,7 @@ interface InstantTeleBookingFlowProps {
 interface AvailableDoctor {
   id: string;
   fullName: string;
+  role: string; // Dynamic role from backend
   specialization: string;
   photo?: string;
   rating: number;
@@ -37,6 +39,7 @@ export function InstantTeleBookingFlow({
   serviceId, 
   serviceName, 
   basePrice,
+  roleName = 'Doctor',
   onPaymentComplete,
   onBack 
 }: InstantTeleBookingFlowProps) {
@@ -227,6 +230,12 @@ export function InstantTeleBookingFlow({
     );
   }
 
+  const getPrefix = (role: string = '') => {
+    const r = role.toLowerCase();
+    if (r.includes('doctor') || r.includes('vet')) return 'Dr.';
+    return '';
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-4xl mx-auto p-6">
@@ -235,7 +244,7 @@ export function InstantTeleBookingFlow({
           <Button variant="ghost" onClick={onBack} className="mb-4">
             ← Back
           </Button>
-          <h1 className="text-2xl font-bold text-gray-900">Instant Tele Consultation</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Instant {roleName} Consultation</h1>
           <p className="text-gray-600 mt-1">{serviceName}</p>
         </div>
 
@@ -321,7 +330,7 @@ export function InstantTeleBookingFlow({
                 <div className="flex-1">
                   <h3 className="font-semibold text-blue-900 mb-1">How Instant Tele Works</h3>
                   <p className="text-sm text-blue-800">
-                    After payment, a doctor from the list below will be assigned to you within 2 minutes based on availability. You'll be notified immediately when your doctor is ready.
+                    After payment, a {roleName.toLowerCase()} from the list below will be assigned to you within 2 minutes based on availability. You'll be notified immediately when your {roleName.toLowerCase()} is ready.
                   </p>
                 </div>
               </div>
@@ -331,7 +340,7 @@ export function InstantTeleBookingFlow({
             <div>
               <div className="flex items-center justify-between mb-4">
                 <h3 className="font-semibold text-gray-900">
-                  Available Doctors ({candidateDoctors.length})
+                  Available {roleName}s ({candidateDoctors.length})
                 </h3>
                 <div className="flex gap-2">
                   <Button
@@ -375,7 +384,7 @@ export function InstantTeleBookingFlow({
                       </div>
                       <div className="flex-1 min-w-0">
                         <h4 className="font-semibold text-gray-900 truncate">
-                          Dr. {doctor.fullName}
+                          {getPrefix(roleName)} {doctor.fullName}
                         </h4>
                         <p className="text-xs text-gray-600 truncate">
                           {doctor.specialization}
@@ -465,9 +474,9 @@ export function InstantTeleBookingFlow({
             <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <Loader className="w-10 h-10 text-[#FF8C42] animate-spin" />
             </div>
-            <h3 className="text-xl font-bold text-gray-900 mb-2">Assigning Your Doctor...</h3>
+            <h3 className="text-xl font-bold text-gray-900 mb-2">Assigning Your {roleName}...</h3>
             <p className="text-gray-600 mb-6">
-              We're connecting you with the best available doctor. This usually takes less than 2 minutes.
+              We're connecting you with the best available {roleName.toLowerCase()}. This usually takes less than 2 minutes.
             </p>
             <div className="max-w-md mx-auto">
               <div className="flex items-center justify-center gap-2 text-sm text-gray-500">
@@ -496,7 +505,7 @@ export function InstantTeleBookingFlow({
                   <div className="flex items-start justify-between mb-2">
                     <div>
                       <h3 className="text-xl font-bold text-gray-900">
-                        Dr. {assignedDoctor.fullName}
+                        {getPrefix(roleName)} {assignedDoctor.fullName}
                       </h3>
                       <p className="text-gray-700">{assignedDoctor.specialization}</p>
                     </div>
@@ -520,7 +529,7 @@ export function InstantTeleBookingFlow({
             <Card className="p-6">
               <h3 className="font-semibold text-gray-900 mb-4">Ready to Start Consultation</h3>
               <p className="text-gray-600 mb-6">
-                Dr. {assignedDoctor.fullName} is ready to see you now. Click below to start your video consultation.
+                {getPrefix(roleName)} {assignedDoctor.fullName} is ready to see you now. Click below to start your video consultation.
               </p>
 
               <div className="space-y-3">
@@ -535,7 +544,7 @@ export function InstantTeleBookingFlow({
                 <div className="grid grid-cols-2 gap-3">
                   <Button variant="outline" className="w-full">
                     <Phone className="w-4 h-4 mr-2" />
-                    Call Doctor
+                    Call {roleName}
                   </Button>
                   <Button variant="outline" className="w-full">
                     <MessageSquare className="w-4 h-4 mr-2" />
@@ -569,7 +578,7 @@ export function InstantTeleBookingFlow({
             </div>
             <h3 className="text-xl font-bold text-gray-900 mb-2">Session Active</h3>
             <p className="text-gray-600 mb-6">
-              Your consultation with Dr. {assignedDoctor?.fullName} is now in progress.
+              Your consultation with {getPrefix(roleName)} {assignedDoctor?.fullName} is now in progress.
             </p>
             <Button
               onClick={() => window.open(sessionUrl, '_blank')}

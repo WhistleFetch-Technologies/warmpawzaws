@@ -26,6 +26,8 @@ interface CafeDetails {
   openHours: string;
   phone: string;
   coordinates: { lat: number; lng: number };
+  petPolicy?: string[];
+  bookingPolicy?: string[];
 }
 
 interface PetCafeListingEnhancedProps {
@@ -55,7 +57,24 @@ export function PetCafeListingEnhanced({ cafeId, onBack }: PetCafeListingEnhance
 
       if (response.ok) {
         const data = await response.json();
-        setCafe(data.profile);
+        // Ensure policies exist (fallback if API doesn't return them yet)
+        const profile = data.profile;
+        if (!profile.petPolicy) {
+             profile.petPolicy = [
+                 "Pets must be on a leash at all times unless in designated play areas.",
+                 "Up-to-date vaccinations are mandatory.",
+                 "Aggressive behavior will not be tolerated.",
+                 "Owners are responsible for cleaning up after their pets."
+             ];
+        }
+        if (!profile.bookingPolicy) {
+             profile.bookingPolicy = [
+                 "Reservations held for 15 minutes past booking time.",
+                 "Cancellations must be made at least 2 hours in advance.",
+                 "Special events may require a deposit."
+             ];
+        }
+        setCafe(profile);
       } else {
         toast.error('Failed to load cafe details');
       }
@@ -166,6 +185,7 @@ export function PetCafeListingEnhanced({ cafeId, onBack }: PetCafeListingEnhance
           <TabsList className="w-full flex border-b rounded-none p-0 h-12 bg-white">
             <TabsTrigger value="overview" className="flex-1 rounded-none border-b-2 border-transparent data-[state=active]:border-orange-600 data-[state=active]:text-orange-600">Overview</TabsTrigger>
             <TabsTrigger value="menu" className="flex-1 rounded-none border-b-2 border-transparent data-[state=active]:border-orange-600 data-[state=active]:text-orange-600">Menu</TabsTrigger>
+            <TabsTrigger value="policies" className="flex-1 rounded-none border-b-2 border-transparent data-[state=active]:border-orange-600 data-[state=active]:text-orange-600">Policies</TabsTrigger>
             <TabsTrigger value="photos" className="flex-1 rounded-none border-b-2 border-transparent data-[state=active]:border-orange-600 data-[state=active]:text-orange-600">Photos</TabsTrigger>
           </TabsList>
 
@@ -187,6 +207,36 @@ export function PetCafeListingEnhanced({ cafeId, onBack }: PetCafeListingEnhance
                   ))}
                 </div>
               </div>
+            </TabsContent>
+
+            <TabsContent value="policies" className="mt-0 space-y-6">
+                 <div>
+                    <h3 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
+                        <Heart className="w-4 h-4 text-red-500" /> Pet Policy
+                    </h3>
+                    <ul className="space-y-2">
+                        {cafe.petPolicy?.map((policy, idx) => (
+                            <li key={idx} className="flex items-start gap-2 text-sm text-gray-600">
+                                <span className="w-1.5 h-1.5 bg-gray-400 rounded-full mt-1.5 flex-shrink-0" />
+                                {policy}
+                            </li>
+                        ))}
+                    </ul>
+                 </div>
+                 
+                 <div>
+                    <h3 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
+                        <Info className="w-4 h-4 text-blue-500" /> Booking Policy
+                    </h3>
+                    <ul className="space-y-2">
+                        {cafe.bookingPolicy?.map((policy, idx) => (
+                            <li key={idx} className="flex items-start gap-2 text-sm text-gray-600">
+                                <span className="w-1.5 h-1.5 bg-gray-400 rounded-full mt-1.5 flex-shrink-0" />
+                                {policy}
+                            </li>
+                        ))}
+                    </ul>
+                 </div>
             </TabsContent>
 
             <TabsContent value="menu" className="mt-0 space-y-6">

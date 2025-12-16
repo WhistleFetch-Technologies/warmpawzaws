@@ -429,6 +429,11 @@ app.use('/make-server-3dd53475/admin/catalog/clear', criticalActionGuard());
 app.use('/make-server-3dd53475/admin/catalog/seed', criticalActionGuard());
 app.use('/make-server-3dd53475/admin/onboarding-fields/sync', criticalActionGuard());
 
+import { tierSystemEndpoints } from './tier-system.tsx';
+import { razorpayMarketplaceSettlement } from './razorpay-marketplace-settlement.tsx';
+
+import { adminCleanupDuplicatesEndpoints } from './admin-cleanup-duplicates.tsx';
+
 // ------------------------------------------------------------------
 // REGISTER ROUTES
 // IMPORTANT: Order matters! Specific routes must be registered before generic wildcards.
@@ -1175,6 +1180,24 @@ if (cafeTableManagement && typeof cafeTableManagement === 'object') {
   app.route('/make-server-3dd53475', cafeTableManagement);
 } else {
   console.warn('⚠️ Cafe Table Management module undefined, skipping');
+}
+
+// ✅ NEW: Tier System Endpoints (Rule 15)
+if (tierSystemEndpoints && typeof tierSystemEndpoints === 'function') {
+  console.log('✅ Registering Tier System Endpoints...');
+  tierSystemEndpoints(app, kv);
+}
+
+// ✅ NEW: Razorpay Marketplace Settlement (Rule 15)
+if (razorpayMarketplaceSettlement && typeof razorpayMarketplaceSettlement === 'function') {
+  console.log('✅ Registering Razorpay Marketplace Settlement...');
+  razorpayMarketplaceSettlement(app, kv);
+}
+
+// ✅ NEW: Admin Cleanup Duplicates (Rule 18)
+if (adminCleanupDuplicatesEndpoints && typeof adminCleanupDuplicatesEndpoints === 'function') {
+  console.log('✅ Registering Admin Cleanup Duplicates...');
+  adminCleanupDuplicatesEndpoints(app, kv);
 }
 
 // ------------------------------------------------------------------

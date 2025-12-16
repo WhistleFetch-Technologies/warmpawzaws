@@ -104,10 +104,10 @@ export function PetCafeServicesLanding({ onBack, onNavigate, phone }: PetCafeSer
                   icon="☕"
                   colorClass="from-orange-100 to-amber-100"
                   onViewDetails={(vendorId) => {
-                      onNavigate('cafe_reservation', { vendorId });
+                      onNavigate('cafe_detail', { vendorId });
                   }}
                   onBook={(vendorId) => {
-                      onNavigate('cafe_reservation', { vendorId });
+                      onNavigate('cafe_detail', { vendorId });
                   }}
                 />
               ))}
