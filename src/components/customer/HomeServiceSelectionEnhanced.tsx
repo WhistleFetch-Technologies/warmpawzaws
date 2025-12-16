@@ -6,6 +6,8 @@ import { MapPin, Clock, Star, Calendar, ChevronRight, Heart, TrendingUp, Navigat
 import { toast } from 'sonner@2.0.3';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { motion, AnimatePresence } from 'motion/react';
+import { RadarProviderMap } from '../RadarProviderMap';
+import { PreviousProvidersCarousel } from '../PreviousProvidersCarousel';
 
 // Types
 interface Provider {
@@ -55,7 +57,6 @@ export function HomeServiceSelectionEnhanced({
   const [viewMode, setViewMode] = useState<'list' | 'radar'>('list');
   const [selectedTimeWindow, setSelectedTimeWindow] = useState<string>('');
   const [providers, setProviders] = useState<Provider[]>([]);
-  const [previousProviders, setPreviousProviders] = useState<Provider[]>([]);
   const [selectedProvider, setSelectedProvider] = useState<string>('');
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedSlot, setSelectedSlot] = useState('');
@@ -70,7 +71,6 @@ export function HomeServiceSelectionEnhanced({
   ];
 
   useEffect(() => {
-    loadPreviousProviders();
     // Simulate getting user location
     navigator.geolocation.getCurrentPosition(
       (position) => {
@@ -81,7 +81,6 @@ export function HomeServiceSelectionEnhanced({
       },
       (error) => {
         console.error("Error getting location", error);
-        // Fallback or use default
       }
     );
   }, [customerId, serviceType]);
@@ -92,98 +91,64 @@ export function HomeServiceSelectionEnhanced({
     }
   }, [selectedTimeWindow]);
 
-  const loadPreviousProviders = async () => {
-    try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/${customerId}/bookings`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        const bookings = data.bookings || [];
-        
-        const usedProviderIds = new Set(
-          bookings
-            .filter((b: any) => b.status === 'completed' && b.serviceType === serviceType)
-            .map((b: any) => b.vendorId)
-        );
-
-        const previousList: Provider[] = Array.from(usedProviderIds).map((id: any) => {
-          const booking = bookings.find((b: any) => b.vendorId === id);
-          return {
-            id,
-            name: booking?.vendorName || 'Provider',
-            photo: booking?.vendorPhoto || '',
-            rating: booking?.vendorRating || 4.5,
-            reviews: booking?.vendorReviews || 0,
-            distance: 0,
-            commuteTime: 0,
-            price: booking?.totalAmount || 0,
-            previouslyUsed: true,
-            isAvailable: true,
-            coordinates: { lat: 28.61, lng: 77.20 } // Mock coordinates
-          };
-        });
-
-        setPreviousProviders(previousList);
-      }
-    } catch (error) {
-      console.error('Error loading previous providers:', error);
-    }
-  };
-
-  const calculateCommuteTime = (distance: number): number => {
-    // Enhanced calculation simulating traffic
-    const baseTime = (distance / 20) * 60; // 20 km/h avg speed
-    const trafficFactor = 1.2; // 20% delay for traffic
-    const buffer = 5; // 5 min parking/entry buffer
-    return Math.ceil(baseTime * trafficFactor + buffer);
-  };
-
   const loadProviders = async () => {
     try {
       setLoadingProviders(true);
 
-      // Search for providers based on service type and time window
+      // Search for providers based on service type and time window using Radar endpoint for comprehensive data
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/discover/vendors?serviceType=${serviceType}&timeWindow=${selectedTimeWindow}&lat=${userLocation.lat}&lng=${userLocation.lng}&radius=15`, // Expanded radius for radar
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/home-services/providers/radar?serviceType=${serviceType}&lat=${userLocation.lat}&lng=${userLocation.lng}&radius=15`,
         { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
       );
 
       if (response.ok) {
         const data = await response.json();
-        const vendorList = data.vendors || [];
+        const vendorList = data.providers || [];
 
-        const transformedProviders: Provider[] = vendorList.map((v: any, index: number) => {
-            // Mock coordinates distributed around user for radar effect
-            const angle = (index / vendorList.length) * 2 * Math.PI;
-            const r = (v.distance || Math.random() * 5 + 1) * 0.01; // Scale for lat/lng
+        const transformedProviders: Provider[] = await Promise.all(vendorList.map(async (v: any) => {
+            // Calculate commute time for each provider
+            // In a real optimized scenario, we would batch this or the radar endpoint would return it
+            // For now, we simulate or use the simple calc if not provided
+            
+            let commuteTime = 30; // default
+            try {
+                 const commuteRes = await fetch(
+                    `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/home-services/calculate-commute-time`,
+                    {
+                        method: 'POST',
+                        headers: { 
+                            'Authorization': `Bearer ${publicAnonKey}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            providerId: v.id,
+                            customerLat: userLocation.lat,
+                            customerLng: userLocation.lng
+                        })
+                    }
+                );
+                if (commuteRes.ok) {
+                    const cData = await commuteRes.json();
+                    commuteTime = cData.commute.estimatedTime;
+                }
+            } catch (e) { console.error(e); }
+
             return {
               id: v.id,
-              name: v.businessName || v.fullName,
-              photo: v.profilePhoto || '',
+              name: v.name,
+              photo: v.photo || '', // Add photo if available in radar response
               rating: v.rating || 4.5,
-              reviews: v.totalReviews || 0,
-              distance: v.distance || Math.random() * 5 + 1,
-              commuteTime: calculateCommuteTime(v.distance || Math.random() * 5 + 1),
+              reviews: v.reviewCount || 0,
+              distance: parseFloat(v.distance),
+              commuteTime: commuteTime,
               price: v.basePrice || 0,
-              previouslyUsed: previousProviders.some(p => p.id === v.id),
-              isAvailable: v.isAvailable !== false,
-              nextAvailableSlot: v.nextAvailableSlot,
+              previouslyUsed: false, // Will be handled by PreviousProvidersCarousel logic separation
+              isAvailable: v.available !== false,
+              nextAvailableSlot: 'Today', // Placeholder or fetch real availability
               specialization: v.specialization,
-              coordinates: {
-                  lat: userLocation.lat + r * Math.cos(angle),
-                  lng: userLocation.lng + r * Math.sin(angle)
-              }
+              coordinates: v.location || { lat: 0, lng: 0 }
             };
-        });
-
-        transformedProviders.sort((a, b) => {
-          if (a.previouslyUsed && !b.previouslyUsed) return -1;
-          if (!a.previouslyUsed && b.previouslyUsed) return 1;
-          return a.distance - b.distance;
-        });
+        }));
 
         setProviders(transformedProviders);
         setStep('providers');
@@ -206,7 +171,7 @@ export function HomeServiceSelectionEnhanced({
   };
 
   const handleBooking = async () => {
-    if (!selectedDate && !isSubscription) { // Subscription might strictly use time window
+    if (!selectedDate && !isSubscription) {
       toast.error('Please select a date');
       return;
     }
@@ -229,7 +194,7 @@ export function HomeServiceSelectionEnhanced({
         serviceName,
         serviceStyle: 'at_home',
         scheduledDate: selectedDate,
-        scheduledTime: isSubscription ? selectedTimeWindow : selectedSlot, // Subscription uses general window
+        scheduledTime: isSubscription ? selectedTimeWindow : selectedSlot,
         timeWindow: selectedTimeWindow,
         address: {}, 
         totalAmount: provider?.price || 0,
@@ -269,63 +234,6 @@ export function HomeServiceSelectionEnhanced({
 
   // --- Render Components ---
 
-  const RadarView = () => {
-      // Simple radar visualization using CSS/SVG
-      return (
-          <div className="relative w-full aspect-square bg-gray-900 rounded-full overflow-hidden border-4 border-gray-800 shadow-inner my-4">
-              {/* Radar Rings */}
-              <div className="absolute inset-0 border border-gray-700 rounded-full m-8 opacity-50"></div>
-              <div className="absolute inset-0 border border-gray-700 rounded-full m-16 opacity-50"></div>
-              <div className="absolute inset-0 border border-gray-700 rounded-full m-24 opacity-50"></div>
-              
-              {/* Scan Effect */}
-              <div className="absolute w-1/2 h-1/2 bg-gradient-to-t from-green-500/20 to-transparent top-0 left-1/2 origin-bottom-left animate-[spin_4s_linear_infinite] rounded-tr-full"></div>
-
-              {/* Center User */}
-              <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
-                  <div className="w-4 h-4 bg-blue-500 rounded-full border-2 border-white shadow-[0_0_10px_rgba(59,130,246,0.5)] z-20"></div>
-              </div>
-
-              {/* Providers */}
-              {providers.map((provider) => {
-                  // Project distance/angle to percentage for CSS placement
-                  // This is a rough visualization projection
-                  const maxDist = 15; // configured radius
-                  const distPercent = (provider.distance / maxDist) * 50; // 0-50% from center
-                  
-                  // Random angle for visualization if coordinates are not strict, or calculate if we had real bearing
-                  // Here we used mock lat/lng distribution in loadProviders, but for CSS we can just use simple trig from the mock lat/lng relative to center
-                  // const dx = provider.coordinates.lng - userLocation.lng;
-                  // const dy = provider.coordinates.lat - userLocation.lat;
-                  // For simplicity in this mock radar, we use random positions seeded by ID or pre-calc
-                  const angle = (parseInt(provider.id.slice(-4), 16) % 360) * (Math.PI / 180); 
-                  
-                  const top = 50 + Math.sin(angle) * distPercent;
-                  const left = 50 + Math.cos(angle) * distPercent;
-
-                  return (
-                    <motion.button
-                        key={provider.id}
-                        initial={{ scale: 0 }}
-                        animate={{ scale: 1 }}
-                        className="absolute w-8 h-8 -ml-4 -mt-4 rounded-full border-2 border-white shadow-lg overflow-hidden z-10 hover:scale-125 transition-transform"
-                        style={{ top: `${top}%`, left: `${left}%` }}
-                        onClick={() => handleProviderSelect(provider.id)}
-                    >
-                         {provider.photo ? (
-                            <img src={provider.photo} alt={provider.name} className="w-full h-full object-cover" />
-                          ) : (
-                            <div className="w-full h-full bg-orange-500 flex items-center justify-center">
-                                <User className="w-4 h-4 text-white" />
-                            </div>
-                          )}
-                    </motion.button>
-                  );
-              })}
-          </div>
-      );
-  };
-
   const TimeWindowStep = () => (
     <div className="space-y-6">
       <div>
@@ -344,7 +252,7 @@ export function HomeServiceSelectionEnhanced({
           <button
             key={window.id}
             onClick={() => handleTimeWindowSelect(window.id)}
-            disabled={isSubscription && !window.isPackageEligible} // Some windows might not be eligible for packages
+            disabled={isSubscription && !window.isPackageEligible}
             className={`w-full p-4 rounded-xl border-2 transition-all relative ${
               selectedTimeWindow === window.id
                 ? 'border-orange-500 bg-orange-50'
@@ -357,7 +265,6 @@ export function HomeServiceSelectionEnhanced({
                 window.icon === 'afternoon' ? 'bg-orange-100' :
                 'bg-purple-100'
               }`}>
-                {/* Icons... (Simplified for brevity) */}
                 <Clock className={`w-6 h-6 ${
                      window.icon === 'morning' ? 'text-yellow-600' :
                      window.icon === 'afternoon' ? 'text-orange-600' :
@@ -417,39 +324,12 @@ export function HomeServiceSelectionEnhanced({
         </div>
       </div>
 
-      {/* Previous Providers - Horizontal Scroll */}
-      {previousProviders.length > 0 && viewMode === 'list' && (
-        <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <Heart className="w-4 h-4 text-red-500 fill-red-500" />
-            <h3 className="font-semibold text-gray-900">Your Trusted Providers</h3>
-          </div>
-          <div className="flex gap-3 overflow-x-auto pb-4 -mx-4 px-4 scrollbar-hide snap-x">
-            {previousProviders.map((provider) => (
-              <button
-                key={provider.id}
-                onClick={() => handleProviderSelect(provider.id)}
-                className="flex-shrink-0 w-36 bg-gradient-to-br from-orange-50 to-orange-100 border-2 border-orange-200 rounded-xl p-3 text-center hover:shadow-md transition-all snap-start"
-              >
-                <div className="w-16 h-16 mx-auto mb-2 rounded-full overflow-hidden bg-white relative">
-                  {provider.photo ? (
-                    <img src={provider.photo} alt={provider.name} className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center bg-orange-100">
-                      <User className="w-8 h-8 text-orange-600" />
-                    </div>
-                  )}
-                  <div className="absolute bottom-0 right-0 bg-green-500 w-4 h-4 rounded-full border-2 border-white"></div>
-                </div>
-                <p className="font-medium text-sm text-gray-900 truncate">{provider.name}</p>
-                <div className="flex items-center justify-center gap-1 mt-1">
-                  <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
-                  <span className="text-xs text-gray-600">{provider.rating}</span>
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
+      {/* Previous Providers - Replaced with Component */}
+      {viewMode === 'list' && (
+          <PreviousProvidersCarousel 
+            customerId={customerId} 
+            onBookProvider={(p) => handleProviderSelect(p.providerId)} 
+          />
       )}
 
       {/* Main List or Radar */}
@@ -459,10 +339,12 @@ export function HomeServiceSelectionEnhanced({
             <p className="text-gray-600">Scanning for nearby providers...</p>
           </div>
       ) : viewMode === 'radar' ? (
-          <div className="bg-black rounded-xl p-4">
-              <RadarView />
-              <p className="text-xs text-gray-400 text-center mt-2">Showing providers within 15km radius</p>
-          </div>
+          <RadarProviderMap
+            userLocation={userLocation}
+            radius={15}
+            serviceType={serviceType}
+            onSelectProvider={(p) => handleProviderSelect(p.providerId)}
+          />
       ) : (
           <div className="space-y-3">
              <div className="flex items-center justify-between">
