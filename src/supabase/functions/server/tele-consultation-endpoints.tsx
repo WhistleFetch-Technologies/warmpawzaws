@@ -29,7 +29,7 @@ export function teleConsultationEndpoints(app: Hono) {
         return c.json({ error: 'Only tele consultation bookings can have video calls' }, 400);
       }
       
-      if (booking.status !== 'accepted' && booking.status !== 'pending') {
+      if (booking.status !== 'accepted' && booking.status !== 'pending' && booking.status !== 'assigned') {
         return c.json({ error: 'Booking must be accepted to start call' }, 400);
       }
       

@@ -328,4 +328,66 @@ app.post('/home-services/calculate-commute-time', async (c) => {
   }
 });
 
+// ==========================================
+// SUBSCRIPTION PACKAGE SCHEDULING (RULE 2 GAP CLOSURE)
+// ==========================================
+
+/**
+ * GET /home-services/subscription-slots/:vendorId
+ * Get available time slots for subscription packages
+ * Slots: Morning (8-12), Afternoon (12-4), Evening (4-8)
+ */
+app.get('/home-services/subscription-slots/:vendorId', async (c) => {
+    try {
+        const vendorId = c.req.param('vendorId');
+        // In real app, fetch from vendor_schedule_{vendorId}
+        // For now, return standard slots with some availability logic
+        
+        const slots = {
+            morning: { label: 'Morning', start: '08:00', end: '12:00', available: true, capacity: 5, filled: 2 },
+            afternoon: { label: 'Afternoon', start: '12:00', end: '16:00', available: true, capacity: 5, filled: 1 },
+            evening: { label: 'Evening', start: '16:00', end: '20:00', available: true, capacity: 5, filled: 4 }
+        };
+        
+        return c.json({ success: true, slots });
+    } catch (e) {
+        return c.json({ success: false, error: 'Failed to fetch slots' }, 500);
+    }
+});
+
+/**
+ * POST /home-services/subscription/book
+ * Book a subscription package
+ */
+app.post('/home-services/subscription/book', async (c) => {
+    try {
+        const { vendorId, customerId, packageId, slotType, startDate, durationDays } = await c.req.json();
+        
+        // Validate slot
+        if (!['morning', 'afternoon', 'evening'].includes(slotType)) {
+            return c.json({ success: false, error: 'Invalid slot type' }, 400);
+        }
+        
+        const subscriptionId = `sub_${Date.now()}`;
+        const subscription = {
+            id: subscriptionId,
+            vendorId,
+            customerId,
+            packageId,
+            slotType,
+            startDate,
+            durationDays,
+            status: 'active',
+            createdAt: new Date().toISOString()
+        };
+        
+        // Store
+        await kv.set(`subscription_${subscriptionId}`, subscription);
+        
+        return c.json({ success: true, subscriptionId, message: 'Subscription active' });
+    } catch (e) {
+        return c.json({ success: false, error: 'Booking failed' }, 500);
+    }
+});
+
 export default app;
