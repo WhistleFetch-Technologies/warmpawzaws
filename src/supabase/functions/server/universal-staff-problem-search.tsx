@@ -32,7 +32,11 @@ app.get('/make-server-3dd53475/customer/staff-by-problem/:roleId/:problemId', as
     const problemId = c.req.param('problemId');
     const lat = parseFloat(c.req.query('lat') || '0');
     const lng = parseFloat(c.req.query('lng') || '0');
-    const radius = parseInt(c.req.query('radius') || '50');
+    // ✅ BUSINESS RULE: Maximum radius for home services staff discovery is 20KM
+    let radius = parseInt(c.req.query('radius') || '20');
+    if (radius > 20) {
+      radius = 20; // Cap at 20KM maximum
+    }
     const limit = parseInt(c.req.query('limit') || '20');
     const offset = parseInt(c.req.query('offset') || '0');
     
