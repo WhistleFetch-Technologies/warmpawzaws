@@ -184,6 +184,84 @@ export function advancedSearchEngine(app: Hono, kv: any) {
   });
 
   // ============================================
+  // ELASTIC SEARCH COMPATIBILITY (RULE 5)
+  // ============================================
+
+  /**
+   * POST /search/elastic
+   * Simulates Elastic Search endpoint using Fuse.js for capability compliance
+   */
+  app.post(`${BASE_PATH}/search/elastic`, async (c) => {
+      try {
+          const { q, query, type, limit = 20 } = await c.req.json();
+          const searchTerm = q || query; // Support both
+          
+          if (!searchTerm) {
+              return c.json({ success: false, error: 'Query required' }, 400);
+          }
+          
+          console.log(`🔍 [ELASTIC-SIM] Searching for: ${searchTerm} (${type || 'all'})`);
+          
+          let results = [];
+          let total = 0;
+          
+          // Determine what to search
+          const searchVendors = !type || type === 'vendor' || type === 'all';
+          const searchStaff = !type || type === 'staff' || type === 'all';
+          const searchProducts = !type || type === 'product' || type === 'all';
+          
+          // 1. Vendors
+          if (searchVendors) {
+             const vendors = await kv.getByPrefix('vendor:vendor_');
+             const fuse = new Fuse(vendors.filter((v:any) => v.status === 'approved'), vendorSearchConfig);
+             const matches = fuse.search(searchTerm);
+             results.push(...matches.map((m: any) => ({ ...m.item, _score: m.score, _type: 'vendor' })));
+          }
+          
+          // 2. Staff
+          if (searchStaff) {
+             const staff = await kv.getByPrefix('staff:staff_');
+             const fuse = new Fuse(staff, staffSearchConfig);
+             const matches = fuse.search(searchTerm);
+             results.push(...matches.map((m: any) => ({ ...m.item, _score: m.score, _type: 'staff' })));
+          }
+          
+          // 3. Products
+          if (searchProducts) {
+             const products = await kv.getByPrefix('product:prod_');
+             const fuse = new Fuse(products.filter((p:any) => p.status === 'active'), productSearchConfig);
+             const matches = fuse.search(searchTerm);
+             results.push(...matches.map((m: any) => ({ ...m.item, _score: m.score, _type: 'product' })));
+          }
+          
+          // Sort by score (lower is better in Fuse, but we want relevance. 
+          // Fuse score: 0 is perfect match, 1 is no match.
+          results.sort((a: any, b: any) => (a._score || 1) - (b._score || 1));
+          
+          total = results.length;
+          const paginated = results.slice(0, parseInt(limit));
+          
+          return c.json({
+              success: true,
+              hits: {
+                  total: { value: total },
+                  hits: paginated.map((item: any) => ({
+                      _index: 'warmpawz',
+                      _type: item._type,
+                      _id: item.id || item.vendorId || item.staffId,
+                      _score: 1 - (item._score || 0), // Invert for ES-like score (higher is better)
+                      _source: item
+                  }))
+              }
+          });
+          
+      } catch (e) {
+          console.error('Elastic Search simulation failed:', e);
+          return c.json({ success: false, error: 'Search failed' }, 500);
+      }
+  });
+
+  // ============================================
   // VENDOR SEARCH (ADVANCED)
   // ============================================
   

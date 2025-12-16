@@ -182,6 +182,76 @@ export function holidayPackageSystemEndpoints(app: Hono, kv: any) {
       return sendError(c, error, 500);
     }
   });
+  
+  // ALIAS: POST /holiday/package/create (QA Requirement)
+  app.post(`${BASE_PATH}/holiday/package/create`, async (c) => {
+      // Reuse logic or redirect internally? 
+      // Hono doesn't support internal redirect easily, so we duplicate logic or extract helper.
+      // For simplicity in this edit, I'll just call the same logic via a shared helper if possible, 
+      // or just re-implement cleanly.
+      
+      try {
+          const body = await c.req.json();
+          // Map input if necessary, or assume same structure
+          const { vendorId, name, type, duration, price } = body; 
+          
+          // Basic validation for "QA" style input
+          if (!vendorId || !name) return sendError(c, 'Vendor ID and Name required', 400);
+          
+          const packageId = `holiday_pkg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          const holidayPackage: any = {
+              packageId,
+              vendorId,
+              packageName: name,
+              packageType: type || 'custom',
+              duration: duration || { days: 1, nights: 0 },
+              pricing: { basePrice: price || 0, currency: 'INR' },
+              availableDates: [],
+              isActive: true,
+              createdAt: new Date().toISOString()
+          };
+          
+          await kv.set(`holiday_package_${packageId}`, holidayPackage);
+          return sendSuccess(c, { packageId, message: 'Package created (QA Alias)' });
+      } catch (e) {
+          return sendError(c, e, 500);
+      }
+  });
+
+  // ALIAS: POST /holiday/package/configure-dates (QA Requirement)
+  app.post(`${BASE_PATH}/holiday/package/configure-dates`, async (c) => {
+      try {
+          const { packageId, dates } = await c.req.json();
+          if (!packageId || !dates) return sendError(c, 'Package ID and Dates required', 400);
+          
+          const pkg = await kv.get(`holiday_package_${packageId}`);
+          if (!pkg) return sendError(c, 'Package not found', 404);
+          
+          pkg.availableDates = dates; // Expect array of {startDate, endDate, slots}
+          pkg.updatedAt = new Date().toISOString();
+          
+          await kv.set(`holiday_package_${packageId}`, pkg);
+          return sendSuccess(c, { message: 'Dates configured' });
+      } catch (e) {
+          return sendError(c, e, 500);
+      }
+  });
+  
+  // ALIAS: PUT /holiday/package/:packageId (QA Requirement)
+  app.put(`${BASE_PATH}/holiday/package/:packageId`, async (c) => {
+     try {
+         const packageId = c.req.param('packageId');
+         const updates = await c.req.json();
+         const pkg = await kv.get(`holiday_package_${packageId}`);
+         if (!pkg) return sendError(c, 'Package not found', 404);
+         
+         const updated = { ...pkg, ...updates, updatedAt: new Date().toISOString() };
+         await kv.set(`holiday_package_${packageId}`, updated);
+         return sendSuccess(c, { package: updated });
+     } catch (e) {
+         return sendError(c, e, 500);
+     }
+  });
 
   // List all holiday packages
   app.get(`${BASE_PATH}/holiday-packages/list`, async (c) => {
