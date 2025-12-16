@@ -19,14 +19,18 @@ const app = new Hono();
  * 
  * Query params:
  * - location: lat,lng (for distance filtering)
- * - radius: in km (default: 50)
+ * - radius: in km (default: 20, maximum: 20 for home services)
  * - serviceStyle: at_center, at_home, tele (optional filter)
  */
 app.get('/make-server-3dd53475/customer/doctors/by-specialization/:specialization', async (c) => {
   try {
     const specialization = c.req.param('specialization');
     const location = c.req.query('location'); // "lat,lng"
-    const radius = parseFloat(c.req.query('radius') || '50');
+    // ✅ BUSINESS RULE: Maximum radius for home services discovery is 20KM
+    let radius = parseFloat(c.req.query('radius') || '20');
+    if (radius > 20) {
+      radius = 20; // Cap at 20KM maximum
+    }
     const serviceStyleFilter = c.req.query('serviceStyle'); // optional
     
     console.log(`🔍 [DISCOVERY] Finding doctors for specialization: ${specialization}`);

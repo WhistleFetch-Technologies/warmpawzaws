@@ -23,6 +23,10 @@ import { registerDynamicOnboarding } from './dynamic-onboarding-management.tsx';
 import { registerVendorServiceEndpoints } from './vendor-services-endpoints.tsx';
 import { registerVendorCatalogAPIV2 } from './vendor-catalog-api-v2.tsx';
 import { customServiceEndpoints } from './custom-service-endpoints.tsx';
+import { staffServiceEndpoints } from './staff-service-endpoints.tsx';
+import { staffDiscoveryEndpoints } from './staff-discovery-endpoints.tsx';
+import staffAuthEndpoints from './staff-auth-endpoints.tsx';
+import staffCrudEndpoints from './staff-crud-endpoints.tsx';
 import { vendorScheduleV2Endpoints } from './vendor-schedule-v2.tsx';
 import { registerAdminVendorRoutes } from './admin-vendor-routes.tsx';
 import { adminVendorEndpoints } from './admin-vendor-endpoints.tsx';
@@ -885,16 +889,28 @@ registerP0Features(app);
 
 // ✅ CRITICAL: Staff service and discovery endpoints
 // Staff Service Endpoints - requires both app and kv parameters
-// COMMENTED OUT: staffServiceEndpoints is not imported/defined
-// console.log('✅ Registering staff service endpoints...');
-// staffServiceEndpoints(app, kv);
+console.log('✅ Registering staff service endpoints...');
+staffServiceEndpoints(app, kv);
 
-// if (staffDiscoveryEndpoints && typeof staffDiscoveryEndpoints === 'object') {
-//   console.log('✅ Registering staff discovery endpoints...');
-//   app.route('/make-server-3dd53475', staffDiscoveryEndpoints);
-// } else {
-//   console.warn('⚠️ Staff Discovery Endpoints module undefined, skipping');
-// }
+// Staff Discovery Endpoints
+console.log('✅ Registering staff discovery endpoints...');
+staffDiscoveryEndpoints(app);
+
+// Staff Auth Endpoints
+if (staffAuthEndpoints && typeof staffAuthEndpoints === 'object') {
+  console.log('✅ Registering staff auth endpoints...');
+  app.route('/make-server-3dd53475', staffAuthEndpoints);
+} else {
+  console.warn('⚠️ Staff Auth Endpoints module undefined, skipping');
+}
+
+// Staff CRUD Endpoints
+if (staffCrudEndpoints && typeof staffCrudEndpoints === 'object') {
+  console.log('✅ Registering staff CRUD endpoints...');
+  app.route('/make-server-3dd53475', staffCrudEndpoints);
+} else {
+  console.warn('⚠️ Staff CRUD Endpoints module undefined, skipping');
+}
 
 // if (universalStaffSearch && typeof universalStaffSearch === 'object') {
 //   console.log('✅ Registering universal staff search...');

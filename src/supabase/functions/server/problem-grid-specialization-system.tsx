@@ -281,7 +281,11 @@ export function registerProblemGridSpecializationSystem(app: Hono) {
       const { roleId, problemId } = c.req.param();
       const lat = parseFloat(c.req.query('lat') || '0');
       const lng = parseFloat(c.req.query('lng') || '0');
-      const radius = parseInt(c.req.query('radius') || '50');
+      // ✅ BUSINESS RULE: Maximum radius for home services discovery is 20KM
+      let radius = parseInt(c.req.query('radius') || '20');
+      if (radius > 20) {
+        radius = 20; // Cap at 20KM maximum
+      }
       
       console.log(`🔍 Finding providers for problem: ${problemId}, role: ${roleId}`);
       

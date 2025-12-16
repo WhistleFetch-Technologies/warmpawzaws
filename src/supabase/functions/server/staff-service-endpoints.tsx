@@ -14,6 +14,7 @@ export function staffServiceEndpoints(app: Hono, kvStore: any) {
   /**
    * Get all services for a staff member
    * GET /make-server-3dd53475/staff/:staffId/services
+   * Returns services from both staff:${staffId}:service: prefix and staff.services array
    */
   app.get('/make-server-3dd53475/staff/:staffId/services', async (c) => {
     try {
@@ -21,25 +22,49 @@ export function staffServiceEndpoints(app: Hono, kvStore: any) {
       
       console.log('📋 [STAFF-SERVICE] Fetching services for staff:', staffId);
       
-      // Get staff services from KV store
-      const services = await kvStore.getByPrefix(`staff:${staffId}:service:`);
+      // Get staff record
+      const staff = await kvStore.get(`staff:${staffId}`);
+      if (!staff) {
+        return c.json({ error: 'Staff not found' }, 404);
+      }
       
-      // Deduplicate by serviceId (in case of data duplication)
-      const uniqueServices = [];
-      const seenServiceIds = new Set();
+      // Get staff services from KV store (staff:${staffId}:service: prefix)
+      const prefixServices = await kvStore.getByPrefix(`staff:${staffId}:service:`) || [];
       
-      for (const service of services) {
-        if (!seenServiceIds.has(service.serviceId)) {
-          seenServiceIds.add(service.serviceId);
-          uniqueServices.push(service);
+      // Get services from staff.services array (legacy/alternative format)
+      const arrayServices = (staff.services && Array.isArray(staff.services)) ? staff.services : [];
+      
+      // Combine and deduplicate by serviceId
+      const allServices = new Map();
+      
+      // Add prefix services first
+      for (const service of prefixServices) {
+        const serviceId = service.serviceId || service.id;
+        if (serviceId && !allServices.has(serviceId)) {
+          allServices.set(serviceId, service);
         }
       }
       
-      console.log('✅ [STAFF-SERVICE] Found services:', services.length, '(unique:', uniqueServices.length, ')');
+      // Add array services (prefer prefix if duplicate)
+      for (const service of arrayServices) {
+        const serviceId = service.serviceId || service.id;
+        if (serviceId && !allServices.has(serviceId)) {
+          allServices.set(serviceId, service);
+        }
+      }
+      
+      const uniqueServices = Array.from(allServices.values());
+      
+      console.log('✅ [STAFF-SERVICE] Found services:', {
+        prefix: prefixServices.length,
+        array: arrayServices.length,
+        unique: uniqueServices.length
+      });
       
       return c.json({
         success: true,
-        services: uniqueServices || []
+        services: uniqueServices,
+        count: uniqueServices.length
       });
     } catch (error) {
       console.error('❌ [STAFF-SERVICE] Error fetching services:', error);
@@ -165,11 +190,13 @@ export function staffServiceEndpoints(app: Hono, kvStore: any) {
   /**
    * Create custom service for staff
    * POST /make-server-3dd53475/staff/:staffId/services/create-custom
+   * ✅ RESTRICTION: Custom services only for at_center service style
+   * ✅ REQUIREMENT: Approval required for custom services
    */
   app.post('/make-server-3dd53475/staff/:staffId/services/create-custom', async (c) => {
     try {
       const { staffId } = c.req.param();
-      const { serviceName, category, price, duration, description } = await c.req.json();
+      const { serviceName, category, price, duration, description, serviceStyle } = await c.req.json();
       
       console.log('➕ [STAFF-SERVICE] Creating custom service for staff:', { staffId, serviceName });
       
@@ -178,6 +205,30 @@ export function staffServiceEndpoints(app: Hono, kvStore: any) {
       
       if (!staff) {
         return c.json({ error: 'Staff not found' }, 404);
+      }
+      
+      // ✅ BUSINESS RULE: Custom services only for at_center
+      const effectiveServiceStyle = serviceStyle || 'at_center';
+      if (effectiveServiceStyle !== 'at_center') {
+        return c.json({ 
+          error: 'Custom services are only available for at_center service style',
+          serviceStyle: effectiveServiceStyle,
+          allowed: ['at_center']
+        }, 400);
+      }
+      
+      // Get vendor to check service style
+      const vendorId = staff.vendorId;
+      if (vendorId) {
+        const vendor = await kvStore.get(`vendor:${vendorId}`);
+        if (vendor && vendor.serviceStyle) {
+          if (vendor.serviceStyle !== 'at_center' && vendor.serviceStyle !== 'both') {
+            return c.json({ 
+              error: 'Custom services are only available for vendors with at_center or both service styles',
+              vendorServiceStyle: vendor.serviceStyle
+            }, 400);
+          }
+        }
       }
       
       // Create custom service record
@@ -192,16 +243,19 @@ export function staffServiceEndpoints(app: Hono, kvStore: any) {
         price,
         duration,
         description,
+        serviceStyle: 'at_center', // Always at_center for custom services
         
         // Staff service metadata
         isCustom: true, // This is staff's own service
-        clinicName: null,
-        vendorId: null,
+        clinicName: staff.clinicName || null,
+        vendorId: vendorId || null,
         
-        // Status
-        isActive: true,
-        needsApproval: true, // Custom services may need approval
+        // Status - ✅ REQUIREMENT: Approval required
+        isActive: false, // Not active until approved
+        needsApproval: true, // Custom services require approval
+        approvalStatus: 'pending_approval', // Pending admin approval
         status: 'pending',
+        submittedForApprovalAt: new Date().toISOString(),
         
         // Timestamps
         createdAt: new Date().toISOString(),
@@ -212,11 +266,20 @@ export function staffServiceEndpoints(app: Hono, kvStore: any) {
       await kvStore.set(`staff:${staffId}:service:${staffServiceId}`, staffService);
       await kvStore.set(`staff:service:${staffServiceId}`, staffService);
       
+      // Add to pending approval queue
+      const pendingQueue = await kvStore.get('staff-custom-services:pending-approval') || [];
+      if (!pendingQueue.includes(staffServiceId)) {
+        pendingQueue.push(staffServiceId);
+        await kvStore.set('staff-custom-services:pending-approval', pendingQueue);
+      }
+      
       console.log('✅ [STAFF-SERVICE] Custom service created for staff:', staffServiceId);
+      console.log('   Status: pending_approval (requires admin approval)');
       
       return c.json({
         success: true,
-        service: staffService
+        service: staffService,
+        message: 'Custom service created and submitted for admin approval'
       });
     } catch (error) {
       console.error('❌ [STAFF-SERVICE] Error creating custom service:', error);
@@ -245,40 +308,79 @@ export function staffServiceEndpoints(app: Hono, kvStore: any) {
         return c.json({ error: 'Unauthorized' }, 403);
       }
       
-      // Only custom services can be fully edited
+      // For non-custom services (from vendor), only allow toggling active status
       if (!service.isCustom) {
-        // For clinic services, only allow toggling active status
         if (updates.isActive !== undefined) {
           service.isActive = updates.isActive;
           service.updatedAt = new Date().toISOString();
           
-          await kvStore.set(`staff:${staffId}:service:${serviceId}`, service);
-          await kvStore.set(`staff:service:${serviceId}`, service);
+          const serviceKey = service.id ? `staff:${staffId}:service:${service.id}` : `staff:${staffId}:service:${serviceId}`;
+          await kvStore.set(serviceKey, service);
+          
+          // Also update in staff.services array if it exists
+          const staff = await kvStore.get(`staff:${staffId}`);
+          if (staff && staff.services && Array.isArray(staff.services)) {
+            const serviceIndex = staff.services.findIndex((s: any) => 
+              s.serviceId === serviceId || s.id === serviceId
+            );
+            if (serviceIndex !== -1) {
+              staff.services[serviceIndex].isActive = service.isActive;
+              staff.updatedAt = new Date().toISOString();
+              await kvStore.set(`staff:${staffId}`, staff);
+            }
+          }
           
           return c.json({
             success: true,
-            service
+            service,
+            message: `Service ${service.isActive ? 'enabled' : 'disabled'} successfully`
           });
         } else {
-          return c.json({ error: 'Cannot edit clinic services' }, 400);
+          return c.json({ error: 'Cannot edit vendor services. Only enable/disable is allowed.' }, 400);
         }
       }
       
-      // Update custom service
+      // ✅ For custom services, check approval status before allowing edits
+      if (service.isCustom && service.approvalStatus === 'pending_approval') {
+        return c.json({ 
+          error: 'Cannot edit custom service while pending approval. Wait for admin review.' 
+        }, 400);
+      }
+      
+      if (service.isCustom && service.approvalStatus === 'rejected') {
+        return c.json({ 
+          error: 'Cannot edit rejected custom service. Create a new one instead.' 
+        }, 400);
+      }
+      
+      // Update custom service (only if approved or draft)
       const updatedService = {
         ...service,
         ...updates,
+        // Ensure serviceStyle remains at_center for custom services
+        serviceStyle: 'at_center',
         updatedAt: new Date().toISOString()
       };
       
-      await kvStore.set(`staff:${staffId}:service:${serviceId}`, updatedService);
-      await kvStore.set(`staff:service:${serviceId}`, updatedService);
+      // If updating after approval, mark as needing re-approval if significant changes
+      if (service.approvalStatus === 'approved' && 
+          (updates.price !== undefined || updates.duration !== undefined || updates.serviceName !== undefined)) {
+        updatedService.approvalStatus = 'pending_approval';
+        updatedService.isActive = false;
+        updatedService.submittedForApprovalAt = new Date().toISOString();
+      }
+      
+      const serviceKey = updatedService.id ? `staff:${staffId}:service:${updatedService.id}` : `staff:${staffId}:service:${serviceId}`;
+      await kvStore.set(serviceKey, updatedService);
       
       console.log('✅ [STAFF-SERVICE] Service updated:', serviceId);
       
       return c.json({
         success: true,
-        service: updatedService
+        service: updatedService,
+        message: updatedService.approvalStatus === 'pending_approval' 
+          ? 'Service updated and resubmitted for approval'
+          : 'Service updated successfully'
       });
     } catch (error) {
       console.error('❌ [STAFF-SERVICE] Error updating service:', error);
@@ -403,6 +505,329 @@ export function staffServiceEndpoints(app: Hono, kvStore: any) {
       return c.json({ success: true });
     } catch (error) {
       console.error('❌ [STAFF-LOCATION] Error deleting location:', error);
+      return c.json({ error: String(error) }, 500);
+    }
+  });
+
+  // ============================================
+  // STAFF SERVICE SYNC ENDPOINTS
+  // ============================================
+
+  /**
+   * Check if staff services need sync from vendor
+   * GET /make-server-3dd53475/staff/:staffId/check-sync-needed
+   */
+  app.get('/make-server-3dd53475/staff/:staffId/check-sync-needed', async (c) => {
+    try {
+      const { staffId } = c.req.param();
+      
+      console.log('🔍 [STAFF-SYNC] Checking if sync needed for staff:', staffId);
+      
+      const staff = await kvStore.get(`staff:${staffId}`);
+      if (!staff) {
+        return c.json({ error: 'Staff not found' }, 404);
+      }
+      
+      const vendorId = staff.vendorId;
+      if (!vendorId) {
+        return c.json({ 
+          success: true, 
+          syncNeeded: false, 
+          reason: 'No vendor associated' 
+        });
+      }
+      
+      // Get vendor's published services
+      const serviceStyles = ['at_home', 'at_center', 'tele'];
+      const vendorServiceIds = new Set<string>();
+      
+      for (const style of serviceStyles) {
+        const vendorServicesKey = `vendor_services:${vendorId}:${style}`;
+        const vendorServicesData = await kvStore.get(vendorServicesKey);
+        
+        if (vendorServicesData && vendorServicesData.services) {
+          const publishedServices = vendorServicesData.services.filter(
+            (s: any) => s.publishStatus === 'published' && s.isEnabled === true
+          );
+          publishedServices.forEach((s: any) => vendorServiceIds.add(s.serviceId));
+        }
+      }
+      
+      // Get staff's current services
+      const staffServices = await kvStore.getByPrefix(`staff:${staffId}:service:`);
+      const staffServiceIds = new Set(
+        staffServices.map((s: any) => s.serviceId).filter(Boolean)
+      );
+      
+      // Also check staff.services array (legacy)
+      if (staff.services && Array.isArray(staff.services)) {
+        staff.services.forEach((s: any) => {
+          if (s.serviceId) staffServiceIds.add(s.serviceId);
+        });
+      }
+      
+      // Check if there are vendor services not in staff services
+      const missingServiceIds = Array.from(vendorServiceIds).filter(
+        id => !staffServiceIds.has(id)
+      );
+      
+      const syncNeeded = missingServiceIds.length > 0;
+      
+      console.log(`✅ [STAFF-SYNC] Sync check complete:`, {
+        vendorServices: vendorServiceIds.size,
+        staffServices: staffServiceIds.size,
+        missing: missingServiceIds.length,
+        syncNeeded
+      });
+      
+      return c.json({
+        success: true,
+        syncNeeded,
+        vendorServiceCount: vendorServiceIds.size,
+        staffServiceCount: staffServiceIds.size,
+        missingServiceCount: missingServiceIds.length,
+        missingServiceIds: missingServiceIds.slice(0, 10) // Limit response size
+      });
+      
+    } catch (error) {
+      console.error('❌ [STAFF-SYNC] Error checking sync:', error);
+      return c.json({ error: String(error) }, 500);
+    }
+  });
+
+  /**
+   * Sync services from vendor to staff
+   * POST /make-server-3dd53475/staff/:staffId/sync-services
+   */
+  app.post('/make-server-3dd53475/staff/:staffId/sync-services', async (c) => {
+    try {
+      const { staffId } = c.req.param();
+      
+      console.log('🔄 [STAFF-SYNC] Syncing services for staff:', staffId);
+      
+      const staff = await kvStore.get(`staff:${staffId}`);
+      if (!staff) {
+        return c.json({ error: 'Staff not found' }, 404);
+      }
+      
+      const vendorId = staff.vendorId;
+      if (!vendorId) {
+        return c.json({ error: 'No vendor associated with staff' }, 400);
+      }
+      
+      const vendor = await kvStore.get(`vendor:${vendorId}`);
+      if (!vendor) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+      
+      // Get vendor's published services from all styles
+      const serviceStyles = ['at_home', 'at_center', 'tele'];
+      const allVendorServices: any[] = [];
+      
+      for (const style of serviceStyles) {
+        const vendorServicesKey = `vendor_services:${vendorId}:${style}`;
+        const vendorServicesData = await kvStore.get(vendorServicesKey);
+        
+        if (vendorServicesData && vendorServicesData.services) {
+          const publishedServices = vendorServicesData.services.filter(
+            (s: any) => s.publishStatus === 'published' && s.isEnabled === true
+          );
+          allVendorServices.push(...publishedServices);
+        }
+      }
+      
+      console.log(`📋 Found ${allVendorServices.length} published vendor services`);
+      
+      // Get staff's current services
+      const existingStaffServices = await kvStore.getByPrefix(`staff:${staffId}:service:`);
+      const existingServiceIds = new Set(
+        existingStaffServices.map((s: any) => s.serviceId).filter(Boolean)
+      );
+      
+      // Create staff service records for missing services
+      let servicesCreated = 0;
+      const createdServices = [];
+      
+      for (const vendorService of allVendorServices) {
+        if (!existingServiceIds.has(vendorService.serviceId)) {
+          const staffServiceId = `staffsvc_${Date.now()}_${Math.random().toString(36).substring(2, 15)}_${Math.random().toString(36).substring(2, 9)}`;
+          
+          const staffService = {
+            id: staffServiceId,
+            staffId,
+            serviceId: vendorService.serviceId,
+            serviceName: vendorService.serviceName,
+            category: vendorService.categoryName,
+            categoryName: vendorService.categoryName,
+            subCategoryName: vendorService.subCategoryName,
+            price: vendorService.customPrice || vendorService.price,
+            duration: vendorService.customDuration || vendorService.duration,
+            description: vendorService.description || vendorService.customDescription,
+            serviceStyle: vendorService.serviceStyle,
+            
+            // Staff service metadata
+            isCustom: false,
+            clinicName: vendor.businessName || vendor.fullName,
+            vendorId: vendorId,
+            
+            // Status - staff can enable/disable
+            isActive: true, // Default to enabled when synced
+            
+            // Timestamps
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            syncedAt: new Date().toISOString()
+          };
+          
+          await kvStore.set(`staff:${staffId}:service:${staffServiceId}`, staffService);
+          existingServiceIds.add(vendorService.serviceId);
+          servicesCreated++;
+          createdServices.push(staffService);
+        }
+      }
+      
+      // Also update staff.services array for backward compatibility
+      if (staff.services) {
+        const updatedServices = [...(staff.services || [])];
+        createdServices.forEach(newService => {
+          if (!updatedServices.find((s: any) => s.serviceId === newService.serviceId)) {
+            updatedServices.push(newService);
+          }
+        });
+        staff.services = updatedServices;
+        staff.updatedAt = new Date().toISOString();
+        await kvStore.set(`staff:${staffId}`, staff);
+      }
+      
+      console.log(`✅ [STAFF-SYNC] Synced ${servicesCreated} services to staff ${staffId}`);
+      
+      return c.json({
+        success: true,
+        servicesCreated,
+        services: createdServices,
+        message: `${servicesCreated} service(s) synced from vendor`
+      });
+      
+    } catch (error) {
+      console.error('❌ [STAFF-SYNC] Error syncing services:', error);
+      return c.json({ error: String(error) }, 500);
+    }
+  });
+
+  /**
+   * Toggle service active status (enable/disable)
+   * PUT /make-server-3dd53475/staff/:staffId/services/:serviceId/toggle
+   */
+  app.put('/make-server-3dd53475/staff/:staffId/services/:serviceId/toggle', async (c) => {
+    try {
+      const { staffId, serviceId } = c.req.param();
+      const { isActive } = await c.req.json();
+      
+      console.log('🔄 [STAFF-SERVICE] Toggling service:', { staffId, serviceId, isActive });
+      
+      // Find the service in staff's service list
+      const staffServices = await kvStore.getByPrefix(`staff:${staffId}:service:`);
+      const service = staffServices.find((s: any) => s.serviceId === serviceId || s.id === serviceId);
+      
+      if (!service) {
+        return c.json({ error: 'Service not found for this staff member' }, 404);
+      }
+      
+      // Update isActive status
+      service.isActive = isActive !== undefined ? isActive : !service.isActive;
+      service.updatedAt = new Date().toISOString();
+      
+      // Save updated service
+      const serviceKey = service.id ? `staff:${staffId}:service:${service.id}` : `staff:${staffId}:service:${serviceId}`;
+      await kvStore.set(serviceKey, service);
+      
+      // Also update in staff.services array if it exists
+      const staff = await kvStore.get(`staff:${staffId}`);
+      if (staff && staff.services && Array.isArray(staff.services)) {
+        const serviceIndex = staff.services.findIndex((s: any) => 
+          s.serviceId === serviceId || s.id === serviceId
+        );
+        if (serviceIndex !== -1) {
+          staff.services[serviceIndex].isActive = service.isActive;
+          staff.updatedAt = new Date().toISOString();
+          await kvStore.set(`staff:${staffId}`, staff);
+        }
+      }
+      
+      console.log(`✅ [STAFF-SERVICE] Service ${serviceId} ${service.isActive ? 'enabled' : 'disabled'}`);
+      
+      return c.json({
+        success: true,
+        service,
+        message: `Service ${service.isActive ? 'enabled' : 'disabled'} successfully`
+      });
+      
+    } catch (error) {
+      console.error('❌ [STAFF-SERVICE] Error toggling service:', error);
+      return c.json({ error: String(error) }, 500);
+    }
+  });
+
+  /**
+   * Get all available vendor services for staff to enable
+   * GET /make-server-3dd53475/staff/:staffId/available-vendor-services
+   */
+  app.get('/make-server-3dd53475/staff/:staffId/available-vendor-services', async (c) => {
+    try {
+      const { staffId } = c.req.param();
+      
+      console.log('📋 [STAFF-SERVICE] Fetching available vendor services for staff:', staffId);
+      
+      const staff = await kvStore.get(`staff:${staffId}`);
+      if (!staff) {
+        return c.json({ error: 'Staff not found' }, 404);
+      }
+      
+      const vendorId = staff.vendorId;
+      if (!vendorId) {
+        return c.json({ error: 'No vendor associated' }, 400);
+      }
+      
+      // Get vendor's published services
+      const serviceStyles = ['at_home', 'at_center', 'tele'];
+      const allVendorServices: any[] = [];
+      
+      for (const style of serviceStyles) {
+        const vendorServicesKey = `vendor_services:${vendorId}:${style}`;
+        const vendorServicesData = await kvStore.get(vendorServicesKey);
+        
+        if (vendorServicesData && vendorServicesData.services) {
+          const publishedServices = vendorServicesData.services.filter(
+            (s: any) => s.publishStatus === 'published' && s.isEnabled === true
+          );
+          allVendorServices.push(...publishedServices);
+        }
+      }
+      
+      // Get staff's current services
+      const staffServices = await kvStore.getByPrefix(`staff:${staffId}:service:`);
+      const staffServiceIds = new Set(
+        staffServices.map((s: any) => s.serviceId).filter(Boolean)
+      );
+      
+      // Mark which services are already enabled for staff
+      const availableServices = allVendorServices.map(vendorService => ({
+        ...vendorService,
+        isEnabledForStaff: staffServiceIds.has(vendorService.serviceId),
+        staffServiceId: staffServices.find((s: any) => s.serviceId === vendorService.serviceId)?.id || null
+      }));
+      
+      console.log(`✅ [STAFF-SERVICE] Found ${availableServices.length} available vendor services`);
+      
+      return c.json({
+        success: true,
+        services: availableServices,
+        total: availableServices.length,
+        enabled: availableServices.filter((s: any) => s.isEnabledForStaff).length
+      });
+      
+    } catch (error) {
+      console.error('❌ [STAFF-SERVICE] Error fetching available services:', error);
       return c.json({ error: String(error) }, 500);
     }
   });

@@ -41,7 +41,11 @@ export function servicesByProblemEndpoints(app: Hono, kvStore: any) {
       const roleId = c.req.query('roleId');
       const lat = parseFloat(c.req.query('lat') || '0');
       const lng = parseFloat(c.req.query('lng') || '0');
-      const radius = parseInt(c.req.query('radius') || '50');
+      // ✅ BUSINESS RULE: Maximum radius for home services discovery is 20KM
+      let radius = parseInt(c.req.query('radius') || '20');
+      if (radius > 20) {
+        radius = 20; // Cap at 20KM maximum
+      }
       const limit = parseInt(c.req.query('limit') || '50');
 
       console.log(`🔍 [SERVICES-BY-PROBLEM] Searching services for problem: ${problemId}`);
