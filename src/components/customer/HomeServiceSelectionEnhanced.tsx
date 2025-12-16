@@ -328,7 +328,8 @@ export function HomeServiceSelectionEnhanced({
       {viewMode === 'list' && (
           <PreviousProvidersCarousel 
             customerId={customerId} 
-            onBookProvider={(p) => handleProviderSelect(p.providerId)} 
+            serviceType={serviceType} // Pass serviceType to filter previous providers
+            onSelectProvider={(p) => handleProviderSelect(p.providerId)} 
           />
       )}
 

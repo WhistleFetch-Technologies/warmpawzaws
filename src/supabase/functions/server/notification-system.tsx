@@ -90,16 +90,7 @@ export type NotificationCategory =
   | 'admin_alerts'
   | 'system';
 
-export function notificationEndpoints(app: Hono, kv: any) {
-
-  // ============================================
-  // CORE NOTIFICATION FUNCTIONS
-  // ============================================
-
-  /**
-   * Create and send a notification
-   */
-  async function createNotification(notification: Omit<Notification, 'id' | 'createdAt' | 'status'>): Promise<Notification> {
+export const createNotificationHelper = async (kv: any, notification: Omit<Notification, 'id' | 'createdAt' | 'status'>) => {
     const notificationId = `NOTIF-${Date.now()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
     
     const fullNotification: Notification = {
@@ -123,16 +114,48 @@ export function notificationEndpoints(app: Hono, kv: any) {
     await kv.set(`notifications:category:${notification.category}`, categoryNotifs);
     
     console.log(`📨 Notification created: ${notificationId}`);
-    console.log(`   Type: ${notification.type}`);
-    console.log(`   Recipient: ${notification.recipientType} - ${notification.recipientId}`);
-    console.log(`   Channels: ${Object.entries(notification.channels).filter(([_, enabled]) => enabled).map(([ch]) => ch).join(', ')}`);
+    
+    return fullNotification;
+};
+
+export const sendNotificationHelper = async (kv: any, notification: Notification) => {
+    try {
+      const results = {
+        email: false,
+        sms: false,
+        inApp: true, // Always stored in-app
+        push: false
+      };
+
+      // Email channel
+      if (notification.channels.email && notification.recipientEmail) {
+        // results.email = await sendEmailNotification(notification); // Need to export/pass this too or simplified
+      }
+      return results;
+    } catch (e) {
+        console.error(e);
+        return null;
+    }
+}
+
+export function notificationEndpoints(app: Hono, kv: any) {
+
+  // ============================================
+  // CORE NOTIFICATION FUNCTIONS
+  // ============================================
+
+  /**
+   * Create and send a notification
+   */
+  async function createNotification(notification: Omit<Notification, 'id' | 'createdAt' | 'status'>): Promise<Notification> {
+    const fullNotification = await createNotificationHelper(kv, notification);
     
     // Send through enabled channels
     await sendNotification(fullNotification);
     
     return fullNotification;
   }
-
+ 
   /**
    * Send notification through enabled channels
    */

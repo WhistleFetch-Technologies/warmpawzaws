@@ -83,6 +83,8 @@ import { WalletPage as CustomerWalletPage } from './WalletPage';
 
 // ✅ MATING & DATING SERVICE - P2P Matchmaking
 import { MatingDatingHub } from './MatingDatingHub';
+import { HomeServiceSelectionEnhanced } from './HomeServiceSelectionEnhanced';
+import { IntegratedServicesHub } from '../IntegratedServicesHub';
 
 type ScreenType = 
   | 'home' 
@@ -158,7 +160,9 @@ type ScreenType =
   | 'check-in-out'
   | 'medical-records'
   | 'customer-wallet'
-  | 'mating-dating-hub';
+  | 'mating-dating-hub'
+  | 'integrated-services'
+  | 'home-service-selection';
 
 export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phone: string; onNavigate: (screen: string) => void; initialScreen?: ScreenType }) {
   console.log('CustomerHomeWrapper: Rendering with phone:', phone);
@@ -254,8 +258,10 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     else if (service === 'cart') setCurrentScreen('shop'); // Navigate to shop then cart logic handles
     else if (service === 'photography') setCurrentScreen('photography');
     else if (service === 'breeder') setCurrentScreen('breeder');
-    else if (service === 'ambulance') setCurrentScreen('ambulance');
-    else if (service === 'nutritionist') setCurrentScreen('nutritionist');
+    else if (service === 'ambulance') setCurrentScreen('integrated-services'); // Use new integrated hub
+    else if (service === 'nutritionist') setCurrentScreen('integrated-services');
+    else if (service === 'diagnostics') setCurrentScreen('integrated-services');
+    else if (service === 'home-service') setCurrentScreen('home-service-selection');
     else if (service === 'relocation') setCurrentScreen('relocation');
     else if (service === 'resort') setCurrentScreen('resort');
     else if (service === 'holiday') setCurrentScreen('holiday');
@@ -550,6 +556,22 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   if (currentScreen === 'mating-dating-hub') return <MatingDatingHub
     phone={phone}
     onBack={handleBack}
+  />;
+
+  // ✅ GAP FIXES: Rule 2 & 6
+  if (currentScreen === 'integrated-services') return <IntegratedServicesHub
+    customerId={phone}
+    petId={selectedPetId || 'pet_default'} // Fallback or force selection
+    onNavigate={handleNavigateToService}
+  />;
+
+  if (currentScreen === 'home-service-selection') return <HomeServiceSelectionEnhanced
+    serviceType={selectedService || 'grooming'}
+    serviceName={selectedService || 'Pet Grooming'}
+    customerId={phone}
+    petId={selectedPetId || 'pet_default'}
+    onBack={handleBack}
+    onBookingComplete={(bookingId) => handleViewBooking(bookingId)}
   />;
 
   return <ComingSoon serviceName="pet-marketplace" onBack={handleBack} />;
