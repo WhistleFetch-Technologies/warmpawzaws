@@ -1,271 +1,147 @@
-import React, { useState, useEffect } from 'react';
-import { Ambulance, Pill, Activity, Search, MapPin, Clock, Star } from 'lucide-react';
-
-/**
- * 🏥 INTEGRATED SERVICES HUB
- * 
- * Phase 7C: Rule 6 - Integrated Services Complete
- * 
- * Features:
- * - Unified view of ambulance, medicine, diagnostics
- * - Service discovery with filters
- * - Quick access to all integrated services
- */
-
-interface Service {
-  serviceId: string;
-  serviceType: 'ambulance' | 'medicine' | 'diagnostics';
-  vendorId: string;
-  vendorName: string;
-  location: { lat: number; lng: number; address: string };
-  distance?: number;
-  isAvailable: boolean;
-  estimatedResponseTime?: number;
-  rating: number;
-  services: string[];
-}
+import React, { useState } from 'react';
+import { Card } from './ui/card';
+import { Badge } from './ui/badge';
+import { Button } from './ui/button';
+import { 
+  Ambulance, 
+  Pill, 
+  Activity, 
+  ChevronRight, 
+  Phone, 
+  Clock, 
+  MapPin, 
+  Stethoscope,
+  ShoppingBag
+} from 'lucide-react';
+import { AmbulanceBookingFlow } from './customer/AmbulanceBookingFlow';
+import { MedicineDeliveryOrdering } from './customer/MedicineDeliveryOrdering';
+import { DiagnosticsBooking } from './customer/DiagnosticsBooking';
 
 interface IntegratedServicesHubProps {
-  userLocation?: { lat: number; lng: number };
-  onServiceSelect?: (service: Service) => void;
-  apiUrl?: string;
+  onNavigate?: (route: string) => void;
+  customerId: string;
+  petId: string;
 }
 
-export function IntegratedServicesHub({
-  userLocation,
-  onServiceSelect,
-  apiUrl = `${import.meta.env.VITE_API_URL}/make-server-3dd53475`,
-}: IntegratedServicesHubProps) {
-  const [activeTab, setActiveTab] = useState<'all' | 'ambulance' | 'medicine' | 'diagnostics'>('all');
-  const [services, setServices] = useState<Service[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
+export function IntegratedServicesHub({ onNavigate, customerId, petId }: IntegratedServicesHubProps) {
+  const [activeService, setActiveService] = useState<'ambulance' | 'medicine' | 'diagnostics' | null>(null);
 
-  const serviceTypes = [
-    {
-      type: 'all' as const,
-      label: 'All Services',
-      icon: <Activity className="w-5 h-5" />,
-      color: 'bg-gray-600',
-    },
-    {
-      type: 'ambulance' as const,
-      label: 'Ambulance',
-      icon: <Ambulance className="w-5 h-5" />,
-      color: 'bg-red-600',
-    },
-    {
-      type: 'medicine' as const,
-      label: 'Pharmacy',
-      icon: <Pill className="w-5 h-5" />,
-      color: 'bg-green-600',
-    },
-    {
-      type: 'diagnostics' as const,
-      label: 'Diagnostics',
-      icon: <Activity className="w-5 h-5" />,
-      color: 'bg-blue-600',
-    },
-  ];
+  if (activeService === 'ambulance') {
+    return <AmbulanceBookingFlow 
+        customerId={customerId}
+        phone={customerId}
+        onBack={() => setActiveService(null)} 
+        onSuccess={() => setActiveService(null)} 
+    />;
+  }
 
-  useEffect(() => {
-    loadServices();
-  }, [activeTab]);
+  if (activeService === 'medicine') {
+    return <MedicineDeliveryOrdering 
+        customerId={customerId}
+        onBack={() => setActiveService(null)} 
+        onSuccess={() => setActiveService(null)} 
+    />;
+  }
 
-  const loadServices = async () => {
-    try {
-      setLoading(true);
-
-      let url = `${apiUrl}/integrated-services/discover?type=${activeTab}`;
-
-      const response = await fetch(url);
-      
-      if (!response.ok) {
-        throw new Error('Failed to load services');
-      }
-
-      const data = await response.json();
-      setServices(data.data?.services || []);
-    } catch (err) {
-      console.error('Error loading services:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const filteredServices = services.filter(service =>
-    service.vendorName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    service.location.address.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const getServiceTypeColor = (type: string) => {
-    const colors: Record<string, string> = {
-      ambulance: 'bg-red-100 text-red-800',
-      medicine: 'bg-green-100 text-green-800',
-      diagnostics: 'bg-blue-100 text-blue-800',
-    };
-    return colors[type] || 'bg-gray-100 text-gray-800';
-  };
+  if (activeService === 'diagnostics') {
+    return <DiagnosticsBooking 
+        customerId={customerId}
+        petId={petId}
+        onBack={() => setActiveService(null)} 
+        onSuccess={() => setActiveService(null)} 
+    />;
+  }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="mb-2">Integrated Pet Healthcare Services</h1>
-        <p className="text-gray-600">
-          Emergency ambulance, medicine delivery, and diagnostic services
-        </p>
+    <div className="space-y-6 p-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-bold text-gray-900">Healthcare Services</h2>
       </div>
 
-      {/* Service Type Tabs */}
-      <div className="flex gap-2 overflow-x-auto pb-2">
-        {serviceTypes.map(type => (
-          <button
-            key={type.type}
-            onClick={() => setActiveTab(type.type)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg whitespace-nowrap transition-all ${
-              activeTab === type.type
-                ? `${type.color} text-white`
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            {type.icon}
-            <span>{type.label}</span>
-          </button>
-        ))}
-      </div>
-
-      {/* Search Bar */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-        <input
-          type="text"
-          placeholder="Search by name or location..."
-          value={searchQuery}
-          onChange={e => setSearchQuery(e.target.value)}
-          className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
-      </div>
-
-      {/* Quick Stats */}
-      <div className="grid grid-cols-3 gap-4">
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <div className="flex items-center gap-2 mb-1">
-            <Ambulance className="w-5 h-5 text-red-600" />
-            <span className="text-sm text-gray-600">Ambulances</span>
-          </div>
-          <div className="text-2xl text-red-600">
-            {services.filter(s => s.serviceType === 'ambulance').length}
-          </div>
-        </div>
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-          <div className="flex items-center gap-2 mb-1">
-            <Pill className="w-5 h-5 text-green-600" />
-            <span className="text-sm text-gray-600">Pharmacies</span>
-          </div>
-          <div className="text-2xl text-green-600">
-            {services.filter(s => s.serviceType === 'medicine').length}
-          </div>
-        </div>
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <div className="flex items-center gap-2 mb-1">
-            <Activity className="w-5 h-5 text-blue-600" />
-            <span className="text-sm text-gray-600">Diagnostics</span>
-          </div>
-          <div className="text-2xl text-blue-600">
-            {services.filter(s => s.serviceType === 'diagnostics').length}
-          </div>
-        </div>
-      </div>
-
-      {/* Services List */}
-      {loading ? (
-        <div className="grid gap-4">
-          {[1, 2, 3].map(i => (
-            <div key={i} className="bg-gray-100 rounded-lg p-6 animate-pulse" style={{ height: '120px' }} />
-          ))}
-        </div>
-      ) : filteredServices.length === 0 ? (
-        <div className="bg-gray-50 border border-gray-200 rounded-lg p-12 text-center text-gray-600">
-          {searchQuery ? (
-            <>No services found matching "{searchQuery}"</>
-          ) : (
-            <>No {activeTab === 'all' ? 'integrated' : activeTab} services available</>
-          )}
-        </div>
-      ) : (
-        <div className="grid gap-4">
-          {filteredServices.map(service => (
-            <button
-              key={service.serviceId}
-              onClick={() => onServiceSelect?.(service)}
-              className="bg-white border border-gray-200 rounded-lg p-6 hover:border-blue-500 hover:shadow-md transition-all text-left"
-            >
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-2">
-                    <h3 className="text-lg">{service.vendorName}</h3>
-                    <span className={`px-2 py-0.5 text-xs rounded-full capitalize ${getServiceTypeColor(service.serviceType)}`}>
-                      {service.serviceType === 'medicine' ? 'Pharmacy' : service.serviceType}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-4 text-sm text-gray-600 mb-2">
-                    <span className="flex items-center gap-1">
-                      <MapPin className="w-4 h-4" />
-                      {service.location.address}
-                    </span>
-                    {service.distance && (
-                      <span>{service.distance.toFixed(1)}km away</span>
-                    )}
-                  </div>
-
-                  <div className="flex items-center gap-4 text-sm">
-                    <span className={`flex items-center gap-1 px-2 py-1 rounded ${
-                      service.isAvailable
-                        ? 'bg-green-100 text-green-800'
-                        : 'bg-gray-100 text-gray-600'
-                    }`}>
-                      {service.isAvailable ? '✓ Available' : '⊗ Unavailable'}
-                    </span>
-                    {service.estimatedResponseTime && (
-                      <span className="flex items-center gap-1">
-                        <Clock className="w-4 h-4" />
-                        ~{service.estimatedResponseTime} min
-                      </span>
-                    )}
-                    <span className="flex items-center gap-1">
-                      <Star className="w-4 h-4 fill-yellow-400 stroke-yellow-400" />
-                      {service.rating.toFixed(1)}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="ml-4">
-                  <div className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg">
-                    Book Now
-                  </div>
+      {/* Emergency Ambulance Card */}
+      <Card 
+        className="overflow-hidden border-l-4 border-l-red-500 shadow-md cursor-pointer group"
+        onClick={() => setActiveService('ambulance')}
+      >
+        <div className="bg-gradient-to-r from-red-50 to-white p-4">
+          <div className="flex justify-between items-start">
+            <div className="flex gap-3">
+              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
+                <Ambulance className="w-6 h-6 text-red-600 animate-pulse" />
+              </div>
+              <div>
+                <h3 className="font-bold text-lg text-gray-900">Emergency Ambulance</h3>
+                <p className="text-sm text-gray-600 mt-1">24/7 Rapid Response • GPS Tracking</p>
+                <div className="flex items-center gap-2 mt-2">
+                  <Badge variant="secondary" className="bg-red-100 text-red-700 text-xs">
+                    <Clock className="w-3 h-3 mr-1" /> Arrives in ~15 mins
+                  </Badge>
                 </div>
               </div>
-
-              {service.services.length > 0 && (
-                <div className="flex flex-wrap gap-1 pt-3 border-t border-gray-100">
-                  {service.services.slice(0, 4).map((s, idx) => (
-                    <span key={idx} className="px-2 py-0.5 bg-gray-100 text-xs rounded">
-                      {s}
-                    </span>
-                  ))}
-                  {service.services.length > 4 && (
-                    <span className="px-2 py-0.5 text-xs text-gray-500">
-                      +{service.services.length - 4} more
-                    </span>
-                  )}
-                </div>
-              )}
-            </button>
-          ))}
+            </div>
+            <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-red-500 transition-colors" />
+          </div>
         </div>
-      )}
+      </Card>
+
+      <div className="grid grid-cols-2 gap-4">
+        {/* Pharmacy Card */}
+        <Card 
+          className="p-4 cursor-pointer hover:shadow-md transition-all border-l-4 border-l-teal-500"
+          onClick={() => setActiveService('medicine')}
+        >
+          <div className="w-10 h-10 bg-teal-100 rounded-full flex items-center justify-center mb-3">
+            <ShoppingBag className="w-5 h-5 text-teal-600" />
+          </div>
+          <h3 className="font-bold text-gray-900">Pharmacy</h3>
+          <p className="text-xs text-gray-500 mt-1 mb-2">Order medicines & essentials</p>
+          <Badge variant="outline" className="text-[10px] bg-teal-50 text-teal-700 border-teal-200">
+            <Clock className="w-3 h-3 mr-1" /> 60 min delivery
+          </Badge>
+        </Card>
+
+        {/* Diagnostics Card */}
+        <Card 
+          className="p-4 cursor-pointer hover:shadow-md transition-all border-l-4 border-l-blue-500"
+          onClick={() => setActiveService('diagnostics')}
+        >
+          <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center mb-3">
+            <Activity className="w-5 h-5 text-blue-600" />
+          </div>
+          <h3 className="font-bold text-gray-900">Diagnostics</h3>
+          <p className="text-xs text-gray-500 mt-1 mb-2">Home collection available</p>
+          <Badge variant="outline" className="text-[10px] bg-blue-50 text-blue-700 border-blue-200">
+            <Home className="w-3 h-3 mr-1" /> Home Sample
+          </Badge>
+        </Card>
+      </div>
+
+      {/* Independent Vendors Section */}
+      <div className="mt-6">
+        <h3 className="font-semibold text-gray-900 mb-3">Nearby Independent Services</h3>
+        <div className="space-y-3">
+            <div className="flex items-center gap-3 p-3 bg-white border rounded-xl">
+                <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
+                    <Stethoscope className="w-5 h-5 text-gray-600" />
+                </div>
+                <div className="flex-1">
+                    <h4 className="font-medium text-sm">City Vet Lab</h4>
+                    <p className="text-xs text-gray-500">Diagnostics • 2.5 km</p>
+                </div>
+                <Button size="sm" variant="outline" onClick={() => setActiveService('diagnostics')}>Book</Button>
+            </div>
+            <div className="flex items-center gap-3 p-3 bg-white border rounded-xl">
+                <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
+                    <Pill className="w-5 h-5 text-gray-600" />
+                </div>
+                <div className="flex-1">
+                    <h4 className="font-medium text-sm">PetCare Pharmacy</h4>
+                    <p className="text-xs text-gray-500">Medicine • 1.2 km</p>
+                </div>
+                <Button size="sm" variant="outline" onClick={() => setActiveService('medicine')}>Order</Button>
+            </div>
+        </div>
+      </div>
     </div>
   );
 }

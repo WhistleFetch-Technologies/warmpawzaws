@@ -45,7 +45,7 @@ export function PreviousProvidersCarousel({
       if (customerId) params.append('customerId', customerId);
 
       const response = await fetch(
-        `${BASE_URL}/customer/previous-providers?${params}`,
+        `${BASE_URL}/home-services/providers/previous?${params}`,
         {
           headers: { 'Authorization': `Bearer ${publicAnonKey}` }
         }
