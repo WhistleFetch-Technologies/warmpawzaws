@@ -133,6 +133,9 @@ import { advancedSearchAPI } from './advanced-search-api.tsx';
 import { searchAnalyticsAPI } from './search-analytics-api.tsx';
 import { nutritionistSystemEndpoints } from './nutritionist-system.tsx';
 import { foodDeliveryHyperlocalEndpoints } from './food-delivery-hyperlocal.tsx';
+import { nutritionistDietPlanEndpoints } from './nutritionist-diet-plan-endpoints.tsx';
+import { nutritionistFoodIntegrationEndpoints } from './nutritionist-food-integration.tsx';
+import { nutritionistFoodDeliveryEndpoints } from './nutritionist-food-delivery.tsx';
 import { holidayPackageSystemEndpoints } from './holiday-package-system.tsx';
 import { previousProvidersEndpoints } from './previous-providers.tsx';
 import { radarLocationSystemEndpoints } from './radar-location-system.tsx';
@@ -675,6 +678,28 @@ if (nutritionistSystemEndpoints && typeof nutritionistSystemEndpoints === 'funct
   nutritionistSystemEndpoints(app, kv);
 } else {
   console.warn('⚠️ Nutritionist System Endpoints module undefined, skipping');
+}
+
+// ✅ NEW: Nutritionist Diet & Food Delivery Endpoints (Rule 8)
+if (nutritionistDietPlanEndpoints && typeof nutritionistDietPlanEndpoints === 'function') {
+  console.log('✅ Registering Nutritionist Diet Plan Endpoints...');
+  nutritionistDietPlanEndpoints(app, kv);
+} else {
+  console.warn('⚠️ Nutritionist Diet Plan Endpoints module undefined, skipping');
+}
+
+if (nutritionistFoodIntegrationEndpoints && typeof nutritionistFoodIntegrationEndpoints === 'function') {
+  console.log('✅ Registering Nutritionist Food Integration Endpoints...');
+  nutritionistFoodIntegrationEndpoints(app, kv);
+} else {
+  console.warn('⚠️ Nutritionist Food Integration Endpoints module undefined, skipping');
+}
+
+if (nutritionistFoodDeliveryEndpoints && typeof nutritionistFoodDeliveryEndpoints === 'function') {
+  console.log('✅ Registering Nutritionist Food Delivery Endpoints...');
+  nutritionistFoodDeliveryEndpoints(app, kv);
+} else {
+  console.warn('⚠️ Nutritionist Food Delivery Endpoints module undefined, skipping');
 }
 
 if (foodDeliveryHyperlocalEndpoints && typeof foodDeliveryHyperlocalEndpoints === 'function') {
