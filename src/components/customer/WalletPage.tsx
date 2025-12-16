@@ -55,11 +55,68 @@ export function WalletPage({ customerPhone, customerId }: WalletPageProps) {
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  
+  // Loyalty State
+  const [loyaltyProfile, setLoyaltyProfile] = useState<any>(null);
+  const [redeeming, setRedeeming] = useState(false);
 
   useEffect(() => {
     loadWalletData();
     loadTopUpOffers();
+    loadLoyaltyProfile();
   }, [customerId]);
+
+  const loadLoyaltyProfile = async () => {
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/loyalty/profile/${customerId}?type=customer`,
+        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+      );
+      const data = await response.json();
+      setLoyaltyProfile(data.profile);
+    } catch (err) {
+      console.error('Error loading loyalty:', err);
+    }
+  };
+
+  const redeemPoints = async () => {
+    if (!loyaltyProfile || loyaltyProfile.pointsBalance < 10) {
+      alert("Minimum 10 points required to redeem");
+      return;
+    }
+    
+    try {
+      setRedeeming(true);
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/loyalty/redeem`,
+        {
+          method: 'POST',
+          headers: { 
+            'Authorization': `Bearer ${publicAnonKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            userId: customerId,
+            pointsToRedeem: loyaltyProfile.pointsBalance, // Redeem all for now
+            userType: 'customer'
+          })
+        }
+      );
+      
+      const data = await response.json();
+      if (data.success) {
+        alert(`Successfully redeemed ${data.redeemed} points for ₹${data.walletCredited}!`);
+        loadWalletData();
+        loadLoyaltyProfile();
+      } else {
+        alert(data.error || 'Redemption failed');
+      }
+    } catch (err) {
+      console.error('Redeem error:', err);
+    } finally {
+      setRedeeming(false);
+    }
+  };
 
   const loadWalletData = async () => {
     try {
@@ -274,6 +331,33 @@ export function WalletPage({ customerPhone, customerId }: WalletPageProps) {
           </div>
         </div>
       </div>
+
+      {/* Loyalty Points Card */}
+      {loyaltyProfile && (
+        <div className="bg-white rounded-xl p-4 shadow-sm mb-6 border border-orange-100">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center border-2 border-yellow-200">
+                <Gift className="w-6 h-6 text-yellow-600" />
+              </div>
+              <div>
+                <div className="text-sm text-gray-500">Loyalty Points</div>
+                <div className="text-2xl font-bold text-gray-900">{loyaltyProfile.pointsBalance} <span className="text-sm font-normal text-gray-400">Pawints</span></div>
+              </div>
+            </div>
+            <button 
+              onClick={redeemPoints}
+              disabled={redeeming || loyaltyProfile.pointsBalance < 10}
+              className="bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {redeeming ? '...' : 'Redeem to Wallet'}
+            </button>
+          </div>
+          <div className="mt-3 text-xs text-gray-500 bg-gray-50 p-2 rounded-lg">
+            1 Pawint = ₹1 • Minimum redemption: 10 Points
+          </div>
+        </div>
+      )}
 
       {/* Quick Actions */}
       <div className="bg-white rounded-xl p-4 shadow-sm mb-6">

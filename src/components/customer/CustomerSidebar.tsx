@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Calendar, Clock, MapPin, Star, ChevronRight, User, Heart, Settings, LogOut, FileText, Package } from 'lucide-react';
+import { X, Calendar, Clock, MapPin, Star, ChevronRight, User, Heart, Settings, LogOut, FileText, Package, Gift, Coins } from 'lucide-react';
 import { Button } from '../ui/button';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 
@@ -121,7 +121,7 @@ export function CustomerSidebar({
         {/* Header */}
         <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] px-6 py-6">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-white text-xl font-bold">My Account</h2>
+            <h2 className="text-white">My Account</h2>
             <button
               onClick={onClose}
               className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm"
@@ -268,6 +268,26 @@ export function CustomerSidebar({
                   <span className="font-medium text-gray-800">My Orders</span>
                 </div>
                 <ChevronRight className="w-5 h-5 text-gray-400" />
+              </button>
+
+              {/* ✅ NEW: Referral & Rewards Link */}
+              <button 
+                onClick={() => {
+                  onNavigate?.('referral');
+                  onClose();
+                }}
+                className="w-full flex items-center justify-between p-4 bg-gradient-to-r from-yellow-50 to-orange-50 border-2 border-yellow-300 rounded-xl hover:shadow-md transition-all"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-gradient-to-br from-yellow-400 to-orange-400 rounded-full flex items-center justify-center">
+                    <Coins className="w-5 h-5 text-white" />
+                  </div>
+                  <div className="text-left">
+                    <span className="font-semibold text-gray-800 block">Referral & Rewards</span>
+                    <span className="text-xs text-orange-600">Earn Pawints!</span>
+                  </div>
+                </div>
+                <ChevronRight className="w-5 h-5 text-orange-400" />
               </button>
 
               <button className="w-full flex items-center justify-between p-4 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-all">

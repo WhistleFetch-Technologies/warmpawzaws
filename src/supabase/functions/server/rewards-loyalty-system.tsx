@@ -1,392 +1,557 @@
-/**
- * REWARDS & LOYALTY SYSTEM
- * 
- * Features:
- * - Points earning on bookings
- * - Points redemption
- * - Loyalty tiers (Silver, Gold, Platinum, Diamond)
- * - Tier benefits
- * - Rewards catalog
- * - Points expiry tracking
- * 
- * Status: ✅ P1 IMPLEMENTATION
- */
-
-import { Hono } from 'npm:hono';
-import { cors } from 'npm:hono/cors';
+import { Hono } from "npm:hono";
 import * as kv from './kv_store.tsx';
+import { generateId } from './database-schema.tsx';
+
+// ==========================================
+// TYPES & INTERFACES
+// ==========================================
+
+interface LoyaltyRule {
+  id: string;
+  category: 'End User' | 'Vendor';
+  actionKey: string; // e.g., 'signup', 'spend_medicine'
+  name: string;
+  points: number; // Base points
+  type: 'fixed' | 'percentage_spend' | 'multiplier';
+  spendUnit?: number; // e.g., 1000 (for "10 points per 1000 spent")
+  frequency: 'one-time' | 'recurring' | 'unlimited';
+  period?: 'month' | 'year'; // For limits like "Max 3/month"
+  maxCountPerPeriod?: number;
+  condition?: string; // e.g., 'first_pet_only'
+  isActive: boolean;
+  description?: string;
+}
+
+interface UserLoyaltyProfile {
+  userId: string;
+  userType: 'customer' | 'vendor';
+  pointsBalance: number;
+  totalPointsEarned: number;
+  totalPointsRedeemed: number;
+  referralCode: string;
+  referredBy?: string; // userId of referrer
+  history: LoyaltyTransaction[];
+}
+
+interface LoyaltyTransaction {
+  id: string;
+  userId: string;
+  actionKey: string;
+  points: number;
+  type: 'earned' | 'redeemed';
+  description: string;
+  metadata?: any;
+  timestamp: string;
+}
+
+// ==========================================
+// DEFAULT SEED DATA
+// ==========================================
+
+const DEFAULT_RULES: LoyaltyRule[] = [
+  // CUSTOMER RULES
+  {
+    id: 'rule_cust_signup',
+    category: 'End User',
+    actionKey: 'signup',
+    name: 'Sign up Bonus',
+    points: 100,
+    type: 'fixed',
+    frequency: 'one-time',
+    isActive: true,
+    description: 'Welcome bonus for joining Warmpawz'
+  },
+  {
+    id: 'rule_cust_profile',
+    category: 'End User',
+    actionKey: 'complete_profile',
+    name: 'Complete Pet Profile',
+    points: 100,
+    type: 'fixed',
+    frequency: 'one-time',
+    isActive: true,
+    description: 'For adding your first pet'
+  },
+  {
+    id: 'rule_cust_health',
+    category: 'End User',
+    actionKey: 'update_health_record',
+    name: 'Update Health Record',
+    points: 50,
+    type: 'fixed',
+    frequency: 'recurring',
+    isActive: true,
+    description: 'Digitally update pet health records'
+  },
+  {
+    id: 'rule_cust_medicine',
+    category: 'End User',
+    actionKey: 'spend_medicine',
+    name: 'Buy Medicines',
+    points: 10,
+    type: 'percentage_spend',
+    spendUnit: 1000,
+    frequency: 'recurring',
+    isActive: true,
+    description: '10 points per ₹1000 spent on medicines'
+  },
+  {
+    id: 'rule_cust_referral',
+    category: 'End User',
+    actionKey: 'referral_success',
+    name: 'Refer a Friend',
+    points: 100,
+    type: 'fixed',
+    frequency: 'unlimited',
+    isActive: true,
+    description: 'Earn when friend completes first booking'
+  },
+  {
+    id: 'rule_cust_insurance_buy',
+    category: 'End User',
+    actionKey: 'buy_insurance',
+    name: 'Buy Pet Insurance',
+    points: 50,
+    type: 'percentage_spend',
+    spendUnit: 1000,
+    frequency: 'one-time',
+    isActive: true,
+    description: '50 points per ₹1000 spent on new policy'
+  },
+  {
+    id: 'rule_cust_insurance_renew',
+    category: 'End User',
+    actionKey: 'renew_insurance',
+    name: 'Renew Pet Insurance',
+    points: 100,
+    type: 'percentage_spend',
+    spendUnit: 1000,
+    frequency: 'recurring',
+    isActive: true,
+    description: '100 points per ₹1000 spent on renewal'
+  },
+  {
+    id: 'rule_cust_grooming',
+    category: 'End User',
+    actionKey: 'book_grooming',
+    name: 'Book Grooming',
+    points: 5,
+    type: 'percentage_spend',
+    spendUnit: 1000,
+    frequency: 'unlimited',
+    isActive: true,
+    description: '5 points per ₹1000 spent'
+  },
+  {
+    id: 'rule_cust_vet',
+    category: 'End User',
+    actionKey: 'book_vet',
+    name: 'Book Vet Consultation',
+    points: 7,
+    type: 'percentage_spend',
+    spendUnit: 500,
+    frequency: 'unlimited',
+    isActive: true,
+    description: '7 points per ₹500 spent'
+  },
+  {
+    id: 'rule_cust_food',
+    category: 'End User',
+    actionKey: 'buy_food',
+    name: 'Buy Pet Food',
+    points: 3,
+    type: 'percentage_spend',
+    spendUnit: 1000,
+    frequency: 'unlimited',
+    isActive: true,
+    description: '3 points per ₹1000 spent'
+  },
+  {
+    id: 'rule_cust_review',
+    category: 'End User',
+    actionKey: 'post_review',
+    name: 'Post Review',
+    points: 500,
+    type: 'fixed',
+    frequency: 'recurring',
+    period: 'month',
+    maxCountPerPeriod: 3,
+    isActive: true,
+    description: 'Verified review (Max 3/month)'
+  },
+  {
+    id: 'rule_cust_birthday',
+    category: 'End User',
+    actionKey: 'birthday_booking',
+    name: 'Birthday Booking',
+    points: 2,
+    type: 'multiplier',
+    frequency: 'recurring',
+    period: 'year',
+    maxCountPerPeriod: 1,
+    isActive: true,
+    description: '2x Points during birthday month'
+  },
+  
+  // VENDOR RULES
+  {
+    id: 'rule_vend_signup',
+    category: 'Vendor',
+    actionKey: 'signup',
+    name: 'Vendor Signup Bonus',
+    points: 100,
+    type: 'fixed',
+    frequency: 'one-time',
+    isActive: true,
+    description: 'Welcome bonus for vendors'
+  },
+  {
+    id: 'rule_vend_refer_vendor',
+    category: 'Vendor',
+    actionKey: 'refer_vendor',
+    name: 'Refer another Vendor',
+    points: 200,
+    type: 'fixed',
+    frequency: 'one-time', // Per referral
+    isActive: true,
+    description: 'When referred vendor joins'
+  },
+  {
+    id: 'rule_vend_refer_customer',
+    category: 'Vendor',
+    actionKey: 'refer_customer',
+    name: 'Refer Customer',
+    points: 500,
+    type: 'fixed',
+    frequency: 'unlimited',
+    isActive: true,
+    description: 'Refer existing customer to sign up & buy'
+  },
+  {
+    id: 'rule_vend_premium',
+    category: 'Vendor',
+    actionKey: 'subscribe_premium',
+    name: 'Premium Subscription',
+    points: 1000,
+    type: 'fixed',
+    frequency: 'one-time',
+    isActive: true,
+    description: 'Bonus for upgrading to premium'
+  }
+];
+
+// ==========================================
+// HELPERS
+// ==========================================
+
+function sendSuccess(c: any, data: any, message?: string) {
+  return c.json({ success: true, ...data, message });
+}
+
+function sendError(c: any, error: any, status: number = 500) {
+  return c.json({ success: false, error: error.message || error }, status);
+}
+
+async function getLoyaltyProfile(userId: string, userType: 'customer' | 'vendor'): Promise<UserLoyaltyProfile> {
+  const key = `loyalty_profile:${userId}`;
+  let profile = await kv.get(key);
+
+  if (!profile) {
+    // Generate referral code: REF + First 3 chars of ID (or random) + Random 4
+    const seed = userId.substring(0, 3).toUpperCase();
+    const random = Math.floor(1000 + Math.random() * 9000);
+    const code = `REF${seed}${random}`;
+
+    profile = {
+      userId,
+      userType,
+      pointsBalance: 0,
+      totalPointsEarned: 0,
+      totalPointsRedeemed: 0,
+      referralCode: code,
+      history: []
+    };
+    
+    await kv.set(key, profile);
+    // Index referral code
+    await kv.set(`referral_code:${code}`, userId);
+  }
+  
+  return profile;
+}
+
+async function getRules(): Promise<LoyaltyRule[]> {
+  const rules = await kv.get('loyalty_rules');
+  if (!rules || rules.length === 0) {
+    await kv.set('loyalty_rules', DEFAULT_RULES);
+    return DEFAULT_RULES;
+  }
+  return rules;
+}
+
+// ==========================================
+// CREATE HONO APP
+// ==========================================
 
 const app = new Hono();
-app.use('*', cors());
-
-// Loyalty tier thresholds
-const LOYALTY_TIERS = {
-  SILVER: { minPoints: 0, maxPoints: 999, name: 'Silver', benefits: ['5% wallet cashback'] },
-  GOLD: { minPoints: 1000, maxPoints: 4999, name: 'Gold', benefits: ['10% wallet cashback', 'Priority support'] },
-  PLATINUM: { minPoints: 5000, maxPoints: 9999, name: 'Platinum', benefits: ['15% wallet cashback', 'Priority support', 'Free cancellations'] },
-  DIAMOND: { minPoints: 10000, maxPoints: Infinity, name: 'Diamond', benefits: ['20% wallet cashback', 'VIP support', 'Free cancellations', 'Exclusive deals'] }
-};
-
-// Points earning rules
-const POINTS_EARNING_RULES = {
-  PER_RUPEE: 1, // 1 point per ₹1 spent
-  BONUS_MULTIPLIERS: {
-    first_booking: 2, // 2x points on first booking
-    weekend: 1.5, // 1.5x points on weekends
-    high_value: 1.5 // 1.5x points on bookings > ₹2000
-  }
-};
-
-// Points redemption rules
-const REDEMPTION_RATE = 0.5; // ₹0.5 per point
-
-// Helper: Calculate loyalty tier
-function calculateLoyaltyTier(points: number) {
-  if (points >= LOYALTY_TIERS.DIAMOND.minPoints) return LOYALTY_TIERS.DIAMOND;
-  if (points >= LOYALTY_TIERS.PLATINUM.minPoints) return LOYALTY_TIERS.PLATINUM;
-  if (points >= LOYALTY_TIERS.GOLD.minPoints) return LOYALTY_TIERS.GOLD;
-  return LOYALTY_TIERS.SILVER;
-}
-
-// Helper: Generate reward ID
-function generateRewardId() {
-  return `reward_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-}
-
-// ==========================================================================
-// EARN POINTS ON BOOKING COMPLETION
-// ==========================================================================
 
 /**
- * POST /loyalty/earn-points
- * Award points when booking is completed
+ * ADMIN: Get all loyalty rules
  */
-app.post('/loyalty/earn-points', async (c) => {
+app.get('/admin/loyalty/rules', async (c) => {
   try {
-    const { customerId, bookingId, amount } = await c.req.json();
-    
-    if (!customerId || !bookingId || !amount) {
-      return c.json({
-        error: 'Missing required fields',
-        required: ['customerId', 'bookingId', 'amount']
-      }, 400);
-    }
-    
-    // Get customer loyalty profile
-    let loyalty = await kv.get(`loyalty:${customerId}`) || {
-      customerId,
-      totalPoints: 0,
-      availablePoints: 0,
-      lifetimePoints: 0,
-      tier: 'Silver',
-      joinedAt: new Date().toISOString(),
-      lastActivityAt: new Date().toISOString()
-    };
-    
-    // Calculate base points (1 point per rupee)
-    let pointsEarned = amount * POINTS_EARNING_RULES.PER_RUPEE;
-    
-    // Apply multipliers
-    const booking = await kv.get(`booking:${bookingId}`);
-    
-    // First booking bonus
-    const bookingHistory = await kv.get(`booking:customer:${customerId}`) || [];
-    if (bookingHistory.length === 1) { // First booking
-      pointsEarned *= POINTS_EARNING_RULES.BONUS_MULTIPLIERS.first_booking;
-    }
-    
-    // High value bonus
-    if (amount >= 2000) {
-      pointsEarned *= POINTS_EARNING_RULES.BONUS_MULTIPLIERS.high_value;
-    }
-    
-    // Weekend bonus
-    const bookingDate = new Date(booking?.scheduledDate || new Date());
-    const dayOfWeek = bookingDate.getDay();
-    if (dayOfWeek === 0 || dayOfWeek === 6) { // Sunday or Saturday
-      pointsEarned *= POINTS_EARNING_RULES.BONUS_MULTIPLIERS.weekend;
-    }
-    
-    pointsEarned = Math.floor(pointsEarned);
-    
-    // Update loyalty profile
-    loyalty.totalPoints += pointsEarned;
-    loyalty.availablePoints += pointsEarned;
-    loyalty.lifetimePoints += pointsEarned;
-    loyalty.lastActivityAt = new Date().toISOString();
-    
-    // Calculate new tier
-    const newTier = calculateLoyaltyTier(loyalty.lifetimePoints);
-    const tierChanged = loyalty.tier !== newTier.name;
-    loyalty.tier = newTier.name;
-    
-    await kv.set(`loyalty:${customerId}`, loyalty);
-    
-    // Create points transaction record
-    const transactionId = generateRewardId();
-    const transaction = {
-      id: transactionId,
-      customerId,
-      type: 'earn',
-      points: pointsEarned,
-      bookingId,
-      amount,
-      description: `Earned ${pointsEarned} points on booking`,
-      createdAt: new Date().toISOString(),
-      expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString() // 1 year expiry
-    };
-    
-    await kv.set(`loyalty:transaction:${transactionId}`, transaction);
-    
-    // Add to customer's transaction history
-    const transactions = await kv.get(`loyalty:${customerId}:transactions`) || [];
-    transactions.unshift(transactionId);
-    await kv.set(`loyalty:${customerId}:transactions`, transactions);
-    
-    console.log(`🎁 ${pointsEarned} points earned for customer ${customerId}`);
-    
-    return c.json({
-      success: true,
-      pointsEarned,
-      loyalty: {
-        totalPoints: loyalty.totalPoints,
-        availablePoints: loyalty.availablePoints,
-        tier: loyalty.tier,
-        tierChanged
-      },
-      message: tierChanged 
-        ? `Congratulations! You've been upgraded to ${loyalty.tier} tier!`
-        : `You earned ${pointsEarned} points!`
-    });
-    
-  } catch (error) {
-    console.error('Error earning points:', error);
-    return c.json({ error: String(error) }, 500);
+    const rules = await getRules();
+    return sendSuccess(c, { rules });
+  } catch (e) {
+    return sendError(c, e, 500);
   }
 });
 
-// ==========================================================================
-// REDEEM POINTS
-// ==========================================================================
+/**
+ * ADMIN: Update/Create loyalty rule
+ */
+app.post('/admin/loyalty/rules', async (c) => {
+  try {
+    const rule = await c.req.json();
+    let rules = await getRules();
+    
+    const index = rules.findIndex((r: any) => r.id === rule.id);
+    if (index >= 0) {
+      rules[index] = { ...rules[index], ...rule };
+    } else {
+      rules.push({ ...rule, id: rule.id || generateId('rule') });
+    }
+    
+    await kv.set('loyalty_rules', rules);
+    return sendSuccess(c, { rules }, 'Rules updated');
+  } catch (e) {
+    return sendError(c, e, 500);
+  }
+});
 
 /**
- * POST /loyalty/:customerId/redeem
- * Redeem points for wallet credit
+ * USER: Get Loyalty Profile (Points, Code, History)
  */
-app.post('/loyalty/:customerId/redeem', async (c) => {
+app.get('/loyalty/profile/:userId', async (c) => {
   try {
-    const customerId = c.req.param('customerId');
-    const { points } = await c.req.json();
+    const { userId } = c.req.param();
+    const userType = c.req.query('type') as 'customer' | 'vendor' || 'customer';
     
-    if (!points || points < 100) {
-      return c.json({
-        error: 'Invalid points amount',
-        hint: 'Minimum redemption is 100 points'
-      }, 400);
+    const profile = await getLoyaltyProfile(userId, userType);
+    return sendSuccess(c, { profile });
+  } catch (e) {
+    return sendError(c, e, 500);
+  }
+});
+
+/**
+ * SYSTEM: Process an Action (Award Points)
+ * This is called by other services (Booking, Auth, etc.)
+ */
+app.post('/loyalty/process-action', async (c) => {
+  try {
+    const { userId, userType, actionKey, metadata, amount } = await c.req.json();
+    
+    console.log(`[LOYALTY] Processing action: ${actionKey} for ${userId} (Amount: ${amount})`);
+
+    const rules = await getRules();
+    const rule = rules.find(r => r.actionKey === actionKey && r.isActive);
+    
+    if (!rule) {
+      console.log(`[LOYALTY] No active rule found for ${actionKey}`);
+      return sendSuccess(c, { pointsAwarded: 0, message: 'No rule matched' });
     }
+
+    const profile = await getLoyaltyProfile(userId, userType);
     
-    // Get loyalty profile
-    const loyalty = await kv.get(`loyalty:${customerId}`);
-    if (!loyalty) {
-      return c.json({ error: 'Loyalty profile not found' }, 404);
+    // Check constraints
+    // 1. One-time limit
+    if (rule.frequency === 'one-time') {
+      const hasDone = profile.history.some(h => h.actionKey === actionKey);
+      if (hasDone) {
+        console.log(`[LOYALTY] One-time action already completed`);
+        return sendSuccess(c, { pointsAwarded: 0, message: 'Already claimed' });
+      }
     }
-    
-    // Check available points
-    if (loyalty.availablePoints < points) {
-      return c.json({
-        error: 'Insufficient points',
-        available: loyalty.availablePoints,
-        requested: points
-      }, 400);
+
+    // 2. Period limits (e.g. Max 3/month)
+    if (rule.period && rule.maxCountPerPeriod) {
+      const now = new Date();
+      const periodStart = new Date();
+      if (rule.period === 'month') periodStart.setMonth(now.getMonth() - 1);
+      if (rule.period === 'year') periodStart.setFullYear(now.getFullYear() - 1);
+      
+      const recentCount = profile.history.filter(h => 
+        h.actionKey === actionKey && 
+        new Date(h.timestamp) > periodStart
+      ).length;
+
+      if (recentCount >= rule.maxCountPerPeriod) {
+        console.log(`[LOYALTY] Period limit reached`);
+        return sendSuccess(c, { pointsAwarded: 0, message: 'Limit reached for this period' });
+      }
     }
+
+    // Calculate Points
+    let pointsToAward = 0;
     
-    // Calculate wallet credit
-    const walletCredit = points * REDEMPTION_RATE;
+    if (rule.type === 'fixed') {
+      pointsToAward = rule.points;
+    } else if (rule.type === 'percentage_spend' && amount) {
+      const unit = rule.spendUnit || 1;
+      pointsToAward = Math.floor((amount / unit) * rule.points);
+    } else if (rule.type === 'multiplier' && amount) {
+      pointsToAward = Math.floor((amount / 100) * rule.points);
+    }
+
+    if (pointsToAward <= 0) {
+      return sendSuccess(c, { pointsAwarded: 0, message: 'No points earned (amount too low)' });
+    }
+
+    // Update Profile
+    profile.pointsBalance += pointsToAward;
+    profile.totalPointsEarned += pointsToAward;
     
-    // Deduct points
-    loyalty.availablePoints -= points;
-    loyalty.lastActivityAt = new Date().toISOString();
-    await kv.set(`loyalty:${customerId}`, loyalty);
-    
-    // Credit wallet
-    const wallet = await kv.get(`wallet:${customerId}`) || {
-      balance: 0,
-      totalEarned: 0,
-      totalSpent: 0
+    const transaction: LoyaltyTransaction = {
+      id: `loy_txn_${Date.now()}`,
+      userId,
+      actionKey,
+      points: pointsToAward,
+      type: 'earned',
+      description: rule.name,
+      metadata,
+      timestamp: new Date().toISOString()
     };
     
-    wallet.balance += walletCredit;
-    wallet.totalEarned += walletCredit;
-    await kv.set(`wallet:${customerId}`, wallet);
+    profile.history.unshift(transaction);
+    await kv.set(`loyalty_profile:${userId}`, profile);
     
-    // Create redemption transaction
-    const transactionId = generateRewardId();
-    const transaction = {
-      id: transactionId,
-      customerId,
-      type: 'redeem',
-      points: -points, // Negative for redemption
-      walletCredit,
-      description: `Redeemed ${points} points for ₹${walletCredit} wallet credit`,
+    console.log(`✅ [LOYALTY] Awarded ${pointsToAward} points to ${userId}`);
+
+    return sendSuccess(c, { 
+      pointsAwarded: pointsToAward, 
+      newBalance: profile.pointsBalance 
+    });
+
+  } catch (e) {
+    console.error('[LOYALTY] Error processing action:', e);
+    return sendError(c, e, 500);
+  }
+});
+
+/**
+ * USER: Redeem Points (Convert to Wallet Balance)
+ */
+app.post('/loyalty/redeem', async (c) => {
+  try {
+    const { userId, pointsToRedeem, userType } = await c.req.json();
+    
+    if (!pointsToRedeem || pointsToRedeem <= 0) {
+      return sendError(c, 'Invalid points amount', 400);
+    }
+
+    const profile = await getLoyaltyProfile(userId, userType || 'customer');
+    
+    if (profile.pointsBalance < pointsToRedeem) {
+      return sendError(c, 'Insufficient points balance', 400);
+    }
+
+    const creditAmount = pointsToRedeem; 
+
+    profile.pointsBalance -= pointsToRedeem;
+    profile.totalPointsRedeemed += pointsToRedeem;
+    
+    const transaction: LoyaltyTransaction = {
+      id: `loy_rdm_${Date.now()}`,
+      userId,
+      actionKey: 'redemption',
+      points: pointsToRedeem,
+      type: 'redeemed',
+      description: 'Converted to Wallet Balance',
+      timestamp: new Date().toISOString()
+    };
+    profile.history.unshift(transaction);
+    
+    await kv.set(`loyalty_profile:${userId}`, profile);
+
+    // Credit Wallet
+    const walletKey = `wallet:${userId}`;
+    let wallet = await kv.get(walletKey) || {
+      customerId: userId,
+      balance: 0,
+      totalEarned: 0,
+      transactions: []
+    };
+
+    wallet.balance += creditAmount;
+    wallet.totalEarned += creditAmount;
+    wallet.transactions.push({
+      id: `txn_reward_${Date.now()}`,
+      type: 'credit',
+      amount: creditAmount,
+      source: 'loyalty_rewards',
+      description: `Redeemed ${pointsToRedeem} Pawints`,
+      timestamp: new Date().toISOString(),
+      balanceAfter: wallet.balance
+    });
+
+    await kv.set(walletKey, wallet);
+
+    console.log(`✅ [LOYALTY] Redeemed ${pointsToRedeem} points for ₹${creditAmount}`);
+
+    return sendSuccess(c, { 
+      redeemed: pointsToRedeem, 
+      walletCredited: creditAmount,
+      newPointsBalance: profile.pointsBalance,
+      newWalletBalance: wallet.balance
+    });
+
+  } catch (e) {
+    return sendError(c, e, 500);
+  }
+});
+
+/**
+ * REFERRAL: Apply Referral Code
+ */
+app.post('/loyalty/referral/apply', async (c) => {
+  try {
+    const { newUserId, referralCode, userType } = await c.req.json();
+    
+    const referrerId = await kv.get(`referral_code:${referralCode}`);
+    if (!referrerId) {
+      return sendError(c, 'Invalid referral code', 400);
+    }
+
+    if (referrerId === newUserId) {
+      return sendError(c, 'Cannot refer yourself', 400);
+    }
+
+    const profile = await getLoyaltyProfile(newUserId, userType);
+    
+    if (profile.referredBy) {
+      return sendError(c, 'User already referred', 400);
+    }
+
+    profile.referredBy = referrerId;
+    await kv.set(`loyalty_profile:${newUserId}`, profile);
+
+    const referralRecord = {
+      referrerId,
+      refereeId: newUserId,
+      status: 'pending',
       createdAt: new Date().toISOString()
     };
     
-    await kv.set(`loyalty:transaction:${transactionId}`, transaction);
-    
-    // Add to transaction history
-    const transactions = await kv.get(`loyalty:${customerId}:transactions`) || [];
-    transactions.unshift(transactionId);
-    await kv.set(`loyalty:${customerId}:transactions`, transactions);
-    
-    console.log(`💎 ${points} points redeemed for ₹${walletCredit} by customer ${customerId}`);
-    
-    return c.json({
-      success: true,
-      pointsRedeemed: points,
-      walletCredit,
-      newBalance: {
-        points: loyalty.availablePoints,
-        wallet: wallet.balance
-      },
-      message: `₹${walletCredit} added to your wallet`
-    });
-    
-  } catch (error) {
-    console.error('Error redeeming points:', error);
-    return c.json({ error: String(error) }, 500);
+    await kv.set(`referral_link:${newUserId}`, referralRecord);
+
+    return sendSuccess(c, { message: 'Referral code applied' });
+
+  } catch (e) {
+    return sendError(c, e, 500);
   }
 });
 
-// ==========================================================================
-// GET LOYALTY PROFILE
-// ==========================================================================
-
-/**
- * GET /loyalty/:customerId
- * Get customer loyalty profile
- */
-app.get('/loyalty/:customerId', async (c) => {
-  try {
-    const customerId = c.req.param('customerId');
-    
-    const loyalty = await kv.get(`loyalty:${customerId}`) || {
-      customerId,
-      totalPoints: 0,
-      availablePoints: 0,
-      lifetimePoints: 0,
-      tier: 'Silver',
-      joinedAt: new Date().toISOString(),
-      lastActivityAt: new Date().toISOString()
-    };
-    
-    // Calculate tier info
-    const currentTier = calculateLoyaltyTier(loyalty.lifetimePoints);
-    const nextTier = 
-      currentTier.name === 'Diamond' ? null :
-      currentTier.name === 'Platinum' ? LOYALTY_TIERS.DIAMOND :
-      currentTier.name === 'Gold' ? LOYALTY_TIERS.PLATINUM :
-      LOYALTY_TIERS.GOLD;
-    
-    const pointsToNextTier = nextTier 
-      ? nextTier.minPoints - loyalty.lifetimePoints
-      : 0;
-    
-    // Get recent transactions
-    const transactionIds = await kv.get(`loyalty:${customerId}:transactions`) || [];
-    const recentTransactions = [];
-    
-    for (const txnId of transactionIds.slice(0, 10)) {
-      const txn = await kv.get(`loyalty:transaction:${txnId}`);
-      if (txn) recentTransactions.push(txn);
-    }
-    
-    return c.json({
-      success: true,
-      loyalty: {
-        ...loyalty,
-        currentTier: {
-          name: currentTier.name,
-          benefits: currentTier.benefits
-        },
-        nextTier: nextTier ? {
-          name: nextTier.name,
-          pointsNeeded: pointsToNextTier,
-          benefits: nextTier.benefits
-        } : null,
-        redemptionValue: loyalty.availablePoints * REDEMPTION_RATE
-      },
-      recentTransactions
-    });
-    
-  } catch (error) {
-    console.error('Error fetching loyalty profile:', error);
-    return c.json({ error: String(error) }, 500);
-  }
-});
-
-// ==========================================================================
-// REWARDS CATALOG
-// ==========================================================================
-
-/**
- * GET /loyalty/rewards-catalog
- * Get available rewards
- */
-app.get('/loyalty/rewards-catalog', async (c) => {
-  try {
-    const rewards = [
-      {
-        id: 'reward_wallet_50',
-        name: '₹50 Wallet Credit',
-        pointsCost: 100,
-        type: 'wallet_credit',
-        value: 50,
-        description: 'Add ₹50 to your wallet'
-      },
-      {
-        id: 'reward_wallet_250',
-        name: '₹250 Wallet Credit',
-        pointsCost: 500,
-        type: 'wallet_credit',
-        value: 250,
-        description: 'Add ₹250 to your wallet'
-      },
-      {
-        id: 'reward_wallet_550',
-        name: '₹550 Wallet Credit',
-        pointsCost: 1000,
-        type: 'wallet_credit',
-        value: 550,
-        description: 'Add ₹550 to your wallet (10% bonus!)'
-      },
-      {
-        id: 'reward_free_grooming',
-        name: 'Free Basic Grooming',
-        pointsCost: 1200,
-        type: 'service_voucher',
-        value: 600,
-        description: 'Free basic grooming session (up to ₹600)'
-      },
-      {
-        id: 'reward_free_vet',
-        name: 'Free Vet Consultation',
-        pointsCost: 1000,
-        type: 'service_voucher',
-        value: 500,
-        description: 'Free vet consultation (up to ₹500)'
-      }
-    ];
-    
-    return c.json({
-      success: true,
-      rewards,
-      redemptionRate: REDEMPTION_RATE
-    });
-    
-  } catch (error) {
-    console.error('Error fetching rewards catalog:', error);
-    return c.json({ error: String(error) }, 500);
-  }
-});
+console.log('✅ Loyalty & Rewards System initialized');
 
 export default app;

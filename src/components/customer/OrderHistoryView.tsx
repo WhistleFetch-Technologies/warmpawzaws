@@ -199,7 +199,7 @@ export function OrderHistoryView({ phone, onBack, onOrderClick }: OrderHistoryVi
           <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-full">
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <h1 className="font-bold text-lg flex-1">My Orders</h1>
+          <h1 className="flex-1">My Orders</h1>
           <button className="p-2 hover:bg-gray-100 rounded-full">
             <Filter className="w-5 h-5 text-gray-700" />
           </button>
@@ -315,7 +315,7 @@ export function OrderHistoryView({ phone, onBack, onOrderClick }: OrderHistoryVi
             <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mb-4">
               <Box className="w-12 h-12 text-gray-400" />
             </div>
-            <h2 className="text-xl font-bold text-gray-900 mb-2">No orders found</h2>
+            <h2 className="text-gray-900 mb-2">No orders found</h2>
             <p className="text-gray-500 mb-6">
               {searchQuery ? 'Try a different search term' : 'You haven\'t placed any orders yet'}
             </p>

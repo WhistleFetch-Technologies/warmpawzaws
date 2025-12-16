@@ -772,6 +772,125 @@ export function homeServicesEndpoints(app: Hono) {
       return c.json({ error: String(error) }, 500);
     }
   });
+
+  /**
+   * ✅ NEW: GET /walker/package/:packageId/progress
+   * Get walker package progress with all sessions
+   */
+  app.get('/make-server-3dd53475/walker/package/:packageId/progress', async (c) => {
+    try {
+      const { packageId } = c.req.param();
+      const customerId = c.req.query('customerId');
+
+      console.log(`📊 [WALKER] Fetching package progress for ${packageId}`);
+
+      // Get package enrollment
+      const enrollment = await kv.get(`package_enrollment:${packageId}`);
+      
+      if (!enrollment) {
+        return c.json({ error: 'Package enrollment not found' }, 404);
+      }
+
+      if (customerId && enrollment.customerId !== customerId) {
+        return c.json({ error: 'Unauthorized' }, 403);
+      }
+
+      // Get all sessions for this package
+      const allBookings = await kv.getByPrefix('booking:') || [];
+      const packageSessions = allBookings
+        .map((item: any) => item.value || item)
+        .filter((booking: any) => 
+          booking.packageEnrollmentId === packageId &&
+          booking.serviceType === 'walker'
+        )
+        .sort((a: any, b: any) => 
+          new Date(a.scheduledDate).getTime() - new Date(b.scheduledDate).getTime()
+        );
+
+      // Build walk sessions with tracking data
+      const sessions = await Promise.all(
+        packageSessions.map(async (booking: any, index: number) => {
+          let sessionData: any = {
+            sessionId: booking.id,
+            sessionNumber: index + 1,
+            date: booking.scheduledDate,
+            status: booking.status === 'completed' ? 'completed' : 
+                   booking.status === 'cancelled' ? 'cancelled' : 'scheduled',
+            walkerName: booking.staffName || booking.vendorName,
+            walkerPhoto: booking.staffPhoto,
+            duration: 0,
+            distance: 0,
+            startTime: booking.scheduledDate,
+            endTime: booking.completedAt,
+            notes: booking.serviceNotes,
+            rating: booking.rating
+          };
+
+          // Get walker session details if exists
+          if (booking.walkerSessionId) {
+            const walkerSession = await kv.get(`walker_session:${booking.walkerSessionId}`);
+            if (walkerSession) {
+              sessionData.duration = walkerSession.duration || 0;
+              sessionData.distance = walkerSession.totalDistance || 0;
+              sessionData.route = walkerSession.route || [];
+              sessionData.averageSpeed = walkerSession.totalDistance && walkerSession.duration
+                ? (walkerSession.totalDistance / (walkerSession.duration / 60)).toFixed(2)
+                : 0;
+              sessionData.photos = walkerSession.photos || [];
+            }
+          }
+
+          return sessionData;
+        })
+      );
+
+      // Calculate statistics
+      const completedSessions = sessions.filter(s => s.status === 'completed');
+      const scheduledSessions = sessions.filter(s => s.status === 'scheduled').length;
+      const totalSessions = enrollment.totalSessions;
+      const remainingSessions = totalSessions - completedSessions.length;
+
+      const totalDistance = completedSessions.reduce((sum, s) => sum + s.distance, 0);
+      const totalDuration = completedSessions.reduce((sum, s) => sum + s.duration, 0);
+      const averageDistance = completedSessions.length > 0 ? totalDistance / completedSessions.length : 0;
+      const averageDuration = completedSessions.length > 0 ? Math.round(totalDuration / completedSessions.length) : 0;
+      const longestWalk = Math.max(...completedSessions.map(s => s.distance), 0);
+      const fastestPace = Math.max(...completedSessions.map(s => parseFloat(s.averageSpeed) || 0), 0);
+
+      const progress: any = {
+        packageId: enrollment.id,
+        packageName: enrollment.packageName,
+        totalSessions,
+        completedSessions: completedSessions.length,
+        scheduledSessions,
+        remainingSessions,
+        progress: Math.round((completedSessions.length / totalSessions) * 100),
+        expiryDate: enrollment.expiryDate,
+        sessions,
+        statistics: {
+          totalDistance: parseFloat(totalDistance.toFixed(2)),
+          totalDuration,
+          averageDistance: parseFloat(averageDistance.toFixed(2)),
+          averageDuration,
+          longestWalk: parseFloat(longestWalk.toFixed(2)),
+          fastestPace: parseFloat(fastestPace.toFixed(2))
+        },
+        petName: enrollment.petName,
+        petPhoto: enrollment.petPhoto
+      };
+
+      console.log(`✅ [WALKER] Package progress: ${completedSessions.length}/${totalSessions} sessions`);
+
+      return c.json({
+        success: true,
+        data: progress
+      });
+
+    } catch (error) {
+      console.error('❌ [WALKER] Error fetching package progress:', error);
+      return c.json({ error: String(error) }, 500);
+    }
+  });
 }
 
 // Helper function to release earnings

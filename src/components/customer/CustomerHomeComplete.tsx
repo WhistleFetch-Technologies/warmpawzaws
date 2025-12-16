@@ -11,6 +11,10 @@ import logoImage from 'figma:asset/da6636b92da744b3db8eed5288ca6da9ab889afe.png'
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { AIAssistantChat } from './AIAssistantChat';
 import { CustomerSidebar } from './CustomerSidebar';
+import { EnhancedSearchBar } from './EnhancedSearchBar';
+import { ProblemGridNavigation } from './ProblemGridNavigation';
+import { ServicesByProblem } from './ServicesByProblem';
+import { TrendingProblems } from './TrendingProblems';
 
 interface Pet {
   id: string;
@@ -348,7 +352,7 @@ export function CustomerHome({
               {userProfilePhoto ? (
                 <img src={userProfilePhoto} alt="Profile" className="w-full h-full object-cover" />
               ) : (
-                <div className="w-full h-full bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center text-white font-bold">
+                <div className="w-full h-full bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center text-white">
                   {userData.name.charAt(0)}
                 </div>
               )}
@@ -365,7 +369,7 @@ export function CustomerHome({
             >
               <ShoppingCart className="w-5 h-5 text-white" />
               {itemCount > 0 && (
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
                   {itemCount}
                 </span>
               )}
@@ -466,6 +470,80 @@ export function CustomerHome({
 
       {/* Main Scrollable Content */}
       <div className="bg-white rounded-t-[32px] -mt-6 pt-6 pb-24">
+        {/* ✅ NEW: Enhanced Search Bar */}
+        <div className="px-6 mb-6">
+          <EnhancedSearchBar
+            placeholder="Search services, products, vets, groomers..."
+            customerId={phone}
+            onResultSelect={(result) => {
+              console.log('Search result selected:', result);
+              // Navigate based on result type and category
+              if (result.type === 'service' || result.category) {
+                const serviceNavigationMap: Record<string, string> = {
+                  'veterinary': 'vet',
+                  'vet': 'vet',
+                  'grooming': 'grooming',
+                  'boarding': 'boarding',
+                  'training': 'training',
+                  'walking': 'walker',
+                  'walker': 'walker',
+                  'nutrition': 'nutritionist',
+                  'nutritionist': 'nutritionist',
+                  'cafe': 'cafes',
+                  'cafes': 'cafes',
+                  'adoption': 'adoption',
+                  'breeder': 'breeder',
+                  'ambulance': 'ambulance',
+                  'insurance': 'insurance',
+                  'pharmacy': 'pharmacy',
+                  'photography': 'photography',
+                  'relocation': 'relocation',
+                  'resort': 'resort',
+                  'holiday': 'holiday',
+                  'sunset': 'sunset',
+                  'mating': 'mating-dating-hub'
+                };
+                
+                const category = result.category || result.data?.serviceType || result.data?.category || '';
+                const targetScreen = serviceNavigationMap[category.toLowerCase()] || 'services';
+                onNavigate(targetScreen);
+              } else if (result.type === 'product') {
+                onNavigate('shop');
+              } else if (result.type === 'staff' || result.type === 'vendor' || result.type === 'center') {
+                // Navigate to relevant service page
+                const serviceType = result.data?.serviceType || result.data?.services?.[0] || 'vet';
+                onNavigate(serviceType);
+              }
+            }}
+          />
+        </div>
+
+        {/* ✅ NEW: Trending Problems Section */}
+        <div className="px-6 mb-6">
+          <TrendingProblems
+            onProblemSelect={(problemId, title) => {
+              console.log('Trending problem selected:', problemId, title);
+              // TODO: Navigate to services by problem
+            }}
+            limit={5}
+          />
+        </div>
+
+        {/* ✅ NEW: Problem Grid Navigation */}
+        <div className="px-6 mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-gray-900">What's Your Pet's Need?</h2>
+            <span className="text-xs text-gray-500">Problem-based search</span>
+          </div>
+          <ProblemGridNavigation
+            onProblemSelect={(problemId, problem) => {
+              console.log('Problem selected:', problemId, problem);
+              // TODO: Navigate to services by problem
+            }}
+            showTrending={true}
+          />
+        </div>
+
         {/* Hero Banner Carousel */}
         <div className="px-6 mb-6">
           <div className="relative h-40 rounded-3xl overflow-hidden shadow-lg">
@@ -479,13 +557,13 @@ export function CustomerHome({
               >
                 <div className="h-full flex items-center justify-between px-6">
                   <div>
-                    <h2 className="text-white text-2xl font-bold mb-1">{banner.title}</h2>
+                    <h2 className="text-white mb-1">{banner.title}</h2>
                     <p className="text-white/90 text-sm mb-3">{banner.subtitle}</p>
                     <button className="bg-white text-[#FF8C42] px-4 py-2 rounded-full text-sm font-medium">
                       Claim Now
                     </button>
                   </div>
-                  <div className="text-6xl">{banner.emoji}</div>
+                  <div className="text-4xl">{banner.emoji}</div>
                 </div>
               </div>
             ))}
@@ -551,7 +629,7 @@ export function CustomerHome({
                 <h3 className="text-black font-semibold mb-1">{service.title}</h3>
                 <p className="text-xs text-gray-600 mb-3">{service.description}</p>
                 <div className="flex items-center justify-between">
-                  <span className="text-[#FF8C42] font-bold">{service.price}</span>
+                  <span className="text-[#FF8C42] font-medium">{service.price}</span>
                   <button className="bg-[#FF8C42] text-white px-4 py-2 rounded-full text-xs font-medium">
                     Book Now
                   </button>
@@ -582,7 +660,7 @@ export function CustomerHome({
             >
               <div className="text-3xl mb-2">📱</div>
               <h3 className="text-xs font-semibold text-gray-800 mb-1">Tele Consult</h3>
-              <p className="text-blue-600 font-bold text-sm">₹299</p>
+              <p className="text-blue-600 font-medium text-sm">₹299</p>
             </button>
             <button
               onClick={() => onNavigate('vet')}
@@ -590,7 +668,7 @@ export function CustomerHome({
             >
               <div className="text-3xl mb-2">🏠</div>
               <h3 className="text-xs font-semibold text-gray-800 mb-1">Vet at Home</h3>
-              <p className="text-blue-600 font-bold text-sm">₹599</p>
+              <p className="text-blue-600 font-medium text-sm">₹599</p>
             </button>
             <button
               onClick={() => onNavigate('vet')}
@@ -598,7 +676,7 @@ export function CustomerHome({
             >
               <div className="text-3xl mb-2">🏥</div>
               <h3 className="text-xs font-semibold text-gray-800 mb-1">Clinic Visit</h3>
-              <p className="text-blue-600 font-bold text-sm">₹399</p>
+              <p className="text-blue-600 font-medium text-sm">₹399</p>
             </button>
           </div>
         </div>

@@ -42,26 +42,29 @@ export function multiServiceSchedulingEndpoints(app: Hono, kv: any) {
   const BASE_PATH = "/make-server-3dd53475";
 
   // ========================================
-  // CHECK MULTI-SERVICE AVAILABILITY
+  // GET MULTI-SERVICE PROVIDER AVAILABILITY
   // ========================================
-  app.post(`${BASE_PATH}/home-services/check-multi-service-availability`, async (c) => {
+  app.get(`${BASE_PATH}/provider/:providerId/multi-service-availability`, async (c) => {
     try {
-      const {
-        providerId,
-        requestedDate,
-        requestedTime,
-        services,
-        customerLocation,
-      } = await c.req.json();
+      const { providerId } = c.req.param();
+      const date = c.req.query('date');
+      const customerLat = parseFloat(c.req.query('lat') || '0');
+      const customerLng = parseFloat(c.req.query('lng') || '0');
 
-      if (!providerId || !requestedDate || !services || services.length === 0) {
-        return sendError(c, 'Required fields missing', 400);
+      if (!date) {
+        return sendError(c, 'Date parameter required', 400);
       }
 
-      // Get provider's scheduling policy
+      console.log(`📅 Checking multi-service availability for provider ${providerId} on ${date}`);
+
+      // Get provider details
+      const provider = await kv.get(`vendor:${providerId}`);
+      if (!provider) {
+        return sendError(c, 'Provider not found', 404);
+      }
+
+      // Get scheduling policy
       const policyRes = await kv.get(`scheduling_policy_${providerId}`);
-      
-      // Default policy if none exists
       const policy: SchedulingPolicy = policyRes || {
         vendorId: providerId,
         bufferTimeBetweenServices: 15,
@@ -76,265 +79,221 @@ export function multiServiceSchedulingEndpoints(app: Hono, kv: any) {
         updatedAt: new Date().toISOString()
       };
 
-      if (!policy.multiServiceEnabled && services.length > 1) {
-        return sendSuccess(c, { 
-          isAvailable: false,
-          reason: 'Provider does not support multi-service bookings',
+      // Get all provider's services
+      const vendorServices = await kv.get(`vendor:${providerId}:services`) || [];
+      
+      // Get all bookings for this provider on the requested date
+      const allBookingIds = await kv.get(`vendor:${providerId}:bookings`) || [];
+      const dateBookings = [];
+
+      for (const bookingId of allBookingIds) {
+        const booking = await kv.get(`booking:${bookingId}`);
+        if (booking && booking.scheduledDate === date && booking.status !== 'cancelled') {
+          dateBookings.push(booking);
+        }
+      }
+
+      // Calculate commute time to customer
+      let commuteTime = 15; // default
+      if (customerLat && customerLng && provider.location) {
+        const distance = calculateDistance(
+          provider.location.lat,
+          provider.location.lng,
+          customerLat,
+          customerLng
+        );
+        
+        const speed = 20; // km/h
+        const trafficMultiplier = policy.enableTrafficFactor ? 1.25 : 1.0;
+        const baseCommute = (distance / speed) * 60;
+        commuteTime = Math.ceil(baseCommute * trafficMultiplier + 5);
+      }
+
+      // Build time slots for each service type
+      const serviceAvailability = [];
+
+      for (const service of vendorServices) {
+        const serviceType = service.serviceType || service.category;
+        const serviceDuration = service.duration || 60;
+
+        // Check conflicts for this service type
+        const conflicts = await checkServiceTypeConflicts(
+          providerId,
+          serviceType,
+          date,
+          dateBookings,
+          policy,
+          kv
+        );
+
+        // Generate available slots
+        const availableSlots = generateAvailableSlots(
+          dateBookings,
+          serviceDuration,
+          policy.bufferTimeBetweenServices,
+          commuteTime,
+          conflicts
+        );
+
+        serviceAvailability.push({
+          serviceType,
+          serviceName: service.name || service.serviceName,
+          duration: serviceDuration,
+          availableSlots: availableSlots.length,
+          slots: availableSlots,
+          conflicts: conflicts.length,
         });
       }
 
-      // 1. Check Radius
-      if (customerLocation && customerLocation.lat && customerLocation.lng) {
-          const provider = await kv.get(`vendor_${providerId}`);
-          if (provider && provider.location) {
-              const distance = calculateDistance(
-                  provider.location.lat, provider.location.lng,
-                  customerLocation.lat, customerLocation.lng
-              );
-              if (distance > policy.serviceRadius) {
-                  return sendSuccess(c, {
-                      isAvailable: false,
-                      reason: `Location is outside service radius (${policy.serviceRadius} km)`,
-                      distance
-                  });
-              }
-          }
-      }
-
-      // 2. Calculate total time needed
-      let totalDuration = 0;
-      let totalBufferTime = 0;
-      let previousServiceType = '';
-
-      for (let i = 0; i < services.length; i++) {
-        const service = services[i];
-        // Get service duration
-        const serviceData = await kv.get(`service_${service.serviceId}`);
-        const duration = serviceData?.duration || service.duration || 60;
-        const serviceType = serviceData?.serviceType || service.serviceType || 'general';
-
-        totalDuration += duration;
-        
-        // Add buffer time between services
-        if (i < services.length - 1) {
-          let buffer = policy.bufferTimeBetweenServices;
-          // Add extra buffer if switching service types (e.g. Grooming to Walking)
-          if (previousServiceType && serviceType !== previousServiceType) {
-              buffer += (policy.multiServiceSwitchBuffer || 0);
-          }
-          totalBufferTime += buffer;
-        }
-        previousServiceType = serviceType;
-      }
-
-      // 3. Add commute time
-      let commuteTime = 0;
-      if (customerLocation && customerLocation.lat && customerLocation.lng) {
-        const provider = await kv.get(`vendor_${providerId}`);
-        if (provider && provider.location) {
-          const distance = calculateDistance(
-            provider.location.lat,
-            provider.location.lng,
-            customerLocation.lat,
-            customerLocation.lng
-          );
-          
-          // Enhanced commute calculation
-          const speed = 20; // km/h base speed
-          const trafficMultiplier = policy.enableTrafficFactor ? 1.25 : 1.0; // 25% traffic buffer
-          const baseCommute = (distance / speed) * 60; // minutes
-          commuteTime = Math.ceil(baseCommute * trafficMultiplier + 5); // +5 min parking/entry buffer
-        }
-      } else {
-          // Fallback if no location
-          commuteTime = 15; 
-      }
-
-      const totalTime = totalDuration + totalBufferTime + commuteTime;
-
-      // 4. Check Provider Schedule
-      const requestedDateTime = new Date(`${requestedDate}T${requestedTime}`);
-      const endDateTime = new Date(requestedDateTime.getTime() + totalTime * 60 * 1000);
-
-      // Get provider's existing bookings for that day
-      const bookingsData = await kv.getByPrefix(`booking_${providerId}_${requestedDate}`);
-      
-      // Check for conflicts
-      let hasConflict = false;
-      for (const item of bookingsData || []) {
-        const booking = item.value || item;
-        const bookingStart = new Date(booking.scheduledAt);
-        const bookingEnd = new Date(bookingStart.getTime() + (booking.duration || 60) * 60 * 1000);
-
-        // Check overlap
-        if (
-          (requestedDateTime >= bookingStart && requestedDateTime < bookingEnd) ||
-          (endDateTime > bookingStart && endDateTime <= bookingEnd) ||
-          (requestedDateTime <= bookingStart && endDateTime >= bookingEnd)
-        ) {
-          hasConflict = true;
-          break;
+      // Calculate total daily travel time used
+      let totalTravelTime = 0;
+      for (const booking of dateBookings) {
+        if (booking.commuteTime) {
+          totalTravelTime += booking.commuteTime;
         }
       }
 
-      const isAvailable = !hasConflict;
+      const remainingTravelTime = policy.maxDailyTravelTime - totalTravelTime;
+      const canAcceptBooking = remainingTravelTime >= commuteTime;
 
-      console.log(`✅ Multi-service availability check: ${isAvailable ? 'Available' : 'Unavailable'}`);
+      console.log(`✅ Multi-service availability calculated: ${serviceAvailability.length} service types`);
 
       return sendSuccess(c, {
-        isAvailable,
-        totalDuration,
-        totalBufferTime,
+        providerId,
+        date,
+        serviceAvailability,
+        policy: {
+          multiServiceEnabled: policy.multiServiceEnabled,
+          maxConcurrentServices: policy.maxConcurrentServices,
+          bufferTimeBetweenServices: policy.bufferTimeBetweenServices,
+          multiServiceSwitchBuffer: policy.multiServiceSwitchBuffer,
+        },
         commuteTime,
-        totalTime,
-        estimatedEndTime: endDateTime.toISOString(),
-        serviceBreakdown: services.map((s: any) => ({
-          serviceId: s.serviceId,
-          serviceName: s.serviceName,
-          duration: s.duration,
-        })),
+        totalTravelTime,
+        remainingTravelTime,
+        canAcceptBooking,
+        currentBookings: dateBookings.length,
       });
+
     } catch (error) {
-      console.error('Error checking multi-service availability:', error);
+      console.error('❌ Error checking multi-service availability:', error);
       return sendError(c, error, 500);
     }
   });
 
-  // ========================================
-  // GET SCHEDULING POLICY
-  // ========================================
-  app.get(`${BASE_PATH}/vendor/:vendorId/scheduling-policy`, async (c) => {
-    try {
-      const vendorId = c.req.param('vendorId');
-      const policy = await kv.get(`scheduling_policy_${vendorId}`);
+  console.log('✅ Multi-Service Scheduling endpoints registered');
+}
 
-      if (!policy) {
-        // Return default policy
-        return sendSuccess(c, {
-          policy: {
-            vendorId,
-            bufferTimeBetweenServices: 15,
-            multiServiceSwitchBuffer: 10,
-            commuteTimeAllowance: 3,
-            serviceRadius: 10,
-            multiServiceEnabled: true,
-            maxConcurrentServices: 3,
-            enableTrafficFactor: true,
-            maxDailyTravelTime: 120,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          },
-        });
-      }
+// ========================================
+// HELPER: Calculate Distance (Haversine Formula)
+// ========================================
+function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371; // Earth's radius in km
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
 
-      return sendSuccess(c, { policy });
-    } catch (error) {
-      console.error('Error getting scheduling policy:', error);
-      return sendError(c, error, 500);
+function toRad(degrees: number): number {
+  return degrees * (Math.PI / 180);
+}
+
+// ========================================
+// HELPER: Check Service Type Conflicts
+// ========================================
+async function checkServiceTypeConflicts(
+  providerId: string,
+  serviceType: string,
+  date: string,
+  dateBookings: any[],
+  policy: SchedulingPolicy,
+  kv: any
+): Promise<any[]> {
+  const conflicts = [];
+
+  for (const booking of dateBookings) {
+    // Get booking service type
+    const bookingServiceType = booking.serviceType;
+    
+    // Calculate time windows for existing booking
+    const bookingStart = parseTime(booking.scheduledTime);
+    const serviceDuration = booking.duration || 60;
+    const bookingEnd = bookingStart + serviceDuration;
+
+    // Add buffer time
+    let buffer = policy.bufferTimeBetweenServices;
+    
+    // Add extra buffer if switching service types
+    if (bookingServiceType !== serviceType) {
+      buffer += policy.multiServiceSwitchBuffer || 0;
     }
-  });
 
-  // ========================================
-  // UPDATE SCHEDULING POLICY
-  // ========================================
-  app.put(`${BASE_PATH}/vendor/:vendorId/scheduling-policy`, async (c) => {
-    try {
-      const vendorId = c.req.param('vendorId');
-      const updates = await c.req.json();
-      const existing = await kv.get(`scheduling_policy_${vendorId}`);
-
-      const policy: SchedulingPolicy = {
-        vendorId,
-        bufferTimeBetweenServices: updates.bufferTimeBetweenServices ?? existing?.bufferTimeBetweenServices ?? 15,
-        multiServiceSwitchBuffer: updates.multiServiceSwitchBuffer ?? existing?.multiServiceSwitchBuffer ?? 10,
-        commuteTimeAllowance: updates.commuteTimeAllowance ?? existing?.commuteTimeAllowance ?? 3,
-        serviceRadius: updates.serviceRadius ?? existing?.serviceRadius ?? 10,
-        multiServiceEnabled: updates.multiServiceEnabled ?? existing?.multiServiceEnabled ?? true,
-        maxConcurrentServices: updates.maxConcurrentServices ?? existing?.maxConcurrentServices ?? 3,
-        enableTrafficFactor: updates.enableTrafficFactor ?? existing?.enableTrafficFactor ?? true,
-        maxDailyTravelTime: updates.maxDailyTravelTime ?? existing?.maxDailyTravelTime ?? 120,
-        createdAt: existing?.createdAt || new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-
-      await kv.set(`scheduling_policy_${vendorId}`, policy);
-      console.log(`✅ Scheduling policy updated for vendor ${vendorId}`);
-
-      return sendSuccess(c, { policy }, 'Scheduling policy updated successfully');
-    } catch (error) {
-      console.error('Error updating scheduling policy:', error);
-      return sendError(c, error, 500);
-    }
-  });
-
-  // ========================================
-  // CALCULATE COMMUTE TIME (Enhanced)
-  // ========================================
-  app.post(`${BASE_PATH}/home-services/calculate-commute-time`, async (c) => {
-      try {
-          const { origin, destination, enableTraffic } = await c.req.json();
-          if (!origin || !destination) {
-              return sendError(c, 'Origin and destination required', 400);
-          }
-
-          const distance = calculateDistance(origin.lat, origin.lng, destination.lat, destination.lng);
-          
-          // Enhanced calculation logic
-          // City driving assumption: 20km/h average
-          let speed = 20; 
-          let trafficFactor = enableTraffic ? 1.3 : 1.0; // 30% delay for traffic
-          
-          // Adjust speed for longer distances (highway assumption)
-          if (distance > 10) speed = 30;
-          if (distance > 30) speed = 40;
-
-          const baseTime = (distance / speed) * 60;
-          const totalTime = Math.ceil(baseTime * trafficFactor + 5); // +5 min fixed buffer
-
-          return sendSuccess(c, {
-              distanceKM: parseFloat(distance.toFixed(2)),
-              estimatedMinutes: totalTime,
-              trafficFactorApplied: enableTraffic
-          });
-
-      } catch (error) {
-          console.error('Error calculating commute:', error);
-          return sendError(c, error, 500);
-      }
-  });
-
-  // ========================================
-  // GET PACKAGE SCHEDULE WINDOWS
-  // ========================================
-  app.get(`${BASE_PATH}/home-services/packages/:packageId/schedule-windows`, async (c) => {
-      try {
-          const packageId = c.req.param('packageId');
-          // In a real app, we would fetch package-specific config
-          // For now, return standard windows
-          return sendSuccess(c, {
-              windows: [
-                  { id: 'morning', label: 'Morning', start: '08:00', end: '12:00', icon: 'morning' },
-                  { id: 'afternoon', label: 'Afternoon', start: '12:00', end: '16:00', icon: 'afternoon' },
-                  { id: 'evening', label: 'Evening', start: '16:00', end: '20:00', icon: 'evening' }
-              ]
-          });
-      } catch (error) {
-          return sendError(c, error, 500);
-      }
-  });
-
-  // Helper function
-  function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
-    const R = 6371; // Radius of earth in km
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLng = (lng2 - lng1) * Math.PI / 180;
-    const a = 
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-      Math.sin(dLng / 2) * Math.sin(dLng / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
+    conflicts.push({
+      bookingId: booking.id,
+      startTime: bookingStart - buffer,
+      endTime: bookingEnd + buffer,
+      serviceType: bookingServiceType,
+      requiresServiceSwitch: bookingServiceType !== serviceType,
+    });
   }
 
-  console.log('✅ Multi-Service Scheduling Enhanced endpoints registered');
+  return conflicts;
+}
+
+// ========================================
+// HELPER: Generate Available Slots
+// ========================================
+function generateAvailableSlots(
+  dateBookings: any[],
+  serviceDuration: number,
+  buffer: number,
+  commuteTime: number,
+  conflicts: any[]
+): string[] {
+  const slots = [];
+  const workStart = 8 * 60; // 8:00 AM in minutes
+  const workEnd = 20 * 60; // 8:00 PM in minutes
+  const slotInterval = 30; // Check every 30 minutes
+
+  for (let time = workStart; time <= workEnd - serviceDuration; time += slotInterval) {
+    const slotEnd = time + serviceDuration + buffer;
+    
+    // Check if slot conflicts with any existing booking
+    let hasConflict = false;
+    
+    for (const conflict of conflicts) {
+      if (!(slotEnd <= conflict.startTime || time >= conflict.endTime)) {
+        hasConflict = true;
+        break;
+      }
+    }
+
+    if (!hasConflict) {
+      slots.push(formatTime(time));
+    }
+  }
+
+  return slots;
+}
+
+// ========================================
+// HELPER: Time Parsing and Formatting
+// ========================================
+function parseTime(timeStr: string): number {
+  // Parse time string like "09:00" or "09:00 - 10:00" to minutes
+  const time = timeStr.split(' - ')[0].trim();
+  const [hours, minutes] = time.split(':').map(Number);
+  return hours * 60 + minutes;
+}
+
+function formatTime(minutes: number): string {
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
 }

@@ -3,6 +3,7 @@ import { X, Star, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { Button } from '../ui/button';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { toast } from 'sonner@2.0.3';
+import { awardReviewPoints } from '../../utils/loyalty-helper'; // ✅ NEW
 
 interface RateServiceModalProps {
   bookingId: string;
@@ -69,7 +70,17 @@ export function RateServiceModal({
       );
 
       if (response.ok) {
+        const result = await response.json();
         toast.success('Review submitted successfully!');
+        
+        // ✅ NEW: Award loyalty points for posting review
+        awardReviewPoints({
+          userId: customerId,
+          reviewId: result.reviewId || result.id || bookingId,
+          bookingId,
+          showToast: true
+        });
+        
         onSuccess();
       } else {
         const error = await response.json();

@@ -1,30 +1,29 @@
 import React, { useState, useEffect } from 'react';
-import { Card } from '../../ui/card';
-import { Button } from '../../ui/button';
-import { Badge } from '../../ui/badge';
-import { Coins, Share2, Copy, Trophy, Check, ChevronRight } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { Card } from '../ui/card';
+import { Button } from '../ui/button';
+import { Badge } from '../ui/badge';
+import { Coins, Share2, Copy, Users, Check, ChevronRight } from 'lucide-react';
+import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { toast } from 'sonner@2.0.3';
 
-interface ReferralSystemPageProps {
-  userId: string;
-  userType?: 'customer' | 'vendor';
+interface VendorReferralPageProps {
+  vendorId: string;
   onBack?: () => void;
 }
 
-export function ReferralSystemPage({ userId, userType = 'customer', onBack }: ReferralSystemPageProps) {
+export function VendorReferralPage({ vendorId, onBack }: VendorReferralPageProps) {
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     loadLoyaltyProfile();
-  }, [userId]);
+  }, [vendorId]);
 
   const loadLoyaltyProfile = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/loyalty/profile/${userId}?type=${userType}`,
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/loyalty/profile/${vendorId}?type=vendor`,
         {
           headers: { 'Authorization': `Bearer ${publicAnonKey}` }
         }
@@ -51,9 +50,9 @@ export function ReferralSystemPage({ userId, userType = 'customer', onBack }: Re
     if (navigator.share && profile) {
       try {
         await navigator.share({
-          title: 'Join Warmpawz!',
-          text: `Use my code ${profile.referralCode} to join Warmpawz and get a welcome bonus!`,
-          url: 'https://warmpawz.com/join'
+          title: 'Join Warmpawz as a Vendor!',
+          text: `Use my code ${profile.referralCode} to join Warmpawz and get exclusive bonuses!`,
+          url: 'https://warmpawz.com/vendor/join'
         });
       } catch (err) {
         console.error('Error sharing:', err);
@@ -74,7 +73,7 @@ export function ReferralSystemPage({ userId, userType = 'customer', onBack }: Re
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
       {/* Header */}
-      <div className="bg-gradient-to-br from-yellow-400 to-orange-500 text-white p-6 rounded-b-[2.5rem] shadow-lg relative overflow-hidden">
+      <div className="bg-gradient-to-br from-purple-600 to-orange-500 text-white p-6 rounded-b-[2.5rem] shadow-lg relative overflow-hidden">
         <div className="relative z-10">
           <div className="flex items-center gap-2 mb-4">
             {onBack && (
@@ -82,7 +81,7 @@ export function ReferralSystemPage({ userId, userType = 'customer', onBack }: Re
                 <ChevronRight className="w-5 h-5 rotate-180" />
               </button>
             )}
-            <h1 className="text-xl font-bold">Refer & Earn</h1>
+            <h1 className="text-xl font-bold">Referral & Rewards</h1>
           </div>
           
           <div className="flex flex-col items-center text-center mt-2">
@@ -90,14 +89,13 @@ export function ReferralSystemPage({ userId, userType = 'customer', onBack }: Re
               <Coins className="w-10 h-10 text-yellow-100" />
             </div>
             <h2 className="text-3xl font-bold mb-1">{profile?.pointsBalance || 0}</h2>
-            <p className="text-yellow-100 font-medium text-sm">Available Pawints</p>
+            <p className="text-purple-100 font-medium text-sm">Reward Points</p>
             <div className="mt-2 text-xs bg-black/20 px-3 py-1 rounded-full">
-              1 Pawint = ₹1
+              Reduce your payout adjustments
             </div>
           </div>
         </div>
         
-        {/* Background decorative circles */}
         <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full translate-x-10 -translate-y-10"></div>
         <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/10 rounded-full -translate-x-10 translate-y-10"></div>
       </div>
@@ -105,9 +103,9 @@ export function ReferralSystemPage({ userId, userType = 'customer', onBack }: Re
       <div className="px-4 -mt-8 relative z-20">
         {/* Referral Card */}
         <Card className="p-6 shadow-xl border-0 bg-white rounded-2xl mb-6">
-          <h3 className="text-center text-gray-800 font-bold text-lg mb-2">Invite Friends</h3>
+          <h3 className="text-center text-gray-800 font-bold text-lg mb-2">Grow Your Network</h3>
           <p className="text-center text-gray-500 text-sm mb-6">
-            Share your code and earn <span className="font-bold text-orange-500">100 Pawints</span> when they complete their first booking!
+            Refer other vendors and customers to earn rewards!
           </p>
 
           <div className="flex items-center gap-3 bg-gray-50 border border-dashed border-gray-300 p-3 rounded-xl mb-4">
@@ -124,50 +122,56 @@ export function ReferralSystemPage({ userId, userType = 'customer', onBack }: Re
 
           <Button 
             onClick={shareReferral}
-            className="w-full bg-gradient-to-r from-orange-500 to-pink-500 hover:from-orange-600 hover:to-pink-600 text-white shadow-md py-6 rounded-xl text-lg"
+            className="w-full bg-gradient-to-r from-purple-600 to-orange-500 hover:from-purple-700 hover:to-orange-600 text-white shadow-md py-6 rounded-xl text-lg"
           >
             <Share2 className="w-5 h-5 mr-2" />
             Share Code
           </Button>
         </Card>
 
-        {/* How it works */}
+        {/* Earning Opportunities */}
         <div className="mb-6">
-          <h3 className="font-bold text-gray-900 mb-4 px-2">How to earn</h3>
+          <h3 className="font-bold text-gray-900 mb-4 px-2">Earning Opportunities</h3>
           <div className="space-y-3">
             <div className="bg-white p-4 rounded-xl flex items-center gap-4 shadow-sm border border-gray-100">
-              <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 font-bold">1</div>
+              <div className="w-10 h-10 rounded-full bg-purple-50 flex items-center justify-center text-purple-600 font-bold">
+                <Users className="w-5 h-5" />
+              </div>
               <div className="flex-1">
-                <h4 className="font-semibold text-gray-800">Complete Profile</h4>
-                <p className="text-xs text-gray-500">Add your pet details</p>
+                <h4 className="font-semibold text-gray-800">Refer a Vendor</h4>
+                <p className="text-xs text-gray-500">When they join & complete first booking</p>
               </div>
               <div className="flex items-center gap-1 bg-yellow-50 px-2 py-1 rounded-lg border border-yellow-100">
                 <Coins className="w-3 h-3 text-yellow-600" />
-                <span className="text-xs font-bold text-yellow-700">+100</span>
+                <span className="text-xs font-bold text-yellow-700">+200</span>
               </div>
             </div>
 
             <div className="bg-white p-4 rounded-xl flex items-center gap-4 shadow-sm border border-gray-100">
-              <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 font-bold">2</div>
+              <div className="w-10 h-10 rounded-full bg-orange-50 flex items-center justify-center text-orange-600 font-bold">
+                <Users className="w-5 h-5" />
+              </div>
               <div className="flex-1">
-                <h4 className="font-semibold text-gray-800">Book Services</h4>
-                <p className="text-xs text-gray-500">Grooming, Vet, Training</p>
+                <h4 className="font-semibold text-gray-800">Refer a Customer</h4>
+                <p className="text-xs text-gray-500">Existing customer signs up & books</p>
               </div>
               <div className="flex items-center gap-1 bg-yellow-50 px-2 py-1 rounded-lg border border-yellow-100">
                 <Coins className="w-3 h-3 text-yellow-600" />
-                <span className="text-xs font-bold text-yellow-700">5-10/1k</span>
+                <span className="text-xs font-bold text-yellow-700">+500</span>
               </div>
             </div>
 
             <div className="bg-white p-4 rounded-xl flex items-center gap-4 shadow-sm border border-gray-100">
-              <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 font-bold">3</div>
+              <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 font-bold">
+                ⭐
+              </div>
               <div className="flex-1">
-                <h4 className="font-semibold text-gray-800">Refer Friends</h4>
-                <p className="text-xs text-gray-500">When they join & book</p>
+                <h4 className="font-semibold text-gray-800">Go Premium</h4>
+                <p className="text-xs text-gray-500">Upgrade to premium subscription</p>
               </div>
               <div className="flex items-center gap-1 bg-yellow-50 px-2 py-1 rounded-lg border border-yellow-100">
                 <Coins className="w-3 h-3 text-yellow-600" />
-                <span className="text-xs font-bold text-yellow-700">+100</span>
+                <span className="text-xs font-bold text-yellow-700">+1000</span>
               </div>
             </div>
           </div>
@@ -193,11 +197,17 @@ export function ReferralSystemPage({ userId, userType = 'customer', onBack }: Re
               </div>
             ) : (
               <div className="p-8 text-center text-gray-400 text-sm">
-                No rewards yet. Start earning!
+                No rewards yet. Start referring!
               </div>
             )}
           </div>
         </div>
+
+        <Card className="p-4 bg-gradient-to-br from-purple-50 to-orange-50 border-purple-200">
+          <p className="text-sm text-gray-700 text-center">
+            <strong>💡 Pro Tip:</strong> Points earned reduce your next payout settlement by the equivalent amount (1 point = ₹1 adjustment).
+          </p>
+        </Card>
       </div>
     </div>
   );

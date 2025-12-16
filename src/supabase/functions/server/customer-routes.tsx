@@ -3,6 +3,7 @@ import * as kv from "./kv_store.tsx";
 import { trySet, safeGet } from "./kv-safe.tsx";
 import type { Customer, Pet, Booking, ChatMessage, Review, Notification } from "./database-schema.tsx";
 import { sendSuccess, sendError } from "./response-utils.ts";
+import { normalizePhone, isValidIndianMobile } from "./phone-utils.tsx";
 
 export function registerCustomerRoutes(app: Hono) {
   console.log('✅ Registering Customer Routes...');
@@ -26,16 +27,20 @@ app.post("/make-server-3dd53475/otp/generate", async (c) => {
     const body = await c.req.json();
     console.log('📱 [OTP-GENERATE] Request body:', body);
     
-    const { phone } = body;
+    let { phone } = body;
     
     if (!phone) {
       console.error('❌ [OTP-GENERATE] Phone number missing');
       return sendError(c, 'Phone number is required', 400);
     }
     
-    if (phone.length !== 10) {
-      console.error('❌ [OTP-GENERATE] Invalid phone length:', phone.length);
-      return sendError(c, 'Valid 10-digit phone number required', 400);
+    // ✅ CRITICAL FIX: Normalize phone number to ensure consistency
+    phone = normalizePhone(phone);
+    console.log(`📱 [OTP-GENERATE] Normalized phone: ${phone}`);
+    
+    if (!isValidIndianMobile(phone)) {
+      console.error('❌ [OTP-GENERATE] Invalid phone number:', phone);
+      return sendError(c, 'Valid 10-digit Indian mobile number required', 400);
     }
     
     console.log(`🔑 [OTP-GENERATE] Generating OTP for: ${phone}`);
@@ -76,12 +81,16 @@ app.post("/make-server-3dd53475/otp/verify", async (c) => {
     const body = await c.req.json();
     console.log('🔐 [OTP-VERIFY] Request body:', body);
     
-    const { phone, otp } = body;
+    let { phone, otp } = body;
     
     if (!phone || !otp) {
       console.error('❌ [OTP-VERIFY] Missing phone or OTP');
       return sendError(c, 'Phone and OTP are required', 400);
     }
+    
+    // ✅ CRITICAL FIX: Normalize phone number to match storage key
+    phone = normalizePhone(phone);
+    console.log(`🔐 [OTP-VERIFY] Normalized phone: ${phone}`);
     
     console.log(`🔍 [OTP-VERIFY] Looking up OTP for: ${phone}`);
     const otpData = await kv.get(`otp:${phone}`);

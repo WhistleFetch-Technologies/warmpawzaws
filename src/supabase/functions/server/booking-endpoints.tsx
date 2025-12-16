@@ -376,6 +376,50 @@ export function bookingEndpoints(app: Hono, kv: any) {
           vendor.revenue = (vendor.revenue || 0) + booking.price;
           await kv.set(`vendor:${booking.vendorId}`, vendor);
         }
+
+        // ✅ LOYALTY INTEGRATION: Award points for completed booking
+        try {
+          console.log(`[LOYALTY] Triggering points for completed booking ${bookingId}`);
+          
+          // Determine action key based on service type
+          let actionKey = 'book_grooming'; // default
+          const serviceType = booking.serviceType?.toLowerCase() || '';
+          
+          if (serviceType.includes('vet') || serviceType.includes('consultation')) {
+            actionKey = 'book_vet';
+          } else if (serviceType.includes('food') || serviceType.includes('nutrition')) {
+            actionKey = 'buy_food';
+          } else if (serviceType.includes('groom')) {
+            actionKey = 'book_grooming';
+          }
+
+          // Award loyalty points
+          const loyaltyResponse = await fetch(
+            `http://localhost:54321/functions/v1/make-server-3dd53475/loyalty/process-action`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                userId: booking.customerId,
+                userType: 'customer',
+                actionKey,
+                amount: booking.price || 0,
+                metadata: { bookingId, serviceType: booking.serviceType }
+              })
+            }
+          ).catch(err => {
+            console.error('[LOYALTY] Failed to award points:', err);
+            return null;
+          });
+
+          if (loyaltyResponse?.ok) {
+            const data = await loyaltyResponse.json();
+            console.log(`✅ [LOYALTY] Awarded ${data.pointsAwarded} points to customer ${booking.customerId}`);
+          }
+        } catch (loyaltyErr) {
+          console.error('[LOYALTY] Error processing loyalty points:', loyaltyErr);
+          // Non-blocking: Continue with booking completion even if loyalty fails
+        }
       }
 
       await kv.set(`booking:${bookingId}`, booking);

@@ -6,8 +6,9 @@ import { Calendar } from '../ui/calendar';
 import { format } from 'date-fns';
 import { toast } from 'sonner@2.0.3';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { ArrowLeft, Calendar as CalendarIcon, Clock, Check, Plus, FileText, Upload, Stethoscope, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Calendar as CalendarIcon, Clock, Check, Plus, FileText, Upload, Stethoscope, AlertCircle, MessageCircle, DollarSign } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { BookingChatWidget } from './BookingChatWidget';
 
 /**
  * 🏥 CENTER BOOKING FLOW ENHANCED
@@ -42,7 +43,10 @@ interface CenterBookingFlowEnhancedProps {
   vendorId: string;
   vendorName: string;
   customerId: string;
+  customerPhone: string;
+  customerName: string;
   petId: string;
+  petName: string;
   onBack: () => void;
   onSuccess: (bookingId: string) => void;
 }
@@ -51,7 +55,10 @@ export function CenterBookingFlowEnhanced({
   vendorId,
   vendorName,
   customerId,
+  customerPhone,
+  customerName,
   petId,
+  petName,
   onBack,
   onSuccess
 }: CenterBookingFlowEnhancedProps) {
@@ -67,6 +74,9 @@ export function CenterBookingFlowEnhanced({
   const [selectedTime, setSelectedTime] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [uploadingDoc, setUploadingDoc] = useState(false);
+  const [createdBookingId, setCreatedBookingId] = useState<string | null>(null);
+  const [addOnPricing, setAddOnPricing] = useState<any>(null);
+  const [loadingPricing, setLoadingPricing] = useState(false);
 
   // Load Vendor Services
   useEffect(() => {
@@ -695,6 +705,20 @@ export function CenterBookingFlowEnhanced({
             </motion.div>
         </AnimatePresence>
       </div>
+
+      {/* Chat Widget */}
+      {createdBookingId && (
+        <BookingChatWidget
+          bookingId={createdBookingId}
+          vendorId={vendorId}
+          vendorName={vendorName}
+          customerName={customerName}
+          customerPhone={customerPhone}
+          petName={petName}
+          serviceName={selectedService?.serviceName || ''}
+          totalAmount={calculateTotal()}
+        />
+      )}
     </div>
   );
 }

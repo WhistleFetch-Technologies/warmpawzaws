@@ -23,6 +23,7 @@ interface PreviousProvider {
   isFavorite: boolean;
   location?: { lat: number; lng: number };
   distance?: number;
+  photo?: string;
 }
 
 interface ServiceHistory {
@@ -97,14 +98,20 @@ export function previousProvidersEndpoints(app: Hono, kv: any) {
         const favoriteKey = `favorite_provider_${customerId}_${providerId}`;
         const isFavorite = await kv.get(favoriteKey);
 
+        // Get provider details for location
+        const vendor = await kv.get(`vendor:${providerId}`);
+
         providers.push({
           providerId: data.providerId,
           providerName: data.providerName,
           serviceType: data.serviceType,
           lastServiceDate: data.lastServiceDate,
           totalServices: data.totalServices,
-          rating: Math.round(avgRating * 10) / 10,
+          rating: avgRating,
           isFavorite: !!isFavorite,
+          location: vendor?.location || null,
+          distance: 0, // Will be calculated on client side based on current location
+          photo: vendor?.photo || null,
         });
       }
 
@@ -113,11 +120,115 @@ export function previousProvidersEndpoints(app: Hono, kv: any) {
         new Date(b.lastServiceDate).getTime() - new Date(a.lastServiceDate).getTime()
       );
 
-      console.log(`✅ Retrieved ${providers.length} previous providers for customer ${customerId}`);
+      return sendSuccess(c, { providers, total: providers.length });
 
-      return sendSuccess(c, { providers });
     } catch (error) {
-      console.error('Error getting previous providers:', error);
+      console.error('❌ Error fetching previous providers:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  // ========================================
+  // GET CUSTOMER PREVIOUS PROVIDERS (Alternative endpoint)
+  // ========================================
+  app.get(`${BASE_PATH}/customer/:customerId/previous-providers`, async (c) => {
+    try {
+      const { customerId } = c.req.param();
+      const serviceType = c.req.query('serviceType');
+
+      console.log(`👥 Fetching previous providers for customer: ${customerId}`);
+
+      // Get customer's completed bookings
+      const cleanPhone = customerId.replace(/[^0-9]/g, '');
+      const bookingIds = await kv.get(`customer:bookings:${cleanPhone}`) || [];
+
+      if (bookingIds.length === 0) {
+        return sendSuccess(c, { providers: [], total: 0 });
+      }
+
+      const providerMap = new Map<string, any>();
+
+      // Process each booking
+      for (const bookingId of bookingIds) {
+        const booking = await kv.get(`booking:${bookingId}`);
+        
+        if (!booking || booking.status !== 'completed') continue;
+        if (serviceType && booking.serviceType !== serviceType) continue;
+
+        const providerId = booking.vendorId;
+        
+        if (!providerMap.has(providerId)) {
+          // Get vendor details
+          const vendor = await kv.get(`vendor:${providerId}`);
+          
+          providerMap.set(providerId, {
+            providerId,
+            providerName: vendor?.businessName || vendor?.name || 'Unknown Provider',
+            serviceType: booking.serviceType,
+            lastServiceDate: booking.scheduledDate,
+            totalServices: 0,
+            rating: 0,
+            isFavorite: false,
+            ratings: [],
+            photo: vendor?.photo || null,
+            location: vendor?.location || null,
+          });
+        }
+
+        const provider = providerMap.get(providerId);
+        provider.totalServices += 1;
+
+        // Update last service date if more recent
+        if (new Date(booking.scheduledDate) > new Date(provider.lastServiceDate)) {
+          provider.lastServiceDate = booking.scheduledDate;
+        }
+
+        // Get rating if exists
+        const review = await kv.get(`review:${bookingId}`);
+        if (review && review.rating) {
+          provider.ratings.push(review.rating);
+        }
+      }
+
+      // Calculate average ratings and finalize
+      const providers: PreviousProvider[] = [];
+      
+      for (const [providerId, data] of providerMap.entries()) {
+        const avgRating = data.ratings.length > 0
+          ? data.ratings.reduce((sum: number, r: number) => sum + r, 0) / data.ratings.length
+          : 0;
+
+        // Check if favorited
+        const favoriteKey = `favorite_provider_${customerId}_${providerId}`;
+        const isFavorite = await kv.get(favoriteKey);
+
+        providers.push({
+          providerId: data.providerId,
+          providerName: data.providerName,
+          serviceType: data.serviceType,
+          lastServiceDate: data.lastServiceDate,
+          totalServices: data.totalServices,
+          rating: avgRating,
+          isFavorite: !!isFavorite,
+          location: data.location,
+          distance: 0,
+        });
+      }
+
+      // Sort by total services and last service date
+      providers.sort((a, b) => {
+        if (b.totalServices !== a.totalServices) {
+          return b.totalServices - a.totalServices;
+        }
+        return new Date(b.lastServiceDate).getTime() - new Date(a.lastServiceDate).getTime();
+      });
+
+      console.log(`✅ Found ${providers.length} previous providers`);
+
+      return sendSuccess(c, { providers, total: providers.length });
+
+    } catch (error) {
+      console.error('❌ Error fetching previous providers:', error);
       return sendError(c, error, 500);
     }
   });

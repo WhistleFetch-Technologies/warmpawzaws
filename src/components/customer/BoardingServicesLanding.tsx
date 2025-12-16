@@ -96,31 +96,31 @@ export function BoardingServicesLanding({ onBack, onNavigate, customerId, phone 
 
   return (
     <div className="min-h-screen bg-[#FF8C42] max-w-md mx-auto pb-24">
-      {/* Header - Orange Background */}
-      <div className="px-6 pt-12 pb-6">
-        <div className="flex items-center gap-4 mb-6">
-           <button 
+      {/* HEADER with Orange gradient (Boarding service color - home/comfort theme) */}
+      <div className="bg-gradient-to-r from-orange-500 to-orange-600 px-6 py-6 rounded-b-3xl shadow-lg">
+        <div className="flex items-center justify-between mb-4">
+          <button
             onClick={onBack}
-            className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center hover:bg-white/30 transition-colors"
+            className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm hover:bg-white/30 transition-colors"
           >
             <ArrowLeft className="w-5 h-5 text-white" />
           </button>
-          <h1 className="text-2xl font-bold text-white">Pet Boarding</h1>
+          <h1 className="text-white">Pet Boarding</h1>
         </div>
 
         {/* Stats Bar - Glassmorphism */}
         {stats && (
           <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
             <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-3 min-w-[100px] border border-white/10">
-               <div className="text-2xl font-bold text-white">{stats.activeFacilities}+</div>
+               <div className="font-medium text-white">{stats.activeFacilities}+</div>
                <div className="text-xs text-white/80">Facilities</div>
             </div>
             <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-3 min-w-[100px] border border-white/10">
-               <div className="text-2xl font-bold text-white">{stats.guests}</div>
+               <div className="font-medium text-white">{stats.guests}</div>
                <div className="text-xs text-white/80">Happy Pets</div>
             </div>
             <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-3 min-w-[100px] border border-white/10">
-               <div className="flex items-center gap-1 text-2xl font-bold text-white">
+               <div className="flex items-center gap-1 font-medium text-white">
                  {stats.rating} <Star className="w-4 h-4 fill-white" />
                </div>
                <div className="text-xs text-white/80">Rating</div>

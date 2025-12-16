@@ -361,5 +361,283 @@ export function specializedServicesBooking(app: Hono, kv: any) {
     }
   });
 
+  /**
+   * GET /vendor/:vendorId/chat-config
+   * Get chat configuration for a vendor based on their role
+   */
+  app.get(`${BASE_PATH}/vendor/:vendorId/chat-config`, async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+
+      const vendor = await kv.get(`vendor:${vendorId}`);
+      
+      if (!vendor) {
+        return sendError(c, 'Vendor not found', 404);
+      }
+
+      // Determine chat features based on vendor role
+      const roleBasedConfig = {
+        veterinarian: {
+          chatEnabled: true,
+          features: {
+            prescriptionSharing: true,
+            medicalRecordsAccess: true,
+            fileSharing: true,
+            videoCall: true,
+            followUpScheduling: true
+          },
+          chatTypes: ['consultation', 'prescription', 'follow-up', 'general'],
+          defaultChatType: 'consultation'
+        },
+        groomer: {
+          chatEnabled: true,
+          features: {
+            prescriptionSharing: false,
+            medicalRecordsAccess: false,
+            fileSharing: true,
+            videoCall: false,
+            followUpScheduling: true
+          },
+          chatTypes: ['service-discussion', 'general'],
+          defaultChatType: 'service-discussion'
+        },
+        trainer: {
+          chatEnabled: true,
+          features: {
+            prescriptionSharing: false,
+            medicalRecordsAccess: false,
+            fileSharing: true,
+            videoCall: true,
+            followUpScheduling: true
+          },
+          chatTypes: ['training-progress', 'general'],
+          defaultChatType: 'training-progress'
+        },
+        walker: {
+          chatEnabled: true,
+          features: {
+            prescriptionSharing: false,
+            medicalRecordsAccess: false,
+            fileSharing: true,
+            videoCall: false,
+            followUpScheduling: false
+          },
+          chatTypes: ['walk-updates', 'general'],
+          defaultChatType: 'walk-updates'
+        },
+        boarding: {
+          chatEnabled: true,
+          features: {
+            prescriptionSharing: false,
+            medicalRecordsAccess: true,
+            fileSharing: true,
+            videoCall: true,
+            followUpScheduling: false
+          },
+          chatTypes: ['daily-updates', 'general'],
+          defaultChatType: 'daily-updates'
+        },
+        default: {
+          chatEnabled: true,
+          features: {
+            prescriptionSharing: false,
+            medicalRecordsAccess: false,
+            fileSharing: true,
+            videoCall: false,
+            followUpScheduling: false
+          },
+          chatTypes: ['general'],
+          defaultChatType: 'general'
+        }
+      };
+
+      // Get vendor's primary role
+      const vendorRole = vendor.vendorRole || vendor.role || 'default';
+      const config = roleBasedConfig[vendorRole] || roleBasedConfig.default;
+
+      return sendSuccess(c, {
+        vendorId,
+        vendorName: vendor.businessName || vendor.name,
+        vendorRole,
+        chatConfig: config
+      });
+
+    } catch (error) {
+      console.error('❌ Error fetching vendor chat config:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  /**
+   * POST /booking/:bookingId/prescription/create
+   * Create prescription linked to booking
+   */
+  app.post(`${BASE_PATH}/booking/:bookingId/prescription/create`, async (c) => {
+    try {
+      const { bookingId } = c.req.param();
+      const {
+        vendorId,
+        doctorId,
+        medicines,
+        diagnosis,
+        notes,
+        followUpDate
+      } = await c.req.json();
+
+      console.log(`💊 Creating prescription for booking ${bookingId}`);
+
+      const booking = await kv.get(`booking:${bookingId}`);
+      
+      if (!booking) {
+        return sendError(c, 'Booking not found', 404);
+      }
+
+      // Verify booking is completed
+      if (booking.status !== 'completed' && booking.status !== 'in_progress') {
+        return sendError(c, 'Can only create prescriptions for ongoing or completed bookings', 400);
+      }
+
+      // Create prescription
+      const prescriptionId = `presc_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+      const prescription = {
+        id: prescriptionId,
+        bookingId,
+        petId: booking.petId,
+        customerId: booking.customerId,
+        customerPhone: booking.customerPhone,
+        vendorId: vendorId || booking.vendorId,
+        doctorId: doctorId || booking.doctorId,
+        medicines: medicines || [],
+        diagnosis: diagnosis || '',
+        notes: notes || '',
+        followUpDate: followUpDate || null,
+        status: 'active',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+
+      await kv.set(`prescription:${prescriptionId}`, prescription);
+
+      // Link prescription to booking
+      booking.prescriptionId = prescriptionId;
+      booking.prescriptionCreatedAt = new Date().toISOString();
+      await kv.set(`booking:${bookingId}`, booking);
+
+      // Update specialized services
+      const specializedServices = await kv.get(`booking:${bookingId}:specialized`) || {
+        bookingId,
+        customerId: booking.customerId,
+        petId: booking.petId,
+        prescriptionRequested: false,
+        medicalRecordsShared: false,
+        addOnServices: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+
+      specializedServices.prescriptionId = prescriptionId;
+      specializedServices.prescriptionCreatedAt = new Date().toISOString();
+      specializedServices.updatedAt = new Date().toISOString();
+
+      await kv.set(`booking:${bookingId}:specialized`, specializedServices);
+
+      // Add to customer's prescriptions
+      const customerPhone = booking.customerPhone.replace(/[^0-9]/g, '');
+      const customerPrescriptions = await kv.get(`customer:${customerPhone}:prescriptions`) || [];
+      customerPrescriptions.unshift(prescriptionId);
+      await kv.set(`customer:${customerPhone}:prescriptions`, customerPrescriptions);
+
+      // Add to pet's prescriptions
+      const petPrescriptions = await kv.get(`pet:${booking.petId}:prescriptions`) || [];
+      petPrescriptions.unshift(prescriptionId);
+      await kv.set(`pet:${booking.petId}:prescriptions`, petPrescriptions);
+
+      console.log(`✅ Prescription created: ${prescriptionId}`);
+
+      return sendSuccess(c, {
+        prescription,
+        message: 'Prescription created successfully'
+      });
+
+    } catch (error) {
+      console.error('❌ Error creating prescription:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  /**
+   * POST /booking/:bookingId/add-ons/calculate-pricing
+   * Calculate real-time pricing for add-on services
+   */
+  app.post(`${BASE_PATH}/booking/:bookingId/add-ons/calculate-pricing`, async (c) => {
+    try {
+      const { bookingId } = c.req.param();
+      const { addOnServiceIds } = await c.req.json();
+
+      console.log(`💰 Calculating add-on pricing for booking ${bookingId}`);
+
+      const booking = await kv.get(`booking:${bookingId}`);
+      
+      if (!booking) {
+        return sendError(c, 'Booking not found', 404);
+      }
+
+      // Get vendor's add-on services
+      const allServices = await kv.getByPrefix(`service:${booking.vendorId}:`) || [];
+      const vendorServices = await kv.get(`vendor:${booking.vendorId}:services`) || [];
+      
+      // Combine both sources
+      const combinedServices = [...allServices.map((item: any) => item.value || item), ...vendorServices];
+
+      // Calculate pricing for requested add-ons
+      let totalAddOnPrice = 0;
+      const pricedAddOns = [];
+
+      for (const addOnId of addOnServiceIds) {
+        const addOnService = combinedServices.find((s: any) => s.id === addOnId);
+        
+        if (addOnService) {
+          const price = addOnService.price || 0;
+          totalAddOnPrice += price;
+          
+          pricedAddOns.push({
+            serviceId: addOnId,
+            serviceName: addOnService.name || addOnService.serviceName,
+            description: addOnService.description,
+            price: price,
+            duration: addOnService.duration || 0,
+            category: addOnService.category
+          });
+        }
+      }
+
+      // Calculate grand total
+      const baseAmount = booking.totalAmount || booking.amount || 0;
+      const grandTotal = baseAmount + totalAddOnPrice;
+
+      // Calculate savings if any
+      const savings = 0; // Can add discount logic here
+
+      return sendSuccess(c, {
+        bookingId,
+        baseAmount,
+        addOnServices: pricedAddOns,
+        addOnTotal: totalAddOnPrice,
+        grandTotal,
+        savings,
+        breakdown: {
+          baseService: baseAmount,
+          addOns: totalAddOnPrice,
+          discount: 0,
+          total: grandTotal
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Error calculating add-on pricing:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
   console.log('✅ Specialized Services Booking registered');
 }
