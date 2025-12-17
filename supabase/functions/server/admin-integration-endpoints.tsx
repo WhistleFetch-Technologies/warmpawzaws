@@ -38,7 +38,8 @@ export function adminIntegrationEndpoints(app: Hono) {
         credentials: { accessKeyId: '', secretAccessKey: '', region: 'ap-south-1' },
         s3: { enabled: false, bucket: '', region: '', accessKeyId: '', secretAccessKey: '' },
         sqs: { enabled: false, queueUrl: '', region: '' },
-        sns: { enabled: false, topicArn: '', region: '' },
+        sns: { enabled: false, topicArn: '', region: '', senderId: '', businessListing: '' },
+        ses: { enabled: false, region: '', emailSourceAddress: 'noreply@warmpawz.com' },
         es: { enabled: false, endpoint: '', region: '' }
       };
       
@@ -119,8 +120,14 @@ export function adminIntegrationEndpoints(app: Hono) {
         sns: {
           enabled: settings.sns?.enabled || false,
           region: settings.sns?.region || 'ap-south-1',
-          smsOriginationNumber: settings.sns?.smsOriginationNumber || '',
-          emailSourceAddress: settings.sns?.emailSourceAddress || ''
+          topicArn: settings.sns?.topicArn || '',
+          senderId: settings.sns?.senderId || settings.sns?.businessListing || 'WARMP-VX',
+          businessListing: settings.sns?.businessListing || settings.sns?.senderId || 'WARMP-VX'
+        },
+        ses: {
+          enabled: settings.ses?.enabled || false,
+          region: settings.ses?.region || 'ap-south-1',
+          emailSourceAddress: settings.ses?.emailSourceAddress || 'noreply@warmpawz.com'
         },
         sqs: {
           enabled: settings.sqs?.enabled || false,
@@ -161,7 +168,8 @@ export function adminIntegrationEndpoints(app: Hono) {
       const defaultSettings = {
         credentials: { accessKeyId: '', secretAccessKey: '', region: 'ap-south-1' },
         s3: { enabled: false, bucket: '', region: 'ap-south-1' },
-        sns: { enabled: false, region: 'ap-south-1', smsOriginationNumber: '', emailSourceAddress: '' },
+        sns: { enabled: false, region: 'ap-south-1', topicArn: '', senderId: 'WARMP-VX', businessListing: 'WARMP-VX' },
+        ses: { enabled: false, region: 'ap-south-1', emailSourceAddress: 'noreply@warmpawz.com' },
         sqs: { enabled: false, queueUrl: '', region: 'ap-south-1' },
         chime: { enabled: false, region: 'us-east-1' },
         bedrock: { enabled: false, region: 'us-east-1', modelId: 'anthropic.claude-v2' }

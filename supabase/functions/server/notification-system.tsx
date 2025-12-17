@@ -311,6 +311,9 @@ export function notificationEndpoints(app: Hono, kv: any) {
         phoneNumber = '+91' + phoneNumber.replace(/[^0-9]/g, '');
       }
 
+      // Get SMS sender ID from settings (WARMP-VX, WARMP-SX, WARMP-NX)
+      const smsSenderId = awsSettings.sns?.senderId || awsSettings.sns?.businessListing || 'WARMP-VX';
+      
       const command = new PublishCommand({
         PhoneNumber: phoneNumber,
         Message: `${notification.title}\n\n${notification.message}`,
@@ -318,7 +321,14 @@ export function notificationEndpoints(app: Hono, kv: any) {
           'AWS.SNS.SMS.SMSType': {
             DataType: 'String',
             StringValue: notification.priority === 'urgent' || notification.priority === 'high' ? 'Transactional' : 'Promotional'
-          }
+          },
+          // Add sender ID for business listing (if supported by AWS SNS in your region)
+          ...(smsSenderId && {
+            'AWS.SNS.SMS.SenderID': {
+              DataType: 'String',
+              StringValue: smsSenderId
+            }
+          })
         }
       });
 

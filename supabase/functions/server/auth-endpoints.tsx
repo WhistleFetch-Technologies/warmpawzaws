@@ -41,6 +41,9 @@ export function registerAuthEndpoints(app: Hono) {
             }
           });
           
+          // Get SMS sender ID from settings (WARMP-VX, WARMP-SX, WARMP-NX)
+          const smsSenderId = awsSettings.sns?.senderId || awsSettings.sns?.businessListing || 'WARMP-VX';
+          
           const command = new PublishCommand({
             PhoneNumber: phone,
             Message: `Your Warmpawz verification code is: ${otp}. Valid for 5 minutes.`,
@@ -48,7 +51,14 @@ export function registerAuthEndpoints(app: Hono) {
               'AWS.SNS.SMS.SMSType': {
                 DataType: 'String',
                 StringValue: 'Transactional'
-              }
+              },
+              // Add sender ID for business listing (if supported by AWS SNS in your region)
+              ...(smsSenderId && {
+                'AWS.SNS.SMS.SenderID': {
+                  DataType: 'String',
+                  StringValue: smsSenderId
+                }
+              })
             }
           });
           
