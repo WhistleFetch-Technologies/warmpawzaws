@@ -33,7 +33,10 @@
     "@react-native-community/push-notification-ios": "^2.0.0",
     "react-native-push-notification": "^8.1.1",
     "axios": "^1.6.2",
-    "date-fns": "^3.0.0"
+    "date-fns": "^3.0.0",
+    "@warmpawz/shared-api": "file:../../packages/shared-api",
+    "@warmpawz/shared-types": "file:../../packages/shared-types",
+    "@warmpawz/shared-utils": "file:../../packages/shared-utils"
   },
   "devDependencies": {
     "@babel/core": "^7.23.5",
