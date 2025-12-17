@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { MapPin, Upload, CheckCircle2, X, AlertCircle, ArrowLeft, ChevronRight, User } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { toast } from 'sonner@2.0.3';
+import { VendorOnboardingProgress } from './VendorOnboardingProgress';
 
 // Google Maps API Key removed - fetching from backend
 // const GOOGLE_MAPS_API_KEY = '...';
@@ -1018,6 +1019,18 @@ export function DynamicVendorOnboardingForm({
 
       {/* Main Content Card */}
       <div className="bg-white rounded-t-[40px] px-6 py-8 flex-1 shadow-[0_-10px_40px_rgba(0,0,0,0.03)] min-h-[calc(100vh-220px)]">
+        
+        {/* Progress Indicator */}
+        {form.sections && form.sections.length > 1 && (
+          <VendorOnboardingProgress
+            currentStep={form.sections.findIndex(s => s.isActive && s.fields.some(f => !formData[f.name])) + 1 || form.sections.filter(s => s.isActive).length}
+            totalSteps={form.sections.filter(s => s.isActive).length}
+            steps={form.sections.filter(s => s.isActive).map((section, index) => ({
+              label: section.title,
+              description: index === 0 ? 'Business information' : index === 1 ? 'Location details' : 'Documents'
+            }))}
+          />
+        )}
         
         {/* Intro Text */}
         <div className="text-center mb-8 px-4">

@@ -469,6 +469,9 @@ enhancedSearchEngineEndpoints(app, kv);
 // contains a generic /vendor/:vendorId wildcard that would shadow these.
 vendorOnboardingEndpoints(app, kv);
 vendorApprovalWorkflowEndpoints(app, kv);
+// Register bank validation endpoints
+import vendorBankValidation from './vendor-bank-validation.tsx';
+app.route('/make-server-3dd53475', vendorBankValidation);
 vendorDashboardEndpoints(app, kv);
 vendorRoleConfigEndpoints(app);
 registerDynamicOnboarding(app);

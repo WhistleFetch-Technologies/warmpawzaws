@@ -131,12 +131,12 @@ export function registerAuthEndpoints(app: Hono) {
    * POST /auth/login
    * Universal login endpoint for all portals
    * 
-   * Body: { phone, portal: 'customer' | 'vendor' | 'admin' }
-   * Returns: { session, user, profile, state }
+   * Body: { phone, portal: 'customer' | 'vendor' | 'admin', deviceType?: 'mobile' | 'web', isMobileApp?: boolean }
+   * Returns: { session, user, profile, state, supabaseTokens }
    */
   app.post("/make-server-3dd53475/auth/login", async (c) => {
     try {
-      const { phone, portal } = await c.req.json();
+      const { phone, portal, deviceType = 'web', isMobileApp = false } = await c.req.json();
       
       if (!phone) {
         return sendError(c, 'Phone number required', 400);
@@ -145,6 +145,7 @@ export function registerAuthEndpoints(app: Hono) {
       console.log(`\n🔐 ========== LOGIN REQUEST START ==========`);
       console.log(`📞 Phone: ${phone}`);
       console.log(`🚪 Portal: ${portal}`);
+      console.log(`📱 Device Type: ${deviceType}, Mobile App: ${isMobileApp}`);
       console.log(`⏰ Time: ${new Date().toISOString()}`);
       
       // Find or create user
@@ -157,12 +158,34 @@ export function registerAuthEndpoints(app: Hono) {
         name: user.name
       });
       
-      // Create session
-      const session = await authService.createUserSession(user.userId, user.phone, user.role);
+      // Create session with device/platform info
+      const session = await authService.createUserSession(
+        user.userId, 
+        user.phone, 
+        user.role,
+        deviceType,
+        isMobileApp
+      );
       
       // ✅ SECURITY FIX: Generate access token for authenticated API calls
-      const accessToken = await authService.generateAccessToken(user.userId, user.phone, user.role);
+      const accessToken = await authService.generateAccessToken(
+        user.userId, 
+        user.phone, 
+        user.role,
+        deviceType,
+        isMobileApp
+      );
       console.log(`🔐 Generated access token for user ${user.userId}`);
+      
+      // ✅ NEW: Generate Supabase JWT tokens with proper expiry
+      const supabaseTokens = await authService.generateSupabaseTokens(
+        user.userId,
+        user.phone,
+        user.role,
+        deviceType,
+        isMobileApp
+      );
+      console.log(`🔐 Generated Supabase tokens for user ${user.userId}`);
       
       // Get role-specific state
       let profileData: any = null;
@@ -219,6 +242,11 @@ export function registerAuthEndpoints(app: Hono) {
         currentState = adminState.admin ? 'active' : 'new';
       }
       
+      // Update session with Supabase tokens
+      session.supabaseAccessToken = supabaseTokens.accessToken;
+      session.supabaseRefreshToken = supabaseTokens.refreshToken;
+      await kv.set(`session:${session.sessionId}`, session);
+      
       const response: any = {
         session: {
           sessionId: session.sessionId,
@@ -226,6 +254,8 @@ export function registerAuthEndpoints(app: Hono) {
           phone: session.phone,
           role: session.role,
           expiresAt: session.expiresAt,
+          deviceType: session.deviceType,
+          isMobileApp: session.isMobileApp,
           accessToken: accessToken  // ✅ SECURITY FIX: Include access token
         },
         user: {
@@ -237,7 +267,12 @@ export function registerAuthEndpoints(app: Hono) {
           isActive: user.isActive
         },
         profile: profileData,
-        state: currentState
+        state: currentState,
+        supabaseTokens: {
+          accessToken: supabaseTokens.accessToken,
+          refreshToken: supabaseTokens.refreshToken,
+          expiresAt: supabaseTokens.expiresAt
+        }
       };
       
       // DEBUG: If state is "new" for vendor, add debug information
@@ -347,18 +382,72 @@ export function registerAuthEndpoints(app: Hono) {
   
   /**
    * POST /auth/logout
-   * Logout user and invalidate session
+   * Logout user and invalidate all sessions and tokens
+   * 
+   * Body: { sessionId?, userId?, accessToken?, refreshToken? }
+   * Can logout by sessionId, userId, or tokens
    */
   app.post("/make-server-3dd53475/auth/logout", async (c) => {
     try {
-      const { sessionId } = await c.req.json();
+      const { sessionId, userId, accessToken, refreshToken, logoutAll = false } = await c.req.json();
       
-      if (sessionId) {
-        await authService.deleteSession(sessionId);
-        console.log(`👋 User logged out: ${sessionId}`);
+      console.log(`\n👋 ========== LOGOUT REQUEST ==========`);
+      console.log(`   SessionId: ${sessionId || 'N/A'}`);
+      console.log(`   UserId: ${userId || 'N/A'}`);
+      console.log(`   LogoutAll: ${logoutAll}`);
+      
+      if (logoutAll && userId) {
+        // Logout from all devices
+        await authService.deleteAllUserSessions(userId);
+        console.log(`👋 User logged out from all devices: ${userId}`);
+      } else if (sessionId) {
+        // Logout specific session
+        const session = await authService.getSession(sessionId);
+        if (session) {
+          await authService.deleteSession(sessionId);
+          
+          // Also delete Supabase tokens if present
+          if (session.supabaseAccessToken) {
+            await authService.deleteSupabaseTokens(
+              session.supabaseAccessToken,
+              session.supabaseRefreshToken
+            );
+          }
+          
+          console.log(`👋 Session logged out: ${sessionId}`);
+        }
+      } else if (userId) {
+        // Logout by userId (current session)
+        await authService.deleteAllUserSessions(userId);
+        console.log(`👋 User logged out: ${userId}`);
+      } else if (accessToken) {
+        // Logout by access token
+        const tokenData = await kv.get(`token:${accessToken}`);
+        if (tokenData) {
+          await authService.deleteAccessToken(accessToken);
+          if (tokenData.userId) {
+            await authService.deleteAllUserSessions(tokenData.userId);
+          }
+        }
+        
+        // Also try Supabase token
+        if (refreshToken) {
+          await authService.deleteSupabaseTokens(accessToken, refreshToken);
+        } else {
+          await authService.deleteSupabaseTokens(accessToken);
+        }
+        
+        console.log(`👋 Logged out via token`);
+      } else {
+        return sendError(c, 'sessionId, userId, or accessToken required', 400);
       }
       
-      return sendSuccess(c, {});
+      console.log(`========== LOGOUT COMPLETE ==========\n`);
+      
+      return sendSuccess(c, { 
+        message: 'Logged out successfully',
+        loggedOut: true
+      });
       
     } catch (error) {
       console.error('❌ Logout error:', error);

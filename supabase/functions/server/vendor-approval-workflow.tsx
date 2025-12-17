@@ -7,6 +7,7 @@ import { Hono } from "npm:hono";
 import * as kvStore from './kv_store.tsx';
 import { determineServiceCategory } from "./service-category-mapping.tsx";
 import { normalizePhone, createVendorId, phonesMatch } from "./phone-utils.tsx";
+import { notifyVendorApplicationStatus } from './notification-helpers.tsx';
 
 export function vendorApprovalWorkflowEndpoints(app: Hono, kvStore: any) {
   
@@ -218,6 +219,9 @@ export function vendorApprovalWorkflowEndpoints(app: Hono, kvStore: any) {
 
       console.log(`✅ Vendor approved: ${vendorId} (${vendor.fullName})`);
       
+      // ✅ Send notification to vendor
+      await notifyVendorApplicationStatus(kvStore, vendorId, updatedVendor, 'approved', {});
+      
       return c.json({ 
         success: true, 
         vendor: updatedVendor,
@@ -277,6 +281,9 @@ export function vendorApprovalWorkflowEndpoints(app: Hono, kvStore: any) {
       );
 
       console.log(`❌ Vendor rejected: ${vendorId} (${vendor.fullName})`);
+      
+      // ✅ Send notification to vendor
+      await notifyVendorApplicationStatus(kvStore, vendorId, updatedVendor, 'rejected', { rejectionReason: reason });
       
       return c.json({ 
         success: true, 
@@ -339,6 +346,9 @@ export function vendorApprovalWorkflowEndpoints(app: Hono, kvStore: any) {
       );
 
       console.log(`📋 Info requested from vendor: ${vendorId} (${vendor.fullName})`);
+      
+      // ✅ Send notification to vendor
+      await notifyVendorApplicationStatus(kvStore, vendorId, updatedVendor, 'clarification_requested', { clarificationReason: message });
       
       return c.json({ 
         success: true, 

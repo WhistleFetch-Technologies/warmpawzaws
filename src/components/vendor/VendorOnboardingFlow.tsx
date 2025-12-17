@@ -5,6 +5,7 @@ import { VendorApprovalSuccessNew } from './VendorApprovalSuccessNew';
 import { VendorApplicationRejected } from './VendorApplicationRejected';
 import { VendorClarificationRequested } from './VendorClarificationRequested';
 import { VendorDetailsFormNew } from './VendorDetailsFormNew';
+import { projectId, publicAnonKey } from '../../utils/supabase/info';
 
 interface VendorOnboardingFlowProps {
   vendorId: string;
@@ -40,9 +41,72 @@ export function VendorOnboardingFlow({
   }, [vendorId]);
 
   const checkApplicationStatus = async () => {
-    // This would check the vendor's current application status
-    // and set the appropriate step
-    // For now, we'll start at 'profile'
+    try {
+      console.log('🔍 Checking application status for vendorId:', vendorId);
+      
+      // First, get vendor by ID to find phone
+      const vendorResponse = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/find-by-id/${vendorId}`,
+        {
+          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        }
+      );
+
+      if (!vendorResponse.ok) {
+        console.log('⚠️ Vendor not found, starting at profile step');
+        setCurrentStep('profile');
+        return;
+      }
+
+      const vendorData = await vendorResponse.json();
+      const vendor = vendorData.vendor;
+
+      if (!vendor) {
+        setCurrentStep('profile');
+        return;
+      }
+
+      console.log('✅ Vendor found:', {
+        id: vendor.id,
+        status: vendor.status,
+        applicationId: vendor.applicationId
+      });
+
+      // Set application ID
+      if (vendor.applicationId) {
+        setApplicationId(vendor.applicationId);
+      }
+
+      // Route to appropriate step based on status
+      switch (vendor.status) {
+        case 'pending_approval':
+        case 'under_review':
+          setCurrentStep('under_review');
+          break;
+        case 'more_info_required':
+          setClarificationNotes(vendor.infoRequestMessage || '');
+          setCurrentStep('clarification');
+          break;
+        case 'approved':
+          setCurrentStep('approved');
+          break;
+        case 'rejected':
+          setRejectionReason(vendor.rejectionReason || '');
+          setCurrentStep('rejected');
+          break;
+        case 'withdrawn':
+          // Allow resubmission
+          setCurrentStep('profile');
+          break;
+        default:
+          // If no status or new vendor, start at profile
+          setCurrentStep('profile');
+      }
+    } catch (error) {
+      console.error('❌ Error checking application status:', error);
+      // On error, default to profile step
+      setCurrentStep('profile');
+    }
   };
 
   const handleProfileSubmit = async (profileData: any) => {

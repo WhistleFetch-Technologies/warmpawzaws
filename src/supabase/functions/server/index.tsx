@@ -63,6 +63,16 @@ import { registerUniversalServiceDiscovery } from './universal-service-discovery
 import { registerUniversalOTPSystem } from './universal-otp-system.tsx';
 import { registerHomeServiceBookingFlow } from './home-service-booking-flow.tsx';
 import { registerBookingLifecycleManagement } from './booking-lifecycle-management.tsx';
+import { subscriptionPackageSchedulingEndpoints } from './subscription-package-scheduling.tsx';
+import { radarServiceDiscoveryEndpoints } from './radar-service-discovery.tsx';
+import { universalGPSTrackingEndpoints } from './universal-gps-tracking.tsx';
+import { previousProvidersServiceEndpoints } from './previous-providers-service.tsx';
+import { problemFirstSearchEndpoints } from './problem-first-search.tsx';
+import { instantTeleBookingEndpoints } from './instant-tele-booking.tsx';
+import { centerBookingSpecializedServicesEndpoints } from './center-booking-specialized-services.tsx';
+import { roleBasedChatIntegrationEndpoints } from './role-based-chat-integration.tsx';
+import { completeNotificationSystemEndpoints } from './complete-notification-system.tsx';
+import { petProfilePublishingEndpoints } from './pet-profile-publishing.tsx';
 import { registerSmsOtpService } from './sms-otp-service.tsx';
 import { registerRazorpayRefundProcessor } from './razorpay-refund-processor.tsx';
 import { registerGooglePlacesService } from './google-places-service.tsx';
@@ -1205,6 +1215,38 @@ if (homeServicesEnhanced && typeof homeServicesEnhanced === 'object') {
 } else {
   console.warn('⚠️ Home Services Enhanced Endpoints module undefined, skipping');
 }
+
+// ✅ NEW: Critical Gap Fixes - Production Grade Implementations
+console.log('✅ Registering Subscription Package Scheduling Endpoints...');
+subscriptionPackageSchedulingEndpoints(app);
+
+console.log('✅ Registering Radar Service Discovery Endpoints...');
+radarServiceDiscoveryEndpoints(app);
+
+console.log('✅ Registering Universal GPS Tracking Endpoints...');
+universalGPSTrackingEndpoints(app);
+
+console.log('✅ Registering Previous Providers Service Endpoints...');
+previousProvidersServiceEndpoints(app);
+
+console.log('✅ Registering Problem-First Search Endpoints...');
+problemFirstSearchEndpoints(app);
+
+console.log('✅ Registering Instant Tele Booking Endpoints...');
+instantTeleBookingEndpoints(app);
+
+// ✅ NEW: Phase 2 & 3 Endpoints - Complete Integration
+console.log('✅ Registering Center Booking with Specialized Services Endpoints...');
+centerBookingSpecializedServicesEndpoints(app);
+
+console.log('✅ Registering Role-Based Chat Integration Endpoints...');
+roleBasedChatIntegrationEndpoints(app);
+
+console.log('✅ Registering Complete Notification System Endpoints...');
+completeNotificationSystemEndpoints(app);
+
+console.log('✅ Registering Pet Profile Publishing Endpoints...');
+petProfilePublishingEndpoints(app);
 
 // ✅ NEW: Integrated Services Complete Endpoints
 if (integratedServicesComplete && typeof integratedServicesComplete === 'object') {

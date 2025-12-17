@@ -162,6 +162,53 @@ export function vendorOnboardingEndpoints(app: Hono, kv: any) {
       }
       console.log(`📎 Processed ${documentsArray.length} documents`);
 
+      // ✅ NEW: Validate bank details if provided
+      let bankValidationResult = null;
+      if (formData.ifscCode) {
+        try {
+          console.log(`🏦 Validating IFSC code: ${formData.ifscCode}`);
+          const razorpayUrl = `https://ifsc.razorpay.com/${formData.ifscCode}`;
+          const ifscResponse = await fetch(razorpayUrl, {
+            headers: { 'Accept': 'application/json' }
+          });
+          
+          if (ifscResponse.ok) {
+            const ifscData = await ifscResponse.json();
+            bankValidationResult = {
+              valid: true,
+              bank: ifscData.BANK || ifscData.bank || 'Unknown Bank',
+              branch: ifscData.BRANCH || ifscData.branch || 'Unknown Branch',
+              address: ifscData.ADDRESS || ifscData.address || '',
+              city: ifscData.CITY || ifscData.city || '',
+              state: ifscData.STATE || ifscData.state || '',
+              bankCode: ifscData.BANKCODE || ifscData.bankCode || ''
+            };
+            console.log(`✅ IFSC validated: ${bankValidationResult.bank} - ${bankValidationResult.branch}`);
+            
+            // Auto-fill bank name and branch if not provided
+            if (!formData.bankName && bankValidationResult.bank) {
+              formData.bankName = bankValidationResult.bank;
+            }
+            if (!formData.branchName && bankValidationResult.branch) {
+              formData.branchName = bankValidationResult.branch;
+            }
+          } else {
+            console.warn(`⚠️ Invalid IFSC code: ${formData.ifscCode}`);
+            bankValidationResult = {
+              valid: false,
+              error: 'Invalid IFSC code'
+            };
+          }
+        } catch (error) {
+          console.error('❌ Error validating IFSC:', error);
+          // Don't block submission if validation fails
+          bankValidationResult = {
+            valid: false,
+            error: 'Validation service unavailable'
+          };
+        }
+      }
+      
       // ✅ CRITICAL FIX #4: Create Vendor Record with proper field priority
       const vendorKey = `vendor:${vendorId}`;
       
@@ -221,7 +268,10 @@ export function vendorOnboardingEndpoints(app: Hono, kv: any) {
           accountNumber: formData.accountNumber || null,
           ifscCode: formData.ifscCode || null,
           bankName: formData.bankName || null,
-          branchName: formData.branchName || null
+          branchName: formData.branchName || null,
+          validated: bankValidationResult?.valid || false,
+          validationDetails: bankValidationResult || null,
+          validatedAt: bankValidationResult?.valid ? new Date().toISOString() : null
         },
         
         // Documents
@@ -330,6 +380,255 @@ export function vendorOnboardingEndpoints(app: Hono, kv: any) {
       
     } catch (error) {
       console.error('❌ Error checking phone:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  /**
+   * PUT /make-server-3dd53475/vendor/application/:vendorId
+   * Update vendor application (before admin review)
+   * 
+   * ✅ NEW: Allows editing submitted applications
+   */
+  app.put("/make-server-3dd53475/vendor/application/:vendorId", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const body = await c.req.json();
+      const { formData, documents, location } = body;
+      
+      console.log(`📝 Updating vendor application: ${vendorId}`);
+      
+      // Get existing vendor
+      const vendor = await kv.get(`vendor:${vendorId}`);
+      if (!vendor) {
+        return c.json({ 
+          error: 'vendor_not_found',
+          message: 'Vendor application not found.'
+        }, 404);
+      }
+      
+      // Only allow editing if status is pending_approval or more_info_required
+      if (vendor.status !== 'pending_approval' && vendor.status !== 'more_info_required') {
+        return c.json({ 
+          error: 'cannot_edit',
+          message: `Application cannot be edited in current status: ${vendor.status}`,
+          currentStatus: vendor.status
+        }, 400);
+      }
+      
+      // Process documents if provided
+      const documentsArray = vendor.documents || [];
+      if (documents && typeof documents === 'object') {
+        // Merge new documents with existing
+        for (const [key, docData] of Object.entries(documents)) {
+          if (typeof docData === 'object' && docData !== null) {
+            for (const [side, sideData] of Object.entries(docData)) {
+              if (sideData && typeof sideData === 'object' && (sideData as any).preview) {
+                const sd = sideData as any;
+                documentsArray.push({
+                  name: `${key} - ${side}`,
+                  type: key,
+                  side: side,
+                  category: 'Document',
+                  preview: sd.preview,
+                  url: sd.preview,
+                  fileName: sd.fileName,
+                  fileType: sd.fileType,
+                  uploadedAt: new Date().toISOString()
+                });
+              } else if ((docData as any).preview) {
+                const dd = docData as any;
+                documentsArray.push({
+                  name: key,
+                  type: key,
+                  category: 'Document',
+                  preview: dd.preview,
+                  url: dd.preview,
+                  fileName: dd.fileName,
+                  fileType: dd.fileType,
+                  uploadedAt: new Date().toISOString()
+                });
+                break;
+              }
+            }
+          }
+        }
+      }
+      
+      // Update vendor record
+      const updatedVendor = {
+        ...vendor,
+        // Update form data
+        ...(formData?.businessName && { businessName: formData.businessName }),
+        ...(formData?.fullName && { fullName: formData.fullName }),
+        ...(formData?.email && { email: formData.email }),
+        ...(formData?.address && { address: formData.address }),
+        ...(formData?.city && { city: formData.city }),
+        ...(formData?.state && { state: formData.state }),
+        ...(formData?.pincode && { pincode: formData.pincode }),
+        ...(formData?.gstNumber && { gstNumber: formData.gstNumber }),
+        ...(formData?.yearsOfExperience !== undefined && { yearsOfExperience: formData.yearsOfExperience }),
+        ...(location && { location }),
+        ...(formData?.accountHolderName && {
+          bankDetails: {
+            ...vendor.bankDetails,
+            accountHolderName: formData.accountHolderName,
+            accountNumber: formData.accountNumber || vendor.bankDetails?.accountNumber,
+            ifscCode: formData.ifscCode || vendor.bankDetails?.ifscCode,
+            bankName: formData.bankName || vendor.bankDetails?.bankName,
+            branchName: formData.branchName || vendor.bankDetails?.branchName
+          }
+        }),
+        // Update documents
+        documents: documentsArray,
+        documentsRaw: documents || vendor.documentsRaw,
+        // Update custom fields
+        customFields: { ...vendor.customFields, ...formData },
+        // Update display name
+        displayName: formData?.businessName || formData?.fullName || vendor.displayName,
+        // Update status if it was more_info_required
+        status: vendor.status === 'more_info_required' ? 'resubmitted' : vendor.status,
+        // Track edit history
+        lastEditedAt: new Date().toISOString(),
+        editCount: (vendor.editCount || 0) + 1,
+        updatedAt: new Date().toISOString()
+      };
+      
+      await kv.set(`vendor:${vendorId}`, updatedVendor);
+      
+      // Create edit history entry
+      const historyEntry = {
+        vendorId,
+        applicationId: vendor.applicationId,
+        action: 'application_updated',
+        previousStatus: vendor.status,
+        newStatus: updatedVendor.status,
+        actionBy: 'vendor',
+        notes: 'Application updated by vendor',
+        timestamp: new Date().toISOString()
+      };
+      
+      await kv.set(`vendor:history:${vendorId}:${Date.now()}`, historyEntry);
+      
+      console.log(`✅ Application updated successfully: ${vendorId}`);
+      
+      return sendSuccess(c, {
+        vendorId,
+        applicationId: vendor.applicationId,
+        status: updatedVendor.status,
+        message: 'Application updated successfully.'
+      });
+      
+    } catch (error) {
+      console.error('❌ Error updating application:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  /**
+   * POST /make-server-3dd53475/vendor/application/:vendorId/withdraw
+   * Withdraw vendor application
+   * 
+   * ✅ NEW: Allows vendors to cancel pending applications
+   */
+  app.post("/make-server-3dd53475/vendor/application/:vendorId/withdraw", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const { reason } = await c.req.json();
+      
+      console.log(`📝 Withdrawing vendor application: ${vendorId}`);
+      
+      // Get existing vendor
+      const vendor = await kv.get(`vendor:${vendorId}`);
+      if (!vendor) {
+        return c.json({ 
+          error: 'vendor_not_found',
+          message: 'Vendor application not found.'
+        }, 404);
+      }
+      
+      // Only allow withdrawal if status is pending_approval or more_info_required
+      if (vendor.status !== 'pending_approval' && vendor.status !== 'more_info_required') {
+        return c.json({ 
+          error: 'cannot_withdraw',
+          message: `Application cannot be withdrawn in current status: ${vendor.status}`,
+          currentStatus: vendor.status
+        }, 400);
+      }
+      
+      // Update vendor status
+      const updatedVendor = {
+        ...vendor,
+        status: 'withdrawn',
+        withdrawnAt: new Date().toISOString(),
+        withdrawalReason: reason || 'Withdrawn by vendor',
+        updatedAt: new Date().toISOString()
+      };
+      
+      await kv.set(`vendor:${vendorId}`, updatedVendor);
+      
+      // Remove from pending approvals list
+      const pendingVendors = await kv.get('vendor:pending_approvals') || [];
+      const updatedPending = pendingVendors.filter((id: string) => id !== vendorId);
+      await kv.set('vendor:pending_approvals', updatedPending);
+      
+      // Create withdrawal history entry
+      const historyEntry = {
+        vendorId,
+        applicationId: vendor.applicationId,
+        action: 'withdrawn',
+        previousStatus: vendor.status,
+        newStatus: 'withdrawn',
+        actionBy: 'vendor',
+        notes: reason || 'Application withdrawn by vendor',
+        timestamp: new Date().toISOString()
+      };
+      
+      await kv.set(`vendor:history:${vendorId}:${Date.now()}`, historyEntry);
+      
+      console.log(`✅ Application withdrawn successfully: ${vendorId}`);
+      
+      return sendSuccess(c, {
+        vendorId,
+        applicationId: vendor.applicationId,
+        status: 'withdrawn',
+        message: 'Application withdrawn successfully.'
+      });
+      
+    } catch (error) {
+      console.error('❌ Error withdrawing application:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  /**
+   * GET /make-server-3dd53475/vendor/application/:vendorId/history
+   * Get application status history
+   * 
+   * ✅ NEW: Returns complete status change history
+   */
+  app.get("/make-server-3dd53475/vendor/application/:vendorId/history", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      
+      console.log(`📜 Fetching application history for: ${vendorId}`);
+      
+      // Get all history entries
+      const history = await kv.getByPrefix(`vendor:history:${vendorId}:`);
+      
+      // Sort by timestamp descending (newest first)
+      history.sort((a: any, b: any) => 
+        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      );
+      
+      return sendSuccess(c, {
+        vendorId,
+        history,
+        total: history.length
+      });
+      
+    } catch (error) {
+      console.error('❌ Error fetching application history:', error);
       return sendError(c, error, 500);
     }
   });

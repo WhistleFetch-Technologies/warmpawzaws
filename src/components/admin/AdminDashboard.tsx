@@ -66,6 +66,7 @@ import {
 import { supabase } from '../../utils/supabase/client';
 import { projectId } from '../../utils/supabase/info';
 import { toast } from 'sonner@2.0.3';
+import { useLogout } from '../../hooks/useLogout';
 
 import { MarketingPromotionsTab } from './MarketingPromotionsTab';
 import { EnterpriseLogicTab } from './EnterpriseLogicTab';
@@ -88,6 +89,7 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [activeView, setActiveView] = useState(initialView || 'vendor-admin');
+  const { logout } = useLogout();
 
   useEffect(() => {
     loadVendors();
@@ -175,8 +177,7 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
   };
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    window.location.reload();
+    await logout({ redirectTo: '/admin' });
   };
 
   const approveAllVendors = async () => {

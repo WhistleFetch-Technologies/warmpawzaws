@@ -180,12 +180,63 @@ export async function updateUser(userId: string, updates: Partial<User>): Promis
 // ============================================
 
 /**
- * Create a new session for user
+ * Calculate token expiry based on role and platform
+ * 
+ * Token Expiry Rules:
+ * - Mobile app (customer/vendor): 365 days
+ * - Admin: 4 hours
+ * - Customer web: 48 hours
+ * - Vendor web: 48 hours
  */
-export async function createUserSession(userId: string, phone: string, role: string): Promise<Session> {
+export function calculateTokenExpiry(
+  role: 'customer' | 'vendor' | 'staff' | 'admin',
+  deviceType: 'mobile' | 'web' = 'web',
+  isMobileApp: boolean = false
+): Date {
+  const now = Date.now();
+  let expiryMs: number;
+  
+  // Admin always gets 4 hours
+  if (role === 'admin') {
+    expiryMs = 4 * 60 * 60 * 1000; // 4 hours
+  }
+  // Mobile app (customer/vendor) gets 365 days
+  else if (isMobileApp || (deviceType === 'mobile' && (role === 'customer' || role === 'vendor'))) {
+    expiryMs = 365 * 24 * 60 * 60 * 1000; // 365 days
+  }
+  // Web (customer/vendor) gets 48 hours
+  else if (deviceType === 'web' && (role === 'customer' || role === 'vendor')) {
+    expiryMs = 48 * 60 * 60 * 1000; // 48 hours
+  }
+  // Staff gets 7 days (default)
+  else if (role === 'staff') {
+    expiryMs = 7 * 24 * 60 * 60 * 1000; // 7 days
+  }
+  // Default fallback: 30 days
+  else {
+    expiryMs = 30 * 24 * 60 * 60 * 1000; // 30 days
+  }
+  
+  return new Date(now + expiryMs);
+}
+
+/**
+ * Create a new session for user with platform-aware expiry
+ */
+export async function createUserSession(
+  userId: string, 
+  phone: string, 
+  role: string,
+  deviceType: 'mobile' | 'web' = 'web',
+  isMobileApp: boolean = false
+): Promise<Session> {
   const sessionId = generateId('session');
   const now = new Date().toISOString();
-  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(); // 30 days
+  const expiresAt = calculateTokenExpiry(
+    role as 'customer' | 'vendor' | 'staff' | 'admin',
+    deviceType,
+    isMobileApp
+  ).toISOString();
   
   const session: Session = {
     sessionId,
@@ -194,7 +245,9 @@ export async function createUserSession(userId: string, phone: string, role: str
     role: role as 'customer' | 'vendor' | 'staff' | 'admin',
     token: createSession(userId, role as 'customer' | 'vendor' | 'staff' | 'admin'),
     createdAt: now,
-    expiresAt
+    expiresAt,
+    deviceType, // Store device type for reference
+    isMobileApp // Store mobile app flag
   };
   
   // Store session
@@ -202,7 +255,10 @@ export async function createUserSession(userId: string, phone: string, role: str
   await kv.set(`session:user:${userId}`, session.sessionId);
   await kv.set(`session:phone:${normalizePhone(phone)}`, session.sessionId);
   
+  const expiryDays = Math.round((new Date(expiresAt).getTime() - Date.now()) / (24 * 60 * 60 * 1000));
   console.log(`🔑 Session created: ${session.sessionId} for user ${userId}`);
+  console.log(`   Role: ${role}, Device: ${deviceType}, MobileApp: ${isMobileApp}`);
+  console.log(`   Expires in: ${expiryDays} days (${expiresAt})`);
   
   return session;
 }
@@ -238,16 +294,45 @@ export async function getSessionByUserId(userId: string): Promise<Session | null
 }
 
 /**
- * Delete session
+ * Delete session and all associated tokens
  */
 export async function deleteSession(sessionId: string): Promise<void> {
   const session = await kv.get(`session:${sessionId}`);
   
   if (session) {
+    // Delete session
     await kv.del(`session:${sessionId}`);
     await kv.del(`session:user:${session.userId}`);
     await kv.del(`session:phone:${session.phone}`);
+    
+    // Delete associated access token
+    const token = await kv.get(`token:user:${session.userId}`);
+    if (token) {
+      await deleteAccessToken(token);
+    }
+    
+    console.log(`🗑️ Session deleted: ${sessionId} for user ${session.userId}`);
   }
+}
+
+/**
+ * Delete all sessions for a user (logout from all devices)
+ */
+export async function deleteAllUserSessions(userId: string): Promise<void> {
+  // Get all sessions for user
+  const sessionId = await kv.get(`session:user:${userId}`);
+  
+  if (sessionId) {
+    await deleteSession(sessionId);
+  }
+  
+  // Also delete any remaining tokens
+  const token = await kv.get(`token:user:${userId}`);
+  if (token) {
+    await deleteAccessToken(token);
+  }
+  
+  console.log(`🗑️ All sessions deleted for user: ${userId}`);
 }
 
 /**
@@ -255,8 +340,15 @@ export async function deleteSession(sessionId: string): Promise<void> {
  * Tokens are stored in KV and validated on each API call
  * 
  * Token format: {userId}_{phone}_{timestamp}_{random}
+ * Expiry based on role and platform
  */
-export async function generateAccessToken(userId: string, phone: string, role: string): Promise<string> {
+export async function generateAccessToken(
+  userId: string, 
+  phone: string, 
+  role: string,
+  deviceType: 'mobile' | 'web' = 'web',
+  isMobileApp: boolean = false
+): Promise<string> {
   const cleanedPhone = normalizePhone(phone);
   const timestamp = Date.now();
   const randomPart = Math.random().toString(36).substring(2, 15);
@@ -264,21 +356,31 @@ export async function generateAccessToken(userId: string, phone: string, role: s
   // Create token with user info embedded
   const token = `${userId}_${cleanedPhone}_${timestamp}_${randomPart}`;
   
-  // Store token in KV for validation (expires in 24 hours)
-  const expiresAt = timestamp + (24 * 60 * 60 * 1000);
+  // Calculate expiry based on role and platform
+  const expiresAt = calculateTokenExpiry(
+    role as 'customer' | 'vendor' | 'staff' | 'admin',
+    deviceType,
+    isMobileApp
+  );
+  
   const tokenData = {
     token,
     userId,
     phone: cleanedPhone,
     role,
+    deviceType,
+    isMobileApp,
     createdAt: new Date().toISOString(),
-    expiresAt: new Date(expiresAt).toISOString()
+    expiresAt: expiresAt.toISOString()
   };
   
   await kv.set(`token:${token}`, tokenData);
   await kv.set(`token:user:${userId}`, token); // For quick user→token lookup
   
+  const expiryDays = Math.round((expiresAt.getTime() - timestamp) / (24 * 60 * 60 * 1000));
   console.log(`🔐 Access token created: ${token.substring(0, 20)}... for user ${userId}`);
+  console.log(`   Role: ${role}, Device: ${deviceType}, MobileApp: ${isMobileApp}`);
+  console.log(`   Expires in: ${expiryDays} days`);
   
   return token;
 }
@@ -326,6 +428,234 @@ export async function deleteAccessToken(token: string): Promise<void> {
     await kv.del(`token:user:${tokenData.userId}`);
     console.log(`🗑️ Token deleted: ${token.substring(0, 20)}...`);
   }
+}
+
+/**
+ * ✅ NEW: Generate Supabase JWT tokens with proper expiry
+ * Creates Supabase-compatible JWT tokens with role/platform-based expiry
+ */
+export async function generateSupabaseTokens(
+  userId: string,
+  phone: string,
+  role: string,
+  deviceType: 'mobile' | 'web' = 'web',
+  isMobileApp: boolean = false
+): Promise<{ accessToken: string; refreshToken: string; expiresAt: string }> {
+  // Calculate expiry
+  const expiresAt = calculateTokenExpiry(
+    role as 'customer' | 'vendor' | 'staff' | 'admin',
+    deviceType,
+    isMobileApp
+  );
+  
+  // Get Supabase service key for signing
+  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
+  
+  if (!supabaseServiceKey) {
+    console.warn('⚠️ SUPABASE_SERVICE_ROLE_KEY not set, using fallback token generation');
+    // Fallback: Generate simple token
+    const timestamp = Date.now();
+    const randomPart = Math.random().toString(36).substring(2, 15);
+    const accessToken = `sb_${userId}_${timestamp}_${randomPart}`;
+    const refreshToken = `sb_refresh_${userId}_${timestamp}_${randomPart}`;
+    
+    // Store tokens
+    await kv.set(`supabase_token:${accessToken}`, {
+      userId,
+      phone: normalizePhone(phone),
+      role,
+      deviceType,
+      isMobileApp,
+      expiresAt: expiresAt.toISOString(),
+      createdAt: new Date().toISOString()
+    });
+    
+    return {
+      accessToken,
+      refreshToken,
+      expiresAt: expiresAt.toISOString()
+    };
+  }
+  
+  // Use Supabase Admin API to create user session
+  // This creates proper JWT tokens signed by Supabase
+  try {
+    const { createClient } = await import('jsr:@supabase/supabase-js@2');
+    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
+    });
+    
+    // Create auth user if doesn't exist (or get existing)
+    const { data: authUser, error: userError } = await supabase.auth.admin.getUserById(userId);
+    
+    let finalUserId = userId;
+    
+    if (userError || !authUser?.user) {
+      // User doesn't exist in Supabase Auth - create it
+      const { data: newUser, error: createError } = await supabase.auth.admin.createUser({
+        id: userId,
+        phone: normalizePhone(phone),
+        user_metadata: {
+          role,
+          deviceType,
+          isMobileApp
+        },
+        email_confirm: true,
+        phone_confirm: true
+      });
+      
+      if (createError) {
+        console.error('Error creating Supabase user:', createError);
+        throw createError;
+      }
+      
+      finalUserId = newUser.user.id;
+    }
+    
+    // Generate session with custom expiry
+    // Note: Supabase doesn't directly support custom expiry, so we'll use JWT signing
+    const jwt = await import('npm:jsonwebtoken');
+    const jwtSecret = supabaseServiceKey;
+    
+    // Create JWT payload
+    const payload = {
+      aud: 'authenticated',
+      exp: Math.floor(expiresAt.getTime() / 1000),
+      sub: finalUserId,
+      email: `${normalizePhone(phone)}@warmpawz.local`,
+      phone: normalizePhone(phone),
+      role: 'authenticated',
+      user_metadata: {
+        role,
+        deviceType,
+        isMobileApp,
+        phone: normalizePhone(phone)
+      },
+      app_metadata: {
+        provider: 'phone',
+        providers: ['phone']
+      }
+    };
+    
+    // Sign JWT (Supabase uses HS256)
+    const accessToken = jwt.sign(payload, jwtSecret, { algorithm: 'HS256' });
+    
+    // Generate refresh token (longer expiry - 30 days)
+    const refreshExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    const refreshPayload = {
+      ...payload,
+      exp: Math.floor(refreshExpiresAt.getTime() / 1000),
+      type: 'refresh'
+    };
+    const refreshToken = jwt.sign(refreshPayload, jwtSecret, { algorithm: 'HS256' });
+    
+    // Store tokens for validation
+    await kv.set(`supabase_token:${accessToken}`, {
+      userId: finalUserId,
+      phone: normalizePhone(phone),
+      role,
+      deviceType,
+      isMobileApp,
+      expiresAt: expiresAt.toISOString(),
+      createdAt: new Date().toISOString()
+    });
+    
+    await kv.set(`supabase_refresh:${refreshToken}`, {
+      userId: finalUserId,
+      accessToken,
+      expiresAt: refreshExpiresAt.toISOString(),
+      createdAt: new Date().toISOString()
+    });
+    
+    console.log(`✅ Supabase tokens generated for user ${finalUserId}`);
+    console.log(`   Expires at: ${expiresAt.toISOString()}`);
+    
+    return {
+      accessToken,
+      refreshToken,
+      expiresAt: expiresAt.toISOString()
+    };
+    
+  } catch (error) {
+    console.error('❌ Error generating Supabase tokens:', error);
+    // Fallback to simple token
+    const timestamp = Date.now();
+    const randomPart = Math.random().toString(36).substring(2, 15);
+    const accessToken = `sb_${userId}_${timestamp}_${randomPart}`;
+    const refreshToken = `sb_refresh_${userId}_${timestamp}_${randomPart}`;
+    
+    await kv.set(`supabase_token:${accessToken}`, {
+      userId,
+      phone: normalizePhone(phone),
+      role,
+      deviceType,
+      isMobileApp,
+      expiresAt: expiresAt.toISOString(),
+      createdAt: new Date().toISOString()
+    });
+    
+    return {
+      accessToken,
+      refreshToken,
+      expiresAt: expiresAt.toISOString()
+    };
+  }
+}
+
+/**
+ * ✅ NEW: Validate Supabase JWT token
+ */
+export async function validateSupabaseToken(token: string): Promise<any | null> {
+  if (!token) return null;
+  
+  // Check stored token
+  const tokenData = await kv.get(`supabase_token:${token}`);
+  
+  if (tokenData) {
+    // Check expiry
+    if (new Date(tokenData.expiresAt) < new Date()) {
+      await kv.del(`supabase_token:${token}`);
+      return null;
+    }
+    return tokenData;
+  }
+  
+  // Try to validate as JWT
+  try {
+    const jwt = await import('npm:jsonwebtoken');
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+    
+    if (!supabaseServiceKey) return null;
+    
+    const decoded = jwt.verify(token, supabaseServiceKey, { algorithms: ['HS256'] }) as any;
+    
+    return {
+      userId: decoded.sub,
+      phone: decoded.phone || decoded.user_metadata?.phone,
+      role: decoded.user_metadata?.role,
+      deviceType: decoded.user_metadata?.deviceType,
+      isMobileApp: decoded.user_metadata?.isMobileApp,
+      expiresAt: new Date(decoded.exp * 1000).toISOString()
+    };
+  } catch (error) {
+    console.error('❌ Token validation error:', error);
+    return null;
+  }
+}
+
+/**
+ * ✅ NEW: Delete Supabase tokens
+ */
+export async function deleteSupabaseTokens(accessToken: string, refreshToken?: string): Promise<void> {
+  await kv.del(`supabase_token:${accessToken}`);
+  if (refreshToken) {
+    await kv.del(`supabase_refresh:${refreshToken}`);
+  }
+  console.log(`🗑️ Supabase tokens deleted`);
 }
 
 // ============================================
