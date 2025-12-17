@@ -164,13 +164,6 @@ import { integratedServicesManagerEndpoints } from './integrated-services-manage
 import { tierSystemEndpoints } from './tier-system.tsx';
 import { razorpayMarketplaceSettlement } from './razorpay-marketplace-settlement.tsx';
 
-// ✅ RULE 15: Production-ready integrations
-import { automatedSettlementProcessor } from './automated-settlement-processor.tsx';
-import { bankVerificationIntegration } from './bank-verification-integration.tsx';
-
-// ✅ RULE 16 & 17: Vendor onboarding and schedule management
-import { scheduleValidationTemplates } from './schedule-validation-templates.tsx';
-
 const app = new Hono();
 
 // Global Middleware
@@ -1244,24 +1237,6 @@ if (tierSystemEndpoints && typeof tierSystemEndpoints === 'function') {
 if (razorpayMarketplaceSettlement && typeof razorpayMarketplaceSettlement === 'function') {
   console.log('✅ Registering Razorpay Marketplace Settlement...');
   razorpayMarketplaceSettlement(app, kv);
-}
-
-// ✅ NEW: Automated Settlement Processor (Rule 15)
-if (automatedSettlementProcessor && typeof automatedSettlementProcessor === 'function') {
-  console.log('✅ Registering Automated Settlement Processor...');
-  automatedSettlementProcessor(app, kv);
-}
-
-// ✅ NEW: Bank Verification Integration (Rule 15)
-if (bankVerificationIntegration && typeof bankVerificationIntegration === 'function') {
-  console.log('✅ Registering Bank Verification Integration...');
-  bankVerificationIntegration(app, kv);
-}
-
-// ✅ NEW: Schedule Validation Templates (Rule 16 & 17)
-if (scheduleValidationTemplates && typeof scheduleValidationTemplates === 'function') {
-  console.log('✅ Registering Schedule Validation Templates...');
-  scheduleValidationTemplates(app, kv);
 }
 
 // ------------------------------------------------------------------
