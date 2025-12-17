@@ -15,6 +15,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../types/navigation';
+import vendorService from '../services/api';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 
 type DashboardScreenNavigationProp = StackNavigationProp<RootStackParamList, 'MainTabs'>;
@@ -28,17 +29,20 @@ export default function DashboardScreen() {
     totalRevenue: 0,
     activeServices: 0,
   });
+  const [vendorId, setVendorId] = useState<string>(''); // TODO: Get from auth context
 
   useEffect(() => {
-    loadDashboardData();
-  }, []);
+    if (vendorId) {
+      loadDashboardData();
+    }
+  }, [vendorId]);
 
   const loadDashboardData = async () => {
     try {
-      // TODO: Implement API call
-      // const response = await fetch(`${API_BASE_URL}/vendor/dashboard`);
-      // const data = await response.json();
-      // setStats(data.stats);
+      setLoading(true);
+      // TODO: Uncomment when API is ready and vendorId is available
+      // const response = await vendorService.getDashboard(vendorId);
+      // setStats(response.stats || stats);
       
       setLoading(false);
     } catch (error) {
@@ -186,4 +190,3 @@ const styles = StyleSheet.create({
     color: '#333',
   },
 });
-
