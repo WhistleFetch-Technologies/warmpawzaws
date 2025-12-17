@@ -10,7 +10,6 @@ import {
 import logoImage from 'figma:asset/da6636b92da744b3db8eed5288ca6da9ab889afe.png';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { BookingDetailModal } from './BookingDetailModal';
-import { useLogout } from '../../hooks/useLogout';
 
 interface UserProfile {
   firstName: string;
@@ -59,7 +58,6 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
   const [originalProfile, setOriginalProfile] = useState<UserProfile | null>(null);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [editMode, setEditMode] = useState(false);
-  const { logout } = useLogout();
   const [loading, setLoading] = useState(true);
   const [loadingBookings, setLoadingBookings] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -678,12 +676,7 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
               <ChevronRight className="w-5 h-5 text-gray-400" />
             </button>
 
-            <button 
-              onClick={async () => {
-                await logout({ redirectTo: '/customer', onComplete: onBack });
-              }}
-              className="w-full flex items-center justify-between p-4 bg-white border border-red-200 rounded-xl hover:bg-red-50 transition-all"
-            >
+            <button className="w-full flex items-center justify-between p-4 bg-white border border-red-200 rounded-xl hover:bg-red-50 transition-all">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-gradient-to-br from-red-100 to-red-200 rounded-full flex items-center justify-center">
                   <LogOut className="w-5 h-5 text-red-600" />

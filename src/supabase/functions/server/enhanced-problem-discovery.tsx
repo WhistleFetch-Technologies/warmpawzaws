@@ -75,11 +75,7 @@ app.get('/make-server-3dd53475/customer/discover-by-problem-v2/:roleId/:problemI
     const problemId = c.req.param('problemId');
     const lat = parseFloat(c.req.query('lat') || '0');
     const lng = parseFloat(c.req.query('lng') || '0');
-    // ✅ BUSINESS RULE: Maximum radius for home services vendor discovery is 20KM
-    let radius = parseInt(c.req.query('radius') || '20');
-    if (radius > 20) {
-      radius = 20; // Cap at 20KM maximum
-    }
+    const radius = parseInt(c.req.query('radius') || '50');
     
     console.log(`\n🔍 [ENHANCED DISCOVERY] Starting discovery...`);
     console.log(`   Role: ${roleId}`);

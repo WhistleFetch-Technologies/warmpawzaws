@@ -31,7 +31,7 @@ export function staffDiscoveryEndpoints(app: Hono) {
    *  - serviceStyle: at_home, at_center, or tele [REQUIRED]
    *  - latitude: customer latitude (for home services)
    *  - longitude: customer longitude (for home services)
-   *  - maxDistance: max distance in km (default: 20, maximum: 20)
+   *  - maxDistance: max distance in km (default: 50)
    *  - serviceId: filter by specific service capability
    */
   app.get('/make-server-3dd53475/customer/discover-staff', async (c) => {
@@ -40,11 +40,7 @@ export function staffDiscoveryEndpoints(app: Hono) {
       const serviceStyle = c.req.query('serviceStyle');
       const latitude = c.req.query('latitude');
       const longitude = c.req.query('longitude');
-      // ✅ BUSINESS RULE: Maximum radius for home services discovery is 20KM
-      let maxDistance = parseInt(c.req.query('maxDistance') || '20');
-      if (maxDistance > 20) {
-        maxDistance = 20; // Cap at 20KM maximum
-      }
+      const maxDistance = parseInt(c.req.query('maxDistance') || '50');
       const serviceId = c.req.query('serviceId');
       
       if (!roleId) {

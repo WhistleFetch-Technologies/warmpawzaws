@@ -5,8 +5,6 @@ import { Label } from '../ui/label';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { toast } from 'sonner@2.0.3';
 import logoImage from 'figma:asset/da6636b92da744b3db8eed5288ca6da9ab889afe.png';
-import { storeSession, getLoginDeviceInfo } from '../../utils/session-manager';
-import { supabase } from '../../utils/supabase/client';
 
 interface CustomerAuthProps {
   onAuthSuccess: (session: any) => void;

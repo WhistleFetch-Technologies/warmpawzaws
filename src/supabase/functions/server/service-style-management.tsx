@@ -95,14 +95,9 @@ export function serviceStyleManagement(app: Hono) {
         updatedAt: new Date().toISOString()
       };
       
-      // ✅ BUSINESS RULE: Validation - Maximum radius for home services is 20KM
-      if (updated.at_home?.maxDistance) {
-        if (updated.at_home.maxDistance < 0) {
-          return c.json({ error: 'Max distance must be positive' }, 400);
-        }
-        if (updated.at_home.maxDistance > 20) {
-          return c.json({ error: 'Max distance cannot exceed 20 km (maximum allowed for home services)' }, 400);
-        }
+      // Validation: Distance must be positive
+      if (updated.at_home?.maxDistance && updated.at_home.maxDistance < 0) {
+        return c.json({ error: 'Max distance must be positive' }, 400);
       }
       
       // Validation: Max session duration reasonable
@@ -179,9 +174,8 @@ export function serviceStyleManagement(app: Hono) {
       const { staffId } = c.req.param();
       const { maxDistance, travelChargePerKm } = await c.req.json();
       
-      // ✅ BUSINESS RULE: Maximum radius for home services is 20KM
-      if (maxDistance < 0 || maxDistance > 20) {
-        return c.json({ error: 'Distance must be between 0-20 km (maximum allowed for home services)' }, 400);
+      if (maxDistance < 0 || maxDistance > 100) {
+        return c.json({ error: 'Distance must be between 0-100 km' }, 400);
       }
       
       console.log(`🎨 [STYLE] Updating home distance for staff ${staffId}: ${maxDistance}km`);

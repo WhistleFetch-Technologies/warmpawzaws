@@ -9,7 +9,6 @@ import {
   Gift, Users, Award
 } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { useLogout } from '../../hooks/useLogout';
 
 interface UserProfile {
   firstName: string;
@@ -118,7 +117,6 @@ interface UserAccountSidebarProps {
 export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustomerProfile, onViewAppointments, onViewWallet, onNavigate }: UserAccountSidebarProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [activeView, setActiveView] = useState<'menu' | 'profile' | 'bookings' | 'cart' | 'saved' | 'addresses' | 'payments' | 'notifications' | 'help'>('menu');
-  const { logout } = useLogout();
   
   // Profile states
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -867,12 +865,7 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
               ))}
 
               {/* Logout Button */}
-              <button 
-                onClick={async () => {
-                  await logout({ redirectTo: '/customer', onComplete: onClose });
-                }}
-                className="w-full flex items-center justify-between p-4 bg-white border-2 border-red-200 rounded-2xl active:scale-[0.98] active:bg-red-50 transition-all shadow-sm mt-6"
-              >
+              <button className="w-full flex items-center justify-between p-4 bg-white border-2 border-red-200 rounded-2xl active:scale-[0.98] active:bg-red-50 transition-all shadow-sm mt-6">
                 <div className="flex items-center gap-4">
                   <div className="w-14 h-14 bg-gradient-to-br from-red-100 to-red-200 rounded-2xl flex items-center justify-center">
                     <LogOut className="w-7 h-7 text-red-600" />
