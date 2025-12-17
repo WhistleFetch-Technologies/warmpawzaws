@@ -69,9 +69,10 @@ export class ApiClient {
    * Get authentication token from storage
    */
   private getAuthToken(): string | null {
-    // This should be implemented based on storage mechanism
-    // For React Native, use AsyncStorage
-    return null;
+    // Token is managed by the API client instance
+    // It should be set via setAuthToken() method
+    // For React Native, tokens are stored in AsyncStorage via AuthContext
+    return this.client.defaults.headers.common['Authorization']?.toString().replace('Bearer ', '') || null;
   }
 
   /**
@@ -86,7 +87,8 @@ export class ApiClient {
    * Set authentication token
    */
   setAuthToken(token: string): void {
-    // Store token (implement with AsyncStorage)
+    // Set token in axios headers
+    // Note: Token persistence is handled by AuthContext using AsyncStorage
     this.client.defaults.headers.common['Authorization'] = `Bearer ${token}`;
   }
 
@@ -94,6 +96,8 @@ export class ApiClient {
    * Clear authentication token
    */
   clearAuthToken(): void {
+    // Remove token from axios headers
+    // Note: Token removal from storage is handled by AuthContext
     delete this.client.defaults.headers.common['Authorization'];
   }
 

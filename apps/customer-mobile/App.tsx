@@ -9,15 +9,19 @@ import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { StatusBar } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
-import { AuthProvider } from './src/context/AuthContext';
+import { AuthProvider, useAuth } from './src/context/AuthContext';
 
-// Screens (to be implemented)
+// Screens
 import HomeScreen from './src/screens/HomeScreen';
 import SearchScreen from './src/screens/SearchScreen';
 import BookingsScreen from './src/screens/BookingsScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import ServiceDetailScreen from './src/screens/ServiceDetailScreen';
 import BookingConfirmationScreen from './src/screens/BookingConfirmationScreen';
+import LoginScreen from './src/screens/auth/LoginScreen';
+
+// Navigation
+import ProtectedRoute from './src/navigation/ProtectedRoute';
 
 // Types
 import { RootStackParamList, TabParamList } from './src/types/navigation';
@@ -61,39 +65,62 @@ function TabNavigator() {
 }
 
 // Main App Component
+function AppContent() {
+  const { isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) {
+    return null; // Loading handled by AuthProvider
+  }
+
+  return (
+    <NavigationContainer>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <Stack.Navigator
+        screenOptions={{
+          headerStyle: {
+            backgroundColor: '#FF8C42',
+          },
+          headerTintColor: '#fff',
+          headerTitleStyle: {
+            fontWeight: 'bold',
+          },
+        }}
+      >
+        {!isAuthenticated ? (
+          <Stack.Screen 
+            name="Login" 
+            component={LoginScreen}
+            options={{ headerShown: false }}
+          />
+        ) : (
+          <>
+            <Stack.Screen 
+              name="MainTabs" 
+              component={TabNavigator} 
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen 
+              name="ServiceDetail" 
+              component={ServiceDetailScreen}
+              options={{ title: 'Service Details' }}
+            />
+            <Stack.Screen 
+              name="BookingConfirmation" 
+              component={BookingConfirmationScreen}
+              options={{ title: 'Booking Confirmation' }}
+            />
+          </>
+        )}
+      </Stack.Navigator>
+    </NavigationContainer>
+  );
+}
+
+// Main App Component with Auth Provider
 export default function App() {
   return (
     <AuthProvider>
-      <NavigationContainer>
-        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-        <Stack.Navigator
-          screenOptions={{
-            headerStyle: {
-              backgroundColor: '#FF8C42',
-            },
-            headerTintColor: '#fff',
-            headerTitleStyle: {
-              fontWeight: 'bold',
-            },
-          }}
-        >
-          <Stack.Screen 
-            name="MainTabs" 
-            component={TabNavigator} 
-            options={{ headerShown: false }}
-          />
-          <Stack.Screen 
-            name="ServiceDetail" 
-            component={ServiceDetailScreen}
-            options={{ title: 'Service Details' }}
-          />
-          <Stack.Screen 
-            name="BookingConfirmation" 
-            component={BookingConfirmationScreen}
-            options={{ title: 'Booking Confirmation' }}
-          />
-        </Stack.Navigator>
-      </NavigationContainer>
+      <AppContent />
     </AuthProvider>
   );
 }
