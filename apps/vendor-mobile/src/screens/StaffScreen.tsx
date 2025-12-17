@@ -11,31 +11,52 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../types/navigation';
+import { useAuth } from '../context/AuthContext';
+import vendorService from '../services/api';
+import { handleApiError, getErrorMessage } from '../utils/errorHandler';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 
 type StaffScreenNavigationProp = StackNavigationProp<RootStackParamList, 'MainTabs'>;
 
 export default function StaffScreen() {
   const navigation = useNavigation<StaffScreenNavigationProp>();
+  const { vendor, isAuthenticated } = useAuth();
   const [loading, setLoading] = useState(true);
   const [staff, setStaff] = useState<any[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    loadStaff();
-  }, []);
+    if (isAuthenticated && vendor) {
+      loadStaff();
+    } else {
+      setLoading(false);
+    }
+  }, [isAuthenticated, vendor]);
 
   const loadStaff = async () => {
+    if (!vendor?.id) return;
+    
     try {
-      // TODO: Implement API call
+      setLoading(true);
+      setError(null);
+      // TODO: Uncomment when API is ready
+      // const response = await vendorService.getStaff(vendor.id);
+      // setStaff(response.staff || []);
+      
+      // Placeholder for now
       setStaff([]);
       setLoading(false);
-    } catch (error) {
-      console.error('Error loading staff:', error);
+    } catch (err) {
+      const apiError = handleApiError(err);
+      const errorMessage = getErrorMessage(apiError);
+      setError(errorMessage);
       setLoading(false);
+      Alert.alert('Error', errorMessage);
     }
   };
 

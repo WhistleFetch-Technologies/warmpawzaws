@@ -11,31 +11,52 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../types/navigation';
+import { useAuth } from '../context/AuthContext';
+import vendorService from '../services/api';
+import { handleApiError, getErrorMessage } from '../utils/errorHandler';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 
 type BookingsScreenNavigationProp = StackNavigationProp<RootStackParamList, 'MainTabs'>;
 
 export default function BookingsScreen() {
   const navigation = useNavigation<BookingsScreenNavigationProp>();
+  const { vendor, isAuthenticated } = useAuth();
   const [loading, setLoading] = useState(true);
   const [bookings, setBookings] = useState<any[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    loadBookings();
-  }, []);
+    if (isAuthenticated && vendor) {
+      loadBookings();
+    } else {
+      setLoading(false);
+    }
+  }, [isAuthenticated, vendor]);
 
   const loadBookings = async () => {
+    if (!vendor?.id) return;
+    
     try {
-      // TODO: Implement API call
+      setLoading(true);
+      setError(null);
+      // TODO: Uncomment when API is ready
+      // const response = await vendorService.getBookings(vendor.id);
+      // setBookings(response.bookings || []);
+      
+      // Placeholder for now
       setBookings([]);
       setLoading(false);
-    } catch (error) {
-      console.error('Error loading bookings:', error);
+    } catch (err) {
+      const apiError = handleApiError(err);
+      const errorMessage = getErrorMessage(apiError);
+      setError(errorMessage);
       setLoading(false);
+      Alert.alert('Error', errorMessage);
     }
   };
 

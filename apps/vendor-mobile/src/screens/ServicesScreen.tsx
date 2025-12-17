@@ -11,31 +11,52 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../types/navigation';
+import { useAuth } from '../context/AuthContext';
+import vendorService from '../services/api';
+import { handleApiError, getErrorMessage } from '../utils/errorHandler';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 
 type ServicesScreenNavigationProp = StackNavigationProp<RootStackParamList, 'MainTabs'>;
 
 export default function ServicesScreen() {
   const navigation = useNavigation<ServicesScreenNavigationProp>();
+  const { vendor, isAuthenticated } = useAuth();
   const [loading, setLoading] = useState(true);
   const [services, setServices] = useState<any[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    loadServices();
-  }, []);
+    if (isAuthenticated && vendor) {
+      loadServices();
+    } else {
+      setLoading(false);
+    }
+  }, [isAuthenticated, vendor]);
 
   const loadServices = async () => {
+    if (!vendor?.id) return;
+    
     try {
-      // TODO: Implement API call
+      setLoading(true);
+      setError(null);
+      // TODO: Uncomment when API is ready
+      // const response = await vendorService.getServices(vendor.id);
+      // setServices(response.services || []);
+      
+      // Placeholder for now
       setServices([]);
       setLoading(false);
-    } catch (error) {
-      console.error('Error loading services:', error);
+    } catch (err) {
+      const apiError = handleApiError(err);
+      const errorMessage = getErrorMessage(apiError);
+      setError(errorMessage);
       setLoading(false);
+      Alert.alert('Error', errorMessage);
     }
   };
 
