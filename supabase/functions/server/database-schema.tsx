@@ -53,6 +53,10 @@ export interface Session {
   token?: string;
   createdAt: string;
   expiresAt: string;
+  deviceType?: 'mobile' | 'web'; // Device type for expiry calculation
+  isMobileApp?: boolean; // True if mobile app, false if mobile web
+  supabaseAccessToken?: string; // Supabase JWT access token
+  supabaseRefreshToken?: string; // Supabase refresh token
 }
 
 export interface VendorProfile {

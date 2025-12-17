@@ -291,7 +291,15 @@ app.post("/make-server-3dd53475/admin/vendors/rate-changes/:requestId/approve", 
       console.log(`   Vendor: ${approval.vendorName}`);
       console.log(`   Now visible to customers`);
       
-      // Send notification to vendor
+      // ✅ Send notification to vendor via notification system (email, SMS, in-app)
+      const { notifyCustomServiceStatus } = await import('./notification-helpers.tsx');
+      await notifyCustomServiceStatus(kv, vendorId, requestId, {
+        serviceName: service.serviceName,
+        categoryName: service.categoryName || service.category || 'General',
+        isPackage: service.isPackage || false
+      }, 'approved');
+      
+      // Also add to vendor's in-app notification list (legacy support)
       const vendorNotificationsKey = `vendor_notifications:${vendorId}`;
       const existingNotifications = await kv.get(vendorNotificationsKey) || [];
       existingNotifications.push({
@@ -538,7 +546,16 @@ app.post("/make-server-3dd53475/admin/vendors/rate-changes/:requestId/reject", a
       console.log(`   Vendor: ${approval.vendorName}`);
       console.log(`   Reason: ${adminNote}`);
       
-      // Send notification to vendor
+      // ✅ Send notification to vendor via notification system (email, SMS, in-app)
+      const { notifyCustomServiceStatus } = await import('./notification-helpers.tsx');
+      await notifyCustomServiceStatus(kv, vendorId, requestId, {
+        serviceName: service.serviceName,
+        categoryName: service.categoryName || service.category || 'General',
+        rejectionReason: adminNote.trim(),
+        isPackage: service.isPackage || false
+      }, 'rejected');
+      
+      // Also add to vendor's in-app notification list (legacy support)
       const vendorNotificationsKey = `vendor_notifications:${vendorId}`;
       const existingNotifications = await kv.get(vendorNotificationsKey) || [];
       existingNotifications.push({

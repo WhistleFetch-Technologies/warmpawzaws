@@ -204,8 +204,11 @@ export function notificationEndpoints(app: Hono, kv: any) {
    */
   async function sendEmailNotification(notification: Notification): Promise<boolean> {
     try {
-      // Get AWS SES settings from platform settings
-      const awsSettings = await kv.get('platform:settings:aws');
+      // Get AWS SES settings from platform settings (check both paths for compatibility)
+      let awsSettings = await kv.get('platform:settings:aws');
+      if (!awsSettings) {
+        awsSettings = await kv.get('admin:settings:aws');
+      }
       
       if (!awsSettings?.ses?.enabled) {
         console.log(`📧 [EMAIL] AWS SES not enabled - skipping email to: ${notification.recipientEmail}`);
@@ -224,7 +227,7 @@ export function notificationEndpoints(app: Hono, kv: any) {
       });
 
       const command = new SendEmailCommand({
-        Source: awsSettings.sns.emailSourceAddress || 'noreply@warmpawz.com',
+        Source: awsSettings.ses.emailSourceAddress || awsSettings.emailSourceAddress || 'noreply@warmpawz.com',
         Destination: {
           ToAddresses: [notification.recipientEmail]
         },
@@ -279,8 +282,11 @@ export function notificationEndpoints(app: Hono, kv: any) {
    */
   async function sendSMSNotification(notification: Notification): Promise<boolean> {
     try {
-      // Get AWS SNS settings from platform settings
-      const awsSettings = await kv.get('platform:settings:aws');
+      // Get AWS SNS settings from platform settings (check both paths for compatibility)
+      let awsSettings = await kv.get('platform:settings:aws');
+      if (!awsSettings) {
+        awsSettings = await kv.get('admin:settings:aws');
+      }
       
       if (!awsSettings?.sns?.enabled) {
         console.log(`📱 [SMS] AWS SNS not enabled - skipping SMS to: ${notification.recipientPhone}`);

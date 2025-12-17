@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { X, Calendar, Clock, MapPin, Star, ChevronRight, User, Heart, Settings, LogOut, FileText, Package, Gift, Coins } from 'lucide-react';
 import { Button } from '../ui/button';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { useLogout } from '../../hooks/useLogout';
 
 interface Booking {
   id: string;
@@ -57,6 +58,7 @@ export function CustomerSidebar({
   const [activeTab, setActiveTab] = useState<'bookings' | 'profile' | 'settings'>('bookings');
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
+  const { logout } = useLogout();
 
   useEffect(() => {
     if (isOpen) {
@@ -320,7 +322,12 @@ export function CustomerSidebar({
                 <ChevronRight className="w-5 h-5 text-gray-400" />
               </button>
 
-              <button className="w-full flex items-center justify-between p-4 bg-white border border-red-200 rounded-xl hover:bg-red-50 transition-all">
+              <button 
+                onClick={async () => {
+                  await logout({ redirectTo: '/customer' });
+                }}
+                className="w-full flex items-center justify-between p-4 bg-white border border-red-200 rounded-xl hover:bg-red-50 transition-all"
+              >
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-gradient-to-br from-red-100 to-red-200 rounded-full flex items-center justify-center">
                     <LogOut className="w-5 h-5 text-red-600" />

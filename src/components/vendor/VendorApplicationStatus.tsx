@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Clock, CheckCircle, FileText, Mail, Phone } from 'lucide-react';
+import { Clock, CheckCircle, FileText, Mail, Phone, History, ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '../ui/button';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 
@@ -18,17 +18,35 @@ interface Application {
   clarificationNotes?: string;
 }
 
+interface HistoryEntry {
+  action: string;
+  previousStatus?: string;
+  newStatus: string;
+  actionBy: string;
+  notes?: string;
+  timestamp: string;
+}
+
 export function VendorApplicationStatus({ vendorId, onApproved, onClarificationRequested }: VendorApplicationStatusProps) {
   const [application, setApplication] = useState<Application | null>(null);
   const [loading, setLoading] = useState(true);
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
   useEffect(() => {
     loadApplicationStatus();
+    loadHistory();
     
     // Poll every 10 seconds for faster updates
-    const interval = setInterval(loadApplicationStatus, 10000);
+    const interval = setInterval(() => {
+      loadApplicationStatus();
+      if (showHistory) {
+        loadHistory();
+      }
+    }, 10000);
     return () => clearInterval(interval);
-  }, [vendorId]);
+  }, [vendorId, showHistory]);
 
   const loadApplicationStatus = async () => {
     try {
@@ -83,6 +101,27 @@ export function VendorApplicationStatus({ vendorId, onApproved, onClarificationR
     }
   };
 
+  const loadHistory = async () => {
+    try {
+      setLoadingHistory(true);
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/application/${vendorId}/history`,
+        {
+          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        setHistory(data.history || []);
+      }
+    } catch (error) {
+      console.error('Error loading history:', error);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
   const getTimeAgo = (dateString: string) => {
     const now = new Date();
     const submitted = new Date(dateString);
@@ -94,6 +133,30 @@ export function VendorApplicationStatus({ vendorId, onApproved, onClarificationR
     if (diffHours < 24) return `${diffHours}h ago`;
     const diffDays = Math.floor(diffHours / 24);
     return `${diffDays}d ago`;
+  };
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleString('en-IN', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const getStatusLabel = (status: string) => {
+    const labels: Record<string, string> = {
+      'pending_approval': 'Pending Approval',
+      'under_review': 'Under Review',
+      'approved': 'Approved',
+      'rejected': 'Rejected',
+      'more_info_required': 'More Info Required',
+      'resubmitted': 'Resubmitted',
+      'withdrawn': 'Withdrawn'
+    };
+    return labels[status] || status;
   };
 
   if (loading) {
@@ -212,6 +275,69 @@ export function VendorApplicationStatus({ vendorId, onApproved, onClarificationR
           </div>
         </div>
       </div>
+
+      {/* Status History */}
+      {history.length > 0 && (
+        <div className="bg-white rounded-2xl border border-gray-200 p-6 mb-6 shadow-sm">
+          <button
+            onClick={() => setShowHistory(!showHistory)}
+            className="w-full flex items-center justify-between mb-4"
+          >
+            <div className="flex items-center gap-3">
+              <History className="w-6 h-6 text-[#FF8C42]" />
+              <h3 className="font-semibold text-gray-900">Application History</h3>
+              <span className="text-sm text-gray-500">({history.length})</span>
+            </div>
+            {showHistory ? (
+              <ChevronUp className="w-5 h-5 text-gray-500" />
+            ) : (
+              <ChevronDown className="w-5 h-5 text-gray-500" />
+            )}
+          </button>
+
+          {showHistory && (
+            <div className="space-y-4">
+              {history.map((entry, index) => (
+                <div key={index} className="flex items-start gap-4 pb-4 border-b border-gray-100 last:border-0 last:pb-0">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
+                    entry.newStatus === 'approved' ? 'bg-green-100' :
+                    entry.newStatus === 'rejected' ? 'bg-red-100' :
+                    entry.newStatus === 'more_info_required' ? 'bg-blue-100' :
+                    'bg-gray-100'
+                  }`}>
+                    {entry.newStatus === 'approved' ? (
+                      <CheckCircle className="w-5 h-5 text-green-600" />
+                    ) : (
+                      <Clock className={`w-5 h-5 ${
+                        entry.newStatus === 'rejected' ? 'text-red-600' :
+                        entry.newStatus === 'more_info_required' ? 'text-blue-600' :
+                        'text-gray-600'
+                      }`} />
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between mb-1">
+                      <h4 className="font-medium text-gray-900">
+                        {getStatusLabel(entry.newStatus)}
+                      </h4>
+                      <span className="text-xs text-gray-500">{formatDate(entry.timestamp)}</span>
+                    </div>
+                    {entry.previousStatus && (
+                      <p className="text-xs text-gray-500 mb-1">
+                        Changed from {getStatusLabel(entry.previousStatus)}
+                      </p>
+                    )}
+                    {entry.notes && (
+                      <p className="text-sm text-gray-600 mt-1">{entry.notes}</p>
+                    )}
+                    <p className="text-xs text-gray-400 mt-1">By: {entry.actionBy}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Support Options */}
       <div className="space-y-3">

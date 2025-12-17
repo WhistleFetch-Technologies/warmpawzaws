@@ -7,7 +7,7 @@ import { supabase } from '../../utils/supabase/client';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { ChevronLeft, CheckCircle2 } from 'lucide-react';
 import logoImage from 'figma:asset/da6636b92da744b3db8eed5288ca6da9ab889afe.png';
-import { storeSession } from '../../utils/session-manager'; // ✅ SECURITY FIX
+import { storeSession, getLoginDeviceInfo } from '../../utils/session-manager'; // ✅ SECURITY FIX
 
 interface VendorAuthProps {
   onAuthSuccess: (session: any) => void;
@@ -185,6 +185,11 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
       
       // Not a staff member, proceed with regular vendor login
       console.log('📞 [VendorAuth] Not a staff member, proceeding with vendor login...');
+      
+      // ✅ NEW: Get device info for proper token expiry
+      const deviceInfo = getLoginDeviceInfo();
+      console.log('📱 [VendorAuth] Device info:', deviceInfo);
+      
       return safeFetch(`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/auth/login`, {
         method: 'POST',
         headers: {
@@ -193,28 +198,50 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
         },
         body: JSON.stringify({
           phone: phoneNumber,
-          portal: 'vendor'
+          portal: 'vendor',
+          deviceType: deviceInfo.deviceType,
+          isMobileApp: deviceInfo.isMobileApp
         })
       })
       .then(({ ok, data }) => {
         if (ok && data.success && data.session) {
           console.log('✅ [VendorAuth] Vendor login successful!');
           
-          // ✅ SECURITY FIX: Store session with access token
-          storeSession({
-            phone: phoneNumber,
+          // ✅ SECURITY FIX: Store session with all tokens
+          const sessionData = {
+            sessionId: data.session.sessionId,
+            userId: data.session.userId,
+            phone: data.session.phone,
+            role: data.session.role,
             accessToken: data.session.accessToken,
-            user: data.user,
-            profile: data.profile,
-            vendorId: data.profile?.id || data.profile?.vendorId
-          });
-          console.log('🔐 [VendorAuth] Session stored with access token');
+            supabaseAccessToken: data.supabaseTokens?.accessToken,
+            supabaseRefreshToken: data.supabaseTokens?.refreshToken,
+            expiresAt: data.session.expiresAt || data.supabaseTokens?.expiresAt,
+            deviceType: data.session.deviceType,
+            isMobileApp: data.session.isMobileApp
+          };
+          
+          storeSession(sessionData);
+          console.log('🔐 [VendorAuth] Session stored with all tokens');
+          
+          // Set Supabase session if tokens available
+          if (data.supabaseTokens?.accessToken && data.supabaseTokens?.refreshToken) {
+            supabase.auth.setSession({
+              access_token: data.supabaseTokens.accessToken,
+              refresh_token: data.supabaseTokens.refreshToken
+            }).then(() => {
+              console.log('✅ [VendorAuth] Supabase session set');
+            }).catch(err => {
+              console.error('⚠️ [VendorAuth] Error setting Supabase session:', err);
+            });
+          }
           
           onAuthSuccess({
             ...data.session,
             user: data.user,
             profile: data.profile,
-            state: data.state
+            state: data.state,
+            supabaseTokens: data.supabaseTokens
           });
         } else {
           throw new Error(data.error || 'Login failed');

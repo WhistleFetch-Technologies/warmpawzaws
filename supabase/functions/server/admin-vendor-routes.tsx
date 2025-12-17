@@ -1648,6 +1648,10 @@ app.post("/make-server-3dd53475/:vendorId/compliance/flag", async (c) => {
     
     await kv.set(`vendor:${vendorId}`, vendor);
     
+    // ✅ Send notification to vendor
+    const { notifyVendorApplicationStatus } = await import('./notification-helpers.tsx');
+    await notifyVendorApplicationStatus(kv, vendorId, vendor, 'approved', {});
+    
     return c.json({
       success: true,
       message: 'Compliance flag added',
