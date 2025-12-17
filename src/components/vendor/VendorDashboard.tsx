@@ -48,7 +48,6 @@ import { AppointmentDetailModal } from './AppointmentDetailModal';
 import { VendorAnalytics } from './VendorAnalytics';
 import { VendorPaymentSettings } from './VendorPaymentSettings';
 import { AIChatBot } from '../customer/AIChatBot';
-import { LogoutButton } from '../common/LogoutButton';
 
 interface VendorDashboardProps {
   vendorId: string;
@@ -454,15 +453,6 @@ export function VendorDashboard({
                   <div className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
                 )}
               </button>
-              
-              {/* ✅ NEW: Logout Button */}
-              <LogoutButton 
-                variant="ghost" 
-                size="icon"
-                className="w-5 h-5 text-gray-400 hover:text-red-500"
-                showIcon={false}
-                redirectTo="/vendor"
-              />
             </div>
           </div>
 

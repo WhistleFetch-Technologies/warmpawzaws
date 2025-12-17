@@ -258,86 +258,28 @@ export function registerVendorServiceEndpoints(app: Hono) {
       
       await kv.set(`service:${serviceId}`, updatedService);
       
-      // ✅ INTEGRATION: Auto-sync to staff for solo providers AND multi-staff centers
+      // ✅ INTEGRATION: Auto-sync to staff for solo providers
       let autoSynced = false;
       const vendor = await kv.get(`vendor:${service.vendorId}`);
-      
-      // Sync to all staff members (both solo and multi-staff)
-      const staffRecords = await kv.get(`vendor:${service.vendorId}:staff`) || [];
-      
-      if (staffRecords.length > 0) {
-        // Get all updated published services from vendor
-        const serviceStyles = ['at_home', 'at_center', 'tele'];
-        const allVendorServices: any[] = [];
-        
-        for (const style of serviceStyles) {
-          const vendorServicesKey = `vendor_services:${service.vendorId}:${style}`;
-          const vendorServicesData = await kv.get(vendorServicesKey);
-          
-          if (vendorServicesData && vendorServicesData.services) {
-            const publishedServices = vendorServicesData.services.filter(
-              (s: any) => s.publishStatus === 'published' && s.isEnabled === true
-            );
-            allVendorServices.push(...publishedServices);
-          }
-        }
-        
-        // Sync to each staff member
-        for (const staffId of staffRecords) {
+      if (vendor?.isSoloProvider) {
+        const staffRecords = await kv.get(`vendor:${service.vendorId}:staff`);
+        if (staffRecords && staffRecords.length > 0) {
+          const staffId = staffRecords[0];
           const staff = await kv.get(`staff:${staffId}`);
           if (staff) {
-            // Update or create staff service records
-            const existingStaffServices = await kv.getByPrefix(`staff:${staffId}:service:`) || [];
-            const existingServiceIds = new Set(
-              existingStaffServices.map((s: any) => s.serviceId).filter(Boolean)
-            );
-            
-            for (const vendorService of allVendorServices) {
-              if (existingServiceIds.has(vendorService.serviceId)) {
-                // Update existing staff service
-                const existingService = existingStaffServices.find(
-                  (s: any) => s.serviceId === vendorService.serviceId
-                );
-                if (existingService) {
-                  // Update service details but preserve isActive status
-                  existingService.serviceName = vendorService.serviceName;
-                  existingService.price = vendorService.customPrice || vendorService.price;
-                  existingService.duration = vendorService.customDuration || vendorService.duration;
-                  existingService.description = vendorService.description || vendorService.customDescription;
-                  existingService.updatedAt = new Date().toISOString();
-                  
-                  const serviceKey = existingService.id 
-                    ? `staff:${staffId}:service:${existingService.id}` 
-                    : `staff:${staffId}:service:${vendorService.serviceId}`;
-                  await kv.set(serviceKey, existingService);
-                }
-              } else {
-                // Create new staff service record
-                const staffServiceId = `staffsvc_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
-                const staffService = {
-                  id: staffServiceId,
-                  staffId,
-                  serviceId: vendorService.serviceId,
-                  serviceName: vendorService.serviceName,
-                  category: vendorService.categoryName,
-                  categoryName: vendorService.categoryName,
-                  price: vendorService.customPrice || vendorService.price,
-                  duration: vendorService.customDuration || vendorService.duration,
-                  description: vendorService.description || vendorService.customDescription,
-                  serviceStyle: vendorService.serviceStyle,
-                  isCustom: false,
-                  clinicName: vendor.businessName || vendor.fullName,
-                  vendorId: service.vendorId,
-                  isActive: true, // Default to enabled
-                  createdAt: new Date().toISOString(),
-                  updatedAt: new Date().toISOString(),
-                  syncedAt: new Date().toISOString()
-                };
-                
-                await kv.set(`staff:${staffId}:service:${staffServiceId}`, staffService);
+            // Get all updated services
+            const allServiceIds = await kv.get(`vendor:${service.vendorId}:services`) || [];
+            const allServices = [];
+            for (const sId of allServiceIds) {
+              const svc = await kv.get(`service:${sId}`);
+              if (svc && svc.isActive !== false) {
+                allServices.push(svc);
               }
             }
             
+            staff.services = allServices;
+            staff.updatedAt = new Date().toISOString();
+            await kv.set(`staff:${staffId}`, staff);
             autoSynced = true;
             console.log(`   ✅ Auto-synced updated services to staff: ${staffId}`);
           }

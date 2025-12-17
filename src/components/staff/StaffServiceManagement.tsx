@@ -54,9 +54,6 @@ export function StaffServiceManagement({ staff, onBack }: StaffServiceManagement
   const [selectedServiceStyle, setSelectedServiceStyle] = useState<'at_home' | 'at_center' | 'tele'>('at_center');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedClinicServices, setSelectedClinicServices] = useState<any[]>([]);
-  const [editingService, setEditingService] = useState<Service | null>(null);
-  const [showEditDialog, setShowEditDialog] = useState(false);
-  const [deletingService, setDeletingService] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
@@ -264,47 +261,15 @@ export function StaffServiceManagement({ staff, onBack }: StaffServiceManagement
                   )}
                 </div>
                 <div className="flex gap-2">
-                  {service.isCustom && (
-                    <button
-                      onClick={() => {
-                        setEditingService(service);
-                        setShowEditDialog(true);
-                      }}
-                      className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                    >
-                      <Edit className="w-4 h-4 text-gray-600" />
-                    </button>
-                  )}
                   <button
-                    onClick={async () => {
-                      if (confirm(`Are you sure you want to delete "${service.serviceName}"?`)) {
-                        setDeletingService(service.id);
-                        try {
-                          const response = await fetch(
-                            `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/${staff.id}/services/${service.serviceId}`,
-                            {
-                              method: 'DELETE',
-                              headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-                            }
-                          );
-                          
-                          if (response.ok) {
-                            toast.success('Service deleted successfully');
-                            await loadData();
-                          } else {
-                            const error = await response.json();
-                            toast.error(error.error || 'Failed to delete service');
-                          }
-                        } catch (error) {
-                          console.error('Error deleting service:', error);
-                          toast.error('Failed to delete service');
-                        } finally {
-                          setDeletingService(null);
-                        }
-                      }
-                    }}
-                    disabled={deletingService === service.id}
-                    className="p-2 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+                    onClick={() => {/* TODO: Edit service */}}
+                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                  >
+                    <Edit className="w-4 h-4 text-gray-600" />
+                  </button>
+                  <button
+                    onClick={() => {/* TODO: Delete service */}}
+                    className="p-2 hover:bg-red-50 rounded-lg transition-colors"
                   >
                     <Trash2 className="w-4 h-4 text-red-500" />
                   </button>
@@ -578,126 +543,6 @@ export function StaffServiceManagement({ staff, onBack }: StaffServiceManagement
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Edit Service Dialog */}
-      {showEditDialog && editingService && (
-        <Dialog open={true} onOpenChange={() => {
-          setShowEditDialog(false);
-          setEditingService(null);
-        }}>
-          <DialogContent className="max-w-[400px]">
-            <DialogHeader>
-              <DialogTitle>Edit Service</DialogTitle>
-              <DialogDescription>
-                Update your custom service details
-              </DialogDescription>
-            </DialogHeader>
-            <form
-              onSubmit={async (e) => {
-                e.preventDefault();
-                const formData = new FormData(e.currentTarget);
-                const updates = {
-                  serviceName: formData.get('serviceName') as string,
-                  category: formData.get('category') as string,
-                  price: parseFloat(formData.get('price') as string),
-                  duration: parseInt(formData.get('duration') as string),
-                  description: formData.get('description') as string
-                };
-
-                try {
-                  const response = await fetch(
-                    `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/${staff.id}/services/${editingService.serviceId}`,
-                    {
-                      method: 'PUT',
-                      headers: {
-                        'Authorization': `Bearer ${publicAnonKey}`,
-                        'Content-Type': 'application/json'
-                      },
-                      body: JSON.stringify(updates)
-                    }
-                  );
-
-                  if (response.ok) {
-                    toast.success('Service updated successfully');
-                    setShowEditDialog(false);
-                    setEditingService(null);
-                    await loadData();
-                  } else {
-                    const error = await response.json();
-                    toast.error(error.error || 'Failed to update service');
-                  }
-                } catch (error) {
-                  console.error('Error updating service:', error);
-                  toast.error('Failed to update service');
-                }
-              }}
-              className="space-y-4"
-            >
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Service Name</label>
-                <Input
-                  name="serviceName"
-                  defaultValue={editingService.serviceName}
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
-                <Input
-                  name="category"
-                  defaultValue={editingService.category}
-                  required
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Price (₹)</label>
-                  <Input
-                    name="price"
-                    type="number"
-                    step="0.01"
-                    defaultValue={editingService.price}
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Duration (min)</label>
-                  <Input
-                    name="duration"
-                    type="number"
-                    defaultValue={editingService.duration}
-                    required
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                <textarea
-                  name="description"
-                  defaultValue={editingService.description || ''}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
-                  rows={3}
-                />
-              </div>
-              <DialogFooter>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    setShowEditDialog(false);
-                    setEditingService(null);
-                  }}
-                >
-                  Cancel
-                </Button>
-                <Button type="submit" className="bg-[#FF8C42] hover:bg-[#ff7a28] text-white">
-                  Update Service
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
-      )}
 
       {/* Add Location Modal - TODO: Implement */}
       {showAddLocation && (

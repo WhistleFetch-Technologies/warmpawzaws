@@ -23,10 +23,6 @@ import { registerDynamicOnboarding } from './dynamic-onboarding-management.tsx';
 import { registerVendorServiceEndpoints } from './vendor-services-endpoints.tsx';
 import { registerVendorCatalogAPIV2 } from './vendor-catalog-api-v2.tsx';
 import { customServiceEndpoints } from './custom-service-endpoints.tsx';
-import { staffServiceEndpoints } from './staff-service-endpoints.tsx';
-import { staffDiscoveryEndpoints } from './staff-discovery-endpoints.tsx';
-import staffAuthEndpoints from './staff-auth-endpoints.tsx';
-import staffCrudEndpoints from './staff-crud-endpoints.tsx';
 import { vendorScheduleV2Endpoints } from './vendor-schedule-v2.tsx';
 import { registerAdminVendorRoutes } from './admin-vendor-routes.tsx';
 import { adminVendorEndpoints } from './admin-vendor-endpoints.tsx';
@@ -63,16 +59,6 @@ import { registerUniversalServiceDiscovery } from './universal-service-discovery
 import { registerUniversalOTPSystem } from './universal-otp-system.tsx';
 import { registerHomeServiceBookingFlow } from './home-service-booking-flow.tsx';
 import { registerBookingLifecycleManagement } from './booking-lifecycle-management.tsx';
-import { subscriptionPackageSchedulingEndpoints } from './subscription-package-scheduling.tsx';
-import { radarServiceDiscoveryEndpoints } from './radar-service-discovery.tsx';
-import { universalGPSTrackingEndpoints } from './universal-gps-tracking.tsx';
-import { previousProvidersServiceEndpoints } from './previous-providers-service.tsx';
-import { problemFirstSearchEndpoints } from './problem-first-search.tsx';
-import { instantTeleBookingEndpoints } from './instant-tele-booking.tsx';
-import { centerBookingSpecializedServicesEndpoints } from './center-booking-specialized-services.tsx';
-import { roleBasedChatIntegrationEndpoints } from './role-based-chat-integration.tsx';
-import { completeNotificationSystemEndpoints } from './complete-notification-system.tsx';
-import { petProfilePublishingEndpoints } from './pet-profile-publishing.tsx';
 import { registerSmsOtpService } from './sms-otp-service.tsx';
 import { registerRazorpayRefundProcessor } from './razorpay-refund-processor.tsx';
 import { registerGooglePlacesService } from './google-places-service.tsx';
@@ -899,28 +885,16 @@ registerP0Features(app);
 
 // ✅ CRITICAL: Staff service and discovery endpoints
 // Staff Service Endpoints - requires both app and kv parameters
-console.log('✅ Registering staff service endpoints...');
-staffServiceEndpoints(app, kv);
+// COMMENTED OUT: staffServiceEndpoints is not imported/defined
+// console.log('✅ Registering staff service endpoints...');
+// staffServiceEndpoints(app, kv);
 
-// Staff Discovery Endpoints
-console.log('✅ Registering staff discovery endpoints...');
-staffDiscoveryEndpoints(app);
-
-// Staff Auth Endpoints
-if (staffAuthEndpoints && typeof staffAuthEndpoints === 'object') {
-  console.log('✅ Registering staff auth endpoints...');
-  app.route('/make-server-3dd53475', staffAuthEndpoints);
-} else {
-  console.warn('⚠️ Staff Auth Endpoints module undefined, skipping');
-}
-
-// Staff CRUD Endpoints
-if (staffCrudEndpoints && typeof staffCrudEndpoints === 'object') {
-  console.log('✅ Registering staff CRUD endpoints...');
-  app.route('/make-server-3dd53475', staffCrudEndpoints);
-} else {
-  console.warn('⚠️ Staff CRUD Endpoints module undefined, skipping');
-}
+// if (staffDiscoveryEndpoints && typeof staffDiscoveryEndpoints === 'object') {
+//   console.log('✅ Registering staff discovery endpoints...');
+//   app.route('/make-server-3dd53475', staffDiscoveryEndpoints);
+// } else {
+//   console.warn('⚠️ Staff Discovery Endpoints module undefined, skipping');
+// }
 
 // if (universalStaffSearch && typeof universalStaffSearch === 'object') {
 //   console.log('✅ Registering universal staff search...');
@@ -1215,38 +1189,6 @@ if (homeServicesEnhanced && typeof homeServicesEnhanced === 'object') {
 } else {
   console.warn('⚠️ Home Services Enhanced Endpoints module undefined, skipping');
 }
-
-// ✅ NEW: Critical Gap Fixes - Production Grade Implementations
-console.log('✅ Registering Subscription Package Scheduling Endpoints...');
-subscriptionPackageSchedulingEndpoints(app);
-
-console.log('✅ Registering Radar Service Discovery Endpoints...');
-radarServiceDiscoveryEndpoints(app);
-
-console.log('✅ Registering Universal GPS Tracking Endpoints...');
-universalGPSTrackingEndpoints(app);
-
-console.log('✅ Registering Previous Providers Service Endpoints...');
-previousProvidersServiceEndpoints(app);
-
-console.log('✅ Registering Problem-First Search Endpoints...');
-problemFirstSearchEndpoints(app);
-
-console.log('✅ Registering Instant Tele Booking Endpoints...');
-instantTeleBookingEndpoints(app);
-
-// ✅ NEW: Phase 2 & 3 Endpoints - Complete Integration
-console.log('✅ Registering Center Booking with Specialized Services Endpoints...');
-centerBookingSpecializedServicesEndpoints(app);
-
-console.log('✅ Registering Role-Based Chat Integration Endpoints...');
-roleBasedChatIntegrationEndpoints(app);
-
-console.log('✅ Registering Complete Notification System Endpoints...');
-completeNotificationSystemEndpoints(app);
-
-console.log('✅ Registering Pet Profile Publishing Endpoints...');
-petProfilePublishingEndpoints(app);
 
 // ✅ NEW: Integrated Services Complete Endpoints
 if (integratedServicesComplete && typeof integratedServicesComplete === 'object') {

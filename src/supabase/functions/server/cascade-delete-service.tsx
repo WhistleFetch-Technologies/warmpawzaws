@@ -110,59 +110,28 @@ export async function cascadeDeleteVendorService(
     // 4. Delete all staff service assignments
     console.log(`   🔄 Removing staff service assignments...`);
     
-    // Get all staff for this vendor
-    const staffIds = await kv.get(`vendor:${vendorId}:staff`) || [];
+    const allStaffServices = await kv.getByPrefix('staff:');
     let staffServicesDeleted = 0;
 
-    // Remove from staff:${staffId}:service: prefix
-    const allStaffServices = await kv.getByPrefix(`staff:`);
-    const staffServiceKeys = new Set<string>();
-    
     for (const staffData of allStaffServices) {
-      if (staffData && (staffData.serviceId === serviceId || staffData.id?.includes(serviceId))) {
-        const staffId = staffData.staffId;
-        if (staffId) {
-          // Find the exact key
-          const serviceKey = staffData.id 
-            ? `staff:${staffId}:service:${staffData.id}` 
-            : `staff:${staffId}:service:${serviceId}`;
-          staffServiceKeys.add(serviceKey);
-        }
-      }
-    }
-    
-    // Also check each staff member's services array
-    for (const staffId of staffIds) {
-      try {
-        const staff = await kv.get(`staff:${staffId}`);
-        if (staff && staff.services && Array.isArray(staff.services)) {
-          const originalLength = staff.services.length;
-          staff.services = staff.services.filter((s: any) => 
-            s.serviceId !== serviceId && s.id !== serviceId
-          );
+      // Check if this is a staff service assignment record
+      if (staffData.serviceId === serviceId) {
+        try {
+          const staffId = staffData.staffId;
           
-          if (staff.services.length !== originalLength) {
-            staff.updatedAt = new Date().toISOString();
-            await kv.set(`staff:${staffId}`, staff);
-            console.log(`      ✅ Removed service from staff.services array: ${staffId}`);
-          }
+          // Delete staff:${staffId}:service:${serviceId}
+          await kv.del(`staff:${staffId}:service:${serviceId}`);
+          
+          // Delete staff:service:${serviceId} (if exists)
+          await kv.del(`staff:service:${serviceId}`);
+          
+          deleted.push(`staff:${staffId}:service:${serviceId}`);
+          staffServicesDeleted++;
+          
+          console.log(`      ✅ Removed service from staff: ${staffId}`);
+        } catch (error) {
+          console.error(`      ❌ Failed to remove staff service:`, error);
         }
-        
-        // Delete from prefix storage
-        const prefixServices = await kv.getByPrefix(`staff:${staffId}:service:`) || [];
-        for (const svc of prefixServices) {
-          if (svc.serviceId === serviceId || svc.id === serviceId) {
-            const serviceKey = svc.id 
-              ? `staff:${staffId}:service:${svc.id}` 
-              : `staff:${staffId}:service:${serviceId}`;
-            await kv.del(serviceKey);
-            deleted.push(serviceKey);
-            staffServicesDeleted++;
-            console.log(`      ✅ Removed service from staff prefix: ${staffId}`);
-          }
-        }
-      } catch (error) {
-        console.error(`      ❌ Failed to remove staff service for ${staffId}:`, error);
       }
     }
 

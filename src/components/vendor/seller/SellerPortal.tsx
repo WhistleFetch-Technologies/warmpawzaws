@@ -14,7 +14,6 @@ import { PromotionsManagement } from './PromotionsManagement';
 import { BannerManagement } from './BannerManagement';
 import { SellerAnalytics } from './SellerAnalytics';
 import { SellerSettings } from './SellerSettings';
-import { useLogout } from '../../../hooks/useLogout';
 
 interface SellerPortalProps {
   vendorData: any;
@@ -37,14 +36,9 @@ export function SellerPortal({ vendorData, onLogout }: SellerPortalProps) {
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [notifications, setNotifications] = useState(0);
-  const { logout } = useLogout();
 
   const sellerId = vendorData.id;
   const sellerName = vendorData.fullName || vendorData.businessName || 'Seller';
-  
-  const handleLogout = async () => {
-    await logout({ redirectTo: '/vendor', onComplete: onLogout });
-  };
 
   const navigationItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -129,7 +123,7 @@ export function SellerPortal({ vendorData, onLogout }: SellerPortalProps) {
                 </div>
               </div>
               <button
-                onClick={handleLogout}
+                onClick={onLogout}
                 className="w-full flex items-center gap-2 px-3 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
               >
                 <LogOut className="w-4 h-4" />
@@ -138,7 +132,7 @@ export function SellerPortal({ vendorData, onLogout }: SellerPortalProps) {
             </div>
           ) : (
             <button
-              onClick={handleLogout}
+              onClick={onLogout}
               className="w-full p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
               title="Logout"
             >
