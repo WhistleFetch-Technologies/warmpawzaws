@@ -45,11 +45,14 @@ export default function UserProfileScreen({
   journeyStage,
   onComplete,
 }: UserProfileScreenProps) {
+  // Get phone from session with null-checking
+  const phone = session?.phone || session?.user?.phone || '';
+  
   const [profile, setProfile] = useState<UserProfile>({
     firstName: '',
     lastName: '',
     email: '',
-    phone: session.phone || '',
+    phone: phone,
     address: '',
     pincode: '',
     photo: '',
@@ -110,7 +113,7 @@ export default function UserProfileScreen({
             Authorization: `Bearer ${publicAnonKey}`,
           },
           body: JSON.stringify({
-            phone: session.phone,
+            phone: phone || session?.phone || session?.user?.phone || '',
             profile: profile,
             journeyType: journeyStage,
           }),

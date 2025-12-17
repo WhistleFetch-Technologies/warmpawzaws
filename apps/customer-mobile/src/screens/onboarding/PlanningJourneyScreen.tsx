@@ -92,8 +92,13 @@ export default function PlanningJourneyScreen({
   };
 
   const saveQuestionnaire = async (questionnaireData: QuestionnaireData) => {
+    if (!session?.phone && !session?.user?.phone) {
+      throw new Error('Phone number is required. Please log in again.');
+    }
+
     setLoading(true);
     try {
+      const phone = session?.phone || session?.user?.phone || '';
       const response = await fetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/onboarding`,
         {
@@ -103,7 +108,7 @@ export default function PlanningJourneyScreen({
             Authorization: `Bearer ${publicAnonKey}`,
           },
           body: JSON.stringify({
-            phone: session.phone,
+            phone: phone,
             type: 'planning',
             data: questionnaireData,
           }),
