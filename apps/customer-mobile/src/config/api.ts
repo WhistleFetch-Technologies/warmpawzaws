@@ -3,17 +3,16 @@
  */
 
 // Get from environment or use default
+// For React Native, use react-native-config or direct values
+// For now, using direct values - replace with actual keys
 export const API_BASE_URL = 
-  process.env.API_BASE_URL || 
   'https://vpvpbdwtyugbknrntkho.supabase.co/functions/v1/make-server-3dd53475';
 
 export const SUPABASE_URL = 
-  process.env.SUPABASE_URL || 
   'https://vpvpbdwtyugbknrntkho.supabase.co';
 
 export const SUPABASE_ANON_KEY = 
-  process.env.SUPABASE_ANON_KEY || 
-  'your-anon-key-here';
+  'your-anon-key-here'; // TODO: Replace with actual anon key
 
 // API Endpoints
 export const API_ENDPOINTS = {

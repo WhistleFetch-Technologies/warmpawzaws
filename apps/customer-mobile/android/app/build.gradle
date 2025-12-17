@@ -76,7 +76,7 @@ android {
 
     namespace "com.warmpawzcustomer"
     defaultConfig {
-        applicationId "com.warmpawzcustomer"
+        applicationId "com.warmpawz.customer"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

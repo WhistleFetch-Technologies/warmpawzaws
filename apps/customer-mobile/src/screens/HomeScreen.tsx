@@ -16,7 +16,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../types/navigation';
-import { API_BASE_URL } from '../config/api';
+import customerService from '../services/api';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 
 type HomeScreenNavigationProp = StackNavigationProp<RootStackParamList, 'MainTabs'>;
@@ -32,12 +32,12 @@ export default function HomeScreen() {
 
   const loadFeaturedServices = async () => {
     try {
-      // TODO: Implement API call to fetch featured services
-      // const response = await fetch(`${API_BASE_URL}/customer/featured-services`);
-      // const data = await response.json();
-      // setFeaturedServices(data.services);
+      setLoading(true);
+      // TODO: Uncomment when API is ready
+      // const response = await customerService.getFeaturedServices();
+      // setFeaturedServices(response.services || []);
       
-      // Placeholder data
+      // Placeholder data for now
       setFeaturedServices([]);
       setLoading(false);
     } catch (error) {
@@ -195,4 +195,3 @@ const styles = StyleSheet.create({
     color: '#999',
   },
 });
-
