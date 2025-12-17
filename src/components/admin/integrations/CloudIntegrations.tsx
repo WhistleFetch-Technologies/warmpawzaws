@@ -6,7 +6,7 @@ import { Button } from '../../ui/button';
 import { Switch } from '../../ui/switch';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../../ui/tabs';
 import { useAdminIntegrations } from '../../../hooks/useAdminIntegrations';
-import { Cloud, Database, MessageSquare, Search, Map, Loader2, CheckCircle2, AlertCircle, Wifi, Key, Shield, Video, Bot, Brain, Radio, Globe, Server, Zap, Edit3, Save, X, Lock } from 'lucide-react';
+import { Cloud, Database, MessageSquare, Search, Map, Loader2, CheckCircle2, AlertCircle, Wifi, Key, Shield, Video, Bot, Brain, Radio, Globe, Server, Zap, Edit3, Save, X, Lock, Mail } from 'lucide-react';
 import { Badge } from '../../ui/badge';
 import { toast } from 'sonner@2.0.3';
 import { Alert, AlertDescription } from '../../ui/alert';
@@ -18,7 +18,8 @@ export function CloudIntegrations() {
     apiGateway: { enabled: false, endpoint: '', apiKey: '' },
     s3: { enabled: false, bucket: '', region: '' },
     sqs: { enabled: false, queueUrl: '', region: '' },
-    sns: { enabled: false, topicArn: '', region: '' },
+    sns: { enabled: false, topicArn: '', region: '', senderId: 'WARMP-VX', businessListing: 'WARMP-VX' },
+    ses: { enabled: false, region: 'ap-south-1', emailSourceAddress: 'noreply@warmpawz.com' },
     chime: { enabled: false, region: '' },
     bedrock: { enabled: false, region: '', bearerToken: '' },
     es: { enabled: false, endpoint: '', region: '' }
@@ -454,7 +455,7 @@ export function CloudIntegrations() {
                            <Wifi className="w-5 h-5 text-pink-600" />
                            <div>
                              <h3 className="font-semibold text-pink-900">SNS Notifications</h3>
-                             <p className="text-sm text-pink-700">OTP and push notifications.</p>
+                             <p className="text-sm text-pink-700">OTP and SMS notifications.</p>
                            </div>
                         </div>
                         <Switch 
@@ -471,6 +472,49 @@ export function CloudIntegrations() {
                           <div className="space-y-2">
                             <Label>Region</Label>
                             <Input value={aws.sns?.region || ''} onChange={e => setAws({...aws, sns: {...aws.sns, region: e.target.value}})} placeholder="ap-south-1" />
+                          </div>
+                          <div className="space-y-2 col-span-2">
+                            <Label>Sender ID / Business Listing</Label>
+                            <Input 
+                              value={aws.sns?.senderId || aws.sns?.businessListing || 'WARMP-VX'} 
+                              onChange={e => setAws({...aws, sns: {...aws.sns, senderId: e.target.value, businessListing: e.target.value}})} 
+                              placeholder="WARMP-VX" 
+                            />
+                            <p className="text-xs text-muted-foreground">SMS sender ID (e.g., WARMP-VX, WARMP-SX, WARMP-NX). Must be registered in AWS SNS.</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* SES */}
+                    <div className="space-y-4 pt-4 border-t">
+                      <div className="flex items-center justify-between p-4 bg-blue-50 rounded-lg border border-blue-100">
+                        <div className="flex items-center gap-3">
+                           <Mail className="w-5 h-5 text-blue-600" />
+                           <div>
+                             <h3 className="font-semibold text-blue-900">SES Email</h3>
+                             <p className="text-sm text-blue-700">Email notifications and transactional emails.</p>
+                           </div>
+                        </div>
+                        <Switch 
+                          checked={aws.ses?.enabled || false} 
+                          onCheckedChange={(c) => setAws({...aws, ses: {...aws.ses, enabled: c}})} 
+                        />
+                      </div>
+                      {aws.ses?.enabled && (
+                        <div className="grid grid-cols-2 gap-4 pl-4 border-l-2 border-blue-100">
+                          <div className="space-y-2">
+                            <Label>Region</Label>
+                            <Input value={aws.ses?.region || ''} onChange={e => setAws({...aws, ses: {...aws.ses, region: e.target.value}})} placeholder="ap-south-1" />
+                          </div>
+                          <div className="space-y-2 col-span-2">
+                            <Label>Email Source Address</Label>
+                            <Input 
+                              value={aws.ses?.emailSourceAddress || 'noreply@warmpawz.com'} 
+                              onChange={e => setAws({...aws, ses: {...aws.ses, emailSourceAddress: e.target.value}})} 
+                              placeholder="noreply@warmpawz.com" 
+                            />
+                            <p className="text-xs text-muted-foreground">Verified email address in AWS SES. Must be verified before sending.</p>
                           </div>
                         </div>
                       )}
