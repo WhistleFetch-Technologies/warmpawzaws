@@ -26,7 +26,7 @@ interface AuthContextType {
   isLoading: boolean;
   login: (vendorData: Vendor, token: string) => Promise<void>;
   logout: () => Promise<void>;
-  updateVendor: (vendorData: Partial<Vendor>) => void;
+  updateVendor: (vendorData: Partial<Vendor>) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -89,11 +89,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const updateVendor = (vendorData: Partial<Vendor>) => {
+  const updateVendor = async (vendorData: Partial<Vendor>) => {
     if (vendor) {
-      const updatedVendor = { ...vendor, ...vendorData };
-      setVendor(updatedVendor);
-      AsyncStorage.setItem(VENDOR_DATA_KEY, JSON.stringify(updatedVendor));
+      try {
+        const updatedVendor = { ...vendor, ...vendorData };
+        setVendor(updatedVendor);
+        await AsyncStorage.setItem(VENDOR_DATA_KEY, JSON.stringify(updatedVendor));
+      } catch (error) {
+        console.error('Error updating vendor data:', error);
+        // Revert state change on storage failure
+        setVendor(vendor);
+        throw error;
+      }
     }
   };
 
