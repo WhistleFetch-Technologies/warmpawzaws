@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { CustomerDashboard } from './customer/CustomerDashboard';
 import { CustomerAuth } from './customer/CustomerAuth';
 import { CustomerOnboarding } from './customer/CustomerOnboarding';
 import { CustomerPlanningJourney } from './customer/CustomerPlanningJourney';
@@ -152,5 +151,10 @@ export function CustomerApp() {
     );
   }
 
-  return <CustomerDashboard session={session} journeyStage={journeyStage} />;
+  // Fallback: redirect to home
+  return (
+    <CartProvider>
+      <CustomerHomeWrapper phone={session.phone} onNavigate={handleNavigate} />
+    </CartProvider>
+  );
 }
