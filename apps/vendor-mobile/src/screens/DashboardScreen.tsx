@@ -11,17 +11,21 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../types/navigation';
+import { useAuth } from '../context/AuthContext';
 import vendorService from '../services/api';
+import { handleApiError, getErrorMessage } from '../utils/errorHandler';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 
 type DashboardScreenNavigationProp = StackNavigationProp<RootStackParamList, 'MainTabs'>;
 
 export default function DashboardScreen() {
   const navigation = useNavigation<DashboardScreenNavigationProp>();
+  const { vendor, isAuthenticated } = useAuth();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     todayBookings: 0,
@@ -29,25 +33,33 @@ export default function DashboardScreen() {
     totalRevenue: 0,
     activeServices: 0,
   });
-  const [vendorId, setVendorId] = useState<string>(''); // TODO: Get from auth context
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (vendorId) {
+    if (isAuthenticated && vendor) {
       loadDashboardData();
+    } else {
+      setLoading(false);
     }
-  }, [vendorId]);
+  }, [isAuthenticated, vendor]);
 
   const loadDashboardData = async () => {
+    if (!vendor?.id) return;
+    
     try {
       setLoading(true);
-      // TODO: Uncomment when API is ready and vendorId is available
-      // const response = await vendorService.getDashboard(vendorId);
+      setError(null);
+      // TODO: Uncomment when API is ready
+      // const response = await vendorService.getDashboard(vendor.id);
       // setStats(response.stats || stats);
       
       setLoading(false);
-    } catch (error) {
-      console.error('Error loading dashboard:', error);
+    } catch (err) {
+      const apiError = handleApiError(err);
+      const errorMessage = getErrorMessage(apiError);
+      setError(errorMessage);
       setLoading(false);
+      Alert.alert('Error', errorMessage);
     }
   };
 

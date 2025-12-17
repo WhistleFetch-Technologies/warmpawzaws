@@ -9,6 +9,7 @@ import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { StatusBar } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import { AuthProvider } from './src/context/AuthContext';
 
 // Screens (to be implemented)
 import DashboardScreen from './src/screens/DashboardScreen';
@@ -66,36 +67,38 @@ function TabNavigator() {
 // Main App Component
 export default function App() {
   return (
-    <NavigationContainer>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      <Stack.Navigator
-        screenOptions={{
-          headerStyle: {
-            backgroundColor: '#FF8C42',
-          },
-          headerTintColor: '#fff',
-          headerTitleStyle: {
-            fontWeight: 'bold',
-          },
-        }}
-      >
-        <Stack.Screen 
-          name="MainTabs" 
-          component={TabNavigator} 
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen 
-          name="ServiceDetail" 
-          component={ServiceDetailScreen}
-          options={{ title: 'Service Details' }}
-        />
-        <Stack.Screen 
-          name="BookingDetail" 
-          component={BookingDetailScreen}
-          options={{ title: 'Booking Details' }}
-        />
-      </Stack.Navigator>
-    </NavigationContainer>
+    <AuthProvider>
+      <NavigationContainer>
+        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+        <Stack.Navigator
+          screenOptions={{
+            headerStyle: {
+              backgroundColor: '#FF8C42',
+            },
+            headerTintColor: '#fff',
+            headerTitleStyle: {
+              fontWeight: 'bold',
+            },
+          }}
+        >
+          <Stack.Screen 
+            name="MainTabs" 
+            component={TabNavigator} 
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen 
+            name="ServiceDetail" 
+            component={ServiceDetailScreen}
+            options={{ title: 'Service Details' }}
+          />
+          <Stack.Screen 
+            name="BookingDetail" 
+            component={BookingDetailScreen}
+            options={{ title: 'Booking Details' }}
+          />
+        </Stack.Navigator>
+      </NavigationContainer>
+    </AuthProvider>
   );
 }
 

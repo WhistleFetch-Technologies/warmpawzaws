@@ -12,19 +12,24 @@ import {
   TouchableOpacity,
   Image,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../types/navigation';
+import { useAuth } from '../context/AuthContext';
 import customerService from '../services/api';
+import { handleApiError, getErrorMessage } from '../utils/errorHandler';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 
 type HomeScreenNavigationProp = StackNavigationProp<RootStackParamList, 'MainTabs'>;
 
 export default function HomeScreen() {
   const navigation = useNavigation<HomeScreenNavigationProp>();
+  const { isAuthenticated } = useAuth();
   const [loading, setLoading] = useState(true);
   const [featuredServices, setFeaturedServices] = useState<any[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     loadFeaturedServices();
@@ -33,6 +38,7 @@ export default function HomeScreen() {
   const loadFeaturedServices = async () => {
     try {
       setLoading(true);
+      setError(null);
       // TODO: Uncomment when API is ready
       // const response = await customerService.getFeaturedServices();
       // setFeaturedServices(response.services || []);
@@ -40,9 +46,15 @@ export default function HomeScreen() {
       // Placeholder data for now
       setFeaturedServices([]);
       setLoading(false);
-    } catch (error) {
-      console.error('Error loading featured services:', error);
+    } catch (err) {
+      const apiError = handleApiError(err);
+      const errorMessage = getErrorMessage(apiError);
+      setError(errorMessage);
       setLoading(false);
+      // Only show alert for critical errors
+      if (apiError.status && apiError.status >= 500) {
+        Alert.alert('Error', errorMessage);
+      }
     }
   };
 
