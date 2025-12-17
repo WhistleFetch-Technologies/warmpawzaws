@@ -10,6 +10,8 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { StatusBar } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
+import { BrandColors } from './src/theme';
+import NotificationService from './src/services/NotificationService';
 
 // Screens
 import HomeScreen from './src/screens/HomeScreen';
@@ -22,6 +24,16 @@ import LoginScreen from './src/screens/auth/LoginScreen';
 import OnboardingScreen from './src/screens/onboarding/OnboardingScreen';
 import UserProfileScreen from './src/screens/onboarding/UserProfileScreen';
 import PetProfileScreen from './src/screens/onboarding/PetProfileScreen';
+import ProblemGridScreen from './src/screens/ProblemGridScreen';
+import VendorDiscoveryScreen from './src/screens/VendorDiscoveryScreen';
+import ServiceSelectionScreen from './src/screens/ServiceSelectionScreen';
+import TimeSlotSelectionScreen from './src/screens/TimeSlotSelectionScreen';
+import PetSelectionScreen from './src/screens/PetSelectionScreen';
+import AddressSelectionScreen from './src/screens/AddressSelectionScreen';
+import PaymentScreen from './src/screens/PaymentScreen';
+import StaffTrackingScreen from './src/screens/StaffTrackingScreen';
+import CancellationScreen from './src/screens/booking/CancellationScreen';
+import RescheduleScreen from './src/screens/booking/RescheduleScreen';
 
 // Navigation
 import ProtectedRoute from './src/navigation/ProtectedRoute';
@@ -73,33 +85,115 @@ function AppContent() {
   const [session, setSession] = React.useState<any>(null);
   const [onboardingStage, setOnboardingStage] = React.useState<string | null>(null);
   const [needsOnboarding, setNeedsOnboarding] = React.useState(false);
+  const navigationRef = React.useRef<any>(null);
 
+  // Calculate initial route name ONCE - must be constant
+  // Always start with Login - we'll navigate after auth state is determined
+  const initialRouteName = 'Login';
+
+  // Initialize notifications
   React.useEffect(() => {
-    // Check if user needs onboarding (new user or incomplete profile)
-    if (isAuthenticated && user) {
-      // For now, always show onboarding for new users
-      // In production, check user.onboardingComplete from API
-      setNeedsOnboarding(true);
+    NotificationService.initialize();
+    
+    // Register notification handlers
+    NotificationService.onNotification('booking', (data) => {
+      if (data.bookingId && navigationRef.current?.isReady()) {
+        if (data.action === 'track_service') {
+          navigationRef.current.navigate('StaffTracking', {
+            bookingId: data.bookingId,
+            staffId: data.data?.staffId || '',
+            destination: data.data?.destination,
+            staffName: data.data?.staffName || 'Service Provider',
+          });
+        } else {
+          navigationRef.current.navigate('Bookings');
+        }
+      }
+    });
+
+    NotificationService.onNotification('payment', (data) => {
+      if (data.bookingId && navigationRef.current?.isReady()) {
+        navigationRef.current.navigate('Bookings');
+      }
+    });
+
+    NotificationService.onNotification('gps', (data) => {
+      if (data.bookingId && navigationRef.current?.isReady()) {
+        navigationRef.current.navigate('StaffTracking', {
+          bookingId: data.bookingId,
+          staffId: data.data?.staffId || '',
+          destination: data.data?.destination,
+          staffName: data.data?.staffName || 'Service Provider',
+        });
+      }
+    });
+
+    return () => {
+      NotificationService.offNotification('booking');
+      NotificationService.offNotification('payment');
+      NotificationService.offNotification('gps');
+    };
+  }, []);
+
+  // Handle navigation based on auth state after mount
+  React.useEffect(() => {
+    if (isLoading) {
+      return; // Wait for auth state to be determined
     }
-  }, [isAuthenticated, user]);
+
+    if (!navigationRef.current?.isReady()) {
+      return; // Wait for navigation to be ready
+    }
+
+    if (!isAuthenticated) {
+      // User not authenticated - ensure we're on Login screen
+      const currentRoute = navigationRef.current.getCurrentRoute();
+      if (currentRoute?.name !== 'Login') {
+        navigationRef.current.reset({
+          index: 0,
+          routes: [{ name: 'Login' }],
+        });
+      }
+      return;
+    }
+
+    // User is authenticated - check onboarding status
+    if (user) {
+      const hasCompletedOnboarding = user.onboardingComplete || user.hasCompletedOnboarding;
+      
+      if (!hasCompletedOnboarding) {
+        setNeedsOnboarding(true);
+        // Navigate to onboarding
+        const currentRoute = navigationRef.current.getCurrentRoute();
+        if (currentRoute?.name !== 'Onboarding') {
+          navigationRef.current.reset({
+            index: 0,
+            routes: [{ name: 'Onboarding' }],
+          });
+        }
+      } else {
+        setNeedsOnboarding(false);
+        // Navigate to main app
+        const currentRoute = navigationRef.current.getCurrentRoute();
+        if (currentRoute?.name !== 'MainTabs') {
+          navigationRef.current.reset({
+            index: 0,
+            routes: [{ name: 'MainTabs' }],
+          });
+        }
+      }
+    }
+  }, [isAuthenticated, isLoading, user]);
 
   if (isLoading) {
     return null; // Loading handled by AuthProvider
   }
 
-  // Determine initial route
-  const getInitialRouteName = () => {
-    if (!isAuthenticated) return 'Login';
-    if (needsOnboarding && !onboardingStage) return 'Onboarding';
-    if (needsOnboarding && onboardingStage) return 'UserProfile';
-    return 'MainTabs';
-  };
-
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       <Stack.Navigator
-        initialRouteName={getInitialRouteName()}
+        initialRouteName={initialRouteName}
         screenOptions={{
           headerStyle: {
             backgroundColor: '#FF8C42',
@@ -149,7 +243,7 @@ function AppContent() {
             <UserProfileScreen
               {...props}
               session={session}
-              journeyStage={props.route.params?.journeyStage || onboardingStage}
+              journeyStage={props.route.params?.journeyStage || onboardingStage || undefined}
               onComplete={(profile) => {
                 props.navigation.navigate('PetProfile', { prefillData: null });
               }}
@@ -191,6 +285,221 @@ function AppContent() {
           name="BookingConfirmation" 
           component={BookingConfirmationScreen}
           options={{ title: 'Booking Confirmation' }}
+        />
+        <Stack.Screen 
+          name="BookingDetail" 
+          component={BookingDetailScreen}
+          options={{ 
+            title: 'Booking Details',
+            headerStyle: { backgroundColor: '#FFFFFF' },
+            headerTintColor: BrandColors.primary.orange,
+          }}
+        />
+        <Stack.Screen 
+          name="ProblemGrid" 
+          options={{ 
+            title: 'Select Problem',
+            headerStyle: { backgroundColor: BrandColors.primary.orange },
+            headerTintColor: '#fff',
+          }}
+        >
+          {(props) => <ProblemGridScreen {...props} />}
+        </Stack.Screen>
+        <Stack.Screen 
+          name="VendorDiscovery" 
+          options={{ 
+            title: 'Service Providers',
+            headerStyle: { backgroundColor: '#FFFFFF' },
+            headerTintColor: BrandColors.primary.orange,
+          }}
+        >
+          {(props) => <VendorDiscoveryScreen {...props} />}
+        </Stack.Screen>
+        <Stack.Screen 
+          name="ServiceSelection" 
+          options={{ 
+            title: 'Select Service',
+            headerStyle: { backgroundColor: '#FFFFFF' },
+            headerTintColor: BrandColors.primary.orange,
+          }}
+        >
+          {(props) => <ServiceSelectionScreen {...props} />}
+        </Stack.Screen>
+        <Stack.Screen 
+          name="TimeSlotSelection" 
+          options={{ 
+            title: 'Select Time',
+            headerStyle: { backgroundColor: '#FFFFFF' },
+            headerTintColor: BrandColors.primary.orange,
+          }}
+        >
+          {(props) => <TimeSlotSelectionScreen {...props} />}
+        </Stack.Screen>
+        <Stack.Screen 
+          name="PetSelection" 
+          options={{ 
+            title: 'Select Pet',
+            headerStyle: { backgroundColor: '#FFFFFF' },
+            headerTintColor: BrandColors.primary.orange,
+          }}
+        >
+          {(props) => <PetSelectionScreen {...props} />}
+        </Stack.Screen>
+        <Stack.Screen 
+          name="AddressSelection" 
+          options={{ 
+            title: 'Select Address',
+            headerStyle: { backgroundColor: '#FFFFFF' },
+            headerTintColor: BrandColors.primary.orange,
+          }}
+        >
+          {(props) => <AddressSelectionScreen {...props} />}
+        </Stack.Screen>
+        <Stack.Screen 
+          name="Payment" 
+          options={{ 
+            title: 'Payment',
+            headerStyle: { backgroundColor: '#FFFFFF' },
+            headerTintColor: BrandColors.primary.orange,
+          }}
+        >
+          {(props) => <PaymentScreen {...props} />}
+        </Stack.Screen>
+        <Stack.Screen 
+          name="StaffTracking" 
+          options={{ 
+            title: 'Track Service Provider',
+            headerStyle: { backgroundColor: '#FFFFFF' },
+            headerTintColor: BrandColors.primary.orange,
+          }}
+        >
+          {(props) => <StaffTrackingScreen {...props} />}
+        </Stack.Screen>
+        <Stack.Screen 
+          name="Cancellation" 
+          component={CancellationScreen}
+          options={{ 
+            title: 'Cancel Booking',
+            headerStyle: { backgroundColor: '#FFFFFF' },
+            headerTintColor: BrandColors.primary.orange,
+          }}
+        />
+        <Stack.Screen 
+          name="Reschedule" 
+          component={RescheduleScreen}
+          options={{ 
+            title: 'Reschedule Booking',
+            headerStyle: { backgroundColor: '#FFFFFF' },
+            headerTintColor: BrandColors.primary.orange,
+          }}
+        />
+        <Stack.Screen 
+          name="CafeBooking" 
+          component={CafeBookingScreen}
+          options={{ 
+            title: 'Cafe Reservation',
+            headerStyle: { backgroundColor: '#FFFFFF' },
+            headerTintColor: BrandColors.primary.orange,
+          }}
+        />
+        <Stack.Screen 
+          name="ResortBooking" 
+          component={ResortBookingScreen}
+          options={{ 
+            title: 'Resort Booking',
+            headerStyle: { backgroundColor: '#FFFFFF' },
+            headerTintColor: BrandColors.primary.orange,
+          }}
+        />
+        <Stack.Screen 
+          name="InsurancePlans" 
+          component={InsurancePlansScreen}
+          options={{ 
+            title: 'Insurance Plans',
+            headerStyle: { backgroundColor: '#FFFFFF' },
+            headerTintColor: BrandColors.primary.orange,
+          }}
+        />
+        <Stack.Screen 
+          name="HolidayPackages" 
+          component={HolidayPackagesScreen}
+          options={{ 
+            title: 'Holiday Packages',
+            headerStyle: { backgroundColor: '#FFFFFF' },
+            headerTintColor: BrandColors.primary.orange,
+          }}
+        />
+        <Stack.Screen 
+          name="HolidayPackageDetail" 
+          component={HolidayPackageDetailScreen}
+          options={{ 
+            title: 'Package Details',
+            headerStyle: { backgroundColor: '#FFFFFF' },
+            headerTintColor: BrandColors.primary.orange,
+          }}
+        />
+        <Stack.Screen 
+          name="HolidayBooking" 
+          component={HolidayBookingScreen}
+          options={{ 
+            title: 'Book Package',
+            headerStyle: { backgroundColor: '#FFFFFF' },
+            headerTintColor: BrandColors.primary.orange,
+          }}
+        />
+        <Stack.Screen 
+          name="InsurancePurchase" 
+          component={InsurancePurchaseScreen}
+          options={{ 
+            title: 'Purchase Insurance',
+            headerStyle: { backgroundColor: '#FFFFFF' },
+            headerTintColor: BrandColors.primary.orange,
+          }}
+        />
+        <Stack.Screen 
+          name="InsuranceClaims" 
+          component={InsuranceClaimsScreen}
+          options={{ 
+            title: 'Insurance Claims',
+            headerStyle: { backgroundColor: '#FFFFFF' },
+            headerTintColor: BrandColors.primary.orange,
+          }}
+        />
+        <Stack.Screen 
+          name="NutritionistMenu" 
+          component={NutritionistMenuScreen}
+          options={{ 
+            title: 'Menu',
+            headerStyle: { backgroundColor: '#FFFFFF' },
+            headerTintColor: BrandColors.primary.orange,
+          }}
+        />
+        <Stack.Screen 
+          name="NutritionistOrder" 
+          component={NutritionistOrderScreen}
+          options={{ 
+            title: 'Place Order',
+            headerStyle: { backgroundColor: '#FFFFFF' },
+            headerTintColor: BrandColors.primary.orange,
+          }}
+        />
+        <Stack.Screen 
+          name="TrainingProgress" 
+          component={TrainingProgressScreen}
+          options={{ 
+            title: 'Training Progress',
+            headerStyle: { backgroundColor: '#FFFFFF' },
+            headerTintColor: BrandColors.primary.orange,
+          }}
+        />
+        <Stack.Screen 
+          name="TrainingSessionDetail" 
+          component={TrainingSessionDetailScreen}
+          options={{ 
+            title: 'Session Details',
+            headerStyle: { backgroundColor: '#FFFFFF' },
+            headerTintColor: BrandColors.primary.orange,
+          }}
         />
       </Stack.Navigator>
     </NavigationContainer>

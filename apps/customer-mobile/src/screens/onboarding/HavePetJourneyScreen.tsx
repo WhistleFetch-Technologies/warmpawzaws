@@ -91,33 +91,40 @@ export default function HavePetJourneyScreen({
     const isValid = validateStep(currentStep);
     if (!isValid) return;
 
-    // Save temp selections to main data
+    // Build updated data object with temp selections merged in
+    // This ensures we use the latest data when saving, not stale state
+    let updatedData = { ...data };
+
     if (currentStep === 3) {
-      setData({
+      updatedData = {
         ...data,
         livingSpace: {
           homeType: tempSelections.homeType || '',
           outdoorSpace: tempSelections.outdoorSpace || '',
         },
-      });
+      };
+      setData(updatedData);
     } else if (currentStep === 4) {
-      setData({
+      updatedData = {
         ...data,
         lifestyle: {
           workSchedule: tempSelections.workSchedule || '',
           activityLevel: tempSelections.activityLevel || '',
           travelFrequency: tempSelections.travelFrequency || '',
         },
-      });
+      };
+      setData(updatedData);
     } else if (currentStep === 5) {
-      setData({
+      updatedData = {
         ...data,
         budget: tempSelections.budget || '',
-      });
+      };
+      setData(updatedData);
     }
 
     if (currentStep === totalSteps) {
-      await saveOnboarding(data);
+      // Use updatedData instead of stale data state
+      await saveOnboarding(updatedData);
       onComplete();
     } else {
       setCurrentStep(currentStep + 1);
@@ -159,7 +166,7 @@ export default function HavePetJourneyScreen({
             Authorization: `Bearer ${publicAnonKey}`,
           },
           body: JSON.stringify({
-            phone: session.phone,
+            phone: session?.phone || session?.user?.phone || '',
             type: 'have-pet',
             data: onboardingData,
           }),

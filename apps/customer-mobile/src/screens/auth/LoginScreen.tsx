@@ -121,8 +121,13 @@ export default function LoginScreen({ onAuthSuccess }: LoginScreenProps) {
       const data = await response.json();
       console.log('✅ OTP verified:', data);
       
+      // Validate that customer data exists
+      if (!data.customer) {
+        throw new Error('Invalid response: customer data not found');
+      }
+      
       // Apply referral code if provided
-      if (referralCode && data.isNewUser) {
+      if (referralCode && data.isNewUser && data.customer?.id) {
         try {
           console.log('🎁 Applying referral code:', referralCode);
           const referralResponse = await fetch(
@@ -156,9 +161,9 @@ export default function LoginScreen({ onAuthSuccess }: LoginScreenProps) {
         }
       }
       
-      // Check if user has completed onboarding
-      const hasCompletedOnboarding = data.customer.onboardingComplete;
-      const hasPets = data.customer.petIds && data.customer.petIds.length > 0;
+      // Check if user has completed onboarding (with null safety)
+      const hasCompletedOnboarding = data.customer?.onboardingComplete || false;
+      const hasPets = data.customer?.petIds && Array.isArray(data.customer.petIds) && data.customer.petIds.length > 0;
       
       console.log('📊 User state:', {
         isNewUser: data.isNewUser,
@@ -184,7 +189,7 @@ export default function LoginScreen({ onAuthSuccess }: LoginScreenProps) {
         {
           id: data.customer.id,
           phone: cleanPhone,
-          name: data.customer.name,
+          name: data.customer.name || cleanPhone,
         },
         data.sessionToken
       );
@@ -350,9 +355,11 @@ export default function LoginScreen({ onAuthSuccess }: LoginScreenProps) {
                 autoFocus
               />
             </View>
-            <Text style={[Typography.bodyTiny, styles.helperText]}>
-              🔐 UAT Mode: OTP is 123456 for all numbers
-            </Text>
+            {__DEV__ && (
+              <Text style={[Typography.bodyTiny, styles.helperText]}>
+                🔐 UAT Mode: OTP is 123456 for all numbers
+              </Text>
+            )}
 
             <BrandedButton
               title={loading ? 'Sending code...' : 'Continue'}
