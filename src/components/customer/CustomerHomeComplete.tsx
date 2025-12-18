@@ -1047,9 +1047,9 @@ export function CustomerHome({
                     <p className="text-xs text-white/80">250+ reviews</p>
                   </div>
                 </div>
-                <button className="bg-white text-indigo-600 px-5 py-2.5 rounded-full text-sm font-medium">
+                <Button className="bg-white text-indigo-600 px-5 py-2.5 rounded-full text-sm font-medium hover:bg-indigo-50">
                   Book Boarding
-                </button>
+                </Button>
               </div>
               <HomeIcon className="w-16 h-16 text-white/80" />
             </div>
@@ -1064,12 +1064,12 @@ export function CustomerHome({
               Our support team is available 24/7 for you
             </p>
             <div className="flex gap-3">
-              <button className="flex-1 bg-white border-2 border-[#FF8C42] text-[#FF8C42] py-3 rounded-full font-medium text-sm flex items-center justify-center gap-2">
+              <Button variant="outline" className="flex-1 bg-white border-2 border-[#FF8C42] text-[#FF8C42] py-3 rounded-full font-medium text-sm flex items-center justify-center gap-2 hover:bg-orange-50">
                 <Phone className="w-4 h-4" /> Call Us
-              </button>
-              <button className="flex-1 bg-[#FF8C42] text-white py-3 rounded-full font-medium text-sm flex items-center justify-center gap-2">
+              </Button>
+              <Button className="flex-1 bg-[#FF8C42] text-white py-3 rounded-full font-medium text-sm flex items-center justify-center gap-2 hover:bg-[#FF7A2E]">
                 <Video className="w-4 h-4" /> Live Chat
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -1082,7 +1082,7 @@ export function CustomerHome({
             <HomeIcon className="w-6 h-6 text-[#FF8C42]" />
             <span className="text-xs font-medium text-[#FF8C42]">Home</span>
           </button>
-          <button 
+          <Button variant="ghost"
             onClick={() => onNavigate && onNavigate('cart')}
             className="flex flex-col items-center gap-1 relative"
           >
@@ -1095,7 +1095,7 @@ export function CustomerHome({
               )}
             </div>
             <span className="text-xs text-gray-400">Cart</span>
-          </button>
+          </Button>
           <button 
             onClick={() => onOpenMenu && onOpenMenu()}
             className="flex flex-col items-center gap-1"
