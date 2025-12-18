@@ -1,54 +1,66 @@
 {
-  "timestamp": "2025-12-18T05:52:09.704Z",
+  "timestamp": "2025-12-18T05:56:27.941Z",
   "summary": {
-    "total": 72,
-    "passed": 61,
-    "failed": 3,
-    "warnings": 8,
-    "successRate": "84.72%"
+    "total": 74,
+    "passed": 67,
+    "failed": 0,
+    "warnings": 7,
+    "successRate": "90.54%"
   },
   "results": [
     {
       "category": "Routes",
       "test": "Route Registration",
       "status": "pass",
-      "message": "Found 23 route patterns"
+      "message": "Found 23 route patterns in index.tsx"
     },
     {
       "category": "Routes",
-      "test": "Critical Endpoint: /make-server-3dd53475/health",
+      "test": "Total Routes Found",
       "status": "pass",
-      "message": "Found"
+      "message": "Found 1785 routes across all server files"
     },
     {
       "category": "Routes",
-      "test": "Critical Endpoint: /make-server-3dd53475/customer",
-      "status": "fail",
-      "message": "Missing"
-    },
-    {
-      "category": "Routes",
-      "test": "Critical Endpoint: /make-server-3dd53475/vendor",
+      "test": "Critical Endpoint: Health Check",
       "status": "pass",
-      "message": "Found"
+      "message": "Found routes with prefix /make-server-3dd53475/health"
     },
     {
       "category": "Routes",
-      "test": "Critical Endpoint: /make-server-3dd53475/admin",
+      "test": "Critical Endpoint: Customer Routes",
       "status": "pass",
-      "message": "Found"
+      "message": "Found routes with prefix /make-server-3dd53475/customer"
     },
     {
       "category": "Routes",
-      "test": "Critical Endpoint: /make-server-3dd53475/booking",
-      "status": "fail",
-      "message": "Missing"
+      "test": "Critical Endpoint: Vendor Routes",
+      "status": "pass",
+      "message": "Found routes with prefix /make-server-3dd53475/vendor"
     },
     {
       "category": "Routes",
-      "test": "Critical Endpoint: /make-server-3dd53475/payment",
-      "status": "fail",
-      "message": "Missing"
+      "test": "Critical Endpoint: Admin Routes",
+      "status": "pass",
+      "message": "Found routes with prefix /make-server-3dd53475/admin"
+    },
+    {
+      "category": "Routes",
+      "test": "Critical Endpoint: Booking Routes",
+      "status": "pass",
+      "message": "Found routes with prefix /make-server-3dd53475/bookings"
+    },
+    {
+      "category": "Routes",
+      "test": "Critical Endpoint: Payment Routes (E-commerce)",
+      "status": "pass",
+      "message": "Found routes with prefix /make-server-3dd53475/ecommerce/payments"
+    },
+    {
+      "category": "Routes",
+      "test": "Critical Endpoint: Payment Routes",
+      "status": "pass",
+      "message": "Found routes with prefix /make-server-3dd53475/payments"
     },
     {
       "category": "Routes",
@@ -233,8 +245,8 @@
     {
       "category": "Design",
       "test": "Brand Color in globals.css",
-      "status": "warning",
-      "message": "Brand color not found"
+      "status": "pass",
+      "message": "Brand color found"
     },
     {
       "category": "Design",
@@ -447,43 +459,55 @@
         "category": "Routes",
         "test": "Route Registration",
         "status": "pass",
-        "message": "Found 23 route patterns"
+        "message": "Found 23 route patterns in index.tsx"
       },
       {
         "category": "Routes",
-        "test": "Critical Endpoint: /make-server-3dd53475/health",
+        "test": "Total Routes Found",
         "status": "pass",
-        "message": "Found"
+        "message": "Found 1785 routes across all server files"
       },
       {
         "category": "Routes",
-        "test": "Critical Endpoint: /make-server-3dd53475/customer",
-        "status": "fail",
-        "message": "Missing"
-      },
-      {
-        "category": "Routes",
-        "test": "Critical Endpoint: /make-server-3dd53475/vendor",
+        "test": "Critical Endpoint: Health Check",
         "status": "pass",
-        "message": "Found"
+        "message": "Found routes with prefix /make-server-3dd53475/health"
       },
       {
         "category": "Routes",
-        "test": "Critical Endpoint: /make-server-3dd53475/admin",
+        "test": "Critical Endpoint: Customer Routes",
         "status": "pass",
-        "message": "Found"
+        "message": "Found routes with prefix /make-server-3dd53475/customer"
       },
       {
         "category": "Routes",
-        "test": "Critical Endpoint: /make-server-3dd53475/booking",
-        "status": "fail",
-        "message": "Missing"
+        "test": "Critical Endpoint: Vendor Routes",
+        "status": "pass",
+        "message": "Found routes with prefix /make-server-3dd53475/vendor"
       },
       {
         "category": "Routes",
-        "test": "Critical Endpoint: /make-server-3dd53475/payment",
-        "status": "fail",
-        "message": "Missing"
+        "test": "Critical Endpoint: Admin Routes",
+        "status": "pass",
+        "message": "Found routes with prefix /make-server-3dd53475/admin"
+      },
+      {
+        "category": "Routes",
+        "test": "Critical Endpoint: Booking Routes",
+        "status": "pass",
+        "message": "Found routes with prefix /make-server-3dd53475/bookings"
+      },
+      {
+        "category": "Routes",
+        "test": "Critical Endpoint: Payment Routes (E-commerce)",
+        "status": "pass",
+        "message": "Found routes with prefix /make-server-3dd53475/ecommerce/payments"
+      },
+      {
+        "category": "Routes",
+        "test": "Critical Endpoint: Payment Routes",
+        "status": "pass",
+        "message": "Found routes with prefix /make-server-3dd53475/payments"
       },
       {
         "category": "Routes",
@@ -674,8 +698,8 @@
       {
         "category": "Design",
         "test": "Brand Color in globals.css",
-        "status": "warning",
-        "message": "Brand color not found"
+        "status": "pass",
+        "message": "Brand color found"
       },
       {
         "category": "Design",
