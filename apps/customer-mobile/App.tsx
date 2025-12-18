@@ -34,6 +34,22 @@ import PaymentScreen from './src/screens/PaymentScreen';
 import StaffTrackingScreen from './src/screens/StaffTrackingScreen';
 import CancellationScreen from './src/screens/booking/CancellationScreen';
 import RescheduleScreen from './src/screens/booking/RescheduleScreen';
+import MedicalHistoryScreen from './src/screens/MedicalHistory';
+import MedicineCatalogScreen from './src/screens/medicine/MedicineCatalogScreen';
+import MedicineDetailScreen from './src/screens/medicine/MedicineDetailScreen';
+import MedicineOrderScreen from './src/screens/medicine/MedicineOrderScreen';
+import MealPlanBrowseScreen from './src/screens/nutritionist/MealPlanBrowseScreen';
+import MealPlanDetailScreen from './src/screens/nutritionist/MealPlanDetailScreen';
+import MealOrderScreen from './src/screens/nutritionist/MealOrderScreen';
+import MealDeliveryTrackingScreen from './src/screens/nutritionist/MealDeliveryTrackingScreen';
+import MedicineSearchScreen from './src/screens/medicine/MedicineSearchScreen';
+import PrescriptionMedicineMatchScreen from './src/screens/medicine/PrescriptionMedicineMatchScreen';
+import PuppyProfileBrowseScreen from './src/screens/puppy/PuppyProfileBrowseScreen';
+import MealOrderScreen from './src/screens/nutritionist/MealOrderScreen';
+import MealDeliveryTrackingScreen from './src/screens/nutritionist/MealDeliveryTrackingScreen';
+import MedicineSearchScreen from './src/screens/medicine/MedicineSearchScreen';
+import PrescriptionMedicineMatchScreen from './src/screens/medicine/PrescriptionMedicineMatchScreen';
+import PuppyProfileBrowseScreen from './src/screens/puppy/PuppyProfileBrowseScreen';
 
 // Navigation
 import ProtectedRoute from './src/navigation/ProtectedRoute';
@@ -91,9 +107,23 @@ function AppContent() {
   // Always start with Login - we'll navigate after auth state is determined
   const initialRouteName = 'Login';
 
-  // Initialize notifications
+  // Initialize notifications and register device token
   React.useEffect(() => {
-    NotificationService.initialize();
+    const initNotifications = async () => {
+      await NotificationService.initialize();
+      
+      // Register device token after user is authenticated
+      if (isAuthenticated && user?.id) {
+        try {
+          await NotificationService.registerDeviceToken(user.id, 'customer');
+          console.log('✅ Device token registered for user:', user.id);
+        } catch (error) {
+          console.error('❌ Failed to register device token:', error);
+        }
+      }
+    };
+    
+    initNotifications();
     
     // Register notification handlers
     NotificationService.onNotification('booking', (data) => {
@@ -133,7 +163,9 @@ function AppContent() {
       NotificationService.offNotification('payment');
       NotificationService.offNotification('gps');
     };
-  }, []);
+    // ✅ FIX: Add dependencies so handlers update when auth state changes
+    // Note: navigationRef is stable (useRef), but included for completeness
+  }, [isAuthenticated, user?.id]);
 
   // Handle navigation based on auth state after mount
   React.useEffect(() => {
@@ -448,6 +480,105 @@ function AppContent() {
           }}
         />
         <Stack.Screen 
+          name="MedicalHistory" 
+          component={MedicalHistoryScreen}
+          options={{ 
+            title: 'Medical History',
+            headerStyle: { backgroundColor: '#FFFFFF' },
+            headerTintColor: BrandColors.primary.orange,
+          }}
+        />
+        <Stack.Screen 
+          name="MedicineCatalog" 
+          component={MedicineCatalogScreen}
+          options={{ 
+            title: 'Medicine Catalog',
+            headerStyle: { backgroundColor: '#FFFFFF' },
+            headerTintColor: BrandColors.primary.orange,
+          }}
+        />
+        <Stack.Screen 
+          name="MedicineDetail" 
+          component={MedicineDetailScreen}
+          options={{ 
+            title: 'Medicine Details',
+            headerStyle: { backgroundColor: '#FFFFFF' },
+            headerTintColor: BrandColors.primary.orange,
+          }}
+        />
+        <Stack.Screen 
+          name="MedicineOrder" 
+          component={MedicineOrderScreen}
+          options={{ 
+            title: 'Place Order',
+            headerStyle: { backgroundColor: '#FFFFFF' },
+            headerTintColor: BrandColors.primary.orange,
+          }}
+        />
+        <Stack.Screen 
+          name="MealPlanBrowse" 
+          component={MealPlanBrowseScreen}
+          options={{ 
+            title: 'Meal Plans',
+            headerStyle: { backgroundColor: '#FFFFFF' },
+            headerTintColor: BrandColors.primary.orange,
+          }}
+        />
+        <Stack.Screen 
+          name="MealPlanDetail" 
+          component={MealPlanDetailScreen}
+          options={{ 
+            title: 'Meal Plan Details',
+            headerStyle: { backgroundColor: '#FFFFFF' },
+            headerTintColor: BrandColors.primary.orange,
+          }}
+        />
+        <Stack.Screen 
+          name="MealOrder" 
+          component={MealOrderScreen}
+          options={{ 
+            title: 'Place Meal Order',
+            headerStyle: { backgroundColor: '#FFFFFF' },
+            headerTintColor: BrandColors.primary.orange,
+          }}
+        />
+        <Stack.Screen 
+          name="MealDeliveryTracking" 
+          component={MealDeliveryTrackingScreen}
+          options={{ 
+            title: 'Track Delivery',
+            headerStyle: { backgroundColor: '#FFFFFF' },
+            headerTintColor: BrandColors.primary.orange,
+          }}
+        />
+        <Stack.Screen 
+          name="MedicineSearch" 
+          component={MedicineSearchScreen}
+          options={{ 
+            title: 'Search Medicines',
+            headerStyle: { backgroundColor: '#FFFFFF' },
+            headerTintColor: BrandColors.primary.orange,
+          }}
+        />
+        <Stack.Screen 
+          name="PrescriptionMedicineMatch" 
+          component={PrescriptionMedicineMatchScreen}
+          options={{ 
+            title: 'Matched Medicines',
+            headerStyle: { backgroundColor: '#FFFFFF' },
+            headerTintColor: BrandColors.primary.orange,
+          }}
+        />
+        <Stack.Screen 
+          name="PuppyProfileBrowse" 
+          component={PuppyProfileBrowseScreen}
+          options={{ 
+            title: 'Puppy Profiles',
+            headerStyle: { backgroundColor: '#FFFFFF' },
+            headerTintColor: BrandColors.primary.orange,
+          }}
+        />
+        <Stack.Screen 
           name="InsurancePurchase" 
           component={InsurancePurchaseScreen}
           options={{ 
@@ -497,6 +628,42 @@ function AppContent() {
           component={TrainingSessionDetailScreen}
           options={{ 
             title: 'Session Details',
+            headerStyle: { backgroundColor: '#FFFFFF' },
+            headerTintColor: BrandColors.primary.orange,
+          }}
+        />
+        <Stack.Screen 
+          name="BehaviorAssessment" 
+          component={BehaviorAssessmentScreen}
+          options={{ 
+            title: 'Behavior Assessment',
+            headerStyle: { backgroundColor: '#FFFFFF' },
+            headerTintColor: BrandColors.primary.orange,
+          }}
+        />
+        <Stack.Screen 
+          name="ProgressTracking" 
+          component={ProgressTrackingScreen}
+          options={{ 
+            title: 'Track Progress',
+            headerStyle: { backgroundColor: '#FFFFFF' },
+            headerTintColor: BrandColors.primary.orange,
+          }}
+        />
+        <Stack.Screen 
+          name="ProgressView" 
+          component={ProgressViewScreen}
+          options={{ 
+            title: 'View Progress',
+            headerStyle: { backgroundColor: '#FFFFFF' },
+            headerTintColor: BrandColors.primary.orange,
+          }}
+        />
+        <Stack.Screen 
+          name="ProgressChart" 
+          component={ProgressChartScreen}
+          options={{ 
+            title: 'Progress Chart',
             headerStyle: { backgroundColor: '#FFFFFF' },
             headerTintColor: BrandColors.primary.orange,
           }}

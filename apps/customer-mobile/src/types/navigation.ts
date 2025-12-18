@@ -80,6 +80,24 @@ export type RootStackParamList = {
     destination?: { latitude: number; longitude: number };
     staffName?: string;
   };
+  MedicineCatalog: undefined;
+  MedicineDetail: { medicineId: string };
+  MedicineOrder: { medicines: Array<{ medicineId: string; quantity: number }> };
+  PrescriptionMedicineMatch: { prescriptionId: string };
+  PrescriptionUpload: { medicineId?: string };
+  MealPlanBrowse: undefined;
+  MealPlanDetail: { mealPlanId: string };
+  MealOrder: { nutritionistId: string; items: any[] };
+  MealDeliveryTracking: { orderId: string };
+  MedicineSearch: undefined;
+  PuppyProfileBrowse: undefined;
+  PuppyProfileDetail: { profileId: string };
+  AdoptionListing: undefined;
+  AdoptionApplication: { publicationId: string };
+  BehaviorAssessment: { bookingId: string };
+  ProgressTracking: { bookingId: string };
+  ProgressView: { bookingId: string };
+  ProgressChart: { bookingId: string };
 };
 
 export type TabParamList = {

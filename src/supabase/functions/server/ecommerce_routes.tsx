@@ -668,6 +668,56 @@ ecommerce.put('/order/:orderId/status', async (c) => {
       ]
     };
     
+    // ✅ FIX: Auto-assign delivery partner when order is shipped
+    if (status === 'shipped' && !updated.deliveryPartnerId) {
+      try {
+        const { autoAssignDeliveryPartner, extractPickupLocation, extractDeliveryLocation } = await import('./delivery-assignment-utils.tsx');
+        
+        // Get pickup location (usually vendor/warehouse location)
+        let pickupLocation = extractPickupLocation(order);
+        
+        // If no pickup location in order, try to get vendor location
+        if (!pickupLocation && order.vendorId) {
+          const vendor = await kv.get(`vendor:${order.vendorId}`);
+          if (vendor && vendor.latitude && vendor.longitude) {
+            pickupLocation = {
+              lat: vendor.latitude,
+              lng: vendor.longitude,
+              address: vendor.address || vendor.businessAddress
+            };
+          }
+        }
+        
+        // Get delivery location
+        const deliveryLocation = extractDeliveryLocation(order);
+        
+        // Auto-assign if we have pickup location
+        if (pickupLocation && pickupLocation.lat && pickupLocation.lng) {
+          const assignedPartner = await autoAssignDeliveryPartner(
+            orderId,
+            order.type || 'product_order',
+            pickupLocation,
+            deliveryLocation || undefined
+          );
+          
+          if (assignedPartner) {
+            updated.deliveryPartnerId = assignedPartner.partnerId;
+            updated.deliveryPartnerName = assignedPartner.partnerName;
+            updated.deliveryPartnerPhone = assignedPartner.partnerPhone;
+            updated.deliveryDistance = assignedPartner.distance;
+            console.log(`✅ [ECOMMERCE] Auto-assigned delivery partner ${assignedPartner.partnerId} to order ${orderId}`);
+          } else {
+            console.log(`⚠️ [ECOMMERCE] No delivery partners available for order ${orderId}`);
+          }
+        } else {
+          console.log(`⚠️ [ECOMMERCE] Cannot auto-assign delivery partner: missing pickup location for order ${orderId}`);
+        }
+      } catch (assignError) {
+        console.error(`❌ [ECOMMERCE] Error auto-assigning delivery partner for order ${orderId}:`, assignError);
+        // Non-blocking: continue even if assignment fails
+      }
+    }
+    
     await kv.set(`order:${orderId}`, updated);
     
     // BROADCAST REAL-TIME UPDATE

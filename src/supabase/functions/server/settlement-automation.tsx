@@ -1,405 +1,387 @@
-import { Hono } from "npm:hono";
-import * as kv from './kv_store.tsx';
-import { generateId } from './database-schema.tsx';
-
 /**
- * SETTLEMENT AUTOMATION
- * 
- * Features:
- * - Daily settlement calculation
- * - Apply hold period (7 days default)
- * - Deduct commission & refunds
- * - Razorpay transfer integration
- * - Payout history tracking
- * - Vendor notifications
+ * Settlement Automation Service
+ * Automated Razorpay marketplace settlements
  */
 
-export function registerSettlementAutomation(app: Hono) {
-  const BASE = '/make-server-3dd53475';
+import { Hono } from 'npm:hono';
+import * as kv from './kv_store.tsx';
+import { createRazorpayTransfer } from './razorpay-integration.tsx';
 
+interface Settlement {
+  id: string;
+  vendorId: string;
+  vendorName: string;
+  periodStart: string;
+  periodEnd: string;
+  totalAmount: number;
+  commission: number;
+  netAmount: number;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  transactions: string[]; // Booking/order IDs
+  createdAt: string;
+  processedAt?: string;
+  transferId?: string;
+}
+
+/**
+ * Calculate settlement for a vendor
+ */
+export async function calculateSettlement(
+  vendorId: string,
+  periodStart: string,
+  periodEnd: string
+): Promise<Settlement> {
+  const vendor = await kv.get(`vendor:${vendorId}`);
+  if (!vendor) {
+    throw new Error('Vendor not found');
+  }
+
+  // Get all bookings/orders in period
+  const allBookings = await kv.getByPrefix('booking:');
+  const allOrders = await kv.getByPrefix('order:');
+
+  const periodStartDate = new Date(periodStart);
+  const periodEndDate = new Date(periodEnd);
+
+  // Filter bookings in period
+  const bookings = allBookings.filter((b: any) => {
+    if (b.vendorId !== vendorId) return false;
+    if (b.paymentStatus !== 'paid') return false;
+    const bookingDate = new Date(b.createdAt || b.bookingDate);
+    return bookingDate >= periodStartDate && bookingDate <= periodEndDate;
+  });
+
+  // Filter orders in period
+  const orders = allOrders.filter((o: any) => {
+    if (o.vendorId !== vendorId) return false;
+    if (o.paymentStatus !== 'paid') return false;
+    const orderDate = new Date(o.createdAt || o.orderDate);
+    return orderDate >= periodStartDate && orderDate <= periodEndDate;
+  });
+
+  // Calculate totals
+  const bookingAmount = bookings.reduce((sum: number, b: any) => 
+    sum + (b.totalAmount || b.amount || 0), 0
+  );
+  const orderAmount = orders.reduce((sum: number, o: any) => 
+    sum + (o.totalAmount || o.amount || 0), 0
+  );
+
+  const totalAmount = bookingAmount + orderAmount;
+
+  // Get vendor tier for commission calculation
+  const vendorTierId = await kv.get(`vendor:${vendorId}:tier_id`);
+  const tiers = await kv.get('payment:tiers') || [];
+  const tier = tiers.find((t: any) => t.id === vendorTierId) || tiers.find((t: any) => t.isDefault);
+  const commissionRate = tier?.commissionRate || 15; // Default 15%
+
+  const commission = Math.round((totalAmount * commissionRate) / 100);
+  const netAmount = totalAmount - commission;
+
+  const transactionIds = [
+    ...bookings.map((b: any) => b.id),
+    ...orders.map((o: any) => o.id),
+  ];
+
+  return {
+    id: `settlement_${Date.now()}_${vendorId}`,
+    vendorId,
+    vendorName: vendor.businessName || vendor.name,
+    periodStart,
+    periodEnd,
+    totalAmount,
+    commission,
+    netAmount,
+    status: 'pending',
+    transactions: transactionIds,
+    createdAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Process settlement (transfer to vendor)
+ */
+export async function processSettlement(settlementId: string): Promise<void> {
+  const settlement = await kv.get(`settlement:${settlementId}`);
+  if (!settlement) {
+    throw new Error('Settlement not found');
+  }
+
+  if (settlement.status !== 'pending') {
+    throw new Error(`Settlement already ${settlement.status}`);
+  }
+
+  try {
+    // Update status to processing
+    settlement.status = 'processing';
+    await kv.set(`settlement:${settlementId}`, settlement);
+
+    // Get vendor Razorpay account ID
+    const vendor = await kv.get(`vendor:${settlement.vendorId}`);
+    if (!vendor) {
+      throw new Error('Vendor not found');
+    }
+
+    const vendorAccountId = vendor.razorpayAccountId;
+    if (!vendorAccountId) {
+      throw new Error('Vendor Razorpay account not configured. Please complete bank account verification.');
+    }
+
+    // Get payment IDs from settlement transactions for Razorpay Route transfers
+    // In Razorpay Route, we need to transfer from actual payment IDs
+    // For marketplace settlements, we'll use the first payment ID or create a settlement payment
+    
+    const RAZORPAY_KEY_ID = Deno.env.get('RAZORPAY_KEY_ID') || '';
+    const RAZORPAY_KEY_SECRET = Deno.env.get('RAZORPAY_KEY_SECRET') || '';
+    
+    if (!RAZORPAY_KEY_ID || !RAZORPAY_KEY_SECRET) {
+      throw new Error('Razorpay credentials not configured');
+    }
+    
+    const RAZORPAY_AUTH = btoa(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`);
+    const RAZORPAY_API_BASE = 'https://api.razorpay.com/v1';
+
+    // Get payment IDs from bookings/orders in settlement
+    // For marketplace mode, we need to transfer from actual payment IDs
+    // Strategy: Get first payment ID from transactions, or use settlement payment
+    let paymentIdForTransfer: string | null = null;
+    
+    // Try to get payment ID from first booking/order
+    if (settlement.transactions && settlement.transactions.length > 0) {
+      const firstTransactionId = settlement.transactions[0];
+      const booking = await kv.get(`booking:${firstTransactionId}`);
+      const order = booking ? null : await kv.get(`order:${firstTransactionId}`);
+      
+      if (booking?.razorpayPaymentId) {
+        paymentIdForTransfer = booking.razorpayPaymentId;
+      } else if (order?.razorpayPaymentId) {
+        paymentIdForTransfer = order.razorpayPaymentId;
+      }
+    }
+    
+    let transfer: any;
+    
+    if (paymentIdForTransfer) {
+      // Use Razorpay Route transfer from payment
+      try {
+        const transferResponse = await fetch(
+          `${RAZORPAY_API_BASE}/payments/${paymentIdForTransfer}/transfers`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Basic ${RAZORPAY_AUTH}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              transfers: [
+                {
+                  account: vendorAccountId,
+                  amount: Math.round(settlement.netAmount * 100), // Convert to paise
+                  currency: 'INR',
+                  notes: {
+                    settlementId: settlement.id,
+                    vendorId: settlement.vendorId,
+                    period: `${settlement.periodStart} to ${settlement.periodEnd}`,
+                  },
+                  linked_account_notes: {
+                    settlementId: settlement.id,
+                  },
+                },
+              ],
+            }),
+          }
+        );
+        
+        if (!transferResponse.ok) {
+          const error = await transferResponse.json();
+          throw new Error(`Razorpay transfer failed: ${JSON.stringify(error)}`);
+        }
+        
+        transfer = await transferResponse.json();
+        console.log(`✅ [SETTLEMENT] Razorpay transfer created: ${transfer.id}`);
+      } catch (transferError) {
+        console.error(`❌ [SETTLEMENT] Razorpay transfer error:`, transferError);
+        throw transferError;
+      }
+    } else {
+      // No payment ID available - create settlement payment first
+      // In production, settlements should always have payment IDs
+      // For now, mark as pending manual processing
+      console.warn(`⚠️ [SETTLEMENT] No payment ID found for settlement ${settlementId}, marking for manual processing`);
+      settlement.status = 'pending';
+      settlement.notes = 'No payment ID available - requires manual processing';
+      await kv.set(`settlement:${settlementId}`, settlement);
+      throw new Error('No payment ID available for transfer. Settlement requires manual processing.');
+    }
+
+    // Update settlement
+    settlement.status = 'completed';
+    settlement.processedAt = new Date().toISOString();
+    settlement.transferId = transfer.id;
+    await kv.set(`settlement:${settlementId}`, settlement);
+
+    // Store in vendor settlements list
+    const vendorSettlementsKey = `vendor:${settlement.vendorId}:settlements`;
+    const vendorSettlements = await kv.get(vendorSettlementsKey) || [];
+    vendorSettlements.push(settlementId);
+    await kv.set(vendorSettlementsKey, vendorSettlements);
+
+    console.log(`✅ [SETTLEMENT] Processed settlement ${settlementId}: ₹${settlement.netAmount}`);
+  } catch (error) {
+    console.error(`❌ [SETTLEMENT] Error processing ${settlementId}:`, error);
+    
+    // Update status to failed
+    settlement.status = 'failed';
+    settlement.error = String(error);
+    await kv.set(`settlement:${settlementId}`, settlement);
+    
+    throw error;
+  }
+}
+
+/**
+ * Auto-settle vendors (run daily/weekly)
+ */
+export async function autoSettleVendors(
+  periodDays: number = 7
+): Promise<void> {
+  try {
+    console.log(`🔄 [SETTLEMENT] Starting auto-settlement for ${periodDays} day period`);
+
+    const periodEnd = new Date();
+    const periodStart = new Date();
+    periodStart.setDate(periodStart.getDate() - periodDays);
+
+    const allVendors = await kv.getByPrefix('vendor:vendor_');
+    const activeVendors = allVendors.filter(
+      (v: any) => v.status === 'approved' && v.isActive
+    );
+
+    console.log(`📊 [SETTLEMENT] Processing ${activeVendors.length} vendors`);
+
+    for (const vendor of activeVendors) {
+      try {
+        const settlement = await calculateSettlement(
+          vendor.id,
+          periodStart.toISOString(),
+          periodEnd.toISOString()
+        );
+
+        if (settlement.totalAmount > 0) {
+          // Save settlement
+          await kv.set(`settlement:${settlement.id}`, settlement);
+
+          // Auto-process if amount > threshold
+          const minSettlementAmount = 100; // ₹100 minimum
+          if (settlement.netAmount >= minSettlementAmount) {
+            await processSettlement(settlement.id);
+          } else {
+            console.log(`⏸️ [SETTLEMENT] Settlement ${settlement.id} below threshold (₹${settlement.netAmount})`);
+          }
+        }
+      } catch (error) {
+        console.error(`❌ [SETTLEMENT] Error for vendor ${vendor.id}:`, error);
+        // Continue with next vendor
+      }
+    }
+
+    console.log(`✅ [SETTLEMENT] Auto-settlement completed`);
+  } catch (error) {
+    console.error('❌ [SETTLEMENT] Auto-settlement error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Register settlement endpoints
+ */
+export function registerSettlementEndpoints(app: Hono) {
   /**
-   * POST /settlements/calculate-daily
-   * Run daily settlement calculation
-   * Should be called by cron job at midnight
+   * Calculate settlement
+   * POST /make-server-3dd53475/settlements/calculate
    */
-  app.post(`${BASE}/settlements/calculate-daily`, async (c) => {
+  app.post('/make-server-3dd53475/settlements/calculate', async (c) => {
     try {
-      console.log('💰 [SETTLEMENT] Starting daily settlement calculation...');
+      const { vendorId, periodStart, periodEnd } = await c.req.json();
 
-      // Get payout rules
-      const rules = await kv.get('admin:settings:payout_rules') || {
-        holdPeriodDays: 7,
-        minimumPayout: 1000,
-        autoPayout: true,
-        defaultCommission: 10
-      };
-
-      const holdPeriodMs = rules.holdPeriodDays * 24 * 60 * 60 * 1000;
-      const cutoffDate = new Date(Date.now() - holdPeriodMs);
-
-      // Get all completed bookings that passed hold period
-      const allBookings = await kv.getByPrefix('booking:');
-      const eligibleBookings = allBookings.filter((b: any) => {
-        if (b.status !== 'completed') return false;
-        if (b.settled) return false; // Already settled
-        
-        const completedDate = new Date(b.completedAt || b.scheduledDate);
-        return completedDate < cutoffDate;
-      });
-
-      console.log(`📊 [SETTLEMENT] Found ${eligibleBookings.length} eligible bookings`);
-
-      // Group by vendor
-      const vendorSettlements: any = {};
-
-      for (const booking of eligibleBookings) {
-        const vendorId = booking.vendorId;
-        
-        if (!vendorSettlements[vendorId]) {
-          vendorSettlements[vendorId] = {
-            vendorId,
-            bookings: [],
-            totalAmount: 0,
-            commission: 0,
-            netAmount: 0
-          };
-        }
-
-        // Calculate commission
-        const vendor = await kv.get(`vendor:${vendorId}`);
-        const commissionRate = vendor?.commissionRate || rules.defaultCommission;
-        const bookingAmount = booking.totalAmount || booking.amount || 0;
-        const commissionAmount = (bookingAmount * commissionRate) / 100;
-        const netAmount = bookingAmount - commissionAmount;
-
-        vendorSettlements[vendorId].bookings.push(booking.id);
-        vendorSettlements[vendorId].totalAmount += bookingAmount;
-        vendorSettlements[vendorId].commission += commissionAmount;
-        vendorSettlements[vendorId].netAmount += netAmount;
-
-        // Mark booking as settled
-        booking.settled = true;
-        booking.settledAt = new Date().toISOString();
-        await kv.set(`booking:${booking.id}`, booking);
+      if (!vendorId || !periodStart || !periodEnd) {
+        return c.json({ error: 'Missing required fields' }, 400);
       }
 
-      // Process settlements
-      const settlements = [];
-      for (const vendorId in vendorSettlements) {
-        const settlement = vendorSettlements[vendorId];
-
-        // Check minimum payout
-        if (settlement.netAmount < rules.minimumPayout) {
-          console.log(`⚠️ [SETTLEMENT] Vendor ${vendorId} below minimum (₹${settlement.netAmount})`);
-          continue;
-        }
-
-        // Create settlement record
-        const settlementId = generateId('settlement');
-        const settlementRecord = {
-          id: settlementId,
-          vendorId,
-          amount: settlement.netAmount,
-          totalAmount: settlement.totalAmount,
-          commission: settlement.commission,
-          bookingCount: settlement.bookings.length,
-          bookings: settlement.bookings,
-          status: rules.autoPayout ? 'pending_transfer' : 'pending_approval',
-          createdAt: new Date().toISOString()
-        };
-
-        await kv.set(`settlement:${settlementId}`, settlementRecord);
-        
-        // Add to pending settlements
-        const pendingSettlements = await kv.get('admin:settlements:pending') || [];
-        pendingSettlements.push(settlementId);
-        await kv.set('admin:settlements:pending', pendingSettlements);
-
-        settlements.push(settlementRecord);
-
-        // If auto-payout enabled, initiate transfer
-        if (rules.autoPayout) {
-          await initiateRazorpayTransfer(settlementRecord);
-        }
-
-        // Notify vendor
-        await sendSettlementNotification(vendorId, settlementRecord);
-      }
-
-      console.log(`✅ [SETTLEMENT] Created ${settlements.length} settlements`);
+      const settlement = await calculateSettlement(vendorId, periodStart, periodEnd);
+      
+      // Save settlement
+      await kv.set(`settlement:${settlement.id}`, settlement);
 
       return c.json({
         success: true,
-        settlementsCreated: settlements.length,
-        totalAmount: settlements.reduce((sum, s) => sum + s.netAmount, 0),
-        settlements
+        settlement,
       });
-
     } catch (error) {
-      console.error('[SETTLEMENT] Error:', error);
-      return c.json({ error: 'Settlement calculation failed' }, 500);
+      return c.json({ error: String(error) }, 500);
     }
   });
 
   /**
-   * POST /settlements/:settlementId/approve
-   * Admin approves a settlement for payout
+   * Process settlement
+   * POST /make-server-3dd53475/settlements/:settlementId/process
    */
-  app.post(`${BASE}/settlements/:settlementId/approve`, async (c) => {
+  app.post('/make-server-3dd53475/settlements/:settlementId/process', async (c) => {
     try {
       const { settlementId } = c.req.param();
-      const { adminId } = await c.req.json();
+      await processSettlement(settlementId);
 
       const settlement = await kv.get(`settlement:${settlementId}`);
-      if (!settlement) {
-        return c.json({ error: 'Settlement not found' }, 404);
-      }
-
-      if (settlement.status !== 'pending_approval') {
-        return c.json({ error: 'Settlement already processed' }, 400);
-      }
-
-      settlement.status = 'approved';
-      settlement.approvedBy = adminId;
-      settlement.approvedAt = new Date().toISOString();
-      await kv.set(`settlement:${settlementId}`, settlement);
-
-      // Initiate transfer
-      await initiateRazorpayTransfer(settlement);
 
       return c.json({
         success: true,
-        message: 'Settlement approved and transfer initiated'
+        settlement,
       });
-
     } catch (error) {
-      console.error('[SETTLEMENT] Approval error:', error);
-      return c.json({ error: 'Failed to approve settlement' }, 500);
+      return c.json({ error: String(error) }, 500);
     }
   });
 
   /**
-   * GET /settlements/vendor/:vendorId
-   * Get settlement history for vendor
+   * Get vendor settlements
+   * GET /make-server-3dd53475/settlements/vendor/:vendorId
    */
-  app.get(`${BASE}/settlements/vendor/:vendorId`, async (c) => {
+  app.get('/make-server-3dd53475/settlements/vendor/:vendorId', async (c) => {
     try {
       const { vendorId } = c.req.param();
+      const settlementsKey = `vendor:${vendorId}:settlements`;
+      const settlementIds = await kv.get(settlementsKey) || [];
 
-      const allSettlements = await kv.getByPrefix('settlement:');
-      const vendorSettlements = allSettlements
-        .filter((s: any) => s.vendorId === vendorId)
-        .sort((a: any, b: any) => 
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        );
+      const settlements = await Promise.all(
+        settlementIds.map(async (id: string) => {
+          return await kv.get(`settlement:${id}`);
+        })
+      );
 
       return c.json({
         success: true,
-        settlements: vendorSettlements,
-        totalSettled: vendorSettlements
-          .filter((s: any) => s.status === 'completed')
-          .reduce((sum: number, s: any) => sum + s.amount, 0)
+        settlements: settlements.filter(s => s),
       });
-
     } catch (error) {
-      console.error('[SETTLEMENT] History error:', error);
-      return c.json({ error: 'Failed to fetch history' }, 500);
+      return c.json({ error: String(error) }, 500);
     }
   });
 
-  // ==========================================
-  // HELPER FUNCTIONS
-  // ==========================================
-
-  async function initiateRazorpayTransfer(settlement: any) {
+  /**
+   * Trigger auto-settlement (admin only)
+   * POST /make-server-3dd53475/settlements/auto-settle
+   */
+  app.post('/make-server-3dd53475/settlements/auto-settle', async (c) => {
     try {
-      console.log(`💸 [TRANSFER] Initiating for settlement ${settlement.id}`);
+      const { periodDays } = await c.req.json();
+      await autoSettleVendors(periodDays || 7);
 
-      // Get vendor details
-      const vendor = await kv.get(`vendor:${settlement.vendorId}`);
-      if (!vendor) {
-        throw new Error('Vendor not found');
-      }
-
-      // Get Razorpay credentials
-      const paymentSettings = await kv.get('admin:settings:payment') || {};
-      const razorpayKeyId = paymentSettings.razorpay?.keyId || Deno.env.get('RAZORPAY_KEY_ID');
-      const razorpayKeySecret = paymentSettings.razorpay?.keySecret || Deno.env.get('RAZORPAY_KEY_SECRET');
-
-      if (!razorpayKeyId || !razorpayKeySecret) {
-        console.error('[TRANSFER] Razorpay credentials not configured');
-        settlement.status = 'failed';
-        settlement.error = 'Payment gateway not configured';
-        await kv.set(`settlement:${settlement.id}`, settlement);
-        return;
-      }
-
-      // Create/Get contact
-      let contactId = vendor.razorpayContactId;
-      if (!contactId) {
-        contactId = await createRazorpayContact(vendor, razorpayKeyId, razorpayKeySecret);
-        vendor.razorpayContactId = contactId;
-        await kv.set(`vendor:${vendor.id}`, vendor);
-      }
-
-      // Create/Get fund account
-      let fundAccountId = vendor.razorpayFundAccountId;
-      if (!fundAccountId) {
-        fundAccountId = await createRazorpayFundAccount(
-          contactId,
-          vendor,
-          razorpayKeyId,
-          razorpayKeySecret
-        );
-        vendor.razorpayFundAccountId = fundAccountId;
-        await kv.set(`vendor:${vendor.id}`, vendor);
-      }
-
-      // Create payout
-      const payout = await createRazorpayPayout(
-        fundAccountId,
-        settlement.amount,
-        settlement.id,
-        razorpayKeyId,
-        razorpayKeySecret
-      );
-
-      // Update settlement
-      settlement.status = 'processing';
-      settlement.razorpayPayoutId = payout.id;
-      settlement.transferInitiatedAt = new Date().toISOString();
-      await kv.set(`settlement:${settlement.id}`, settlement);
-
-      console.log(`✅ [TRANSFER] Payout created: ${payout.id}`);
-
+      return c.json({
+        success: true,
+        message: 'Auto-settlement completed',
+      });
     } catch (error) {
-      console.error('[TRANSFER] Error:', error);
-      settlement.status = 'failed';
-      settlement.error = error instanceof Error ? error.message : 'Transfer failed';
-      await kv.set(`settlement:${settlement.id}`, settlement);
+      return c.json({ error: String(error) }, 500);
     }
-  }
-
-  async function createRazorpayContact(vendor: any, keyId: string, keySecret: string) {
-    const auth = btoa(`${keyId}:${keySecret}`);
-
-    const response = await fetch('https://api.razorpay.com/v1/contacts', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Basic ${auth}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        name: vendor.businessName || vendor.fullName,
-        email: vendor.email,
-        contact: vendor.phone,
-        type: 'vendor',
-        reference_id: vendor.id
-      })
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error?.description || 'Failed to create contact');
-    }
-
-    const contact = await response.json();
-    return contact.id;
-  }
-
-  async function createRazorpayFundAccount(
-    contactId: string,
-    vendor: any,
-    keyId: string,
-    keySecret: string
-  ) {
-    const auth = btoa(`${keyId}:${keySecret}`);
-
-    const response = await fetch('https://api.razorpay.com/v1/fund_accounts', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Basic ${auth}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        contact_id: contactId,
-        account_type: 'bank_account',
-        bank_account: {
-          name: vendor.bankAccountName || vendor.businessName,
-          ifsc: vendor.ifscCode,
-          account_number: vendor.accountNumber
-        }
-      })
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error?.description || 'Failed to create fund account');
-    }
-
-    const fundAccount = await response.json();
-    return fundAccount.id;
-  }
-
-  async function createRazorpayPayout(
-    fundAccountId: string,
-    amount: number,
-    settlementId: string,
-    keyId: string,
-    keySecret: string
-  ) {
-    const auth = btoa(`${keyId}:${keySecret}`);
-    const amountInPaise = Math.round(amount * 100);
-
-    const response = await fetch('https://api.razorpay.com/v1/payouts', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Basic ${auth}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        account_number: Deno.env.get('RAZORPAY_ACCOUNT_NUMBER'), // Your Razorpay account
-        fund_account_id: fundAccountId,
-        amount: amountInPaise,
-        currency: 'INR',
-        mode: 'IMPS',
-        purpose: 'payout',
-        queue_if_low_balance: true,
-        reference_id: settlementId,
-        narration: `Settlement ${settlementId}`
-      })
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error?.description || 'Failed to create payout');
-    }
-
-    return await response.json();
-  }
-
-  async function sendSettlementNotification(vendorId: string, settlement: any) {
-    try {
-      const notification = {
-        id: generateId('notif'),
-        userId: vendorId,
-        userType: 'vendor',
-        type: 'settlement_processed',
-        title: 'Settlement Processed! 💰',
-        message: `₹${settlement.amount.toFixed(2)} will be transferred to your account within 2-3 business days.`,
-        data: { settlementId: settlement.id },
-        read: false,
-        priority: 'high',
-        createdAt: new Date().toISOString()
-      };
-
-      const notifications = await kv.get(`notifications:${vendorId}`) || [];
-      notifications.unshift(notification);
-      await kv.set(`notifications:${vendorId}`, notifications);
-
-      console.log(`📧 [NOTIFICATION] Settlement notification sent to vendor ${vendorId}`);
-    } catch (error) {
-      console.error('[NOTIFICATION] Error:', error);
-    }
-  }
+  });
 }

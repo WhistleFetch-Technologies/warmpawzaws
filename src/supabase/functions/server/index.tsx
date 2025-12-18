@@ -171,6 +171,15 @@ import { bankVerificationIntegration } from './bank-verification-integration.tsx
 // ✅ RULE 16 & 17: Vendor onboarding and schedule management
 import { scheduleValidationTemplates } from './schedule-validation-templates.tsx';
 
+// ✅ NEW: Gap Fixes - Critical Infrastructure
+import { registerEnhancedSearchEndpoints } from './enhanced-search-endpoints.tsx';
+import { registerVideoProviderEndpoints } from './video-provider-integration.tsx';
+import { registerPushNotificationEndpoints } from './push-notification-service.tsx';
+import { registerSettlementEndpoints } from './settlement-automation.tsx';
+import { registerPolicyPDFEndpoints } from './policy-pdf-generator.tsx';
+import { registerMedicineCatalogEndpoints } from './medicine-catalog-endpoints.tsx';
+import { initializeAndSyncIndices } from './search-indexing.tsx';
+
 const app = new Hono();
 
 // Global Middleware
@@ -1263,6 +1272,49 @@ if (scheduleValidationTemplates && typeof scheduleValidationTemplates === 'funct
   console.log('✅ Registering Schedule Validation Templates...');
   scheduleValidationTemplates(app, kv);
 }
+
+// ✅ NEW: Gap Fixes - Critical Infrastructure Endpoints
+console.log('✅ Registering Enhanced Search Endpoints (Elasticsearch)...');
+registerEnhancedSearchEndpoints(app);
+
+console.log('✅ Registering Video Provider Endpoints (100ms/Agora/Zoom)...');
+registerVideoProviderEndpoints(app);
+
+console.log('✅ Registering Push Notification Endpoints...');
+registerPushNotificationEndpoints(app);
+
+console.log('✅ Registering Settlement Automation Endpoints...');
+registerSettlementEndpoints(app);
+
+console.log('✅ Registering Policy PDF Endpoints...');
+registerPolicyPDFEndpoints(app);
+
+console.log('✅ Registering Medicine Catalog Endpoints...');
+registerMedicineCatalogEndpoints(app);
+
+console.log('✅ Registering Ambulance Service Complete...');
+import { registerAmbulanceServiceComplete } from './ambulance-service-complete.tsx';
+registerAmbulanceServiceComplete(app);
+
+console.log('✅ Registering Nutritionist Meal Plan Complete...');
+import { registerNutritionistMealPlanComplete } from './nutritionist-meal-plan-complete.tsx';
+registerNutritionistMealPlanComplete(app);
+
+console.log('✅ Registering Puppy Profile Publishing...');
+import { registerPuppyProfilePublishing } from './puppy-profile-publishing.tsx';
+registerPuppyProfilePublishing(app);
+
+console.log('✅ Registering Behaviorist Service Complete...');
+import { registerBehavioristServiceComplete } from './behaviorist-service-complete.tsx';
+registerBehavioristServiceComplete(app);
+
+// Holiday package endpoints already registered via holidayPackageEndpoints
+// Verify it's registered in the endpoint registration section below
+
+// Initialize Elasticsearch indices (async, non-blocking)
+initializeAndSyncIndices().catch((error) => {
+  console.warn('⚠️ Elasticsearch initialization failed (will use KV store fallback):', error);
+});
 
 // ------------------------------------------------------------------
 // GLOBAL ERROR HANDLERS

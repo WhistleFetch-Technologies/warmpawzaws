@@ -94,14 +94,24 @@ const publicAnonKeyProxy = new Proxy({} as any, {
   get: function(_target, prop) {
     // When any property is accessed, return the actual key value
     const key = getPublicAnonKey();
-    // Handle special cases for string coercion
+    // ✅ FIX: Handle primitive conversion for template strings
+    // When used in template strings like `${publicAnonKey}`, JavaScript calls:
+    // 1. Symbol.toPrimitive (if present)
+    // 2. valueOf() (if present)
+    // 3. toString() (if present)
     if (prop === Symbol.toPrimitive) {
+      // Return a function that will be called during primitive conversion
+      return (hint: string) => key;
+    }
+    if (prop === 'toString') {
+      // Return a function that will be called when converting to string
       return () => key;
     }
-    if (prop === 'toString' || prop === 'valueOf') {
+    if (prop === 'valueOf') {
+      // Return a function that will be called when converting to primitive
       return () => key;
     }
-    // For any other property access, return the key string
+    // For any other property access, return the key string directly
     return key;
   },
 });
