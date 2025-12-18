@@ -258,10 +258,11 @@ export function HomeServiceSelectionEnhanced({
 
       <div className="space-y-3">
         {timeWindows.map((window) => (
-          <button
+          <Button
             key={window.id}
             onClick={() => handleTimeWindowSelect(window.id)}
             disabled={isSubscription && !window.isPackageEligible}
+            variant={selectedTimeWindow === window.id ? "default" : "outline"}
             className={`w-full p-4 rounded-xl border-2 transition-all relative ${
               selectedTimeWindow === window.id
                 ? 'border-orange-500 bg-orange-50'
@@ -313,9 +314,9 @@ export function HomeServiceSelectionEnhanced({
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-            <button onClick={() => setStep('timeWindow')} className="text-gray-600">
+            <Button variant="ghost" size="icon" onClick={() => setStep('timeWindow')} className="text-gray-600">
                 <ChevronRight className="w-5 h-5 rotate-180" />
-            </button>
+            </Button>
             <div>
             <h2 className="text-xl font-bold text-gray-900">Choose Provider</h2>
             <p className="text-sm text-gray-600">
@@ -362,9 +363,10 @@ export function HomeServiceSelectionEnhanced({
                 <span className="text-sm text-gray-600">{providers.length} providers</span>
              </div>
              {providers.map((provider) => (
-              <button
+              <Button
                 key={provider.id}
                 onClick={() => handleProviderSelect(provider.id)}
+                variant={selectedProvider === provider.id ? "default" : "outline"}
                 className={`w-full p-4 rounded-xl border-2 transition-all text-left ${
                   selectedProvider === provider.id
                     ? 'border-orange-500 bg-orange-50'
@@ -418,7 +420,7 @@ export function HomeServiceSelectionEnhanced({
                     )}
                   </div>
                 </div>
-              </button>
+              </Button>
             ))}
           </div>
       )}
@@ -431,9 +433,9 @@ export function HomeServiceSelectionEnhanced({
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-2">
-          <button onClick={() => setStep('providers')} className="text-gray-600">
+          <Button variant="ghost" size="icon" onClick={() => setStep('providers')} className="text-gray-600">
             <ChevronRight className="w-5 h-5 rotate-180" />
-          </button>
+          </Button>
           <div>
             <h2 className="text-xl font-bold text-gray-900">
                 {isSubscription ? 'Confirm Subscription' : 'Schedule Appointment'}
@@ -487,8 +489,9 @@ export function HomeServiceSelectionEnhanced({
             <label className="block text-sm font-medium text-gray-700 mb-2">Select Time Slot</label>
             <div className="grid grid-cols-2 gap-2">
               {['09:00 AM', '10:00 AM', '11:00 AM', '02:00 PM', '03:00 PM', '04:00 PM', '05:00 PM', '06:00 PM'].map((slot) => (
-                <button
+                <Button
                   key={slot}
+                  variant={selectedSlot === slot ? "default" : "outline"}
                   onClick={() => setSelectedSlot(slot)}
                   className={`py-3 rounded-lg border-2 transition-all ${
                     selectedSlot === slot
@@ -497,7 +500,7 @@ export function HomeServiceSelectionEnhanced({
                   }`}
                 >
                   {slot}
-                </button>
+                </Button>
               ))}
             </div>
           </div>

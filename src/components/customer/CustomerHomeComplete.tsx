@@ -363,9 +363,11 @@ export function CustomerHome({
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button 
+            <Button 
+              variant="ghost"
+              size="icon"
               onClick={() => onNavigate && onNavigate('cart')}
-              className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm relative"
+              className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm relative hover:bg-white/30"
             >
               <ShoppingCart className="w-5 h-5 text-white" />
               {itemCount > 0 && (
@@ -373,10 +375,10 @@ export function CustomerHome({
                   {itemCount}
                 </span>
               )}
-            </button>
-            <button className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm">
+            </Button>
+            <Button variant="ghost" size="icon" className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm hover:bg-white/30">
               <Heart className="w-5 h-5 text-white" />
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -385,13 +387,15 @@ export function CustomerHome({
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <p className="text-white/90 text-sm font-medium">Your Pets</p>
-              <button
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={handleAddPet}
                 className="text-white/90 text-xs flex items-center gap-1 hover:text-white transition-colors"
               >
                 <Plus className="w-4 h-4" />
                 Add Pet
-              </button>
+              </Button>
             </div>
             <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide -mx-6 px-6">
               {userData.pets.map((pet) => (
@@ -456,13 +460,13 @@ export function CustomerHome({
                   ? 'Ready for a new companion? Add your pet profile to get started'
                   : 'Add your pet profile to unlock personalized services'}
               </p>
-              <button
+              <Button
                 onClick={handleAddPet}
-                className="bg-white text-[#FF8C42] px-4 py-2 rounded-full text-sm font-medium flex items-center gap-2 mx-auto"
+                className="bg-white text-[#FF8C42] px-4 py-2 rounded-full text-sm font-medium flex items-center gap-2 mx-auto hover:bg-orange-50"
               >
                 <Plus className="w-4 h-4" />
                 Add Your First Pet
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -1096,20 +1100,20 @@ export function CustomerHome({
             </div>
             <span className="text-xs text-gray-400">Cart</span>
           </Button>
-          <button 
+          <Button variant="ghost"
             onClick={() => onOpenMenu && onOpenMenu()}
             className="flex flex-col items-center gap-1"
           >
             <Calendar className="w-6 h-6 text-gray-400" />
             <span className="text-xs text-gray-400">Bookings</span>
-          </button>
-          <button 
+          </Button>
+          <Button variant="ghost"
             onClick={() => onProfileClick && onProfileClick()}
             className="flex flex-col items-center gap-1"
           >
             <User className="w-6 h-6 text-gray-400" />
             <span className="text-xs text-gray-400">Profile</span>
-          </button>
+          </Button>
         </div>
         {/* Home Indicator */}
         <div className="flex justify-center mt-2">
