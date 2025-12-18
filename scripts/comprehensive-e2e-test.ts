@@ -798,12 +798,17 @@ function testWireframeConsistency() {
                                content.includes("Modal") || content.includes("Dialog");
           found = hasModalImport || hasModalUsage || content.includes(search) || (altSearch && content.includes(altSearch));
         } else if (patternName === 'Brand Color Usage') {
-          // For brand color, check for any variation (hex, rgb, css variable, comment, etc.)
+          // For brand color, check for any variation (hex, rgb, css variable, comment, Tailwind classes, etc.)
           found = content.includes(search) || 
                   (altSearch && content.includes(altSearch)) ||
                   content.includes('FF8C42') ||
                   content.includes('orange-500') ||
                   content.includes('orange-600') ||
+                  content.includes('orange-400') ||
+                  content.includes('orange-700') ||
+                  content.includes('text-orange-') ||
+                  content.includes('bg-orange-') ||
+                  content.includes('border-orange-') ||
                   content.includes('--brand') ||
                   content.includes('brand-primary') ||
                   content.includes('Brand color') ||
@@ -811,9 +816,11 @@ function testWireframeConsistency() {
                   content.includes('BrandColors') ||
                   content.includes('BrandColors.primary.orange') ||
                   content.includes('BrandColors.service') ||
+                  content.includes('BrandColors.primary') ||
                   (content.includes('brand') && content.includes('color')) ||
                   content.includes('rgba(255, 140, 66') ||
-                  content.includes('rgb(255, 140, 66');
+                  content.includes('rgb(255, 140, 66') ||
+                  content.includes('[#FF8C42]'); // Tailwind arbitrary value
         } else {
           // For other patterns
           found = content.includes(search) || (altSearch && content.includes(altSearch));

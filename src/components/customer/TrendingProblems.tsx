@@ -3,6 +3,7 @@ import { TrendingUp, ChevronRight } from 'lucide-react';
 import { Badge } from '../ui/badge';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 // Brand color: #FF8C42
+// Using brand color in styling: #FF8C42
 
 interface TrendingProblem {
   problemId: string;

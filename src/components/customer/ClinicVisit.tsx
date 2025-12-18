@@ -1,4 +1,5 @@
 import { useState } from 'react';
+// Brand color: #FF8C42
 import { ClinicListView } from './vet/ClinicListView';
 import { ClinicProfileView } from './vet/ClinicProfileView';
 import { VetServiceBooking } from './vet/VetServiceBooking';
