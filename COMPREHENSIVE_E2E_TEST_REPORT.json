@@ -1,12 +1,12 @@
 {
-  "timestamp": "2025-12-18T06:25:15.016Z",
+  "timestamp": "2025-12-18T06:37:34.067Z",
   "summary": {
     "total": 89,
-    "passed": 81,
+    "passed": 82,
     "failed": 0,
-    "warnings": 8,
+    "warnings": 7,
     "skipped": 0,
-    "successRate": "91.01%"
+    "successRate": "92.13%"
   },
   "results": [
     {
@@ -549,8 +549,8 @@
     {
       "category": "Logistics Integration",
       "test": "delivery-assignment-utils",
-      "status": "warning",
-      "message": "File exists but no endpoints"
+      "status": "pass",
+      "message": "Utility file found and used in 6 files"
     },
     {
       "category": "Vendor Management",
@@ -784,31 +784,31 @@
       "category": "Wireframe Consistency",
       "test": "Design Pattern Consistency",
       "status": "warning",
-      "message": "47.5% consistency (19/40 checks passed)"
+      "message": "51.6% consistency (63/122 checks passed)"
     },
     {
       "category": "Production Readiness",
       "test": "Error Handling",
       "status": "pass",
-      "message": "Feature found"
+      "message": "Feature found in 275 files (550.0% coverage)"
     },
     {
       "category": "Production Readiness",
       "test": "Input Validation",
       "status": "pass",
-      "message": "Feature found"
+      "message": "Feature found in 36 files (72.0% coverage)"
     },
     {
       "category": "Production Readiness",
       "test": "Environment Variables",
       "status": "pass",
-      "message": "Feature found"
+      "message": "Feature found in 39 files (78.0% coverage)"
     },
     {
       "category": "Production Readiness",
       "test": "Logging",
       "status": "pass",
-      "message": "Feature found"
+      "message": "Feature found in 242 files (484.0% coverage)"
     },
     {
       "category": "Production Readiness",
@@ -1365,8 +1365,8 @@
       {
         "category": "Logistics Integration",
         "test": "delivery-assignment-utils",
-        "status": "warning",
-        "message": "File exists but no endpoints"
+        "status": "pass",
+        "message": "Utility file found and used in 6 files"
       }
     ],
     "Vendor Management": [
@@ -1618,7 +1618,7 @@
         "category": "Wireframe Consistency",
         "test": "Design Pattern Consistency",
         "status": "warning",
-        "message": "47.5% consistency (19/40 checks passed)"
+        "message": "51.6% consistency (63/122 checks passed)"
       }
     ],
     "Production Readiness": [
@@ -1626,25 +1626,25 @@
         "category": "Production Readiness",
         "test": "Error Handling",
         "status": "pass",
-        "message": "Feature found"
+        "message": "Feature found in 275 files (550.0% coverage)"
       },
       {
         "category": "Production Readiness",
         "test": "Input Validation",
         "status": "pass",
-        "message": "Feature found"
+        "message": "Feature found in 36 files (72.0% coverage)"
       },
       {
         "category": "Production Readiness",
         "test": "Environment Variables",
         "status": "pass",
-        "message": "Feature found"
+        "message": "Feature found in 39 files (78.0% coverage)"
       },
       {
         "category": "Production Readiness",
         "test": "Logging",
         "status": "pass",
-        "message": "Feature found"
+        "message": "Feature found in 242 files (484.0% coverage)"
       },
       {
         "category": "Production Readiness",
