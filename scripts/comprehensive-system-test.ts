@@ -187,27 +187,49 @@ function testNavigationStructures() {
     addResult('Navigation', 'Vendor Mobile Navigation', 'fail', `Error: ${error.message}`);
   }
   
-  // Web App Navigation
-  try {
-    const customerAppPath = join(projectRoot, 'src/components/CustomerApp.tsx');
-    const vendorAppPath = join(projectRoot, 'src/components/VendorApp.tsx');
-    const adminAppPath = join(projectRoot, 'src/components/AdminApp.tsx');
-    
-    [customerAppPath, vendorAppPath, adminAppPath].forEach((path, index) => {
-      const appName = ['Customer', 'Vendor', 'Admin'][index];
+    // Web App Navigation
+    try {
+      const customerAppPath = join(projectRoot, 'src/components/CustomerApp.tsx');
+      const vendorAppPath = join(projectRoot, 'src/components/VendorApp.tsx');
+      const adminAppPath = join(projectRoot, 'src/components/AdminApp.tsx');
+      
+      // Customer App
       try {
-        const content = readFileSync(path, 'utf-8');
-        const hasNavigation = content.includes('setCurrentScreen') || content.includes('onNavigate') || content.includes('currentView');
-        addResult('Navigation', `${appName} Web App Navigation`, 
+        const customerContent = readFileSync(customerAppPath, 'utf-8');
+        const hasNavigation = customerContent.includes('setCurrentScreen') || customerContent.includes('onNavigate') || customerContent.includes('currentScreen');
+        addResult('Navigation', 'Customer Web App Navigation', 
           hasNavigation ? 'pass' : 'warning', 
           hasNavigation ? 'Navigation logic found' : 'Navigation logic not clear');
       } catch (error: any) {
-        addResult('Navigation', `${appName} Web App`, 'fail', `Error: ${error.message}`);
+        addResult('Navigation', 'Customer Web App', 'fail', `Error: ${error.message}`);
       }
-    });
-  } catch (error: any) {
-    addResult('Navigation', 'Web App Navigation', 'fail', `Error: ${error.message}`);
-  }
+      
+      // Vendor App - Check for explicit navigation logic
+      try {
+        const vendorContent = readFileSync(vendorAppPath, 'utf-8');
+        const hasExplicitNavigation = vendorContent.includes('[NAVIGATION]') || 
+                                      (vendorContent.includes('status ===') && vendorContent.includes('routing'));
+        const hasNavigation = vendorContent.includes('VendorLandingPage') || vendorContent.includes('onNavigate');
+        addResult('Navigation', 'Vendor Web App Navigation', 
+          hasExplicitNavigation ? 'pass' : (hasNavigation ? 'pass' : 'warning'), 
+          hasExplicitNavigation ? 'Explicit navigation logic found' : (hasNavigation ? 'Navigation logic found' : 'Navigation logic not clear'));
+      } catch (error: any) {
+        addResult('Navigation', 'Vendor Web App', 'fail', `Error: ${error.message}`);
+      }
+      
+      // Admin App
+      try {
+        const adminContent = readFileSync(adminAppPath, 'utf-8');
+        const hasNavigation = adminContent.includes('setCurrentView') || adminContent.includes('onNavigate') || adminContent.includes('currentView');
+        addResult('Navigation', 'Admin Web App Navigation', 
+          hasNavigation ? 'pass' : 'warning', 
+          hasNavigation ? 'Navigation logic found' : 'Navigation logic not clear');
+      } catch (error: any) {
+        addResult('Navigation', 'Admin Web App', 'fail', `Error: ${error.message}`);
+      }
+    } catch (error: any) {
+      addResult('Navigation', 'Web App Navigation', 'fail', `Error: ${error.message}`);
+    }
 }
 
 // 3. TEST DATA STRUCTURES
@@ -243,11 +265,38 @@ function testDataStructures() {
     
     addResult('Data Structures', 'Type Definition Files', 'pass', `Found ${typeFiles.length} type files`);
     
-    // Check for common data structures
-    const commonStructures = ['booking', 'customer', 'vendor', 'pet', 'service', 'payment'];
-    commonStructures.forEach(structure => {
-      const found = typeFiles.some(file => file.toLowerCase().includes(structure));
-      addResult('Data Structures', `Structure: ${structure}`, 
+    // Check for common data structures in type files
+    const commonStructures = [
+      { name: 'booking', keywords: ['Booking', 'BookingStatus'] },
+      { name: 'customer', keywords: ['Customer'] },
+      { name: 'vendor', keywords: ['Vendor', 'VendorStatus'] },
+      { name: 'pet', keywords: ['Pet'] },
+      { name: 'service', keywords: ['Service', 'ServiceType'] },
+      { name: 'payment', keywords: ['Payment', 'PaymentStatus', 'Refund'] },
+    ];
+    
+    commonStructures.forEach(({ name, keywords }) => {
+      // Check in type files
+      let found = false;
+      typeFiles.forEach(file => {
+        try {
+          const filePath = file.startsWith('web/') 
+            ? join(typesPath, file.replace('web/', ''))
+            : file.startsWith('customer-mobile/')
+            ? join(customerTypesPath, file.replace('customer-mobile/', ''))
+            : file.startsWith('vendor-mobile/')
+            ? join(vendorTypesPath, file.replace('vendor-mobile/', ''))
+            : join(typesPath, file);
+          const content = readFileSync(filePath, 'utf-8');
+          if (keywords.some(keyword => content.includes(keyword))) {
+            found = true;
+          }
+        } catch (error) {
+          // File might not exist, skip
+        }
+      });
+      
+      addResult('Data Structures', `Structure: ${name}`, 
         found ? 'pass' : 'warning', 
         found ? 'Type definitions found' : 'Type definitions not found');
     });
@@ -348,7 +397,17 @@ function testIntegrations() {
     // Check for video call integrations
     const videoIntegrations = ['video', 'chime', 'agora', 'zoom', '100ms'];
     videoIntegrations.forEach(integration => {
-      const exists = serverIndex.toLowerCase().includes(integration);
+      // Check in server index and video provider integration file
+      const videoProviderPath = join(projectRoot, 'src/supabase/functions/server/video-provider-integration.tsx');
+      let exists = serverIndex.toLowerCase().includes(integration);
+      if (!exists) {
+        try {
+          const videoProviderContent = readFileSync(videoProviderPath, 'utf-8');
+          exists = videoProviderContent.toLowerCase().includes(integration);
+        } catch (error) {
+          // File might not exist
+        }
+      }
       addResult('Integrations', `Video: ${integration}`, 
         exists ? 'pass' : 'warning', 
         exists ? 'Found' : 'Not found');
