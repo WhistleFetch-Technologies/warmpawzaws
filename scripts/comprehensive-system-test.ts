@@ -44,10 +44,11 @@ function testRoutesAndEndpoints() {
   log('\n📡 Testing Routes and Endpoints...', colors.cyan);
   
   try {
+    const serverFunctionsPath = join(projectRoot, 'src/supabase/functions/server');
     const serverIndexPath = join(projectRoot, 'src/supabase/functions/server/index.tsx');
     const serverIndex = readFileSync(serverIndexPath, 'utf-8');
     
-    // Check for route registrations
+    // Check for route registrations in index.tsx
     const routePatterns = [
       /app\.(get|post|put|patch|delete)\(['"`]([^'"`]+)['"`]/g,
       /app\.route\(['"`]([^'"`]+)['"`]/g,
@@ -61,23 +62,65 @@ function testRoutesAndEndpoints() {
       }
     });
     
-    addResult('Routes', 'Route Registration', 'pass', `Found ${routes.size} route patterns`);
+    addResult('Routes', 'Route Registration', 'pass', `Found ${routes.size} route patterns in index.tsx`);
     
-    // Check for critical endpoints
-    const criticalEndpoints = [
-      '/make-server-3dd53475/health',
-      '/make-server-3dd53475/customer',
-      '/make-server-3dd53475/vendor',
-      '/make-server-3dd53475/admin',
-      '/make-server-3dd53475/booking',
-      '/make-server-3dd53475/payment',
+    // Check for routes across all server files
+    const serverFiles = readdirSync(serverFunctionsPath).filter(f => 
+      (f.endsWith('.tsx') || f.endsWith('.ts')) && f !== 'index.tsx'
+    );
+    
+    let totalRoutes = 0;
+    const routePrefixes = new Set<string>();
+    
+    serverFiles.forEach(file => {
+      try {
+        const filePath = join(serverFunctionsPath, file);
+        const content = readFileSync(filePath, 'utf-8');
+        const routeMatches = content.matchAll(/app\.(get|post|put|patch|delete)\(['"`]([^'"`]+)['"`]/g);
+        
+        for (const match of routeMatches) {
+          const route = match[2];
+          totalRoutes++;
+          // Extract prefix (e.g., /make-server-3dd53475/customer from /make-server-3dd53475/customer/:id)
+          const prefixMatch = route.match(/^(\/make-server-3dd53475\/[^\/:]+)/);
+          if (prefixMatch) {
+            routePrefixes.add(prefixMatch[1]);
+          }
+        }
+      } catch (error) {
+        // Skip files that can't be read
+      }
+    });
+    
+    addResult('Routes', 'Total Routes Found', 'pass', `Found ${totalRoutes} routes across all server files`);
+    
+    // Check for critical endpoint prefixes (routes may have parameters, so check prefixes)
+    const criticalEndpointPrefixes = [
+      { prefix: '/make-server-3dd53475/health', name: 'Health Check' },
+      { prefix: '/make-server-3dd53475/customer', name: 'Customer Routes' },
+      { prefix: '/make-server-3dd53475/vendor', name: 'Vendor Routes' },
+      { prefix: '/make-server-3dd53475/admin', name: 'Admin Routes' },
+      { prefix: '/make-server-3dd53475/bookings', name: 'Booking Routes' },
+      { prefix: '/make-server-3dd53475/ecommerce/payments', name: 'Payment Routes (E-commerce)' },
+      { prefix: '/make-server-3dd53475/payments', name: 'Payment Routes' },
     ];
     
-    criticalEndpoints.forEach(endpoint => {
-      const exists = serverIndex.includes(endpoint);
-      addResult('Routes', `Critical Endpoint: ${endpoint}`, 
+    criticalEndpointPrefixes.forEach(({ prefix, name }) => {
+      // Check if prefix exists in routes or if any route starts with this prefix
+      const exists = routePrefixes.has(prefix) || 
+                    Array.from(routePrefixes).some(r => r.startsWith(prefix)) ||
+                    serverFiles.some(file => {
+                      try {
+                        const content = readFileSync(join(serverFunctionsPath, file), 'utf-8');
+                        return content.includes(prefix);
+                      } catch {
+                        return false;
+                      }
+                    });
+      
+      addResult('Routes', `Critical Endpoint: ${name}`, 
         exists ? 'pass' : 'fail', 
-        exists ? 'Found' : 'Missing');
+        exists ? `Found routes with prefix ${prefix}` : `Missing routes with prefix ${prefix}`);
     });
     
     // Check for endpoint registration functions
