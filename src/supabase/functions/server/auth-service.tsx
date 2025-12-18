@@ -185,7 +185,7 @@ export async function updateUser(userId: string, updates: Partial<User>): Promis
 export async function createUserSession(userId: string, phone: string, role: string): Promise<Session> {
   const sessionId = generateId('session');
   const now = new Date().toISOString();
-  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(); // 30 days
+  const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(); // ✅ EXTENDED: 48 hours (was 30 days, now aligned with frontend)
   
   const session: Session = {
     sessionId,

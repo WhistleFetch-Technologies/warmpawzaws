@@ -19,7 +19,7 @@ interface SessionData {
 }
 
 const SESSION_KEY = 'warmpawz_session';
-const SESSION_EXPIRY_HOURS = 24;
+const SESSION_EXPIRY_HOURS = 48; // ✅ EXTENDED: 48 hours for all apps (Customer, Vendor, Admin)
 
 /**
  * Store session data securely

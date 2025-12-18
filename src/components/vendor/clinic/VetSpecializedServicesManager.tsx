@@ -21,6 +21,7 @@ import { Card } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import { toast } from 'sonner@2.0.3';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { authenticatedFetch } from '../../../utils/session-manager'; // ✅ FIX: Use authenticated fetch for write operations
 import { VetPharmacyManager } from './VetPharmacyManager'; // ✅ NEW: Import pharmacy manager
 import { AmbulanceEditModal } from './modals/AmbulanceEditModal'; // ✅ Import edit modals
 import { DiagnosticEditModal } from './modals/DiagnosticEditModal';
@@ -146,12 +147,9 @@ export function VetSpecializedServicesManager({
         ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/ambulance-services/${editingAmbulance.id}`
         : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/ambulance-services`;
 
-      const response = await fetch(url, {
+      // ✅ FIX: Use authenticatedFetch instead of manual fetch with publicAnonKey
+      const response = await authenticatedFetch(url, {
         method: editingAmbulance ? 'PUT' : 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
-        },
         body: JSON.stringify(ambulanceData)
       });
 
@@ -177,11 +175,11 @@ export function VetSpecializedServicesManager({
     }
 
     try {
-      const response = await fetch(
+      // ✅ FIX: Use authenticatedFetch instead of manual fetch with publicAnonKey
+      const response = await authenticatedFetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/ambulance-services/${ambulanceId}`,
         {
-          method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          method: 'DELETE'
         }
       );
 
@@ -211,12 +209,9 @@ export function VetSpecializedServicesManager({
         ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/diagnostic-tests/${editingDiagnostic.id}`
         : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/diagnostic-tests`;
 
-      const response = await fetch(url, {
+      // ✅ FIX: Use authenticatedFetch instead of manual fetch with publicAnonKey
+      const response = await authenticatedFetch(url, {
         method: editingDiagnostic ? 'PUT' : 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
-        },
         body: JSON.stringify(diagnosticData)
       });
 
@@ -242,11 +237,11 @@ export function VetSpecializedServicesManager({
     }
 
     try {
-      const response = await fetch(
+      // ✅ FIX: Use authenticatedFetch instead of manual fetch with publicAnonKey
+      const response = await authenticatedFetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/diagnostic-tests/${testId}`,
         {
-          method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          method: 'DELETE'
         }
       );
 
