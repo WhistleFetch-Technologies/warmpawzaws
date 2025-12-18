@@ -116,22 +116,18 @@ export function TierUpgradeModal({ isOpen, onClose, currentTierId, vendorId, onS
             {/* Billing Toggle */}
             <div className="flex justify-center">
               <div className="bg-gray-100 p-1 rounded-lg flex items-center">
-                <button
-                  onClick={() => setBillingCycle('monthly')}
-                  className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
+                <Button onClick={() => setBillingCycle('monthly')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
                     billingCycle === 'monthly' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'
                   }`}
                 >
                   Monthly
-                </button>
-                <button
-                  onClick={() => setBillingCycle('yearly')}
-                  className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all flex items-center gap-2 ${
+                </Button>
+                <Button onClick={() => setBillingCycle('yearly')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all flex items-center gap-2 ${
                     billingCycle === 'yearly' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'
                   }`}
                 >
                   Yearly <span className="text-[10px] text-green-600 font-bold">SAVE 20%</span>
-                </button>
+                </Button>
               </div>
             </div>
 

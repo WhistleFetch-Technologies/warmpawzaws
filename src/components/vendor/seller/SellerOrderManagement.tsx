@@ -351,9 +351,9 @@ function OrderDetailModal({ order, sellerId, onClose, onStatusUpdate, statusConf
       <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         <div className="sticky top-0 bg-white border-b border-gray-200 p-6 flex items-center justify-between">
           <h2 className="text-black">Order Details - #{order.id.slice(-8)}</h2>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg">
+          <Button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg">
             <XCircle className="w-5 h-5" />
-          </button>
+          </Button>
         </div>
 
         <div className="p-6 space-y-6">

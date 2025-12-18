@@ -62,33 +62,33 @@ export function LabCollection({ onBack, customerId, petProfiles }: LabCollection
 
   if (step === 'pets') {
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col max-w-md mx-auto">
-        <div className="px-6 pt-3 pb-2 flex justify-between items-center text-black bg-white">
+      <div className="min-h-screen bg-[#FF8C42] gray-50 flex flex-col max-w-md mx-auto">
+        <div className="px-6 pt-3 pb-2 flex justify-between items-center text-black bg-[#FF8C42] white">
           <span>09:41</span>
           <div className="flex gap-1 items-center">
-            <div className="w-4 h-3 bg-black/30"></div>
-            <div className="w-4 h-3 bg-black/30"></div>
-            <div className="w-6 h-3 bg-black/30"></div>
+            <div className="w-4 h-3 bg-[#FF8C42] black/30"></div>
+            <div className="w-4 h-3 bg-[#FF8C42] black/30"></div>
+            <div className="w-6 h-3 bg-[#FF8C42] black/30"></div>
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-purple-500 to-purple-600 px-6 pt-4 pb-8">
+        <div className="bg-[#FF8C42] gradient-to-br from-purple-500 to-purple-600 px-6 pt-4 pb-8">
           <div className="flex items-center mb-6">
-            <button onClick={onBack} className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
+            <button onClick={onBack} className="w-10 h-10 bg-[#FF8C42] white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
               <ArrowLeft className="w-5 h-5 text-white" />
             </button>
             <h1 className="text-white flex-1 ml-4">Lab Sample Collection</h1>
           </div>
         </div>
 
-        <div className="flex-1 -mt-4 bg-white rounded-t-[32px] px-6 pt-6 pb-24">
+        <div className="flex-1 -mt-4 bg-[#FF8C42] white rounded-t-[32px] px-6 pt-6 pb-24">
           <h2 className="mb-4">Select Pet Profile</h2>
           <div className="space-y-3">
             {petProfiles.map((pet: any) => (
               <button key={pet.id} onClick={() => { setSelectedPet(pet); setStep('tests'); }} className="w-full">
                 <Card className="p-4 border-gray-200 shadow-sm hover:shadow-md transition-all">
                   <div className="flex items-center gap-4">
-                    <div className="w-16 h-16 bg-purple-100 rounded-2xl flex items-center justify-center text-2xl">
+                    <div className="w-16 h-16 bg-[#FF8C42] purple-100 rounded-2xl flex items-center justify-center text-2xl">
                       {pet.icon}
                     </div>
                     <div className="flex-1 text-left">
@@ -102,8 +102,8 @@ export function LabCollection({ onBack, customerId, petProfiles }: LabCollection
           </div>
         </div>
 
-        <div className="fixed bottom-0 left-0 right-0 bg-white flex justify-center pb-2 max-w-md mx-auto">
-          <div className="w-32 h-1 bg-black rounded-full"></div>
+        <div className="fixed bottom-0 left-0 right-0 bg-[#FF8C42] white flex justify-center pb-2 max-w-md mx-auto">
+          <div className="w-32 h-1 bg-[#FF8C42] black rounded-full"></div>
         </div>
       </div>
     );
@@ -111,26 +111,26 @@ export function LabCollection({ onBack, customerId, petProfiles }: LabCollection
 
   if (step === 'tests') {
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col max-w-md mx-auto">
-        <div className="px-6 pt-3 pb-2 flex justify-between items-center text-black bg-white">
+      <div className="min-h-screen bg-[#FF8C42] gray-50 flex flex-col max-w-md mx-auto">
+        <div className="px-6 pt-3 pb-2 flex justify-between items-center text-black bg-[#FF8C42] white">
           <span>09:41</span>
           <div className="flex gap-1 items-center">
-            <div className="w-4 h-3 bg-black/30"></div>
-            <div className="w-4 h-3 bg-black/30"></div>
-            <div className="w-6 h-3 bg-black/30"></div>
+            <div className="w-4 h-3 bg-[#FF8C42] black/30"></div>
+            <div className="w-4 h-3 bg-[#FF8C42] black/30"></div>
+            <div className="w-6 h-3 bg-[#FF8C42] black/30"></div>
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-purple-500 to-purple-600 px-6 pt-4 pb-8">
+        <div className="bg-[#FF8C42] gradient-to-br from-purple-500 to-purple-600 px-6 pt-4 pb-8">
           <div className="flex items-center mb-6">
-            <button onClick={() => setStep('pets')} className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
+            <button onClick={() => setStep('pets')} className="w-10 h-10 bg-[#FF8C42] white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
               <ArrowLeft className="w-5 h-5 text-white" />
             </button>
             <h1 className="text-white flex-1 ml-4">Select Tests</h1>
           </div>
         </div>
 
-        <div className="flex-1 -mt-4 bg-white rounded-t-[32px] px-6 pt-6 pb-24 overflow-y-auto">
+        <div className="flex-1 -mt-4 bg-[#FF8C42] white rounded-t-[32px] px-6 pt-6 pb-24 overflow-y-auto">
           <div className="mb-6">
             <h3 className="mb-3">Test Type</h3>
             <div className="flex gap-3">
@@ -176,12 +176,12 @@ export function LabCollection({ onBack, customerId, petProfiles }: LabCollection
         </div>
 
         {selectedTests.length > 0 && (
-          <div className="fixed bottom-0 left-0 right-0 bg-white border-t p-4 max-w-md mx-auto">
-            <Button onClick={() => setStep('schedule')} className="w-full bg-purple-600 hover:bg-purple-700">
+          <div className="fixed bottom-0 left-0 right-0 bg-[#FF8C42] white border-t p-4 max-w-md mx-auto">
+            <Button onClick={() => setStep('schedule')} className="w-full bg-purple-600 hover:bg-[#FF8C42] purple-700">
               Continue ({selectedTests.length} tests selected)
             </Button>
             <div className="flex justify-center mt-3">
-              <div className="w-32 h-1 bg-black rounded-full"></div>
+              <div className="w-32 h-1 bg-[#FF8C42] black rounded-full"></div>
             </div>
           </div>
         )}
@@ -191,26 +191,26 @@ export function LabCollection({ onBack, customerId, petProfiles }: LabCollection
 
   if (step === 'schedule') {
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col max-w-md mx-auto">
-        <div className="px-6 pt-3 pb-2 flex justify-between items-center text-black bg-white">
+      <div className="min-h-screen bg-[#FF8C42] gray-50 flex flex-col max-w-md mx-auto">
+        <div className="px-6 pt-3 pb-2 flex justify-between items-center text-black bg-[#FF8C42] white">
           <span>09:41</span>
           <div className="flex gap-1 items-center">
-            <div className="w-4 h-3 bg-black/30"></div>
-            <div className="w-4 h-3 bg-black/30"></div>
-            <div className="w-6 h-3 bg-black/30"></div>
+            <div className="w-4 h-3 bg-[#FF8C42] black/30"></div>
+            <div className="w-4 h-3 bg-[#FF8C42] black/30"></div>
+            <div className="w-6 h-3 bg-[#FF8C42] black/30"></div>
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-purple-500 to-purple-600 px-6 pt-4 pb-8">
+        <div className="bg-[#FF8C42] gradient-to-br from-purple-500 to-purple-600 px-6 pt-4 pb-8">
           <div className="flex items-center mb-6">
-            <button onClick={() => setStep('tests')} className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
+            <button onClick={() => setStep('tests')} className="w-10 h-10 bg-[#FF8C42] white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
               <ArrowLeft className="w-5 h-5 text-white" />
             </button>
             <h1 className="text-white flex-1 ml-4">Schedule Collection</h1>
           </div>
         </div>
 
-        <div className="flex-1 -mt-4 bg-white rounded-t-[32px] px-6 pt-6 pb-24 overflow-y-auto">
+        <div className="flex-1 -mt-4 bg-[#FF8C42] white rounded-t-[32px] px-6 pt-6 pb-24 overflow-y-auto">
           <div className="space-y-6">
             <div>
               <label className="block mb-2">Collection Address</label>
@@ -240,13 +240,13 @@ export function LabCollection({ onBack, customerId, petProfiles }: LabCollection
             </div>
           </div>
 
-          <Button onClick={() => setStep('confirm')} className="w-full bg-purple-600 hover:bg-purple-700 mt-6">
+          <Button onClick={() => setStep('confirm')} className="w-full bg-purple-600 hover:bg-[#FF8C42] purple-700 mt-6">
             Continue to Payment
           </Button>
         </div>
 
-        <div className="fixed bottom-0 left-0 right-0 bg-white flex justify-center pb-2 max-w-md mx-auto">
-          <div className="w-32 h-1 bg-black rounded-full"></div>
+        <div className="fixed bottom-0 left-0 right-0 bg-[#FF8C42] white flex justify-center pb-2 max-w-md mx-auto">
+          <div className="w-32 h-1 bg-[#FF8C42] black rounded-full"></div>
         </div>
       </div>
     );
@@ -254,26 +254,26 @@ export function LabCollection({ onBack, customerId, petProfiles }: LabCollection
 
   if (step === 'confirm') {
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col max-w-md mx-auto">
-        <div className="px-6 pt-3 pb-2 flex justify-between items-center text-black bg-white">
+      <div className="min-h-screen bg-[#FF8C42] gray-50 flex flex-col max-w-md mx-auto">
+        <div className="px-6 pt-3 pb-2 flex justify-between items-center text-black bg-[#FF8C42] white">
           <span>09:41</span>
           <div className="flex gap-1 items-center">
-            <div className="w-4 h-3 bg-black/30"></div>
-            <div className="w-4 h-3 bg-black/30"></div>
-            <div className="w-6 h-3 bg-black/30"></div>
+            <div className="w-4 h-3 bg-[#FF8C42] black/30"></div>
+            <div className="w-4 h-3 bg-[#FF8C42] black/30"></div>
+            <div className="w-6 h-3 bg-[#FF8C42] black/30"></div>
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-purple-500 to-purple-600 px-6 pt-4 pb-8">
+        <div className="bg-[#FF8C42] gradient-to-br from-purple-500 to-purple-600 px-6 pt-4 pb-8">
           <div className="flex items-center mb-6">
-            <button onClick={() => setStep('schedule')} className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
+            <button onClick={() => setStep('schedule')} className="w-10 h-10 bg-[#FF8C42] white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
               <ArrowLeft className="w-5 h-5 text-white" />
             </button>
             <h1 className="text-white flex-1 ml-4">Confirm Booking</h1>
           </div>
         </div>
 
-        <div className="flex-1 -mt-4 bg-white rounded-t-[32px] px-6 pt-6 pb-24 overflow-y-auto">
+        <div className="flex-1 -mt-4 bg-[#FF8C42] white rounded-t-[32px] px-6 pt-6 pb-24 overflow-y-auto">
           <Card className="p-4 border-gray-200 mb-6">
             <h3 className="mb-3">Booking Summary</h3>
             <div className="space-y-3 text-sm">
@@ -304,13 +304,13 @@ export function LabCollection({ onBack, customerId, petProfiles }: LabCollection
             </div>
           </Card>
 
-          <Button onClick={createLabTest} disabled={loading} className="w-full bg-purple-600 hover:bg-purple-700">
+          <Button onClick={createLabTest} disabled={loading} className="w-full bg-purple-600 hover:bg-[#FF8C42] purple-700">
             {loading ? 'Booking...' : 'Confirm & Pay'}
           </Button>
         </div>
 
-        <div className="fixed bottom-0 left-0 right-0 bg-white flex justify-center pb-2 max-w-md mx-auto">
-          <div className="w-32 h-1 bg-black rounded-full"></div>
+        <div className="fixed bottom-0 left-0 right-0 bg-[#FF8C42] white flex justify-center pb-2 max-w-md mx-auto">
+          <div className="w-32 h-1 bg-[#FF8C42] black rounded-full"></div>
         </div>
       </div>
     );
@@ -318,28 +318,28 @@ export function LabCollection({ onBack, customerId, petProfiles }: LabCollection
 
   if (step === 'tracking') {
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col max-w-md mx-auto">
-        <div className="px-6 pt-3 pb-2 flex justify-between items-center text-black bg-white">
+      <div className="min-h-screen bg-[#FF8C42] gray-50 flex flex-col max-w-md mx-auto">
+        <div className="px-6 pt-3 pb-2 flex justify-between items-center text-black bg-[#FF8C42] white">
           <span>09:41</span>
           <div className="flex gap-1 items-center">
-            <div className="w-4 h-3 bg-black/30"></div>
-            <div className="w-4 h-3 bg-black/30"></div>
-            <div className="w-6 h-3 bg-black/30"></div>
+            <div className="w-4 h-3 bg-[#FF8C42] black/30"></div>
+            <div className="w-4 h-3 bg-[#FF8C42] black/30"></div>
+            <div className="w-6 h-3 bg-[#FF8C42] black/30"></div>
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-purple-500 to-purple-600 px-6 pt-4 pb-8">
+        <div className="bg-[#FF8C42] gradient-to-br from-purple-500 to-purple-600 px-6 pt-4 pb-8">
           <div className="flex items-center mb-6">
-            <button onClick={onBack} className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
+            <button onClick={onBack} className="w-10 h-10 bg-[#FF8C42] white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
               <ArrowLeft className="w-5 h-5 text-white" />
             </button>
             <h1 className="text-white flex-1 ml-4">Track Collection</h1>
           </div>
         </div>
 
-        <div className="flex-1 -mt-4 bg-white rounded-t-[32px] px-6 pt-6 pb-24 overflow-y-auto">
+        <div className="flex-1 -mt-4 bg-[#FF8C42] white rounded-t-[32px] px-6 pt-6 pb-24 overflow-y-auto">
           <div className="text-center mb-6">
-            <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <div className="w-20 h-20 bg-[#FF8C42] green-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <Check className="w-10 h-10 text-green-600" />
             </div>
             <h2 className="mb-2">Collection Scheduled!</h2>
@@ -348,14 +348,14 @@ export function LabCollection({ onBack, customerId, petProfiles }: LabCollection
 
           <Card className="p-4 border-gray-200 mb-6">
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center">
+              <div className="w-12 h-12 bg-[#FF8C42] purple-100 rounded-full flex items-center justify-center">
                 <User className="w-6 h-6 text-purple-600" />
               </div>
               <div className="flex-1">
                 <h3 className="mb-1">Rajesh Kumar</h3>
                 <p className="text-sm text-gray-500">Lab Technician</p>
               </div>
-              <Button size="sm" className="bg-purple-600 hover:bg-purple-700">
+              <Button size="sm" className="bg-purple-600 hover:bg-[#FF8C42] purple-700">
                 <Phone className="w-4 h-4" />
               </Button>
             </div>
@@ -372,13 +372,13 @@ export function LabCollection({ onBack, customerId, petProfiles }: LabCollection
             </div>
           </Card>
 
-          <Button onClick={() => setStep('report')} className="w-full bg-purple-600 hover:bg-purple-700">
+          <Button onClick={() => setStep('report')} className="w-full bg-purple-600 hover:bg-[#FF8C42] purple-700">
             View Report (Demo)
           </Button>
         </div>
 
-        <div className="fixed bottom-0 left-0 right-0 bg-white flex justify-center pb-2 max-w-md mx-auto">
-          <div className="w-32 h-1 bg-black rounded-full"></div>
+        <div className="fixed bottom-0 left-0 right-0 bg-[#FF8C42] white flex justify-center pb-2 max-w-md mx-auto">
+          <div className="w-32 h-1 bg-[#FF8C42] black rounded-full"></div>
         </div>
       </div>
     );
@@ -386,29 +386,29 @@ export function LabCollection({ onBack, customerId, petProfiles }: LabCollection
 
   if (step === 'report') {
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col max-w-md mx-auto">
-        <div className="px-6 pt-3 pb-2 flex justify-between items-center text-black bg-white">
+      <div className="min-h-screen bg-[#FF8C42] gray-50 flex flex-col max-w-md mx-auto">
+        <div className="px-6 pt-3 pb-2 flex justify-between items-center text-black bg-[#FF8C42] white">
           <span>09:41</span>
           <div className="flex gap-1 items-center">
-            <div className="w-4 h-3 bg-black/30"></div>
-            <div className="w-4 h-3 bg-black/30"></div>
-            <div className="w-6 h-3 bg-black/30"></div>
+            <div className="w-4 h-3 bg-[#FF8C42] black/30"></div>
+            <div className="w-4 h-3 bg-[#FF8C42] black/30"></div>
+            <div className="w-6 h-3 bg-[#FF8C42] black/30"></div>
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-purple-500 to-purple-600 px-6 pt-4 pb-8">
+        <div className="bg-[#FF8C42] gradient-to-br from-purple-500 to-purple-600 px-6 pt-4 pb-8">
           <div className="flex items-center mb-6">
-            <button onClick={() => setStep('tracking')} className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
+            <button onClick={() => setStep('tracking')} className="w-10 h-10 bg-[#FF8C42] white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
               <ArrowLeft className="w-5 h-5 text-white" />
             </button>
             <h1 className="text-white flex-1 ml-4">Lab Report</h1>
           </div>
         </div>
 
-        <div className="flex-1 -mt-4 bg-white rounded-t-[32px] px-6 pt-6 pb-24 overflow-y-auto">
+        <div className="flex-1 -mt-4 bg-[#FF8C42] white rounded-t-[32px] px-6 pt-6 pb-24 overflow-y-auto">
           <Card className="p-4 border-gray-200 mb-6">
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
+              <div className="w-12 h-12 bg-[#FF8C42] purple-100 rounded-xl flex items-center justify-center">
                 <FileText className="w-6 h-6 text-purple-600" />
               </div>
               <div>
@@ -419,13 +419,13 @@ export function LabCollection({ onBack, customerId, petProfiles }: LabCollection
 
             <div className="space-y-3">
               {selectedTests.map((test, index) => (
-                <div key={index} className="p-3 bg-purple-50 rounded-xl">
+                <div key={index} className="p-3 bg-[#FF8C42] purple-50 rounded-xl">
                   <div className="flex justify-between items-start">
                     <div>
                       <h4 className="text-sm mb-1">{test}</h4>
                       <p className="text-xs text-gray-500">Normal Range</p>
                     </div>
-                    <span className="px-2 py-1 bg-green-100 text-green-600 rounded-lg text-xs">Normal</span>
+                    <span className="px-2 py-1 bg-[#FF8C42] green-100 text-green-600 rounded-lg text-xs">Normal</span>
                   </div>
                 </div>
               ))}
@@ -433,7 +433,7 @@ export function LabCollection({ onBack, customerId, petProfiles }: LabCollection
           </Card>
 
           <div className="space-y-3">
-            <Button className="w-full bg-purple-600 hover:bg-purple-700">
+            <Button className="w-full bg-purple-600 hover:bg-[#FF8C42] purple-700">
               Download Report (PDF)
             </Button>
             <Button variant="outline" className="w-full">
@@ -442,8 +442,8 @@ export function LabCollection({ onBack, customerId, petProfiles }: LabCollection
           </div>
         </div>
 
-        <div className="fixed bottom-0 left-0 right-0 bg-white flex justify-center pb-2 max-w-md mx-auto">
-          <div className="w-32 h-1 bg-black rounded-full"></div>
+        <div className="fixed bottom-0 left-0 right-0 bg-[#FF8C42] white flex justify-center pb-2 max-w-md mx-auto">
+          <div className="w-32 h-1 bg-[#FF8C42] black rounded-full"></div>
         </div>
       </div>
     );

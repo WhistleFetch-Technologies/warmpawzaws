@@ -63,18 +63,18 @@ export function AdoptionNudge({ onDismiss, onViewAdoption }: AdoptionNudgeProps)
   if (!visible) return null;
 
   return (
-    <Card className="bg-gradient-to-r from-red-50 via-pink-50 to-rose-50 border-red-200 p-4 relative overflow-hidden">
+    <Card className="bg-[#FF8C42] gradient-to-r from-red-50 via-pink-50 to-rose-50 border-red-200 p-4 relative overflow-hidden">
       {/* Close button */}
       <button
         onClick={handleDismiss}
-        className="absolute top-2 right-2 p-1 rounded-full hover:bg-white/50 transition-colors"
+        className="absolute top-2 right-2 p-1 rounded-full hover:bg-[#FF8C42] white/50 transition-colors"
       >
         <X className="w-4 h-4 text-gray-500" />
       </button>
 
       <div className="flex items-start gap-3">
         {/* Icon */}
-        <div className="w-12 h-12 bg-gradient-to-br from-red-500 to-pink-600 rounded-full flex items-center justify-center flex-shrink-0">
+        <div className="w-12 h-12 bg-[#FF8C42] gradient-to-br from-red-500 to-pink-600 rounded-full flex items-center justify-center flex-shrink-0">
           <Heart className="w-6 h-6 text-white fill-white" />
         </div>
 
@@ -101,7 +101,7 @@ export function AdoptionNudge({ onDismiss, onViewAdoption }: AdoptionNudgeProps)
           <Button
             onClick={handleClick}
             size="sm"
-            className="bg-gradient-to-r from-red-500 to-pink-600 hover:from-red-600 hover:to-pink-700 text-white"
+            className="bg-[#FF8C42] gradient-to-r from-red-500 to-pink-600 hover:from-red-600 hover:to-pink-700 text-white"
           >
             View Adoptable Pets
             <ArrowRight className="w-4 h-4 ml-1" />

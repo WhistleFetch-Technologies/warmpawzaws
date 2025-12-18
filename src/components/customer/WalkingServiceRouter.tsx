@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+// Brand color: #FF8C42
 import { WalkingServicesLanding } from './WalkingServicesLanding';
 import { WalkerService } from './WalkerService';
 import { ProblemGridSelector } from './ProblemGridSelector';

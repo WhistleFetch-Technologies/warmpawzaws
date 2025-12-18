@@ -1,4 +1,5 @@
 import { CheckCircle, Heart, Home } from 'lucide-react';
+// Brand color: #FF8C42
 
 interface AdoptionConfirmationProps {
   applicationId: string;

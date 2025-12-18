@@ -91,12 +91,12 @@ export function EnhancedAdoptionFilters({ onApplyFilters, onClearFilters }: Enha
       {/* Filter Button */}
       <button
         onClick={() => setShowFilters(!showFilters)}
-        className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-full hover:bg-gray-50 transition-colors"
+        className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-full hover:bg-[#FF8C42] gray-50 transition-colors"
       >
         <Filter className="w-4 h-4 text-gray-600" />
         <span className="text-sm font-medium text-gray-700">Filters</span>
         {activeFilterCount > 0 && (
-          <span className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">
+          <span className="bg-[#FF8C42] red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">
             {activeFilterCount}
           </span>
         )}
@@ -104,12 +104,12 @@ export function EnhancedAdoptionFilters({ onApplyFilters, onClearFilters }: Enha
 
       {/* Filter Panel */}
       {showFilters && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-end sm:items-center justify-center">
-          <Card className="w-full max-w-lg bg-white rounded-t-2xl sm:rounded-2xl max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black bg-[#FF8C42] opacity-50 z-50 flex items-end sm:items-center justify-center">
+          <Card className="w-full max-w-lg bg-[#FF8C42] white rounded-t-2xl sm:rounded-2xl max-h-[90vh] overflow-y-auto">
             {/* Header */}
-            <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
+            <div className="sticky top-0 bg-[#FF8C42] white border-b border-gray-200 p-4 flex items-center justify-between">
               <h2 className="font-bold text-gray-900">Filter Pets</h2>
-              <button onClick={() => setShowFilters(false)} className="p-1 hover:bg-gray-100 rounded-full">
+              <button onClick={() => setShowFilters(false)} className="p-1 hover:bg-[#FF8C42] gray-100 rounded-full">
                 <X className="w-5 h-5 text-gray-600" />
               </button>
             </div>
@@ -209,7 +209,7 @@ export function EnhancedAdoptionFilters({ onApplyFilters, onClearFilters }: Enha
             </div>
 
             {/* Action Buttons */}
-            <div className="sticky bottom-0 bg-white border-t border-gray-200 p-4 flex gap-3">
+            <div className="sticky bottom-0 bg-[#FF8C42] white border-t border-gray-200 p-4 flex gap-3">
               <Button
                 onClick={handleClear}
                 variant="outline"
@@ -219,7 +219,7 @@ export function EnhancedAdoptionFilters({ onApplyFilters, onClearFilters }: Enha
               </Button>
               <Button
                 onClick={handleApply}
-                className="flex-1 bg-gradient-to-r from-red-500 to-pink-600 hover:from-red-600 hover:to-pink-700 text-white"
+                className="flex-1 bg-[#FF8C42] gradient-to-r from-red-500 to-pink-600 hover:from-red-600 hover:to-pink-700 text-white"
               >
                 Apply Filters
               </Button>

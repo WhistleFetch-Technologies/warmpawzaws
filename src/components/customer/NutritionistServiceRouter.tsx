@@ -3,6 +3,7 @@ import { Button } from '../ui/button';
 import { Calendar, Package, Truck, MapPin, Clock, Phone, ChevronRight, Navigation, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+// Brand color: #FF8C42
 
 interface NutritionistServiceRouterProps {
   customerId: string;

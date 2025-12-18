@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Users, Calendar, DollarSign, CheckCircle } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { Button } from '../ui/button';
 
 /**
  * 📅 HOLIDAY BOOKING VENDOR DASHBOARD
@@ -190,12 +191,11 @@ export default function HolidayBookingDashboard({ vendorId }: { vendorId: string
                       </span>
                     </td>
                     <td className="px-6 py-4">
-                      <button
-                        onClick={() => setSelectedBooking(booking)}
+                      <Button onClick={() => setSelectedBooking(booking)}
                         className="text-orange-500 hover:text-orange-600 text-sm"
                       >
                         View Details
-                      </button>
+                      </Button>
                     </td>
                   </tr>
                 ))}
@@ -220,12 +220,11 @@ export default function HolidayBookingDashboard({ vendorId }: { vendorId: string
                   <h2 className="text-gray-900 mb-2">Booking Details</h2>
                   <p className="text-gray-600">#{selectedBooking.bookingId}</p>
                 </div>
-                <button
-                  onClick={() => setSelectedBooking(null)}
+                <Button onClick={() => setSelectedBooking(null)}
                   className="text-gray-400 hover:text-gray-600"
                 >
                   ✕
-                </button>
+                </Button>
               </div>
 
               <div className="space-y-6">
@@ -308,35 +307,31 @@ export default function HolidayBookingDashboard({ vendorId }: { vendorId: string
 
                 <div className="flex gap-3">
                   {selectedBooking.status === 'pending' && (
-                    <button
-                      onClick={() => updateBookingStatus(selectedBooking.bookingId, 'confirmed', 'paid')}
+                    <Button onClick={() => updateBookingStatus(selectedBooking.bookingId, 'confirmed', 'paid')}
                       className="flex-1 bg-green-500 text-white py-2 rounded-lg hover:bg-green-600"
                     >
                       Confirm Booking
-                    </button>
+                    </Button>
                   )}
                   {selectedBooking.status === 'confirmed' && (
-                    <button
-                      onClick={() => updateBookingStatus(selectedBooking.bookingId, 'in_progress')}
+                    <Button onClick={() => updateBookingStatus(selectedBooking.bookingId, 'in_progress')}
                       className="flex-1 bg-blue-500 text-white py-2 rounded-lg hover:bg-blue-600"
                     >
                       Mark In Progress
-                    </button>
+                    </Button>
                   )}
                   {selectedBooking.status === 'in_progress' && (
-                    <button
-                      onClick={() => updateBookingStatus(selectedBooking.bookingId, 'completed')}
+                    <Button onClick={() => updateBookingStatus(selectedBooking.bookingId, 'completed')}
                       className="flex-1 bg-purple-500 text-white py-2 rounded-lg hover:bg-purple-600"
                     >
                       Mark Completed
-                    </button>
+                    </Button>
                   )}
-                  <button
-                    onClick={() => setSelectedBooking(null)}
+                  <Button onClick={() => setSelectedBooking(null)}
                     className="flex-1 bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400"
                   >
                     Close
-                  </button>
+                  </Button>
                 </div>
               </div>
             </div>

@@ -42,10 +42,10 @@ export function NutritionistServicesLanding({ onBack, onNavigate, customerId, ph
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="bg-gradient-to-r from-green-600 to-emerald-600 text-white sticky top-0 z-50 px-4 py-4">
+    <div className="min-h-screen bg-[#FF8C42] gray-50">
+      <div className="bg-[#FF8C42] gradient-to-r from-green-600 to-emerald-600 text-white sticky top-0 z-50 px-4 py-4">
         <div className="flex items-center gap-3">
-          <button onClick={onBack} className="p-2 hover:bg-white/10 rounded-full">
+          <button onClick={onBack} className="p-2 hover:bg-[#FF8C42] white/10 rounded-full">
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div className="flex-1">
@@ -56,12 +56,12 @@ export function NutritionistServicesLanding({ onBack, onNavigate, customerId, ph
       </div>
 
       <div className="p-4 space-y-6 pb-24">
-        <Card className="bg-gradient-to-br from-green-50 to-emerald-50 border-green-200 p-6">
+        <Card className="bg-[#FF8C42] gradient-to-br from-green-50 to-emerald-50 border-green-200 p-6">
           <div className="flex items-start justify-between">
             <div className="flex-1">
               <h2 className="text-xl font-bold text-gray-900 mb-2">Custom Diet Plans</h2>
               <p className="text-gray-700 mb-4">Personalized nutrition for your pet's health</p>
-              <Button className="bg-green-600 hover:bg-green-700">Get Started</Button>
+              <Button className="bg-green-600 hover:bg-[#FF8C42] green-700">Get Started</Button>
             </div>
             <div className="text-5xl">🥗</div>
           </div>
@@ -122,7 +122,7 @@ export function NutritionistServicesLanding({ onBack, onNavigate, customerId, ph
         </div>
 
         {/* Benefits Section */}
-        <Card className="p-6 bg-gradient-to-br from-gray-50 to-gray-100">
+        <Card className="p-6 bg-[#FF8C42] gradient-to-br from-gray-50 to-gray-100">
           <h3 className="font-bold text-gray-900 mb-4">Why Choose Our Nutritionists?</h3>
           <div className="space-y-3">
             {[
@@ -132,7 +132,7 @@ export function NutritionistServicesLanding({ onBack, onNavigate, customerId, ph
               { icon: '📱', title: 'Online Support', desc: '24/7 consultation available' }
             ].map((item, idx) => (
               <div key={idx} className="flex items-start gap-3">
-                <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-xl shadow-sm">
+                <div className="w-10 h-10 bg-[#FF8C42] white rounded-xl flex items-center justify-center text-xl shadow-sm">
                   {item.icon}
                 </div>
                 <div className="flex-1">

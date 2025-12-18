@@ -11,14 +11,14 @@ interface OrderSuccessViewProps {
 
 export function OrderSuccessView({ orderId, onTrackOrder, onBackToHome, onViewOrders }: OrderSuccessViewProps) {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50 flex flex-col items-center justify-center p-6 max-w-md mx-auto relative">
+    <div className="min-h-screen bg-[#FF8C42] gradient-to-br from-green-50 to-blue-50 flex flex-col items-center justify-center p-6 max-w-md mx-auto relative">
       <motion.div
         initial={{ scale: 0 }}
         animate={{ scale: 1 }}
         transition={{ type: 'spring', duration: 0.5 }}
         className="mb-6"
       >
-        <div className="w-24 h-24 bg-green-500 rounded-full flex items-center justify-center shadow-lg">
+        <div className="w-24 h-24 bg-[#FF8C42] green-500 rounded-full flex items-center justify-center shadow-lg">
           <CheckCircle className="w-16 h-16 text-white" />
         </div>
       </motion.div>
@@ -34,13 +34,13 @@ export function OrderSuccessView({ orderId, onTrackOrder, onBackToHome, onViewOr
           Your order has been successfully placed and is being processed.
         </p>
 
-        <div className="bg-white rounded-2xl p-6 shadow-lg mb-6">
+        <div className="bg-[#FF8C42] white rounded-2xl p-6 shadow-lg mb-6">
           <div className="mb-4">
             <p className="text-sm text-gray-500 mb-1">Order ID</p>
             <p className="text-2xl font-bold text-blue-600">{orderId}</p>
           </div>
           
-          <div className="bg-blue-50 rounded-xl p-4">
+          <div className="bg-[#FF8C42] blue-50 rounded-xl p-4">
             <div className="flex items-center gap-3 mb-2">
               <Package className="w-5 h-5 text-blue-600" />
               <p className="font-semibold text-gray-900">What's Next?</p>
@@ -54,7 +54,7 @@ export function OrderSuccessView({ orderId, onTrackOrder, onBackToHome, onViewOr
         <div className="space-y-3">
           <Button
             onClick={onTrackOrder}
-            className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 h-12"
+            className="w-full bg-[#FF8C42] gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 h-12"
           >
             Track Order
             <ChevronRight className="w-5 h-5 ml-1" />

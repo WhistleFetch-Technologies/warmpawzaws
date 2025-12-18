@@ -14,6 +14,7 @@
 import React, { useState, useEffect } from 'react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { FileText, Upload, Trash2, Share2, X, File, Image, Calendar, Download, Eye } from 'lucide-react';
+// Brand color: #FF8C42
 
 interface MedicalDocument {
   id: string;

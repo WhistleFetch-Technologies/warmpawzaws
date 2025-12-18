@@ -14,6 +14,7 @@ import { PromotionsManagement } from './PromotionsManagement';
 import { BannerManagement } from './BannerManagement';
 import { SellerAnalytics } from './SellerAnalytics';
 import { SellerSettings } from './SellerSettings';
+import { Button } from '../../ui/button';
 
 interface SellerPortalProps {
   vendorData: any;
@@ -69,20 +70,18 @@ export function SellerPortal({ vendorData, onLogout }: SellerPortalProps) {
                 </div>
                 <span className="font-bold text-black">Seller Hub</span>
               </div>
-              <button 
-                onClick={() => setSidebarOpen(false)}
+              <Button onClick={() => setSidebarOpen(false)}
                 className="p-1 hover:bg-gray-100 rounded"
               >
                 <X className="w-5 h-5 text-gray-600" />
-              </button>
+              </Button>
             </>
           ) : (
-            <button 
-              onClick={() => setSidebarOpen(true)}
+            <Button onClick={() => setSidebarOpen(true)}
               className="p-1 hover:bg-gray-100 rounded mx-auto"
             >
               <Menu className="w-5 h-5 text-gray-600" />
-            </button>
+            </Button>
           )}
         </div>
 
@@ -93,7 +92,7 @@ export function SellerPortal({ vendorData, onLogout }: SellerPortalProps) {
             const isActive = activeTab === item.id;
             
             return (
-              <button
+              <Button
                 key={item.id}
                 onClick={() => setActiveTab(item.id as TabType)}
                 className={`w-full flex items-center gap-3 px-4 py-3 transition-colors ${
@@ -104,7 +103,7 @@ export function SellerPortal({ vendorData, onLogout }: SellerPortalProps) {
               >
                 <Icon className="w-5 h-5 flex-shrink-0" />
                 {sidebarOpen && <span className="font-medium">{item.label}</span>}
-              </button>
+              </Button>
             );
           })}
         </nav>
@@ -122,22 +121,20 @@ export function SellerPortal({ vendorData, onLogout }: SellerPortalProps) {
                   <p className="text-xs text-gray-500">Seller Account</p>
                 </div>
               </div>
-              <button
-                onClick={onLogout}
+              <Button onClick={onLogout}
                 className="w-full flex items-center gap-2 px-3 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
               >
                 <LogOut className="w-4 h-4" />
                 <span className="text-sm font-medium">Logout</span>
-              </button>
+              </Button>
             </div>
           ) : (
-            <button
-              onClick={onLogout}
+            <Button onClick={onLogout}
               className="w-full p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
               title="Logout"
             >
               <LogOut className="w-5 h-5 mx-auto" />
-            </button>
+            </Button>
           )}
         </div>
       </aside>
@@ -150,15 +147,15 @@ export function SellerPortal({ vendorData, onLogout }: SellerPortalProps) {
             <h2 className="text-black capitalize">{activeTab.replace('_', ' ')}</h2>
           </div>
           <div className="flex items-center gap-4">
-            <button className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors">
+            <Button className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors">
               <Bell className="w-5 h-5 text-gray-600" />
               {notifications > 0 && (
                 <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
               )}
-            </button>
-            <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+            </Button>
+            <Button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
               <HelpCircle className="w-5 h-5 text-gray-600" />
-            </button>
+            </Button>
           </div>
         </header>
 

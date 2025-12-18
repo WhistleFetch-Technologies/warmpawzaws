@@ -632,9 +632,9 @@ export function VendorServiceConfigurationScreen({
         {/* Header */}
         <div className="p-4 bg-white border-b sticky top-0 z-10">
           <div className="flex items-center gap-3 mb-3">
-            <button onClick={onBack} className="w-8 h-8 flex items-center justify-center">
+            <Button onClick={onBack} className="w-8 h-8 flex items-center justify-center">
               <ArrowLeft className="w-5 h-5 text-gray-700" />
-            </button>
+            </Button>
             <div className="flex-1">
               <div className="flex items-center gap-2">
                 <span className="text-xl">{getStyleIcon()}</span>
@@ -654,12 +654,11 @@ export function VendorServiceConfigurationScreen({
               className="pl-10 h-10"
             />
             {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
+              <Button onClick={() => setSearchQuery('')}
                 className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
               >
                 <X className="w-4 h-4" />
-              </button>
+              </Button>
             )}
           </div>
 
@@ -682,12 +681,11 @@ export function VendorServiceConfigurationScreen({
           {/* ✅ NEW: Bulk Selection Actions */}
           {services.length > 0 && (
             <div className="mt-3">
-              <button
-                onClick={() => setShowBulkActions(!showBulkActions)}
+              <Button onClick={() => setShowBulkActions(!showBulkActions)}
                 className="w-full text-xs font-medium text-[#FF8C42] py-2 bg-orange-50 rounded-lg hover:bg-orange-100 transition-colors"
               >
                 {showBulkActions ? 'Hide Bulk Actions' : 'Show Bulk Actions'}
-              </button>
+              </Button>
               
               {showBulkActions && (
                 <div className="mt-2 grid grid-cols-2 gap-2">
@@ -886,8 +884,7 @@ export function VendorServiceConfigurationScreen({
 
                         {/* Expand/Collapse Button */}
                         {service.isEnabled && (canEditPricing || service.whatIncluded?.length) && (
-                          <button
-                            onClick={() => toggleExpanded(service.id)}
+                          <Button onClick={() => toggleExpanded(service.id)}
                             className="w-full mt-2 pt-2 border-t flex items-center justify-center gap-1 text-xs text-[#FF8C42] font-medium"
                           >
                             {expandedServices.has(service.id) ? (
@@ -895,7 +892,7 @@ export function VendorServiceConfigurationScreen({
                             ) : (
                               <>View Details <ChevronDown className="w-4 h-4" /></>
                             )}
-                          </button>
+                          </Button>
                         )}
                       </div>
 

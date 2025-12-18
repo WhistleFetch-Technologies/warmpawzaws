@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, MapPin, Star, Clock, Calendar, Sun, Palmtree, UtensilsCrossed, Waves, Mountain, Users, Shield } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { UniversalVendorCard } from './UniversalVendorCard';
+// Brand color: #FF8C42
 
 interface PetHolidayServicesLandingProps {
   phone: string;

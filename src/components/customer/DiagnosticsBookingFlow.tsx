@@ -230,9 +230,9 @@ export function DiagnosticsBookingFlow({
   if (step === 'location') {
     return (
       <div className="max-w-2xl mx-auto">
-        <div className="bg-white rounded-xl border-2 border-gray-200 p-8">
+        <div className="bg-[#FF8C42] white rounded-xl border-2 border-gray-200 p-8">
           <div className="text-center mb-8">
-            <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <div className="w-20 h-20 bg-[#FF8C42] blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <Flask className="w-10 h-10 text-blue-600" />
             </div>
             <h2 className="text-2xl font-bold text-gray-900 mb-2">
@@ -246,7 +246,7 @@ export function DiagnosticsBookingFlow({
           <Button
             onClick={getCurrentLocation}
             disabled={gettingLocation}
-            className="w-full bg-blue-600 hover:bg-blue-700"
+            className="w-full bg-blue-600 hover:bg-[#FF8C42] blue-700"
             size="lg"
           >
             <MapPin className="w-5 h-5 mr-2" />
@@ -261,7 +261,7 @@ export function DiagnosticsBookingFlow({
   if (step === 'centers') {
     return (
       <div className="max-w-4xl mx-auto">
-        <div className="bg-white rounded-xl border-2 border-gray-200 p-6">
+        <div className="bg-[#FF8C42] white rounded-xl border-2 border-gray-200 p-6">
           <h2 className="text-2xl font-bold text-gray-900 mb-6">
             Nearby Diagnostic Centers
           </h2>
@@ -270,8 +270,8 @@ export function DiagnosticsBookingFlow({
             <div className="space-y-4">
               {[1, 2, 3].map(i => (
                 <div key={i} className="p-6 border border-gray-200 rounded-lg animate-pulse">
-                  <div className="h-6 bg-gray-200 rounded w-1/3 mb-3" />
-                  <div className="h-4 bg-gray-200 rounded w-2/3" />
+                  <div className="h-6 bg-[#FF8C42] gray-200 rounded w-1/3 mb-3" />
+                  <div className="h-4 bg-[#FF8C42] gray-200 rounded w-2/3" />
                 </div>
               ))}
             </div>
@@ -309,7 +309,7 @@ export function DiagnosticsBookingFlow({
                   </div>
 
                   {center.homeCollectionAvailable && (
-                    <div className="inline-flex items-center gap-2 px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm">
+                    <div className="inline-flex items-center gap-2 px-3 py-1 bg-[#FF8C42] green-100 text-green-700 rounded-full text-sm">
                       <Home className="w-4 h-4" />
                       Home Collection Available
                     </div>
@@ -328,7 +328,7 @@ export function DiagnosticsBookingFlow({
             <Button
               onClick={() => fetchTests(selectedCenter.centerId)}
               disabled={loading}
-              className="w-full mt-6 bg-blue-600 hover:bg-blue-700"
+              className="w-full mt-6 bg-blue-600 hover:bg-[#FF8C42] blue-700"
             >
               View Available Tests
             </Button>
@@ -345,7 +345,7 @@ export function DiagnosticsBookingFlow({
 
     return (
       <div className="max-w-4xl mx-auto">
-        <div className="bg-white rounded-xl border-2 border-gray-200 p-6">
+        <div className="bg-[#FF8C42] white rounded-xl border-2 border-gray-200 p-6">
           <div className="mb-6">
             <h2 className="text-2xl font-bold text-gray-900 mb-2">
               Available Tests
@@ -359,7 +359,7 @@ export function DiagnosticsBookingFlow({
               {['blood', 'urine', 'imaging', 'specialized'].map(category => (
                 <button
                   key={category}
-                  className="px-4 py-2 border border-gray-300 rounded-lg text-sm capitalize hover:bg-gray-50"
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-sm capitalize hover:bg-[#FF8C42] gray-50"
                 >
                   {category}
                 </button>
@@ -383,7 +383,7 @@ export function DiagnosticsBookingFlow({
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <h3 className="font-medium text-gray-900">{test.testName}</h3>
-                      <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full capitalize">
+                      <span className="text-xs px-2 py-0.5 bg-[#FF8C42] gray-100 text-gray-600 rounded-full capitalize">
                         {test.category}
                       </span>
                     </div>
@@ -429,7 +429,7 @@ export function DiagnosticsBookingFlow({
             <Button
               onClick={() => setStep('booking')}
               disabled={selectedTests.size === 0}
-              className="flex-1 bg-blue-600 hover:bg-blue-700"
+              className="flex-1 bg-blue-600 hover:bg-[#FF8C42] blue-700"
             >
               Continue
             </Button>
@@ -445,7 +445,7 @@ export function DiagnosticsBookingFlow({
 
     return (
       <div className="max-w-2xl mx-auto">
-        <div className="bg-white rounded-xl border-2 border-gray-200 p-6">
+        <div className="bg-[#FF8C42] white rounded-xl border-2 border-gray-200 p-6">
           <h2 className="text-2xl font-bold text-gray-900 mb-6">
             Booking Details
           </h2>
@@ -553,7 +553,7 @@ export function DiagnosticsBookingFlow({
             <Button
               onClick={createBooking}
               disabled={loading}
-              className="flex-1 bg-blue-600 hover:bg-blue-700"
+              className="flex-1 bg-blue-600 hover:bg-[#FF8C42] blue-700"
             >
               {loading ? 'Booking...' : 'Confirm Booking'}
             </Button>
@@ -567,8 +567,8 @@ export function DiagnosticsBookingFlow({
   if (step === 'confirm') {
     return (
       <div className="max-w-2xl mx-auto">
-        <div className="bg-white rounded-xl border-2 border-gray-200 p-8 text-center">
-          <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+        <div className="bg-[#FF8C42] white rounded-xl border-2 border-gray-200 p-8 text-center">
+          <div className="w-20 h-20 bg-[#FF8C42] green-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <CheckCircle className="w-10 h-10 text-green-600" />
           </div>
           
@@ -580,7 +580,7 @@ export function DiagnosticsBookingFlow({
             Your diagnostic test has been scheduled successfully
           </p>
 
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-6 text-left">
+          <div className="bg-[#FF8C42] blue-50 border border-blue-200 rounded-lg p-6 mb-6 text-left">
             <h3 className="font-medium text-gray-900 mb-4">Booking Summary</h3>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
@@ -606,7 +606,7 @@ export function DiagnosticsBookingFlow({
 
           <Button
             onClick={() => window.location.href = '/customer/bookings'}
-            className="w-full bg-blue-600 hover:bg-blue-700"
+            className="w-full bg-blue-600 hover:bg-[#FF8C42] blue-700"
           >
             View My Bookings
           </Button>

@@ -56,26 +56,26 @@ export function MedicineDelivery({ onBack, customerId, petProfiles }: MedicineDe
 
   if (step === 'pets') {
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col max-w-md mx-auto">
-        <div className="px-6 pt-3 pb-2 flex justify-between items-center text-black bg-white">
+      <div className="min-h-screen bg-[#FF8C42] gray-50 flex flex-col max-w-md mx-auto">
+        <div className="px-6 pt-3 pb-2 flex justify-between items-center text-black bg-[#FF8C42] white">
           <span>09:41</span>
           <div className="flex gap-1 items-center">
-            <div className="w-4 h-3 bg-black/30"></div>
-            <div className="w-4 h-3 bg-black/30"></div>
-            <div className="w-6 h-3 bg-black/30"></div>
+            <div className="w-4 h-3 bg-[#FF8C42] black/30"></div>
+            <div className="w-4 h-3 bg-[#FF8C42] black/30"></div>
+            <div className="w-6 h-3 bg-[#FF8C42] black/30"></div>
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-red-500 to-red-600 px-6 pt-4 pb-8">
+        <div className="bg-[#FF8C42] gradient-to-br from-red-500 to-red-600 px-6 pt-4 pb-8">
           <div className="flex items-center mb-6">
-            <button onClick={onBack} className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
+            <button onClick={onBack} className="w-10 h-10 bg-[#FF8C42] white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
               <ArrowLeft className="w-5 h-5 text-white" />
             </button>
             <h1 className="text-white flex-1 ml-4">Medicine Delivery</h1>
           </div>
-          <Card className="bg-white/10 backdrop-blur-sm border-white/20 p-4">
+          <Card className="bg-[#FF8C42] white/10 backdrop-blur-sm border-white/20 p-4">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+              <div className="w-12 h-12 bg-[#FF8C42] white/20 rounded-xl flex items-center justify-center">
                 <Pill className="w-6 h-6 text-white" />
               </div>
               <div>
@@ -86,14 +86,14 @@ export function MedicineDelivery({ onBack, customerId, petProfiles }: MedicineDe
           </Card>
         </div>
 
-        <div className="flex-1 -mt-4 bg-white rounded-t-[32px] px-6 pt-6 pb-24">
+        <div className="flex-1 -mt-4 bg-[#FF8C42] white rounded-t-[32px] px-6 pt-6 pb-24">
           <h2 className="mb-4">Select Pet Profile</h2>
           <div className="space-y-3">
             {petProfiles.map((pet: any) => (
               <button key={pet.id} onClick={() => { setSelectedPet(pet); setStep('upload'); }} className="w-full">
                 <Card className="p-4 border-gray-200 shadow-sm hover:shadow-md transition-all">
                   <div className="flex items-center gap-4">
-                    <div className="w-16 h-16 bg-red-100 rounded-2xl flex items-center justify-center text-2xl">
+                    <div className="w-16 h-16 bg-[#FF8C42] red-100 rounded-2xl flex items-center justify-center text-2xl">
                       {pet.icon}
                     </div>
                     <div className="flex-1 text-left">
@@ -107,8 +107,8 @@ export function MedicineDelivery({ onBack, customerId, petProfiles }: MedicineDe
           </div>
         </div>
 
-        <div className="fixed bottom-0 left-0 right-0 bg-white flex justify-center pb-2 max-w-md mx-auto">
-          <div className="w-32 h-1 bg-black rounded-full"></div>
+        <div className="fixed bottom-0 left-0 right-0 bg-[#FF8C42] white flex justify-center pb-2 max-w-md mx-auto">
+          <div className="w-32 h-1 bg-[#FF8C42] black rounded-full"></div>
         </div>
       </div>
     );
@@ -116,26 +116,26 @@ export function MedicineDelivery({ onBack, customerId, petProfiles }: MedicineDe
 
   if (step === 'upload') {
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col max-w-md mx-auto">
-        <div className="px-6 pt-3 pb-2 flex justify-between items-center text-black bg-white">
+      <div className="min-h-screen bg-[#FF8C42] gray-50 flex flex-col max-w-md mx-auto">
+        <div className="px-6 pt-3 pb-2 flex justify-between items-center text-black bg-[#FF8C42] white">
           <span>09:41</span>
           <div className="flex gap-1 items-center">
-            <div className="w-4 h-3 bg-black/30"></div>
-            <div className="w-4 h-3 bg-black/30"></div>
-            <div className="w-6 h-3 bg-black/30"></div>
+            <div className="w-4 h-3 bg-[#FF8C42] black/30"></div>
+            <div className="w-4 h-3 bg-[#FF8C42] black/30"></div>
+            <div className="w-6 h-3 bg-[#FF8C42] black/30"></div>
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-red-500 to-red-600 px-6 pt-4 pb-8">
+        <div className="bg-[#FF8C42] gradient-to-br from-red-500 to-red-600 px-6 pt-4 pb-8">
           <div className="flex items-center mb-6">
-            <button onClick={() => setStep('pets')} className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
+            <button onClick={() => setStep('pets')} className="w-10 h-10 bg-[#FF8C42] white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
               <ArrowLeft className="w-5 h-5 text-white" />
             </button>
             <h1 className="text-white flex-1 ml-4">Upload Prescription</h1>
           </div>
         </div>
 
-        <div className="flex-1 -mt-4 bg-white rounded-t-[32px] px-6 pt-6 pb-24 overflow-y-auto">
+        <div className="flex-1 -mt-4 bg-[#FF8C42] white rounded-t-[32px] px-6 pt-6 pb-24 overflow-y-auto">
           <Card className="p-6 border-2 border-dashed border-gray-300 text-center mb-6">
             <Upload className="w-12 h-12 mx-auto mb-4 text-gray-400" />
             <h3 className="mb-2">Upload Prescription</h3>
@@ -151,16 +151,16 @@ export function MedicineDelivery({ onBack, customerId, petProfiles }: MedicineDe
               id="prescription-upload"
             />
             <label htmlFor="prescription-upload">
-              <Button className="bg-red-600 hover:bg-red-700" asChild>
+              <Button className="bg-red-600 hover:bg-[#FF8C42] red-700" asChild>
                 <span>Choose File</span>
               </Button>
             </label>
           </Card>
 
           {prescriptionUploaded && (
-            <Card className="p-4 border-gray-200 bg-green-50 mb-6">
+            <Card className="p-4 border-gray-200 bg-[#FF8C42] green-50 mb-6">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-green-600 rounded-full flex items-center justify-center">
+                <div className="w-10 h-10 bg-[#FF8C42] green-600 rounded-full flex items-center justify-center">
                   <Check className="w-5 h-5 text-white" />
                 </div>
                 <div className="flex-1">
@@ -179,14 +179,14 @@ export function MedicineDelivery({ onBack, customerId, petProfiles }: MedicineDe
           <Button
             onClick={() => setStep('confirm')}
             disabled={!prescriptionUploaded}
-            className="w-full bg-red-600 hover:bg-red-700"
+            className="w-full bg-red-600 hover:bg-[#FF8C42] red-700"
           >
             Continue
           </Button>
         </div>
 
-        <div className="fixed bottom-0 left-0 right-0 bg-white flex justify-center pb-2 max-w-md mx-auto">
-          <div className="w-32 h-1 bg-black rounded-full"></div>
+        <div className="fixed bottom-0 left-0 right-0 bg-[#FF8C42] white flex justify-center pb-2 max-w-md mx-auto">
+          <div className="w-32 h-1 bg-[#FF8C42] black rounded-full"></div>
         </div>
       </div>
     );
@@ -194,27 +194,27 @@ export function MedicineDelivery({ onBack, customerId, petProfiles }: MedicineDe
 
   if (step === 'confirm') {
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col max-w-md mx-auto">
-        <div className="px-6 pt-3 pb-2 flex justify-between items-center text-black bg-white">
+      <div className="min-h-screen bg-[#FF8C42] gray-50 flex flex-col max-w-md mx-auto">
+        <div className="px-6 pt-3 pb-2 flex justify-between items-center text-black bg-[#FF8C42] white">
           <span>09:41</span>
           <div className="flex gap-1 items-center">
-            <div className="w-4 h-3 bg-black/30"></div>
-            <div className="w-4 h-3 bg-black/30"></div>
-            <div className="w-6 h-3 bg-black/30"></div>
+            <div className="w-4 h-3 bg-[#FF8C42] black/30"></div>
+            <div className="w-4 h-3 bg-[#FF8C42] black/30"></div>
+            <div className="w-6 h-3 bg-[#FF8C42] black/30"></div>
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-red-500 to-red-600 px-6 pt-4 pb-8">
+        <div className="bg-[#FF8C42] gradient-to-br from-red-500 to-red-600 px-6 pt-4 pb-8">
           <div className="flex items-center mb-6">
-            <button onClick={() => setStep('upload')} className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
+            <button onClick={() => setStep('upload')} className="w-10 h-10 bg-[#FF8C42] white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
               <ArrowLeft className="w-5 h-5 text-white" />
             </button>
             <h1 className="text-white flex-1 ml-4">Confirm Order</h1>
           </div>
         </div>
 
-        <div className="flex-1 -mt-4 bg-white rounded-t-[32px] px-6 pt-6 pb-24 overflow-y-auto">
-          <Card className="p-4 border-2 border-blue-200 bg-blue-50 mb-6">
+        <div className="flex-1 -mt-4 bg-[#FF8C42] white rounded-t-[32px] px-6 pt-6 pb-24 overflow-y-auto">
+          <Card className="p-4 border-2 border-blue-200 bg-[#FF8C42] blue-50 mb-6">
             <div className="flex items-start gap-3">
               <div className="text-2xl">ℹ️</div>
               <div>
@@ -244,13 +244,13 @@ export function MedicineDelivery({ onBack, customerId, petProfiles }: MedicineDe
             </div>
           </Card>
 
-          <Button onClick={createMedicineOrder} disabled={loading} className="w-full bg-red-600 hover:bg-red-700">
+          <Button onClick={createMedicineOrder} disabled={loading} className="w-full bg-red-600 hover:bg-[#FF8C42] red-700">
             {loading ? 'Placing Order...' : 'Place Order'}
           </Button>
         </div>
 
-        <div className="fixed bottom-0 left-0 right-0 bg-white flex justify-center pb-2 max-w-md mx-auto">
-          <div className="w-32 h-1 bg-black rounded-full"></div>
+        <div className="fixed bottom-0 left-0 right-0 bg-[#FF8C42] white flex justify-center pb-2 max-w-md mx-auto">
+          <div className="w-32 h-1 bg-[#FF8C42] black rounded-full"></div>
         </div>
       </div>
     );
@@ -258,28 +258,28 @@ export function MedicineDelivery({ onBack, customerId, petProfiles }: MedicineDe
 
   if (step === 'verification') {
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col max-w-md mx-auto">
-        <div className="px-6 pt-3 pb-2 flex justify-between items-center text-black bg-white">
+      <div className="min-h-screen bg-[#FF8C42] gray-50 flex flex-col max-w-md mx-auto">
+        <div className="px-6 pt-3 pb-2 flex justify-between items-center text-black bg-[#FF8C42] white">
           <span>09:41</span>
           <div className="flex gap-1 items-center">
-            <div className="w-4 h-3 bg-black/30"></div>
-            <div className="w-4 h-3 bg-black/30"></div>
-            <div className="w-6 h-3 bg-black/30"></div>
+            <div className="w-4 h-3 bg-[#FF8C42] black/30"></div>
+            <div className="w-4 h-3 bg-[#FF8C42] black/30"></div>
+            <div className="w-6 h-3 bg-[#FF8C42] black/30"></div>
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-red-500 to-red-600 px-6 pt-4 pb-8">
+        <div className="bg-[#FF8C42] gradient-to-br from-red-500 to-red-600 px-6 pt-4 pb-8">
           <div className="flex items-center mb-6">
-            <button onClick={onBack} className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
+            <button onClick={onBack} className="w-10 h-10 bg-[#FF8C42] white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
               <ArrowLeft className="w-5 h-5 text-white" />
             </button>
             <h1 className="text-white flex-1 ml-4">Order Status</h1>
           </div>
         </div>
 
-        <div className="flex-1 -mt-4 bg-white rounded-t-[32px] px-6 pt-6 pb-24 overflow-y-auto">
+        <div className="flex-1 -mt-4 bg-[#FF8C42] white rounded-t-[32px] px-6 pt-6 pb-24 overflow-y-auto">
           <div className="text-center mb-8">
-            <div className="w-20 h-20 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
+            <div className="w-20 h-20 bg-[#FF8C42] yellow-100 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
               <Package className="w-10 h-10 text-yellow-600" />
             </div>
             <h2 className="mb-2">Verifying Prescription</h2>
@@ -290,7 +290,7 @@ export function MedicineDelivery({ onBack, customerId, petProfiles }: MedicineDe
             <h3 className="mb-4">Order Timeline</h3>
             <div className="space-y-4">
               <div className="flex gap-3">
-                <div className="w-8 h-8 bg-green-600 rounded-full flex items-center justify-center flex-shrink-0">
+                <div className="w-8 h-8 bg-[#FF8C42] green-600 rounded-full flex items-center justify-center flex-shrink-0">
                   <Check className="w-4 h-4 text-white" />
                 </div>
                 <div className="flex-1">
@@ -300,8 +300,8 @@ export function MedicineDelivery({ onBack, customerId, petProfiles }: MedicineDe
               </div>
 
               <div className="flex gap-3">
-                <div className="w-8 h-8 bg-yellow-500 rounded-full flex items-center justify-center flex-shrink-0 animate-pulse">
-                  <div className="w-2 h-2 bg-white rounded-full"></div>
+                <div className="w-8 h-8 bg-[#FF8C42] yellow-500 rounded-full flex items-center justify-center flex-shrink-0 animate-pulse">
+                  <div className="w-2 h-2 bg-[#FF8C42] white rounded-full"></div>
                 </div>
                 <div className="flex-1">
                   <h4 className="text-sm mb-1">Verification in Progress</h4>
@@ -310,8 +310,8 @@ export function MedicineDelivery({ onBack, customerId, petProfiles }: MedicineDe
               </div>
 
               <div className="flex gap-3 opacity-50">
-                <div className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center flex-shrink-0">
-                  <div className="w-2 h-2 bg-white rounded-full"></div>
+                <div className="w-8 h-8 bg-[#FF8C42] gray-300 rounded-full flex items-center justify-center flex-shrink-0">
+                  <div className="w-2 h-2 bg-[#FF8C42] white rounded-full"></div>
                 </div>
                 <div className="flex-1">
                   <h4 className="text-sm mb-1">Payment</h4>
@@ -320,7 +320,7 @@ export function MedicineDelivery({ onBack, customerId, petProfiles }: MedicineDe
               </div>
 
               <div className="flex gap-3 opacity-50">
-                <div className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center flex-shrink-0">
+                <div className="w-8 h-8 bg-[#FF8C42] gray-300 rounded-full flex items-center justify-center flex-shrink-0">
                   <Truck className="w-4 h-4 text-white" />
                 </div>
                 <div className="flex-1">
@@ -331,13 +331,13 @@ export function MedicineDelivery({ onBack, customerId, petProfiles }: MedicineDe
             </div>
           </Card>
 
-          <Button onClick={() => setStep('tracking')} className="w-full bg-red-600 hover:bg-red-700">
+          <Button onClick={() => setStep('tracking')} className="w-full bg-red-600 hover:bg-[#FF8C42] red-700">
             Track Delivery (Demo)
           </Button>
         </div>
 
-        <div className="fixed bottom-0 left-0 right-0 bg-white flex justify-center pb-2 max-w-md mx-auto">
-          <div className="w-32 h-1 bg-black rounded-full"></div>
+        <div className="fixed bottom-0 left-0 right-0 bg-[#FF8C42] white flex justify-center pb-2 max-w-md mx-auto">
+          <div className="w-32 h-1 bg-[#FF8C42] black rounded-full"></div>
         </div>
       </div>
     );
@@ -345,28 +345,28 @@ export function MedicineDelivery({ onBack, customerId, petProfiles }: MedicineDe
 
   if (step === 'tracking') {
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col max-w-md mx-auto">
-        <div className="px-6 pt-3 pb-2 flex justify-between items-center text-black bg-white">
+      <div className="min-h-screen bg-[#FF8C42] gray-50 flex flex-col max-w-md mx-auto">
+        <div className="px-6 pt-3 pb-2 flex justify-between items-center text-black bg-[#FF8C42] white">
           <span>09:41</span>
           <div className="flex gap-1 items-center">
-            <div className="w-4 h-3 bg-black/30"></div>
-            <div className="w-4 h-3 bg-black/30"></div>
-            <div className="w-6 h-3 bg-black/30"></div>
+            <div className="w-4 h-3 bg-[#FF8C42] black/30"></div>
+            <div className="w-4 h-3 bg-[#FF8C42] black/30"></div>
+            <div className="w-6 h-3 bg-[#FF8C42] black/30"></div>
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-red-500 to-red-600 px-6 pt-4 pb-8">
+        <div className="bg-[#FF8C42] gradient-to-br from-red-500 to-red-600 px-6 pt-4 pb-8">
           <div className="flex items-center mb-6">
-            <button onClick={() => setStep('verification')} className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
+            <button onClick={() => setStep('verification')} className="w-10 h-10 bg-[#FF8C42] white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
               <ArrowLeft className="w-5 h-5 text-white" />
             </button>
             <h1 className="text-white flex-1 ml-4">Track Delivery</h1>
           </div>
         </div>
 
-        <div className="flex-1 -mt-4 bg-white rounded-t-[32px] px-6 pt-6 pb-24 overflow-y-auto">
+        <div className="flex-1 -mt-4 bg-[#FF8C42] white rounded-t-[32px] px-6 pt-6 pb-24 overflow-y-auto">
           <div className="text-center mb-6">
-            <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <div className="w-20 h-20 bg-[#FF8C42] green-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <Truck className="w-10 h-10 text-green-600" />
             </div>
             <h2 className="mb-2">Out for Delivery</h2>
@@ -376,7 +376,7 @@ export function MedicineDelivery({ onBack, customerId, petProfiles }: MedicineDe
           <Card className="p-4 border-gray-200 mb-6">
             <h3 className="mb-3">Order Details</h3>
             <div className="space-y-3">
-              <div className="p-3 bg-red-50 rounded-xl">
+              <div className="p-3 bg-[#FF8C42] red-50 rounded-xl">
                 <div className="flex justify-between items-start mb-2">
                   <h4 className="text-sm">Amoxicillin 250mg</h4>
                   <span className="text-sm">₹180</span>
@@ -384,7 +384,7 @@ export function MedicineDelivery({ onBack, customerId, petProfiles }: MedicineDe
                 <p className="text-xs text-gray-500">Quantity: 2 strips</p>
               </div>
 
-              <div className="p-3 bg-red-50 rounded-xl">
+              <div className="p-3 bg-[#FF8C42] red-50 rounded-xl">
                 <div className="flex justify-between items-start mb-2">
                   <h4 className="text-sm">Vitamin Supplement</h4>
                   <span className="text-sm">₹320</span>
@@ -409,13 +409,13 @@ export function MedicineDelivery({ onBack, customerId, petProfiles }: MedicineDe
             </div>
           </Card>
 
-          <Button onClick={onBack} className="w-full bg-red-600 hover:bg-red-700">
+          <Button onClick={onBack} className="w-full bg-red-600 hover:bg-[#FF8C42] red-700">
             Back to Home
           </Button>
         </div>
 
-        <div className="fixed bottom-0 left-0 right-0 bg-white flex justify-center pb-2 max-w-md mx-auto">
-          <div className="w-32 h-1 bg-black rounded-full"></div>
+        <div className="fixed bottom-0 left-0 right-0 bg-[#FF8C42] white flex justify-center pb-2 max-w-md mx-auto">
+          <div className="w-32 h-1 bg-[#FF8C42] black rounded-full"></div>
         </div>
       </div>
     );

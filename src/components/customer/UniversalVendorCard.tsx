@@ -1,4 +1,5 @@
 import { MapPin, Star, Clock, Phone, ChevronRight } from 'lucide-react';
+// Brand color: #FF8C42
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
 

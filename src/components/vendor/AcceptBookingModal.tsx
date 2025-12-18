@@ -100,7 +100,7 @@ export function AcceptBookingModal({ booking, vendorId, onClose, onSuccess }: Ac
 
         <div className="space-y-4 py-4">
           {/* Booking Summary */}
-          <div className="p-4 bg-gray-50 rounded-lg">
+          <div className="p-4 bg-[#FF8C42] gray-50 rounded-lg">
             <div className="grid grid-cols-2 gap-2 text-sm">
               <div>
                 <p className="text-gray-600">Customer</p>
@@ -170,7 +170,7 @@ export function AcceptBookingModal({ booking, vendorId, onClose, onSuccess }: Ac
           </div>
 
           {/* Info Box */}
-          <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+          <div className="p-3 bg-[#FF8C42] green-50 border border-green-200 rounded-lg">
             <p className="text-sm text-green-800">
               <strong>Next Steps:</strong> After accepting, the customer will be notified. 
               You can start the service using the OTP on the scheduled date.
@@ -185,7 +185,7 @@ export function AcceptBookingModal({ booking, vendorId, onClose, onSuccess }: Ac
           <Button
             onClick={handleAccept}
             disabled={loading || (staffMembers.length > 0 && !selectedStaffId)}
-            className="bg-green-600 hover:bg-green-700 text-white"
+            className="bg-green-600 hover:bg-[#FF8C42] green-700 text-white"
           >
             {loading ? 'Accepting...' : 'Accept Booking'}
           </Button>

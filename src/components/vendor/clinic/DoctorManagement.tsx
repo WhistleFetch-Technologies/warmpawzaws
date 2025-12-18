@@ -214,25 +214,23 @@ export function DoctorManagement({ clinicId, clinicData, onBack }: DoctorManagem
       {/* Header */}
       <div className="bg-[#FF8C42] text-white p-4 sticky top-0 z-10">
         <div className="flex items-center gap-3 mb-4">
-          <button
-            onClick={onBack}
+          <Button onClick={onBack}
             className="p-2 hover:bg-white/10 rounded-full transition-colors"
           >
             <ArrowLeft className="w-6 h-6" />
-          </button>
+          </Button>
           <div>
             <h1 className="text-xl text-white">{roleLabel} Management</h1>
             <p className="text-sm text-white/90">{clinicData.businessName}</p>
           </div>
         </div>
 
-        <button
-          onClick={handleAddStaff}
+        <Button onClick={handleAddStaff}
           className="w-full bg-white text-[#FF8C42] rounded-xl py-3 font-semibold flex items-center justify-center gap-2 hover:bg-gray-100 transition-colors"
         >
           <Plus className="w-5 h-5" />
           Add New {roleLabel}
-        </button>
+        </Button>
       </div>
 
       {/* Staff List */}
@@ -244,12 +242,11 @@ export function DoctorManagement({ clinicId, clinicData, onBack }: DoctorManagem
             <p className="text-gray-500 mb-4">
               Add {roleLabelPlural.toLowerCase()} to start accepting appointments
             </p>
-            <button
-              onClick={handleAddStaff}
+            <Button onClick={handleAddStaff}
               className="bg-[#FF8C42] text-white px-6 py-2 rounded-lg hover:bg-[#FF7A29] transition-colors"
             >
               Add First {roleLabel}
-            </button>
+            </Button>
           </div>
         ) : (
           staff.map((staffMember) => (
@@ -354,20 +351,18 @@ export function DoctorManagement({ clinicId, clinicData, onBack }: DoctorManagem
 
               {/* Action Buttons */}
               <div className="flex gap-2">
-                <button
-                  onClick={() => handleEditStaff(staffMember)}
+                <Button onClick={() => handleEditStaff(staffMember)}
                   className="flex-1 bg-white border border-[#FF8C42] text-[#FF8C42] rounded-lg py-2 flex items-center justify-center gap-2 hover:bg-orange-50 transition-colors"
                 >
                   <Edit className="w-4 h-4" />
                   Edit
-                </button>
-                <button
-                  onClick={() => handleRemoveStaff(staffMember.id)}
+                </Button>
+                <Button onClick={() => handleRemoveStaff(staffMember.id)}
                   className="flex-1 bg-white border border-red-500 text-red-500 rounded-lg py-2 flex items-center justify-center gap-2 hover:bg-red-50 transition-colors"
                 >
                   <Trash2 className="w-4 h-4" />
                   Remove
-                </button>
+                </Button>
               </div>
             </div>
           ))
@@ -652,12 +647,11 @@ function StaffFormModal({ clinicId, clinicData, staff, onClose, onSuccess }: Sta
             <h2 className="text-xl text-gray-900">
               {staff ? `Edit ${roleLabel}` : `Add New ${roleLabel}`}
             </h2>
-            <button
-              onClick={onClose}
+            <Button onClick={onClose}
               className="p-2 hover:bg-gray-100 rounded-full transition-colors"
             >
               ✕
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -881,21 +875,21 @@ function StaffFormModal({ clinicId, clinicData, staff, onClose, onSuccess }: Sta
 
           {/* Buttons */}
           <div className="flex gap-3 pt-4">
-            <button
+            <Button
               type="button"
               onClick={onClose}
               className="flex-1 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
               disabled={submitting}
             >
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               type="submit"
               className="flex-1 py-3 bg-[#FF8C42] text-white rounded-lg hover:bg-[#FF7A29] transition-colors disabled:opacity-50"
               disabled={submitting}
             >
               {submitting ? 'Saving...' : staff ? 'Update' : 'Add Staff'}
-            </button>
+            </Button>
           </div>
         </form>
       </div>

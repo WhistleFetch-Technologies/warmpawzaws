@@ -77,9 +77,9 @@ export function VendorReferralPage({ vendorId, onBack }: VendorReferralPageProps
         <div className="relative z-10">
           <div className="flex items-center gap-2 mb-4">
             {onBack && (
-              <button onClick={onBack} className="bg-white/20 p-2 rounded-full hover:bg-white/30 transition">
+              <Button onClick={onBack} className="bg-white/20 p-2 rounded-full hover:bg-white/30 transition">
                 <ChevronRight className="w-5 h-5 rotate-180" />
-              </button>
+              </Button>
             )}
             <h1 className="text-xl font-bold">Referral & Rewards</h1>
           </div>
@@ -112,12 +112,11 @@ export function VendorReferralPage({ vendorId, onBack }: VendorReferralPageProps
             <div className="flex-1 text-center font-mono text-xl font-bold tracking-wider text-gray-800">
               {profile?.referralCode || 'LOADING...'}
             </div>
-            <button 
-              onClick={copyToClipboard}
+            <Button onClick={copyToClipboard}
               className="p-2 hover:bg-white rounded-lg transition-colors"
             >
               {copied ? <Check className="w-5 h-5 text-green-500" /> : <Copy className="w-5 h-5 text-gray-500" />}
-            </button>
+            </Button>
           </div>
 
           <Button 

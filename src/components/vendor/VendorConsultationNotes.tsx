@@ -106,12 +106,11 @@ export function VendorConsultationNotes({
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-gray-200 flex-shrink-0">
           <h2 className="font-semibold text-gray-900">Consultation Notes</h2>
-          <button
-            onClick={onClose}
+          <Button onClick={onClose}
             className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
           >
             <X className="w-5 h-5 text-gray-600" />
-          </button>
+          </Button>
         </div>
 
         {/* Patient Info */}
@@ -151,14 +150,12 @@ export function VendorConsultationNotes({
 
         {/* Actions */}
         <div className="p-4 border-t border-gray-200 flex gap-3 flex-shrink-0">
-          <button
-            onClick={onClose}
+          <Button onClick={onClose}
             className="flex-1 px-4 py-3 border-2 border-gray-300 rounded-xl text-gray-700 font-medium hover:bg-gray-50 transition-colors"
           >
             Cancel
-          </button>
-          <button
-            onClick={handleSave}
+          </Button>
+          <Button onClick={handleSave}
             disabled={saving || loading}
             className="flex-1 px-4 py-3 bg-[#FF8C42] text-white rounded-xl font-medium hover:bg-[#ff7a28] transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
           >
@@ -173,7 +170,7 @@ export function VendorConsultationNotes({
                 Save Notes
               </>
             )}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

@@ -9,6 +9,7 @@ import { useState, useEffect } from 'react';
 import { Check, Loader2, AlertCircle } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { toast } from 'sonner@2.0.3';
+import { Button } from '../ui/button';
 
 interface SpecializationSelectorProps {
   roleId: string;
@@ -97,12 +98,11 @@ export function SpecializationSelector({
             <p className="text-sm text-gray-600">
               {error || 'No specializations available'}
             </p>
-            <button
-              onClick={loadSpecializations}
+            <Button onClick={loadSpecializations}
               className="text-sm text-[#FF8C42] hover:underline mt-1"
             >
               Try again
-            </button>
+            </Button>
           </div>
         </div>
       </div>
@@ -124,12 +124,11 @@ export function SpecializationSelector({
           {selected.length} selected
         </span>
         {selected.length > 0 && (
-          <button
-            onClick={() => onChange([])}
+          <Button onClick={() => onChange([])}
             className="text-[#FF8C42] hover:underline"
           >
             Clear all
-          </button>
+          </Button>
         )}
       </div>
 
@@ -139,7 +138,7 @@ export function SpecializationSelector({
           const isSelected = selected.includes(spec.id);
           
           return (
-            <button
+            <Button
               key={spec.id}
               onClick={() => toggleSpec(spec.id)}
               className={`relative p-4 rounded-xl border-2 transition-all ${
@@ -177,7 +176,7 @@ export function SpecializationSelector({
                   {spec.shortDescription}
                 </div>
               )}
-            </button>
+            </Button>
           );
         })}
       </div>

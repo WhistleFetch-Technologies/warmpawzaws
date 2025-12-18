@@ -219,15 +219,15 @@ export function VendorMemorialServices({ vendorId, vendorData, onBack }: VendorM
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-[#FF8C42] gray-50">
       {/* Header */}
-      <div className="bg-gradient-to-r from-purple-900 to-indigo-900 px-6 py-8 text-white">
+      <div className="bg-[#FF8C42] gradient-to-r from-purple-900 to-indigo-900 px-6 py-8 text-white">
         <div className="flex items-center justify-between mb-6">
           {onBack && (
-            <button onClick={onBack} className="flex items-center gap-2 text-purple-200 hover:text-white">
+            <Button onClick={onBack} className="flex items-center gap-2 text-purple-200 hover:text-white">
               <ArrowLeft className="w-5 h-5" />
               Back to Dashboard
-            </button>
+            </Button>
           )}
         </div>
 
@@ -241,27 +241,27 @@ export function VendorMemorialServices({ vendorId, vendorData, onBack }: VendorM
 
         {/* Stats Overview */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-          <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4">
+          <div className="bg-[#FF8C42] white/10 backdrop-blur-sm rounded-lg p-4">
             <p className="text-purple-200 text-sm">Scheduled</p>
             <p className="text-2xl mt-1">{stats.scheduled}</p>
           </div>
-          <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4">
+          <div className="bg-[#FF8C42] white/10 backdrop-blur-sm rounded-lg p-4">
             <p className="text-purple-200 text-sm">In Progress</p>
             <p className="text-2xl mt-1">{stats.inProgress}</p>
           </div>
-          <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4">
+          <div className="bg-[#FF8C42] white/10 backdrop-blur-sm rounded-lg p-4">
             <p className="text-purple-200 text-sm">Completed</p>
             <p className="text-2xl mt-1">{stats.completed}</p>
           </div>
-          <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4">
+          <div className="bg-[#FF8C42] white/10 backdrop-blur-sm rounded-lg p-4">
             <p className="text-purple-200 text-sm">Products</p>
             <p className="text-2xl mt-1">{stats.totalProducts}</p>
           </div>
-          <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4">
+          <div className="bg-[#FF8C42] white/10 backdrop-blur-sm rounded-lg p-4">
             <p className="text-purple-200 text-sm">In Stock</p>
             <p className="text-2xl mt-1">{stats.inStockProducts}</p>
           </div>
-          <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4">
+          <div className="bg-[#FF8C42] white/10 backdrop-blur-sm rounded-lg p-4">
             <p className="text-purple-200 text-sm">Tributes</p>
             <p className="text-2xl mt-1">{stats.totalTributes}</p>
           </div>
@@ -269,11 +269,9 @@ export function VendorMemorialServices({ vendorId, vendorData, onBack }: VendorM
       </div>
 
       {/* Tabs */}
-      <div className="bg-white border-b border-gray-200">
+      <div className="bg-[#FF8C42] white border-b border-gray-200">
         <div className="flex gap-6 px-6">
-          <button
-            onClick={() => setActiveTab('services')}
-            className={`py-4 px-2 border-b-2 transition-colors ${
+          <Button onClick={() => setActiveTab('services')} className={`py-4 px-2 border-b-2 transition-colors ${
               activeTab === 'services'
                 ? 'border-purple-600 text-purple-600'
                 : 'border-transparent text-gray-600 hover:text-gray-900'
@@ -283,10 +281,8 @@ export function VendorMemorialServices({ vendorId, vendorData, onBack }: VendorM
               <Heart className="w-5 h-5" />
               <span>Memorial Services</span>
             </div>
-          </button>
-          <button
-            onClick={() => setActiveTab('tributes')}
-            className={`py-4 px-2 border-b-2 transition-colors ${
+          </Button>
+          <Button onClick={() => setActiveTab('tributes')} className={`py-4 px-2 border-b-2 transition-colors ${
               activeTab === 'tributes'
                 ? 'border-purple-600 text-purple-600'
                 : 'border-transparent text-gray-600 hover:text-gray-900'
@@ -296,10 +292,8 @@ export function VendorMemorialServices({ vendorId, vendorData, onBack }: VendorM
               <ImageIcon className="w-5 h-5" />
               <span>Tributes & Memories</span>
             </div>
-          </button>
-          <button
-            onClick={() => setActiveTab('products')}
-            className={`py-4 px-2 border-b-2 transition-colors ${
+          </Button>
+          <Button onClick={() => setActiveTab('products')} className={`py-4 px-2 border-b-2 transition-colors ${
               activeTab === 'products'
                 ? 'border-purple-600 text-purple-600'
                 : 'border-transparent text-gray-600 hover:text-gray-900'
@@ -309,7 +303,7 @@ export function VendorMemorialServices({ vendorId, vendorData, onBack }: VendorM
               <Package className="w-5 h-5" />
               <span>Memorial Products</span>
             </div>
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -334,7 +328,7 @@ export function VendorMemorialServices({ vendorId, vendorData, onBack }: VendorM
                       setEditingService(null);
                       setServiceModalOpen(true);
                     }}
-                    className="bg-purple-600 hover:bg-purple-700 text-white"
+                    className="bg-purple-600 hover:bg-[#FF8C42] purple-700 text-white"
                   >
                     <Plus className="w-4 h-4 mr-2" />
                     Add Service
@@ -342,13 +336,13 @@ export function VendorMemorialServices({ vendorId, vendorData, onBack }: VendorM
                 </div>
 
                 {services.length === 0 ? (
-                  <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
+                  <div className="bg-[#FF8C42] white rounded-lg border border-gray-200 p-12 text-center">
                     <Heart className="w-16 h-16 mx-auto mb-4 text-gray-300" />
                     <h3 className="text-lg text-gray-900 mb-2">No Memorial Services</h3>
                     <p className="text-gray-600 mb-4">Start by adding your first memorial service</p>
                     <Button
                       onClick={() => setServiceModalOpen(true)}
-                      className="bg-purple-600 hover:bg-purple-700 text-white"
+                      className="bg-purple-600 hover:bg-[#FF8C42] purple-700 text-white"
                     >
                       Add Service
                     </Button>
@@ -356,7 +350,7 @@ export function VendorMemorialServices({ vendorId, vendorData, onBack }: VendorM
                 ) : (
                   <div className="grid gap-4">
                     {services.map((service) => (
-                      <div key={service.id} className="bg-white rounded-lg border border-gray-200 p-6">
+                      <div key={service.id} className="bg-[#FF8C42] white rounded-lg border border-gray-200 p-6">
                         <div className="flex items-start justify-between mb-4">
                           <div className="flex-1">
                             <div className="flex items-center gap-3 mb-2">
@@ -388,7 +382,7 @@ export function VendorMemorialServices({ vendorId, vendorData, onBack }: VendorM
                               </div>
                             </div>
                             {service.specialRequests && (
-                              <div className="mt-3 p-3 bg-blue-50 rounded-lg">
+                              <div className="mt-3 p-3 bg-[#FF8C42] blue-50 rounded-lg">
                                 <p className="text-sm text-gray-700">
                                   <strong>Special Requests:</strong> {service.specialRequests}
                                 </p>
@@ -400,7 +394,7 @@ export function VendorMemorialServices({ vendorId, vendorData, onBack }: VendorM
                               <Button
                                 size="sm"
                                 onClick={() => handleStatusUpdate(service.id, 'in_progress')}
-                                className="bg-purple-600 hover:bg-purple-700 text-white"
+                                className="bg-purple-600 hover:bg-[#FF8C42] purple-700 text-white"
                               >
                                 Start Service
                               </Button>
@@ -409,7 +403,7 @@ export function VendorMemorialServices({ vendorId, vendorData, onBack }: VendorM
                               <Button
                                 size="sm"
                                 onClick={() => handleStatusUpdate(service.id, 'completed')}
-                                className="bg-green-600 hover:bg-green-700 text-white"
+                                className="bg-green-600 hover:bg-[#FF8C42] green-700 text-white"
                               >
                                 Mark Complete
                               </Button>
@@ -441,7 +435,7 @@ export function VendorMemorialServices({ vendorId, vendorData, onBack }: VendorM
                   <h2 className="text-xl text-gray-900">Memorial Tributes</h2>
                   <Button
                     onClick={() => setTributeModalOpen(true)}
-                    className="bg-purple-600 hover:bg-purple-700 text-white"
+                    className="bg-purple-600 hover:bg-[#FF8C42] purple-700 text-white"
                   >
                     <Plus className="w-4 h-4 mr-2" />
                     Create Tribute
@@ -449,13 +443,13 @@ export function VendorMemorialServices({ vendorId, vendorData, onBack }: VendorM
                 </div>
 
                 {tributes.length === 0 ? (
-                  <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
+                  <div className="bg-[#FF8C42] white rounded-lg border border-gray-200 p-12 text-center">
                     <ImageIcon className="w-16 h-16 mx-auto mb-4 text-gray-300" />
                     <h3 className="text-lg text-gray-900 mb-2">No Memorial Tributes</h3>
                     <p className="text-gray-600 mb-4">Create beautiful tributes for beloved pets</p>
                     <Button
                       onClick={() => setTributeModalOpen(true)}
-                      className="bg-purple-600 hover:bg-purple-700 text-white"
+                      className="bg-purple-600 hover:bg-[#FF8C42] purple-700 text-white"
                     >
                       Create Tribute
                     </Button>
@@ -463,9 +457,9 @@ export function VendorMemorialServices({ vendorId, vendorData, onBack }: VendorM
                 ) : (
                   <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {tributes.map((tribute) => (
-                      <div key={tribute.id} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                      <div key={tribute.id} className="bg-[#FF8C42] white rounded-lg border border-gray-200 overflow-hidden">
                         {tribute.petImage && (
-                          <div className="h-48 bg-gray-200">
+                          <div className="h-48 bg-[#FF8C42] gray-200">
                             <img src={tribute.petImage} alt={tribute.petName} className="w-full h-full object-cover" />
                           </div>
                         )}
@@ -504,7 +498,7 @@ export function VendorMemorialServices({ vendorId, vendorData, onBack }: VendorM
                       setEditingProduct(null);
                       setProductModalOpen(true);
                     }}
-                    className="bg-purple-600 hover:bg-purple-700 text-white"
+                    className="bg-purple-600 hover:bg-[#FF8C42] purple-700 text-white"
                   >
                     <Plus className="w-4 h-4 mr-2" />
                     Add Product
@@ -512,13 +506,13 @@ export function VendorMemorialServices({ vendorId, vendorData, onBack }: VendorM
                 </div>
 
                 {products.length === 0 ? (
-                  <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
+                  <div className="bg-[#FF8C42] white rounded-lg border border-gray-200 p-12 text-center">
                     <Package className="w-16 h-16 mx-auto mb-4 text-gray-300" />
                     <h3 className="text-lg text-gray-900 mb-2">No Memorial Products</h3>
                     <p className="text-gray-600 mb-4">Add products like urns, photo frames, and memorial stones</p>
                     <Button
                       onClick={() => setProductModalOpen(true)}
-                      className="bg-purple-600 hover:bg-purple-700 text-white"
+                      className="bg-purple-600 hover:bg-[#FF8C42] purple-700 text-white"
                     >
                       Add Product
                     </Button>
@@ -526,7 +520,7 @@ export function VendorMemorialServices({ vendorId, vendorData, onBack }: VendorM
                 ) : (
                   <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {products.map((product) => (
-                      <div key={product.id} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                      <div key={product.id} className="bg-[#FF8C42] white rounded-lg border border-gray-200 overflow-hidden">
                         <div className="p-4">
                           <div className="flex items-start justify-between mb-3">
                             <div className="flex-1">
@@ -585,16 +579,15 @@ export function VendorMemorialServices({ vendorId, vendorData, onBack }: VendorM
 
       {/* Modals would go here - simplified for now */}
       {(serviceModalOpen || tributeModalOpen || productModalOpen) && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg p-6 max-w-2xl w-full">
+        <div className="fixed inset-0 bg-[#FF8C42] black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-[#FF8C42] white rounded-lg p-6 max-w-2xl w-full">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg text-gray-900">
                 {serviceModalOpen && (editingService ? 'Edit Service' : 'Add Service')}
                 {tributeModalOpen && 'Create Tribute'}
                 {productModalOpen && (editingProduct ? 'Edit Product' : 'Add Product')}
               </h3>
-              <button
-                onClick={() => {
+              <Button onClick={() => {
                   setServiceModalOpen(false);
                   setTributeModalOpen(false);
                   setProductModalOpen(false);
@@ -602,7 +595,7 @@ export function VendorMemorialServices({ vendorId, vendorData, onBack }: VendorM
                 className="text-gray-400 hover:text-gray-600"
               >
                 <XCircle className="w-6 h-6" />
-              </button>
+              </Button>
             </div>
             <p className="text-sm text-gray-600">Form implementation to be added based on requirements</p>
           </div>

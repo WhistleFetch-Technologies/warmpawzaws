@@ -355,21 +355,18 @@ export function StaffScheduleManagement({ staffId, staffName, vendorId, onClose 
               <Settings className="w-6 h-6" />
               <h2 className="text-xl font-bold">Schedule Management</h2>
             </div>
-            <button
-              onClick={onClose}
+            <Button onClick={onClose}
               className="p-2 hover:bg-white/20 rounded-full transition-colors"
             >
               <X className="w-5 h-5" />
-            </button>
+            </Button>
           </div>
           <p className="text-sm text-white/90">Dr. {staffName}</p>
         </div>
 
         {/* Tabs */}
         <div className="flex border-b border-gray-200 bg-gray-50 flex-shrink-0">
-          <button
-            onClick={() => setActiveTab('breaks')}
-            className={`flex-1 py-3 px-4 font-medium transition-colors ${
+          <Button onClick={() => setActiveTab('breaks')} className={`flex-1 py-3 px-4 font-medium transition-colors ${
               activeTab === 'breaks'
                 ? 'bg-white text-[#FF8C42] border-b-2 border-[#FF8C42]'
                 : 'text-gray-600 hover:text-gray-900'
@@ -377,10 +374,8 @@ export function StaffScheduleManagement({ staffId, staffName, vendorId, onClose 
           >
             <Coffee className="w-4 h-4 inline mr-2" />
             Breaks
-          </button>
-          <button
-            onClick={() => setActiveTab('buffer')}
-            className={`flex-1 py-3 px-4 font-medium transition-colors ${
+          </Button>
+          <Button onClick={() => setActiveTab('buffer')} className={`flex-1 py-3 px-4 font-medium transition-colors ${
               activeTab === 'buffer'
                 ? 'bg-white text-[#FF8C42] border-b-2 border-[#FF8C42]'
                 : 'text-gray-600 hover:text-gray-900'
@@ -388,10 +383,8 @@ export function StaffScheduleManagement({ staffId, staffName, vendorId, onClose 
           >
             <Timer className="w-4 h-4 inline mr-2" />
             Buffer Time
-          </button>
-          <button
-            onClick={() => setActiveTab('holidays')}
-            className={`flex-1 py-3 px-4 font-medium transition-colors ${
+          </Button>
+          <Button onClick={() => setActiveTab('holidays')} className={`flex-1 py-3 px-4 font-medium transition-colors ${
               activeTab === 'holidays'
                 ? 'bg-white text-[#FF8C42] border-b-2 border-[#FF8C42]'
                 : 'text-gray-600 hover:text-gray-900'
@@ -399,7 +392,7 @@ export function StaffScheduleManagement({ staffId, staffName, vendorId, onClose 
           >
             <Palmtree className="w-4 h-4 inline mr-2" />
             Holidays
-          </button>
+          </Button>
         </div>
 
         {/* Content */}
@@ -464,18 +457,16 @@ export function StaffScheduleManagement({ staffId, staffName, vendorId, onClose 
                                 </div>
                               </div>
                               <div className="flex gap-2">
-                                <button
-                                  onClick={() => setEditingBreak(breakItem)}
+                                <Button onClick={() => setEditingBreak(breakItem)}
                                   className="p-2 hover:bg-gray-100 rounded transition-colors"
                                 >
                                   <Edit2 className="w-4 h-4 text-gray-600" />
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteBreak(breakItem.id)}
+                                </Button>
+                                <Button onClick={() => handleDeleteBreak(breakItem.id)}
                                   className="p-2 hover:bg-red-50 rounded transition-colors"
                                 >
                                   <Trash2 className="w-4 h-4 text-red-500" />
-                                </button>
+                                </Button>
                               </div>
                             </div>
                           </Card>
@@ -677,12 +668,11 @@ export function StaffScheduleManagement({ staffId, staffName, vendorId, onClose 
                                 </span>
                               </div>
                             </div>
-                            <button
-                              onClick={() => handleDeleteHoliday(holiday.id)}
+                            <Button onClick={() => handleDeleteHoliday(holiday.id)}
                               className="p-2 hover:bg-red-50 rounded transition-colors"
                             >
                               <Trash2 className="w-4 h-4 text-red-500" />
-                            </button>
+                            </Button>
                           </div>
                         </Card>
                       ))}

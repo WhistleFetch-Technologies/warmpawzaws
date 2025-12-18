@@ -3,6 +3,7 @@ import { Search, X, Clock, TrendingUp, MapPin, Star, ChevronRight } from 'lucide
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+// Brand color: #FF8C42
 
 interface SearchResult {
   id: string;

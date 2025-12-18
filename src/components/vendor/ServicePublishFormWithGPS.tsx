@@ -147,8 +147,7 @@ export function ServicePublishFormWithGPS({
           
           <div className="grid grid-cols-2 gap-3">
             {/* Vendor Level */}
-            <button
-              onClick={() => setPublishLevel('vendor')}
+            <Button onClick={() => setPublishLevel('vendor')}
               disabled={!hasCentres && publishLevel !== 'vendor'}
               className={`p-4 rounded-lg border-2 text-left transition-colors ${
                 publishLevel === 'vendor'
@@ -168,11 +167,10 @@ export function ServicePublishFormWithGPS({
               <p className="text-xs text-gray-600">
                 Available across all your locations
               </p>
-            </button>
+            </Button>
 
             {/* Centre Level */}
-            <button
-              onClick={() => setPublishLevel('centre')}
+            <Button onClick={() => setPublishLevel('centre')}
               disabled={!hasCentres}
               className={`p-4 rounded-lg border-2 text-left transition-colors ${
                 publishLevel === 'centre'
@@ -197,7 +195,7 @@ export function ServicePublishFormWithGPS({
                   ? 'Publish at specific centres with custom pricing'
                   : 'No centres configured'}
               </p>
-            </button>
+            </Button>
           </div>
         </Card>
 

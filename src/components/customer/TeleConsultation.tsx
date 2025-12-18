@@ -154,31 +154,31 @@ export function TeleConsultation({ onBack, customerId, petProfiles, customerName
   // Pet Selection Step
   if (step === 'pets') {
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col max-w-md mx-auto">
+      <div className="min-h-screen bg-[#FF8C42] gray-50 flex flex-col max-w-md mx-auto">
         {/* Status Bar */}
-        <div className="px-6 pt-3 pb-2 flex justify-between items-center text-black bg-white">
+        <div className="px-6 pt-3 pb-2 flex justify-between items-center text-black bg-[#FF8C42] white">
           <span>09:41</span>
           <div className="flex gap-1 items-center">
-            <div className="w-4 h-3 bg-black/30"></div>
-            <div className="w-4 h-3 bg-black/30"></div>
-            <div className="w-6 h-3 bg-black/30"></div>
+            <div className="w-4 h-3 bg-[#FF8C42] black/30"></div>
+            <div className="w-4 h-3 bg-[#FF8C42] black/30"></div>
+            <div className="w-6 h-3 bg-[#FF8C42] black/30"></div>
           </div>
         </div>
 
         {/* Header */}
-        <div className="bg-gradient-to-br from-blue-500 to-blue-600 px-6 pt-4 pb-8">
+        <div className="bg-[#FF8C42] gradient-to-br from-blue-500 to-blue-600 px-6 pt-4 pb-8">
           <div className="flex items-center mb-6">
             <button 
               onClick={onBack}
-              className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center"
+              className="w-10 h-10 bg-[#FF8C42] white/20 backdrop-blur-sm rounded-xl flex items-center justify-center"
             >
               <ArrowLeft className="w-5 h-5 text-white" />
             </button>
             <h1 className="text-white flex-1 ml-4">Tele Consultation</h1>
           </div>
 
-          <div className="flex items-center gap-3 bg-white/10 backdrop-blur-sm rounded-2xl p-4">
-            <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+          <div className="flex items-center gap-3 bg-[#FF8C42] white/10 backdrop-blur-sm rounded-2xl p-4">
+            <div className="w-12 h-12 bg-[#FF8C42] white/20 rounded-xl flex items-center justify-center">
               <Video className="w-6 h-6 text-white" />
             </div>
             <div>
@@ -189,7 +189,7 @@ export function TeleConsultation({ onBack, customerId, petProfiles, customerName
         </div>
 
         {/* Main Content */}
-        <div className="flex-1 -mt-4 bg-white rounded-t-[32px] px-6 pt-6 pb-24">
+        <div className="flex-1 -mt-4 bg-[#FF8C42] white rounded-t-[32px] px-6 pt-6 pb-24">
           <h2 className="mb-4">Select Pet Profile</h2>
 
           <div className="space-y-3">
@@ -204,7 +204,7 @@ export function TeleConsultation({ onBack, customerId, petProfiles, customerName
               >
                 <Card className="p-4 border-gray-200 shadow-sm hover:shadow-md hover:border-blue-500/30 transition-all">
                   <div className="flex items-center gap-4">
-                    <div className="w-16 h-16 bg-blue-100 rounded-2xl flex items-center justify-center text-2xl">
+                    <div className="w-16 h-16 bg-[#FF8C42] blue-100 rounded-2xl flex items-center justify-center text-2xl">
                       {pet.icon || '🐶'}
                     </div>
                     <div className="flex-1 text-left">
@@ -221,8 +221,8 @@ export function TeleConsultation({ onBack, customerId, petProfiles, customerName
         </div>
 
         {/* Home Indicator */}
-        <div className="fixed bottom-0 left-0 right-0 bg-white flex justify-center pb-2 max-w-md mx-auto">
-          <div className="w-32 h-1 bg-black rounded-full"></div>
+        <div className="fixed bottom-0 left-0 right-0 bg-[#FF8C42] white flex justify-center pb-2 max-w-md mx-auto">
+          <div className="w-32 h-1 bg-[#FF8C42] black rounded-full"></div>
         </div>
       </div>
     );
@@ -231,32 +231,32 @@ export function TeleConsultation({ onBack, customerId, petProfiles, customerName
   // Doctor Selection Step
   if (step === 'doctors') {
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col max-w-md mx-auto">
+      <div className="min-h-screen bg-[#FF8C42] gray-50 flex flex-col max-w-md mx-auto">
         {/* Status Bar */}
-        <div className="px-6 pt-3 pb-2 flex justify-between items-center text-black bg-white">
+        <div className="px-6 pt-3 pb-2 flex justify-between items-center text-black bg-[#FF8C42] white">
           <span>09:41</span>
           <div className="flex gap-1 items-center">
-            <div className="w-4 h-3 bg-black/30"></div>
-            <div className="w-4 h-3 bg-black/30"></div>
-            <div className="w-6 h-3 bg-black/30"></div>
+            <div className="w-4 h-3 bg-[#FF8C42] black/30"></div>
+            <div className="w-4 h-3 bg-[#FF8C42] black/30"></div>
+            <div className="w-6 h-3 bg-[#FF8C42] black/30"></div>
           </div>
         </div>
 
         {/* Header */}
-        <div className="bg-gradient-to-br from-blue-500 to-blue-600 px-6 pt-4 pb-8">
+        <div className="bg-[#FF8C42] gradient-to-br from-blue-500 to-blue-600 px-6 pt-4 pb-8">
           <div className="flex items-center mb-6">
             <button 
               onClick={() => setStep('pets')}
-              className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center"
+              className="w-10 h-10 bg-[#FF8C42] white/20 backdrop-blur-sm rounded-xl flex items-center justify-center"
             >
               <ArrowLeft className="w-5 h-5 text-white" />
             </button>
             <h1 className="text-white flex-1 ml-4">Select Doctor</h1>
           </div>
 
-          <Card className="bg-white/10 backdrop-blur-sm border-white/20 p-4">
+          <Card className="bg-[#FF8C42] white/10 backdrop-blur-sm border-white/20 p-4">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center text-xl">
+              <div className="w-12 h-12 bg-[#FF8C42] white/20 rounded-xl flex items-center justify-center text-xl">
                 {selectedPet.icon || '🐶'}
               </div>
               <div>
@@ -268,7 +268,7 @@ export function TeleConsultation({ onBack, customerId, petProfiles, customerName
         </div>
 
         {/* Main Content */}
-        <div className="flex-1 -mt-4 bg-white rounded-t-[32px] px-6 pt-6 pb-24 overflow-y-auto">
+        <div className="flex-1 -mt-4 bg-[#FF8C42] white rounded-t-[32px] px-6 pt-6 pb-24 overflow-y-auto">
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
@@ -286,7 +286,7 @@ export function TeleConsultation({ onBack, customerId, petProfiles, customerName
                 >
                   <Card className="p-4 border-gray-200 shadow-sm hover:shadow-md hover:border-blue-500/30 transition-all">
                     <div className="flex gap-4">
-                      <div className="w-16 h-16 bg-blue-100 rounded-2xl flex items-center justify-center">
+                      <div className="w-16 h-16 bg-[#FF8C42] blue-100 rounded-2xl flex items-center justify-center">
                         <User className="w-8 h-8 text-blue-600" />
                       </div>
                       <div className="flex-1 text-left">
@@ -295,7 +295,7 @@ export function TeleConsultation({ onBack, customerId, petProfiles, customerName
                             <h3 className="mb-1">{doctor.name}</h3>
                             <p className="text-sm text-gray-500">{doctor.specialization}</p>
                           </div>
-                          <div className="flex items-center gap-1 bg-green-100 px-2 py-1 rounded-lg">
+                          <div className="flex items-center gap-1 bg-[#FF8C42] green-100 px-2 py-1 rounded-lg">
                             <Star className="w-3 h-3 text-green-600 fill-green-600" />
                             <span className="text-sm text-green-600">{doctor.rating}</span>
                           </div>
@@ -324,8 +324,8 @@ export function TeleConsultation({ onBack, customerId, petProfiles, customerName
         </div>
 
         {/* Home Indicator */}
-        <div className="fixed bottom-0 left-0 right-0 bg-white flex justify-center pb-2 max-w-md mx-auto">
-          <div className="w-32 h-1 bg-black rounded-full"></div>
+        <div className="fixed bottom-0 left-0 right-0 bg-[#FF8C42] white flex justify-center pb-2 max-w-md mx-auto">
+          <div className="w-32 h-1 bg-[#FF8C42] black rounded-full"></div>
         </div>
       </div>
     );
@@ -336,32 +336,32 @@ export function TeleConsultation({ onBack, customerId, petProfiles, customerName
     const nextDays = getNextDays();
 
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col max-w-md mx-auto">
+      <div className="min-h-screen bg-[#FF8C42] gray-50 flex flex-col max-w-md mx-auto">
         {/* Status Bar */}
-        <div className="px-6 pt-3 pb-2 flex justify-between items-center text-black bg-white">
+        <div className="px-6 pt-3 pb-2 flex justify-between items-center text-black bg-[#FF8C42] white">
           <span>09:41</span>
           <div className="flex gap-1 items-center">
-            <div className="w-4 h-3 bg-black/30"></div>
-            <div className="w-4 h-3 bg-black/30"></div>
-            <div className="w-6 h-3 bg-black/30"></div>
+            <div className="w-4 h-3 bg-[#FF8C42] black/30"></div>
+            <div className="w-4 h-3 bg-[#FF8C42] black/30"></div>
+            <div className="w-6 h-3 bg-[#FF8C42] black/30"></div>
           </div>
         </div>
 
         {/* Header */}
-        <div className="bg-gradient-to-br from-blue-500 to-blue-600 px-6 pt-4 pb-8">
+        <div className="bg-[#FF8C42] gradient-to-br from-blue-500 to-blue-600 px-6 pt-4 pb-8">
           <div className="flex items-center mb-6">
             <button 
               onClick={() => setStep('doctors')}
-              className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center"
+              className="w-10 h-10 bg-[#FF8C42] white/20 backdrop-blur-sm rounded-xl flex items-center justify-center"
             >
               <ArrowLeft className="w-5 h-5 text-white" />
             </button>
             <h1 className="text-white flex-1 ml-4">Select Time Slot</h1>
           </div>
 
-          <Card className="bg-white/10 backdrop-blur-sm border-white/20 p-4">
+          <Card className="bg-[#FF8C42] white/10 backdrop-blur-sm border-white/20 p-4">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+              <div className="w-12 h-12 bg-[#FF8C42] white/20 rounded-xl flex items-center justify-center">
                 <User className="w-6 h-6 text-white" />
               </div>
               <div>
@@ -373,7 +373,7 @@ export function TeleConsultation({ onBack, customerId, petProfiles, customerName
         </div>
 
         {/* Main Content */}
-        <div className="flex-1 -mt-4 bg-white rounded-t-[32px] px-6 pt-6 pb-24 overflow-y-auto">
+        <div className="flex-1 -mt-4 bg-[#FF8C42] white rounded-t-[32px] px-6 pt-6 pb-24 overflow-y-auto">
           {/* Date Selection */}
           <div className="mb-6">
             <h3 className="mb-3">Select Date</h3>
@@ -427,7 +427,7 @@ export function TeleConsultation({ onBack, customerId, petProfiles, customerName
 
         {/* Bottom CTA */}
         {selectedSlot && (
-          <div className="fixed bottom-0 left-0 right-0 bg-white border-t p-4 max-w-md mx-auto">
+          <div className="fixed bottom-0 left-0 right-0 bg-[#FF8C42] white border-t p-4 max-w-md mx-auto">
             <div className="flex items-center justify-between mb-3">
               <div>
                 <div className="text-sm text-gray-500">Consultation Fee</div>
@@ -435,13 +435,13 @@ export function TeleConsultation({ onBack, customerId, petProfiles, customerName
               </div>
               <Button 
                 onClick={() => setStep('payment')}
-                className="bg-blue-600 hover:bg-blue-700"
+                className="bg-blue-600 hover:bg-[#FF8C42] blue-700"
               >
                 Continue to Payment
               </Button>
             </div>
             <div className="flex justify-center">
-              <div className="w-32 h-1 bg-black rounded-full"></div>
+              <div className="w-32 h-1 bg-[#FF8C42] black rounded-full"></div>
             </div>
           </div>
         )}
@@ -452,23 +452,23 @@ export function TeleConsultation({ onBack, customerId, petProfiles, customerName
   // Payment Step
   if (step === 'payment') {
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col max-w-md mx-auto">
+      <div className="min-h-screen bg-[#FF8C42] gray-50 flex flex-col max-w-md mx-auto">
         {/* Status Bar */}
-        <div className="px-6 pt-3 pb-2 flex justify-between items-center text-black bg-white">
+        <div className="px-6 pt-3 pb-2 flex justify-between items-center text-black bg-[#FF8C42] white">
           <span>09:41</span>
           <div className="flex gap-1 items-center">
-            <div className="w-4 h-3 bg-black/30"></div>
-            <div className="w-4 h-3 bg-black/30"></div>
-            <div className="w-6 h-3 bg-black/30"></div>
+            <div className="w-4 h-3 bg-[#FF8C42] black/30"></div>
+            <div className="w-4 h-3 bg-[#FF8C42] black/30"></div>
+            <div className="w-6 h-3 bg-[#FF8C42] black/30"></div>
           </div>
         </div>
 
         {/* Header */}
-        <div className="bg-gradient-to-br from-blue-500 to-blue-600 px-6 pt-4 pb-8">
+        <div className="bg-[#FF8C42] gradient-to-br from-blue-500 to-blue-600 px-6 pt-4 pb-8">
           <div className="flex items-center mb-6">
             <button 
               onClick={() => setStep('slots')}
-              className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center"
+              className="w-10 h-10 bg-[#FF8C42] white/20 backdrop-blur-sm rounded-xl flex items-center justify-center"
             >
               <ArrowLeft className="w-5 h-5 text-white" />
             </button>
@@ -477,13 +477,13 @@ export function TeleConsultation({ onBack, customerId, petProfiles, customerName
         </div>
 
         {/* Main Content */}
-        <div className="flex-1 -mt-4 bg-white rounded-t-[32px] px-6 pt-6 pb-24 overflow-y-auto">
+        <div className="flex-1 -mt-4 bg-[#FF8C42] white rounded-t-[32px] px-6 pt-6 pb-24 overflow-y-auto">
           <h2 className="mb-4">Booking Summary</h2>
 
           <Card className="p-4 border-gray-200 mb-6">
             <div className="space-y-4">
               <div className="flex items-center gap-3 pb-4 border-b">
-                <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
+                <div className="w-12 h-12 bg-[#FF8C42] blue-100 rounded-xl flex items-center justify-center">
                   <User className="w-6 h-6 text-blue-600" />
                 </div>
                 <div className="flex-1">
@@ -527,15 +527,15 @@ export function TeleConsultation({ onBack, customerId, petProfiles, customerName
           <Button 
             onClick={createBooking}
             disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-700"
+            className="w-full bg-blue-600 hover:bg-[#FF8C42] blue-700"
           >
             {loading ? 'Processing...' : 'Confirm & Pay'}
           </Button>
         </div>
 
         {/* Home Indicator */}
-        <div className="fixed bottom-0 left-0 right-0 bg-white flex justify-center pb-2 max-w-md mx-auto">
-          <div className="w-32 h-1 bg-black rounded-full"></div>
+        <div className="fixed bottom-0 left-0 right-0 bg-[#FF8C42] white flex justify-center pb-2 max-w-md mx-auto">
+          <div className="w-32 h-1 bg-[#FF8C42] black rounded-full"></div>
         </div>
       </div>
     );
@@ -561,32 +561,32 @@ export function TeleConsultation({ onBack, customerId, petProfiles, customerName
   // Prescription View (after consultation)
   if (step === 'prescription') {
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col max-w-md mx-auto">
+      <div className="min-h-screen bg-[#FF8C42] gray-50 flex flex-col max-w-md mx-auto">
         {/* Status Bar */}
-        <div className="px-6 pt-3 pb-2 flex justify-between items-center text-black bg-white">
+        <div className="px-6 pt-3 pb-2 flex justify-between items-center text-black bg-[#FF8C42] white">
           <span>09:41</span>
           <div className="flex gap-1 items-center">
-            <div className="w-4 h-3 bg-black/30"></div>
-            <div className="w-4 h-3 bg-black/30"></div>
-            <div className="w-6 h-3 bg-black/30"></div>
+            <div className="w-4 h-3 bg-[#FF8C42] black/30"></div>
+            <div className="w-4 h-3 bg-[#FF8C42] black/30"></div>
+            <div className="w-6 h-3 bg-[#FF8C42] black/30"></div>
           </div>
         </div>
 
         {/* Header */}
-        <div className="bg-gradient-to-br from-green-500 to-green-600 px-6 pt-4 pb-8">
+        <div className="bg-[#FF8C42] gradient-to-br from-green-500 to-green-600 px-6 pt-4 pb-8">
           <div className="flex items-center mb-6">
             <button 
               onClick={onBack}
-              className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center"
+              className="w-10 h-10 bg-[#FF8C42] white/20 backdrop-blur-sm rounded-xl flex items-center justify-center"
             >
               <ArrowLeft className="w-5 h-5 text-white" />
             </button>
             <h1 className="text-white flex-1 ml-4">Prescription</h1>
           </div>
 
-          <Card className="bg-white/10 backdrop-blur-sm border-white/20 p-4">
+          <Card className="bg-[#FF8C42] white/10 backdrop-blur-sm border-white/20 p-4">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-green-600 rounded-full flex items-center justify-center">
+              <div className="w-12 h-12 bg-[#FF8C42] green-600 rounded-full flex items-center justify-center">
                 <Check className="w-6 h-6 text-white" />
               </div>
               <div>
@@ -598,7 +598,7 @@ export function TeleConsultation({ onBack, customerId, petProfiles, customerName
         </div>
 
         {/* Main Content */}
-        <div className="flex-1 -mt-4 bg-white rounded-t-[32px] px-6 pt-6 pb-24 overflow-y-auto">
+        <div className="flex-1 -mt-4 bg-[#FF8C42] white rounded-t-[32px] px-6 pt-6 pb-24 overflow-y-auto">
           <Card className="p-4 border-gray-200 mb-6">
             <h3 className="mb-3">Prescribed Medicines</h3>
             <div className="space-y-3">
@@ -606,8 +606,8 @@ export function TeleConsultation({ onBack, customerId, petProfiles, customerName
                 { name: 'Amoxicillin', dosage: '250mg', frequency: 'Twice daily', duration: '7 days' },
                 { name: 'Vitamin Supplement', dosage: '1 tablet', frequency: 'Once daily', duration: '30 days' }
               ].map((med, index) => (
-                <div key={index} className="flex items-start gap-3 p-3 bg-blue-50 rounded-xl">
-                  <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center flex-shrink-0">
+                <div key={index} className="flex items-start gap-3 p-3 bg-[#FF8C42] blue-50 rounded-xl">
+                  <div className="w-10 h-10 bg-[#FF8C42] blue-600 rounded-lg flex items-center justify-center flex-shrink-0">
                     <span className="text-white">{index + 1}</span>
                   </div>
                   <div className="flex-1">
@@ -621,7 +621,7 @@ export function TeleConsultation({ onBack, customerId, petProfiles, customerName
           </Card>
 
           <div className="space-y-3">
-            <Button className="w-full bg-blue-600 hover:bg-blue-700">
+            <Button className="w-full bg-blue-600 hover:bg-[#FF8C42] blue-700">
               Order Medicines
             </Button>
             <Button variant="outline" className="w-full">
@@ -631,8 +631,8 @@ export function TeleConsultation({ onBack, customerId, petProfiles, customerName
         </div>
 
         {/* Home Indicator */}
-        <div className="fixed bottom-0 left-0 right-0 bg-white flex justify-center pb-2 max-w-md mx-auto">
-          <div className="w-32 h-1 bg-black rounded-full"></div>
+        <div className="fixed bottom-0 left-0 right-0 bg-[#FF8C42] white flex justify-center pb-2 max-w-md mx-auto">
+          <div className="w-32 h-1 bg-[#FF8C42] black rounded-full"></div>
         </div>
       </div>
     );

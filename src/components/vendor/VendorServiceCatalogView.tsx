@@ -472,9 +472,9 @@ export function VendorServiceCatalogView({
         {/* Header */}
         <div className="sticky top-0 z-10 bg-white border-b border-gray-200 p-4">
           <div className="flex items-center gap-3 mb-3">
-            <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg">
+            <Button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg">
               <ArrowLeft className="w-5 h-5 text-gray-700" />
-            </button>
+            </Button>
             <div className="flex-1">
               <h1 className="font-semibold text-gray-900">Service Catalog</h1>
               <p className="text-xs text-gray-500">Browse & enable services for your business</p>
@@ -516,46 +516,38 @@ export function VendorServiceCatalogView({
 
           {/* Service Style Filter */}
           <div className="flex gap-2 overflow-x-auto pb-2 mb-2 scrollbar-hide">
-            <button
-              onClick={() => setActiveStyle('all')}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
+            <Button onClick={() => setActiveStyle('all')} className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
                 activeStyle === 'all'
                   ? 'bg-gray-900 text-white'
                   : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
             >
               All Styles
-            </button>
-            <button
-              onClick={() => setActiveStyle('at_home')}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
+            </Button>
+            <Button onClick={() => setActiveStyle('at_home')} className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
                 activeStyle === 'at_home'
                   ? 'bg-blue-600 text-white'
                   : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
               }`}
             >
               🏠 At Home
-            </button>
-            <button
-              onClick={() => setActiveStyle('at_center')}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
+            </Button>
+            <Button onClick={() => setActiveStyle('at_center')} className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
                 activeStyle === 'at_center'
                   ? 'bg-green-600 text-white'
                   : 'bg-green-50 text-green-700 hover:bg-green-100'
               }`}
             >
               🏥 At Center
-            </button>
-            <button
-              onClick={() => setActiveStyle('tele')}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
+            </Button>
+            <Button onClick={() => setActiveStyle('tele')} className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
                 activeStyle === 'tele'
                   ? 'bg-purple-600 text-white'
                   : 'bg-purple-50 text-purple-700 hover:bg-purple-100'
               }`}
             >
               📞 Tele
-            </button>
+            </Button>
           </div>
 
           {/* Expand/Collapse Controls */}
@@ -621,8 +613,7 @@ export function VendorServiceCatalogView({
                 return (
                   <div key={category.categoryId} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
                     {/* Category Header */}
-                    <button
-                      onClick={() => toggleCategory(category.categoryId)}
+                    <Button onClick={() => toggleCategory(category.categoryId)}
                       className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors"
                     >
                       <div className="flex items-center gap-3">
@@ -641,7 +632,7 @@ export function VendorServiceCatalogView({
                       <Badge className="bg-gray-100 text-gray-700">
                         {totalServices} services
                       </Badge>
-                    </button>
+                    </Button>
 
                     {/* Subcategories */}
                     {isExpanded && (
@@ -654,8 +645,7 @@ export function VendorServiceCatalogView({
                           return (
                             <div key={subKey} className="border-b border-gray-100 last:border-0">
                               {/* Subcategory Header */}
-                              <button
-                                onClick={() => toggleSubcategory(subKey)}
+                              <Button onClick={() => toggleSubcategory(subKey)}
                                 className="w-full flex items-center justify-between p-3 pl-12 hover:bg-gray-50 transition-colors"
                               >
                                 <div className="flex items-center gap-2">
@@ -669,7 +659,7 @@ export function VendorServiceCatalogView({
                                     {enabledInSub > 0 && `${enabledInSub}/`}{subcategory.services.length}
                                   </Badge>
                                 </div>
-                              </button>
+                              </Button>
 
                               {/* Services */}
                               {isSubExpanded && (
@@ -699,8 +689,7 @@ export function VendorServiceCatalogView({
                                           {/* ✅ Multi-Select Checkbox */}
                                           {mode === 'multi-select' && !isEnabled && service.catalogId && (
                                             <div className="mr-3 flex-shrink-0 pt-1">
-                                              <button
-                                                onClick={(e) => {
+                                              <Button onClick={(e) => {
                                                   e.stopPropagation();
                                                   toggleServiceSelection(service.catalogId!);
                                                 }}
@@ -711,7 +700,7 @@ export function VendorServiceCatalogView({
                                                 ) : (
                                                   <Square className="w-5 h-5 text-gray-400" />
                                                 )}
-                                              </button>
+                                              </Button>
                                             </div>
                                           )}
 
@@ -749,12 +738,11 @@ export function VendorServiceCatalogView({
                                                   <div className="text-xs text-gray-600">
                                                     <span className="font-medium">Status:</span> {vendorService.status}
                                                   </div>
-                                                  <button 
-                                                    onClick={() => onSelectService?.(service)}
+                                                  <Button onClick={() => onSelectService?.(service)}
                                                     className="text-xs text-[#FF8C42] hover:text-[#FF7829] font-medium flex items-center gap-1"
                                                   >
                                                     Manage Settings &rarr;
-                                                  </button>
+                                                  </Button>
                                                 </div>
                                               </div>
                                             )}
@@ -765,20 +753,18 @@ export function VendorServiceCatalogView({
                                             <div className="flex gap-1 ml-4">
                                               <div>
                                                 {isEnabled ? (
-                                                  <button
-                                                    onClick={() => onSelectService?.(service)}
+                                                  <Button onClick={() => onSelectService?.(service)}
                                                     className="px-3 py-1.5 bg-green-100 hover:bg-green-200 text-green-700 border border-green-200 rounded-lg text-xs font-medium transition-colors flex items-center gap-1"
                                                   >
                                                     ✓ Added
-                                                  </button>
+                                                  </Button>
                                                 ) : (
-                                                  <button
-                                                    onClick={() => handleAddSingleService(service)}
+                                                  <Button onClick={() => handleAddSingleService(service)}
                                                     className="px-3 py-1.5 bg-[#FF8C42] hover:bg-[#FF7829] text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1"
                                                   >
                                                     <Plus className="w-3 h-3" />
                                                     Add
-                                                  </button>
+                                                  </Button>
                                                 )}
                                               </div>
                                             </div>

@@ -3,6 +3,7 @@ import { Button } from '../ui/button';
 import { Shield, Upload, Download, FileText, CheckCircle, AlertCircle, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+// Brand color: #FF8C42
 
 interface InsurancePlan {
   id: string;

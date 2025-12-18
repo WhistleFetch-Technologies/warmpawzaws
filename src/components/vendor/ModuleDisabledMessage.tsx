@@ -24,7 +24,7 @@ export function ModuleDisabledMessage({
 
   if (variant === 'inline') {
     return (
-      <div className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg border border-gray-200">
+      <div className="flex items-center gap-2 p-2 bg-[#FF8C42] gray-50 rounded-lg border border-gray-200">
         {displayIcon}
         <div className="flex-1">
           <p className="text-xs text-gray-600">{reason}</p>
@@ -40,7 +40,7 @@ export function ModuleDisabledMessage({
 
   if (variant === 'banner') {
     return (
-      <div className="bg-yellow-50 border-l-4 border-yellow-400 p-3">
+      <div className="bg-[#FF8C42] yellow-50 border-l-4 border-yellow-400 p-3">
         <div className="flex items-start gap-3">
           <AlertCircle className="w-5 h-5 text-yellow-600 mt-0.5 flex-shrink-0" />
           <div className="flex-1">
@@ -51,7 +51,7 @@ export function ModuleDisabledMessage({
                 size="sm"
                 variant="outline"
                 onClick={onAction}
-                className="mt-2 text-xs h-7 border-yellow-300 text-yellow-700 hover:bg-yellow-100"
+                className="mt-2 text-xs h-7 border-yellow-300 text-yellow-700 hover:bg-[#FF8C42] yellow-100"
               >
                 <Mail className="w-3 h-3 mr-1" />
                 {actionText}
@@ -65,9 +65,9 @@ export function ModuleDisabledMessage({
 
   // Default: card variant
   return (
-    <Card className="p-6 text-center bg-gray-50 border-2 border-dashed border-gray-300">
+    <Card className="p-6 text-center bg-[#FF8C42] gray-50 border-2 border-dashed border-gray-300">
       <div className="flex flex-col items-center gap-3">
-        <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center">
+        <div className="w-12 h-12 bg-[#FF8C42] gray-100 rounded-full flex items-center justify-center">
           {displayIcon}
         </div>
         <div>

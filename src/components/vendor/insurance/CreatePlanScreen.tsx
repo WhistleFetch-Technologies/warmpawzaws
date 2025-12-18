@@ -121,13 +121,13 @@ export function CreatePlanScreen({
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+    <div className="min-h-screen bg-[#FF8C42] gray-50 w-full max-w-[430px] mx-auto">
       {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-4 text-white sticky top-0 z-10">
+      <div className="bg-[#FF8C42] gradient-to-r from-blue-600 to-indigo-600 p-4 text-white sticky top-0 z-10">
         <div className="flex items-center gap-3 mb-3">
-          <button onClick={onBack} className="p-2 hover:bg-white/10 rounded-full">
+          <Button onClick={onBack} className="p-2 hover:bg-[#FF8C42] white/10 rounded-full">
             <ArrowLeft className="w-5 h-5" />
-          </button>
+          </Button>
           <div>
             <h1 className="text-lg font-bold">Create Insurance Plan</h1>
             <p className="text-xs text-blue-100">Step {step} of 3</p>
@@ -151,7 +151,7 @@ export function CreatePlanScreen({
         {/* Step 1: Basic Details */}
         {step === 1 && (
           <div className="space-y-4">
-            <Card className="p-4 bg-blue-50 border-blue-200">
+            <Card className="p-4 bg-[#FF8C42] blue-50 border-blue-200">
               <div className="flex gap-3">
                 <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
                 <div>
@@ -233,7 +233,7 @@ export function CreatePlanScreen({
             <Button
               onClick={() => setStep(2)}
               disabled={!formData.planName || !formData.description}
-              className="w-full bg-blue-600 hover:bg-blue-700"
+              className="w-full bg-blue-600 hover:bg-[#FF8C42] blue-700"
             >
               Next: Coverage & Premium
             </Button>
@@ -243,7 +243,7 @@ export function CreatePlanScreen({
         {/* Step 2: Coverage & Premium */}
         {step === 2 && (
           <div className="space-y-4">
-            <Card className="p-4 bg-blue-50 border-blue-200">
+            <Card className="p-4 bg-[#FF8C42] blue-50 border-blue-200">
               <div className="flex gap-3">
                 <Shield className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
                 <div>
@@ -331,7 +331,7 @@ export function CreatePlanScreen({
               <Button
                 onClick={() => setStep(3)}
                 disabled={!formData.coverageAmount || !formData.premium}
-                className="flex-1 bg-blue-600 hover:bg-blue-700"
+                className="flex-1 bg-blue-600 hover:bg-[#FF8C42] blue-700"
               >
                 Next: Inclusions & Exclusions
               </Button>
@@ -342,7 +342,7 @@ export function CreatePlanScreen({
         {/* Step 3: Inclusions & Exclusions */}
         {step === 3 && (
           <div className="space-y-4">
-            <Card className="p-4 bg-green-50 border-green-200">
+            <Card className="p-4 bg-[#FF8C42] green-50 border-green-200">
               <div className="flex gap-3">
                 <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
                 <div>
@@ -370,14 +370,13 @@ export function CreatePlanScreen({
 
               <div className="space-y-2">
                 {formData.inclusions.map((item, index) => (
-                  <div key={index} className="flex items-center justify-between bg-green-50 p-2 rounded-lg">
+                  <div key={index} className="flex items-center justify-between bg-[#FF8C42] green-50 p-2 rounded-lg">
                     <span className="text-sm text-green-900">✓ {item}</span>
-                    <button
-                      onClick={() => handleRemoveInclusion(index)}
+                    <Button onClick={() => handleRemoveInclusion(index)}
                       className="text-red-500 text-xs"
                     >
                       Remove
-                    </button>
+                    </Button>
                   </div>
                 ))}
               </div>
@@ -399,21 +398,20 @@ export function CreatePlanScreen({
 
               <div className="space-y-2">
                 {formData.exclusions.map((item, index) => (
-                  <div key={index} className="flex items-center justify-between bg-red-50 p-2 rounded-lg">
+                  <div key={index} className="flex items-center justify-between bg-[#FF8C42] red-50 p-2 rounded-lg">
                     <span className="text-sm text-red-900">✗ {item}</span>
-                    <button
-                      onClick={() => handleRemoveExclusion(index)}
+                    <Button onClick={() => handleRemoveExclusion(index)}
                       className="text-red-500 text-xs"
                     >
                       Remove
-                    </button>
+                    </Button>
                   </div>
                 ))}
               </div>
             </Card>
 
             {/* Summary */}
-            <Card className="p-4 bg-blue-50 border-blue-200">
+            <Card className="p-4 bg-[#FF8C42] blue-50 border-blue-200">
               <h3 className="font-semibold text-blue-900 mb-3">Plan Summary</h3>
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
@@ -442,7 +440,7 @@ export function CreatePlanScreen({
               <Button
                 onClick={handleSubmit}
                 disabled={submitting || formData.inclusions.length === 0}
-                className="flex-1 bg-blue-600 hover:bg-blue-700"
+                className="flex-1 bg-blue-600 hover:bg-[#FF8C42] blue-700"
               >
                 {submitting ? 'Submitting...' : 'Submit for Approval'}
               </Button>

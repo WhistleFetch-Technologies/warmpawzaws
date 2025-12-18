@@ -146,16 +146,16 @@ export function TodayBookingsOTP({ vendorId, vendorName }: TodayBookingsOTPProps
 
   if (loading && bookings.length === 0) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-[#FF8C42] gray-50 flex items-center justify-center">
         <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-[#FF8C42] gray-50">
       {/* Header */}
-      <div className="bg-white border-b sticky top-0 z-10">
+      <div className="bg-[#FF8C42] white border-b sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div>
@@ -174,19 +174,19 @@ export function TodayBookingsOTP({ vendorId, vendorName }: TodayBookingsOTPProps
 
           {/* Stats */}
           <div className="grid grid-cols-3 gap-4 mt-4">
-            <div className="p-3 bg-blue-50 rounded-lg">
+            <div className="p-3 bg-[#FF8C42] blue-50 rounded-lg">
               <p className="text-xs text-blue-600 font-medium">Pending</p>
               <p className="text-2xl font-bold text-blue-900">
                 {bookings.filter(b => b.status === 'confirmed').length}
               </p>
             </div>
-            <div className="p-3 bg-green-50 rounded-lg">
+            <div className="p-3 bg-[#FF8C42] green-50 rounded-lg">
               <p className="text-xs text-green-600 font-medium">In Progress</p>
               <p className="text-2xl font-bold text-green-900">
                 {bookings.filter(b => b.status === 'in_progress').length}
               </p>
             </div>
-            <div className="p-3 bg-gray-50 rounded-lg">
+            <div className="p-3 bg-[#FF8C42] gray-50 rounded-lg">
               <p className="text-xs text-gray-600 font-medium">Completed</p>
               <p className="text-2xl font-bold text-gray-900">
                 {bookings.filter(b => b.status === 'completed').length}
@@ -199,7 +199,7 @@ export function TodayBookingsOTP({ vendorId, vendorName }: TodayBookingsOTPProps
       {/* Bookings List */}
       <div className="max-w-7xl mx-auto px-4 py-6">
         {bookings.length === 0 ? (
-          <div className="bg-white rounded-xl border p-12 text-center">
+          <div className="bg-[#FF8C42] white rounded-xl border p-12 text-center">
             <Clock className="w-16 h-16 mx-auto mb-4 text-gray-300" />
             <h3 className="font-bold text-gray-900 mb-2">No Bookings Today</h3>
             <p className="text-gray-600">You're all caught up!</p>
@@ -209,7 +209,7 @@ export function TodayBookingsOTP({ vendorId, vendorName }: TodayBookingsOTPProps
             {bookings.map((booking) => (
               <div
                 key={booking.id}
-                className="bg-white rounded-xl border hover:shadow-lg transition-shadow p-6"
+                className="bg-[#FF8C42] white rounded-xl border hover:shadow-lg transition-shadow p-6"
               >
                 <div className="flex items-start justify-between mb-4">
                   <div>
@@ -220,7 +220,7 @@ export function TodayBookingsOTP({ vendorId, vendorName }: TodayBookingsOTPProps
                       <span className={`px-2 py-0.5 rounded-full text-xs ${getStatusColor(booking.status)}`}>
                         {booking.status.replace('_', ' ')}
                       </span>
-                      <span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full text-xs">
+                      <span className="px-2 py-0.5 bg-[#FF8C42] purple-100 text-purple-700 rounded-full text-xs">
                         {getServiceTypeLabel(booking.serviceType)}
                       </span>
                     </div>
@@ -256,7 +256,7 @@ export function TodayBookingsOTP({ vendorId, vendorName }: TodayBookingsOTPProps
 
                 {/* Customer Notes */}
                 {booking.customerNotes && (
-                  <div className="mb-4 p-3 bg-yellow-50 rounded-lg">
+                  <div className="mb-4 p-3 bg-[#FF8C42] yellow-50 rounded-lg">
                     <p className="text-xs text-yellow-800 font-medium mb-1">
                       Customer Notes:
                     </p>
@@ -266,7 +266,7 @@ export function TodayBookingsOTP({ vendorId, vendorName }: TodayBookingsOTPProps
 
                 {/* In Progress Info */}
                 {booking.status === 'in_progress' && booking.startedAt && (
-                  <div className="mb-4 p-3 bg-green-50 rounded-lg">
+                  <div className="mb-4 p-3 bg-[#FF8C42] green-50 rounded-lg">
                     <p className="text-xs text-green-800 font-medium mb-1">
                       Service Started:
                     </p>
@@ -279,7 +279,7 @@ export function TodayBookingsOTP({ vendorId, vendorName }: TodayBookingsOTPProps
 
                 {/* Completed Info */}
                 {booking.status === 'completed' && (
-                  <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+                  <div className="mb-4 p-3 bg-[#FF8C42] gray-50 rounded-lg">
                     <div className="grid grid-cols-2 gap-2 text-sm">
                       <div>
                         <p className="text-xs text-gray-500">Duration</p>
@@ -306,7 +306,7 @@ export function TodayBookingsOTP({ vendorId, vendorName }: TodayBookingsOTPProps
                   {booking.status === 'confirmed' && (
                     <Button
                       onClick={() => handleStartService(booking)}
-                      className="bg-green-600 hover:bg-green-700 text-white flex items-center gap-2"
+                      className="bg-green-600 hover:bg-[#FF8C42] green-700 text-white flex items-center gap-2"
                     >
                       <Play className="w-4 h-4" />
                       Start Service (OTP Required)
@@ -316,7 +316,7 @@ export function TodayBookingsOTP({ vendorId, vendorName }: TodayBookingsOTPProps
                   {booking.status === 'in_progress' && (
                     <Button
                       onClick={() => handleEndService(booking)}
-                      className="bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2"
+                      className="bg-blue-600 hover:bg-[#FF8C42] blue-700 text-white flex items-center gap-2"
                     >
                       <Square className="w-4 h-4" />
                       End Service (OTP Required)
@@ -348,7 +348,7 @@ export function TodayBookingsOTP({ vendorId, vendorName }: TodayBookingsOTPProps
           <div className="space-y-4 mt-4">
             {/* Booking Info */}
             {selectedBooking && (
-              <div className="p-4 bg-gray-50 rounded-lg">
+              <div className="p-4 bg-[#FF8C42] gray-50 rounded-lg">
                 <p className="font-medium text-gray-900">{selectedBooking.customerName}</p>
                 <p className="text-sm text-gray-600">{selectedBooking.scheduledTime}</p>
               </div>
@@ -390,7 +390,7 @@ export function TodayBookingsOTP({ vendorId, vendorName }: TodayBookingsOTPProps
             )}
 
             {/* Warning */}
-            <div className="p-3 bg-yellow-50 rounded-lg flex gap-2">
+            <div className="p-3 bg-[#FF8C42] yellow-50 rounded-lg flex gap-2">
               <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0" />
               <p className="text-sm text-yellow-900">
                 Only the correct OTP from the customer will allow you to {otpAction === 'start' ? 'start' : 'complete'} this service.

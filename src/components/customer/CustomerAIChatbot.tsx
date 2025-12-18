@@ -166,7 +166,7 @@ export function CustomerAIChatbot({
       >
         <MessageSquare className="w-7 h-7" />
         {/* Notification Dot */}
-        <span className="absolute top-0 right-0 w-4 h-4 bg-red-500 rounded-full border-2 border-white"></span>
+        <span className="absolute top-0 right-0 w-4 h-4 bg-[#FF8C42] red-500 rounded-full border-2 border-white"></span>
       </motion.button>
 
       {/* Chat Window */}
@@ -176,12 +176,12 @@ export function CustomerAIChatbot({
             initial={{ opacity: 0, y: 50, scale: 0.9 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 50, scale: 0.9 }}
-            className="fixed bottom-24 right-4 w-[380px] max-w-[calc(100vw-32px)] h-[600px] max-h-[80vh] bg-white rounded-2xl shadow-2xl border border-gray-200 flex flex-col z-50 overflow-hidden font-sans"
+            className="fixed bottom-24 right-4 w-[380px] max-w-[calc(100vw-32px)] h-[600px] max-h-[80vh] bg-[#FF8C42] white rounded-2xl shadow-2xl border border-gray-200 flex flex-col z-50 overflow-hidden font-sans"
           >
             {/* Header */}
-            <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-4 flex items-center justify-between text-white shadow-md">
+            <div className="bg-[#FF8C42] gradient-to-r from-indigo-600 to-purple-600 p-4 flex items-center justify-between text-white shadow-md">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm border border-white/30">
+                <div className="w-10 h-10 bg-[#FF8C42] white/20 rounded-full flex items-center justify-center backdrop-blur-sm border border-white/30">
                   <img 
                     src="https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=64&h=64&fit=crop&crop=faces" 
                     alt="AI" 
@@ -191,12 +191,12 @@ export function CustomerAIChatbot({
                 <div>
                   <h3 className="font-bold text-base flex items-center gap-2">
                     Warmpawz AI
-                    <Badge variant="secondary" className="text-[10px] h-5 bg-white/20 text-white border-none hover:bg-white/30">
+                    <Badge variant="secondary" className="text-[10px] h-5 bg-white/20 text-white border-none hover:bg-[#FF8C42] white/30">
                       BETA
                     </Badge>
                   </h3>
                   <div className="flex items-center gap-1.5">
-                    <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
+                    <span className="w-2 h-2 bg-[#FF8C42] green-400 rounded-full animate-pulse"></span>
                     <p className="text-xs text-white/90">Always here to help</p>
                   </div>
                 </div>
@@ -210,14 +210,14 @@ export function CustomerAIChatbot({
                     intent: 'general', 
                     timestamp: new Date().toISOString()
                   }])}
-                  className="p-2 hover:bg-white/20 rounded-full transition-colors text-white/80 hover:text-white"
+                  className="p-2 hover:bg-[#FF8C42] white/20 rounded-full transition-colors text-white/80 hover:text-white"
                   title="Reset Chat"
                 >
                   <X className="w-4 h-4 rotate-45" />
                 </button>
                 <button 
                   onClick={() => setIsOpen(false)}
-                  className="p-2 hover:bg-white/20 rounded-full transition-colors text-white"
+                  className="p-2 hover:bg-[#FF8C42] white/20 rounded-full transition-colors text-white"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -232,7 +232,7 @@ export function CustomerAIChatbot({
             )}
 
             {/* Messages Area */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50 scrollbar-thin scrollbar-thumb-gray-200">
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#FF8C42] gray-50 scrollbar-thin scrollbar-thumb-gray-200">
               {messages.map((msg) => (
                 <motion.div
                   initial={{ opacity: 0, y: 10 }}
@@ -282,12 +282,12 @@ export function CustomerAIChatbot({
 
               {isTyping && (
                 <div className="flex items-start gap-2">
-                  <div className="w-8 h-8 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center text-xs font-bold">AI</div>
-                  <div className="bg-white border border-gray-200 rounded-2xl rounded-tl-none p-4 shadow-sm">
+                  <div className="w-8 h-8 bg-[#FF8C42] purple-100 text-purple-600 rounded-full flex items-center justify-center text-xs font-bold">AI</div>
+                  <div className="bg-[#FF8C42] white border border-gray-200 rounded-2xl rounded-tl-none p-4 shadow-sm">
                     <div className="flex gap-1.5">
-                      <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></span>
-                      <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></span>
-                      <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></span>
+                      <span className="w-2 h-2 bg-[#FF8C42] gray-400 rounded-full animate-bounce"></span>
+                      <span className="w-2 h-2 bg-[#FF8C42] gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></span>
+                      <span className="w-2 h-2 bg-[#FF8C42] gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></span>
                     </div>
                   </div>
                 </div>
@@ -300,7 +300,7 @@ export function CustomerAIChatbot({
                     <button
                       key={action.label}
                       onClick={() => sendMessage(action.query)}
-                      className="flex flex-col items-center justify-center p-3 bg-white border border-gray-200 rounded-xl hover:border-indigo-300 hover:shadow-md transition-all group"
+                      className="flex flex-col items-center justify-center p-3 bg-[#FF8C42] white border border-gray-200 rounded-xl hover:border-indigo-300 hover:shadow-md transition-all group"
                     >
                       <div className={`w-10 h-10 rounded-full bg-gray-50 group-hover:bg-indigo-50 flex items-center justify-center text-gray-500 group-hover:text-indigo-600 mb-2 transition-colors`}>
                         <action.icon className="w-5 h-5" />
@@ -316,19 +316,19 @@ export function CustomerAIChatbot({
 
             {/* Context Aware Suggestions (Bottom Bar) */}
             {messages.length > 1 && !isTyping && (
-               <div className="px-4 py-2 bg-gray-50 border-t border-gray-100 flex gap-2 overflow-x-auto scrollbar-none">
+               <div className="px-4 py-2 bg-[#FF8C42] gray-50 border-t border-gray-100 flex gap-2 overflow-x-auto scrollbar-none">
                  {currentIntent === 'shopping' && (
-                    <Badge onClick={() => sendMessage('Show me dog food')} variant="outline" className="cursor-pointer hover:bg-indigo-50 whitespace-nowrap">🐶 Dog Food</Badge>
+                    <Badge onClick={() => sendMessage('Show me dog food')} variant="outline" className="cursor-pointer hover:bg-[#FF8C42] indigo-50 whitespace-nowrap">🐶 Dog Food</Badge>
                  )}
                  {currentIntent === 'symptoms' && (
-                    <Badge onClick={() => sendMessage('I want to book a vet')} variant="outline" className="cursor-pointer hover:bg-red-50 text-red-600 border-red-200 whitespace-nowrap">🏥 Book Vet</Badge>
+                    <Badge onClick={() => sendMessage('I want to book a vet')} variant="outline" className="cursor-pointer hover:bg-[#FF8C42] red-50 text-red-600 border-red-200 whitespace-nowrap">🏥 Book Vet</Badge>
                  )}
-                 <Badge onClick={() => sendMessage('Talk to a human')} variant="outline" className="cursor-pointer hover:bg-gray-100 whitespace-nowrap">👤 Support Agent</Badge>
+                 <Badge onClick={() => sendMessage('Talk to a human')} variant="outline" className="cursor-pointer hover:bg-[#FF8C42] gray-100 whitespace-nowrap">👤 Support Agent</Badge>
                </div>
             )}
 
             {/* Input Area */}
-            <div className="p-4 bg-white border-t border-gray-200">
+            <div className="p-4 bg-[#FF8C42] white border-t border-gray-200">
               <div className="flex items-center gap-2 relative">
                 <input
                   type="text"
@@ -336,12 +336,12 @@ export function CustomerAIChatbot({
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && sendMessage(input)}
                   placeholder="Type a message..."
-                  className="flex-1 bg-gray-100 border-transparent focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 rounded-full pl-5 pr-12 py-3 text-sm transition-all"
+                  className="flex-1 bg-gray-100 border-transparent focus:bg-[#FF8C42] white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 rounded-full pl-5 pr-12 py-3 text-sm transition-all"
                   disabled={isTyping}
                 />
                 <Button
                   size="icon"
-                  className="absolute right-1 top-1 bottom-1 w-10 h-10 bg-indigo-600 hover:bg-indigo-700 rounded-full shadow-sm"
+                  className="absolute right-1 top-1 bottom-1 w-10 h-10 bg-indigo-600 hover:bg-[#FF8C42] indigo-700 rounded-full shadow-sm"
                   onClick={() => sendMessage(input)}
                   disabled={!input.trim() || isTyping}
                 >

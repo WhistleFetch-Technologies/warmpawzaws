@@ -57,13 +57,13 @@ export function PharmacyCheckout({ onBack, onSuccess, phone }: PharmacyCheckoutP
 
   if (items.length === 0) {
     return (
-      <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6 text-center">
-        <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mb-6">
+      <div className="min-h-screen bg-[#FF8C42] white flex flex-col items-center justify-center p-6 text-center">
+        <div className="w-20 h-20 bg-[#FF8C42] gray-100 rounded-full flex items-center justify-center mb-6">
           <CreditCard className="w-10 h-10 text-gray-400" />
         </div>
         <h2 className="text-xl font-bold text-gray-900 mb-2">Your cart is empty</h2>
         <p className="text-gray-500 mb-8">Looks like you haven't added any medicines yet.</p>
-        <Button onClick={onBack} className="bg-pink-600 hover:bg-pink-700 text-white min-w-[200px]">
+        <Button onClick={onBack} className="bg-pink-600 hover:bg-[#FF8C42] pink-700 text-white min-w-[200px]">
           Start Shopping
         </Button>
       </div>
@@ -71,9 +71,9 @@ export function PharmacyCheckout({ onBack, onSuccess, phone }: PharmacyCheckoutP
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-32">
+    <div className="min-h-screen bg-[#FF8C42] gray-50 pb-32">
       {/* Header */}
-      <div className="bg-white sticky top-0 z-10 border-b border-gray-100">
+      <div className="bg-[#FF8C42] white sticky top-0 z-10 border-b border-gray-100">
         <div className="px-4 py-4 flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={onBack} className="-ml-2">
             <ArrowLeft className="w-5 h-5" />
@@ -86,11 +86,11 @@ export function PharmacyCheckout({ onBack, onSuccess, phone }: PharmacyCheckoutP
         {/* Order Summary */}
         <section>
           <h2 className="text-sm font-semibold text-gray-500 mb-3 uppercase tracking-wider">Order Summary</h2>
-          <Card className="bg-white border-gray-100 shadow-sm overflow-hidden">
+          <Card className="bg-[#FF8C42] white border-gray-100 shadow-sm overflow-hidden">
             <div className="divide-y divide-gray-100">
               {items.map((item) => (
                 <div key={item.id} className="p-4 flex gap-3">
-                  <div className="w-16 h-16 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0">
+                  <div className="w-16 h-16 bg-[#FF8C42] gray-100 rounded-lg overflow-hidden flex-shrink-0">
                     <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
                   </div>
                   <div className="flex-1">
@@ -139,17 +139,17 @@ export function PharmacyCheckout({ onBack, onSuccess, phone }: PharmacyCheckoutP
         {/* Prescription Upload (if needed) */}
         {hasPrescriptionItems && (
           <section>
-            <div className="flex items-center gap-2 mb-3 text-amber-600 bg-amber-50 p-3 rounded-lg border border-amber-100">
+            <div className="flex items-center gap-2 mb-3 text-amber-600 bg-[#FF8C42] amber-50 p-3 rounded-lg border border-amber-100">
               <AlertCircle className="w-5 h-5" />
               <p className="text-xs font-medium">Some items require a prescription</p>
             </div>
-            <Card className="bg-white p-4 border-dashed border-2 border-gray-200 shadow-none text-center">
-              <div className="w-12 h-12 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-3">
+            <Card className="bg-[#FF8C42] white p-4 border-dashed border-2 border-gray-200 shadow-none text-center">
+              <div className="w-12 h-12 bg-[#FF8C42] blue-50 rounded-full flex items-center justify-center mx-auto mb-3">
                 <FileText className="w-6 h-6 text-blue-600" />
               </div>
               <h3 className="font-medium text-sm mb-1">Upload Prescription</h3>
               <p className="text-xs text-gray-500 mb-4">Upload a photo of your prescription</p>
-              <Button variant="outline" className="w-full text-blue-600 border-blue-200 hover:bg-blue-50">
+              <Button variant="outline" className="w-full text-blue-600 border-blue-200 hover:bg-[#FF8C42] blue-50">
                 Select File
               </Button>
             </Card>
@@ -185,7 +185,7 @@ export function PharmacyCheckout({ onBack, onSuccess, phone }: PharmacyCheckoutP
         {/* Bill Details */}
         <section>
           <h2 className="text-sm font-semibold text-gray-500 mb-3 uppercase tracking-wider">Bill Details</h2>
-          <Card className="bg-white p-4 border-gray-100 shadow-sm space-y-3">
+          <Card className="bg-[#FF8C42] white p-4 border-gray-100 shadow-sm space-y-3">
             <div className="flex justify-between text-sm text-gray-600">
               <span>Item Total</span>
               <span>₹{cartTotal}</span>
@@ -212,14 +212,14 @@ export function PharmacyCheckout({ onBack, onSuccess, phone }: PharmacyCheckoutP
       </div>
 
       {/* Footer */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 z-20">
+      <div className="fixed bottom-0 left-0 right-0 bg-[#FF8C42] white border-t border-gray-200 p-4 z-20">
         <div className="max-w-md mx-auto flex items-center gap-4">
           <div className="flex-1">
             <p className="text-xs text-gray-500 mb-0.5">Total Payable</p>
             <p className="text-xl font-bold text-gray-900">₹{totalAmount + parseInt((cartTotal * 0.05).toFixed(0))}</p>
           </div>
           <Button 
-            className="flex-1 bg-pink-600 hover:bg-pink-700 text-white h-12 rounded-xl font-semibold"
+            className="flex-1 bg-pink-600 hover:bg-[#FF8C42] pink-700 text-white h-12 rounded-xl font-semibold"
             onClick={handlePlaceOrder}
             disabled={isProcessing}
           >

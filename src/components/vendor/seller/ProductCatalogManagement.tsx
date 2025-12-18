@@ -180,18 +180,14 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
 
           {/* View Toggle */}
           <div className="flex gap-1 bg-gray-100 p-1 rounded-lg border">
-            <button
-              onClick={() => setViewMode('grid')}
-              className={`p-2 rounded ${viewMode === 'grid' ? 'bg-white shadow text-[#FF8C42]' : 'text-gray-500 hover:text-gray-900'}`}
+            <Button onClick={() => setViewMode('grid')} className={`p-2 rounded ${viewMode === 'grid' ? 'bg-white shadow text-[#FF8C42]' : 'text-gray-500 hover:text-gray-900'}`}
             >
               <Grid className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => setViewMode('list')}
-              className={`p-2 rounded ${viewMode === 'list' ? 'bg-white shadow text-[#FF8C42]' : 'text-gray-500 hover:text-gray-900'}`}
+            </Button>
+            <Button onClick={() => setViewMode('list')} className={`p-2 rounded ${viewMode === 'list' ? 'bg-white shadow text-[#FF8C42]' : 'text-gray-500 hover:text-gray-900'}`}
             >
               <List className="w-4 h-4" />
-            </button>
+            </Button>
           </div>
         </div>
       </div>
@@ -424,9 +420,9 @@ function ProductModal({ product, sellerId, categories, onClose, onSave }: any) {
       <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
         <div className="sticky top-0 bg-white border-b border-gray-200 p-6 flex items-center justify-between z-10">
           <h2 className="text-xl font-bold text-black">{product ? 'Edit Product' : 'Add New Product'}</h2>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg">
+          <Button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg">
             <X className="w-5 h-5" />
-          </button>
+          </Button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6">

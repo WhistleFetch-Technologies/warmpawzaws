@@ -66,8 +66,8 @@ export function OrderTrackingPage({ orderId, onBack }: OrderTrackingPageProps) {
   if (!order) return <EmptyState message="Order not found" />;
   
   return (
-    <div className="min-h-screen bg-gray-50 pb-20">
-      <div className="bg-white border-b px-4 py-4 sticky top-0 z-10 flex items-center gap-3">
+    <div className="min-h-screen bg-[#FF8C42] gray-50 pb-20">
+      <div className="bg-[#FF8C42] white border-b px-4 py-4 sticky top-0 z-10 flex items-center gap-3">
         <Button variant="ghost" size="icon" onClick={onBack}>
           <ArrowLeft className="w-5 h-5" />
         </Button>
@@ -79,7 +79,7 @@ export function OrderTrackingPage({ orderId, onBack }: OrderTrackingPageProps) {
       
       <div className="container mx-auto px-4 py-6 max-w-lg">
         {/* Order Info Card */}
-        <div className="bg-white rounded-xl shadow-sm p-5 mb-6">
+        <div className="bg-[#FF8C42] white rounded-xl shadow-sm p-5 mb-6">
           <div className="flex justify-between items-start mb-4">
             <div>
               <p className="text-sm text-gray-500">Status</p>
@@ -94,7 +94,7 @@ export function OrderTrackingPage({ orderId, onBack }: OrderTrackingPageProps) {
           </div>
           
           {order.shiprocketAwbCode && (
-            <div className="bg-gray-50 p-3 rounded-lg flex justify-between items-center">
+            <div className="bg-[#FF8C42] gray-50 p-3 rounded-lg flex justify-between items-center">
               <span className="text-sm text-gray-600">AWB Code</span>
               <span className="font-mono font-medium">{order.shiprocketAwbCode}</span>
             </div>
@@ -103,7 +103,7 @@ export function OrderTrackingPage({ orderId, onBack }: OrderTrackingPageProps) {
         
         {/* Tracking Timeline */}
         {tracking ? (
-          <div className="bg-white rounded-xl shadow-sm p-6">
+          <div className="bg-[#FF8C42] white rounded-xl shadow-sm p-6">
             <h2 className="text-lg font-semibold mb-6 flex items-center gap-2">
               <Truck className="w-5 h-5 text-gray-600" />
               Tracking Timeline
@@ -115,7 +115,7 @@ export function OrderTrackingPage({ orderId, onBack }: OrderTrackingPageProps) {
                   <div key={index} className="flex gap-4">
                     <div className="flex flex-col items-center">
                       <div className={`w-3 h-3 rounded-full ${index === 0 ? 'bg-blue-600 ring-4 ring-blue-50' : 'bg-gray-300'}`}></div>
-                      {!isLast && <div className="w-0.5 h-full bg-gray-100 my-1"></div>}
+                      {!isLast && <div className="w-0.5 h-full bg-[#FF8C42] gray-100 my-1"></div>}
                     </div>
                     <div className="flex-1 pb-8">
                       <p className={`font-medium ${index === 0 ? 'text-gray-900' : 'text-gray-600'}`}>
@@ -136,7 +136,7 @@ export function OrderTrackingPage({ orderId, onBack }: OrderTrackingPageProps) {
             </div>
           </div>
         ) : (
-          <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 p-4 rounded-xl flex items-start gap-3">
+          <div className="bg-[#FF8C42] yellow-50 border border-yellow-200 text-yellow-800 p-4 rounded-xl flex items-start gap-3">
              <Clock className="w-5 h-5 flex-shrink-0 mt-0.5" />
              <div>
                <p className="font-medium">Tracking Pending</p>

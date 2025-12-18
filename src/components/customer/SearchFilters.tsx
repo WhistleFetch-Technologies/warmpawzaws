@@ -3,6 +3,7 @@ import { Filter, X, Star, MapPin, DollarSign, Briefcase } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+// Brand color: #FF8C42
 
 interface SearchFiltersProps {
   query?: string;

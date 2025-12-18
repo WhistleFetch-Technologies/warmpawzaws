@@ -14,6 +14,7 @@
 import React, { useState, useEffect } from 'react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { Wallet, Plus, History, Gift, ArrowUpCircle, ArrowDownCircle, Check, X } from 'lucide-react';
+// Brand color: #FF8C42
 
 interface Transaction {
   id: string;

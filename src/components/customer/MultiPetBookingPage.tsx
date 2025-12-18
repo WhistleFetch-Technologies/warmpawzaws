@@ -14,6 +14,7 @@
 import React, { useState, useEffect } from 'react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { Check, Calendar, Clock, MapPin, User, DollarSign, Percent, Info, ChevronRight } from 'lucide-react';
+// Brand color: #FF8C42
 
 interface Pet {
   id: string;

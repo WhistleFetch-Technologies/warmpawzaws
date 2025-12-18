@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Edit, MapPin } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { Button } from '../ui/button';
 
 /**
  * 🏖️ HOLIDAY PACKAGE VENDOR MANAGEMENT
@@ -96,13 +97,12 @@ export default function HolidayPackageManagement({ vendorId }: { vendorId: strin
       <div className="max-w-7xl mx-auto">
         <div className="flex items-center justify-between mb-8">
           <h1 className="text-gray-900">Holiday Package Management</h1>
-          <button
-            onClick={() => setShowCreate(true)}
+          <Button onClick={() => setShowCreate(true)}
             className="bg-orange-500 text-white px-6 py-3 rounded-lg hover:bg-orange-600 flex items-center gap-2"
           >
             <Plus className="w-5 h-5" />
             Create Package
-          </button>
+          </Button>
         </div>
 
         {/* Packages Grid */}
@@ -277,16 +277,16 @@ export default function HolidayPackageManagement({ vendorId }: { vendorId: strin
                 </div>
 
                 <div className="flex gap-3">
-                  <button type="submit" className="flex-1 bg-orange-500 text-white py-2 rounded-lg hover:bg-orange-600">
+                  <Button type="submit" className="flex-1 bg-orange-500 text-white py-2 rounded-lg hover:bg-orange-600">
                     Create Package
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
                     onClick={() => setShowCreate(false)}
                     className="flex-1 bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400"
                   >
                     Cancel
-                  </button>
+                  </Button>
                 </div>
               </form>
             </div>

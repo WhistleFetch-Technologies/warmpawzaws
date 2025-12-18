@@ -152,26 +152,26 @@ export function HomeVisit({ onBack, customerId, petProfiles }: HomeVisitProps) {
   // Pet Selection
   if (step === 'pets') {
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col max-w-md mx-auto">
-        <div className="px-6 pt-3 pb-2 flex justify-between items-center text-black bg-white">
+      <div className="min-h-screen bg-[#FF8C42] gray-50 flex flex-col max-w-md mx-auto">
+        <div className="px-6 pt-3 pb-2 flex justify-between items-center text-black bg-[#FF8C42] white">
           <span>09:41</span>
           <div className="flex gap-1 items-center">
-            <div className="w-4 h-3 bg-black/30"></div>
-            <div className="w-4 h-3 bg-black/30"></div>
-            <div className="w-6 h-3 bg-black/30"></div>
+            <div className="w-4 h-3 bg-[#FF8C42] black/30"></div>
+            <div className="w-4 h-3 bg-[#FF8C42] black/30"></div>
+            <div className="w-6 h-3 bg-[#FF8C42] black/30"></div>
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-green-500 to-green-600 px-6 pt-4 pb-8">
+        <div className="bg-[#FF8C42] gradient-to-br from-green-500 to-green-600 px-6 pt-4 pb-8">
           <div className="flex items-center mb-6">
-            <button onClick={onBack} className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
+            <button onClick={onBack} className="w-10 h-10 bg-[#FF8C42] white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
               <ArrowLeft className="w-5 h-5 text-white" />
             </button>
             <h1 className="text-white flex-1 ml-4">Home Visit</h1>
           </div>
-          <Card className="bg-white/10 backdrop-blur-sm border-white/20 p-4">
+          <Card className="bg-[#FF8C42] white/10 backdrop-blur-sm border-white/20 p-4">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+              <div className="w-12 h-12 bg-[#FF8C42] white/20 rounded-xl flex items-center justify-center">
                 <Home className="w-6 h-6 text-white" />
               </div>
               <div>
@@ -182,14 +182,14 @@ export function HomeVisit({ onBack, customerId, petProfiles }: HomeVisitProps) {
           </Card>
         </div>
 
-        <div className="flex-1 -mt-4 bg-white rounded-t-[32px] px-6 pt-6 pb-24">
+        <div className="flex-1 -mt-4 bg-[#FF8C42] white rounded-t-[32px] px-6 pt-6 pb-24">
           <h2 className="mb-4">Select Pet Profile</h2>
           <div className="space-y-3">
             {petProfiles.map((pet: any) => (
               <button key={pet.id} onClick={() => { setSelectedPet(pet); setStep('address'); }} className="w-full">
                 <Card className="p-4 border-gray-200 shadow-sm hover:shadow-md transition-all">
                   <div className="flex items-center gap-4">
-                    <div className="w-16 h-16 bg-green-100 rounded-2xl flex items-center justify-center text-2xl">
+                    <div className="w-16 h-16 bg-[#FF8C42] green-100 rounded-2xl flex items-center justify-center text-2xl">
                       {pet.icon}
                     </div>
                     <div className="flex-1 text-left">
@@ -203,8 +203,8 @@ export function HomeVisit({ onBack, customerId, petProfiles }: HomeVisitProps) {
           </div>
         </div>
 
-        <div className="fixed bottom-0 left-0 right-0 bg-white flex justify-center pb-2 max-w-md mx-auto">
-          <div className="w-32 h-1 bg-black rounded-full"></div>
+        <div className="fixed bottom-0 left-0 right-0 bg-[#FF8C42] white flex justify-center pb-2 max-w-md mx-auto">
+          <div className="w-32 h-1 bg-[#FF8C42] black rounded-full"></div>
         </div>
       </div>
     );
@@ -213,26 +213,26 @@ export function HomeVisit({ onBack, customerId, petProfiles }: HomeVisitProps) {
   // Address Entry
   if (step === 'address') {
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col max-w-md mx-auto">
-        <div className="px-6 pt-3 pb-2 flex justify-between items-center text-black bg-white">
+      <div className="min-h-screen bg-[#FF8C42] gray-50 flex flex-col max-w-md mx-auto">
+        <div className="px-6 pt-3 pb-2 flex justify-between items-center text-black bg-[#FF8C42] white">
           <span>09:41</span>
           <div className="flex gap-1 items-center">
-            <div className="w-4 h-3 bg-black/30"></div>
-            <div className="w-4 h-3 bg-black/30"></div>
-            <div className="w-6 h-3 bg-black/30"></div>
+            <div className="w-4 h-3 bg-[#FF8C42] black/30"></div>
+            <div className="w-4 h-3 bg-[#FF8C42] black/30"></div>
+            <div className="w-6 h-3 bg-[#FF8C42] black/30"></div>
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-green-500 to-green-600 px-6 pt-4 pb-8">
+        <div className="bg-[#FF8C42] gradient-to-br from-green-500 to-green-600 px-6 pt-4 pb-8">
           <div className="flex items-center mb-6">
-            <button onClick={() => setStep('pets')} className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
+            <button onClick={() => setStep('pets')} className="w-10 h-10 bg-[#FF8C42] white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
               <ArrowLeft className="w-5 h-5 text-white" />
             </button>
             <h1 className="text-white flex-1 ml-4">Enter Address</h1>
           </div>
         </div>
 
-        <div className="flex-1 -mt-4 bg-white rounded-t-[32px] px-6 pt-6 pb-24">
+        <div className="flex-1 -mt-4 bg-[#FF8C42] white rounded-t-[32px] px-6 pt-6 pb-24">
           <div className="mb-6">
             <label className="block mb-2">Service Address</label>
             <Input
@@ -250,14 +250,14 @@ export function HomeVisit({ onBack, customerId, petProfiles }: HomeVisitProps) {
           <Button
             onClick={() => setStep('doctors')}
             disabled={!address}
-            className="w-full bg-green-600 hover:bg-green-700"
+            className="w-full bg-green-600 hover:bg-[#FF8C42] green-700"
           >
             Continue
           </Button>
         </div>
 
-        <div className="fixed bottom-0 left-0 right-0 bg-white flex justify-center pb-2 max-w-md mx-auto">
-          <div className="w-32 h-1 bg-black rounded-full"></div>
+        <div className="fixed bottom-0 left-0 right-0 bg-[#FF8C42] white flex justify-center pb-2 max-w-md mx-auto">
+          <div className="w-32 h-1 bg-[#FF8C42] black rounded-full"></div>
         </div>
       </div>
     );
@@ -266,26 +266,26 @@ export function HomeVisit({ onBack, customerId, petProfiles }: HomeVisitProps) {
   // Doctor Selection (Similar to TeleConsultation)
   if (step === 'doctors') {
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col max-w-md mx-auto">
-        <div className="px-6 pt-3 pb-2 flex justify-between items-center text-black bg-white">
+      <div className="min-h-screen bg-[#FF8C42] gray-50 flex flex-col max-w-md mx-auto">
+        <div className="px-6 pt-3 pb-2 flex justify-between items-center text-black bg-[#FF8C42] white">
           <span>09:41</span>
           <div className="flex gap-1 items-center">
-            <div className="w-4 h-3 bg-black/30"></div>
-            <div className="w-4 h-3 bg-black/30"></div>
-            <div className="w-6 h-3 bg-black/30"></div>
+            <div className="w-4 h-3 bg-[#FF8C42] black/30"></div>
+            <div className="w-4 h-3 bg-[#FF8C42] black/30"></div>
+            <div className="w-6 h-3 bg-[#FF8C42] black/30"></div>
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-green-500 to-green-600 px-6 pt-4 pb-8">
+        <div className="bg-[#FF8C42] gradient-to-br from-green-500 to-green-600 px-6 pt-4 pb-8">
           <div className="flex items-center mb-6">
-            <button onClick={() => setStep('address')} className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
+            <button onClick={() => setStep('address')} className="w-10 h-10 bg-[#FF8C42] white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
               <ArrowLeft className="w-5 h-5 text-white" />
             </button>
             <h1 className="text-white flex-1 ml-4">Select Vet</h1>
           </div>
         </div>
 
-        <div className="flex-1 -mt-4 bg-white rounded-t-[32px] px-6 pt-6 pb-24 overflow-y-auto">
+        <div className="flex-1 -mt-4 bg-[#FF8C42] white rounded-t-[32px] px-6 pt-6 pb-24 overflow-y-auto">
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-500"></div>
@@ -296,7 +296,7 @@ export function HomeVisit({ onBack, customerId, petProfiles }: HomeVisitProps) {
                 <button key={doctor.id} onClick={() => { setSelectedDoctor(doctor); setStep('slots'); }} className="w-full">
                   <Card className="p-4 border-gray-200 shadow-sm hover:shadow-md transition-all">
                     <div className="flex gap-4">
-                      <div className="w-16 h-16 bg-green-100 rounded-2xl flex items-center justify-center">
+                      <div className="w-16 h-16 bg-[#FF8C42] green-100 rounded-2xl flex items-center justify-center">
                         <User className="w-8 h-8 text-green-600" />
                       </div>
                       <div className="flex-1 text-left">
@@ -305,7 +305,7 @@ export function HomeVisit({ onBack, customerId, petProfiles }: HomeVisitProps) {
                             <h3 className="mb-1">{doctor.name}</h3>
                             <p className="text-sm text-gray-500">{doctor.specialization}</p>
                           </div>
-                          <div className="flex items-center gap-1 bg-green-100 px-2 py-1 rounded-lg">
+                          <div className="flex items-center gap-1 bg-[#FF8C42] green-100 px-2 py-1 rounded-lg">
                             <Star className="w-3 h-3 text-green-600 fill-green-600" />
                             <span className="text-sm text-green-600">{doctor.rating}</span>
                           </div>
@@ -320,8 +320,8 @@ export function HomeVisit({ onBack, customerId, petProfiles }: HomeVisitProps) {
           )}
         </div>
 
-        <div className="fixed bottom-0 left-0 right-0 bg-white flex justify-center pb-2 max-w-md mx-auto">
-          <div className="w-32 h-1 bg-black rounded-full"></div>
+        <div className="fixed bottom-0 left-0 right-0 bg-[#FF8C42] white flex justify-center pb-2 max-w-md mx-auto">
+          <div className="w-32 h-1 bg-[#FF8C42] black rounded-full"></div>
         </div>
       </div>
     );
@@ -331,26 +331,26 @@ export function HomeVisit({ onBack, customerId, petProfiles }: HomeVisitProps) {
   if (step === 'slots') {
     const nextDays = getNextDays();
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col max-w-md mx-auto">
-        <div className="px-6 pt-3 pb-2 flex justify-between items-center text-black bg-white">
+      <div className="min-h-screen bg-[#FF8C42] gray-50 flex flex-col max-w-md mx-auto">
+        <div className="px-6 pt-3 pb-2 flex justify-between items-center text-black bg-[#FF8C42] white">
           <span>09:41</span>
           <div className="flex gap-1 items-center">
-            <div className="w-4 h-3 bg-black/30"></div>
-            <div className="w-4 h-3 bg-black/30"></div>
-            <div className="w-6 h-3 bg-black/30"></div>
+            <div className="w-4 h-3 bg-[#FF8C42] black/30"></div>
+            <div className="w-4 h-3 bg-[#FF8C42] black/30"></div>
+            <div className="w-6 h-3 bg-[#FF8C42] black/30"></div>
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-green-500 to-green-600 px-6 pt-4 pb-8">
+        <div className="bg-[#FF8C42] gradient-to-br from-green-500 to-green-600 px-6 pt-4 pb-8">
           <div className="flex items-center mb-6">
-            <button onClick={() => setStep('doctors')} className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
+            <button onClick={() => setStep('doctors')} className="w-10 h-10 bg-[#FF8C42] white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
               <ArrowLeft className="w-5 h-5 text-white" />
             </button>
             <h1 className="text-white flex-1 ml-4">Select Time Slot</h1>
           </div>
         </div>
 
-        <div className="flex-1 -mt-4 bg-white rounded-t-[32px] px-6 pt-6 pb-24 overflow-y-auto">
+        <div className="flex-1 -mt-4 bg-[#FF8C42] white rounded-t-[32px] px-6 pt-6 pb-24 overflow-y-auto">
           <div className="mb-6">
             <h3 className="mb-3">Select Date</h3>
             <div className="flex gap-2 overflow-x-auto pb-2 -mx-6 px-6 scrollbar-hide">
@@ -397,12 +397,12 @@ export function HomeVisit({ onBack, customerId, petProfiles }: HomeVisitProps) {
         </div>
 
         {selectedSlot && (
-          <div className="fixed bottom-0 left-0 right-0 bg-white border-t p-4 max-w-md mx-auto">
-            <Button onClick={() => setStep('confirm')} className="w-full bg-green-600 hover:bg-green-700">
+          <div className="fixed bottom-0 left-0 right-0 bg-[#FF8C42] white border-t p-4 max-w-md mx-auto">
+            <Button onClick={() => setStep('confirm')} className="w-full bg-green-600 hover:bg-[#FF8C42] green-700">
               Continue to Payment
             </Button>
             <div className="flex justify-center mt-3">
-              <div className="w-32 h-1 bg-black rounded-full"></div>
+              <div className="w-32 h-1 bg-[#FF8C42] black rounded-full"></div>
             </div>
           </div>
         )}
@@ -413,26 +413,26 @@ export function HomeVisit({ onBack, customerId, petProfiles }: HomeVisitProps) {
   // Confirmation
   if (step === 'confirm') {
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col max-w-md mx-auto">
-        <div className="px-6 pt-3 pb-2 flex justify-between items-center text-black bg-white">
+      <div className="min-h-screen bg-[#FF8C42] gray-50 flex flex-col max-w-md mx-auto">
+        <div className="px-6 pt-3 pb-2 flex justify-between items-center text-black bg-[#FF8C42] white">
           <span>09:41</span>
           <div className="flex gap-1 items-center">
-            <div className="w-4 h-3 bg-black/30"></div>
-            <div className="w-4 h-3 bg-black/30"></div>
-            <div className="w-6 h-3 bg-black/30"></div>
+            <div className="w-4 h-3 bg-[#FF8C42] black/30"></div>
+            <div className="w-4 h-3 bg-[#FF8C42] black/30"></div>
+            <div className="w-6 h-3 bg-[#FF8C42] black/30"></div>
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-green-500 to-green-600 px-6 pt-4 pb-8">
+        <div className="bg-[#FF8C42] gradient-to-br from-green-500 to-green-600 px-6 pt-4 pb-8">
           <div className="flex items-center mb-6">
-            <button onClick={() => setStep('slots')} className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
+            <button onClick={() => setStep('slots')} className="w-10 h-10 bg-[#FF8C42] white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
               <ArrowLeft className="w-5 h-5 text-white" />
             </button>
             <h1 className="text-white flex-1 ml-4">Confirm Booking</h1>
           </div>
         </div>
 
-        <div className="flex-1 -mt-4 bg-white rounded-t-[32px] px-6 pt-6 pb-24 overflow-y-auto">
+        <div className="flex-1 -mt-4 bg-[#FF8C42] white rounded-t-[32px] px-6 pt-6 pb-24 overflow-y-auto">
           <Card className="p-4 border-gray-200 mb-6">
             <div className="space-y-3 text-sm">
               <div className="flex justify-between">
@@ -454,13 +454,13 @@ export function HomeVisit({ onBack, customerId, petProfiles }: HomeVisitProps) {
             </div>
           </Card>
 
-          <Button onClick={createBooking} disabled={loading} className="w-full bg-green-600 hover:bg-green-700">
+          <Button onClick={createBooking} disabled={loading} className="w-full bg-green-600 hover:bg-[#FF8C42] green-700">
             {loading ? 'Booking...' : 'Confirm & Pay'}
           </Button>
         </div>
 
-        <div className="fixed bottom-0 left-0 right-0 bg-white flex justify-center pb-2 max-w-md mx-auto">
-          <div className="w-32 h-1 bg-black rounded-full"></div>
+        <div className="fixed bottom-0 left-0 right-0 bg-[#FF8C42] white flex justify-center pb-2 max-w-md mx-auto">
+          <div className="w-32 h-1 bg-[#FF8C42] black rounded-full"></div>
         </div>
       </div>
     );

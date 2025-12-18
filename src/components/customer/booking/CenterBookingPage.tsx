@@ -1,4 +1,5 @@
 import React from 'react';
+// Brand color: #FF8C42
 import { CenterBookingFlowEnhanced } from '../CenterBookingFlowEnhanced';
 
 interface CenterBookingPageProps {

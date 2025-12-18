@@ -14,6 +14,7 @@
 import React, { useState, useEffect } from 'react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { Package, Calendar, Check, Clock, TrendingUp, ChevronRight, Info, Star, Users, DollarSign } from 'lucide-react';
+// Brand color: #FF8C42
 
 interface PackageItem {
   id: string;

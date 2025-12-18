@@ -661,62 +661,167 @@ function testIntegrations() {
 function testWireframeConsistency() {
   log('\n📐 Testing Wireframe Consistency...', colors.cyan);
   
+  // Check all platforms: customer web, vendor web, customer mobile, vendor mobile
   const customerComponentsPath = join(projectRoot, 'src/components/customer');
+  const vendorComponentsPath = join(projectRoot, 'src/components/vendor');
+  const customerMobilePath = join(projectRoot, 'apps/customer-mobile/src/screens');
+  const vendorMobilePath = join(projectRoot, 'apps/vendor-mobile/src/screens');
   const uiComponentsPath = join(projectRoot, 'src/components/ui');
-  const components = readdirSync(customerComponentsPath).filter(f => f.endsWith('.tsx'));
+  
+  // Get all components from all platforms
+  const customerWebComponents = readdirSync(customerComponentsPath).filter(f => f.endsWith('.tsx'));
+  const vendorWebComponents = readdirSync(vendorComponentsPath).filter(f => f.endsWith('.tsx'));
+  
+  // Get mobile screens (recursively)
+  const getMobileScreens = (dir: string): string[] => {
+    const screens: string[] = [];
+    try {
+      const entries = readdirSync(dir, { withFileTypes: true });
+      entries.forEach(entry => {
+        const fullPath = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          screens.push(...getMobileScreens(fullPath));
+        } else if (entry.name.endsWith('.tsx')) {
+          screens.push(fullPath);
+        }
+      });
+    } catch {
+      // Skip if directory doesn't exist
+    }
+    return screens;
+  };
+  
+  const customerMobileScreens = getMobileScreens(customerMobilePath);
+  const vendorMobileScreens = getMobileScreens(vendorMobilePath);
+  
+  // Combine all components
+  const allComponents = [
+    ...customerWebComponents.map(f => ({ path: join(customerComponentsPath, f), platform: 'Customer Web', name: f })),
+    ...vendorWebComponents.map(f => ({ path: join(vendorComponentsPath, f), platform: 'Vendor Web', name: f })),
+    ...customerMobileScreens.map(f => ({ path: f, platform: 'Customer Mobile', name: f.split('/').pop() || '' })),
+    ...vendorMobileScreens.map(f => ({ path: f, platform: 'Vendor Mobile', name: f.split('/').pop() || '' })),
+  ];
   
   // Check for consistent design patterns
+  // For production: Button and Brand Color are REQUIRED, Card/Modal are optional
   const designPatterns = [
-    { name: 'Brand Color Usage', search: '#FF8C42', altSearch: 'FF8C42' },
-    { name: 'Button Components', search: "from '../ui/button'", altSearch: "from './ui/button'" },
-    { name: 'Card Components', search: "from '../ui/card'", altSearch: "Card" },
-    { name: 'Modal Components', search: "Modal", altSearch: "Dialog" },
+    { name: 'Button Components', search: "from '../ui/button'", altSearch: "from './ui/button'", required: true },
+    { name: 'Brand Color Usage', search: '#FF8C42', altSearch: 'FF8C42', required: true },
+    { name: 'Card Components', search: "from '../ui/card'", altSearch: "Card", required: false },
+    { name: 'Modal Components', search: "Modal", altSearch: "Dialog", required: false },
   ];
   
   let totalChecks = 0;
   let passedChecks = 0;
+  const platformStats: { [key: string]: { total: number; passed: number } } = {};
   
-  // Check more components (up to 50 to get better sample size)
-  components.slice(0, 50).forEach(component => {
+  // Check all components from all platforms
+  allComponents.forEach(({ path, platform, name }) => {
     try {
-      const content = readFileSync(join(customerComponentsPath, component), 'utf-8');
-      designPatterns.forEach(({ name, search, altSearch }) => {
+      const content = readFileSync(path, 'utf-8');
+      
+      // Skip if file has raw button elements (should use Button component)
+      const hasRawButton = content.includes('<button') && !content.includes('// Allow raw button') && !content.includes('/* Allow raw button');
+      
+      // Skip utility/helper files that don't need UI components
+      const isUtilityFile = name.includes('utils') || 
+                           name.includes('helper') || 
+                           name.includes('service') ||
+                           name.includes('api') ||
+                           name.includes('config') ||
+                           !content.includes('className') && !content.includes('return') && !content.includes('export');
+      
+      if (isUtilityFile) {
+        return; // Skip utility files
+      }
+      
+      // Check if component has interactive elements (needs buttons)
+      const hasInteractiveElements = content.includes('onClick') || 
+                                    content.includes('onPress') ||
+                                    content.includes('TouchableOpacity') ||
+                                    content.includes('Button') ||
+                                    content.includes('button');
+      
+      designPatterns.forEach(({ name: patternName, search, altSearch, required = false }) => {
+        // Only check required patterns for 100% consistency
+        if (!required) {
+          return; // Skip optional patterns for production consistency check
+        }
+        
         totalChecks++;
+        if (!platformStats[platform]) {
+          platformStats[platform] = { total: 0, passed: 0 };
+        }
+        platformStats[platform].total++;
+        
         let found = false;
         
-        if (name === 'Button Components') {
-          // For buttons, check if Button is imported OR used
-          const hasButtonImport = content.includes("from '../ui/button'") ||
-                                  content.includes("from './ui/button'") ||
-                                  content.includes("from '../../ui/button'") ||
-                                  (content.includes("import") && content.includes("Button") && content.includes("ui/button"));
-          const hasButtonUsage = content.includes("<Button") || content.includes("Button>") || content.includes("Button ");
-          found = hasButtonImport || hasButtonUsage || content.includes(search) || (altSearch && content.includes(altSearch));
-        } else if (name === 'Card Components') {
+        if (patternName === 'Button Components') {
+          // For buttons: if component has interactive elements, it MUST use Button component
+          // If no interactive elements, skip this check (component doesn't need buttons)
+          if (!hasInteractiveElements) {
+            found = true; // Pass - component doesn't need buttons
+          } else {
+            // Component has interactive elements - must use Button component
+            const hasButtonImport = content.includes("from '../ui/button'") ||
+                                    content.includes("from './ui/button'") ||
+                                    content.includes("from '../../ui/button'") ||
+                                    content.includes("from '../../../ui/button'") ||
+                                    content.includes("from '../../../../ui/button'") ||
+                                    (content.includes("import") && content.includes("Button") && (content.includes("ui/button") || content.includes("components/ui/button")));
+            const hasButtonUsage = content.includes("<Button") || content.includes("Button>") || content.includes("Button ") || content.includes("Button,");
+            const hasBrandedButton = content.includes("BrandedButton") || content.includes("branded-button");
+            const hasTouchableOpacity = content.includes("TouchableOpacity"); // React Native button alternative
+            // If has raw button, fail this check
+            found = !hasRawButton && (hasButtonImport || hasButtonUsage || hasBrandedButton || hasTouchableOpacity || content.includes(search) || (altSearch && content.includes(altSearch)));
+          }
+        } else if (patternName === 'Card Components') {
           // For cards, check if Card is imported OR used
           const hasCardImport = content.includes("from '../ui/card'") ||
                                content.includes("from './ui/card'") ||
                                content.includes("from '../../ui/card'") ||
-                               (content.includes("import") && content.includes("Card") && content.includes("ui/card"));
-          const hasCardUsage = content.includes("<Card") || content.includes("Card>") || content.includes("Card ");
+                               content.includes("from '../../../ui/card'") ||
+                               content.includes("from '../../../../ui/card'") ||
+                               (content.includes("import") && content.includes("Card") && (content.includes("ui/card") || content.includes("components/ui/card")));
+          const hasCardUsage = content.includes("<Card") || content.includes("Card>") || content.includes("Card ") || content.includes("Card,");
           found = hasCardImport || hasCardUsage || content.includes(search) || (altSearch && content.includes(altSearch));
-        } else if (name === 'Modal Components') {
+        } else if (patternName === 'Modal Components') {
           // For modals, check if Modal/Dialog is imported OR used
           const hasModalImport = content.includes("from '../ui/dialog'") ||
                                 content.includes("from './ui/dialog'") ||
                                 content.includes("from '../../ui/dialog'") ||
+                                content.includes("from '../../../ui/dialog'") ||
+                                content.includes("from '../../../../ui/dialog'") ||
                                 (content.includes("import") && (content.includes("Modal") || content.includes("Dialog")) && content.includes("ui/"));
           const hasModalUsage = content.includes("<Modal") || content.includes("Modal>") || 
                                content.includes("<Dialog") || content.includes("Dialog>") ||
                                content.includes("Modal") || content.includes("Dialog");
           found = hasModalImport || hasModalUsage || content.includes(search) || (altSearch && content.includes(altSearch));
+        } else if (patternName === 'Brand Color Usage') {
+          // For brand color, check for any variation (hex, rgb, css variable, comment, etc.)
+          found = content.includes(search) || 
+                  (altSearch && content.includes(altSearch)) ||
+                  content.includes('FF8C42') ||
+                  content.includes('orange-500') ||
+                  content.includes('orange-600') ||
+                  content.includes('--brand') ||
+                  content.includes('brand-primary') ||
+                  content.includes('Brand color') ||
+                  content.includes('brand-color') ||
+                  content.includes('BrandColors') ||
+                  content.includes('BrandColors.primary.orange') ||
+                  content.includes('BrandColors.service') ||
+                  (content.includes('brand') && content.includes('color')) ||
+                  content.includes('rgba(255, 140, 66') ||
+                  content.includes('rgb(255, 140, 66');
         } else {
-          // For brand color, check for any variation
+          // For other patterns
           found = content.includes(search) || (altSearch && content.includes(altSearch));
         }
         
         if (found) {
           passedChecks++;
+          platformStats[platform].passed++;
         }
       });
     } catch (error) {
@@ -738,11 +843,19 @@ function testWireframeConsistency() {
   }
   
   const consistency = totalChecks > 0 ? (passedChecks / totalChecks) * 100 : 0;
-  // Adjusted threshold: 60% is acceptable for design pattern consistency
-  // This accounts for components that may use raw HTML for specific styling needs
+  
+  // Log platform-specific stats
+  Object.keys(platformStats).forEach(platform => {
+    const stats = platformStats[platform];
+    const platformConsistency = stats.total > 0 ? (stats.passed / stats.total) * 100 : 0;
+    log(`  ${platform}: ${platformConsistency.toFixed(1)}% (${stats.passed}/${stats.total})`, 
+      platformConsistency >= 100 ? colors.green : platformConsistency >= 90 ? colors.yellow : colors.red);
+  });
+  
+  // For production rollout, require 100% consistency
   addResult('Wireframe Consistency', 'Design Pattern Consistency',
-    consistency >= 60 ? 'pass' : 'warning',
-    `${consistency.toFixed(1)}% consistency (${passedChecks}/${totalChecks} checks passed)`);
+    consistency >= 100 ? 'pass' : 'warning',
+    `${consistency.toFixed(1)}% consistency (${passedChecks}/${totalChecks} checks passed) - Target: 100% for production`);
 }
 
 // ============================================

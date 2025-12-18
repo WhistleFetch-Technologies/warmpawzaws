@@ -171,37 +171,32 @@ export function VendorNotificationModal({ vendorId, open, onClose, onNotificatio
                   Mark all read
                 </Button>
               )}
-              <button
-                onClick={onClose}
+              <Button onClick={onClose}
                 className="text-gray-400 hover:text-gray-600"
               >
                 <X className="w-5 h-5" />
-              </button>
+              </Button>
             </div>
           </div>
 
           {/* Filter Tabs */}
           <div className="flex gap-2 mt-3">
-            <button
-              onClick={() => setFilter('all')}
-              className={`px-4 py-1.5 rounded-full text-sm transition-colors ${
+            <Button onClick={() => setFilter('all')} className={`px-4 py-1.5 rounded-full text-sm transition-colors ${
                 filter === 'all'
                   ? 'bg-[#FF8C42] text-white'
                   : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
             >
               All ({notifications.length})
-            </button>
-            <button
-              onClick={() => setFilter('unread')}
-              className={`px-4 py-1.5 rounded-full text-sm transition-colors ${
+            </Button>
+            <Button onClick={() => setFilter('unread')} className={`px-4 py-1.5 rounded-full text-sm transition-colors ${
                 filter === 'unread'
                   ? 'bg-[#FF8C42] text-white'
                   : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
             >
               Unread ({unreadCount})
-            </button>
+            </Button>
           </div>
         </DialogHeader>
 
@@ -300,8 +295,7 @@ export function VendorNotificationModal({ vendorId, open, onClose, onNotificatio
                         {/* Actions */}
                         <div className="flex flex-col gap-1">
                           {!notification.isRead && (
-                            <button
-                              onClick={(e) => {
+                            <Button onClick={(e) => {
                                 e.stopPropagation();
                                 markAsRead(notification.notificationId);
                               }}
@@ -309,10 +303,9 @@ export function VendorNotificationModal({ vendorId, open, onClose, onNotificatio
                               title="Mark as read"
                             >
                               <Check className="w-4 h-4 text-gray-600" />
-                            </button>
+                            </Button>
                           )}
-                          <button
-                            onClick={(e) => {
+                          <Button onClick={(e) => {
                               e.stopPropagation();
                               deleteNotification(notification.notificationId);
                             }}
@@ -320,7 +313,7 @@ export function VendorNotificationModal({ vendorId, open, onClose, onNotificatio
                             title="Delete"
                           >
                             <Trash2 className="w-4 h-4 text-gray-400 hover:text-red-600" />
-                          </button>
+                          </Button>
                         </div>
                       </div>
                     </div>

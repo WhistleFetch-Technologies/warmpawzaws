@@ -210,12 +210,11 @@ export function VendorPrescriptionForm({
           <h2 className="font-bold text-gray-800">
             {isVet ? 'Add Prescription' : 'Add Service Notes'}
           </h2>
-          <button
-            onClick={onClose}
+          <Button onClick={onClose}
             className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
           >
             <X className="w-5 h-5 text-gray-600" />
-          </button>
+          </Button>
         </div>
 
         <div className="p-6 space-y-6 pb-32">
@@ -344,25 +343,23 @@ export function VendorPrescriptionForm({
           <div className="bg-white border border-gray-200 rounded-2xl p-5 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-gray-800">Medications</h3>
-              <button
-                onClick={addMedication}
+              <Button onClick={addMedication}
                 className="flex items-center gap-1 px-3 py-1 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors"
               >
                 <Plus className="w-4 h-4" />
                 Add
-              </button>
+              </Button>
             </div>
 
             {medications.map((med, idx) => (
               <div key={idx} className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <h4 className="font-semibold text-gray-800">Medicine {idx + 1}</h4>
-                  <button
-                    onClick={() => removeMedication(idx)}
+                  <Button onClick={() => removeMedication(idx)}
                     className="text-red-600 hover:text-red-700"
                   >
                     <Trash2 className="w-4 h-4" />
-                  </button>
+                  </Button>
                 </div>
 
                 <div>
@@ -434,25 +431,23 @@ export function VendorPrescriptionForm({
           <div className="bg-white border border-gray-200 rounded-2xl p-5 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-gray-800">Products Used</h3>
-              <button
-                onClick={addProduct}
+              <Button onClick={addProduct}
                 className="flex items-center gap-1 px-3 py-1 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors"
               >
                 <Plus className="w-4 h-4" />
                 Add
-              </button>
+              </Button>
             </div>
 
             {productsUsed.map((prod, idx) => (
               <div key={idx} className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <h4 className="font-semibold text-gray-800">Product {idx + 1}</h4>
-                  <button
-                    onClick={() => removeProduct(idx)}
+                  <Button onClick={() => removeProduct(idx)}
                     className="text-red-600 hover:text-red-700"
                   >
                     <Trash2 className="w-4 h-4" />
-                  </button>
+                  </Button>
                 </div>
 
                 <div>
@@ -496,25 +491,23 @@ export function VendorPrescriptionForm({
             <div className="bg-white border border-gray-200 rounded-2xl p-5 space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="font-bold text-gray-800">Tests Recommended</h3>
-                <button
-                  onClick={addTest}
+                <Button onClick={addTest}
                   className="flex items-center gap-1 px-3 py-1 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors"
                 >
                   <Plus className="w-4 h-4" />
                   Add
-                </button>
+                </Button>
               </div>
 
               {testsRecommended.map((test, idx) => (
                 <div key={idx} className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 space-y-3">
                   <div className="flex items-center justify-between">
                     <h4 className="font-semibold text-gray-800">Test {idx + 1}</h4>
-                    <button
-                      onClick={() => removeTest(idx)}
+                    <Button onClick={() => removeTest(idx)}
                       className="text-red-600 hover:text-red-700"
                     >
                       <Trash2 className="w-4 h-4" />
-                    </button>
+                    </Button>
                   </div>
 
                   <div>

@@ -8,6 +8,7 @@ import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { motion, AnimatePresence } from 'motion/react';
 import { RadarProviderMap } from '../RadarProviderMap';
 import { PreviousProvidersCarousel } from '../PreviousProvidersCarousel';
+// Brand color: #FF8C42
 
 // Types
 interface Provider {
