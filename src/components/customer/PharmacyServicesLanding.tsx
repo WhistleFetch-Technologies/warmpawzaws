@@ -103,16 +103,16 @@ export function PharmacyServicesLanding({ onBack, onNavigate, customerId, phone 
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center max-w-md mx-auto">
+      <div className="min-h-screen bg-[#FF8C42] white flex items-center justify-center max-w-md mx-auto">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-600"></div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-white max-w-md mx-auto">
+    <div className="min-h-screen bg-[#FF8C42] white max-w-md mx-auto">
       {/* Header with Concave Bottom Curve */}
-      <div className="bg-gradient-to-br from-pink-600 to-pink-700 text-white px-6 pt-8 pb-16 relative">
+      <div className="bg-[#FF8C42] gradient-to-br from-pink-600 to-pink-700 text-white px-6 pt-8 pb-16 relative">
         <button 
           onClick={onBack}
           className="mb-4 flex items-center gap-2 text-white/90 hover:text-white"
@@ -122,7 +122,7 @@ export function PharmacyServicesLanding({ onBack, onNavigate, customerId, phone 
         </button>
         
         <div className="flex items-center gap-3 mb-4">
-          <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center">
+          <div className="w-12 h-12 bg-[#FF8C42] white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center">
             <ShoppingBag className="w-6 h-6" />
           </div>
           <div>
@@ -134,15 +134,15 @@ export function PharmacyServicesLanding({ onBack, onNavigate, customerId, phone 
         {/* Quick Stats */}
         {stats && (
           <div className="grid grid-cols-3 gap-3">
-            <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 border border-white/20">
+            <div className="bg-[#FF8C42] white/10 backdrop-blur-sm rounded-xl p-3 border border-white/20">
               <div className="text-2xl font-bold">{stats.activePharmacies}+</div>
               <div className="text-white/80 text-xs">Pharmacies</div>
             </div>
-            <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 border border-white/20">
+            <div className="bg-[#FF8C42] white/10 backdrop-blur-sm rounded-xl p-3 border border-white/20">
               <div className="text-2xl font-bold">{stats.orders}</div>
               <div className="text-white/80 text-xs">Orders</div>
             </div>
-            <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 border border-white/20">
+            <div className="bg-[#FF8C42] white/10 backdrop-blur-sm rounded-xl p-3 border border-white/20">
               <div className="flex items-center gap-1 text-2xl font-bold">
                 <Star className="w-4 h-4 fill-white" />
                 {stats.rating}
@@ -153,7 +153,7 @@ export function PharmacyServicesLanding({ onBack, onNavigate, customerId, phone 
         )}
         
         {/* Concave curve */}
-        <div className="absolute bottom-0 left-0 right-0 h-8 bg-white" 
+        <div className="absolute bottom-0 left-0 right-0 h-8 bg-[#FF8C42] white" 
              style={{
                borderTopLeftRadius: '50% 100%',
                borderTopRightRadius: '50% 100%',
@@ -172,14 +172,14 @@ export function PharmacyServicesLanding({ onBack, onNavigate, customerId, phone 
           
           <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide -mx-6 px-6">
             {/* First Order Discount */}
-            <Card className="min-w-[280px] flex-shrink-0 bg-white border border-gray-100 p-5 shadow-sm">
+            <Card className="min-w-[280px] flex-shrink-0 bg-[#FF8C42] white border border-gray-100 p-5 shadow-sm">
               <div className="flex items-start justify-between mb-3">
                 <div>
-                  <Badge className="bg-pink-100 text-pink-600 border-none mb-2">First Order</Badge>
+                  <Badge className="bg-[#FF8C42] pink-100 text-pink-600 border-none mb-2">First Order</Badge>
                   <div className="text-3xl font-bold text-pink-600 mb-1">20% OFF</div>
                   <div className="text-gray-700 text-sm">On All Medicines</div>
                 </div>
-                <div className="p-3 bg-pink-50 rounded-xl">
+                <div className="p-3 bg-[#FF8C42] pink-50 rounded-xl">
                   <Pill className="w-6 h-6 text-pink-600" />
                 </div>
               </div>
@@ -187,7 +187,7 @@ export function PharmacyServicesLanding({ onBack, onNavigate, customerId, phone 
                 <div className="text-sm text-gray-600">+ Free delivery above ₹500</div>
                 <Button 
                   size="sm" 
-                  className="bg-pink-600 text-white hover:bg-pink-700 h-8"
+                  className="bg-pink-600 text-white hover:bg-[#FF8C42] pink-700 h-8"
                   onClick={() => onNavigate('pharmacy_store')}
                 >
                   Shop Now
@@ -196,14 +196,14 @@ export function PharmacyServicesLanding({ onBack, onNavigate, customerId, phone 
             </Card>
 
             {/* Prescription Upload */}
-            <Card className="min-w-[280px] flex-shrink-0 bg-white border border-gray-100 p-5 shadow-sm">
+            <Card className="min-w-[280px] flex-shrink-0 bg-[#FF8C42] white border border-gray-100 p-5 shadow-sm">
               <div className="flex items-start justify-between mb-3">
                 <div>
-                  <Badge className="bg-blue-100 text-blue-600 border-none mb-2">Upload RX</Badge>
+                  <Badge className="bg-[#FF8C42] blue-100 text-blue-600 border-none mb-2">Upload RX</Badge>
                   <div className="text-3xl font-bold text-blue-600 mb-1">FREE</div>
                   <div className="text-gray-700 text-sm">Home Delivery</div>
                 </div>
-                <div className="p-3 bg-blue-50 rounded-xl">
+                <div className="p-3 bg-[#FF8C42] blue-50 rounded-xl">
                   <Truck className="w-6 h-6 text-blue-600" />
                 </div>
               </div>
@@ -211,7 +211,7 @@ export function PharmacyServicesLanding({ onBack, onNavigate, customerId, phone 
                 <div className="text-sm text-gray-600">On prescription orders</div>
                 <Button 
                   size="sm" 
-                  className="bg-blue-600 text-white hover:bg-blue-700 h-8"
+                  className="bg-blue-600 text-white hover:bg-[#FF8C42] blue-700 h-8"
                   onClick={() => onNavigate('pharmacy_store')}
                 >
                   Upload
@@ -220,14 +220,14 @@ export function PharmacyServicesLanding({ onBack, onNavigate, customerId, phone 
             </Card>
 
             {/* Monthly Pack */}
-            <Card className="min-w-[280px] flex-shrink-0 bg-white border border-gray-100 p-5 shadow-sm">
+            <Card className="min-w-[280px] flex-shrink-0 bg-[#FF8C42] white border border-gray-100 p-5 shadow-sm">
               <div className="flex items-start justify-between mb-3">
                 <div>
-                  <Badge className="bg-green-100 text-green-600 border-none mb-2">Monthly</Badge>
+                  <Badge className="bg-[#FF8C42] green-100 text-green-600 border-none mb-2">Monthly</Badge>
                   <div className="text-3xl font-bold text-green-600 mb-1">₹2,499</div>
                   <div className="text-gray-700 text-sm">Health Pack</div>
                 </div>
-                <div className="p-3 bg-green-50 rounded-xl">
+                <div className="p-3 bg-[#FF8C42] green-50 rounded-xl">
                   <Heart className="w-6 h-6 text-green-600" />
                 </div>
               </div>
@@ -235,7 +235,7 @@ export function PharmacyServicesLanding({ onBack, onNavigate, customerId, phone 
                 <div className="text-sm text-gray-600">Supplements + Vitamins</div>
                 <Button 
                   size="sm" 
-                  className="bg-green-600 text-white hover:bg-green-700 h-8"
+                  className="bg-green-600 text-white hover:bg-[#FF8C42] green-700 h-8"
                   onClick={() => onNavigate('pharmacy_store')}
                 >
                   View
@@ -253,11 +253,11 @@ export function PharmacyServicesLanding({ onBack, onNavigate, customerId, phone 
           
           <div className="grid grid-cols-2 gap-3">
             <Card
-              className="p-4 cursor-pointer hover:shadow-md transition-all border border-gray-100 bg-white shadow-sm"
+              className="p-4 cursor-pointer hover:shadow-md transition-all border border-gray-100 bg-[#FF8C42] white shadow-sm"
               onClick={() => onNavigate('pharmacy_store', { category: 'prescription' })}
             >
               <div className="flex flex-col h-full">
-                <div className="w-12 h-12 bg-pink-50 rounded-xl flex items-center justify-center mb-3">
+                <div className="w-12 h-12 bg-[#FF8C42] pink-50 rounded-xl flex items-center justify-center mb-3">
                   <Pill className="w-6 h-6 text-pink-600" />
                 </div>
                 <div className="flex-1">
@@ -271,11 +271,11 @@ export function PharmacyServicesLanding({ onBack, onNavigate, customerId, phone 
             </Card>
 
             <Card
-              className="p-4 cursor-pointer hover:shadow-md transition-all border border-gray-100 bg-white shadow-sm"
+              className="p-4 cursor-pointer hover:shadow-md transition-all border border-gray-100 bg-[#FF8C42] white shadow-sm"
               onClick={() => onNavigate('pharmacy_store', { category: 'otc' })}
             >
               <div className="flex flex-col h-full">
-                <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center mb-3">
+                <div className="w-12 h-12 bg-[#FF8C42] blue-50 rounded-xl flex items-center justify-center mb-3">
                   <ShieldCheck className="w-6 h-6 text-blue-600" />
                 </div>
                 <div className="flex-1">
@@ -289,11 +289,11 @@ export function PharmacyServicesLanding({ onBack, onNavigate, customerId, phone 
             </Card>
 
             <Card
-              className="p-4 cursor-pointer hover:shadow-md transition-all border border-gray-100 bg-white shadow-sm"
+              className="p-4 cursor-pointer hover:shadow-md transition-all border border-gray-100 bg-[#FF8C42] white shadow-sm"
               onClick={() => onNavigate('pharmacy_store', { category: 'supplements' })}
             >
               <div className="flex flex-col h-full">
-                <div className="w-12 h-12 bg-green-50 rounded-xl flex items-center justify-center mb-3">
+                <div className="w-12 h-12 bg-[#FF8C42] green-50 rounded-xl flex items-center justify-center mb-3">
                   <Heart className="w-6 h-6 text-green-600" />
                 </div>
                 <div className="flex-1">
@@ -307,11 +307,11 @@ export function PharmacyServicesLanding({ onBack, onNavigate, customerId, phone 
             </Card>
 
             <Card
-              className="p-4 cursor-pointer hover:shadow-md transition-all border border-gray-100 bg-white shadow-sm"
+              className="p-4 cursor-pointer hover:shadow-md transition-all border border-gray-100 bg-[#FF8C42] white shadow-sm"
               onClick={() => onNavigate('pharmacy_store', { category: 'accessories' })}
             >
               <div className="flex flex-col h-full">
-                <div className="w-12 h-12 bg-purple-50 rounded-xl flex items-center justify-center mb-3">
+                <div className="w-12 h-12 bg-[#FF8C42] purple-50 rounded-xl flex items-center justify-center mb-3">
                   <ShoppingBag className="w-6 h-6 text-purple-600" />
                 </div>
                 <div className="flex-1">
@@ -344,11 +344,11 @@ export function PharmacyServicesLanding({ onBack, onNavigate, customerId, phone 
               featuredPharmacies.slice(0, 3).map((pharmacy, index) => (
                 <Card 
                   key={index}
-                  className="p-4 cursor-pointer hover:shadow-md transition-all bg-white border border-gray-100 shadow-sm"
+                  className="p-4 cursor-pointer hover:shadow-md transition-all bg-[#FF8C42] white border border-gray-100 shadow-sm"
                   onClick={() => onNavigate('pharmacy_store')}
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-16 h-16 bg-gradient-to-br from-pink-600 to-pink-700 rounded-xl flex items-center justify-center text-white text-xl font-bold">
+                    <div className="w-16 h-16 bg-[#FF8C42] gradient-to-br from-pink-600 to-pink-700 rounded-xl flex items-center justify-center text-white text-xl font-bold">
                       {pharmacy.businessName?.charAt(0) || 'P'}
                     </div>
                     <div className="flex-1">
@@ -385,11 +385,11 @@ export function PharmacyServicesLanding({ onBack, onNavigate, customerId, phone 
               ].map((pharmacy, i) => (
                 <Card 
                   key={i}
-                  className="p-4 cursor-pointer hover:shadow-md transition-all bg-white border border-gray-100 shadow-sm"
+                  className="p-4 cursor-pointer hover:shadow-md transition-all bg-[#FF8C42] white border border-gray-100 shadow-sm"
                   onClick={() => onNavigate('pharmacy_store')}
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-16 h-16 bg-gradient-to-br from-pink-600 to-pink-700 rounded-xl flex items-center justify-center text-white text-xl font-bold">
+                    <div className="w-16 h-16 bg-[#FF8C42] gradient-to-br from-pink-600 to-pink-700 rounded-xl flex items-center justify-center text-white text-xl font-bold">
                       {pharmacy.name.charAt(0)}
                     </div>
                     <div className="flex-1">
@@ -429,9 +429,9 @@ export function PharmacyServicesLanding({ onBack, onNavigate, customerId, phone 
           </div>
           
           <div className="space-y-3">
-            <Card className="p-4 bg-white border border-gray-100 shadow-sm">
+            <Card className="p-4 bg-[#FF8C42] white border border-gray-100 shadow-sm">
               <div className="flex items-start gap-3">
-                <div className="w-10 h-10 bg-pink-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <div className="w-10 h-10 bg-[#FF8C42] pink-100 rounded-lg flex items-center justify-center flex-shrink-0">
                   <ShieldCheck className="w-5 h-5 text-pink-600" />
                 </div>
                 <div className="flex-1">
@@ -441,9 +441,9 @@ export function PharmacyServicesLanding({ onBack, onNavigate, customerId, phone 
               </div>
             </Card>
 
-            <Card className="p-4 bg-white border border-gray-100 shadow-sm">
+            <Card className="p-4 bg-[#FF8C42] white border border-gray-100 shadow-sm">
               <div className="flex items-start gap-3">
-                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <div className="w-10 h-10 bg-[#FF8C42] blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
                   <Truck className="w-5 h-5 text-blue-600" />
                 </div>
                 <div className="flex-1">
@@ -453,9 +453,9 @@ export function PharmacyServicesLanding({ onBack, onNavigate, customerId, phone 
               </div>
             </Card>
 
-            <Card className="p-4 bg-white border border-gray-100 shadow-sm">
+            <Card className="p-4 bg-[#FF8C42] white border border-gray-100 shadow-sm">
               <div className="flex items-start gap-3">
-                <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <div className="w-10 h-10 bg-[#FF8C42] green-100 rounded-lg flex items-center justify-center flex-shrink-0">
                   <Pill className="w-5 h-5 text-green-600" />
                 </div>
                 <div className="flex-1">
@@ -465,9 +465,9 @@ export function PharmacyServicesLanding({ onBack, onNavigate, customerId, phone 
               </div>
             </Card>
 
-            <Card className="p-4 bg-white border border-gray-100 shadow-sm">
+            <Card className="p-4 bg-[#FF8C42] white border border-gray-100 shadow-sm">
               <div className="flex items-start gap-3">
-                <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <div className="w-10 h-10 bg-[#FF8C42] purple-100 rounded-lg flex items-center justify-center flex-shrink-0">
                   <Star className="w-5 h-5 text-purple-600" />
                 </div>
                 <div className="flex-1">

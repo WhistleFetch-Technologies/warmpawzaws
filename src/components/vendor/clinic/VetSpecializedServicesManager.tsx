@@ -624,9 +624,9 @@ export function VetSpecializedServicesManager({
         {/* Header */}
         <div className="p-4 bg-gradient-to-r from-red-600 to-orange-600 text-white">
           <div className="flex items-center gap-3 mb-3">
-            <button onClick={onBack} className="w-8 h-8 flex items-center justify-center">
+            <Button onClick={onBack} className="w-8 h-8 flex items-center justify-center">
               <ArrowLeft className="w-5 h-5" />
-            </button>
+            </Button>
             <div className="flex-1">
               <h1 className="font-semibold">Specialized Vet Services</h1>
               <p className="text-sm opacity-90">{vendorData?.businessName}</p>
@@ -635,9 +635,7 @@ export function VetSpecializedServicesManager({
 
           {/* Tabs */}
           <div className="flex gap-2 mt-4">
-            <button
-              onClick={() => setActiveTab('ambulance')}
-              className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
+            <Button onClick={() => setActiveTab('ambulance')} className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
                 activeTab === 'ambulance'
                   ? 'bg-white text-red-600'
                   : 'bg-white/20 text-white hover:bg-white/30'
@@ -645,10 +643,8 @@ export function VetSpecializedServicesManager({
             >
               <Ambulance className="w-4 h-4 mx-auto mb-1" />
               Ambulance
-            </button>
-            <button
-              onClick={() => setActiveTab('diagnostics')}
-              className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
+            </Button>
+            <Button onClick={() => setActiveTab('diagnostics')} className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
                 activeTab === 'diagnostics'
                   ? 'bg-white text-red-600'
                   : 'bg-white/20 text-white hover:bg-white/30'
@@ -656,10 +652,8 @@ export function VetSpecializedServicesManager({
             >
               <Microscope className="w-4 h-4 mx-auto mb-1" />
               Diagnostics
-            </button>
-            <button
-              onClick={() => setActiveTab('emergency')}
-              className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
+            </Button>
+            <Button onClick={() => setActiveTab('emergency')} className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
                 activeTab === 'emergency'
                   ? 'bg-white text-red-600'
                   : 'bg-white/20 text-white hover:bg-white/30'
@@ -667,10 +661,8 @@ export function VetSpecializedServicesManager({
             >
               <AlertCircle className="w-4 h-4 mx-auto mb-1" />
               Emergency
-            </button>
-            <button
-              onClick={() => setActiveTab('pharmacy')}
-              className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
+            </Button>
+            <Button onClick={() => setActiveTab('pharmacy')} className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
                 activeTab === 'pharmacy'
                   ? 'bg-white text-red-600'
                   : 'bg-white/20 text-white hover:bg-white/30'
@@ -678,7 +670,7 @@ export function VetSpecializedServicesManager({
             >
               <Pill className="w-4 h-4 mx-auto mb-1" />
               Pharmacy
-            </button>
+            </Button>
           </div>
         </div>
 

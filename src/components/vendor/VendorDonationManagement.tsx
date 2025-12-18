@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Heart, Users, TrendingUp, Award, Plus, Download, Calendar } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { toast } from 'react-toastify';
+import { Button } from '../ui/button';
 
 interface Donation {
   id: string;
@@ -339,14 +340,14 @@ export function VendorDonationManagement({ vendorId, vendorData, onBack }: Vendo
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
+    <div className="min-h-screen bg-[#FF8C42] gray-50 p-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-6">
           {onBack && (
-            <button onClick={onBack} className="text-blue-600 hover:text-blue-700 mb-4">
+            <Button onClick={onBack} className="text-blue-600 hover:text-blue-700 mb-4">
               ← Back to Dashboard
-            </button>
+            </Button>
           )}
           <h1 className="text-3xl text-gray-900 mb-2">Donation Management</h1>
           <p className="text-gray-600">Track donations, manage donors, and run campaigns</p>
@@ -355,7 +356,7 @@ export function VendorDonationManagement({ vendorId, vendorData, onBack }: Vendo
         {/* Stats Cards */}
         {stats && (
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
-            <div className="bg-white rounded-lg shadow p-6">
+            <div className="bg-[#FF8C42] white rounded-lg shadow p-6">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-gray-500 text-sm">Total Value</p>
@@ -366,7 +367,7 @@ export function VendorDonationManagement({ vendorId, vendorData, onBack }: Vendo
               </div>
             </div>
 
-            <div className="bg-white rounded-lg shadow p-6">
+            <div className="bg-[#FF8C42] white rounded-lg shadow p-6">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-gray-500 text-sm">Total Donors</p>
@@ -377,7 +378,7 @@ export function VendorDonationManagement({ vendorId, vendorData, onBack }: Vendo
               </div>
             </div>
 
-            <div className="bg-white rounded-lg shadow p-6">
+            <div className="bg-[#FF8C42] white rounded-lg shadow p-6">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-gray-500 text-sm">This Month</p>
@@ -388,7 +389,7 @@ export function VendorDonationManagement({ vendorId, vendorData, onBack }: Vendo
               </div>
             </div>
 
-            <div className="bg-white rounded-lg shadow p-6">
+            <div className="bg-[#FF8C42] white rounded-lg shadow p-6">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-gray-500 text-sm">Major Donors</p>
@@ -402,39 +403,33 @@ export function VendorDonationManagement({ vendorId, vendorData, onBack }: Vendo
         )}
 
         {/* Tabs */}
-        <div className="bg-white rounded-lg shadow">
+        <div className="bg-[#FF8C42] white rounded-lg shadow">
           <div className="border-b border-gray-200">
             <div className="flex space-x-8 px-6">
-              <button
-                onClick={() => setActiveTab('donations')}
-                className={`py-4 px-2 border-b-2 transition-colors ${
+              <Button onClick={() => setActiveTab('donations')} className={`py-4 px-2 border-b-2 transition-colors ${
                   activeTab === 'donations'
                     ? 'border-blue-500 text-blue-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700'
                 }`}
               >
                 Donations
-              </button>
-              <button
-                onClick={() => setActiveTab('donors')}
-                className={`py-4 px-2 border-b-2 transition-colors ${
+              </Button>
+              <Button onClick={() => setActiveTab('donors')} className={`py-4 px-2 border-b-2 transition-colors ${
                   activeTab === 'donors'
                     ? 'border-blue-500 text-blue-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700'
                 }`}
               >
                 Donors
-              </button>
-              <button
-                onClick={() => setActiveTab('campaigns')}
-                className={`py-4 px-2 border-b-2 transition-colors ${
+              </Button>
+              <Button onClick={() => setActiveTab('campaigns')} className={`py-4 px-2 border-b-2 transition-colors ${
                   activeTab === 'campaigns'
                     ? 'border-blue-500 text-blue-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700'
                 }`}
               >
                 Campaigns
-              </button>
+              </Button>
             </div>
           </div>
 
@@ -443,13 +438,12 @@ export function VendorDonationManagement({ vendorId, vendorData, onBack }: Vendo
             <div className="p-6">
               <div className="flex justify-between mb-6">
                 <div></div>
-                <button
-                  onClick={() => setShowAddDonation(true)}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+                <Button onClick={() => setShowAddDonation(true)}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-[#FF8C42] blue-700 flex items-center gap-2"
                 >
                   <Plus size={20} />
                   Record Donation
-                </button>
+                </Button>
               </div>
 
               {loading ? (
@@ -478,7 +472,7 @@ export function VendorDonationManagement({ vendorId, vendorData, onBack }: Vendo
                               {donation.status.toUpperCase()}
                             </span>
                             {donation.taxBenefit && (
-                              <span className="px-2 py-1 bg-green-50 text-green-700 rounded text-xs">
+                              <span className="px-2 py-1 bg-[#FF8C42] green-50 text-green-700 rounded text-xs">
                                 80G Eligible
                               </span>
                             )}
@@ -511,7 +505,7 @@ export function VendorDonationManagement({ vendorId, vendorData, onBack }: Vendo
                               <p className="text-sm text-gray-600">Items:</p>
                               <div className="flex flex-wrap gap-2 mt-1">
                                 {donation.items.map((item, idx) => (
-                                  <span key={idx} className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs">
+                                  <span key={idx} className="px-2 py-1 bg-[#FF8C42] gray-100 text-gray-700 rounded text-xs">
                                     {item.name} ({item.quantity} {item.unit})
                                   </span>
                                 ))}
@@ -521,27 +515,24 @@ export function VendorDonationManagement({ vendorId, vendorData, onBack }: Vendo
                         </div>
                         <div className="flex gap-2">
                           {donation.status === 'pending' && (
-                            <button
-                              onClick={() => updateDonationStatus(donation.id, 'received')}
-                              className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+                            <Button onClick={() => updateDonationStatus(donation.id, 'received')}
+                              className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-[#FF8C42] blue-700 text-sm"
                             >
                               Mark Received
-                            </button>
+                            </Button>
                           )}
                           {donation.status === 'received' && (
-                            <button
-                              onClick={() => updateDonationStatus(donation.id, 'acknowledged')}
-                              className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 text-sm"
+                            <Button onClick={() => updateDonationStatus(donation.id, 'acknowledged')}
+                              className="px-3 py-1 bg-green-600 text-white rounded hover:bg-[#FF8C42] green-700 text-sm"
                             >
                               Send Thank You
-                            </button>
+                            </Button>
                           )}
-                          <button
-                            onClick={() => handleDeleteDonation(donation.id)}
-                            className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm"
+                          <Button onClick={() => handleDeleteDonation(donation.id)}
+                            className="px-3 py-1 bg-red-600 text-white rounded hover:bg-[#FF8C42] red-700 text-sm"
                           >
                             Delete
-                          </button>
+                          </Button>
                         </div>
                       </div>
                     </div>
@@ -592,7 +583,7 @@ export function VendorDonationManagement({ vendorId, vendorData, onBack }: Vendo
                       {donor.tags && donor.tags.length > 0 && (
                         <div className="flex flex-wrap gap-2 mt-3">
                           {donor.tags.map((tag, idx) => (
-                            <span key={idx} className="px-2 py-1 bg-purple-100 text-purple-700 rounded text-xs">
+                            <span key={idx} className="px-2 py-1 bg-[#FF8C42] purple-100 text-purple-700 rounded text-xs">
                               {tag}
                             </span>
                           ))}
@@ -610,13 +601,12 @@ export function VendorDonationManagement({ vendorId, vendorData, onBack }: Vendo
             <div className="p-6">
               <div className="flex justify-between mb-6">
                 <div></div>
-                <button
-                  onClick={() => setShowAddCampaign(true)}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+                <Button onClick={() => setShowAddCampaign(true)}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-[#FF8C42] blue-700 flex items-center gap-2"
                 >
                   <Plus size={20} />
                   Create Campaign
-                </button>
+                </Button>
               </div>
 
               {loading ? (
@@ -653,9 +643,9 @@ export function VendorDonationManagement({ vendorId, vendorData, onBack }: Vendo
                             <span className="text-gray-600">Progress</span>
                             <span className="text-gray-900">{progress.toFixed(1)}%</span>
                           </div>
-                          <div className="w-full bg-gray-200 rounded-full h-3">
+                          <div className="w-full bg-[#FF8C42] gray-200 rounded-full h-3">
                             <div
-                              className="bg-blue-600 h-3 rounded-full transition-all"
+                              className="bg-[#FF8C42] blue-600 h-3 rounded-full transition-all"
                               style={{ width: `${Math.min(progress, 100)}%` }}
                             />
                           </div>
@@ -693,8 +683,8 @@ export function VendorDonationManagement({ vendorId, vendorData, onBack }: Vendo
 
       {/* Add Donation Modal */}
       {showAddDonation && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black bg-[#FF8C42] opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-[#FF8C42] white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6">
               <h2 className="text-2xl text-gray-900 mb-4">Record Donation</h2>
               <form onSubmit={handleAddDonation} className="space-y-4">
@@ -812,23 +802,23 @@ export function VendorDonationManagement({ vendorId, vendorData, onBack }: Vendo
                               }}
                               className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
                             />
-                            <button
+                            <Button
                               type="button"
                               onClick={() => removeItemFromDonation(index)}
-                              className="px-2 bg-red-100 text-red-600 rounded hover:bg-red-200"
+                              className="px-2 bg-red-100 text-red-600 rounded hover:bg-[#FF8C42] red-200"
                             >
                               ×
-                            </button>
+                            </Button>
                           </div>
                         </div>
                       ))}
-                      <button
+                      <Button
                         type="button"
                         onClick={addItemToDonation}
-                        className="px-3 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 text-sm"
+                        className="px-3 py-2 bg-gray-100 text-gray-700 rounded hover:bg-[#FF8C42] gray-200 text-sm"
                       >
                         + Add Item
-                      </button>
+                      </Button>
                     </div>
                   )}
                   <div className="md:col-span-2">
@@ -853,19 +843,19 @@ export function VendorDonationManagement({ vendorId, vendorData, onBack }: Vendo
                   </label>
                 </div>
                 <div className="flex gap-4">
-                  <button
+                  <Button
                     type="submit"
-                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-[#FF8C42] blue-700"
                   >
                     Record Donation
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
                     onClick={() => setShowAddDonation(false)}
-                    className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+                    className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-[#FF8C42] gray-300"
                   >
                     Cancel
-                  </button>
+                  </Button>
                 </div>
               </form>
             </div>
@@ -875,8 +865,8 @@ export function VendorDonationManagement({ vendorId, vendorData, onBack }: Vendo
 
       {/* Add Campaign Modal */}
       {showAddCampaign && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-lg w-full">
+        <div className="fixed inset-0 bg-black bg-[#FF8C42] opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-[#FF8C42] white rounded-lg max-w-lg w-full">
             <div className="p-6">
               <h2 className="text-2xl text-gray-900 mb-4">Create Campaign</h2>
               <form onSubmit={handleAddCampaign} className="space-y-4">
@@ -935,19 +925,19 @@ export function VendorDonationManagement({ vendorId, vendorData, onBack }: Vendo
                   </div>
                 </div>
                 <div className="flex gap-4">
-                  <button
+                  <Button
                     type="submit"
-                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-[#FF8C42] blue-700"
                   >
                     Create Campaign
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
                     onClick={() => setShowAddCampaign(false)}
-                    className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+                    className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-[#FF8C42] gray-300"
                   >
                     Cancel
-                  </button>
+                  </Button>
                 </div>
               </form>
             </div>

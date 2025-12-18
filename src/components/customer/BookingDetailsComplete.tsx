@@ -113,9 +113,9 @@ export function BookingDetailsComplete({
   if (!booking) return <ErrorState message="Booking not found" onRetry={loadBookingDetails} />;
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20">
+    <div className="min-h-screen bg-[#FF8C42] gray-50 pb-20">
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-white border-b px-4 py-4">
+      <div className="sticky top-0 z-10 bg-[#FF8C42] white border-b px-4 py-4">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={onBack}>
             <ArrowLeft className="w-5 h-5" />
@@ -211,13 +211,13 @@ export function BookingDetailsComplete({
 
         {/* OTP Card (for upcoming bookings) */}
         {booking.showOTPs && booking.otps && !booking.otp.startUsed && (
-          <Card className="p-6 bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
+          <Card className="p-6 bg-[#FF8C42] gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
             <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
               <FileText className="w-5 h-5 text-blue-600" />
               Your Service OTPs
             </h3>
             <div className="grid grid-cols-2 gap-4">
-              <div className="bg-white p-4 rounded-lg border-2 border-green-200">
+              <div className="bg-[#FF8C42] white p-4 rounded-lg border-2 border-green-200">
                 <p className="text-xs text-gray-600 mb-1">Start OTP</p>
                 <p className="text-3xl font-bold text-gray-900 tracking-wider">
                   {booking.otps.start}
@@ -226,7 +226,7 @@ export function BookingDetailsComplete({
                   {booking.otps.startUsed ? '✓ Used' : 'Share when service starts'}
                 </p>
               </div>
-              <div className="bg-white p-4 rounded-lg border-2 border-red-200">
+              <div className="bg-[#FF8C42] white p-4 rounded-lg border-2 border-red-200">
                 <p className="text-xs text-gray-600 mb-1">End OTP</p>
                 <p className="text-3xl font-bold text-gray-900 tracking-wider">
                   {booking.otps.end}
@@ -322,7 +322,7 @@ export function BookingDetailsComplete({
             <Button
               onClick={() => setShowCancel(true)}
               variant="outline"
-              className="flex items-center gap-2 text-red-600 hover:bg-red-50"
+              className="flex items-center gap-2 text-red-600 hover:bg-[#FF8C42] red-50"
             >
               <Trash2 className="w-4 h-4" />
               Cancel
@@ -357,7 +357,7 @@ export function BookingDetailsComplete({
 function TimelineItem({ icon, label, value, extra }: any) {
   return (
     <div className="flex items-start gap-3">
-      <div className="p-1.5 bg-gray-100 rounded-full">{icon}</div>
+      <div className="p-1.5 bg-[#FF8C42] gray-100 rounded-full">{icon}</div>
       <div className="flex-1">
         <p className="text-sm font-medium text-gray-900">{label}</p>
         <p className="text-sm text-gray-600">{value}</p>

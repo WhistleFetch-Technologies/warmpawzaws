@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { X, Plus, MapPin, DollarSign, Save, Edit2, Trash2, Navigation, Calculator } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { toast } from 'sonner@2.0.3';
+import { Button } from '../ui/button';
 
 interface DistancePricingProps {
   vendorId: string;
@@ -236,9 +237,9 @@ export function VendorDistancePricing({ vendorId, onClose }: DistancePricingProp
               </h2>
               <p className="text-sm text-gray-600 mt-1">Configure pricing based on distance traveled</p>
             </div>
-            <button onClick={onClose} className="p-2 hover:bg-white rounded-full transition-colors">
+            <Button onClick={onClose} className="p-2 hover:bg-white rounded-full transition-colors">
               <X className="w-6 h-6 text-gray-500" />
-            </button>
+            </Button>
           </div>
 
           {/* Stats */}
@@ -261,20 +262,18 @@ export function VendorDistancePricing({ vendorId, onClose }: DistancePricingProp
         {/* Actions */}
         <div className="p-4 border-b border-gray-200 bg-gray-50">
           <div className="flex gap-3">
-            <button
-              onClick={() => setShowCreateModal(true)}
+            <Button onClick={() => setShowCreateModal(true)}
               className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
             >
               <Plus className="w-4 h-4" />
               New Pricing Rule
-            </button>
-            <button
-              onClick={() => setShowCalculator(true)}
+            </Button>
+            <Button onClick={() => setShowCalculator(true)}
               className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
             >
               <Calculator className="w-4 h-4" />
               Price Calculator
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -289,12 +288,11 @@ export function VendorDistancePricing({ vendorId, onClose }: DistancePricingProp
             <div className="text-center py-12">
               <Navigation className="w-16 h-16 text-gray-300 mx-auto mb-3" />
               <p className="text-gray-600">No pricing rules configured</p>
-              <button
-                onClick={() => setShowCreateModal(true)}
+              <Button onClick={() => setShowCreateModal(true)}
                 className="mt-4 px-6 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-medium transition-colors"
               >
                 Create First Rule
-              </button>
+              </Button>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -315,8 +313,7 @@ export function VendorDistancePricing({ vendorId, onClose }: DistancePricingProp
                       </div>
                     </div>
                     <div className="flex gap-1">
-                      <button
-                        onClick={() => {
+                      <Button onClick={() => {
                           setSelectedRule(rule);
                           setFormData(rule as any);
                           setShowCreateModal(true);
@@ -324,13 +321,12 @@ export function VendorDistancePricing({ vendorId, onClose }: DistancePricingProp
                         className="p-2 hover:bg-gray-100 rounded-lg"
                       >
                         <Edit2 className="w-4 h-4 text-gray-600" />
-                      </button>
-                      <button
-                        onClick={() => deleteRule(rule.id)}
+                      </Button>
+                      <Button onClick={() => deleteRule(rule.id)}
                         className="p-2 hover:bg-red-50 rounded-lg"
                       >
                         <Trash2 className="w-4 h-4 text-red-600" />
-                      </button>
+                      </Button>
                     </div>
                   </div>
 
@@ -377,25 +373,22 @@ export function VendorDistancePricing({ vendorId, onClose }: DistancePricingProp
 
                   {/* Actions */}
                   <div className="flex gap-2 mt-3">
-                    <button
-                      onClick={() => toggleRuleStatus(rule.id, !rule.isActive)}
-                      className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
+                    <Button onClick={() => toggleRuleStatus(rule.id, !rule.isActive)} className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
                         rule.isActive
                           ? 'bg-gray-100 hover:bg-gray-200 text-gray-700'
                           : 'bg-green-600 hover:bg-green-700 text-white'
                       }`}
                     >
                       {rule.isActive ? 'Deactivate' : 'Activate'}
-                    </button>
-                    <button
-                      onClick={() => {
+                    </Button>
+                    <Button onClick={() => {
                         setSelectedRule(rule);
                         setShowCalculator(true);
                       }}
                       className="flex-1 py-2 px-4 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg font-medium transition-colors"
                     >
                       Calculate
-                    </button>
+                    </Button>
                   </div>
                 </div>
               ))}
@@ -495,8 +488,7 @@ export function VendorDistancePricing({ vendorId, onClose }: DistancePricingProp
               </div>
 
               <div className="flex gap-2 mt-6">
-                <button
-                  onClick={() => {
+                <Button onClick={() => {
                     setShowCreateModal(false);
                     setSelectedRule(null);
                     resetForm();
@@ -504,14 +496,13 @@ export function VendorDistancePricing({ vendorId, onClose }: DistancePricingProp
                   className="flex-1 py-2 px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition-colors"
                 >
                   Cancel
-                </button>
-                <button
-                  onClick={saveRule}
+                </Button>
+                <Button onClick={saveRule}
                   className="flex-1 py-2 px-4 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
                 >
                   <Save className="w-4 h-4" />
                   {selectedRule ? 'Update' : 'Create'}
-                </button>
+                </Button>
               </div>
             </div>
           </div>
@@ -539,12 +530,11 @@ export function VendorDistancePricing({ vendorId, onClose }: DistancePricingProp
                 />
               </div>
 
-              <button
-                onClick={runCalculator}
+              <Button onClick={runCalculator}
                 className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors mb-4"
               >
                 Calculate Price
-              </button>
+              </Button>
 
               {calcResult && (
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-2">
@@ -571,8 +561,7 @@ export function VendorDistancePricing({ vendorId, onClose }: DistancePricingProp
                 </div>
               )}
 
-              <button
-                onClick={() => {
+              <Button onClick={() => {
                   setShowCalculator(false);
                   setSelectedRule(null);
                   setCalcDistance('');
@@ -581,7 +570,7 @@ export function VendorDistancePricing({ vendorId, onClose }: DistancePricingProp
                 className="w-full mt-4 py-2 px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition-colors"
               >
                 Close
-              </button>
+              </Button>
             </div>
           </div>
         )}

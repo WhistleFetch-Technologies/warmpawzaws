@@ -3,6 +3,7 @@ import { Search, X, Clock, TrendingUp, ChevronRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom'; // Assuming react-router
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { Badge } from '../ui/badge';
+// Brand color: #FF8C42
 
 interface SearchResult {
   id: string;

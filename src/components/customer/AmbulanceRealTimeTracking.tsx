@@ -13,6 +13,7 @@ import {
 import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { GoogleMapsTracking } from './GoogleMapsTracking';
+// Brand color: #FF8C42
 
 const BASE_URL = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
 

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Briefcase, Plus, X, Edit2, Trash2, Camera, Award, Calendar, DollarSign, Star } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { toast } from 'sonner@2.0.3';
+import { Button } from '../ui/button';
 
 interface PortfolioItem {
   id: string;
@@ -176,17 +177,16 @@ export function VendorPortfolioManagement({ vendorId, vendorData, onBack }: Vend
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
                 {onBack && (
-                  <button onClick={onBack} className="text-gray-600">
+                  <Button onClick={onBack} className="text-gray-600">
                     <X className="w-6 h-6" />
-                  </button>
+                  </Button>
                 )}
                 <div>
                   <h1 className="text-xl font-bold text-gray-900">Portfolio</h1>
                   <p className="text-sm text-gray-500">{portfolio.length} projects</p>
                 </div>
               </div>
-              <button
-                onClick={() => {
+              <Button onClick={() => {
                   setEditingItem(null);
                   setFormData({
                     title: '',
@@ -203,13 +203,13 @@ export function VendorPortfolioManagement({ vendorId, vendorData, onBack }: Vend
               >
                 <Plus className="w-4 h-4" />
                 Add
-              </button>
+              </Button>
             </div>
 
             {/* Category Filter */}
             <div className="flex gap-2 overflow-x-auto pb-2">
               {categories.map(cat => (
-                <button
+                <Button
                   key={cat.id}
                   onClick={() => setFilterCategory(cat.id)}
                   className={`flex-shrink-0 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
@@ -219,7 +219,7 @@ export function VendorPortfolioManagement({ vendorId, vendorData, onBack }: Vend
                   }`}
                 >
                   {cat.label}
-                </button>
+                </Button>
               ))}
             </div>
           </div>
@@ -232,12 +232,11 @@ export function VendorPortfolioManagement({ vendorId, vendorData, onBack }: Vend
               <Briefcase className="w-16 h-16 text-gray-300 mx-auto mb-4" />
               <h3 className="text-lg font-semibold text-gray-900 mb-2">No Portfolio Items</h3>
               <p className="text-gray-500 mb-4">Showcase your best work to attract customers</p>
-              <button
-                onClick={() => setModalOpen(true)}
+              <Button onClick={() => setModalOpen(true)}
                 className="bg-orange-500 text-white px-6 py-2 rounded-lg hover:bg-orange-600"
               >
                 Add First Project
-              </button>
+              </Button>
             </div>
           ) : (
             <div className="space-y-4">
@@ -273,18 +272,16 @@ export function VendorPortfolioManagement({ vendorId, vendorData, onBack }: Vend
                         </span>
                       </div>
                       <div className="flex gap-1">
-                        <button
-                          onClick={() => handleEdit(item)}
+                        <Button onClick={() => handleEdit(item)}
                           className="p-2 hover:bg-gray-100 rounded-lg text-gray-600"
                         >
                           <Edit2 className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(item.id)}
+                        </Button>
+                        <Button onClick={() => handleDelete(item.id)}
                           className="p-2 hover:bg-red-50 rounded-lg text-red-500"
                         >
                           <Trash2 className="w-4 h-4" />
-                        </button>
+                        </Button>
                       </div>
                     </div>
 
@@ -336,9 +333,9 @@ export function VendorPortfolioManagement({ vendorId, vendorData, onBack }: Vend
                   <h2 className="text-xl font-bold text-gray-900">
                     {editingItem ? 'Edit Project' : 'Add Project'}
                   </h2>
-                  <button onClick={() => setModalOpen(false)}>
+                  <Button onClick={() => setModalOpen(false)}>
                     <X className="w-6 h-6 text-gray-400" />
-                  </button>
+                  </Button>
                 </div>
               </div>
 
@@ -442,19 +439,19 @@ export function VendorPortfolioManagement({ vendorId, vendorData, onBack }: Vend
                 </div>
 
                 <div className="flex gap-3 pt-4 border-t">
-                  <button
+                  <Button
                     type="button"
                     onClick={() => setModalOpen(false)}
                     className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
                   >
                     Cancel
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="submit"
                     className="flex-1 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600"
                   >
                     {editingItem ? 'Update' : 'Add'} Project
-                  </button>
+                  </Button>
                 </div>
               </form>
             </div>

@@ -101,15 +101,15 @@ export function MedicineDeliveryOrdering({ customerId, petId, onBack, onSuccess 
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      <div className="bg-white p-4 border-b sticky top-0 z-10 flex items-center gap-3">
+    <div className="min-h-screen bg-[#FF8C42] gray-50 flex flex-col">
+      <div className="bg-[#FF8C42] white p-4 border-b sticky top-0 z-10 flex items-center gap-3">
         <button onClick={onBack}><Pill className="w-6 h-6 text-gray-600" /></button>
         <h1 className="text-lg font-bold text-gray-900">Pet Pharmacy</h1>
       </div>
 
       <div className="p-4 flex-1 space-y-6">
           {/* Quick Action: Upload Prescription */}
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+          <div className="bg-[#FF8C42] blue-50 border border-blue-200 rounded-xl p-4">
               <div className="flex gap-3">
                   <FileText className="w-10 h-10 text-blue-600" />
                   <div className="flex-1">
@@ -120,7 +120,7 @@ export function MedicineDeliveryOrdering({ customerId, petId, onBack, onSuccess 
                           <input type="file" id="rx-upload" className="hidden" onChange={handleUpload} accept="image/*,.pdf" />
                           <Button 
                             variant="outline" 
-                            className="w-full bg-white border-blue-300 text-blue-700 hover:bg-blue-50"
+                            className="w-full bg-white border-blue-300 text-blue-700 hover:bg-[#FF8C42] blue-50"
                             onClick={() => document.getElementById('rx-upload')?.click()}
                           >
                               {prescriptionFile ? (
@@ -150,24 +150,24 @@ export function MedicineDeliveryOrdering({ customerId, petId, onBack, onSuccess 
                   {medicines.map(med => {
                       const inCart = cart.find(i => i.id === med.id);
                       return (
-                          <div key={med.id} className="bg-white p-3 rounded-xl border border-gray-100 flex items-center justify-between shadow-sm">
+                          <div key={med.id} className="bg-[#FF8C42] white p-3 rounded-xl border border-gray-100 flex items-center justify-between shadow-sm">
                               <div>
                                   <h4 className="font-semibold text-gray-900">{med.name}</h4>
                                   <div className="flex items-center gap-2 mt-1">
-                                      <span className="text-xs bg-gray-100 px-2 py-0.5 rounded text-gray-600">{med.type}</span>
-                                      {med.prescriptionRequired && <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded">Rx Required</span>}
+                                      <span className="text-xs bg-[#FF8C42] gray-100 px-2 py-0.5 rounded text-gray-600">{med.type}</span>
+                                      {med.prescriptionRequired && <span className="text-xs bg-[#FF8C42] red-100 text-red-600 px-2 py-0.5 rounded">Rx Required</span>}
                                   </div>
                                   <p className="text-sm font-bold text-gray-900 mt-1">₹{med.price}</p>
                               </div>
                               
                               {inCart ? (
-                                  <div className="flex items-center gap-3 bg-blue-50 px-2 py-1 rounded-lg">
+                                  <div className="flex items-center gap-3 bg-[#FF8C42] blue-50 px-2 py-1 rounded-lg">
                                       <button onClick={() => removeFromCart(med.id)} className="w-6 h-6 flex items-center justify-center text-blue-600 font-bold">-</button>
                                       <span className="font-semibold text-blue-900">{inCart.qty}</span>
                                       <button onClick={() => addToCart(med)} className="w-6 h-6 flex items-center justify-center text-blue-600 font-bold">+</button>
                                   </div>
                               ) : (
-                                  <Button size="sm" className="bg-blue-600 hover:bg-blue-700 h-8" onClick={() => addToCart(med)}>
+                                  <Button size="sm" className="bg-blue-600 hover:bg-[#FF8C42] blue-700 h-8" onClick={() => addToCart(med)}>
                                       ADD
                                   </Button>
                               )}
@@ -180,14 +180,14 @@ export function MedicineDeliveryOrdering({ customerId, petId, onBack, onSuccess 
 
       {/* Cart Footer */}
       {(cart.length > 0 || prescriptionFile) && (
-          <div className="bg-white border-t p-4 shadow-lg sticky bottom-0">
+          <div className="bg-[#FF8C42] white border-t p-4 shadow-lg sticky bottom-0">
               <div className="flex justify-between items-center mb-3">
                   <div>
                       <p className="text-sm text-gray-500">{cart.length} Items</p>
                       <p className="text-xl font-bold text-gray-900">₹{cart.reduce((sum, i) => sum + (i.price * i.qty), 0)}</p>
                   </div>
                   <Button 
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-8 h-12 text-lg"
+                    className="bg-blue-600 hover:bg-[#FF8C42] blue-700 text-white px-8 h-12 text-lg"
                     onClick={placeOrder}
                     disabled={orderProcessing}
                   >

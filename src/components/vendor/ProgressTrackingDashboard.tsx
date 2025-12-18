@@ -560,9 +560,9 @@ export function ProgressTrackingDashboard({ vendorId, roleType }: { vendorId: st
               <div className="border-b border-gray-200">
                 <div className="flex gap-4">
                   {['Milestones', 'Measurements', 'Notes', 'Media', 'Goals'].map(tab => (
-                    <button key={tab} className="px-4 py-2 border-b-2 border-[#FF8C42] text-[#FF8C42] font-semibold">
+                    <Button key={tab} className="px-4 py-2 border-b-2 border-[#FF8C42] text-[#FF8C42] font-semibold">
                       {tab}
-                    </button>
+                    </Button>
                   ))}
                 </div>
               </div>
@@ -746,7 +746,7 @@ export function ProgressTrackingDashboard({ vendorId, roleType }: { vendorId: st
               <Label>Session Rating</Label>
               <div className="flex gap-2 mt-2">
                 {[1, 2, 3, 4, 5].map((rating) => (
-                  <button
+                  <Button
                     key={rating}
                     onClick={() => setNewNote({...newNote, rating})}
                     className="p-2"
@@ -754,7 +754,7 @@ export function ProgressTrackingDashboard({ vendorId, roleType }: { vendorId: st
                     <Heart
                       className={`w-6 h-6 ${rating <= newNote.rating ? 'fill-[#FF8C42] text-[#FF8C42]' : 'text-gray-300'}`}
                     />
-                  </button>
+                  </Button>
                 ))}
               </div>
             </div>

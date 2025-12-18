@@ -120,9 +120,9 @@ export function VendorConsultationScreen({ vendorId, vendorData, onBack }: Vendo
         {/* Header */}
         <div className="p-4 bg-white border-b border-gray-200 sticky top-0 z-10">
           <div className="flex items-center gap-3 mb-4">
-            <button onClick={onBack} className="w-8 h-8 flex items-center justify-center">
+            <Button onClick={onBack} className="w-8 h-8 flex items-center justify-center">
               <ArrowLeft className="w-5 h-5 text-gray-700" />
-            </button>
+            </Button>
             <div className="flex-1">
               <h1 className="font-semibold text-gray-900">{vendorData?.businessName || vendorData?.fullName || 'Consultation'}</h1>
               <p className="text-xs text-gray-500">{vendorData?.address || 'India'}</p>
@@ -135,20 +135,18 @@ export function VendorConsultationScreen({ vendorId, vendorData, onBack }: Vendo
 
           {/* Action Buttons */}
           <div className="flex gap-3">
-            <button 
-              onClick={() => setShowHistory(false)}
+            <Button onClick={() => setShowHistory(false)}
               className="flex-1 flex items-center justify-center gap-2 h-10 border-2 border-[#FF8C42] rounded-xl bg-white"
             >
               <Plus className="w-4 h-4 text-[#FF8C42]" />
               <span className="text-sm font-medium text-[#FF8C42]">Create New</span>
-            </button>
-            <button 
-              onClick={() => setShowHistory(true)}
+            </Button>
+            <Button onClick={() => setShowHistory(true)}
               className="flex items-center justify-center gap-2 px-4 h-10 border border-gray-300 rounded-xl bg-white"
             >
               <Clock className="w-4 h-4 text-gray-600" />
               <span className="text-sm text-gray-600">History</span>
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -211,12 +209,11 @@ export function VendorConsultationScreen({ vendorId, vendorData, onBack }: Vendo
                   <div key={med.id} className="bg-blue-50 border border-blue-200 rounded-xl p-3">
                     <div className="flex items-start justify-between mb-2">
                       <h3 className="font-semibold text-gray-900">{med.name}</h3>
-                      <button
-                        onClick={() => setMedications(medications.filter(m => m.id !== med.id))}
+                      <Button onClick={() => setMedications(medications.filter(m => m.id !== med.id))}
                         className="text-red-500 text-xs"
                       >
                         Remove
-                      </button>
+                      </Button>
                     </div>
                     <div className="text-sm text-gray-600 space-y-1">
                       <div>Dosage: {med.dosage} | Duration: {med.duration}</div>
@@ -229,15 +226,14 @@ export function VendorConsultationScreen({ vendorId, vendorData, onBack }: Vendo
 
             {/* Add Medication Section */}
             {!showMedicationForm ? (
-              <button
-                onClick={() => setShowMedicationForm(true)}
+              <Button onClick={() => setShowMedicationForm(true)}
                 className="w-full flex items-center justify-center gap-2 p-4 border-2 border-dashed border-gray-300 rounded-xl hover:border-[#FF8C42] hover:bg-orange-50 transition-colors"
               >
                 <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
                   <Plus className="w-5 h-5 text-blue-600" />
                 </div>
                 <span className="text-sm font-medium text-gray-700">Add Medication</span>
-              </button>
+              </Button>
             ) : (
               <div className="bg-white rounded-xl border border-gray-200 p-4">
                 <div className="flex items-center gap-2 mb-4">

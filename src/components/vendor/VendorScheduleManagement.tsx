@@ -444,9 +444,9 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
         <div className="sticky top-0 z-10 bg-white border-b border-gray-200">
           <div className="p-4">
             <div className="flex items-center justify-between mb-4">
-              <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+              <Button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
                 <ChevronLeft className="w-6 h-6" />
-              </button>
+              </Button>
               <h1 className="flex-1 text-center font-semibold text-gray-900">Advanced Schedule</h1>
               <div className="w-10" />
             </div>
@@ -467,16 +467,14 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
                     </div>
                   </div>
                 </div>
-                <button
-                  onClick={toggleOnlineStatus}
-                  className={`relative w-16 h-8 rounded-full transition-colors ${
+                <Button variant="ghost" size="icon" onClick={toggleOnlineStatus} className={`relative w-16 h-8 rounded-full transition-colors ${
                     isOnline ? 'bg-green-500' : 'bg-gray-300'
                   }`}
                 >
                   <div className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-transform ${
                     isOnline ? 'translate-x-9' : 'translate-x-1'
                   }`} />
-                </button>
+                </Button>
               </div>
             </div>
           </div>
@@ -486,7 +484,7 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
         <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
           <div className="flex gap-2 overflow-x-auto pb-2 hide-scrollbar">
             {DAYS.map(day => (
-              <button
+              <Button
                 key={day.value}
                 onClick={() => setSelectedDay(day.value)}
                 className={`flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
@@ -496,13 +494,12 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
                 }`}
               >
                 {day.label}
-              </button>
+              </Button>
             ))}
           </div>
           
           {/* Debug Button */}
-          <button
-            onClick={() => {
+          <Button onClick={() => {
               console.log('🐛 DEBUG STATE:');
               console.log('  - availability:', availability);
               console.log('  - availability.length:', availability?.length);
@@ -513,7 +510,7 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
             className="mt-2 w-full py-1 bg-purple-100 text-purple-700 text-xs rounded"
           >
             🐛 Debug: Log Current State
-          </button>
+          </Button>
         </div>
 
         {/* Schedule Configuration */}
@@ -570,12 +567,11 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
                           )}
                         </div>
                       </div>
-                      <button
-                        onClick={() => removeServiceConfig(selectedDay, config.serviceStyle)}
+                      <Button onClick={() => removeServiceConfig(selectedDay, config.serviceStyle)}
                         className="p-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition-colors"
                       >
                         <Trash2 className="w-4 h-4" />
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 ))}
@@ -621,20 +617,17 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => toggleTimeWindow(selectedDay, window.id)}
-                          className={`p-2 rounded-lg transition-colors ${
+                        <Button onClick={() => toggleTimeWindow(selectedDay, window.id)} className={`p-2 rounded-lg transition-colors ${
                             window.isEnabled ? 'bg-green-100 text-green-600' : 'bg-gray-200 text-gray-400'
                           }`}
                         >
                           {window.isEnabled ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
-                        </button>
-                        <button
-                          onClick={() => removeTimeWindow(selectedDay, window.id)}
+                        </Button>
+                        <Button onClick={() => removeTimeWindow(selectedDay, window.id)}
                           className="p-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition-colors"
                         >
                           <Trash2 className="w-4 h-4" />
-                        </button>
+                        </Button>
                       </div>
                     </div>
 

@@ -4,6 +4,7 @@ import {
   DollarSign, Eye, Percent, ArrowUp, ArrowDown, Clock
 } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { Button } from '../../ui/button';
 
 interface SellerDashboardProps {
   sellerId: string;
@@ -156,7 +157,7 @@ export function SellerDashboard({ sellerId, sellerName }: SellerDashboardProps) 
         <div className="p-6 border-b border-gray-200">
           <div className="flex items-center justify-between">
             <h2 className="text-black">Recent Orders</h2>
-            <button className="text-sm text-[#FF8C42] hover:underline">View All</button>
+            <Button className="text-sm text-[#FF8C42] hover:underline">View All</Button>
           </div>
         </div>
         <div className="divide-y divide-gray-200">
@@ -208,7 +209,7 @@ export function SellerDashboard({ sellerId, sellerName }: SellerDashboardProps) 
               <p className="font-medium text-red-900">Low Stock Alert</p>
               <p className="text-sm text-red-700 mt-1">
                 You have {analytics.lowStockProducts} product(s) running low on stock. 
-                <button className="ml-1 underline hover:no-underline">Update inventory</button>
+                <Button className="ml-1 underline hover:no-underline">Update inventory</Button>
               </p>
             </div>
           </div>

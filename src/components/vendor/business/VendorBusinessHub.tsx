@@ -22,16 +22,16 @@ export function VendorBusinessHub({ vendorId, vendorData, onBack }: VendorBusine
   const [activeTab, setActiveTab] = useState(isVet ? 'vet-services' : 'inventory');
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="w-full max-w-[430px] mx-auto bg-white min-h-screen">
+    <div className="min-h-screen bg-[#FF8C42] gray-50">
+      <div className="w-full max-w-[430px] mx-auto bg-[#FF8C42] white min-h-screen">
         {/* Header */}
-        <div className="bg-gradient-to-r from-slate-900 to-slate-800 p-6 text-white shadow-lg">
+        <div className="bg-[#FF8C42] gradient-to-r from-slate-900 to-slate-800 p-6 text-white shadow-lg">
           <div className="flex items-center gap-4 mb-4">
             <Button 
               variant="ghost" 
               size="icon" 
               onClick={onBack} 
-              className="text-white/70 hover:text-white hover:bg-white/10"
+              className="text-white/70 hover:text-white hover:bg-[#FF8C42] white/10"
             >
               <ArrowLeft className="w-6 h-6" />
             </Button>
@@ -46,7 +46,7 @@ export function VendorBusinessHub({ vendorId, vendorData, onBack }: VendorBusine
           {!isVet && (
             <div className="flex gap-4 text-xs text-white/60 border-t border-white/10 pt-4 mt-2">
               <div className="flex items-center gap-2">
-                <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
+                <div className="w-2 h-2 bg-[#FF8C42] yellow-500 rounded-full"></div>
                 5 Low Stock
               </div>
               <div className="flex items-center gap-2">
@@ -64,7 +64,7 @@ export function VendorBusinessHub({ vendorId, vendorData, onBack }: VendorBusine
               {isVet && (
                 <TabsTrigger 
                   value="vet-services"
-                  className="flex items-center justify-center gap-2 py-2.5 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-lg transition-all"
+                  className="flex items-center justify-center gap-2 py-2.5 data-[state=active]:bg-[#FF8C42] white data-[state=active]:shadow-sm rounded-lg transition-all"
                 >
                   <Stethoscope className="w-4 h-4" />
                   Services
@@ -74,7 +74,7 @@ export function VendorBusinessHub({ vendorId, vendorData, onBack }: VendorBusine
               {/* For All: Show Inventory Tab */}
               <TabsTrigger 
                 value="inventory"
-                className="flex items-center justify-center gap-2 py-2.5 data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-lg transition-all"
+                className="flex items-center justify-center gap-2 py-2.5 data-[state=active]:bg-[#FF8C42] white data-[state=active]:shadow-sm rounded-lg transition-all"
               >
                 <Package className="w-4 h-4" />
                 {isVet ? 'Pharmacy' : 'Inventory'}
@@ -105,7 +105,7 @@ export function VendorBusinessHub({ vendorId, vendorData, onBack }: VendorBusine
             <TabsContent value="inventory" className="animate-in fade-in slide-in-from-bottom-4 duration-500">
               <div className="pb-20">
                 {isVet && (
-                  <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="mb-4 p-4 bg-[#FF8C42] blue-50 border border-blue-200 rounded-lg">
                     <h3 className="font-semibold text-blue-900 mb-1">Pharmacy Inventory</h3>
                     <p className="text-sm text-blue-700">
                       Manage medicines, vaccines, and medical supplies

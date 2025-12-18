@@ -7,6 +7,7 @@ import { Ambulance, Microscope, Pill, MapPin, Clock, Star, Navigation, AlertCirc
 import { toast } from 'sonner@2.0.3';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { motion, AnimatePresence } from 'motion/react';
+// Brand color: #FF8C42
 
 interface ServiceProvider {
   id: string;

@@ -15,6 +15,7 @@
 import React, { useState, useEffect } from 'react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { Award, Gift, Star, TrendingUp, Crown, Zap, History, ShoppingBag, Sparkles } from 'lucide-react';
+// Brand color: #FF8C42
 
 interface LoyaltyProfile {
   customerId: string;

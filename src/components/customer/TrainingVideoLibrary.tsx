@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+// Brand color: #FF8C42
 import { Play, Eye, Heart, Clock, Filter } from 'lucide-react';
 import { Card } from '../ui/card';
 import { Badge } from '../ui/badge';

@@ -377,9 +377,9 @@ export function ResortManagementDashboard({
         {/* Header */}
         <div className="p-4 bg-gradient-to-r from-teal-600 to-cyan-600 text-white">
           <div className="flex items-center gap-3 mb-3">
-            <button onClick={onBack} className="w-8 h-8 flex items-center justify-center">
+            <Button onClick={onBack} className="w-8 h-8 flex items-center justify-center">
               <ArrowLeft className="w-5 h-5" />
-            </button>
+            </Button>
             <div className="flex-1">
               <h1 className="font-semibold">Pet Resort Management</h1>
               <p className="text-sm opacity-90">{vendorData?.businessName}</p>
@@ -388,36 +388,30 @@ export function ResortManagementDashboard({
 
           {/* Tabs */}
           <div className="flex gap-2 mt-4">
-            <button
-              onClick={() => setActiveTab('rooms')}
-              className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
+            <Button onClick={() => setActiveTab('rooms')} className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
                 activeTab === 'rooms'
                   ? 'bg-white text-teal-600'
                   : 'bg-white/20 text-white hover:bg-white/30'
               }`}
             >
               Rooms
-            </button>
-            <button
-              onClick={() => setActiveTab('bookings')}
-              className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
+            </Button>
+            <Button onClick={() => setActiveTab('bookings')} className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
                 activeTab === 'bookings'
                   ? 'bg-white text-teal-600'
                   : 'bg-white/20 text-white hover:bg-white/30'
               }`}
             >
               Bookings
-            </button>
-            <button
-              onClick={() => setActiveTab('amenities')}
-              className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
+            </Button>
+            <Button onClick={() => setActiveTab('amenities')} className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
                 activeTab === 'amenities'
                   ? 'bg-white text-teal-600'
                   : 'bg-white/20 text-white hover:bg-white/30'
               }`}
             >
               Amenities
-            </button>
+            </Button>
           </div>
         </div>
 

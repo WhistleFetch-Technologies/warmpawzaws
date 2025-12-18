@@ -11,6 +11,7 @@ import {
 import { toast } from 'sonner@2.0.3';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { PetCafeTableBooking } from './booking/PetCafeTableBooking';
+// Brand color: #FF8C42
 
 interface CafeDetails {
   id: string;

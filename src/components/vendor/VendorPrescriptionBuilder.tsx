@@ -199,12 +199,11 @@ export function VendorPrescriptionBuilder({
             </h2>
             <p className="text-sm text-gray-600">{petName} - {customerName}</p>
           </div>
-          <button
-            onClick={onClose}
+          <Button onClick={onClose}
             className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
           >
             <X className="w-5 h-5 text-gray-600" />
-          </button>
+          </Button>
         </div>
 
         <div className="p-6 space-y-6 pb-24">
@@ -301,25 +300,23 @@ export function VendorPrescriptionBuilder({
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <h3 className="font-semibold text-gray-800">Medications</h3>
-                <button
-                  onClick={addMedication}
+                <Button onClick={addMedication}
                   className="text-[#FF8C42] flex items-center gap-1 text-sm hover:text-[#FF7A2F]"
                 >
                   <Plus className="w-4 h-4" />
                   Add Medication
-                </button>
+                </Button>
               </div>
               
               {medications.map((med, idx) => (
                 <div key={idx} className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-semibold text-gray-700">Medication {idx + 1}</span>
-                    <button
-                      onClick={() => removeMedication(idx)}
+                    <Button onClick={() => removeMedication(idx)}
                       className="text-red-500 hover:text-red-700"
                     >
                       <Trash2 className="w-4 h-4" />
-                    </button>
+                    </Button>
                   </div>
                   
                   <input
@@ -372,25 +369,23 @@ export function VendorPrescriptionBuilder({
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <h3 className="font-semibold text-gray-800">Products Used</h3>
-                <button
-                  onClick={addProduct}
+                <Button onClick={addProduct}
                   className="text-[#FF8C42] flex items-center gap-1 text-sm hover:text-[#FF7A2F]"
                 >
                   <Plus className="w-4 h-4" />
                   Add Product
-                </button>
+                </Button>
               </div>
               
               {productsUsed.map((product, idx) => (
                 <div key={idx} className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-semibold text-gray-700">Product {idx + 1}</span>
-                    <button
-                      onClick={() => removeProduct(idx)}
+                    <Button onClick={() => removeProduct(idx)}
                       className="text-red-500 hover:text-red-700"
                     >
                       <Trash2 className="w-4 h-4" />
-                    </button>
+                    </Button>
                   </div>
                   
                   <input
@@ -426,25 +421,23 @@ export function VendorPrescriptionBuilder({
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <h3 className="font-semibold text-gray-800">Tests Recommended</h3>
-                <button
-                  onClick={addTest}
+                <Button onClick={addTest}
                   className="text-[#FF8C42] flex items-center gap-1 text-sm hover:text-[#FF7A2F]"
                 >
                   <Plus className="w-4 h-4" />
                   Add Test
-                </button>
+                </Button>
               </div>
               
               {testsRecommended.map((test, idx) => (
                 <div key={idx} className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-semibold text-gray-700">Test {idx + 1}</span>
-                    <button
-                      onClick={() => removeTest(idx)}
+                    <Button onClick={() => removeTest(idx)}
                       className="text-red-500 hover:text-red-700"
                     >
                       <Trash2 className="w-4 h-4" />
-                    </button>
+                    </Button>
                   </div>
                   
                   <input

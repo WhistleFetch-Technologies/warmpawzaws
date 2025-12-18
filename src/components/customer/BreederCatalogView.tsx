@@ -109,16 +109,16 @@ export function BreederCatalogView({ phone, onBack, onViewDetails, onNavigateToA
   );
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-[#FF8C42] gray-50">
       {/* Header */}
-      <div className="bg-white sticky top-0 z-10 shadow-sm">
+      <div className="bg-[#FF8C42] white sticky top-0 z-10 shadow-sm">
         <div className="p-4 flex items-center gap-3 border-b">
           <button onClick={onBack}><ArrowLeft className="w-6 h-6 text-gray-600" /></button>
           <div className="flex-1">
              <h1 className="text-lg font-bold text-gray-900">Find a Pet</h1>
              <p className="text-xs text-gray-500">Verified Breeders Only</p>
           </div>
-          <div className="bg-green-100 text-green-700 px-2 py-1 rounded-full text-xs font-semibold flex items-center gap-1">
+          <div className="bg-[#FF8C42] green-100 text-green-700 px-2 py-1 rounded-full text-xs font-semibold flex items-center gap-1">
              <ShieldCheck className="w-3 h-3" /> Verified
           </div>
         </div>
@@ -128,7 +128,7 @@ export function BreederCatalogView({ phone, onBack, onViewDetails, onNavigateToA
                 <Search className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
                 <Input 
                     placeholder="Search breed, e.g. Golden Retriever" 
-                    className="pl-9 bg-gray-100 border-none"
+                    className="pl-9 bg-[#FF8C42] gray-100 border-none"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                 />
@@ -169,7 +169,7 @@ export function BreederCatalogView({ phone, onBack, onViewDetails, onNavigateToA
                         <div className="flex h-32">
                             <div className="w-32 relative">
                                 <img src={animal.image} className="w-full h-full object-cover" />
-                                <div className="absolute top-2 left-2 bg-white/90 px-1.5 py-0.5 rounded text-[10px] font-bold">
+                                <div className="absolute top-2 left-2 bg-[#FF8C42] white/90 px-1.5 py-0.5 rounded text-[10px] font-bold">
                                     {animal.age}
                                 </div>
                             </div>
@@ -181,11 +181,11 @@ export function BreederCatalogView({ phone, onBack, onViewDetails, onNavigateToA
                                     </div>
                                     <p className="text-xs text-gray-500 mb-1">{animal.vendorName}</p>
                                     <div className="flex gap-2 mt-1">
-                                        <Badge variant="outline" className="text-[10px] h-5 px-1.5 bg-blue-50 text-blue-700 border-blue-100">
+                                        <Badge variant="outline" className="text-[10px] h-5 px-1.5 bg-[#FF8C42] blue-50 text-blue-700 border-blue-100">
                                             {animal.gender}
                                         </Badge>
                                         {animal.certified && (
-                                            <Badge variant="outline" className="text-[10px] h-5 px-1.5 bg-green-50 text-green-700 border-green-100 flex items-center gap-0.5">
+                                            <Badge variant="outline" className="text-[10px] h-5 px-1.5 bg-[#FF8C42] green-50 text-green-700 border-green-100 flex items-center gap-0.5">
                                                 <Award className="w-2 h-2" /> KCI
                                             </Badge>
                                         )}
@@ -196,7 +196,7 @@ export function BreederCatalogView({ phone, onBack, onViewDetails, onNavigateToA
                                         <p className="text-xs text-gray-400">Price</p>
                                         <p className="font-bold text-gray-900">₹{animal.price.toLocaleString()}</p>
                                     </div>
-                                    <Button size="sm" className="h-8 bg-gray-900 text-white text-xs" onClick={() => {
+                                    <Button size="sm" className="h-8 bg-[#FF8C42] gray-900 text-white text-xs" onClick={() => {
                                         toast.success(`Interest shown for ${animal.name}! Breeder will contact you.`);
                                     }}>
                                         Contact Breeder

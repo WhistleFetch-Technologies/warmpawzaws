@@ -9,6 +9,7 @@ import { MatingDatingMatches } from './MatingDatingMatches';
 import { MatingDatingChat } from './MatingDatingChat';
 import { MatingDatingProfile } from './MatingDatingProfile';
 import { MatingDatingSubscription } from './MatingDatingSubscription';
+// Brand color: #FF8C42
 
 type ViewType = 'home' | 'swipe' | 'matches' | 'chat' | 'profile' | 'subscription';
 type ModeType = 'pet' | 'owner';

@@ -19,6 +19,7 @@ import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Card, CardContent } from '../ui/card';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+// Brand color: #FF8C42
 
 interface ServiceProvider {
   providerId: string;

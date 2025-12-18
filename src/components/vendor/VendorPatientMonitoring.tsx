@@ -6,6 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import { AlertCircle, Activity, Heart, Thermometer, Wind, Droplets, Brain, Plus, Search, Filter, Bell, Eye, FileText, TrendingUp, TrendingDown, Minus, CheckCircle, XCircle } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { Button } from '../ui/button';
 
 interface VendorPatientMonitoringProps {
   vendorId: string;
@@ -337,19 +338,17 @@ export function VendorPatientMonitoring({ vendorId }: VendorPatientMonitoringPro
             <p className="text-gray-600 mt-1">Real-time monitoring and vital signs tracking</p>
           </div>
           <div className="flex gap-3">
-            <button
-              onClick={() => setView('list')}
+            <Button onClick={() => setView('list')}
               className="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
             >
               View All Patients
-            </button>
-            <button
-              onClick={() => setView('admit')}
+            </Button>
+            <Button onClick={() => setView('admit')}
               className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 flex items-center gap-2"
             >
               <Plus className="w-4 h-4" />
               Admit Patient
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -471,19 +470,17 @@ export function VendorPatientMonitoring({ vendorId }: VendorPatientMonitoringPro
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
-          <button
-            onClick={() => setView('dashboard')}
+          <Button onClick={() => setView('dashboard')}
             className="text-orange-600 hover:text-orange-700 flex items-center gap-2"
           >
             ← Back to Dashboard
-          </button>
-          <button
-            onClick={() => setView('admit')}
+          </Button>
+          <Button onClick={() => setView('admit')}
             className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 flex items-center gap-2"
           >
             <Plus className="w-4 h-4" />
             Admit Patient
-          </button>
+          </Button>
         </div>
 
         {/* Filters */}
@@ -565,8 +562,7 @@ export function VendorPatientMonitoring({ vendorId }: VendorPatientMonitoringPro
                       )}
                     </td>
                     <td className="px-6 py-4">
-                      <button
-                        onClick={() => {
+                      <Button onClick={() => {
                           setSelectedMonitor(monitor);
                           setView('detail');
                         }}
@@ -574,7 +570,7 @@ export function VendorPatientMonitoring({ vendorId }: VendorPatientMonitoringPro
                       >
                         <Eye className="w-4 h-4" />
                         View
-                      </button>
+                      </Button>
                     </td>
                   </tr>
                 ))}
@@ -592,15 +588,14 @@ export function VendorPatientMonitoring({ vendorId }: VendorPatientMonitoringPro
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
-          <button
-            onClick={() => {
+          <Button onClick={() => {
               setView('list');
               setSelectedMonitor(null);
             }}
             className="text-orange-600 hover:text-orange-700 flex items-center gap-2"
           >
             ← Back to List
-          </button>
+          </Button>
         </div>
 
         {/* Patient Info */}
@@ -678,12 +673,11 @@ export function VendorPatientMonitoring({ vendorId }: VendorPatientMonitoringPro
                       </div>
                       <p className="text-sm">{alert.message}</p>
                     </div>
-                    <button
-                      onClick={() => acknowledgeAlert(index)}
+                    <Button onClick={() => acknowledgeAlert(index)}
                       className="ml-4 px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm"
                     >
                       Acknowledge
-                    </button>
+                    </Button>
                   </div>
                 ))}
             </div>
@@ -813,13 +807,12 @@ export function VendorPatientMonitoring({ vendorId }: VendorPatientMonitoringPro
               placeholder="Any additional observations..."
             />
           </div>
-          <button
-            onClick={recordVitals}
+          <Button onClick={recordVitals}
             disabled={!vitalForm.temperature || !vitalForm.heartRate || !vitalForm.respiratoryRate}
             className="mt-4 px-6 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
           >
             Record Vitals
-          </button>
+          </Button>
         </div>
 
         {/* Vitals History */}
@@ -887,12 +880,11 @@ export function VendorPatientMonitoring({ vendorId }: VendorPatientMonitoringPro
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <button
-            onClick={() => setView('dashboard')}
+          <Button onClick={() => setView('dashboard')}
             className="text-orange-600 hover:text-orange-700 flex items-center gap-2"
           >
             ← Back
-          </button>
+          </Button>
         </div>
 
         <div className="bg-white rounded-lg border border-gray-200 p-6">
@@ -1067,13 +1059,12 @@ export function VendorPatientMonitoring({ vendorId }: VendorPatientMonitoringPro
               </div>
             </div>
 
-            <button
-              onClick={admitPatient}
+            <Button onClick={admitPatient}
               disabled={!admitForm.petName || !admitForm.customerName || !admitForm.assignedVet}
               className="w-full py-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
             >
               Admit Patient
-            </button>
+            </Button>
           </div>
         </div>
       </div>

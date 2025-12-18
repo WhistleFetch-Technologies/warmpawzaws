@@ -443,46 +443,38 @@ export function HomeSampleCollectionManager({ vendorId, vendorName }: HomeSample
 
       {/* Tabs */}
       <div className="flex gap-2 mb-6 border-b border-gray-200">
-        <button
-          onClick={() => setActiveTab('pending')}
-          className={`px-4 py-2 font-medium transition-colors ${
+        <Button onClick={() => setActiveTab('pending')} className={`px-4 py-2 font-medium transition-colors ${
             activeTab === 'pending'
               ? 'text-orange-600 border-b-2 border-orange-600'
               : 'text-gray-600 hover:text-gray-900'
           }`}
         >
           Pending Assignment
-        </button>
-        <button
-          onClick={() => setActiveTab('assigned')}
-          className={`px-4 py-2 font-medium transition-colors ${
+        </Button>
+        <Button onClick={() => setActiveTab('assigned')} className={`px-4 py-2 font-medium transition-colors ${
             activeTab === 'assigned'
               ? 'text-orange-600 border-b-2 border-orange-600'
               : 'text-gray-600 hover:text-gray-900'
           }`}
         >
           Assigned
-        </button>
-        <button
-          onClick={() => setActiveTab('completed')}
-          className={`px-4 py-2 font-medium transition-colors ${
+        </Button>
+        <Button onClick={() => setActiveTab('completed')} className={`px-4 py-2 font-medium transition-colors ${
             activeTab === 'completed'
               ? 'text-orange-600 border-b-2 border-orange-600'
               : 'text-gray-600 hover:text-gray-900'
           }`}
         >
           Completed
-        </button>
-        <button
-          onClick={() => setActiveTab('stats')}
-          className={`px-4 py-2 font-medium transition-colors ${
+        </Button>
+        <Button onClick={() => setActiveTab('stats')} className={`px-4 py-2 font-medium transition-colors ${
             activeTab === 'stats'
               ? 'text-orange-600 border-b-2 border-orange-600'
               : 'text-gray-600 hover:text-gray-900'
           }`}
         >
           Statistics
-        </button>
+        </Button>
       </div>
 
       {/* Date Filter */}

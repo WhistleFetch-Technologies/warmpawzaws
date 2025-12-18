@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { X, FileText, Calendar, User, AlertCircle, Pill, Activity } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { Button } from '../ui/button';
 
 interface PetMedicalHistoryModalProps {
   petId: string;
@@ -95,19 +96,17 @@ export function PetMedicalHistoryModal({ petId, petName, onClose }: PetMedicalHi
         >
           {/* Header */}
           <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between rounded-t-[32px] z-10">
-            <button
-              onClick={() => setSelectedPrescription(null)}
+            <Button onClick={() => setSelectedPrescription(null)}
               className="flex items-center gap-2 text-gray-600 hover:text-gray-800"
             >
               <span>←</span>
               <span>Back to History</span>
-            </button>
-            <button
-              onClick={onClose}
+            </Button>
+            <Button onClick={onClose}
               className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
             >
               <X className="w-5 h-5 text-gray-600" />
-            </button>
+            </Button>
           </div>
 
           <div className="p-6 space-y-6 pb-24">
@@ -288,12 +287,11 @@ export function PetMedicalHistoryModal({ petId, petName, onClose }: PetMedicalHi
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between rounded-t-[32px] z-10">
           <h2 className="font-bold text-gray-800">Medical History</h2>
-          <button
-            onClick={onClose}
+          <Button onClick={onClose}
             className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
           >
             <X className="w-5 h-5 text-gray-600" />
-          </button>
+          </Button>
         </div>
 
         {loading ? (
@@ -329,7 +327,7 @@ export function PetMedicalHistoryModal({ petId, petName, onClose }: PetMedicalHi
             ) : (
               <div className="space-y-3">
                 {prescriptions.map((prescription) => (
-                  <button
+                  <Button
                     key={prescription.id}
                     onClick={() => setSelectedPrescription(prescription)}
                     className="w-full bg-white border-2 border-gray-200 hover:border-orange-300 rounded-2xl p-4 transition-all text-left"
@@ -383,7 +381,7 @@ export function PetMedicalHistoryModal({ petId, petName, onClose }: PetMedicalHi
                         →
                       </div>
                     </div>
-                  </button>
+                  </Button>
                 ))}
               </div>
             )}

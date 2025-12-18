@@ -10,6 +10,7 @@ import {
 import { toast } from 'sonner@2.0.3';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { format } from 'date-fns';
+// Brand color: #FF8C42
 
 interface InsurancePolicyDashboardProps {
   customerId: string;

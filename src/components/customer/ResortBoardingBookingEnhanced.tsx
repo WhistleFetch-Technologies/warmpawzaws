@@ -240,8 +240,8 @@ export function ResortBoardingBookingEnhanced({ phone, onBack, onSuccess, preSel
   };
 
   const renderPreCheck = () => (
-      <div className="min-h-screen bg-gray-50 flex flex-col">
-          <div className="bg-white p-4 border-b sticky top-0 z-10 flex items-center gap-3">
+      <div className="min-h-screen bg-[#FF8C42] gray-50 flex flex-col">
+          <div className="bg-[#FF8C42] white p-4 border-b sticky top-0 z-10 flex items-center gap-3">
               <button onClick={() => setStep('dates')}><ArrowLeft className="w-6 h-6 text-gray-600" /></button>
               <h1 className="text-lg font-semibold">Pet Pre-Check</h1>
           </div>
@@ -283,7 +283,7 @@ export function ResortBoardingBookingEnhanced({ phone, onBack, onSuccess, preSel
                       <div>
                           <Label>Vaccination Status</Label>
                           <select 
-                              className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
+                              className="w-full h-10 px-3 rounded-md border border-input bg-[#FF8C42] background text-sm"
                               value={preCheckData.vaccinationStatus}
                               onChange={e => setPreCheckData({...preCheckData, vaccinationStatus: e.target.value as any})}
                           >
@@ -313,7 +313,7 @@ export function ResortBoardingBookingEnhanced({ phone, onBack, onSuccess, preSel
                   </div>
               </Card>
 
-              <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
+              <div className="bg-[#FF8C42] yellow-50 p-4 rounded-lg border border-yellow-200">
                   <div className="flex gap-3">
                       <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0" />
                       <div className="text-xs text-yellow-800">
@@ -324,9 +324,9 @@ export function ResortBoardingBookingEnhanced({ phone, onBack, onSuccess, preSel
               </div>
           </div>
           
-          <div className="bg-white p-4 border-t shadow-lg fixed bottom-0 w-full max-w-[430px]">
+          <div className="bg-[#FF8C42] white p-4 border-t shadow-lg fixed bottom-0 w-full max-w-[430px]">
               <Button 
-                  className="w-full bg-teal-600 hover:bg-teal-700 text-white h-12 text-lg"
+                  className="w-full bg-teal-600 hover:bg-[#FF8C42] teal-700 text-white h-12 text-lg"
                   disabled={!preCheckData.petName || !preCheckData.petBreed}
                   onClick={() => setStep('confirm')}
               >
@@ -344,8 +344,8 @@ export function ResortBoardingBookingEnhanced({ phone, onBack, onSuccess, preSel
   
   if (step === 'select-resort') {
     return (
-      <div className="min-h-screen bg-gray-50 pb-20">
-        <div className="bg-white p-4 border-b sticky top-0 z-10 flex items-center gap-3">
+      <div className="min-h-screen bg-[#FF8C42] gray-50 pb-20">
+        <div className="bg-[#FF8C42] white p-4 border-b sticky top-0 z-10 flex items-center gap-3">
           <button onClick={onBack}><ArrowLeft className="w-6 h-6 text-gray-600" /></button>
           <h1 className="text-lg font-semibold">Select Resort</h1>
         </div>
@@ -353,7 +353,7 @@ export function ResortBoardingBookingEnhanced({ phone, onBack, onSuccess, preSel
            {loading ? <div className="text-center py-10">Loading...</div> : 
              resorts.map(resort => (
               <Card key={resort.id} className="cursor-pointer" onClick={() => loadResortDetails(resort.id)}>
-                 <div className="h-32 bg-gray-200 relative"><img src={resort.image} className="w-full h-full object-cover"/></div>
+                 <div className="h-32 bg-[#FF8C42] gray-200 relative"><img src={resort.image} className="w-full h-full object-cover"/></div>
                  <div className="p-4"><h3 className="font-bold">{resort.name}</h3></div>
               </Card>
            ))}
@@ -364,8 +364,8 @@ export function ResortBoardingBookingEnhanced({ phone, onBack, onSuccess, preSel
 
   if (step === 'select-room') {
        return (
-      <div className="min-h-screen bg-gray-50 pb-20">
-         <div className="bg-white p-4 border-b sticky top-0 z-10 flex items-center gap-3">
+      <div className="min-h-screen bg-[#FF8C42] gray-50 pb-20">
+         <div className="bg-[#FF8C42] white p-4 border-b sticky top-0 z-10 flex items-center gap-3">
           <button onClick={() => setStep('select-resort')}><ArrowLeft className="w-6 h-6 text-gray-600" /></button>
           <h1 className="text-lg font-semibold">{selectedResort?.name}</h1>
         </div>
@@ -383,8 +383,8 @@ export function ResortBoardingBookingEnhanced({ phone, onBack, onSuccess, preSel
 
   if (step === 'dates') {
       return (
-      <div className="min-h-screen bg-gray-50 flex flex-col">
-        <div className="bg-white p-4 border-b sticky top-0 z-10 flex items-center gap-3">
+      <div className="min-h-screen bg-[#FF8C42] gray-50 flex flex-col">
+        <div className="bg-[#FF8C42] white p-4 border-b sticky top-0 z-10 flex items-center gap-3">
           <button onClick={() => setStep('select-room')}><ArrowLeft className="w-6 h-6 text-gray-600" /></button>
           <h1 className="text-lg font-semibold">Select Dates</h1>
         </div>
@@ -397,8 +397,8 @@ export function ResortBoardingBookingEnhanced({ phone, onBack, onSuccess, preSel
                 <div className="flex justify-between items-center mt-2"><span className="text-sm">Pets</span><div className="flex gap-3"><button onClick={() => setPetCount(Math.max(1, petCount-1))}>-</button><span>{petCount}</span><button onClick={() => setPetCount(petCount+1)}>+</button></div></div>
              </Card>
         </div>
-        <div className="bg-white p-4 border-t shadow-lg fixed bottom-0 w-full max-w-[430px]">
-            <Button className="w-full bg-teal-600 h-12" disabled={!dateRange?.to} onClick={() => setStep('pre-check')}>Continue to Pre-Check</Button>
+        <div className="bg-[#FF8C42] white p-4 border-t shadow-lg fixed bottom-0 w-full max-w-[430px]">
+            <Button className="w-full bg-[#FF8C42] teal-600 h-12" disabled={!dateRange?.to} onClick={() => setStep('pre-check')}>Continue to Pre-Check</Button>
         </div>
       </div>
     );
@@ -408,8 +408,8 @@ export function ResortBoardingBookingEnhanced({ phone, onBack, onSuccess, preSel
      const nights = differenceInDays(dateRange!.to!, dateRange!.from!) || 1;
      const totalPrice = selectedRoom.price * nights;
      return (
-        <div className="min-h-screen bg-gray-50 flex flex-col">
-            <div className="bg-white p-4 border-b sticky top-0 z-10 flex items-center gap-3">
+        <div className="min-h-screen bg-[#FF8C42] gray-50 flex flex-col">
+            <div className="bg-[#FF8C42] white p-4 border-b sticky top-0 z-10 flex items-center gap-3">
                 <button onClick={() => setStep('pre-check')}><ArrowLeft className="w-6 h-6 text-gray-600" /></button>
                 <h1 className="text-lg font-semibold">Confirm Booking</h1>
             </div>
@@ -417,7 +417,7 @@ export function ResortBoardingBookingEnhanced({ phone, onBack, onSuccess, preSel
                 <Card className="p-4">
                     <h3 className="font-bold">{selectedResort?.name}</h3>
                     <p className="text-sm text-gray-500">{selectedRoom?.name} ({nights} nights)</p>
-                    <div className="mt-2 text-xs bg-gray-100 p-2 rounded">
+                    <div className="mt-2 text-xs bg-[#FF8C42] gray-100 p-2 rounded">
                         <p className="font-semibold">Pet: {preCheckData.petName} ({preCheckData.petBreed})</p>
                     </div>
                 </Card>
@@ -425,8 +425,8 @@ export function ResortBoardingBookingEnhanced({ phone, onBack, onSuccess, preSel
                     <div className="flex justify-between font-bold text-lg"><span>Total</span><span>₹{totalPrice.toLocaleString()}</span></div>
                 </Card>
             </div>
-             <div className="bg-white p-4 border-t shadow-lg">
-                <Button className="w-full bg-teal-600 h-12" onClick={handleCreateBooking} disabled={loading}>{loading ? 'Processing...' : 'Pay & Book'}</Button>
+             <div className="bg-[#FF8C42] white p-4 border-t shadow-lg">
+                <Button className="w-full bg-[#FF8C42] teal-600 h-12" onClick={handleCreateBooking} disabled={loading}>{loading ? 'Processing...' : 'Pay & Book'}</Button>
             </div>
         </div>
      );

@@ -3,6 +3,7 @@ import { Search, X, Filter, MapPin, Star, ChevronRight, Building, User, Package,
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+// Brand color: #FF8C42
 
 const BASE_URL = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
 

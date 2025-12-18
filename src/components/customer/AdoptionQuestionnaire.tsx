@@ -150,8 +150,8 @@ export function AdoptionQuestionnaire({ onBack, onComplete }: AdoptionQuestionna
   );
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      <div className="bg-white p-4 border-b sticky top-0 z-10 flex items-center gap-3">
+    <div className="min-h-screen bg-[#FF8C42] gray-50 flex flex-col">
+      <div className="bg-[#FF8C42] white p-4 border-b sticky top-0 z-10 flex items-center gap-3">
         <button onClick={onBack}><ArrowLeft className="w-6 h-6 text-gray-600" /></button>
         <div className="flex-1">
            <h1 className="text-lg font-bold text-gray-900">Adoption Match</h1>
@@ -160,7 +160,7 @@ export function AdoptionQuestionnaire({ onBack, onComplete }: AdoptionQuestionna
       </div>
 
       <div className="p-4 flex-1">
-          <div className="bg-purple-50 p-4 rounded-xl mb-6 flex gap-3 items-start">
+          <div className="bg-[#FF8C42] purple-50 p-4 rounded-xl mb-6 flex gap-3 items-start">
               <Heart className="w-6 h-6 text-purple-600 flex-shrink-0 mt-0.5" />
               <p className="text-sm text-purple-900">
                   Answer a few questions to help us match you with the perfect furry companion for your lifestyle.
@@ -174,9 +174,9 @@ export function AdoptionQuestionnaire({ onBack, onComplete }: AdoptionQuestionna
           </Card>
       </div>
 
-      <div className="bg-white p-4 border-t shadow-lg">
+      <div className="bg-[#FF8C42] white p-4 border-t shadow-lg">
           <Button 
-              className="w-full bg-purple-600 hover:bg-purple-700 text-white h-12 text-lg"
+              className="w-full bg-purple-600 hover:bg-[#FF8C42] purple-700 text-white h-12 text-lg"
               onClick={handleNext}
           >
               {step === totalSteps ? 'Find My Match' : 'Next Step'}

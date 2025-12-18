@@ -11,6 +11,7 @@ import {
   Square
 } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { Button } from '../ui/button';
 
 interface BookingCardProps {
   booking: any;
@@ -159,14 +160,13 @@ export function VendorBookingCard({
           if (booking.status === 'in_progress') {
             return (
               <div className="mt-3">
-                <button
-                  onClick={() => onEndSession(booking)}
+                <Button onClick={() => onEndSession(booking)}
                   disabled={completingBooking}
                   className="w-full px-4 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
                 >
                   <Square className="w-4 h-4" />
                   End Session & Complete
-                </button>
+                </Button>
                 <p className="text-xs text-gray-500 mt-1 text-center">
                   🗺️ Customer is tracking your location
                 </p>
@@ -175,14 +175,13 @@ export function VendorBookingCard({
           } else {
             return (
               <div className="mt-3">
-                <button
-                  onClick={() => onComplete(booking)}
+                <Button onClick={() => onComplete(booking)}
                   disabled={completingBooking}
                   className="w-full px-4 py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
                 >
                   <Play className="w-4 h-4" />
                   Start Session with OTP
-                </button>
+                </Button>
                 <p className="text-xs text-gray-500 mt-1 text-center">
                   Enter customer OTP to start walk & enable live tracking
                 </p>
@@ -193,14 +192,13 @@ export function VendorBookingCard({
           // REGULAR SERVICES: Complete with OTP (or without for tele)
           return (
             <div className="mt-3">
-              <button
-                onClick={() => onComplete(booking)}
+              <Button onClick={() => onComplete(booking)}
                 disabled={completingBooking}
                 className="w-full px-4 py-2.5 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
               >
                 <CheckCircle className="w-4 h-4" />
                 {booking.communicationType === 'video' ? 'Mark Complete' : 'Complete with OTP'}
-              </button>
+              </Button>
               <p className="text-xs text-gray-500 mt-1 text-center">
                 {booking.communicationType === 'video' 
                   ? 'Tele consultation - No OTP required' 
@@ -221,19 +219,17 @@ export function VendorBookingCard({
       <div className="mt-3 pt-3 border-t border-gray-100 flex gap-2 flex-wrap">
         {/* Call Button - TELE ONLY */}
         {booking.communicationType === 'video' && booking.serviceType === 'tele' && booking.status !== 'completed' && (
-          <button
-            onClick={() => alert('Video call interface would open here.\n\nIntegrate with your video call provider (Jitsi, Agora, Twilio, etc.)')}
+          <Button onClick={() => alert('Video call interface would open here.\n\nIntegrate with your video call provider (Jitsi, Agora, Twilio, etc.)')}
             className="flex-1 min-w-[100px] py-2 px-3 bg-purple-500 hover:bg-purple-600 text-white rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1"
           >
             <Video className="w-3.5 h-3.5" />
             Video Call
-          </button>
+          </Button>
         )}
         
         {/* Chat Button - ALL BOOKINGS */}
         {booking.chatEnabled !== false && (
-          <button
-            onClick={handleOpenChat}
+          <Button onClick={handleOpenChat}
             className="relative flex-1 min-w-[100px] py-2 px-3 bg-[#FF8C42] hover:bg-[#FF7829] text-white rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1"
           >
             <MessageSquare className="w-3.5 h-3.5" />
@@ -243,14 +239,12 @@ export function VendorBookingCard({
                 {booking.unreadMessageCount}
               </span>
             )}
-          </button>
+          </Button>
         )}
         
         {/* Prescription Button - VET ONLY */}
         {isVet && (booking.status === 'completed' || booking.status === 'in_progress' || booking.status === 'confirmed') && (
-          <button
-            onClick={handleOpenPrescription}
-            className={`flex-1 min-w-[100px] py-2 px-3 rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1 ${
+          <Button onClick={handleOpenPrescription} className={`flex-1 min-w-[100px] py-2 px-3 rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1 ${
               booking.hasPrescription
                 ? 'bg-green-600 hover:bg-green-700 text-white'
                 : 'bg-green-50 hover:bg-green-100 text-green-700'
@@ -258,7 +252,7 @@ export function VendorBookingCard({
           >
             <Pill className="w-3.5 h-3.5" />
             {booking.hasPrescription ? 'View Rx' : 'Add Rx'}
-          </button>
+          </Button>
         )}
         
         {/* Phone Call Link */}

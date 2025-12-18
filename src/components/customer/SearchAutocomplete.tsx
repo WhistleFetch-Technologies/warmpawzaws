@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Search, X, Clock, TrendingUp, MapPin, Star } from 'lucide-react';
 import { Badge } from '../ui/badge';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+// Brand color: #FF8C42
 
 interface AutocompleteProps {
   onSelect: (value: string) => void;

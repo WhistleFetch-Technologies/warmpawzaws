@@ -199,9 +199,7 @@ export function InsuranceDashboard({
       {/* Tabs */}
       <div className="bg-white border-b sticky top-0 z-10">
         <div className="flex">
-          <button
-            onClick={() => setActiveTab('plans')}
-            className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
+          <Button onClick={() => setActiveTab('plans')} className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
               activeTab === 'plans'
                 ? 'border-blue-600 text-blue-600'
                 : 'border-transparent text-gray-600'
@@ -209,10 +207,8 @@ export function InsuranceDashboard({
           >
             <FileText className="w-4 h-4 inline mr-1" />
             Plans ({stats.totalPlans})
-          </button>
-          <button
-            onClick={() => setActiveTab('claims')}
-            className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
+          </Button>
+          <Button onClick={() => setActiveTab('claims')} className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
               activeTab === 'claims'
                 ? 'border-blue-600 text-blue-600'
                 : 'border-transparent text-gray-600'
@@ -220,10 +216,8 @@ export function InsuranceDashboard({
           >
             <Shield className="w-4 h-4 inline mr-1" />
             Claims ({stats.totalClaims})
-          </button>
-          <button
-            onClick={() => setActiveTab('analytics')}
-            className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
+          </Button>
+          <Button onClick={() => setActiveTab('analytics')} className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
               activeTab === 'analytics'
                 ? 'border-blue-600 text-blue-600'
                 : 'border-transparent text-gray-600'
@@ -231,7 +225,7 @@ export function InsuranceDashboard({
           >
             <TrendingUp className="w-4 h-4 inline mr-1" />
             Analytics
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -252,7 +246,7 @@ export function InsuranceDashboard({
             {/* Filter */}
             <div className="flex gap-2 overflow-x-auto pb-2">
               {['all', 'approved', 'pending', 'rejected'].map(status => (
-                <button
+                <Button
                   key={status}
                   onClick={() => setFilterStatus(status)}
                   className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap ${
@@ -262,7 +256,7 @@ export function InsuranceDashboard({
                   }`}
                 >
                   {status.charAt(0).toUpperCase() + status.slice(1)}
-                </button>
+                </Button>
               ))}
             </div>
 
@@ -326,7 +320,7 @@ export function InsuranceDashboard({
             {/* Filter */}
             <div className="flex gap-2 overflow-x-auto pb-2">
               {['all', 'pending', 'approved', 'rejected', 'info_requested'].map(status => (
-                <button
+                <Button
                   key={status}
                   onClick={() => setFilterStatus(status)}
                   className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap ${
@@ -336,7 +330,7 @@ export function InsuranceDashboard({
                   }`}
                 >
                   {status.replace('_', ' ').charAt(0).toUpperCase() + status.slice(1).replace('_', ' ')}
-                </button>
+                </Button>
               ))}
             </div>
 

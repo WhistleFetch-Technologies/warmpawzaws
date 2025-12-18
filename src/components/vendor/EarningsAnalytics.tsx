@@ -82,13 +82,13 @@ export function EarningsAnalytics({ vendorId, staffId, userType, onBack }: Earni
       {/* Header */}
       <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="flex items-center justify-between p-4 max-w-md mx-auto">
-          <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg">
+          <Button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg">
             <ChevronLeft className="w-5 h-5" />
-          </button>
+          </Button>
           <h1 className="font-semibold">Earnings Analytics</h1>
-          <button onClick={loadEarnings} className="p-2 hover:bg-gray-100 rounded-lg">
+          <Button onClick={loadEarnings} className="p-2 hover:bg-gray-100 rounded-lg">
             <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
-          </button>
+          </Button>
         </div>
 
         {/* Period Tabs */}
@@ -98,7 +98,7 @@ export function EarningsAnalytics({ vendorId, staffId, userType, onBack }: Earni
             { id: 'month', label: 'Month' },
             { id: 'lifetime', label: 'All Time' }
           ].map((period) => (
-            <button
+            <Button
               key={period.id}
               onClick={() => setActivePeriod(period.id as any)}
               className={`flex-1 py-2 px-4 rounded-lg text-sm transition-colors ${
@@ -108,7 +108,7 @@ export function EarningsAnalytics({ vendorId, staffId, userType, onBack }: Earni
               }`}
             >
               {period.label}
-            </button>
+            </Button>
           ))}
         </div>
       </div>

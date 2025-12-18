@@ -827,7 +827,7 @@ export function DynamicVendorOnboardingForm({
                   className="w-full h-48 object-cover transition-transform group-hover:scale-105"
                 />
                 <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                    <button
+                    <Button
                       type="button"
                       onClick={() => {
                         setDocuments({ ...documents, [field.name]: null });
@@ -836,7 +836,7 @@ export function DynamicVendorOnboardingForm({
                       className="bg-white/20 backdrop-blur-md border border-white/50 text-white rounded-full p-2 hover:bg-white/40 transition-colors"
                     >
                       <X className="w-5 h-5" />
-                    </button>
+                    </Button>
                 </div>
                 <div className="absolute top-3 right-3 bg-green-500 text-white px-3 py-1 rounded-full text-xs font-medium flex items-center gap-1.5 shadow-sm">
                   <CheckCircle2 className="w-3.5 h-3.5" />
@@ -867,7 +867,7 @@ export function DynamicVendorOnboardingForm({
       case 'map_pin':
         return (
           <div className="space-y-4 mt-2">
-            <button
+            <Button
               type="button"
               onClick={detectCurrentLocation}
               disabled={detectingLocation}
@@ -884,7 +884,7 @@ export function DynamicVendorOnboardingForm({
                   <span>Detect Location</span>
                 </>
               )}
-            </button>
+            </Button>
 
             <div className="relative">
               <div 
@@ -998,12 +998,11 @@ export function DynamicVendorOnboardingForm({
       {/* Header Section */}
       <div className="pt-8 pb-8 px-6 text-center relative">
         {onBack && (
-          <button 
-            onClick={onBack} 
+          <Button onClick={onBack} 
             className="absolute top-8 left-6 p-2 bg-white/50 hover:bg-white rounded-full transition-colors"
           >
             <ArrowLeft className="w-5 h-5 text-gray-800" />
-          </button>
+          </Button>
         )}
         
         {/* Centered Icon */}
@@ -1117,21 +1116,21 @@ export function DynamicVendorOnboardingForm({
               <div className="flex-1">
                 <p className="text-xs text-gray-600 leading-relaxed">
                   By continuing, you agree to the{' '}
-                  <button 
+                  <Button 
                     type="button" 
                     onClick={() => setShowAgreement(true)} 
                     className="text-gray-900 underline font-bold hover:text-[#FF8C42] transition-colors"
                   >
                     Vendor Onboarding Agreement
-                  </button>
+                  </Button>
                   {' '}and{' '}
-                  <button 
+                  <Button 
                     type="button" 
                     onClick={() => setShowAgreement(true)} 
                     className="text-gray-900 underline font-bold hover:text-[#FF8C42] transition-colors"
                   >
                     Terms of Service
-                  </button>
+                  </Button>
                 </p>
               </div>
             </div>

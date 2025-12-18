@@ -205,12 +205,11 @@ export function VendorAvailabilitySetup({ vendorId, onComplete }: VendorAvailabi
                         checked={dayData.enabled}
                         onCheckedChange={(checked) => handleDayToggle(day, checked)}
                       />
-                      <button
-                        onClick={() => handleAddTimeSlot(day)}
+                      <Button onClick={() => handleAddTimeSlot(day)}
                         className="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center hover:bg-orange-100 transition-colors"
                       >
                         <Plus className="w-4 h-4 text-[#FF8C42]" />
-                      </button>
+                      </Button>
                     </div>
                   </div>
 
@@ -232,12 +231,11 @@ export function VendorAvailabilitySetup({ vendorId, onComplete }: VendorAvailabi
                             onChange={(e) => handleTimeChange(day, idx, 'end', e.target.value)}
                             className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
                           />
-                          <button
-                            onClick={() => handleRemoveTimeSlot(day, idx)}
+                          <Button onClick={() => handleRemoveTimeSlot(day, idx)}
                             className="text-red-500 hover:text-red-700 text-xs px-2"
                           >
                             ✕
-                          </button>
+                          </Button>
                         </div>
                       ))}
                     </div>

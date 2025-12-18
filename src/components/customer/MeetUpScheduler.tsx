@@ -132,7 +132,7 @@ export function MeetUpScheduler({ matchId, phone, onBack, onSuccess }: MeetUpSch
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50 flex items-center justify-center">
+      <div className="min-h-screen bg-[#FF8C42] gradient-to-br from-pink-50 via-purple-50 to-blue-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-500 mx-auto mb-4"></div>
           <p className="text-gray-600">Finding nearby cafés...</p>
@@ -142,9 +142,9 @@ export function MeetUpScheduler({ matchId, phone, onBack, onSuccess }: MeetUpSch
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50">
+    <div className="min-h-screen bg-[#FF8C42] gradient-to-br from-pink-50 via-purple-50 to-blue-50">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
+      <div className="bg-[#FF8C42] white border-b border-gray-200 sticky top-0 z-10">
         <div className="max-w-md mx-auto px-4 py-4 flex items-center gap-3">
           <button onClick={onBack} className="text-gray-600">
             <ChevronLeft className="w-6 h-6" />
@@ -159,7 +159,7 @@ export function MeetUpScheduler({ matchId, phone, onBack, onSuccess }: MeetUpSch
       <div className="max-w-md mx-auto p-4 space-y-6 pb-32">
         {/* Cafés List */}
         {cafes.length === 0 ? (
-          <div className="bg-white rounded-xl p-8 text-center">
+          <div className="bg-[#FF8C42] white rounded-xl p-8 text-center">
             <Coffee className="w-16 h-16 text-gray-300 mx-auto mb-4" />
             <p className="text-gray-600 mb-2">No cafés found nearby</p>
             <p className="text-sm text-gray-500">Try adjusting your location or check back later</p>
@@ -219,7 +219,7 @@ export function MeetUpScheduler({ matchId, phone, onBack, onSuccess }: MeetUpSch
 
         {/* Date & Time Selection */}
         {selectedCafe && (
-          <div className="bg-white rounded-xl p-4 shadow-sm space-y-4">
+          <div className="bg-[#FF8C42] white rounded-xl p-4 shadow-sm space-y-4">
             <h3 className="font-bold text-gray-900">Select Date & Time</h3>
             
             <div>
@@ -273,7 +273,7 @@ export function MeetUpScheduler({ matchId, phone, onBack, onSuccess }: MeetUpSch
 
         {/* Booking Summary */}
         {selectedCafe && selectedDate && selectedTime && (
-          <div className="bg-gradient-to-r from-green-50 to-blue-50 rounded-xl p-4 border border-green-200">
+          <div className="bg-[#FF8C42] gradient-to-r from-green-50 to-blue-50 rounded-xl p-4 border border-green-200">
             <h4 className="font-bold text-gray-900 mb-2">Booking Summary</h4>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
@@ -305,12 +305,12 @@ export function MeetUpScheduler({ matchId, phone, onBack, onSuccess }: MeetUpSch
 
       {/* Fixed Bottom Button */}
       {selectedCafe && (
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 shadow-lg z-10">
+        <div className="fixed bottom-0 left-0 right-0 bg-[#FF8C42] white border-t border-gray-200 p-4 shadow-lg z-10">
           <div className="max-w-md mx-auto">
             <Button
               onClick={handleBookMeetup}
               disabled={!selectedDate || !selectedTime || booking}
-              className="w-full bg-gradient-to-r from-pink-500 to-purple-500 text-white py-3"
+              className="w-full bg-[#FF8C42] gradient-to-r from-pink-500 to-purple-500 text-white py-3"
             >
               {booking ? (
                 <div className="flex items-center justify-center gap-2">

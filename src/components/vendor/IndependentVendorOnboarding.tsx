@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Building2, MapPin, Clock, Phone } from 'lucide-react';
+import { Button } from '../ui/button';
 
 export function IndependentVendorOnboarding({ apiUrl = `${import.meta.env.VITE_API_URL}/make-server-3dd53475` }) {
   const [vendorName, setVendorName] = useState('');
@@ -24,7 +25,7 @@ export function IndependentVendorOnboarding({ apiUrl = `${import.meta.env.VITE_A
 
   if (success) {
     return (
-      <div className="bg-green-50 border border-green-200 rounded-lg p-8 text-center">
+      <div className="bg-[#FF8C42] green-50 border border-green-200 rounded-lg p-8 text-center">
         <h2>Onboarding Submitted!</h2>
         <p className="text-gray-600 mt-2">Your application is under review</p>
       </div>
@@ -74,12 +75,11 @@ export function IndependentVendorOnboarding({ apiUrl = `${import.meta.env.VITE_A
             className="w-full p-3 border border-gray-300 rounded-lg"
           />
         </div>
-        <button
-          onClick={handleSubmit}
-          className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700"
+        <Button onClick={handleSubmit}
+          className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-[#FF8C42] blue-700"
         >
           Submit Application
-        </button>
+        </Button>
       </div>
     </div>
   );

@@ -178,13 +178,12 @@ export function EmergencyProtocolEditModal({
               <p className="text-xs opacity-90">Emergency response protocol</p>
             </div>
           </div>
-          <button 
-            onClick={onClose}
+          <Button onClick={onClose}
             className="w-8 h-8 flex items-center justify-center hover:bg-white/20 rounded-lg transition-colors"
             disabled={saving}
           >
             <X className="w-5 h-5" />
-          </button>
+          </Button>
         </div>
 
         {/* Form */}
@@ -272,14 +271,14 @@ export function EmergencyProtocolEditModal({
                     className="bg-gray-100 text-gray-700 text-xs px-2 py-1 rounded-lg flex items-center gap-1"
                   >
                     {equipment}
-                    <button
+                    <Button
                       type="button"
                       onClick={() => handleRemoveEquipment(index)}
                       className="hover:text-red-600"
                       disabled={saving}
                     >
                       <X className="w-3 h-3" />
-                    </button>
+                    </Button>
                   </div>
                 ))}
               </div>
@@ -323,30 +322,30 @@ export function EmergencyProtocolEditModal({
                     </span>
                     <p className="text-sm text-gray-700 flex-1">{step}</p>
                     <div className="flex gap-1">
-                      <button
+                      <Button
                         type="button"
                         onClick={() => handleMoveStep(index, 'up')}
                         disabled={index === 0 || saving}
                         className="text-gray-400 hover:text-gray-600 disabled:opacity-30"
                       >
                         ↑
-                      </button>
-                      <button
+                      </Button>
+                      <Button
                         type="button"
                         onClick={() => handleMoveStep(index, 'down')}
                         disabled={index === formData.steps.length - 1 || saving}
                         className="text-gray-400 hover:text-gray-600 disabled:opacity-30"
                       >
                         ↓
-                      </button>
-                      <button
+                      </Button>
+                      <Button
                         type="button"
                         onClick={() => handleRemoveStep(index)}
                         className="text-red-400 hover:text-red-600"
                         disabled={saving}
                       >
                         <Trash2 className="w-3 h-3" />
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 ))}

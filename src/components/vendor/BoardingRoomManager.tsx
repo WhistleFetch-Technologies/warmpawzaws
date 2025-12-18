@@ -338,28 +338,28 @@ export function BoardingRoomManager({
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-[#FF8C42] gray-50 flex items-center justify-center">
         <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-[#FF8C42] gray-50">
       {/* Header */}
-      <div className="bg-white border-b sticky top-0 z-10">
+      <div className="bg-[#FF8C42] white border-b sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center gap-4">
-            <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg">
+            <Button onClick={onBack} className="p-2 hover:bg-[#FF8C42] gray-100 rounded-lg">
               <ArrowLeft className="w-5 h-5" />
-            </button>
+            </Button>
             <div className="flex-1">
               <h1 className="font-bold text-gray-900">Boarding Rooms</h1>
               <p className="text-sm text-gray-600">{vendorName}</p>
             </div>
             <Button
               onClick={() => setShowAddRoom(true)}
-              className="bg-blue-600 hover:bg-blue-700 text-white"
+              className="bg-blue-600 hover:bg-[#FF8C42] blue-700 text-white"
             >
               <Plus className="w-4 h-4 mr-2" />
               Add Room Type
@@ -370,7 +370,7 @@ export function BoardingRoomManager({
 
       <div className="max-w-7xl mx-auto px-4 py-6">
         {rooms.length === 0 ? (
-          <div className="bg-white rounded-xl border p-12 text-center">
+          <div className="bg-[#FF8C42] white rounded-xl border p-12 text-center">
             <HomeIcon className="w-16 h-16 mx-auto mb-4 text-gray-300" />
             <h3 className="font-bold text-gray-900 mb-2">No Rooms Yet</h3>
             <p className="text-gray-600 mb-6">
@@ -378,7 +378,7 @@ export function BoardingRoomManager({
             </p>
             <Button
               onClick={() => setShowAddRoom(true)}
-              className="bg-blue-600 hover:bg-blue-700 text-white"
+              className="bg-blue-600 hover:bg-[#FF8C42] blue-700 text-white"
             >
               <Plus className="w-4 h-4 mr-2" />
               Add Room Type
@@ -389,7 +389,7 @@ export function BoardingRoomManager({
             {rooms.map((room) => (
               <div
                 key={room.id}
-                className="bg-white rounded-xl border hover:shadow-lg transition-shadow overflow-hidden"
+                className="bg-[#FF8C42] white rounded-xl border hover:shadow-lg transition-shadow overflow-hidden"
               >
                 {/* Photo */}
                 {room.photoUrls && room.photoUrls.length > 0 ? (
@@ -399,7 +399,7 @@ export function BoardingRoomManager({
                     className="w-full h-48 object-cover"
                   />
                 ) : (
-                  <div className="w-full h-48 bg-gray-100 flex items-center justify-center">
+                  <div className="w-full h-48 bg-[#FF8C42] gray-100 flex items-center justify-center">
                     <ImageIcon className="w-12 h-12 text-gray-300" />
                   </div>
                 )}
@@ -408,11 +408,11 @@ export function BoardingRoomManager({
                   <div className="flex items-start justify-between mb-2">
                     <h3 className="font-bold text-gray-900">{room.name}</h3>
                     {room.isActive ? (
-                      <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded text-xs">
+                      <span className="px-2 py-0.5 bg-[#FF8C42] green-100 text-green-700 rounded text-xs">
                         Active
                       </span>
                     ) : (
-                      <span className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">
+                      <span className="px-2 py-0.5 bg-[#FF8C42] gray-100 text-gray-600 rounded text-xs">
                         Inactive
                       </span>
                     )}
@@ -426,11 +426,11 @@ export function BoardingRoomManager({
 
                   {/* Pricing */}
                   <div className="grid grid-cols-2 gap-2 mb-3">
-                    <div className="bg-blue-50 rounded-lg p-2">
+                    <div className="bg-[#FF8C42] blue-50 rounded-lg p-2">
                       <p className="text-xs text-blue-600 font-medium">Day</p>
                       <p className="font-bold text-blue-900">₹{room.dayPrice}</p>
                     </div>
-                    <div className="bg-purple-50 rounded-lg p-2">
+                    <div className="bg-[#FF8C42] purple-50 rounded-lg p-2">
                       <p className="text-xs text-purple-600 font-medium">Night</p>
                       <p className="font-bold text-purple-900">₹{room.nightPrice}</p>
                     </div>
@@ -444,13 +444,13 @@ export function BoardingRoomManager({
                         {room.amenities.slice(0, 3).map((amenity, idx) => (
                           <span
                             key={idx}
-                            className="px-2 py-0.5 bg-gray-100 text-gray-700 rounded text-xs"
+                            className="px-2 py-0.5 bg-[#FF8C42] gray-100 text-gray-700 rounded text-xs"
                           >
                             {amenity}
                           </span>
                         ))}
                         {room.amenities.length > 3 && (
-                          <span className="px-2 py-0.5 bg-gray-100 text-gray-700 rounded text-xs">
+                          <span className="px-2 py-0.5 bg-[#FF8C42] gray-100 text-gray-700 rounded text-xs">
                             +{room.amenities.length - 3}
                           </span>
                         )}
@@ -472,19 +472,17 @@ export function BoardingRoomManager({
 
                   {/* Actions */}
                   <div className="flex gap-2 pt-3 border-t">
-                    <button
-                      onClick={() => openEditModal(room)}
-                      className="flex-1 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center justify-center gap-2 text-sm"
+                    <Button onClick={() => openEditModal(room)}
+                      className="flex-1 py-2 border border-gray-300 rounded-lg hover:bg-[#FF8C42] gray-50 flex items-center justify-center gap-2 text-sm"
                     >
                       <Edit className="w-4 h-4" />
                       Edit
-                    </button>
-                    <button
-                      onClick={() => handleDeleteRoom(room.id)}
-                      className="p-2 border border-red-200 rounded-lg hover:bg-red-50 text-red-600"
+                    </Button>
+                    <Button onClick={() => handleDeleteRoom(room.id)}
+                      className="p-2 border border-red-200 rounded-lg hover:bg-[#FF8C42] red-50 text-red-600"
                     >
                       <Trash2 className="w-4 h-4" />
-                    </button>
+                    </Button>
                   </div>
                 </div>
               </div>
@@ -586,7 +584,7 @@ export function BoardingRoomManager({
                 {AMENITIES_OPTIONS.map((amenity) => (
                   <label
                     key={amenity}
-                    className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
+                    className="flex items-center gap-2 p-2 hover:bg-[#FF8C42] gray-50 rounded cursor-pointer"
                   >
                     <input
                       type="checkbox"
@@ -666,7 +664,7 @@ export function BoardingRoomManager({
               </Button>
               <Button
                 onClick={editingRoom ? handleUpdateRoom : handleCreateRoom}
-                className="bg-blue-600 hover:bg-blue-700 text-white"
+                className="bg-blue-600 hover:bg-[#FF8C42] blue-700 text-white"
                 disabled={uploadingMedia}
               >
                 <Save className="w-4 h-4 mr-2" />

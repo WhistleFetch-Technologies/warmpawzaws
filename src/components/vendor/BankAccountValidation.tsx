@@ -292,7 +292,7 @@ export function BankAccountValidation({
           )}
 
           {ifscDetails && ifscValid && (
-            <div className="mt-2 p-3 bg-green-50 border border-green-200 rounded-lg">
+            <div className="mt-2 p-3 bg-[#FF8C42] green-50 border border-green-200 rounded-lg">
               <div className="flex items-start gap-2">
                 <CheckCircle className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
                 <div className="text-xs text-green-900">
@@ -364,7 +364,7 @@ export function BankAccountValidation({
         </div>
 
         {/* Security Note */}
-        <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+        <div className="p-3 bg-[#FF8C42] blue-50 border border-blue-200 rounded-lg">
           <p className="text-xs text-blue-900">
             <span className="font-semibold">🔒 Secure:</span> Your bank details are encrypted and stored securely. 
             We never share this information with third parties.

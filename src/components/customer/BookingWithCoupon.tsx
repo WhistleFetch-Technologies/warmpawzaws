@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Calendar, MapPin, User, DollarSign, Check } from 'lucide-react';
 import { CouponCodeInput, DiscountSummary } from './CouponCodeInput';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+// Brand color: #FF8C42
 
 /**
  * 🛒 BOOKING WITH COUPON INTEGRATION

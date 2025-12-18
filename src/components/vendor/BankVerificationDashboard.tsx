@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { CreditCard, Check, X, AlertCircle } from 'lucide-react';
+import { Button } from '../ui/button';
 
 /**
  * 🏦 BANK VERIFICATION DASHBOARD
@@ -51,7 +52,7 @@ export function BankVerificationDashboard({ vendorId, apiUrl = `${import.meta.en
 
   if (verification?.verificationStatus === 'verified') {
     return (
-      <div className="bg-green-50 border border-green-200 rounded-lg p-6">
+      <div className="bg-[#FF8C42] green-50 border border-green-200 rounded-lg p-6">
         <div className="flex items-center gap-3 mb-4">
           <Check className="w-8 h-8 text-green-600" />
           <div>
@@ -59,7 +60,7 @@ export function BankVerificationDashboard({ vendorId, apiUrl = `${import.meta.en
             <p className="text-sm text-gray-600">Your account is ready to receive payments</p>
           </div>
         </div>
-        <div className="bg-white rounded-lg p-4 space-y-2">
+        <div className="bg-[#FF8C42] white rounded-lg p-4 space-y-2">
           <div className="flex justify-between text-sm">
             <span className="text-gray-600">Account Holder:</span>
             <span>{verification.accountHolderName}</span>
@@ -78,7 +79,7 @@ export function BankVerificationDashboard({ vendorId, apiUrl = `${import.meta.en
   }
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg p-6 space-y-6">
+    <div className="bg-[#FF8C42] white border border-gray-200 rounded-lg p-6 space-y-6">
       <div className="flex items-center gap-3">
         <CreditCard className="w-8 h-8 text-blue-600" />
         <div>
@@ -122,13 +123,12 @@ export function BankVerificationDashboard({ vendorId, apiUrl = `${import.meta.en
         </div>
       </div>
 
-      <button
-        onClick={handleVerify}
+      <Button onClick={handleVerify}
         disabled={!accountNumber || !ifscCode || !accountHolderName || loading}
-        className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 disabled:bg-gray-300"
+        className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 disabled:bg-[#FF8C42] gray-300"
       >
         {loading ? 'Verifying...' : 'Verify Bank Account'}
-      </button>
+      </Button>
     </div>
   );
 }

@@ -155,9 +155,9 @@ export function PharmacyStore({ onBack, onNavigate, initialCategory = 'all' }: P
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-24">
+    <div className="min-h-screen bg-[#FF8C42] gray-50 pb-24">
       {/* Header */}
-      <div className="bg-white sticky top-0 z-10 shadow-sm">
+      <div className="bg-[#FF8C42] white sticky top-0 z-10 shadow-sm">
         <div className="px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="icon" onClick={onBack} className="-ml-2">
@@ -176,7 +176,7 @@ export function PharmacyStore({ onBack, onNavigate, initialCategory = 'all' }: P
           >
             <ShoppingCart className="w-6 h-6 text-gray-700" />
             {itemCount > 0 && (
-              <span className="absolute top-0 right-0 w-4 h-4 bg-red-500 text-white text-[10px] font-bold flex items-center justify-center rounded-full">
+              <span className="absolute top-0 right-0 w-4 h-4 bg-[#FF8C42] red-500 text-white text-[10px] font-bold flex items-center justify-center rounded-full">
                 {itemCount}
               </span>
             )}
@@ -189,7 +189,7 @@ export function PharmacyStore({ onBack, onNavigate, initialCategory = 'all' }: P
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <Input 
               placeholder="Search medicines, products..." 
-              className="pl-9 bg-gray-50 border-gray-200"
+              className="pl-9 bg-[#FF8C42] gray-50 border-gray-200"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
@@ -219,20 +219,20 @@ export function PharmacyStore({ onBack, onNavigate, initialCategory = 'all' }: P
       {/* Product List */}
       <div className="p-4 grid grid-cols-2 gap-4">
         {filteredProducts.map(product => (
-          <Card key={product.id} className="overflow-hidden bg-white border-gray-100 shadow-sm flex flex-col">
-            <div className="relative aspect-square bg-gray-100">
+          <Card key={product.id} className="overflow-hidden bg-[#FF8C42] white border-gray-100 shadow-sm flex flex-col">
+            <div className="relative aspect-square bg-[#FF8C42] gray-100">
               <img 
                 src={product.image} 
                 alt={product.name}
                 className="w-full h-full object-cover"
               />
               {product.prescriptionRequired && (
-                <div className="absolute top-2 left-2 bg-blue-500/90 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                <div className="absolute top-2 left-2 bg-[#FF8C42] blue-500/90 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
                   RX
                 </div>
               )}
               {product.originalPrice && (
-                <div className="absolute top-2 right-2 bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                <div className="absolute top-2 right-2 bg-[#FF8C42] red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
                   {Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)}% OFF
                 </div>
               )}
@@ -260,7 +260,7 @@ export function PharmacyStore({ onBack, onNavigate, initialCategory = 'all' }: P
                 
                 <Button 
                   size="sm" 
-                  className="h-8 w-8 p-0 rounded-full bg-pink-600 hover:bg-pink-700"
+                  className="h-8 w-8 p-0 rounded-full bg-pink-600 hover:bg-[#FF8C42] pink-700"
                   onClick={() => addToCart({
                     id: product.id,
                     name: product.name,
@@ -281,7 +281,7 @@ export function PharmacyStore({ onBack, onNavigate, initialCategory = 'all' }: P
 
       {filteredProducts.length === 0 && (
         <div className="flex flex-col items-center justify-center py-12 text-center">
-          <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+          <div className="w-16 h-16 bg-[#FF8C42] gray-100 rounded-full flex items-center justify-center mb-4">
             <Search className="w-8 h-8 text-gray-400" />
           </div>
           <h3 className="font-semibold text-gray-800">No products found</h3>
@@ -293,7 +293,7 @@ export function PharmacyStore({ onBack, onNavigate, initialCategory = 'all' }: P
       {itemCount > 0 && (
         <div className="fixed bottom-6 left-4 right-4">
           <Button 
-            className="w-full bg-gray-900 hover:bg-black text-white h-14 rounded-xl shadow-lg flex items-center justify-between px-6"
+            className="w-full bg-gray-900 hover:bg-[#FF8C42] black text-white h-14 rounded-xl shadow-lg flex items-center justify-between px-6"
             onClick={() => onNavigate('pharmacy_checkout')}
           >
             <div className="flex flex-col items-start">

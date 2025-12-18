@@ -67,9 +67,9 @@ export function ServiceDiscovery({ onSelectVendor }: ServiceDiscoveryProps) {
 
   if (!selectedCategory) {
     return (
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-[#FF8C42] gray-50">
         {/* Header */}
-        <div className="bg-white border-b">
+        <div className="bg-[#FF8C42] white border-b">
           <div className="max-w-7xl mx-auto px-4 py-8">
             <h1 className="text-2xl font-bold text-gray-900 mb-2">
               What does your pet need?
@@ -87,7 +87,7 @@ export function ServiceDiscovery({ onSelectVendor }: ServiceDiscoveryProps) {
               <button
                 key={category.id}
                 onClick={() => setSelectedCategory(category.id)}
-                className="p-6 bg-white rounded-xl border-2 border-gray-200 hover:border-blue-500 transition-all text-center group"
+                className="p-6 bg-[#FF8C42] white rounded-xl border-2 border-gray-200 hover:border-blue-500 transition-all text-center group"
               >
                 <div className="text-4xl mb-3">{category.icon}</div>
                 <h3 className="font-medium text-gray-900 group-hover:text-blue-600">
@@ -102,9 +102,9 @@ export function ServiceDiscovery({ onSelectVendor }: ServiceDiscoveryProps) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-[#FF8C42] gray-50">
       {/* Header with Search */}
-      <div className="bg-white border-b sticky top-0 z-10">
+      <div className="bg-[#FF8C42] white border-b sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center gap-4">
             <button
@@ -164,7 +164,7 @@ export function ServiceDiscovery({ onSelectVendor }: ServiceDiscoveryProps) {
             <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
           </div>
         ) : vendors.length === 0 ? (
-          <div className="bg-white rounded-xl border p-12 text-center">
+          <div className="bg-[#FF8C42] white rounded-xl border p-12 text-center">
             <Search className="w-16 h-16 mx-auto mb-4 text-gray-300" />
             <h3 className="font-bold text-gray-900 mb-2">No providers found</h3>
             <p className="text-gray-600">Try adjusting your filters</p>
@@ -174,7 +174,7 @@ export function ServiceDiscovery({ onSelectVendor }: ServiceDiscoveryProps) {
             {vendors.map((vendor) => (
               <div
                 key={vendor.id}
-                className="bg-white rounded-xl border hover:shadow-lg transition-shadow overflow-hidden"
+                className="bg-[#FF8C42] white rounded-xl border hover:shadow-lg transition-shadow overflow-hidden"
               >
                 <div className="p-6">
                   <div className="flex items-start justify-between mb-4">
@@ -198,7 +198,7 @@ export function ServiceDiscovery({ onSelectVendor }: ServiceDiscoveryProps) {
                     </div>
 
                     {vendor.isAvailableToday && (
-                      <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm flex items-center gap-1">
+                      <span className="px-3 py-1 bg-[#FF8C42] green-100 text-green-700 rounded-full text-sm flex items-center gap-1">
                         <Clock className="w-3 h-3" />
                         Available Today
                       </span>
@@ -219,7 +219,7 @@ export function ServiceDiscovery({ onSelectVendor }: ServiceDiscoveryProps) {
                         {vendor.featuredOfferings.map((offering: any) => (
                           <div
                             key={offering.id}
-                            className="px-3 py-1.5 bg-gray-50 rounded-lg border"
+                            className="px-3 py-1.5 bg-[#FF8C42] gray-50 rounded-lg border"
                           >
                             <span className="text-sm text-gray-700">{offering.name}</span>
                             {offering.price > 0 && (
@@ -250,7 +250,7 @@ export function ServiceDiscovery({ onSelectVendor }: ServiceDiscoveryProps) {
 
                     <Button
                       onClick={() => onSelectVendor(vendor.id)}
-                      className="bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2"
+                      className="bg-blue-600 hover:bg-[#FF8C42] blue-700 text-white flex items-center gap-2"
                     >
                       View Details
                       <ChevronRight className="w-4 h-4" />
