@@ -131,12 +131,12 @@ export function registerAuthEndpoints(app: Hono) {
    * POST /auth/login
    * Universal login endpoint for all portals
    * 
-   * Body: { phone, portal: 'customer' | 'vendor' | 'admin', platform?: 'web' | 'mobile' }
+   * Body: { phone, portal: 'customer' | 'vendor' | 'admin' }
    * Returns: { session, user, profile, state }
    */
   app.post("/make-server-3dd53475/auth/login", async (c) => {
     try {
-      const { phone, portal, platform = 'web' } = await c.req.json();
+      const { phone, portal } = await c.req.json();
       
       if (!phone) {
         return sendError(c, 'Phone number required', 400);
@@ -145,7 +145,6 @@ export function registerAuthEndpoints(app: Hono) {
       console.log(`\n🔐 ========== LOGIN REQUEST START ==========`);
       console.log(`📞 Phone: ${phone}`);
       console.log(`🚪 Portal: ${portal}`);
-      console.log(`📱 Platform: ${platform}`);
       console.log(`⏰ Time: ${new Date().toISOString()}`);
       
       // Find or create user
@@ -158,8 +157,8 @@ export function registerAuthEndpoints(app: Hono) {
         name: user.name
       });
       
-      // Create session with platform-specific expiration
-      const session = await authService.createUserSession(user.userId, user.phone, user.role, platform as 'web' | 'mobile');
+      // Create session
+      const session = await authService.createUserSession(user.userId, user.phone, user.role);
       
       // ✅ SECURITY FIX: Generate access token for authenticated API calls
       const accessToken = await authService.generateAccessToken(user.userId, user.phone, user.role);

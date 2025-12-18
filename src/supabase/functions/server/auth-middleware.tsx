@@ -38,31 +38,44 @@ export async function requireAuth(c: Context, next: () => Promise<void>) {
     
     console.log('🔐 [AUTH] Validating token:', token.substring(0, 20) + '...');
     
-    // Find session by token
-    // Tokens are stored as session.token, so we need to search all sessions
-    const allSessions = await kv.getByPrefix('session:session_');
-    const matchingSession = allSessions.find((s: any) => s.token === token);
+    // ✅ FIX: Look up token in the token system (not session system!)
+    const tokenData = await kv.get(`token:${token}`);
     
-    if (!matchingSession) {
-      console.log('❌ [AUTH] Invalid token - no matching session found');
+    if (!tokenData) {
+      console.log('❌ [AUTH] Invalid token - no matching token found');
+      console.log('🔍 [AUTH] Token lookup key:', `token:${token.substring(0, 30)}...`);
       return sendError(c, 'Invalid or expired session', 401);
     }
     
-    // Check if session is expired
-    if (new Date(matchingSession.expiresAt) < new Date()) {
-      console.log('❌ [AUTH] Token expired:', matchingSession.expiresAt);
-      // Clean up expired session
-      await kv.del(`session:${matchingSession.sessionId}`);
-      await kv.del(`session:user:${matchingSession.userId}`);
-      await kv.del(`session:phone:${matchingSession.phone}`);
+    console.log('✅ [AUTH] Token found:', {
+      userId: tokenData.userId,
+      phone: tokenData.phone,
+      role: tokenData.role,
+      expiresAt: tokenData.expiresAt
+    });
+    
+    // Check if token is expired
+    if (new Date(tokenData.expiresAt) < new Date()) {
+      console.log('❌ [AUTH] Token expired:', tokenData.expiresAt);
+      // Clean up expired token
+      await kv.del(`token:${token}`);
+      await kv.del(`token:user:${tokenData.userId}`);
       return sendError(c, 'Session expired - please login again', 401);
     }
     
-    // Get user data
-    const user = await kv.get(`user:id:${matchingSession.userId}`);
+    // Get user data using phone (more reliable than userId for vendors)
+    const { normalizePhone } = await import('./phone-utils.tsx');
+    const normalizedPhone = normalizePhone(tokenData.phone);
+    let user = await kv.get(`user:phone:${normalizedPhone}`);
+    
+    // Fallback: try userId if phone lookup fails
+    if (!user) {
+      console.log('⚠️ [AUTH] User not found by phone, trying userId...');
+      user = await kv.get(`user:id:${tokenData.userId}`);
+    }
     
     if (!user) {
-      console.log('❌ [AUTH] User not found for session:', matchingSession.userId);
+      console.log('❌ [AUTH] User not found for token:', tokenData.userId);
       return sendError(c, 'User not found', 404);
     }
     
@@ -73,7 +86,7 @@ export async function requireAuth(c: Context, next: () => Promise<void>) {
     });
     
     // Attach auth data to context for use in route handlers
-    c.set('session', matchingSession);
+    c.set('token', tokenData);
     c.set('user', user);
     c.set('userId', user.userId);
     c.set('userPhone', user.phone);

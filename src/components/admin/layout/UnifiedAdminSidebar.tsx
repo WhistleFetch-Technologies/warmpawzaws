@@ -90,7 +90,7 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
     },
     { 
       icon: Database, 
-      label: 'System Setup', 
+      label: 'Database Seeding', 
       id: 'database-seeding',
       onClick: () => onNavigate('database-seeding')
     },

@@ -227,6 +227,57 @@ async function sendEmergencyNotification(
 export function ambulanceServiceEndpoints(app: Hono, kv: any) {
   const BASE_PATH = "/make-server-3dd53475";
 
+  // ============================================
+  // FLEET MANAGEMENT ENDPOINTS (VENDOR UI)
+  // ============================================
+
+  /**
+   * GET /vendor/:vendorId/ambulance/vehicles
+   * Get all ambulance vehicles for a vendor
+   */
+  app.get(`${BASE_PATH}/vendor/:vendorId/ambulance/vehicles`, async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const vehicles = await kv.get(`vendor:${vendorId}:ambulance:vehicles`) || [];
+      return sendSuccess(c, { vehicles, total: vehicles.length });
+    } catch (error) {
+      console.error('Error fetching ambulance vehicles:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  /**
+   * POST /vendor/:vendorId/ambulance/vehicles
+   * Add a new ambulance vehicle
+   */
+  app.post(`${BASE_PATH}/vendor/:vendorId/ambulance/vehicles`, async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const vehicleData = await c.req.json();
+      
+      const vehicleId = `vehicle_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+      
+      const vehicle = {
+        id: vehicleId,
+        ...vehicleData,
+        vendorId,
+        isAvailable: true,
+        createdAt: new Date().toISOString()
+      };
+      
+      const vehicles = await kv.get(`vendor:${vendorId}:ambulance:vehicles`) || [];
+      vehicles.push(vehicle);
+      
+      await kv.set(`vendor:${vendorId}:ambulance:vehicles`, vehicles);
+      await kv.set(`ambulance:vehicle:${vehicleId}`, vehicle);
+      
+      return sendSuccess(c, { vehicle }, 'Vehicle added successfully');
+    } catch (error) {
+      console.error('Error adding ambulance vehicle:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
   /**
    * POST /ambulance/emergency/create
    * Create emergency ambulance booking

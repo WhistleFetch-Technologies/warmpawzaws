@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   LayoutDashboard, Store, Package, Tag, Image as ImageIcon,
-  ShoppingCart, Percent, BarChart3, Settings, FileText, Layers
+  ShoppingCart, Percent, BarChart3, Settings, FileText
 } from 'lucide-react';
 import { ECommerceDashboard } from './ECommerceDashboard';
 import { SellerManagement } from './SellerManagement';
@@ -13,7 +13,6 @@ import { PromotionsAdmin } from './PromotionsAdmin';
 import { BannerAdmin } from './BannerAdmin';
 import { ECommerceAnalytics } from './ECommerceAnalytics';
 import { PolicyManagement } from './PolicyManagement';
-import { TierManagement } from '../finance/TierManagement';
 
 interface ECommerceManagementProps {
   onBack: () => void;
@@ -25,7 +24,6 @@ type TabType =
   | 'products'
   | 'orders'
   | 'commission'
-  | 'tiers'
   | 'categories'
   | 'promotions'
   | 'banners'
@@ -41,7 +39,6 @@ export function ECommerceManagement({ onBack }: ECommerceManagementProps) {
     { id: 'products', label: 'Product Approval', icon: Package },
     { id: 'orders', label: 'Orders', icon: ShoppingCart },
     { id: 'commission', label: 'Commission', icon: Percent },
-    { id: 'tiers', label: 'Tier Management', icon: Layers },
     { id: 'categories', label: 'Categories', icon: FileText },
     { id: 'promotions', label: 'Promotions', icon: Tag },
     { id: 'banners', label: 'Banners', icon: ImageIcon },
@@ -108,7 +105,6 @@ export function ECommerceManagement({ onBack }: ECommerceManagementProps) {
         {activeTab === 'products' && <ProductApproval />}
         {activeTab === 'orders' && <OrderManagementAdmin />}
         {activeTab === 'commission' && <CommissionSettings />}
-        {activeTab === 'tiers' && <TierManagement />}
         {activeTab === 'categories' && <CategoryManagement />}
         {activeTab === 'promotions' && <PromotionsAdmin />}
         {activeTab === 'banners' && <BannerAdmin />}

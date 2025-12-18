@@ -93,9 +93,9 @@ export function VetSpecializedServicesManager({
     try {
       setLoading(true);
       
-      // Load ambulance services
+      // ✅ FIXED: Load ambulance services using correct endpoint
       const ambulanceRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/ambulance-services`,
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/ambulance/vehicles`,
         { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
       );
       
