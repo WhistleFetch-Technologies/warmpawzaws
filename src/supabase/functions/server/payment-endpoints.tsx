@@ -256,6 +256,7 @@ export function paymentEndpoints(app: Hono, kv: any) {
       if (booking) {
         booking.paymentStatus = 'paid';
         booking.paymentId = paymentId;
+        booking.razorpayPaymentId = razorpayPaymentId; // ✅ FIX: Store Razorpay payment ID for settlements
         booking.status = 'confirmed'; // Auto-confirm for now (or 'pending_confirmation')
         booking.paidAt = new Date().toISOString();
         booking.statusHistory.push({
@@ -418,8 +419,26 @@ export function paymentEndpoints(app: Hono, kv: any) {
       if (booking) {
         booking.paymentStatus = 'paid';
         booking.paymentId = paymentId;
+        // ✅ FIX: Store Razorpay payment ID if available (for wallet payments, this may be null)
+        if (payment.razorpayPaymentId) {
+          booking.razorpayPaymentId = payment.razorpayPaymentId;
+        }
         booking.paidAt = new Date().toISOString();
         await kv.set(`booking:${bookingId}`, booking);
+      }
+      
+      // ✅ FIX: Update order status if payment is for an order
+      if (payment.orderId) {
+        const order = await kv.get(`order:${payment.orderId}`);
+        if (order) {
+          order.paymentStatus = 'paid';
+          order.paymentId = paymentId;
+          if (payment.razorpayPaymentId) {
+            order.razorpayPaymentId = payment.razorpayPaymentId;
+          }
+          order.paidAt = new Date().toISOString();
+          await kv.set(`order:${payment.orderId}`, order);
+        }
       }
 
       // Add to customer's payment history

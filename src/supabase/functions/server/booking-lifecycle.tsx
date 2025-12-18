@@ -124,8 +124,20 @@ export function registerBookingLifecycleEndpoints(app: Hono) {
       booking.cancelledAt = new Date().toISOString();
       booking.cancellationReason = reason || 'Vendor rejected request';
       
-      // Trigger Refund Logic Here (TODO: Integrate with Payment System)
-      booking.refundStatus = 'pending';
+      // ✅ FIX: Trigger refund if payment was made
+      if (booking.paymentStatus === 'paid' && (booking.amount > 0 || booking.totalAmount > 0)) {
+        booking.refundStatus = 'pending';
+        booking.refundAmount = booking.amount || booking.totalAmount || 0;
+        
+        // Queue refund processing
+        // The refund processor endpoint (/refunds/process) will handle actual Razorpay API call
+        // Webhook will update booking status when refund is processed
+        console.log(`💰 Refund queued for booking ${bookingId}: ₹${booking.refundAmount}`);
+        
+        // Note: In production, you may want to call the refund processor endpoint here
+        // or use a job queue for async processing. For now, marking as pending
+        // and letting admin/automated system process refunds via /refunds/process endpoint
+      }
 
       await kv.set(`booking:${bookingId}`, booking);
 
