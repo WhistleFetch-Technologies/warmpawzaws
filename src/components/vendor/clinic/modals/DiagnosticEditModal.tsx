@@ -110,12 +110,12 @@ export function DiagnosticEditModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-[#FF8C42] black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-[#FF8C42] white rounded-lg w-full max-w-md max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg w-full max-w-md max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="sticky top-0 bg-[#FF8C42] gradient-to-r from-blue-600 to-cyan-600 text-white p-4 flex items-center justify-between rounded-t-lg">
+        <div className="sticky top-0 bg-gradient-to-r from-blue-600 to-cyan-600 text-white p-4 flex items-center justify-between rounded-t-lg">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-[#FF8C42] white/20 rounded-lg flex items-center justify-center">
+            <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
               <Microscope className="w-5 h-5" />
             </div>
             <div>
@@ -125,12 +125,13 @@ export function DiagnosticEditModal({
               <p className="text-xs opacity-90">Laboratory test details</p>
             </div>
           </div>
-          <Button onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center hover:bg-[#FF8C42] white/20 rounded-lg transition-colors"
+          <button 
+            onClick={onClose}
+            className="w-8 h-8 flex items-center justify-center hover:bg-white/20 rounded-lg transition-colors"
             disabled={saving}
           >
             <X className="w-5 h-5" />
-          </Button>
+          </button>
         </div>
 
         {/* Form */}
@@ -225,7 +226,7 @@ export function DiagnosticEditModal({
           </div>
 
           {/* Checkboxes */}
-          <div className="space-y-3 bg-[#FF8C42] gray-50 p-3 rounded-lg">
+          <div className="space-y-3 bg-gray-50 p-3 rounded-lg">
             <label className="flex items-center gap-3 cursor-pointer">
               <input
                 type="checkbox"
@@ -256,7 +257,7 @@ export function DiagnosticEditModal({
           </div>
 
           {/* Action Buttons */}
-          <div className="flex gap-3 pt-4 border-t sticky bottom-0 bg-[#FF8C42] white">
+          <div className="flex gap-3 pt-4 border-t sticky bottom-0 bg-white">
             <Button
               type="button"
               variant="outline"
@@ -268,7 +269,7 @@ export function DiagnosticEditModal({
             </Button>
             <Button
               type="submit"
-              className="flex-1 bg-blue-600 hover:bg-[#FF8C42] blue-700"
+              className="flex-1 bg-blue-600 hover:bg-blue-700"
               disabled={saving}
             >
               {saving ? (

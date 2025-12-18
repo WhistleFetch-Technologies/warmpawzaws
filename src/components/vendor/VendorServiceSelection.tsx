@@ -139,7 +139,7 @@ export function VendorServiceSelection({ onNext }: { onNext: (data: any) => void
           </h3>
           <div className="grid grid-cols-2 gap-3">
             {services.map((service) => (
-              <Button
+              <button
                 key={service.id}
                 onClick={() => toggleService(service.id)}
                 className={`relative bg-white rounded-2xl p-4 border-2 transition-all ${
@@ -171,7 +171,7 @@ export function VendorServiceSelection({ onNext }: { onNext: (data: any) => void
                     {service.name}
                   </p>
                 </div>
-              </Button>
+              </button>
             ))}
           </div>
         </div>
@@ -205,7 +205,7 @@ export function VendorServiceSelection({ onNext }: { onNext: (data: any) => void
             {serviceStyles.filter(s => s.id !== 'both').map((style) => {
               const isDisabled = !availableStyles[style.id];
               return (
-                <Button
+                <button
                   key={style.id}
                   onClick={() => !isDisabled && setSelectedStyle(style.id)}
                   disabled={isDisabled}
@@ -242,7 +242,7 @@ export function VendorServiceSelection({ onNext }: { onNext: (data: any) => void
                       {style.subtitle}
                     </p>
                   </div>
-                </Button>
+                </button>
               );
             })}
           </div>
@@ -252,7 +252,8 @@ export function VendorServiceSelection({ onNext }: { onNext: (data: any) => void
             const bothStyle = serviceStyles.find(s => s.id === 'both')!;
             const isDisabled = !availableStyles.both;
             return (
-              <Button onClick={() => !isDisabled && setSelectedStyle('both')}
+              <button
+                onClick={() => !isDisabled && setSelectedStyle('both')}
                 disabled={isDisabled}
                 className={`relative w-full bg-white rounded-2xl p-6 border-2 transition-all ${
                   isDisabled
@@ -289,7 +290,7 @@ export function VendorServiceSelection({ onNext }: { onNext: (data: any) => void
                     </p>
                   </div>
                 </div>
-              </Button>
+              </button>
             );
           })()}
           

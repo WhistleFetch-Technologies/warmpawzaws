@@ -73,7 +73,7 @@ export function MatingDatingMatches({ phone, mode, onBack, onChatClick }: Mating
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#FF8C42] gradient-to-br from-pink-50 via-purple-50 to-blue-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-500 mx-auto mb-4"></div>
           <p className="text-gray-600">Loading matches...</p>
@@ -83,15 +83,15 @@ export function MatingDatingMatches({ phone, mode, onBack, onChatClick }: Mating
   }
 
   return (
-    <div className="min-h-screen bg-[#FF8C42] gradient-to-br from-pink-50 via-purple-50 to-blue-50">
+    <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50">
       {/* Header */}
-      <div className="bg-[#FF8C42] white border-b border-gray-200 sticky top-0 z-10">
+      <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="max-w-md mx-auto px-4 py-4 flex items-center justify-between">
           <button onClick={onBack} className="text-gray-600">
             <ChevronLeft className="w-6 h-6" />
           </button>
           <div className="text-center">
-            <h1 className="font-bold text-lg bg-gradient-to-r from-pink-600 to-purple-600 bg-[#FF8C42] clip-text text-transparent">
+            <h1 className="font-bold text-lg bg-gradient-to-r from-pink-600 to-purple-600 bg-clip-text text-transparent">
               Your Matches
             </h1>
             <p className="text-xs text-gray-500">{matches.length} matches</p>
@@ -119,7 +119,7 @@ export function MatingDatingMatches({ phone, mode, onBack, onChatClick }: Mating
 
         {/* Matches List */}
         {matches.length === 0 ? (
-          <div className="bg-[#FF8C42] white rounded-2xl p-8 text-center shadow-sm mt-8">
+          <div className="bg-white rounded-2xl p-8 text-center shadow-sm mt-8">
             <Heart className="w-16 h-16 text-gray-300 mx-auto mb-4" />
             <h2 className="text-xl font-bold text-gray-900 mb-2">No Matches Yet</h2>
             <p className="text-gray-600 mb-4">
@@ -127,7 +127,7 @@ export function MatingDatingMatches({ phone, mode, onBack, onChatClick }: Mating
             </p>
             <Button
               onClick={onBack}
-              className="bg-[#FF8C42] gradient-to-r from-pink-500 to-purple-500 text-white"
+              className="bg-gradient-to-r from-pink-500 to-purple-500 text-white"
             >
               Start Swiping
             </Button>
@@ -141,7 +141,7 @@ export function MatingDatingMatches({ phone, mode, onBack, onChatClick }: Mating
               return (
                 <div
                   key={match.id}
-                  className="bg-[#FF8C42] white rounded-xl shadow-sm overflow-hidden hover:shadow-lg transition-shadow"
+                  className="bg-white rounded-xl shadow-sm overflow-hidden hover:shadow-lg transition-shadow"
                 >
                   <div className="flex gap-4 p-4">
                     {/* Profile Photo */}
@@ -154,7 +154,7 @@ export function MatingDatingMatches({ phone, mode, onBack, onChatClick }: Mating
                         />
                       </div>
                       {match.chatUnlocked && (
-                        <div className="absolute -top-1 -right-1 bg-[#FF8C42] green-500 text-white rounded-full p-1">
+                        <div className="absolute -top-1 -right-1 bg-green-500 text-white rounded-full p-1">
                           <MessageCircle className="w-3 h-3" />
                         </div>
                       )}
@@ -180,7 +180,7 @@ export function MatingDatingMatches({ phone, mode, onBack, onChatClick }: Mating
                       {mode === 'pet' && (
                         <div className="flex flex-wrap gap-1 mb-2">
                           {profile.temperament && (
-                            <span className="bg-[#FF8C42] purple-100 text-purple-700 px-2 py-0.5 rounded-full text-xs">
+                            <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full text-xs">
                               {profile.temperament}
                             </span>
                           )}
@@ -199,7 +199,7 @@ export function MatingDatingMatches({ phone, mode, onBack, onChatClick }: Mating
                       {mode === 'owner' && profile.interests && profile.interests.length > 0 && (
                         <div className="flex flex-wrap gap-1 mb-2">
                           {profile.interests.slice(0, 2).map((interest: string, idx: number) => (
-                            <span key={idx} className="bg-[#FF8C42] gray-100 text-gray-700 px-2 py-0.5 rounded-full text-xs">
+                            <span key={idx} className="bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full text-xs">
                               {interest}
                             </span>
                           ))}

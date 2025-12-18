@@ -72,15 +72,15 @@ export function DiagnosticsBooking({ customerId, petId, onBack, onSuccess }: Dia
   };
 
   return (
-    <div className="min-h-screen bg-[#FF8C42] gray-50 flex flex-col">
-      <div className="bg-[#FF8C42] white p-4 border-b sticky top-0 z-10 flex items-center gap-3">
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      <div className="bg-white p-4 border-b sticky top-0 z-10 flex items-center gap-3">
         <button onClick={onBack}><TestTube className="w-6 h-6 text-gray-600" /></button>
         <h1 className="text-lg font-bold text-gray-900">Book Lab Tests</h1>
       </div>
 
       <div className="p-4 flex-1 space-y-6">
         {/* Collection Type */}
-        <div className="bg-[#FF8C42] white p-4 rounded-xl shadow-sm border border-gray-100">
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
           <h3 className="font-semibold mb-3">Sample Collection</h3>
           <div className="grid grid-cols-2 gap-3">
             <button
@@ -135,7 +135,7 @@ export function DiagnosticsBooking({ customerId, petId, onBack, onSuccess }: Dia
       </div>
 
       {/* Footer */}
-      <div className="bg-[#FF8C42] white border-t p-4 shadow-lg sticky bottom-0">
+      <div className="bg-white border-t p-4 shadow-lg sticky bottom-0">
         <div className="flex justify-between items-center mb-3">
           <div>
             <p className="text-sm text-gray-500">{selectedTests.length} Tests Selected</p>
@@ -145,7 +145,7 @@ export function DiagnosticsBooking({ customerId, petId, onBack, onSuccess }: Dia
             {collectionType === 'home' && <p className="text-xs text-blue-600">+₹150 Home Collection</p>}
           </div>
           <Button 
-            className="bg-blue-600 hover:bg-[#FF8C42] blue-700 text-white px-8 h-12"
+            className="bg-blue-600 hover:bg-blue-700 text-white px-8 h-12"
             onClick={handleBooking}
             disabled={loading || selectedTests.length === 0}
           >

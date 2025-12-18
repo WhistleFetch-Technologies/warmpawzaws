@@ -139,7 +139,7 @@ export function CallModal({ bookingId, customerPhone, customerName, callType, on
   };
 
   return (
-    <div className="fixed inset-0 bg-[#FF8C42] gradient-to-br from-purple-900 via-indigo-900 to-blue-900 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 bg-gradient-to-br from-purple-900 via-indigo-900 to-blue-900 z-50 flex items-center justify-center">
       <div className="w-full max-w-[430px] h-screen flex flex-col">
         {/* Header */}
         <div className="pt-12 pb-6 px-6">
@@ -150,7 +150,7 @@ export function CallModal({ bookingId, customerPhone, customerName, callType, on
             {callStatus !== 'ended' && (
               <button
                 onClick={onClose}
-                className="w-10 h-10 flex items-center justify-center rounded-full bg-white/10 hover:bg-[#FF8C42] white/20 transition-colors"
+                className="w-10 h-10 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors"
               >
                 <X className="w-5 h-5 text-white" />
               </button>
@@ -181,9 +181,9 @@ export function CallModal({ bookingId, customerPhone, customerName, callType, on
           <div className="mb-8">
             {callStatus === 'initiating' && (
               <div className="flex items-center gap-3">
-                <div className="w-2 h-2 bg-[#FF8C42] white rounded-full animate-bounce"></div>
-                <div className="w-2 h-2 bg-[#FF8C42] white rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                <div className="w-2 h-2 bg-[#FF8C42] white rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
+                <div className="w-2 h-2 bg-white rounded-full animate-bounce"></div>
+                <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
               </div>
             )}
             {callStatus === 'ringing' && (
@@ -199,7 +199,7 @@ export function CallModal({ bookingId, customerPhone, customerName, callType, on
 
           {/* Video placeholder for video calls */}
           {callType === 'video' && callStatus === 'active' && videoEnabled && (
-            <div className="w-full aspect-video bg-[#FF8C42] black/30 rounded-2xl mb-8 border-2 border-white/20 flex items-center justify-center">
+            <div className="w-full aspect-video bg-black/30 rounded-2xl mb-8 border-2 border-white/20 flex items-center justify-center">
               <Video className="w-12 h-12 text-white/50" />
               <p className="text-white/70 ml-3">Video feed would appear here</p>
             </div>
@@ -223,7 +223,7 @@ export function CallModal({ bookingId, customerPhone, customerName, callType, on
               {/* End Call */}
               <button
                 onClick={endCall}
-                className="w-20 h-20 rounded-full bg-red-500 hover:bg-[#FF8C42] red-600 flex items-center justify-center transition-colors shadow-lg"
+                className="w-20 h-20 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center transition-colors shadow-lg"
               >
                 <PhoneOff className="w-8 h-8 text-white" />
               </button>
@@ -255,7 +255,7 @@ export function CallModal({ bookingId, customerPhone, customerName, callType, on
             </p>
             <Button
               onClick={onClose}
-              className="w-full bg-white text-purple-900 hover:bg-[#FF8C42] white/90"
+              className="w-full bg-white text-purple-900 hover:bg-white/90"
             >
               Close
             </Button>

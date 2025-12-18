@@ -170,7 +170,7 @@ export function SearchResultsPage() {
             {data.services && data.services.length > 0 && (
               <div className="flex flex-wrap gap-2 mb-3">
                 {data.services.slice(0, 5).map((service: string, idx: number) => (
-                  <span key={idx} className="px-2 py-1 bg-[#FF8C42] gray-100 text-gray-700 text-xs rounded-full">
+                  <span key={idx} className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded-full">
                     {service}
                   </span>
                 ))}
@@ -200,7 +200,7 @@ export function SearchResultsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#FF8C42] gray-50 py-8">
+    <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-7xl mx-auto px-4">
         {/* Search Bar */}
         <div className="mb-8 flex justify-center">
@@ -227,7 +227,7 @@ export function SearchResultsPage() {
               <Filter className="w-4 h-4" />
               Filters
               {activeFiltersCount > 0 && (
-                <span className="px-2 py-0.5 bg-[#FF8C42] blue-500 text-white text-xs rounded-full">
+                <span className="px-2 py-0.5 bg-blue-500 text-white text-xs rounded-full">
                   {activeFiltersCount}
                 </span>
               )}

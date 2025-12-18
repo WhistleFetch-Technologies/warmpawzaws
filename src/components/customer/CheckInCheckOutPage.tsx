@@ -15,7 +15,6 @@
 import React, { useState, useEffect } from 'react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { LogIn, LogOut, Clock, User, Camera, FileText, Key, CheckCircle, AlertCircle, Calendar } from 'lucide-react';
-// Brand color: #FF8C42
 
 interface Booking {
   id: string;

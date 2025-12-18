@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { GoogleMap, LoadScript, Marker, Polyline, InfoWindow } from '@react-google-maps/api';
 import { Ambulance, MapPin, Navigation } from 'lucide-react';
-// Brand color: #FF8C42
 
 interface GoogleMapsTrackingProps {
   currentLocation: { lat: number; lng: number } | null;

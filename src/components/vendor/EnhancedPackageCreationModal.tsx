@@ -480,13 +480,13 @@ export function EnhancedPackageCreationModal({
                     {formData.specialBenefits.map((benefit, index) => (
                       <div key={index} className="flex items-center justify-between bg-green-50 px-3 py-2 rounded">
                         <span className="text-sm">✓ {benefit}</span>
-                        <Button
+                        <button
                           type="button"
                           onClick={() => removeBenefit(index)}
                           className="text-red-600 hover:text-red-700"
                         >
                           <Trash2 className="w-3 h-3" />
-                        </Button>
+                        </button>
                       </div>
                     ))}
                   </div>

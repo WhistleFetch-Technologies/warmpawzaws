@@ -114,10 +114,10 @@ export function AddVetSummaryModal({
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-[#FF8C42] white rounded-2xl shadow-2xl">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-white rounded-2xl shadow-2xl">
         <DialogHeader className="border-b pb-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-[#FF8C42] blue-100 rounded-full flex items-center justify-center">
+            <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
               <FileText className="w-5 h-5 text-blue-600" />
             </div>
             <div>
@@ -131,7 +131,7 @@ export function AddVetSummaryModal({
 
         {success ? (
           <div className="py-12 text-center">
-            <div className="w-16 h-16 bg-[#FF8C42] green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <CheckCircle className="w-10 h-10 text-green-600" />
             </div>
             <h3 className="font-bold text-green-900 mb-2">Summary Saved Successfully</h3>
@@ -141,7 +141,7 @@ export function AddVetSummaryModal({
           <form onSubmit={handleSubmit} className="space-y-6 pt-4">
             {/* Error Alert */}
             {error && (
-              <div className="bg-[#FF8C42] red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
                 <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
                 <p className="text-sm text-red-800">{error}</p>
               </div>
@@ -198,7 +198,7 @@ export function AddVetSummaryModal({
                 <Button 
                   type="button" 
                   onClick={handleAddSymptom}
-                  className="bg-blue-600 hover:bg-[#FF8C42] blue-700 text-white px-4"
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-4"
                 >
                   Add
                 </Button>
@@ -208,16 +208,16 @@ export function AddVetSummaryModal({
                   {formData.symptoms.map((symptom, index) => (
                     <span 
                       key={index}
-                      className="inline-flex items-center gap-1 bg-[#FF8C42] blue-100 text-blue-800 px-3 py-1 rounded-full text-sm"
+                      className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm"
                     >
                       {symptom}
-                      <Button
+                      <button
                         type="button"
                         onClick={() => handleRemoveSymptom(symptom)}
                         className="hover:text-blue-900"
                       >
                         <X className="w-3 h-3" />
-                      </Button>
+                      </button>
                     </span>
                   ))}
                 </div>
@@ -329,7 +329,7 @@ export function AddVetSummaryModal({
               <Button 
                 type="submit"
                 disabled={submitting || !formData.summary.trim()}
-                className="bg-blue-600 hover:bg-[#FF8C42] blue-700 text-white px-6"
+                className="bg-blue-600 hover:bg-blue-700 text-white px-6"
               >
                 {submitting ? (
                   <>

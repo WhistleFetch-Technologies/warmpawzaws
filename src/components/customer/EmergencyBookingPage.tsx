@@ -15,7 +15,6 @@
 import React, { useState, useEffect } from 'react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { AlertCircle, MapPin, Phone, Clock, Navigation, Ambulance, Activity, Shield, ChevronRight, CheckCircle } from 'lucide-react';
-// Brand color: #FF8C42
 
 interface EmergencyType {
   id: string;

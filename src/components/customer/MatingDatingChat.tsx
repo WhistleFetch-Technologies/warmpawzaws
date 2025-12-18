@@ -173,7 +173,7 @@ export function MatingDatingChat({ phone, matchId, onBack }: MatingDatingChatPro
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#FF8C42] gradient-to-br from-pink-50 via-purple-50 to-blue-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-500 mx-auto mb-4"></div>
           <p className="text-gray-600">Loading chat...</p>
@@ -184,8 +184,8 @@ export function MatingDatingChat({ phone, matchId, onBack }: MatingDatingChatPro
 
   if (!match) {
     return (
-      <div className="min-h-screen bg-[#FF8C42] gradient-to-br from-pink-50 via-purple-50 to-blue-50 flex items-center justify-center p-4">
-        <div className="bg-[#FF8C42] white rounded-2xl p-8 text-center">
+      <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl p-8 text-center">
           <p className="text-gray-600 mb-4">Match not found</p>
           <Button onClick={onBack} variant="outline">Go Back</Button>
         </div>
@@ -196,9 +196,9 @@ export function MatingDatingChat({ phone, matchId, onBack }: MatingDatingChatPro
   const otherProfile = match.otherProfile;
 
   return (
-    <div className="min-h-screen bg-[#FF8C42] gray-50 flex flex-col">
+    <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* Header */}
-      <div className="bg-[#FF8C42] white border-b border-gray-200 sticky top-0 z-10">
+      <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="max-w-md mx-auto px-4 py-3 flex items-center gap-3">
           <button onClick={onBack} className="text-gray-600">
             <ChevronLeft className="w-6 h-6" />
@@ -206,7 +206,7 @@ export function MatingDatingChat({ phone, matchId, onBack }: MatingDatingChatPro
           
           {/* Profile Info */}
           <div className="flex items-center gap-3 flex-1">
-            <div className="w-10 h-10 rounded-full overflow-hidden bg-[#FF8C42] gradient-to-br from-pink-400 to-purple-400">
+            <div className="w-10 h-10 rounded-full overflow-hidden bg-gradient-to-br from-pink-400 to-purple-400">
               {otherProfile?.photos?.[0] ? (
                 <img 
                   src={otherProfile.photos[0]} 
@@ -230,7 +230,7 @@ export function MatingDatingChat({ phone, matchId, onBack }: MatingDatingChatPro
       </div>
 
       {/* Action Buttons */}
-      <div className="bg-[#FF8C42] white border-b border-gray-200">
+      <div className="bg-white border-b border-gray-200">
         <div className="max-w-md mx-auto px-4 py-3 flex gap-2">
           <Button
             onClick={handleScheduleMeetup}
@@ -258,14 +258,14 @@ export function MatingDatingChat({ phone, matchId, onBack }: MatingDatingChatPro
         <div className="max-w-md mx-auto px-4 py-4 space-y-4">
           {/* Match Banner */}
           <div className="text-center">
-            <div className="inline-block bg-[#FF8C42] pink-100 text-pink-700 px-4 py-2 rounded-full text-sm font-medium mb-2">
+            <div className="inline-block bg-pink-100 text-pink-700 px-4 py-2 rounded-full text-sm font-medium mb-2">
               You matched on {new Date(match.createdAt).toLocaleDateString()}
             </div>
           </div>
 
           {messages.length === 0 && (
             <div className="text-center py-8">
-              <div className="bg-[#FF8C42] white rounded-xl p-6 shadow-sm inline-block">
+              <div className="bg-white rounded-xl p-6 shadow-sm inline-block">
                 <p className="text-gray-600 mb-2">No messages yet</p>
                 <p className="text-sm text-gray-500">Say hi to {otherProfile?.name}!</p>
               </div>
@@ -304,7 +304,7 @@ export function MatingDatingChat({ phone, matchId, onBack }: MatingDatingChatPro
       </div>
 
       {/* Message Input */}
-      <div className="bg-[#FF8C42] white border-t border-gray-200">
+      <div className="bg-white border-t border-gray-200">
         <div className="max-w-md mx-auto px-4 py-3">
           <div className="flex items-end gap-2">
             <button className="text-gray-400 hover:text-gray-600 mb-2">
@@ -314,21 +314,21 @@ export function MatingDatingChat({ phone, matchId, onBack }: MatingDatingChatPro
               <Smile className="w-6 h-6" />
             </button>
             
-            <div className="flex-1 bg-[#FF8C42] gray-100 rounded-full px-4 py-2">
+            <div className="flex-1 bg-gray-100 rounded-full px-4 py-2">
               <input
                 type="text"
                 value={messageText}
                 onChange={(e) => setMessageText(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
                 placeholder="Type a message..."
-                className="w-full bg-[#FF8C42] transparent outline-none text-gray-900 placeholder-gray-500"
+                className="w-full bg-transparent outline-none text-gray-900 placeholder-gray-500"
               />
             </div>
 
             <button
               onClick={sendMessage}
               disabled={!messageText.trim() || sending}
-              className="bg-[#FF8C42] gradient-to-r from-pink-500 to-purple-500 text-white rounded-full p-3 disabled:opacity-50 hover:scale-105 transition-transform active:scale-95"
+              className="bg-gradient-to-r from-pink-500 to-purple-500 text-white rounded-full p-3 disabled:opacity-50 hover:scale-105 transition-transform active:scale-95"
             >
               <Send className="w-5 h-5" />
             </button>
@@ -357,17 +357,17 @@ export function MatingDatingChat({ phone, matchId, onBack }: MatingDatingChatPro
 // Simple modal placeholders - full components created separately
 function MeetUpSchedulerModal({ matchId, onClose }: { matchId: string; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 bg-[#FF8C42] black/50 z-50 flex items-end sm:items-center justify-center p-4">
-      <div className="bg-[#FF8C42] white rounded-t-2xl sm:rounded-2xl max-w-md w-full p-6">
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl max-w-md w-full p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-xl font-bold text-gray-900">Schedule Meet-Up</h3>
           <button onClick={onClose} className="text-gray-400">×</button>
         </div>
-        <div className="flex items-center gap-3 text-blue-600 bg-[#FF8C42] blue-50 rounded-lg p-4">
+        <div className="flex items-center gap-3 text-blue-600 bg-blue-50 rounded-lg p-4">
           <Coffee className="w-6 h-6" />
           <p className="text-sm">This will open the Meet-Up Scheduler to find nearby pet-friendly cafés</p>
         </div>
-        <Button onClick={onClose} className="w-full mt-4 bg-[#FF8C42] gradient-to-r from-pink-500 to-purple-500 text-white">
+        <Button onClick={onClose} className="w-full mt-4 bg-gradient-to-r from-pink-500 to-purple-500 text-white">
           Find Cafés
         </Button>
       </div>
@@ -377,17 +377,17 @@ function MeetUpSchedulerModal({ matchId, onClose }: { matchId: string; onClose: 
 
 function MatingAppointmentModal({ matchId, onClose }: { matchId: string; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 bg-[#FF8C42] black/50 z-50 flex items-end sm:items-center justify-center p-4">
-      <div className="bg-[#FF8C42] white rounded-t-2xl sm:rounded-2xl max-w-md w-full p-6">
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl max-w-md w-full p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-xl font-bold text-gray-900">Mating Appointment</h3>
           <button onClick={onClose} className="text-gray-400">×</button>
         </div>
-        <div className="flex items-center gap-3 text-green-600 bg-[#FF8C42] green-50 rounded-lg p-4">
+        <div className="flex items-center gap-3 text-green-600 bg-green-50 rounded-lg p-4">
           <Stethoscope className="w-6 h-6" />
           <p className="text-sm">This will help you book a professional mating appointment at a nearby vet clinic</p>
         </div>
-        <Button onClick={onClose} className="w-full mt-4 bg-[#FF8C42] gradient-to-r from-pink-500 to-purple-500 text-white">
+        <Button onClick={onClose} className="w-full mt-4 bg-gradient-to-r from-pink-500 to-purple-500 text-white">
           Find Vets
         </Button>
       </div>

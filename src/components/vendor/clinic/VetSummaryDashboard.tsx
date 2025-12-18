@@ -163,30 +163,36 @@ export function VetSummaryDashboard({ vendorId, vendorName }: VetSummaryDashboar
 
       {/* Period Selector */}
       <div className="mb-6 flex gap-2">
-        <Button onClick={() => setSelectedPeriod('today')} className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+        <button
+          onClick={() => setSelectedPeriod('today')}
+          className={`px-4 py-2 rounded-lg font-medium transition-colors ${
             selectedPeriod === 'today'
               ? 'bg-orange-600 text-white'
               : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
           }`}
         >
           Today
-        </Button>
-        <Button onClick={() => setSelectedPeriod('week')} className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+        </button>
+        <button
+          onClick={() => setSelectedPeriod('week')}
+          className={`px-4 py-2 rounded-lg font-medium transition-colors ${
             selectedPeriod === 'week'
               ? 'bg-orange-600 text-white'
               : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
           }`}
         >
           This Week
-        </Button>
-        <Button onClick={() => setSelectedPeriod('month')} className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+        </button>
+        <button
+          onClick={() => setSelectedPeriod('month')}
+          className={`px-4 py-2 rounded-lg font-medium transition-colors ${
             selectedPeriod === 'month'
               ? 'bg-orange-600 text-white'
               : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
           }`}
         >
           This Month
-        </Button>
+        </button>
       </div>
 
       {loading ? (

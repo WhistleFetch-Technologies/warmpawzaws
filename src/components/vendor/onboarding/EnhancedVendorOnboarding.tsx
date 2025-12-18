@@ -120,13 +120,15 @@ export function EnhancedVendorOnboarding({
         documents: multiStaffData.documents,
         serviceStyle: multiStaffData.serviceStyle || 'both',
         location: multiStaffData.location,
+        specializations: multiStaffData.specializations || [], // ✅ NEW: Include specializations
         isSoloProvider: false // ✅ Explicitly mark as multi-staff
       };
 
-      console.log('📤 Submitting to /vendor/applications');
+      console.log('📤 Submitting to /vendor/apply');
+      console.log('📤 Specializations:', applicationPayload.specializations);
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/applications`,
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/apply`,
         {
           method: 'POST',
           headers: {

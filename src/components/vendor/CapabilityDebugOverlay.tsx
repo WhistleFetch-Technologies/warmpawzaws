@@ -3,7 +3,6 @@ import { ChevronDown, ChevronUp, Code, CheckCircle, XCircle, AlertCircle, Info }
 import { VendorCapabilities } from './hooks/useVendorCapabilities';
 import { Badge } from '../ui/badge';
 import { Card } from '../ui/card';
-import { Button } from '../ui/button';
 
 interface CapabilityDebugOverlayProps {
   roleId: string;
@@ -137,55 +136,62 @@ export function CapabilityDebugOverlay({
   return (
     <>
       {/* Floating Toggle Button */}
-      <Button onClick={() => setIsExpanded(!isExpanded)}
-        className="fixed bottom-4 right-4 z-50 bg-purple-600 hover:bg-[#FF8C42] purple-700 text-white rounded-full p-3 shadow-lg transition-all duration-300 flex items-center gap-2"
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="fixed bottom-4 right-4 z-50 bg-purple-600 hover:bg-purple-700 text-white rounded-full p-3 shadow-lg transition-all duration-300 flex items-center gap-2"
         title="Developer: Capability Debug Panel"
       >
         <Code className="w-5 h-5" />
         {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
-      </Button>
+      </button>
 
       {/* Debug Panel */}
       {isExpanded && (
-        <div className="fixed bottom-20 right-4 z-50 w-96 max-h-[600px] bg-[#FF8C42] white rounded-xl shadow-2xl border-2 border-purple-600 overflow-hidden flex flex-col">
+        <div className="fixed bottom-20 right-4 z-50 w-96 max-h-[600px] bg-white rounded-xl shadow-2xl border-2 border-purple-600 overflow-hidden flex flex-col">
           {/* Header */}
-          <div className="bg-[#FF8C42] purple-600 text-white p-4">
+          <div className="bg-purple-600 text-white p-4">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
                 <Code className="w-5 h-5" />
                 <h3 className="font-bold">Capability Debug Panel</h3>
               </div>
-              <Badge className="bg-[#FF8C42] purple-800 text-white">DEV ONLY</Badge>
+              <Badge className="bg-purple-800 text-white">DEV ONLY</Badge>
             </div>
             <p className="text-xs text-purple-200">Role-based module visibility audit</p>
           </div>
 
           {/* Tabs */}
-          <div className="flex border-b border-gray-200 bg-[#FF8C42] gray-50">
-            <Button onClick={() => setActiveTab('modules')} className={`flex-1 px-4 py-2 text-sm font-medium transition-colors ${
+          <div className="flex border-b border-gray-200 bg-gray-50">
+            <button
+              onClick={() => setActiveTab('modules')}
+              className={`flex-1 px-4 py-2 text-sm font-medium transition-colors ${
                 activeTab === 'modules'
                   ? 'bg-white text-purple-600 border-b-2 border-purple-600'
                   : 'text-gray-600 hover:text-gray-900'
               }`}
             >
               Modules ({enabledModules.length}/{modules.length})
-            </Button>
-            <Button onClick={() => setActiveTab('capabilities')} className={`flex-1 px-4 py-2 text-sm font-medium transition-colors ${
+            </button>
+            <button
+              onClick={() => setActiveTab('capabilities')}
+              className={`flex-1 px-4 py-2 text-sm font-medium transition-colors ${
                 activeTab === 'capabilities'
                   ? 'bg-white text-purple-600 border-b-2 border-purple-600'
                   : 'text-gray-600 hover:text-gray-900'
               }`}
             >
               Capabilities
-            </Button>
-            <Button onClick={() => setActiveTab('vendor')} className={`flex-1 px-4 py-2 text-sm font-medium transition-colors ${
+            </button>
+            <button
+              onClick={() => setActiveTab('vendor')}
+              className={`flex-1 px-4 py-2 text-sm font-medium transition-colors ${
                 activeTab === 'vendor'
                   ? 'bg-white text-purple-600 border-b-2 border-purple-600'
                   : 'text-gray-600 hover:text-gray-900'
               }`}
             >
               Vendor Info
-            </Button>
+            </button>
           </div>
 
           {/* Content */}
@@ -194,7 +200,7 @@ export function CapabilityDebugOverlay({
             {activeTab === 'modules' && (
               <>
                 {/* Summary */}
-                <Card className="p-3 bg-[#FF8C42] purple-50 border-purple-200">
+                <Card className="p-3 bg-purple-50 border-purple-200">
                   <div className="flex items-center gap-2 mb-2">
                     <Info className="w-4 h-4 text-purple-600" />
                     <p className="text-xs font-semibold text-purple-900">Module Load Summary</p>
@@ -219,7 +225,7 @@ export function CapabilityDebugOverlay({
                   </h4>
                   <div className="space-y-2">
                     {enabledModules.map((module) => (
-                      <Card key={module.name} className="p-2 bg-[#FF8C42] green-50 border-green-200">
+                      <Card key={module.name} className="p-2 bg-green-50 border-green-200">
                         <div className="flex items-start gap-2">
                           <CheckCircle className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
                           <div className="flex-1 min-w-0">
@@ -257,7 +263,7 @@ export function CapabilityDebugOverlay({
                     </h4>
                     <div className="space-y-2">
                       {disabledModules.map((module) => (
-                        <Card key={module.name} className="p-2 bg-[#FF8C42] red-50 border-red-200">
+                        <Card key={module.name} className="p-2 bg-red-50 border-red-200">
                           <div className="flex items-start gap-2">
                             <XCircle className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" />
                             <div className="flex-1 min-w-0">
@@ -266,7 +272,7 @@ export function CapabilityDebugOverlay({
                               {module.dependencies && module.dependencies.length > 0 && (
                                 <div className="flex flex-wrap gap-1 mt-1">
                                   {module.dependencies.map((dep) => (
-                                    <Badge key={dep} className="text-xs bg-[#FF8C42] gray-100 text-gray-600">
+                                    <Badge key={dep} className="text-xs bg-gray-100 text-gray-600">
                                       {dep}
                                     </Badge>
                                   ))}
@@ -333,12 +339,12 @@ export function CapabilityDebugOverlay({
             {/* Vendor Info Tab */}
             {activeTab === 'vendor' && (
               <>
-                <Card className="p-3 bg-[#FF8C42] blue-50 border-blue-200">
+                <Card className="p-3 bg-blue-50 border-blue-200">
                   <h4 className="text-xs font-semibold text-blue-900 mb-2">Role Information</h4>
                   <div className="space-y-2 text-xs">
                     <div className="flex justify-between">
                       <span className="text-gray-600">Role ID:</span>
-                      <code className="bg-[#FF8C42] white px-2 py-0.5 rounded border border-blue-200 text-blue-900">
+                      <code className="bg-white px-2 py-0.5 rounded border border-blue-200 text-blue-900">
                         {roleId}
                       </code>
                     </div>
@@ -391,12 +397,12 @@ export function CapabilityDebugOverlay({
                   </div>
                 </Card>
 
-                <Card className="p-3 bg-[#FF8C42] gray-50 border-gray-200">
+                <Card className="p-3 bg-gray-50 border-gray-200">
                   <h4 className="text-xs font-semibold text-gray-900 mb-2">Service Styles</h4>
                   <div className="flex flex-wrap gap-1">
                     {vendorData?.serviceStyles && vendorData.serviceStyles.length > 0 ? (
                       vendorData.serviceStyles.map((style: string) => (
-                        <Badge key={style} className="bg-[#FF8C42] blue-100 text-blue-800 text-xs">
+                        <Badge key={style} className="bg-blue-100 text-blue-800 text-xs">
                           {style}
                         </Badge>
                       ))
@@ -406,7 +412,7 @@ export function CapabilityDebugOverlay({
                   </div>
                 </Card>
 
-                <div className="p-2 bg-[#FF8C42] yellow-50 border border-yellow-200 rounded-lg">
+                <div className="p-2 bg-yellow-50 border border-yellow-200 rounded-lg">
                   <div className="flex items-start gap-2">
                     <AlertCircle className="w-4 h-4 text-yellow-600 mt-0.5 flex-shrink-0" />
                     <p className="text-xs text-yellow-800">
@@ -420,7 +426,7 @@ export function CapabilityDebugOverlay({
           </div>
 
           {/* Footer */}
-          <div className="border-t border-gray-200 bg-[#FF8C42] gray-50 px-4 py-2">
+          <div className="border-t border-gray-200 bg-gray-50 px-4 py-2">
             <p className="text-xs text-gray-600 text-center">
               Capability-driven rendering • Dev Tools • v1.0
             </p>

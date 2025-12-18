@@ -93,7 +93,7 @@ export function RescheduleBooking({ bookingId, onSuccess, onCancel }: Reschedule
 
   if (!policy?.canReschedule) {
     return (
-      <Card className="p-8 text-center bg-[#FF8C42] red-50">
+      <Card className="p-8 text-center bg-red-50">
         <Info className="w-12 h-12 text-red-500 mx-auto mb-3" />
         <p className="font-semibold text-gray-900 mb-2">Cannot Reschedule</p>
         <p className="text-gray-700">{policy?.reason}</p>
@@ -112,7 +112,7 @@ export function RescheduleBooking({ bookingId, onSuccess, onCancel }: Reschedule
   return (
     <div className="space-y-6">
       {/* Policy Info */}
-      <Card className="p-6 bg-[#FF8C42] blue-50 border-blue-200">
+      <Card className="p-6 bg-blue-50 border-blue-200">
         <div className="flex items-start gap-3">
           <Info className="w-5 h-5 text-blue-600 mt-0.5" />
           <div>

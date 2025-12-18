@@ -1,5 +1,4 @@
 import { useState } from 'react';
-// Brand color: #FF8C42
 import { CustomerHome } from './CustomerHomeComplete';
 import { UserAccountSidebar } from './UserAccountSidebar';
 import { CustomerPetDetails } from './CustomerPetDetails';

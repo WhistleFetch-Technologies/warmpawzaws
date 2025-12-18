@@ -3,7 +3,6 @@ import { Button } from '../ui/button';
 import { Star, MapPin, Calendar, ArrowRight, Clock } from 'lucide-react';
 import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-// Brand color: #FF8C42
 
 const BASE_URL = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
 

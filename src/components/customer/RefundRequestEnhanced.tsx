@@ -102,8 +102,8 @@ export function RefundRequestEnhanced({ bookingId, onClose, onSuccess }: RefundR
   }
 
   return (
-    <div className="max-w-md mx-auto bg-[#FF8C42] white rounded-xl shadow-lg overflow-hidden">
-      <div className="bg-[#FF8C42] red-50 p-4 border-b border-red-100">
+    <div className="max-w-md mx-auto bg-white rounded-xl shadow-lg overflow-hidden">
+      <div className="bg-red-50 p-4 border-b border-red-100">
         <h2 className="text-lg font-bold text-red-900 flex items-center gap-2">
           <AlertCircle className="w-5 h-5" />
           Cancel Booking & Refund
@@ -112,7 +112,7 @@ export function RefundRequestEnhanced({ bookingId, onClose, onSuccess }: RefundR
 
       <div className="p-6 space-y-6">
         {/* Breakdown */}
-        <div className="space-y-3 bg-[#FF8C42] gray-50 p-4 rounded-lg">
+        <div className="space-y-3 bg-gray-50 p-4 rounded-lg">
            <div className="flex justify-between text-sm">
              <span className="text-gray-600">Total Paid</span>
              <span className="font-medium">₹{estimate.paidAmount}</span>
@@ -163,7 +163,7 @@ export function RefundRequestEnhanced({ bookingId, onClose, onSuccess }: RefundR
                           <p className="text-xs text-green-700">Instant credit</p>
                        </div>
                     </div>
-                    <Badge className="bg-[#FF8C42] green-100 text-green-800 border-green-200">Recommended</Badge>
+                    <Badge className="bg-green-100 text-green-800 border-green-200">Recommended</Badge>
                  </Label>
               </div>
 
@@ -187,7 +187,7 @@ export function RefundRequestEnhanced({ bookingId, onClose, onSuccess }: RefundR
            <Button 
               onClick={handleConfirm} 
               disabled={submitting || !reason}
-              className="flex-1 bg-red-600 hover:bg-[#FF8C42] red-700 text-white"
+              className="flex-1 bg-red-600 hover:bg-red-700 text-white"
            >
               {submitting ? 'Processing...' : 'Confirm Cancellation'}
            </Button>

@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-// Brand color: #FF8C42
 import { UniversalServicesLanding } from './UniversalServicesLanding';
 import { VetClinicListViewEnhanced } from './vet/VetClinicListViewEnhanced'; // We can reuse this or make a universal list view
 import { VetCenterProfileView } from './vet/VetCenterProfileView'; // We can reuse this or make a universal profile view

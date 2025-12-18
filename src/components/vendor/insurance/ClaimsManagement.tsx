@@ -147,9 +147,9 @@ export function ClaimsManagement({
       {/* Header */}
       <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-4 text-white sticky top-0 z-10">
         <div className="flex items-center gap-3">
-          <Button onClick={onBack} className="p-2 hover:bg-white/10 rounded-full">
+          <button onClick={onBack} className="p-2 hover:bg-white/10 rounded-full">
             <ArrowLeft className="w-5 h-5" />
-          </Button>
+          </button>
           <div>
             <div className="text-xs text-blue-100">Claim #{claim.claimNumber}</div>
             <h1 className="text-lg font-bold">Claim Details</h1>
@@ -260,12 +260,12 @@ export function ClaimsManagement({
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  <Button className="p-2 hover:bg-gray-200 rounded-full">
+                  <button className="p-2 hover:bg-gray-200 rounded-full">
                     <Eye className="w-4 h-4 text-gray-600" />
-                  </Button>
-                  <Button className="p-2 hover:bg-gray-200 rounded-full">
+                  </button>
+                  <button className="p-2 hover:bg-gray-200 rounded-full">
                     <Download className="w-4 h-4 text-gray-600" />
-                  </Button>
+                  </button>
                 </div>
               </div>
             ))}

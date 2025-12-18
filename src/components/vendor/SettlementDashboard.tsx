@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-// Brand color: #FF8C42
 import { DollarSign, Clock, Check, TrendingUp } from 'lucide-react';
 
 /**

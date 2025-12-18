@@ -108,7 +108,7 @@ export function WriteReviewModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[425px] bg-[#FF8C42] white">
+      <DialogContent className="sm:max-w-[425px] bg-white">
         <DialogHeader>
           <DialogTitle>Write a Review</DialogTitle>
           <DialogDescription>

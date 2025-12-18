@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-// Brand color: #FF8C42
 import { VendorApplicationSubmitted } from './VendorApplicationSubmitted';
 import { VendorApplicationStatus } from './VendorApplicationStatus';
 import { VendorApprovalSuccessNew } from './VendorApprovalSuccessNew';

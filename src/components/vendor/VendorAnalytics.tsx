@@ -116,30 +116,36 @@ export function VendorAnalytics({ vendorId, vendorData, onBack }: VendorAnalytic
 
         {/* Period Selector */}
         <div className="flex gap-2">
-          <Button onClick={() => setPeriod('week')} className={`px-4 py-2 rounded-lg text-sm ${
+          <button
+            onClick={() => setPeriod('week')}
+            className={`px-4 py-2 rounded-lg text-sm ${
               period === 'week'
                 ? 'bg-white text-[#FF8C42]'
                 : 'bg-white/20 text-white'
             }`}
           >
             Week
-          </Button>
-          <Button onClick={() => setPeriod('month')} className={`px-4 py-2 rounded-lg text-sm ${
+          </button>
+          <button
+            onClick={() => setPeriod('month')}
+            className={`px-4 py-2 rounded-lg text-sm ${
               period === 'month'
                 ? 'bg-white text-[#FF8C42]'
                 : 'bg-white/20 text-white'
             }`}
           >
             Month
-          </Button>
-          <Button onClick={() => setPeriod('year')} className={`px-4 py-2 rounded-lg text-sm ${
+          </button>
+          <button
+            onClick={() => setPeriod('year')}
+            className={`px-4 py-2 rounded-lg text-sm ${
               period === 'year'
                 ? 'bg-white text-[#FF8C42]'
                 : 'bg-white/20 text-white'
             }`}
           >
             Year
-          </Button>
+          </button>
         </div>
       </div>
 

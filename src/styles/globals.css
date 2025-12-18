@@ -62,9 +62,6 @@
   --popover-foreground: oklch(0.145 0 0);
   --primary: #030213;
   --primary-foreground: oklch(1 0 0);
-  /* WarmPawz Brand Color */
-  --brand-primary: #FF8C42;
-  --brand-primary-rgb: 255, 140, 66;
   --secondary: oklch(0.95 0.0058 264.53);
   --secondary-foreground: #030213;
   --muted: #ececf0;

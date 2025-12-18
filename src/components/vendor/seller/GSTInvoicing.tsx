@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { FileText, Download, Eye, Search, Calendar, Filter } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
 import { toast } from 'sonner@2.0.3';
-import { Button } from '../../ui/button';
 
 interface GSTInvoicingProps {
   sellerId: string;
@@ -203,20 +202,22 @@ export function GSTInvoicing({ sellerId, sellerData }: GSTInvoicingProps) {
                       </td>
                       <td className="px-6 py-4 text-center">
                         <div className="flex items-center justify-center gap-2">
-                          <Button onClick={() => setSelectedInvoice(invoice)}
+                          <button
+                            onClick={() => setSelectedInvoice(invoice)}
                             className="p-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
                             title="View Invoice"
                           >
                             <Eye className="w-4 h-4" />
-                          </Button>
-                          <Button onClick={() => {
+                          </button>
+                          <button
+                            onClick={() => {
                               toast.success('Invoice downloaded (demo)');
                             }}
                             className="p-2 bg-[#FF8C42] text-white rounded-lg hover:bg-[#E67A32] transition-colors"
                             title="Download Invoice"
                           >
                             <Download className="w-4 h-4" />
-                          </Button>
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -247,15 +248,16 @@ function InvoicePreviewModal({ invoice, sellerData, onClose }: any) {
         <div className="sticky top-0 bg-white border-b border-gray-200 p-6 flex items-center justify-between">
           <h2 className="text-black">Invoice Preview</h2>
           <div className="flex gap-2">
-            <Button onClick={() => toast.success('Invoice downloaded (demo)')}
+            <button
+              onClick={() => toast.success('Invoice downloaded (demo)')}
               className="bg-[#FF8C42] text-white px-4 py-2 rounded-lg hover:bg-[#E67A32] transition-colors flex items-center gap-2"
             >
               <Download className="w-4 h-4" />
               Download PDF
-            </Button>
-            <Button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg">
+            </button>
+            <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg">
               ✕
-            </Button>
+            </button>
           </div>
         </div>
 

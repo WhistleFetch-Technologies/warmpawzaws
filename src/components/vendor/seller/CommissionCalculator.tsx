@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Calculator, DollarSign, Percent, TrendingUp, Info, Calendar } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
-import { Button } from '../../ui/button';
 
 interface CommissionCalculatorProps {
   sellerId: string;
@@ -190,11 +189,12 @@ export function CommissionCalculator({ sellerId }: CommissionCalculatorProps) {
               placeholder="0.00"
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42] text-lg"
             />
-            <Button onClick={calculateCommission}
+            <button
+              onClick={calculateCommission}
               className="w-full mt-4 bg-[#FF8C42] text-white px-4 py-3 rounded-lg hover:bg-[#E67A32] transition-colors font-medium"
             >
               Calculate
-            </Button>
+            </button>
           </div>
 
           {/* Result */}

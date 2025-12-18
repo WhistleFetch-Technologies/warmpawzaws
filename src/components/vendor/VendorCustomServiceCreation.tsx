@@ -442,11 +442,12 @@ export function VendorCustomServiceCreation({
       {/* Header */}
       <div className="mb-6">
         <div className="flex items-center gap-3 mb-4">
-          <Button onClick={onClose}
+          <button 
+            onClick={onClose}
             className="w-8 h-8 flex items-center justify-center bg-white rounded-lg border border-gray-200"
           >
             <ArrowLeft className="w-5 h-5 text-gray-700" />
-          </Button>
+          </button>
           <h1 className="text-2xl font-bold text-gray-900 flex-1">
             Custom Services
           </h1>
@@ -654,7 +655,7 @@ export function VendorCustomServiceCreation({
                 </p>
                 <div className="grid grid-cols-1 gap-2 max-h-60 overflow-y-auto border border-gray-200 rounded-lg p-2 bg-gray-50">
                   {availableMicroCategories.map((micro) => (
-                    <Button
+                    <button
                       key={micro.id}
                       type="button"
                       onClick={() => applyMicroCategoryTemplate(micro)}
@@ -685,7 +686,7 @@ export function VendorCustomServiceCreation({
                           </div>
                         </div>
                       </div>
-                    </Button>
+                    </button>
                   ))}
                 </div>
               </div>
@@ -824,7 +825,7 @@ export function VendorCustomServiceCreation({
               <Label>Applicable Pet Types</Label>
               <div className="flex gap-2 flex-wrap">
                 {['dog', 'cat', 'bird', 'rabbit', 'hamster'].map(petType => (
-                  <Button
+                  <button
                     key={petType}
                     type="button"
                     onClick={() => handlePetTypeToggle(petType)}
@@ -835,7 +836,7 @@ export function VendorCustomServiceCreation({
                     }`}
                   >
                     {petType.charAt(0).toUpperCase() + petType.slice(1)}
-                  </Button>
+                  </button>
                 ))}
               </div>
             </div>

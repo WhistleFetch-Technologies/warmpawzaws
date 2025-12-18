@@ -249,11 +249,12 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
       <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
         <div className="bg-white rounded-2xl w-full max-w-[430px] p-6">
           <p className="text-center text-gray-600">Appointment not found</p>
-          <Button onClick={onClose}
+          <button
+            onClick={onClose}
             className="w-full mt-4 px-4 py-2 bg-[#FF8C42] text-white rounded-lg"
           >
             Close
-          </Button>
+          </button>
         </div>
       </div>
     );
@@ -269,39 +270,46 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
               <h2 className="font-bold text-white">Appointment Details</h2>
               <p className="text-xs text-white/80">{booking.petName} - {booking.customerName}</p>
             </div>
-            <Button onClick={onClose}
+            <button
+              onClick={onClose}
               className="w-8 h-8 flex items-center justify-center rounded-full bg-white/20 hover:bg-white/30 transition-colors"
             >
               <X className="w-5 h-5 text-white" />
-            </Button>
+            </button>
           </div>
 
           {/* Tabs */}
           <div className="flex border-b border-gray-200 bg-white px-4">
-            <Button onClick={() => setActiveTab('details')} className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
+            <button
+              onClick={() => setActiveTab('details')}
+              className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
                 activeTab === 'details'
                   ? 'border-[#FF8C42] text-[#FF8C42]'
                   : 'border-transparent text-gray-500'
               }`}
             >
               Details
-            </Button>
-            <Button onClick={() => setActiveTab('history')} className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
+            </button>
+            <button
+              onClick={() => setActiveTab('history')}
+              className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
                 activeTab === 'history'
                   ? 'border-[#FF8C42] text-[#FF8C42]'
                   : 'border-transparent text-gray-500'
               }`}
             >
               History
-            </Button>
-            <Button onClick={() => setActiveTab('prescriptions')} className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
+            </button>
+            <button
+              onClick={() => setActiveTab('prescriptions')}
+              className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
                 activeTab === 'prescriptions'
                   ? 'border-[#FF8C42] text-[#FF8C42]'
                   : 'border-transparent text-gray-500'
               }`}
             >
               Prescriptions
-            </Button>
+            </button>
           </div>
 
           {/* Content */}
@@ -487,11 +495,12 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                     <p className="mb-4">No prescriptions yet</p>
                     {/* ✅ CANONICAL: Only show for pet_clinic role */}
                     {vendorData?.roleId === 'pet_clinic' && (
-                      <Button onClick={() => setShowPrescriptionModal(true)}
+                      <button
+                        onClick={() => setShowPrescriptionModal(true)}
                         className="px-4 py-2 bg-[#FF8C42] text-white rounded-lg font-medium"
                       >
                         Add Prescription
-                      </Button>
+                      </button>
                     )}
                   </div>
                 ) : (
@@ -543,11 +552,12 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                     ))}
                     
                     {vendorData?.roleId === 'veterinarian' && (
-                      <Button onClick={() => setShowPrescriptionModal(true)}
+                      <button
+                        onClick={() => setShowPrescriptionModal(true)}
                         className="w-full px-4 py-2 bg-green-50 text-green-700 rounded-lg font-medium hover:bg-green-100 transition-colors"
                       >
                         + Add New Prescription
-                      </Button>
+                      </button>
                     )}
                   </>
                 )}
@@ -559,21 +569,23 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
           <div className="bg-white border-t border-gray-200 p-4 space-y-2">
             <div className="flex gap-2">
               {/* CHAT - Always available */}
-              <Button onClick={() => setCommunicationMode('chat')}
+              <button
+                onClick={() => setCommunicationMode('chat')}
                 className="flex-1 py-3 bg-white border border-[#FF8C42] text-[#FF8C42] rounded-xl font-medium flex items-center justify-center gap-2"
               >
                 <MessageSquare className="w-4 h-4" />
                 Chat
-              </Button>
+              </button>
               
               {/* TELE-CONSULTATION Actions */}
               {booking.serviceType === 'tele' && booking.status !== 'completed' && booking.status !== 'cancelled' && (
-                <Button onClick={() => setCommunicationMode('video')}
+                <button
+                  onClick={() => setCommunicationMode('video')}
                   className="flex-1 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-medium flex items-center justify-center gap-2"
                 >
                   <Video className="w-4 h-4" />
                   Start Video Call
-                </Button>
+                </button>
               )}
 
               {/* HOME SERVICE Actions (Walker/Trainer/Groomer) */}
@@ -581,29 +593,32 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                 <>
                   {/* Phase 1: Start Travel (If confirmed) */}
                   {booking.status === 'confirmed' && (
-                    <Button onClick={handleStartTravel}
+                    <button
+                      onClick={handleStartTravel}
                       disabled={processing}
                       className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium flex items-center justify-center gap-2"
                     >
                       <MapPin className="w-4 h-4" />
                       Start Travel
-                    </Button>
+                    </button>
                   )}
 
                   {/* Phase 2: Arrived (If traveling/in_progress) */}
                   {(booking.status === 'traveling' || (booking.status === 'in_progress' && !booking.arrived)) && (
-                    <Button onClick={handleArrived}
+                    <button
+                      onClick={handleArrived}
                       disabled={processing}
                       className="flex-1 py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-medium flex items-center justify-center gap-2"
                     >
                       <MapPin className="w-4 h-4" />
                       Mark Arrived
-                    </Button>
+                    </button>
                   )}
 
                   {/* Phase 3: Start Session (If Arrived & Walker/Trainer) */}
                   {booking.status === 'arrived' && (vendorData?.roleId === 'pet_walker' || vendorData?.roleId === 'pet_trainer') && (
-                    <Button onClick={() => {
+                    <button
+                      onClick={() => {
                         setOtpAction('start');
                         setShowOtpModal(true);
                       }}
@@ -611,12 +626,13 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                     >
                       <Clock className="w-4 h-4" />
                       Start Session (OTP)
-                    </Button>
+                    </button>
                   )}
 
                   {/* Phase 4: Complete (If In Progress or Arrived for non-session roles) */}
                   {((booking.status === 'in_progress' && booking.arrived) || (booking.status === 'arrived' && vendorData?.roleId !== 'pet_walker' && vendorData?.roleId !== 'pet_trainer')) && (
-                    <Button onClick={() => {
+                    <button
+                      onClick={() => {
                         setOtpAction('complete');
                         setShowOtpModal(true);
                       }}
@@ -624,7 +640,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                     >
                       <CheckCircle2 className="w-4 h-4" />
                       Complete Job (OTP)
-                    </Button>
+                    </button>
                   )}
                 </>
               )}
@@ -634,25 +650,28 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
             {(vendorData?.roleId === 'veterinarian' || vendorData?.roleId === 'pet_clinic') && booking.status !== 'cancelled' && (
               <div className="space-y-2">
                 <div className="flex gap-2">
-                  <Button onClick={() => setShowMedicalHistory(true)}
+                  <button
+                    onClick={() => setShowMedicalHistory(true)}
                     className="flex-1 py-3 bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 rounded-xl font-medium flex items-center justify-center gap-2"
                   >
                     <FileText className="w-4 h-4" />
                     Medical History
-                  </Button>
-                  <Button onClick={() => setShowPrescriptionModal(true)}
+                  </button>
+                  <button
+                    onClick={() => setShowPrescriptionModal(true)}
                     className="flex-1 py-3 bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 rounded-xl font-medium flex items-center justify-center gap-2"
                   >
                     <Pill className="w-4 h-4" />
                     {prescriptions.length > 0 ? 'Update Rx' : 'Write Rx'}
-                  </Button>
+                  </button>
                 </div>
-                <Button onClick={() => setShowVetSummaryModal(true)}
+                <button
+                  onClick={() => setShowVetSummaryModal(true)}
                   className="w-full py-3 bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 rounded-xl font-medium flex items-center justify-center gap-2"
                 >
                   <Stethoscope className="w-4 h-4" />
                   Add Consultation Summary
-                </Button>
+                </button>
               </div>
             )}
           </div>
@@ -746,7 +765,8 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
             )}
             
             <div className="flex gap-3">
-              <Button onClick={() => {
+              <button
+                onClick={() => {
                   setShowOtpModal(false);
                   setOtp('');
                   setOtpError(null);
@@ -754,13 +774,14 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                 className="flex-1 py-3 border border-gray-300 rounded-xl font-medium text-gray-700"
               >
                 Cancel
-              </Button>
-              <Button onClick={handleOtpSubmit}
+              </button>
+              <button
+                onClick={handleOtpSubmit}
                 disabled={otp.length !== 6 || processing}
                 className="flex-1 py-3 bg-[#FF8C42] text-white rounded-xl font-medium disabled:opacity-50"
               >
                 {processing ? 'Verifying...' : 'Verify OTP'}
-              </Button>
+              </button>
             </div>
           </div>
         </div>

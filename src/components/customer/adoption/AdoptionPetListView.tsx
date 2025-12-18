@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-// Brand color: #FF8C42
 import { ArrowLeft, Heart, Calendar } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
 import { ImageWithFallback } from '../../figma/ImageWithFallback';

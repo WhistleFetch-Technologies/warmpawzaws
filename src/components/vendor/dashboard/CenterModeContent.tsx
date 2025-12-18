@@ -123,7 +123,7 @@ export function CenterModeContent({
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Card className="p-6">
               <div className="flex items-center gap-3">
-                <div className="bg-[#FF8C42] blue-100 rounded-full p-3">
+                <div className="bg-blue-100 rounded-full p-3">
                   <Package className="w-6 h-6 text-blue-600" />
                 </div>
                 <div>
@@ -134,7 +134,7 @@ export function CenterModeContent({
             </Card>
             <Card className="p-6">
               <div className="flex items-center gap-3">
-                <div className="bg-[#FF8C42] green-100 rounded-full p-3">
+                <div className="bg-green-100 rounded-full p-3">
                   <DollarSign className="w-6 h-6 text-green-600" />
                 </div>
                 <div>
@@ -145,7 +145,7 @@ export function CenterModeContent({
             </Card>
             <Card className="p-6">
               <div className="flex items-center gap-3">
-                <div className="bg-[#FF8C42] yellow-100 rounded-full p-3">
+                <div className="bg-yellow-100 rounded-full p-3">
                   <Users className="w-6 h-6 text-yellow-600" />
                 </div>
                 <div>
@@ -159,7 +159,7 @@ export function CenterModeContent({
           {/* Staff Management (Disabled for Solo) */}
           <Card className="p-6">
             <h2 className="text-xl font-semibold mb-4">Staff Management</h2>
-            <div className="text-center py-8 bg-[#FF8C42] gray-50 rounded-lg">
+            <div className="text-center py-8 bg-gray-50 rounded-lg">
               <Users className="w-12 h-12 text-gray-400 mx-auto mb-3" />
               <h3 className="font-semibold text-gray-700 mb-2">
                 Solo Provider Mode
@@ -230,7 +230,7 @@ export function CenterModeContent({
               )}
             </div>
           ) : (
-            <div className="text-center py-8 bg-[#FF8C42] gray-50 rounded-lg">
+            <div className="text-center py-8 bg-gray-50 rounded-lg">
               <MapPin className="w-12 h-12 text-gray-400 mx-auto mb-3" />
               <p className="text-gray-600 mb-4">No service area configured</p>
               <Button onClick={() => setServiceAreaModalOpen(true)}>

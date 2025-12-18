@@ -41,10 +41,10 @@ export function ResortServicesLanding({ onBack, onNavigate, phone }: ResortServi
   };
 
   return (
-    <div className="min-h-screen bg-[#FF8C42] gray-50">
-      <div className="bg-[#FF8C42] gradient-to-r from-teal-600 to-cyan-600 text-white px-4 py-4 sticky top-0 z-50">
+    <div className="min-h-screen bg-gray-50">
+      <div className="bg-gradient-to-r from-teal-600 to-cyan-600 text-white px-4 py-4 sticky top-0 z-50">
         <div className="flex items-center gap-3">
-          <button onClick={onBack} className="p-2 hover:bg-[#FF8C42] white/10 rounded-full">
+          <button onClick={onBack} className="p-2 hover:bg-white/10 rounded-full">
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div className="flex-1">
@@ -55,12 +55,12 @@ export function ResortServicesLanding({ onBack, onNavigate, phone }: ResortServi
       </div>
 
       <div className="p-4 space-y-6 pb-24">
-        <Card className="bg-[#FF8C42] gradient-to-br from-teal-50 to-cyan-50 border-teal-200 p-6">
+        <Card className="bg-gradient-to-br from-teal-50 to-cyan-50 border-teal-200 p-6">
           <div className="flex items-start justify-between">
             <div className="flex-1">
               <h2 className="text-xl font-bold text-gray-900 mb-2">5-Star Pet Experience</h2>
               <p className="text-gray-700 mb-4">Spa, pool, gourmet meals & more</p>
-              <Button className="bg-teal-600 hover:bg-[#FF8C42] teal-700">Explore Resorts</Button>
+              <Button className="bg-teal-600 hover:bg-teal-700">Explore Resorts</Button>
             </div>
             <div className="text-5xl">🏝️</div>
           </div>
@@ -76,7 +76,7 @@ export function ResortServicesLanding({ onBack, onNavigate, phone }: ResortServi
             ].map((pkg, idx) => (
               <Card key={idx} className="p-4">
                 <div className="flex items-start gap-4">
-                  <div className="w-14 h-14 bg-[#FF8C42] gradient-to-br from-teal-100 to-cyan-100 rounded-xl flex items-center justify-center text-2xl">
+                  <div className="w-14 h-14 bg-gradient-to-br from-teal-100 to-cyan-100 rounded-xl flex items-center justify-center text-2xl">
                     {pkg.icon}
                   </div>
                   <div className="flex-1">
@@ -129,7 +129,7 @@ export function ResortServicesLanding({ onBack, onNavigate, phone }: ResortServi
         </div>
 
         {/* Resort Features Section */}
-        <Card className="p-6 bg-[#FF8C42] gradient-to-br from-gray-50 to-gray-100">
+        <Card className="p-6 bg-gradient-to-br from-gray-50 to-gray-100">
           <h3 className="font-bold text-gray-900 mb-4">Resort Amenities</h3>
           <div className="space-y-3">
             {[
@@ -139,7 +139,7 @@ export function ResortServicesLanding({ onBack, onNavigate, phone }: ResortServi
               { icon: '📸', title: 'Daily Updates', desc: 'Photos & videos of your pet' }
             ].map((item, idx) => (
               <div key={idx} className="flex items-start gap-3">
-                <div className="w-10 h-10 bg-[#FF8C42] white rounded-xl flex items-center justify-center text-xl shadow-sm">
+                <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-xl shadow-sm">
                   {item.icon}
                 </div>
                 <div className="flex-1">

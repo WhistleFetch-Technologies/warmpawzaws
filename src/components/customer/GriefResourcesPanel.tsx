@@ -68,7 +68,7 @@ export function GriefResourcesPanel({ petId, petName }: GriefResourcesPanelProps
       </div>
 
       {/* Compassionate Message */}
-      <Card className="p-4 bg-[#FF8C42] gradient-to-r from-purple-50 to-pink-50 border-purple-200">
+      <Card className="p-4 bg-gradient-to-r from-purple-50 to-pink-50 border-purple-200">
         <p className="text-sm text-gray-700">
           💜 We understand how difficult it is to lose a beloved pet. You're not alone in this journey. 
           These resources are here to support you through your grief.
@@ -104,7 +104,7 @@ export function GriefResourcesPanel({ petId, petName }: GriefResourcesPanelProps
             {resources.articles.map((article: any) => (
               <Card key={article.id} className="p-4 hover:shadow-md transition-all cursor-pointer">
                 <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 bg-[#FF8C42] purple-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center flex-shrink-0">
                     <Book className="w-5 h-5 text-purple-600" />
                   </div>
                   <div className="flex-1">
@@ -134,13 +134,13 @@ export function GriefResourcesPanel({ petId, petName }: GriefResourcesPanelProps
             {resources.supportGroups.map((group: any) => (
               <Card key={group.id} className="p-4">
                 <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 bg-[#FF8C42] blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
                     <Users className="w-5 h-5 text-blue-600" />
                   </div>
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <h4 className="font-bold text-gray-900">{group.name}</h4>
-                      <span className="text-xs bg-[#FF8C42] blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+                      <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
                         {group.type}
                       </span>
                     </div>
@@ -179,7 +179,7 @@ export function GriefResourcesPanel({ petId, petName }: GriefResourcesPanelProps
             {resources.memorialOptions.map((memorial: any) => (
               <Card key={memorial.id} className="p-4">
                 <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 bg-[#FF8C42] green-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
                     <TreePine className="w-5 h-5 text-green-600" />
                   </div>
                   <div className="flex-1">
@@ -200,7 +200,7 @@ export function GriefResourcesPanel({ petId, petName }: GriefResourcesPanelProps
                     </div>
                     <Button
                       size="sm"
-                      className="w-full bg-[#FF8C42] gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white"
+                      className="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white"
                     >
                       Create Memorial
                     </Button>
@@ -215,9 +215,9 @@ export function GriefResourcesPanel({ petId, petName }: GriefResourcesPanelProps
         {activeTab === 'counseling' && (
           <div className="space-y-3">
             {/* Helplines */}
-            <Card className="p-4 bg-[#FF8C42] red-50 border-red-200">
+            <Card className="p-4 bg-red-50 border-red-200">
               <div className="flex items-start gap-3">
-                <div className="w-10 h-10 bg-[#FF8C42] red-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center flex-shrink-0">
                   <Phone className="w-5 h-5 text-red-600" />
                 </div>
                 <div className="flex-1">
@@ -242,7 +242,7 @@ export function GriefResourcesPanel({ petId, petName }: GriefResourcesPanelProps
             {resources.counseling.map((counselor: any) => (
               <Card key={counselor.id} className="p-4">
                 <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 bg-[#FF8C42] purple-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center flex-shrink-0">
                     <Users className="w-5 h-5 text-purple-600" />
                   </div>
                   <div className="flex-1">
@@ -254,7 +254,7 @@ export function GriefResourcesPanel({ petId, petName }: GriefResourcesPanelProps
                     </div>
                     <Button
                       size="sm"
-                      className="w-full bg-purple-600 hover:bg-[#FF8C42] purple-700 text-white"
+                      className="w-full bg-purple-600 hover:bg-purple-700 text-white"
                       onClick={() => window.open(counselor.bookingUrl, '_blank')}
                     >
                       Book Counseling Session

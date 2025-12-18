@@ -7,7 +7,6 @@ import { Textarea } from '../ui/textarea';
 import { ArrowLeft, Upload, FileText, X } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-// Brand color: #FF8C42
 
 interface InsuranceClaimFormProps {
   policyId: string;

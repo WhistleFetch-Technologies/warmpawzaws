@@ -353,22 +353,26 @@ export function ShelterAdoptionSystem({ vendorId }: { vendorId: string }) {
       {/* Tabs */}
       <div className="border-b border-gray-200">
         <div className="flex gap-4">
-          <Button onClick={() => setActiveTab('pets')} className={`px-4 py-2 border-b-2 transition-colors ${
+          <button
+            onClick={() => setActiveTab('pets')}
+            className={`px-4 py-2 border-b-2 transition-colors ${
               activeTab === 'pets'
                 ? 'border-[#FF8C42] text-[#FF8C42] font-semibold'
                 : 'border-transparent text-gray-600 hover:text-gray-900'
             }`}
           >
             Pets ({stats.totalPets})
-          </Button>
-          <Button onClick={() => setActiveTab('applications')} className={`px-4 py-2 border-b-2 transition-colors ${
+          </button>
+          <button
+            onClick={() => setActiveTab('applications')}
+            className={`px-4 py-2 border-b-2 transition-colors ${
               activeTab === 'applications'
                 ? 'border-[#FF8C42] text-[#FF8C42] font-semibold'
                 : 'border-transparent text-gray-600 hover:text-gray-900'
             }`}
           >
             Applications ({stats.pendingApps} pending)
-          </Button>
+          </button>
         </div>
       </div>
 

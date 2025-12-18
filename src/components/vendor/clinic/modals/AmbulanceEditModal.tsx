@@ -136,12 +136,13 @@ export function AmbulanceEditModal({
               <p className="text-xs opacity-90">Emergency service details</p>
             </div>
           </div>
-          <Button onClick={onClose}
+          <button 
+            onClick={onClose}
             className="w-8 h-8 flex items-center justify-center hover:bg-white/20 rounded-lg transition-colors"
             disabled={saving}
           >
             <X className="w-5 h-5" />
-          </Button>
+          </button>
         </div>
 
         {/* Form */}

@@ -1,5 +1,4 @@
 import { ArrowLeft, Heart, Home, Building2, Moon, Sun as Sunrise } from 'lucide-react';
-// Brand color: #FF8C42
 
 interface SunsetServicesLandingProps {
   onBack: () => void;

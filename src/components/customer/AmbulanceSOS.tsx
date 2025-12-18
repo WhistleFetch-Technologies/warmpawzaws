@@ -93,9 +93,9 @@ export function AmbulanceSOS({ phone, onBack }: AmbulanceSOSProps) {
 
   if (step === 'alert') {
     return (
-      <div className="min-h-screen bg-[#FF8C42] red-50 flex flex-col items-center justify-center p-6 text-center">
+      <div className="min-h-screen bg-red-50 flex flex-col items-center justify-center p-6 text-center">
         <div className="mb-8">
-            <div className="w-24 h-24 bg-[#FF8C42] red-100 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
+            <div className="w-24 h-24 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
                 <Siren className="w-12 h-12 text-red-600" />
             </div>
             <h1 className="text-2xl font-bold text-gray-900">Medical Emergency?</h1>
@@ -103,7 +103,7 @@ export function AmbulanceSOS({ phone, onBack }: AmbulanceSOSProps) {
         </div>
 
         <Button 
-            className="w-full max-w-xs h-16 text-xl bg-red-600 hover:bg-[#FF8C42] red-700 text-white rounded-full shadow-xl shadow-red-200 animate-bounce"
+            className="w-full max-w-xs h-16 text-xl bg-red-600 hover:bg-red-700 text-white rounded-full shadow-xl shadow-red-200 animate-bounce"
             onClick={() => setStep('locating')}
         >
             TAP FOR HELP
@@ -116,7 +116,7 @@ export function AmbulanceSOS({ phone, onBack }: AmbulanceSOSProps) {
 
   if (step === 'locating') {
       return (
-        <div className="min-h-screen bg-[#FF8C42] gray-900 text-white flex flex-col items-center justify-center p-6 text-center">
+        <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-center p-6 text-center">
              <div className="w-16 h-16 border-4 border-t-red-500 border-gray-700 rounded-full animate-spin mb-4"></div>
              <h2 className="text-xl font-bold">Locating nearest units...</h2>
              <p className="text-gray-400 mt-2 text-sm">Please enable GPS</p>
@@ -125,8 +125,8 @@ export function AmbulanceSOS({ phone, onBack }: AmbulanceSOSProps) {
   }
 
   return (
-    <div className="min-h-screen bg-[#FF8C42] gray-50">
-        <div className="bg-[#FF8C42] red-600 text-white p-4 sticky top-0 z-10">
+    <div className="min-h-screen bg-gray-50">
+        <div className="bg-red-600 text-white p-4 sticky top-0 z-10">
             <div className="flex items-center gap-3">
                 <button onClick={onBack}><ArrowLeft className="w-6 h-6" /></button>
                 <h1 className="font-bold text-lg">Nearby Ambulances</h1>
@@ -134,7 +134,7 @@ export function AmbulanceSOS({ phone, onBack }: AmbulanceSOSProps) {
         </div>
 
         <div className="p-4">
-            <div className="bg-[#FF8C42] white p-4 rounded-xl shadow-sm border border-gray-200 mb-4 flex items-center gap-3">
+            <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 mb-4 flex items-center gap-3">
                 <MapPin className="w-5 h-5 text-red-500" />
                 <div>
                     <p className="text-xs text-gray-500">Current Location</p>
@@ -153,7 +153,7 @@ export function AmbulanceSOS({ phone, onBack }: AmbulanceSOSProps) {
                                     <span className="flex items-center gap-1 font-bold text-green-600"><Clock className="w-3 h-3" /> {amb.eta || '10 mins'}</span>
                                 </div>
                             </div>
-                            <div className="bg-[#FF8C42] red-50 p-2 rounded-full">
+                            <div className="bg-red-50 p-2 rounded-full">
                                 <Siren className="w-6 h-6 text-red-600" />
                             </div>
                         </div>
@@ -161,13 +161,13 @@ export function AmbulanceSOS({ phone, onBack }: AmbulanceSOSProps) {
                         <div className="grid grid-cols-2 gap-3 mt-4">
                              <Button 
                                 variant="outline" 
-                                className="border-red-200 text-red-600 hover:bg-[#FF8C42] red-50"
+                                className="border-red-200 text-red-600 hover:bg-red-50"
                                 onClick={() => handleEmergencyCall(amb.phone || '911')}
                              >
                                  <Phone className="w-4 h-4 mr-2" /> Call
                              </Button>
                              <Button 
-                                className="bg-red-600 hover:bg-[#FF8C42] red-700 text-white"
+                                className="bg-red-600 hover:bg-red-700 text-white"
                                 onClick={() => handleRequestDispatch(amb.vendorId)}
                                 disabled={loading}
                              >

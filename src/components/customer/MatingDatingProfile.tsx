@@ -221,9 +221,9 @@ export function MatingDatingProfile({ phone, mode, onBack, onComplete }: MatingD
   };
 
   return (
-    <div className="min-h-screen bg-[#FF8C42] gradient-to-br from-pink-50 via-purple-50 to-blue-50">
+    <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50">
       {/* Header */}
-      <div className="bg-[#FF8C42] white border-b border-gray-200 sticky top-0 z-10">
+      <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="max-w-md mx-auto px-4 py-4 flex items-center gap-3">
           <button onClick={onBack} className="text-gray-600">
             <ChevronLeft className="w-6 h-6" />
@@ -242,7 +242,7 @@ export function MatingDatingProfile({ phone, mode, onBack, onComplete }: MatingD
       <div className="max-w-md mx-auto p-4 space-y-6 pb-24">
         {/* Pet Selection (Pet Mode Only) */}
         {mode === 'pet' && pets.length > 0 && (
-          <div className="bg-[#FF8C42] white rounded-xl p-4 shadow-sm">
+          <div className="bg-white rounded-xl p-4 shadow-sm">
             <label className="block text-sm font-semibold text-gray-700 mb-2">
               Select Your Pet
             </label>
@@ -263,7 +263,7 @@ export function MatingDatingProfile({ phone, mode, onBack, onComplete }: MatingD
         )}
 
         {/* Photo Upload */}
-        <div className="bg-[#FF8C42] white rounded-xl p-4 shadow-sm">
+        <div className="bg-white rounded-xl p-4 shadow-sm">
           <label className="block text-sm font-semibold text-gray-700 mb-3">
             Photos (Max 6)
           </label>
@@ -273,7 +273,7 @@ export function MatingDatingProfile({ phone, mode, onBack, onComplete }: MatingD
                 <img src={photo} alt="" className="w-full h-full object-cover rounded-lg" />
                 <button
                   onClick={() => removePhoto(idx)}
-                  className="absolute top-1 right-1 bg-[#FF8C42] red-500 text-white rounded-full p-1"
+                  className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -298,7 +298,7 @@ export function MatingDatingProfile({ phone, mode, onBack, onComplete }: MatingD
         {mode === 'pet' ? (
           <>
             {/* Pet Details */}
-            <div className="bg-[#FF8C42] white rounded-xl p-4 shadow-sm space-y-4">
+            <div className="bg-white rounded-xl p-4 shadow-sm space-y-4">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1">Name *</label>
                 <input
@@ -425,7 +425,7 @@ export function MatingDatingProfile({ phone, mode, onBack, onComplete }: MatingD
         ) : (
           <>
             {/* Owner Details */}
-            <div className="bg-[#FF8C42] white rounded-xl p-4 shadow-sm space-y-4">
+            <div className="bg-white rounded-xl p-4 shadow-sm space-y-4">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1">Name *</label>
                 <input
@@ -482,7 +482,7 @@ export function MatingDatingProfile({ phone, mode, onBack, onComplete }: MatingD
         )}
 
         {/* Location */}
-        <div className="bg-[#FF8C42] white rounded-xl p-4 shadow-sm">
+        <div className="bg-white rounded-xl p-4 shadow-sm">
           <div className="flex items-center gap-2 mb-2">
             <MapPin className="w-5 h-5 text-pink-500" />
             <label className="text-sm font-semibold text-gray-700">Location</label>
@@ -501,7 +501,7 @@ export function MatingDatingProfile({ phone, mode, onBack, onComplete }: MatingD
         </div>
 
         {/* Info Card */}
-        <div className="bg-[#FF8C42] blue-50 border border-blue-200 rounded-xl p-4">
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
           <div className="flex gap-3">
             <Info className="w-5 h-5 text-blue-600 flex-shrink-0" />
             <div>
@@ -515,12 +515,12 @@ export function MatingDatingProfile({ phone, mode, onBack, onComplete }: MatingD
       </div>
 
       {/* Fixed Bottom Button */}
-      <div className="fixed bottom-0 left-0 right-0 bg-[#FF8C42] white border-t border-gray-200 p-4 z-10">
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 z-10">
         <div className="max-w-md mx-auto">
           <Button
             onClick={handleSave}
             disabled={loading || (mode === 'pet' ? !petForm.name || !petForm.breed : !ownerForm.name)}
-            className="w-full bg-[#FF8C42] gradient-to-r from-pink-500 to-purple-500 text-white py-3"
+            className="w-full bg-gradient-to-r from-pink-500 to-purple-500 text-white py-3"
           >
             {loading ? (
               <div className="flex items-center justify-center gap-2">

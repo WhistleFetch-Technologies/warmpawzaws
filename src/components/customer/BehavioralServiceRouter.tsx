@@ -3,7 +3,6 @@ import { BehavioralServicesLanding } from './BehavioralServicesLanding';
 import { ProblemGridSelector } from './ProblemGridSelector';
 import { VendorDiscoveryByProblem } from './VendorDiscoveryByProblem';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-// Brand color: #FF8C42
 
 type ViewType = 
   | 'landing'

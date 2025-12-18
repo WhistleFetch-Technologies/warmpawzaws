@@ -13,7 +13,6 @@ import {
   Loader2
 } from 'lucide-react';
 import { ImageWithFallback } from '../figma/ImageWithFallback';
-import { Button } from '../ui/button';
 
 interface VendorTeleConsultationActiveProps {
   vendorData: any;
@@ -214,12 +213,13 @@ export function VendorTeleConsultationActive({
                 </p>
               </div>
             </div>
-            <Button onClick={onOpenNotes}
+            <button
+              onClick={onOpenNotes}
               className="px-4 py-2 bg-blue-600 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-lg active:transform active:scale-95"
             >
               <StickyNote className="w-4 h-4 text-white" />
               <span className="text-white text-sm font-medium">Notes</span>
-            </Button>
+            </button>
           </div>
         </div>
 
@@ -230,7 +230,9 @@ export function VendorTeleConsultationActive({
               {/* Main Controls */}
               <div className="flex items-center justify-center gap-6 mb-6">
                 {/* Microphone */}
-                <Button variant="ghost" size="icon" onClick={toggleMute} className={`w-14 h-14 rounded-full flex items-center justify-center transition-colors shadow-sm ${
+                <button
+                  onClick={toggleMute}
+                  className={`w-14 h-14 rounded-full flex items-center justify-center transition-colors shadow-sm ${
                     isMuted ? 'bg-red-100' : 'bg-gray-100 hover:bg-gray-200'
                   }`}
                 >
@@ -239,17 +241,20 @@ export function VendorTeleConsultationActive({
                   ) : (
                     <Mic className="w-6 h-6 text-gray-700" />
                   )}
-                </Button>
+                </button>
 
                 {/* End Call */}
-                <Button onClick={onEndCall}
+                <button
+                  onClick={onEndCall}
                   className="w-16 h-16 bg-red-500 rounded-full flex items-center justify-center hover:bg-red-600 transition-colors shadow-lg active:transform active:scale-95"
                 >
                   <Phone className="w-7 h-7 text-white transform rotate-135" />
-                </Button>
+                </button>
 
                 {/* Video */}
-                <Button variant="ghost" size="icon" onClick={toggleVideo} className={`w-14 h-14 rounded-full flex items-center justify-center transition-colors shadow-sm ${
+                <button
+                  onClick={toggleVideo}
+                  className={`w-14 h-14 rounded-full flex items-center justify-center transition-colors shadow-sm ${
                     isVideoOff ? 'bg-red-100' : 'bg-gray-100 hover:bg-gray-200'
                   }`}
                 >
@@ -258,42 +263,42 @@ export function VendorTeleConsultationActive({
                   ) : (
                     <Video className="w-6 h-6 text-gray-700" />
                   )}
-                </Button>
+                </button>
               </div>
 
               {/* Secondary Controls */}
               <div className="flex items-center justify-around border-t border-gray-200 pt-4">
                 {/* Flip Camera */}
-                <Button className="flex flex-col items-center gap-1 opacity-70 hover:opacity-100 transition-opacity">
+                <button className="flex flex-col items-center gap-1 opacity-70 hover:opacity-100 transition-opacity">
                   <div className="w-12 h-12 bg-gray-50 rounded-xl flex items-center justify-center">
                     <FlipHorizontal className="w-5 h-5 text-gray-700" />
                   </div>
                   <span className="text-[10px] text-gray-600 font-medium">Flip</span>
-                </Button>
+                </button>
 
                 {/* Speaker */}
-                <Button className="flex flex-col items-center gap-1 opacity-70 hover:opacity-100 transition-opacity">
+                <button className="flex flex-col items-center gap-1 opacity-70 hover:opacity-100 transition-opacity">
                   <div className="w-12 h-12 bg-gray-50 rounded-xl flex items-center justify-center">
                     <Volume2 className="w-5 h-5 text-gray-700" />
                   </div>
                   <span className="text-[10px] text-gray-600 font-medium">Speaker</span>
-                </Button>
+                </button>
 
                 {/* Chat */}
-                <Button className="flex flex-col items-center gap-1 opacity-70 hover:opacity-100 transition-opacity">
+                <button className="flex flex-col items-center gap-1 opacity-70 hover:opacity-100 transition-opacity">
                   <div className="w-12 h-12 bg-gray-50 rounded-xl flex items-center justify-center">
                     <MessageSquare className="w-5 h-5 text-gray-700" />
                   </div>
                   <span className="text-[10px] text-gray-600 font-medium">Chat</span>
-                </Button>
+                </button>
 
                 {/* Share */}
-                <Button className="flex flex-col items-center gap-1 opacity-70 hover:opacity-100 transition-opacity">
+                <button className="flex flex-col items-center gap-1 opacity-70 hover:opacity-100 transition-opacity">
                   <div className="w-12 h-12 bg-gray-50 rounded-xl flex items-center justify-center">
                     <Share2 className="w-5 h-5 text-gray-700" />
                   </div>
                   <span className="text-[10px] text-gray-600 font-medium">Share</span>
-                </Button>
+                </button>
               </div>
 
               {/* Home Indicator */}

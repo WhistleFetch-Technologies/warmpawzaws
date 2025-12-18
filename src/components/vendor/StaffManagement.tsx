@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Edit, Save, X, User, Phone, Mail, MapPin, Calendar, Clock, UserCheck, Upload, CheckCircle } from 'lucide-react';
+import { Plus, Trash2, Edit, Save, X, User, Phone, Mail, MapPin, Calendar, Clock, UserCheck, Upload, CheckCircle, Check, Camera, Award, Star, DollarSign, Settings, ArrowLeft } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { toast } from 'sonner@2.0.3';
-import { authenticatedFetch } from '../../utils/session-manager'; // ✅ SECURITY FIX
+import { authenticatedFetch } from '../../utils/session-manager'; // ✅ FIXED: Use correct session manager
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../ui/dialog';
 import { StaffScheduleManagement } from './StaffScheduleManagement'; // ✅ NEW: Staff schedule management
 
@@ -230,23 +230,25 @@ export function StaffManagement({ vendorId, vendorData, onBack, onNavigateToServ
       {/* Header */}
       <div className="bg-[#FF8C42] text-white p-4 sticky top-0 z-10">
         <div className="flex items-center gap-3 mb-4">
-          <Button onClick={onBack}
+          <button
+            onClick={onBack}
             className="p-2 hover:bg-white/10 rounded-full transition-colors"
           >
             <ArrowLeft className="w-6 h-6" />
-          </Button>
+          </button>
           <div>
             <h1 className="text-xl text-white">{staffLabel} Management</h1>
             <p className="text-sm text-white/90">{vendorData.businessName}</p>
           </div>
         </div>
 
-        <Button onClick={handleAddStaff}
+        <button
+          onClick={handleAddStaff}
           className="w-full bg-white text-[#FF8C42] rounded-xl py-3 font-semibold flex items-center justify-center gap-2 hover:bg-gray-100 transition-colors"
         >
           <Plus className="w-5 h-5" />
           Add New {staffLabel}
-        </Button>
+        </button>
       </div>
 
       {/* Staff List */}
@@ -258,11 +260,12 @@ export function StaffManagement({ vendorId, vendorData, onBack, onNavigateToServ
             <p className="text-gray-500 mb-4">
               Add {staffLabelPlural.toLowerCase()} to start accepting appointments
             </p>
-            <Button onClick={handleAddStaff}
+            <button
+              onClick={handleAddStaff}
               className="bg-[#FF8C42] text-white px-6 py-2 rounded-lg hover:bg-[#FF7A29] transition-colors"
             >
               Add First {staffLabel}
-            </Button>
+            </button>
           </div>
         ) : (
           staff.map((staffMember) => (
@@ -396,30 +399,34 @@ export function StaffManagement({ vendorId, vendorData, onBack, onNavigateToServ
 
               {/* Action Buttons */}
               <div className="grid grid-cols-2 gap-2 mb-2">
-                <Button onClick={() => handleManageServices(staffMember)}
+                <button
+                  onClick={() => handleManageServices(staffMember)}
                   className="bg-white border border-blue-500 text-blue-500 rounded-lg py-2 flex items-center justify-center gap-2 hover:bg-blue-50 transition-colors text-sm"
                 >
                   Services ({staffMember.assignedServices?.length || 0})
-                </Button>
-                <Button onClick={() => setShowScheduleManagement(staffMember)}
+                </button>
+                <button
+                  onClick={() => setShowScheduleManagement(staffMember)}
                   className="bg-white border border-purple-500 text-purple-500 rounded-lg py-2 flex items-center justify-center gap-2 hover:bg-purple-50 transition-colors text-sm"
                 >
                   <Calendar className="w-4 h-4" />
                   Schedule
-                </Button>
+                </button>
               </div>
               <div className="flex gap-2">
-                <Button onClick={() => handleEditStaff(staffMember)}
+                <button
+                  onClick={() => handleEditStaff(staffMember)}
                   className="flex-1 bg-white border border-[#FF8C42] text-[#FF8C42] rounded-lg py-2 flex items-center justify-center gap-2 hover:bg-orange-50 transition-colors text-sm"
                 >
                   <Edit className="w-4 h-4" />
                   Edit
-                </Button>
-                <Button onClick={() => handleRemoveStaff(staffMember.id)}
+                </button>
+                <button
+                  onClick={() => handleRemoveStaff(staffMember.id)}
                   className="bg-white border border-red-500 text-red-500 rounded-lg py-2 px-3 flex items-center justify-center hover:bg-red-50 transition-colors"
                 >
                   <Trash2 className="w-4 h-4" />
-                </Button>
+                </button>
               </div>
             </div>
           ))
@@ -962,21 +969,21 @@ function StaffFormModal({ vendorId, vendorData, staff, onClose, onSuccess }: Sta
 
           {/* Action Buttons */}
           <div className="flex gap-3 pt-2">
-            <Button
+            <button
               type="button"
               onClick={onClose}
               className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
               disabled={submitting}
             >
               Cancel
-            </Button>
-            <Button
+            </button>
+            <button
               type="submit"
               className="flex-1 px-4 py-2 bg-[#FF8C42] text-white rounded-lg hover:bg-[#FF7A29] transition-colors disabled:opacity-50"
               disabled={submitting}
             >
               {submitting ? 'Saving...' : staff ? 'Update' : 'Add'} {staffLabel}
-            </Button>
+            </button>
           </div>
         </form>
       </DialogContent>
@@ -1083,12 +1090,13 @@ function ServiceAssignmentModal({ vendorId, staff, availableServices, onClose, o
                 Add services to your clinic/centre first, then assign them to staff.
               </p>
               {onNavigateToServices && (
-                <Button onClick={onNavigateToServices}
+                <button
+                  onClick={onNavigateToServices}
                   className="inline-flex items-center gap-2 px-6 py-3 bg-[#FF8C42] text-white rounded-lg hover:bg-[#FF7A29] transition-colors"
                 >
                   <Plus className="w-4 h-4" />
                   Add Services
-                </Button>
+                </button>
               )}
             </div>
           ) : (
@@ -1156,22 +1164,22 @@ function ServiceAssignmentModal({ vendorId, staff, availableServices, onClose, o
         </div>
 
         <div className="flex gap-3 mt-6">
-          <Button
+          <button
             type="button"
             onClick={onClose}
             className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
             disabled={submitting}
           >
             Cancel
-          </Button>
-          <Button
+          </button>
+          <button
             type="button"
             onClick={handleSubmit}
             className="flex-1 px-4 py-2 bg-[#FF8C42] text-white rounded-lg hover:bg-[#FF7A29] transition-colors disabled:opacity-50"
             disabled={submitting}
           >
             {submitting ? 'Saving...' : `Save (${selectedServices.length} selected)`}
-          </Button>
+          </button>
         </div>
       </DialogContent>
     </Dialog>

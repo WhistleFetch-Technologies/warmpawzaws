@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { TrendingUp, Target, Calendar, Award, Star, ChevronRight, Image as ImageIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-// Brand color: #FF8C42
 
 interface TrainingSession {
   sessionId: string;

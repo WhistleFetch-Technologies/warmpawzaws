@@ -1,5 +1,4 @@
 import { useState } from 'react';
-// Brand color: #FF8C42
 import { ArrowLeft } from 'lucide-react';
 
 interface AdoptionApplicationFormProps {

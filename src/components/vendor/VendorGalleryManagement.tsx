@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { Camera, Upload, X, Image as ImageIcon, Trash2, Star, Eye, Download, Grid3x3, List } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { toast } from 'sonner@2.0.3';
-import { Button } from '../ui/button';
 
 interface GalleryImage {
   id: string;
@@ -203,9 +202,9 @@ export function VendorGalleryManagement({ vendorId, vendorData, onBack }: Vendor
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
                 {onBack && (
-                  <Button onClick={onBack} className="text-gray-600">
+                  <button onClick={onBack} className="text-gray-600">
                     <X className="w-6 h-6" />
-                  </Button>
+                  </button>
                 )}
                 <div>
                   <h1 className="text-xl font-bold text-gray-900">Gallery Management</h1>
@@ -213,24 +212,26 @@ export function VendorGalleryManagement({ vendorId, vendorData, onBack }: Vendor
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <Button onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
+                <button
+                  onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
                   className="p-2 hover:bg-gray-100 rounded-lg"
                 >
                   {viewMode === 'grid' ? <List className="w-5 h-5" /> : <Grid3x3 className="w-5 h-5" />}
-                </Button>
-                <Button onClick={() => setUploadModalOpen(true)}
+                </button>
+                <button
+                  onClick={() => setUploadModalOpen(true)}
                   className="bg-orange-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-orange-600"
                 >
                   <Upload className="w-4 h-4" />
                   Upload
-                </Button>
+                </button>
               </div>
             </div>
 
             {/* Category Filter */}
             <div className="flex gap-2 overflow-x-auto pb-2">
               {categories.map(cat => (
-                <Button
+                <button
                   key={cat.id}
                   onClick={() => setFilterCategory(cat.id)}
                   className={`flex-shrink-0 px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
@@ -240,7 +241,7 @@ export function VendorGalleryManagement({ vendorId, vendorData, onBack }: Vendor
                   }`}
                 >
                   {cat.label}
-                </Button>
+                </button>
               ))}
             </div>
           </div>
@@ -253,11 +254,12 @@ export function VendorGalleryManagement({ vendorId, vendorData, onBack }: Vendor
               <Camera className="w-16 h-16 text-gray-300 mx-auto mb-4" />
               <h3 className="text-lg font-semibold text-gray-900 mb-2">No Images Yet</h3>
               <p className="text-gray-500 mb-4">Upload images to showcase your work</p>
-              <Button onClick={() => setUploadModalOpen(true)}
+              <button
+                onClick={() => setUploadModalOpen(true)}
                 className="bg-orange-500 text-white px-6 py-2 rounded-lg hover:bg-orange-600"
               >
                 Upload First Image
-              </Button>
+              </button>
             </div>
           ) : (
             <div className={viewMode === 'grid' ? 'grid grid-cols-2 gap-3' : 'space-y-3'}>
@@ -288,18 +290,20 @@ export function VendorGalleryManagement({ vendorId, vendorData, onBack }: Vendor
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs text-gray-500 capitalize">{image.category.replace('_', ' ')}</span>
                       <div className="flex gap-1">
-                        <Button onClick={() => toggleFeatured(image.id, image.isFeatured)}
+                        <button
+                          onClick={() => toggleFeatured(image.id, image.isFeatured)}
                           className="p-1 hover:bg-gray-100 rounded"
                           title={image.isFeatured ? 'Remove from featured' : 'Add to featured'}
                         >
                           <Star className={`w-4 h-4 ${image.isFeatured ? 'fill-yellow-500 text-yellow-500' : 'text-gray-400'}`} />
-                        </Button>
-                        <Button onClick={() => handleDeleteImage(image.id)}
+                        </button>
+                        <button
+                          onClick={() => handleDeleteImage(image.id)}
                           className="p-1 hover:bg-red-50 rounded text-red-500"
                           title="Delete"
                         >
                           <Trash2 className="w-4 h-4" />
-                        </Button>
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -315,9 +319,9 @@ export function VendorGalleryManagement({ vendorId, vendorData, onBack }: Vendor
             <div className="bg-white rounded-xl max-w-md w-full p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-bold text-gray-900">Upload Image</h2>
-                <Button onClick={() => setUploadModalOpen(false)}>
+                <button onClick={() => setUploadModalOpen(false)}>
                   <X className="w-6 h-6 text-gray-400" />
-                </Button>
+                </button>
               </div>
 
               <div className="space-y-4">

@@ -120,7 +120,7 @@ export function BehaviorJournal({ petId, customerId }: BehaviorJournalProps) {
         <Button
           onClick={() => setShowAddForm(!showAddForm)}
           size="sm"
-          className="bg-blue-600 hover:bg-[#FF8C42] blue-700 text-white"
+          className="bg-blue-600 hover:bg-blue-700 text-white"
         >
           <Plus className="w-4 h-4 mr-1" />
           Add Entry
@@ -129,7 +129,7 @@ export function BehaviorJournal({ petId, customerId }: BehaviorJournalProps) {
 
       {/* Trends Summary */}
       {trends && trends.totalEntries > 0 && (
-        <Card className="p-4 bg-[#FF8C42] gradient-to-r from-blue-50 to-purple-50 border-blue-200">
+        <Card className="p-4 bg-gradient-to-r from-blue-50 to-purple-50 border-blue-200">
           <div className="flex items-center gap-2 mb-3">
             <TrendingUp className="w-5 h-5 text-blue-600" />
             <h4 className="font-bold text-gray-900">Behavior Trends</h4>
@@ -259,7 +259,7 @@ export function BehaviorJournal({ petId, customerId }: BehaviorJournalProps) {
               </Button>
               <Button
                 type="submit"
-                className="flex-1 bg-blue-600 hover:bg-[#FF8C42] blue-700 text-white"
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
               >
                 Add Entry
               </Button>
@@ -270,7 +270,7 @@ export function BehaviorJournal({ petId, customerId }: BehaviorJournalProps) {
 
       {/* Journal Entries */}
       {journal.length === 0 ? (
-        <Card className="p-8 text-center bg-[#FF8C42] gray-50">
+        <Card className="p-8 text-center bg-gray-50">
           <BookOpen className="w-12 h-12 text-gray-300 mx-auto mb-3" />
           <p className="text-gray-600 mb-1">No journal entries yet</p>
           <p className="text-sm text-gray-500">Start tracking your pet's behavior patterns</p>
@@ -298,7 +298,7 @@ export function BehaviorJournal({ petId, customerId }: BehaviorJournalProps) {
                 <div className="flex items-center gap-2 mb-2 flex-wrap">
                   <Tag className="w-3.5 h-3.5 text-gray-400" />
                   {entry.triggers.map((trigger: string, idx: number) => (
-                    <span key={idx} className="text-xs bg-[#FF8C42] gray-100 text-gray-700 px-2 py-1 rounded-full">
+                    <span key={idx} className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded-full">
                       {trigger}
                     </span>
                   ))}
@@ -312,7 +312,7 @@ export function BehaviorJournal({ petId, customerId }: BehaviorJournalProps) {
               )}
 
               {entry.notes && (
-                <p className="text-sm text-gray-700 bg-[#FF8C42] gray-50 p-2 rounded">
+                <p className="text-sm text-gray-700 bg-gray-50 p-2 rounded">
                   {entry.notes}
                 </p>
               )}

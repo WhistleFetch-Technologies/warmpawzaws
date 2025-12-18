@@ -157,7 +157,7 @@ export function CancelBookingModal({
               </div>
 
               {/* Cancellation Policy */}
-              <div className="bg-[#FF8C42] gray-50 p-4 rounded-lg">
+              <div className="bg-gray-50 p-4 rounded-lg">
                 <p className="text-sm font-medium text-gray-900 mb-2">Cancellation Policy</p>
                 <ul className="space-y-1 text-xs text-gray-600">
                   {Object.entries(refundInfo.policy || {}).map(([key, value]) => (
@@ -187,7 +187,7 @@ export function CancelBookingModal({
               </div>
 
               {/* Warning */}
-              <div className="flex items-start gap-2 p-3 bg-[#FF8C42] yellow-50 border border-yellow-200 rounded-lg">
+              <div className="flex items-start gap-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
                 <AlertTriangle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
                 <div className="text-sm text-yellow-800">
                   <p className="font-medium">Important</p>
@@ -217,7 +217,7 @@ export function CancelBookingModal({
             onClick={handleCancel}
             disabled={loading || !reason.trim() || loadingRefundInfo}
             variant="destructive"
-            className="bg-red-600 hover:bg-[#FF8C42] red-700"
+            className="bg-red-600 hover:bg-red-700"
           >
             {loading ? 'Cancelling...' : 'Confirm Cancellation'}
           </Button>

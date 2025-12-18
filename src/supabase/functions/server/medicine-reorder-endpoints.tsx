@@ -313,51 +313,6 @@ app.post("/make-server-3dd53475/medicine/reorder/:reorderId/status", async (c) =
     // Update status
     reorder.status = status;
     reorder.updatedAt = new Date().toISOString();
-    
-    // ✅ FIX: Auto-assign delivery partner when reorder is dispatched or shipped
-    if ((status === 'dispatched' || status === 'shipped') && !reorder.deliveryPartnerId) {
-      try {
-        const { autoAssignDeliveryPartner, extractDeliveryLocation } = await import('./delivery-assignment-utils.tsx');
-        
-        // Get vendor location (pickup) and delivery address
-        let pickupLocation = null;
-        if (reorder.medicineVendorId) {
-          const vendor = await kv.get(`vendor:${reorder.medicineVendorId}`);
-          if (vendor && vendor.latitude && vendor.longitude) {
-            pickupLocation = {
-              lat: vendor.latitude,
-              lng: vendor.longitude,
-              address: vendor.address || vendor.businessAddress
-            };
-          }
-        }
-        
-        const deliveryLocation = reorder.deliveryAddress ? {
-          lat: reorder.deliveryAddress.lat || reorder.deliveryAddress.latitude || 0,
-          lng: reorder.deliveryAddress.lng || reorder.deliveryAddress.longitude || 0,
-          address: reorder.deliveryAddress.address || reorder.deliveryAddress
-        } : null;
-        
-        if (pickupLocation && pickupLocation.lat && pickupLocation.lng) {
-          const assignedPartner = await autoAssignDeliveryPartner(
-            reorderId,
-            'medicine_reorder',
-            pickupLocation,
-            deliveryLocation || undefined
-          );
-          
-          if (assignedPartner) {
-            reorder.deliveryPartnerId = assignedPartner.partnerId;
-            reorder.deliveryPartnerName = assignedPartner.partnerName;
-            reorder.deliveryPartnerPhone = assignedPartner.partnerPhone;
-            console.log(`✅ [MEDICINE] Auto-assigned delivery partner ${assignedPartner.partnerId} to reorder ${reorderId}`);
-          }
-        }
-      } catch (assignError) {
-        console.error(`❌ [MEDICINE] Error auto-assigning delivery partner for reorder ${reorderId}:`, assignError);
-        // Non-blocking: continue even if assignment fails
-      }
-    }
 
     await kv.set(`medicine:reorder:${reorderId}`, reorder);
 

@@ -89,9 +89,9 @@ export function CenterAvailabilityManager({
       <div className="bg-white border-b sticky top-0 z-10">
         <div className="max-w-6xl mx-auto px-4 py-4">
           <div className="flex items-center gap-4">
-            <Button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg">
+            <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg">
               <ArrowLeft className="w-5 h-5" />
-            </Button>
+            </button>
             <div className="flex-1">
               <h1 className="font-bold text-gray-900">Center Settings</h1>
               <p className="text-sm text-gray-600">{vendorName}</p>

@@ -218,9 +218,9 @@ export function CreatePackageFlow({
       {/* Header */}
       <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] p-4 text-white sticky top-0 z-10">
         <div className="flex items-center gap-3 mb-3">
-          <Button onClick={onBack} className="p-2 hover:bg-white/10 rounded-full">
+          <button onClick={onBack} className="p-2 hover:bg-white/10 rounded-full">
             <ArrowLeft className="w-5 h-5" />
-          </Button>
+          </button>
           <div>
             <h1 className="text-lg font-bold">Create Package</h1>
             <p className="text-xs text-white/90">Step {step} of 4</p>
@@ -259,7 +259,7 @@ export function CreatePackageFlow({
             {/* Package Types */}
             <div className="space-y-2">
               {packageTypes.map(type => (
-                <Button
+                <button
                   key={type.id}
                   onClick={() => setFormData(prev => ({ ...prev, packageType: type.id as any }))}
                   className={`w-full p-4 rounded-xl border-2 text-left transition-all ${
@@ -278,7 +278,7 @@ export function CreatePackageFlow({
                       <CheckCircle className="w-5 h-5 text-[#FF8C42]" />
                     )}
                   </div>
-                </Button>
+                </button>
               ))}
             </div>
 
@@ -612,11 +612,12 @@ export function CreatePackageFlow({
                   {formData.benefits.map((benefit, index) => (
                     <div key={index} className="flex items-center justify-between bg-green-50 p-2 rounded-lg">
                       <span className="text-sm text-green-900">✓ {benefit}</span>
-                      <Button onClick={() => setFormData(prev => ({ ...prev, benefits: prev.benefits.filter((_, i) => i !== index) }))}
+                      <button
+                        onClick={() => setFormData(prev => ({ ...prev, benefits: prev.benefits.filter((_, i) => i !== index) }))}
                         className="text-red-500 text-xs"
                       >
                         <X className="w-4 h-4" />
-                      </Button>
+                      </button>
                     </div>
                   ))}
                 </div>
@@ -711,11 +712,12 @@ export function CreatePackageFlow({
                   {formData.terms.map((term, index) => (
                     <div key={index} className="flex items-center justify-between bg-gray-50 p-2 rounded-lg">
                       <span className="text-sm text-gray-900">• {term}</span>
-                      <Button onClick={() => setFormData(prev => ({ ...prev, terms: prev.terms.filter((_, i) => i !== index) }))}
+                      <button
+                        onClick={() => setFormData(prev => ({ ...prev, terms: prev.terms.filter((_, i) => i !== index) }))}
                         className="text-red-500 text-xs"
                       >
                         <X className="w-4 h-4" />
-                      </Button>
+                      </button>
                     </div>
                   ))}
                 </div>

@@ -1,6 +1,5 @@
 import { Search, Bell, Home, Calendar, FileText, Phone, Video } from 'lucide-react';
 import { ImageWithFallback } from '../figma/ImageWithFallback';
-import { Button } from '../ui/button';
 
 interface VendorTeleConsultationIncomingProps {
   vendorData: any;
@@ -63,12 +62,12 @@ export function VendorTeleConsultationIncoming({
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <Button className="w-10 h-10 bg-gray-50 rounded-lg flex items-center justify-center">
+              <button className="w-10 h-10 bg-gray-50 rounded-lg flex items-center justify-center">
                 <Search className="w-5 h-5 text-gray-600" />
-              </Button>
-              <Button className="w-10 h-10 bg-gray-50 rounded-lg flex items-center justify-center">
+              </button>
+              <button className="w-10 h-10 bg-gray-50 rounded-lg flex items-center justify-center">
                 <Bell className="w-5 h-5 text-gray-600" />
-              </Button>
+              </button>
             </div>
           </div>
         </div>
@@ -137,18 +136,20 @@ export function VendorTeleConsultationIncoming({
 
             {/* Action Buttons */}
             <div className="w-full flex gap-3">
-              <Button onClick={onDecline}
+              <button
+                onClick={onDecline}
                 className="flex-1 flex items-center justify-center gap-2 px-6 py-4 border-2 border-gray-300 rounded-full text-gray-700 font-medium hover:bg-gray-50 transition-colors"
               >
                 <Phone className="w-5 h-5" />
                 Decline
-              </Button>
-              <Button onClick={onAccept}
+              </button>
+              <button
+                onClick={onAccept}
                 className="flex-1 flex items-center justify-center gap-2 px-6 py-4 bg-green-500 rounded-full text-white font-medium hover:bg-green-600 transition-colors"
               >
                 <Video className="w-5 h-5" />
                 Accept
-              </Button>
+              </button>
             </div>
           </div>
         </div>
@@ -156,22 +157,22 @@ export function VendorTeleConsultationIncoming({
         {/* Bottom Navigation */}
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200">
           <div className="max-w-[430px] mx-auto flex items-center justify-around py-4">
-            <Button className="flex flex-col items-center gap-1">
+            <button className="flex flex-col items-center gap-1">
               <Home className="w-6 h-6 text-gray-400" />
               <span className="text-xs text-gray-500">Home</span>
-            </Button>
-            <Button className="flex flex-col items-center gap-1">
+            </button>
+            <button className="flex flex-col items-center gap-1">
               <div className="w-6 h-6 text-[#FF8C42]">📋</div>
               <span className="text-xs text-[#FF8C42] font-medium">Prescription</span>
-            </Button>
-            <Button className="flex flex-col items-center gap-1">
+            </button>
+            <button className="flex flex-col items-center gap-1">
               <div className="w-6 h-6 text-gray-400">📅</div>
               <span className="text-xs text-gray-500">Schedule</span>
-            </Button>
-            <Button className="flex flex-col items-center gap-1">
+            </button>
+            <button className="flex flex-col items-center gap-1">
               <div className="w-6 h-6 text-gray-400">💳</div>
               <span className="text-xs text-gray-500">Payouts</span>
-            </Button>
+            </button>
           </div>
           <div className="h-1 w-32 bg-black rounded-full mx-auto mb-2"></div>
         </div>

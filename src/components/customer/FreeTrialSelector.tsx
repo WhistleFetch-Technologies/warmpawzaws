@@ -110,7 +110,7 @@ export function FreeTrialSelector({ customerId, vendorId, onTrialBooked }: FreeT
         <h3 className="font-bold text-gray-900">Free Trial Sessions</h3>
       </div>
 
-      <div className="bg-[#FF8C42] purple-50 border border-purple-200 rounded-lg p-3 mb-4">
+      <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 mb-4">
         <p className="text-sm text-purple-900">
           🎁 <strong>Try before you commit!</strong> Book a free trial session to experience our training programs.
         </p>
@@ -129,11 +129,11 @@ export function FreeTrialSelector({ customerId, vendorId, onTrialBooked }: FreeT
           >
             {/* Trial Badge */}
             <div className="flex items-center justify-between mb-3">
-              <div className="bg-[#FF8C42] gradient-to-r from-purple-500 to-pink-600 text-white px-3 py-1 rounded-full text-xs font-bold">
+              <div className="bg-gradient-to-r from-purple-500 to-pink-600 text-white px-3 py-1 rounded-full text-xs font-bold">
                 FREE TRIAL
               </div>
               {selectedTrial === trial.id && (
-                <div className="bg-[#FF8C42] green-500 text-white px-2 py-1 rounded-full text-xs font-bold flex items-center gap-1">
+                <div className="bg-green-500 text-white px-2 py-1 rounded-full text-xs font-bold flex items-center gap-1">
                   <Check className="w-3 h-3" /> Booked
                 </div>
               )}
@@ -176,7 +176,7 @@ export function FreeTrialSelector({ customerId, vendorId, onTrialBooked }: FreeT
             <Button
               onClick={() => handleBookTrial(trial.id)}
               disabled={booking || selectedTrial === trial.id}
-              className="w-full bg-[#FF8C42] gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white"
+              className="w-full bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white"
             >
               {selectedTrial === trial.id ? 'Trial Booked ✓' : 'Book Free Trial'}
             </Button>

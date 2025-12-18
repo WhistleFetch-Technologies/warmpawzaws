@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Users, FileText, Plus } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { Button } from '../ui/button';
 
 /**
  * 🥗 NUTRITIONIST VENDOR DASHBOARD
@@ -81,19 +80,22 @@ export default function NutritionistDashboard({ vendorId }: { vendorId: string }
       <div className="max-w-7xl mx-auto">
         <div className="flex items-center justify-between mb-8">
           <h1 className="text-gray-900">Nutritionist Dashboard</h1>
-          <Button onClick={() => setShowCreateMealPlan(true)}
+          <button
+            onClick={() => setShowCreateMealPlan(true)}
             className="bg-orange-500 text-white px-6 py-3 rounded-lg hover:bg-orange-600 flex items-center gap-2"
           >
             <Plus className="w-5 h-5" />
             Create Meal Plan
-          </Button>
+          </button>
         </div>
 
         {/* Tabs */}
         <div className="bg-white rounded-lg shadow-sm mb-6">
           <div className="border-b border-gray-200">
             <div className="flex">
-              <Button onClick={() => setActiveTab('consultations')} className={`px-6 py-4 ${
+              <button
+                onClick={() => setActiveTab('consultations')}
+                className={`px-6 py-4 ${
                   activeTab === 'consultations'
                     ? 'border-b-2 border-orange-500 text-orange-500'
                     : 'text-gray-600'
@@ -103,8 +105,10 @@ export default function NutritionistDashboard({ vendorId }: { vendorId: string }
                   <Calendar className="w-5 h-5" />
                   <span>Consultations</span>
                 </div>
-              </Button>
-              <Button onClick={() => setActiveTab('meal-plans')} className={`px-6 py-4 ${
+              </button>
+              <button
+                onClick={() => setActiveTab('meal-plans')}
+                className={`px-6 py-4 ${
                   activeTab === 'meal-plans'
                     ? 'border-b-2 border-orange-500 text-orange-500'
                     : 'text-gray-600'
@@ -114,7 +118,7 @@ export default function NutritionistDashboard({ vendorId }: { vendorId: string }
                   <FileText className="w-5 h-5" />
                   <span>Meal Plans</span>
                 </div>
-              </Button>
+              </button>
             </div>
           </div>
 
@@ -233,19 +237,19 @@ export default function NutritionistDashboard({ vendorId }: { vendorId: string }
                   </div>
                 </div>
                 <div className="flex gap-3">
-                  <Button
+                  <button
                     type="submit"
                     className="flex-1 bg-orange-500 text-white py-2 rounded-lg hover:bg-orange-600"
                   >
                     Create Plan
-                  </Button>
-                  <Button
+                  </button>
+                  <button
                     type="button"
                     onClick={() => setShowCreateMealPlan(false)}
                     className="flex-1 bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400"
                   >
                     Cancel
-                  </Button>
+                  </button>
                 </div>
               </form>
             </div>

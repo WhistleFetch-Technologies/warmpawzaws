@@ -1,17 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
-import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
+import { Label } from '../ui/label';
 import { Checkbox } from '../ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog';
-import { MapPin, Upload, CheckCircle2, X, AlertCircle, ArrowLeft, ChevronRight, User } from 'lucide-react';
+import { Upload, MapPin, AlertCircle, CheckCircle2, ArrowLeft, X, User, Check } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { toast } from 'sonner@2.0.3';
-
-// Google Maps API Key removed - fetching from backend
-// const GOOGLE_MAPS_API_KEY = '...';
 
 interface FormField {
   id: string;
@@ -65,6 +62,8 @@ interface DynamicVendorOnboardingFormProps {
   onBack?: () => void;
   serviceStyles?: string[];
   initialData?: any; // ✅ NEW: Support for re-editing
+  vendorId?: string; // ✅ NEW: For edit mode
+  isEditMode?: boolean; // ✅ NEW: Flag for edit vs create
 }
 
 export function DynamicVendorOnboardingForm({ 
@@ -72,7 +71,9 @@ export function DynamicVendorOnboardingForm({
   onSubmit, 
   onBack,
   serviceStyles = [],
-  initialData
+  initialData,
+  vendorId,
+  isEditMode
 }: DynamicVendorOnboardingFormProps) {
   const [form, setForm] = useState<OnboardingForm | null>(null);
   const [loading, setLoading] = useState(true);
@@ -93,6 +94,12 @@ export function DynamicVendorOnboardingForm({
   const [detectingLocation, setDetectingLocation] = useState(false);
   const [googleMapsApiKey, setGoogleMapsApiKey] = useState<string>('');
 
+  // ✅ NEW: Specialization selection for center/vendor
+  const [availableSpecializations, setAvailableSpecializations] = useState<any[]>([]);
+  const [selectedSpecializations, setSelectedSpecializations] = useState<string[]>([]);
+  const [loadingSpecializations, setLoadingSpecializations] = useState(false);
+  const [showSpecializationDialog, setShowSpecializationDialog] = useState(false);
+
   const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
 
   useEffect(() => {
@@ -112,66 +119,131 @@ export function DynamicVendorOnboardingForm({
   }, [initialData]);
 
   useEffect(() => {
-    console.log('🚀 [MAP DEBUG] Component mounted, starting initialization...');
+    console.log('🚀 [INIT] Component mounted, starting initialization...');
+    console.log('🚀 [INIT] roleId:', roleId);
     checkServerHealth();
-    fetchGoogleMapsKey();
+    
+    // ✅ FIX: Safely access environment variable with fallback
+    console.log('🔍 [ENV] Checking for environment variable...');
+    console.log('🔍 [ENV] import.meta exists:', typeof import.meta !== 'undefined');
+    console.log('🔍 [ENV] import.meta.env exists:', !!(import.meta && import.meta.env));
+    
+    const envApiKey = typeof import.meta !== 'undefined' && 
+                      import.meta.env && 
+                      import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+    
+    console.log('🔍 [ENV] envApiKey exists:', !!envApiKey);
+    console.log('🔍 [ENV] envApiKey value:', envApiKey ? `${envApiKey.substring(0, 10)}...` : 'null/undefined');
+    
+    if (envApiKey) {
+      console.log('✅ [ENV] Using Google Maps API key from environment variable');
+      setGoogleMapsApiKey(envApiKey);
+    } else {
+      console.log('⚠️ [ENV] No environment variable found, fetching from backend...');
+      fetchGoogleMapsKey();
+    }
+    
     fetchForm();
+    loadSpecializations(); // ✅ NEW: Load specializations when component mounts
   }, [roleId]);
 
+  // ✅ NEW: Load available specializations from backend
+  const loadSpecializations = async () => {
+    try {
+      setLoadingSpecializations(true);
+      console.log('[DYNAMIC FORM] Loading specializations for roleId:', roleId);
+      
+      const response = await fetch(
+        `${API_BASE}/vendor/problem-grid-specializations/${roleId}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`
+          }
+        }
+      );
+      
+      console.log('[DYNAMIC FORM] Specializations response status:', response.status);
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('[DYNAMIC FORM] Specializations loaded:', data);
+        setAvailableSpecializations(data.specializations || []);
+        
+        // Pre-select specializations from initialData if editing
+        if (initialData?.specializations) {
+          setSelectedSpecializations(initialData.specializations);
+        }
+      } else {
+        const errorText = await response.text();
+        console.error('[DYNAMIC FORM] Failed to load specializations:', errorText);
+        // Don't show error toast - specializations might not be applicable for this role
+      }
+    } catch (error) {
+      console.error('[DYNAMIC FORM] Error loading specializations:', error);
+    } finally {
+      setLoadingSpecializations(false);
+    }
+  };
+
+  // ✅ NEW: Toggle specialization selection
+  const toggleSpecialization = (specId: string) => {
+    setSelectedSpecializations(prev => {
+      if (prev.includes(specId)) {
+        return prev.filter(id => id !== specId);
+      } else {
+        return [...prev, specId];
+      }
+    });
+  };
+
   const fetchGoogleMapsKey = async () => {
+    console.log('🔑 [API KEY] Fetching Google Maps API key from backend...');
     try {
       const response = await fetch(`${API_BASE}/admin/integrations/settings`, {
         headers: { 'Authorization': `Bearer ${publicAnonKey}` }
       });
+      
+      console.log('🔑 [API KEY] Response status:', response.status);
+      
       if (response.ok) {
         const data = await response.json();
+        console.log('🔑 [API KEY] Response data:', data);
+        
         if (data.settings?.googleMaps?.apiKey) {
+          console.log('✅ [API KEY] Found API key in backend settings');
+          console.log('🔑 [API KEY] Key length:', data.settings.googleMaps.apiKey.length);
           setGoogleMapsApiKey(data.settings.googleMaps.apiKey);
         } else {
-          console.warn('[DYNAMIC FORM] No Google Maps API key found in settings');
+          console.warn('⚠️ [API KEY] No Google Maps API key found in backend settings');
+          console.warn('⚠️ [API KEY] Settings structure:', JSON.stringify(data.settings, null, 2));
+          toast.warning('Google Maps not configured. Please contact administrator.');
         }
+      } else {
+        console.error('❌ [API KEY] Failed to fetch settings, status:', response.status);
       }
     } catch (error) {
-      console.error('[DYNAMIC FORM] Failed to fetch Google Maps key:', error);
+      console.error('❌ [API KEY] Error fetching Google Maps key:', error);
     }
   };
 
   useEffect(() => {
+    console.log('🔄 [API KEY EFFECT] googleMapsApiKey changed:', !!googleMapsApiKey);
     if (googleMapsApiKey) {
+      console.log('🔄 [API KEY EFFECT] Calling loadGoogleMapsScript...');
       loadGoogleMapsScript();
+    } else {
+      console.log('⚠️ [API KEY EFFECT] No API key available yet');
     }
   }, [googleMapsApiKey]);
 
+  // Note: initializeMap is now called directly from loadGoogleMapsScript callback
+  // These useEffect hooks are kept as a backup in case callback doesn't fire
   useEffect(() => {
-    console.log('🔍 [MAP DEBUG] mapLoaded changed to:', mapLoaded);
-    console.log('🔍 [MAP DEBUG] mapRef.current exists:', !!mapRef.current);
-    console.log('🔍 [MAP DEBUG] googleMapRef.current exists:', !!googleMapRef.current);
-    console.log('🔍 [MAP DEBUG] window.google exists:', !!(window as any).google);
-    
     if (mapLoaded && mapRef.current && !googleMapRef.current) {
-      console.log('🗺️ [MAP DEBUG] All conditions met, calling initializeMap...');
-      initializeMap();
-    } else {
-      console.log('⚠️ [MAP DEBUG] Conditions not met for initialization:', {
-        mapLoaded,
-        hasMapRef: !!mapRef.current,
-        hasGoogleMapRef: !!googleMapRef.current
-      });
-    }
-  }, [mapLoaded]);
-
-  // ✅ CRITICAL FIX: Watch for when the map div is actually rendered
-  useEffect(() => {
-    console.log('🎯 [MAP DEBUG] Checking if map div is ready...');
-    console.log('🎯 [MAP DEBUG] mapRef.current:', !!mapRef.current);
-    console.log('🎯 [MAP DEBUG] mapLoaded:', mapLoaded);
-    console.log('🎯 [MAP DEBUG] googleMapRef.current:', !!googleMapRef.current);
-    
-    if (mapRef.current && mapLoaded && !googleMapRef.current) {
-      console.log('✨ [MAP DEBUG] Map div is now ready! Initializing map...');
+      console.log('🔄 [BACKUP] useEffect triggered - attempting to initialize map...');
       initializeMap();
     }
-  }, [mapRef.current, mapLoaded, form]); // Re-check when form loads (which renders the div)
+  }, [mapLoaded, mapRef.current]);
 
   const checkServerHealth = async () => {
     try {
@@ -242,59 +314,101 @@ export function DynamicVendorOnboardingForm({
   };
 
   const loadGoogleMapsScript = () => {
-    if (!googleMapsApiKey) return;
+    console.log('🗺️ [GOOGLE MAPS] loadGoogleMapsScript called');
+    console.log('🗺️ [GOOGLE MAPS] API Key exists:', !!googleMapsApiKey);
+    console.log('🗺️ [GOOGLE MAPS] API Key length:', googleMapsApiKey?.length || 0);
+    
+    if (!googleMapsApiKey) {
+      console.error('❌ [GOOGLE MAPS] No API key available');
+      toast.error('Google Maps API key not configured. Please contact support.');
+      return;
+    }
 
-    // Check if already loaded
-    if (window.google?.maps) {
-      console.log('✅ Google Maps already loaded');
+    // Check if already loaded and Map class is available
+    if ((window as any).google?.maps?.Map) {
+      console.log('✅ [GOOGLE MAPS] Already loaded and Map class available');
       setMapLoaded(true);
+      // Try to initialize immediately
+      setTimeout(() => {
+        if (mapRef.current && !googleMapRef.current) {
+          initializeMap();
+        }
+      }, 100);
       return;
     }
 
     // Check if script tag already exists
     const existingScript = document.querySelector('script[src*="maps.googleapis.com"]');
     if (existingScript) {
-      console.log('⏳ Google Maps script already loading, waiting...');
+      console.log('⏳ [GOOGLE MAPS] Script tag already exists, polling for Map class...');
+      
+      let attempts = 0;
+      const maxAttempts = 100; // 10 seconds
+      
       const checkInterval = setInterval(() => {
-        // Check for both google and google.maps to be safer
-        if (window.google && window.google.maps) {
-          console.log('✅ Google Maps loaded from existing script');
+        attempts++;
+        console.log(`🔄 [GOOGLE MAPS] Polling attempt ${attempts}/${maxAttempts}`);
+        
+        if ((window as any).google?.maps?.Map) {
+          console.log('✅ [GOOGLE MAPS] Map class now available!');
           setMapLoaded(true);
           clearInterval(checkInterval);
+          
+          // Initialize map after a short delay
+          setTimeout(() => {
+            if (mapRef.current && !googleMapRef.current) {
+              initializeMap();
+            }
+          }, 100);
+        } else if (attempts >= maxAttempts) {
+          console.error('❌ [GOOGLE MAPS] Timeout - Map class never became available');
+          console.error('❌ [GOOGLE MAPS] window.google exists:', !!(window as any).google);
+          console.error('❌ [GOOGLE MAPS] window.google.maps exists:', !!((window as any).google?.maps));
+          clearInterval(checkInterval);
+          toast.error('Map loading timed out. Please refresh the page.');
         }
       }, 100);
+      
       return;
     }
 
-    console.log('📦 Loading Google Maps script with async...');
+    console.log('📦 [GOOGLE MAPS] Creating new script tag...');
+    console.log('📦 [GOOGLE MAPS] Using API key:', googleMapsApiKey.substring(0, 10) + '...');
+    
     const script = document.createElement('script');
-    // ✅ FIX: Add loading=async parameter and use callback
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${googleMapsApiKey}&loading=async&libraries=marker`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${googleMapsApiKey}&callback=initGoogleMaps`;
     script.async = true;
     script.defer = true;
     
-    script.onload = () => {
-      // Double check availability
-      if (window.google && window.google.maps) {
-         console.log('✅ Google Maps script loaded successfully');
-         setMapLoaded(true);
-      } else {
-         console.warn('⚠️ Script loaded but window.google.maps not found immediately. Waiting...');
-         const retryInterval = setInterval(() => {
-             if (window.google && window.google.maps) {
-                 console.log('✅ Google Maps now available');
-                 setMapLoaded(true);
-                 clearInterval(retryInterval);
-             }
-         }, 200);
-      }
+    // Define global callback
+    (window as any).initGoogleMaps = () => {
+      console.log('✅ [GOOGLE MAPS] Callback fired - Google Maps is ready!');
+      console.log('✅ [GOOGLE MAPS] window.google exists:', !!(window as any).google);
+      console.log('✅ [GOOGLE MAPS] window.google.maps exists:', !!((window as any).google?.maps));
+      console.log('✅ [GOOGLE MAPS] window.google.maps.Map exists:', !!((window as any).google?.maps?.Map));
+      
+      setMapLoaded(true);
+      
+      // Initialize map after a short delay to ensure React has rendered
+      setTimeout(() => {
+        console.log('🔄 [GOOGLE MAPS] Attempting to initialize map...');
+        console.log('🔄 [GOOGLE MAPS] mapRef.current exists:', !!mapRef.current);
+        console.log('🔄 [GOOGLE MAPS] googleMapRef.current exists:', !!googleMapRef.current);
+        
+        if (mapRef.current && !googleMapRef.current) {
+          initializeMap();
+        } else {
+          console.warn('⚠️ [GOOGLE MAPS] Cannot initialize - mapRef or googleMapRef issue');
+        }
+      }, 200);
     };
     
     script.onerror = (error) => {
-      console.error('❌ Failed to load Google Maps:', error);
-      toast.error('Failed to load maps');
+      console.error('❌ [GOOGLE MAPS] Script loading error:', error);
+      toast.error('Failed to load Google Maps. Please check your internet connection.');
     };
     
+    console.log('📦 [GOOGLE MAPS] Appending script to document head...');
     document.head.appendChild(script);
   };
 
@@ -378,150 +492,109 @@ export function DynamicVendorOnboardingForm({
     );
   };
 
-  const initializeMap = async () => {
+  const initializeMap = () => {
+    console.log('🗺️ [MAP INIT] Starting map initialization...');
+    console.log('🗺️ [MAP INIT] mapRef.current exists:', !!mapRef.current);
+    console.log('🗺️ [MAP INIT] window.google exists:', !!(window as any).google);
+    console.log('🗺️ [MAP INIT] window.google.maps exists:', !!((window as any).google?.maps));
+    console.log('🗺️ [MAP INIT] window.google.maps.Map exists:', !!((window as any).google?.maps?.Map));
+    console.log('🗺️ [MAP INIT] window.google.maps.Marker exists:', !!((window as any).google?.maps?.Marker));
+    
     if (!mapRef.current) {
-       console.log('❌ Map Ref not found');
+       console.error('❌ [MAP INIT] Map Ref not found');
+       toast.error('Map container not ready. Please try again.');
        return;
     }
     
     // Safe check for Google Maps availability
-    if (!window.google || !window.google.maps) {
-      console.log('❌ Google Maps API not fully loaded yet. Waiting...');
+    if (!(window as any).google) {
+      console.error('❌ [MAP INIT] window.google not found');
+      toast.error('Google Maps not loaded. Please refresh the page.');
       return;
     }
     
-    console.log('✅ Initializing Google Maps...');
+    if (!(window as any).google.maps) {
+      console.error('❌ [MAP INIT] window.google.maps not found');
+      toast.error('Google Maps API not ready. Please refresh the page.');
+      return;
+    }
+    
+    if (!(window as any).google.maps.Map) {
+      console.error('❌ [MAP INIT] google.maps.Map class not found');
+      toast.error('Google Maps Map class not available. Please refresh the page.');
+      return;
+    }
+    
+    if (!(window as any).google.maps.Marker) {
+      console.error('❌ [MAP INIT] google.maps.Marker class not found');
+      toast.error('Google Maps Marker class not available. Please refresh the page.');
+      return;
+    }
     
     try {
-        let MapClass: any = null;
-        let MarkerClass: any = null;
-
-        // 1. Try modern importLibrary approach
-        if (window.google.maps.importLibrary) {
-            try {
-                const mapsLib = await window.google.maps.importLibrary("maps") as google.maps.MapsLibrary;
-                if (mapsLib && mapsLib.Map) {
-                   MapClass = mapsLib.Map;
-                   console.log('✅ Loaded Map via importLibrary');
-                }
-                
-                try {
-                    const markerLib = await window.google.maps.importLibrary("marker") as google.maps.MarkerLibrary;
-                    if (markerLib && markerLib.AdvancedMarkerElement) {
-                        MarkerClass = markerLib.AdvancedMarkerElement;
-                        console.log('✅ Loaded AdvancedMarkerElement via importLibrary');
-                    }
-                } catch (e) {
-                    console.warn('⚠️ AdvancedMarkerElement import failed, will try legacy Marker');
-                }
-            } catch (e) {
-                console.warn('⚠️ importLibrary("maps") failed:', e);
-            }
-        }
-
-        // 2. Fallback to global objects if importLibrary didn't work
-        if (!MapClass && window.google.maps.Map) {
-            console.log('ℹ️ Falling back to legacy window.google.maps.Map');
-            MapClass = window.google.maps.Map;
-        }
-
-        if (!MarkerClass && window.google.maps.Marker) {
-             console.log('ℹ️ Falling back to legacy window.google.maps.Marker');
-             MarkerClass = window.google.maps.Marker;
-        }
-
-        // 3. Final verification
-        if (!MapClass) {
-            throw new Error('Google Maps Map class could not be found. API may not be loaded correctly.');
-        }
-
-        // 4. Initialize Map
-        const map = new MapClass(mapRef.current, {
+        console.log('🗺️ [MAP INIT] All checks passed - creating map instance...');
+        
+        // Use simple, direct Google Maps API
+        const map = new (window as any).google.maps.Map(mapRef.current, {
           center: { lat: 20.5937, lng: 78.9629 }, // India center
           zoom: 5,
           disableDefaultUI: false,
           zoomControl: true,
           mapTypeControl: false,
           streetViewControl: false,
-          mapId: 'WARMPAWZ_MAP', // Required for AdvancedMarkerElement
+          fullscreenControl: false,
         });
 
         googleMapRef.current = map;
-        console.log('✅ Map instance created');
+        console.log('✅ [MAP INIT] Map instance created successfully');
 
-        // 5. Initialize Marker
-        if (!MarkerClass) {
-            console.warn('⚠️ No Marker class available. Map loaded but markers cannot be created.');
-            toast.warning('Map loaded but marker functionality is limited.');
-            return;
-        }
+        // Create marker
+        console.log('🗺️ [MAP INIT] Creating marker...');
+        const marker = new (window as any).google.maps.Marker({
+          map: map,
+          position: { lat: 20.5937, lng: 78.9629 },
+          draggable: true,
+          title: 'Your Business Location'
+        });
 
-        let marker: any;
-        
-        // Check if using Legacy Marker (it has a 'position' property in constructor options that is NOT wrapped in AdvancedMarkerElement logic)
-        // We can check if MarkerClass.prototype exists and if it looks like the legacy one, or just check equality if we grabbed it from window.google.maps.Marker
-        const isLegacyMarker = MarkerClass === window.google.maps.Marker;
-
-        if (isLegacyMarker) {
-             // Legacy Marker
-             marker = new MarkerClass({
-                map,
-                position: { lat: 20.5937, lng: 78.9629 },
-                draggable: true, // Legacy property
-             });
-             
-             // Legacy event listeners
-             map.addListener('click', (e: any) => {
-                if (!e.latLng) return;
-                const lat = e.latLng.lat();
-                const lng = e.latLng.lng();
-                marker.setPosition({ lat, lng });
-                setCoordinates({ lat, lng });
-             });
-             
-             marker.addListener('dragend', (e: any) => {
-                if (!e.latLng) return;
-                const lat = e.latLng.lat();
-                const lng = e.latLng.lng();
-                setCoordinates({ lat, lng });
-             });
-             
-        } else {
-            // Modern AdvancedMarkerElement
-             marker = new MarkerClass({
-                map,
-                position: { lat: 20.5937, lng: 78.9629 },
-                gmpDraggable: true, // Modern property
-             });
-
-             // Modern event listeners
-             map.addListener('click', (e: any) => {
-                if (!e.latLng) return;
-                const lat = e.latLng.lat();
-                const lng = e.latLng.lng();
-                
-                marker.position = { lat, lng };
-                setCoordinates({ lat, lng });
-             });
-
-             marker.addListener('dragend', (e: any) => {
-                  if (marker.position) {
-                     const lat = (marker.position as google.maps.LatLng).lat;
-                     const lng = (marker.position as google.maps.LatLng).lng;
-                     const finalLat = typeof lat === 'function' ? lat() : lat;
-                     const finalLng = typeof lng === 'function' ? lng() : lng;
-                     setCoordinates({ lat: finalLat, lng: finalLng });
-                  }
-             });
-        }
-
-        // Keep reference
         markerRef.current = marker;
-        console.log('✅ Marker created successfully');
+        console.log('✅ [MAP INIT] Marker created successfully');
+        
+        // Add click listener to map
+        map.addListener('click', (e: any) => {
+          console.log('🗺️ [MAP CLICK] Map clicked');
+          if (!e.latLng) {
+            console.log('⚠️ [MAP CLICK] No latLng in event');
+            return;
+          }
+          const lat = e.latLng.lat();
+          const lng = e.latLng.lng();
+          console.log('📍 [MAP CLICK] New position:', { lat, lng });
+          marker.setPosition({ lat, lng });
+          setCoordinates({ lat, lng });
+          toast.success('Location updated!');
+        });
+        
+        // Add drag listener to marker
+        marker.addListener('dragend', (e: any) => {
+          console.log('🗺️ [MARKER DRAG] Marker dragged');
+          if (!e.latLng) {
+            console.log('⚠️ [MARKER DRAG] No latLng in event');
+            return;
+          }
+          const lat = e.latLng.lat();
+          const lng = e.latLng.lng();
+          console.log('📍 [MARKER DRAG] New position:', { lat, lng });
+          setCoordinates({ lat, lng });
+          toast.success('Location updated!');
+        });
+
+        console.log('✅ [MAP INIT] Map fully initialized and ready to use');
+        toast.success('Map loaded successfully! Click or drag to set your location.');
 
     } catch (e) {
-        console.error('❌ Error initializing map:', e);
-        toast.error('Failed to initialize map. Please refresh.');
+        console.error('❌ [MAP INIT] Error initializing map:', e);
+        toast.error('Failed to initialize map. Please refresh the page.');
     }
   };
 
@@ -742,11 +815,15 @@ export function DynamicVendorOnboardingForm({
         documents: uploadedDocuments, // Send the object with URLs
         serviceStyles,
         location: coordinates,
+        specializations: selectedSpecializations, // ✅ NEW: Include specializations
         agreedToTerms,
         formVersion: form?.version,
+        vendorId: vendorId, // ✅ NEW: Include vendorId for edit mode
+        isEditMode: isEditMode, // ✅ NEW: Flag for edit vs create
       };
 
       console.log('[DYNAMIC FORM] Submitting:', submissionData);
+      console.log('[DYNAMIC FORM] Selected specializations:', selectedSpecializations);
       await onSubmit(submissionData);
       
     } catch (error) {
@@ -827,7 +904,7 @@ export function DynamicVendorOnboardingForm({
                   className="w-full h-48 object-cover transition-transform group-hover:scale-105"
                 />
                 <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                    <Button
+                    <button
                       type="button"
                       onClick={() => {
                         setDocuments({ ...documents, [field.name]: null });
@@ -836,7 +913,7 @@ export function DynamicVendorOnboardingForm({
                       className="bg-white/20 backdrop-blur-md border border-white/50 text-white rounded-full p-2 hover:bg-white/40 transition-colors"
                     >
                       <X className="w-5 h-5" />
-                    </Button>
+                    </button>
                 </div>
                 <div className="absolute top-3 right-3 bg-green-500 text-white px-3 py-1 rounded-full text-xs font-medium flex items-center gap-1.5 shadow-sm">
                   <CheckCircle2 className="w-3.5 h-3.5" />
@@ -867,10 +944,19 @@ export function DynamicVendorOnboardingForm({
       case 'map_pin':
         return (
           <div className="space-y-4 mt-2">
-            <Button
+            {/* ✅ Show warning if no API key */}
+            {!googleMapsApiKey && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
+                <p className="text-xs text-yellow-800 font-medium">
+                  ⚠️ Google Maps API key is not configured. Please contact support or configure VITE_GOOGLE_MAPS_API_KEY in environment variables.
+                </p>
+              </div>
+            )}
+            
+            <button
               type="button"
               onClick={detectCurrentLocation}
-              disabled={detectingLocation}
+              disabled={detectingLocation || !googleMapsApiKey}
               className="w-full py-3.5 bg-white border-2 border-[#FF8C42] text-[#FF8C42] rounded-2xl font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:bg-orange-50"
             >
               {detectingLocation ? (
@@ -884,25 +970,36 @@ export function DynamicVendorOnboardingForm({
                   <span>Detect Location</span>
                 </>
               )}
-            </Button>
+            </button>
 
             <div className="relative">
               <div 
                 ref={mapRef} 
                 className="w-full h-64 rounded-2xl border border-gray-200 bg-gray-100 overflow-hidden shadow-inner"
               />
-              {!mapLoaded && (
+              {!mapLoaded && googleMapsApiKey && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-100 rounded-2xl">
                   <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-[#FF8C42] mb-3"></div>
-                  <p className="text-sm text-gray-600">Loading map...</p>
+                  <p className="text-sm text-gray-600 font-medium">Loading map...</p>
+                  <p className="text-xs text-gray-400 mt-1">Please wait</p>
                 </div>
               )}
-              {/* Overlay hint if not interacting */}
-              <div className="absolute bottom-4 left-0 right-0 flex justify-center pointer-events-none">
-                 <span className="bg-white/90 backdrop-blur-sm px-4 py-2 rounded-full text-xs font-medium text-gray-600 shadow-sm border border-gray-100">
-                    Pin your exact location on the map
-                 </span>
-              </div>
+              {!mapLoaded && !googleMapsApiKey && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-yellow-50 rounded-2xl border-2 border-yellow-200">
+                  <AlertCircle className="w-10 h-10 text-yellow-600 mb-3" />
+                  <p className="text-sm text-yellow-800 font-semibold">Map Not Available</p>
+                  <p className="text-xs text-yellow-600 mt-1 px-4 text-center">
+                    Google Maps API key not configured. Please contact support.
+                  </p>
+                </div>
+              )}
+              {mapLoaded && (
+                <div className="absolute bottom-4 left-0 right-0 flex justify-center pointer-events-none">
+                   <span className="bg-white/90 backdrop-blur-sm px-4 py-2 rounded-full text-xs font-medium text-gray-600 shadow-sm border border-gray-100">
+                      Click or drag marker to set location
+                   </span>
+                </div>
+              )}
             </div>
             
             {coordinates && (
@@ -998,11 +1095,12 @@ export function DynamicVendorOnboardingForm({
       {/* Header Section */}
       <div className="pt-8 pb-8 px-6 text-center relative">
         {onBack && (
-          <Button onClick={onBack} 
+          <button 
+            onClick={onBack} 
             className="absolute top-8 left-6 p-2 bg-white/50 hover:bg-white rounded-full transition-colors"
           >
             <ArrowLeft className="w-5 h-5 text-gray-800" />
-          </Button>
+          </button>
         )}
         
         {/* Centered Icon */}
@@ -1105,6 +1203,75 @@ export function DynamicVendorOnboardingForm({
             </div>
           ))}
 
+          {/* ✅ NEW: Specialization Selection (if available) */}
+          {availableSpecializations.length > 0 && (
+            <div className="space-y-6 pt-2">
+              <div className="flex items-center justify-between pb-2 border-b border-gray-100">
+                <h3 className="font-bold text-lg text-gray-900">Specializations</h3>
+                <span className="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded-full font-medium">
+                  {selectedSpecializations.length} selected
+                </span>
+              </div>
+              
+              <p className="text-xs text-gray-600">
+                Select areas of expertise. Your center will appear in customer searches for these services.
+              </p>
+
+              {loadingSpecializations ? (
+                <div className="text-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#FF8C42] mx-auto mb-2"></div>
+                  <p className="text-sm text-gray-500">Loading specializations...</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {availableSpecializations.map((spec) => {
+                    const isSelected = selectedSpecializations.includes(spec.id);
+                    return (
+                      <div
+                        key={spec.id}
+                        onClick={() => toggleSpecialization(spec.id)}
+                        className={`p-4 rounded-2xl border cursor-pointer transition-all ${
+                          isSelected
+                            ? 'border-[#FF8C42] bg-orange-50'
+                            : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                        }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 ${
+                            isSelected
+                              ? 'border-[#FF8C42] bg-[#FF8C42]'
+                              : 'border-gray-300'
+                          }`}>
+                            {isSelected && <Check className="w-3 h-3 text-white" />}
+                          </div>
+                          
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-gray-900">{spec.name}</p>
+                            <p className="text-xs text-gray-600 mt-0.5">{spec.description}</p>
+                            
+                            {spec.helpsWithProblems && spec.helpsWithProblems.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-2">
+                                {spec.helpsWithProblems.map((problem: any) => (
+                                  <span
+                                    key={problem.id}
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs"
+                                  >
+                                    <span>{problem.icon}</span>
+                                    <span>{problem.name}</span>
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Terms & Conditions */}
           <div className="pt-4">
             <div className="flex items-start gap-3 p-4 rounded-2xl bg-gray-50 border border-gray-100">
@@ -1116,21 +1283,21 @@ export function DynamicVendorOnboardingForm({
               <div className="flex-1">
                 <p className="text-xs text-gray-600 leading-relaxed">
                   By continuing, you agree to the{' '}
-                  <Button 
+                  <button 
                     type="button" 
                     onClick={() => setShowAgreement(true)} 
                     className="text-gray-900 underline font-bold hover:text-[#FF8C42] transition-colors"
                   >
                     Vendor Onboarding Agreement
-                  </Button>
+                  </button>
                   {' '}and{' '}
-                  <Button 
+                  <button 
                     type="button" 
                     onClick={() => setShowAgreement(true)} 
                     className="text-gray-900 underline font-bold hover:text-[#FF8C42] transition-colors"
                   >
                     Terms of Service
-                  </Button>
+                  </button>
                 </p>
               </div>
             </div>

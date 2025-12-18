@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { Navigation, MapPin, Clock } from 'lucide-react';
-import { Button } from '../ui/button';
 
 export function CommuteTimeCalculator({ providerId, apiUrl = `${import.meta.env.VITE_API_URL}/make-server-3dd53475` }) {
   const [fromLat, setFromLat] = useState('');
@@ -26,7 +25,7 @@ export function CommuteTimeCalculator({ providerId, apiUrl = `${import.meta.env.
   };
 
   return (
-    <div className="bg-[#FF8C42] white border border-gray-200 rounded-lg p-6 space-y-6">
+    <div className="bg-white border border-gray-200 rounded-lg p-6 space-y-6">
       <h2 className="flex items-center gap-2">
         <Navigation className="w-6 h-6 text-blue-600" />
         Commute Time Calculator
@@ -49,11 +48,11 @@ export function CommuteTimeCalculator({ providerId, apiUrl = `${import.meta.env.
           <input type="number" value={toLng} onChange={e => setToLng(e.target.value)} className="w-full p-3 border rounded-lg" step="0.000001" />
         </div>
       </div>
-      <Button onClick={calculate} className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-[#FF8C42] blue-700">
+      <button onClick={calculate} className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700">
         Calculate Commute Time
-      </Button>
+      </button>
       {result && (
-        <div className="bg-[#FF8C42] blue-50 border border-blue-200 rounded-lg p-4 space-y-2">
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-2">
           <div className="flex justify-between"><span>Distance:</span><span>{result.distance} km</span></div>
           <div className="flex justify-between"><span>Commute Time:</span><span>{result.commuteTime} min</span></div>
           <div className="flex justify-between"><span>Buffer Time:</span><span>{result.bufferTime} min</span></div>

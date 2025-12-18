@@ -321,24 +321,18 @@ export function bookingEndpoints(app: Hono, kv: any) {
       booking.status = status;
       booking.updatedAt = new Date().toISOString();
       
-      // ✅ FIX: Auto-Start GPS Tracking if status is in_progress
+      // Phase 2: Auto-Start GPS if status is in_progress
       if (status === 'in_progress') {
          // Check if this service requires tracking
+         // We check if vendor has capability or specific roles
          const vendor = await kv.get(`vendor:${booking.vendorId}`);
-         const serviceStyle = booking.serviceStyle || booking.serviceType;
-         
-         // Tracking roles: walkers, ambulance, relocation (use GPS tracking endpoints)
          const isTrackingRole = vendor && (
              vendor.role === 'pet_walker' || 
              vendor.role === 'pet_ambulance' || 
              vendor.role === 'pet_relocation'
          );
          
-         // Home services: use home service tracking (staff traveling to customer)
-         const isHomeService = serviceStyle === 'at_home' || serviceStyle === 'home';
-         
          if (isTrackingRole) {
-             // Use GPS tracking system for walkers/ambulance/relocation
              const sessionId = bookingId; // Use bookingId as sessionId
              const sessionKey = `session:tracking:${sessionId}`;
              
@@ -347,9 +341,7 @@ export function bookingEndpoints(app: Hono, kv: any) {
              if (!existingSession) {
                  const trackingSession = {
                     id: sessionId,
-                    walkerId: booking.staffId || booking.vendorId, // Use staff if assigned, else vendor
-                    bookingId: bookingId,
-                    customerId: booking.customerId,
+                    walkerId: booking.vendorId, // Default to vendor, update when staff assigned
                     status: 'in_progress',
                     startTime: new Date().toISOString(),
                     currentLocation: { lat: 0, lng: 0 }, // Waiting for first update
@@ -359,15 +351,8 @@ export function bookingEndpoints(app: Hono, kv: any) {
                  };
                  await kv.set(sessionKey, trackingSession);
                  booking.trackingActive = true;
-                 booking.trackingSessionId = sessionId;
-                 console.log(`📍 Auto-started GPS session for booking ${bookingId} (role: ${vendor.role})`);
+                 console.log(`📍 Auto-started GPS session for booking ${bookingId}`);
              }
-         } else if (isHomeService && booking.staffId) {
-             // For home services, tracking session is created when staff starts travel
-             // via /booking/:bookingId/start-travel endpoint
-             // But we ensure booking is ready for tracking
-             booking.trackingReady = true;
-             console.log(`📍 Home service booking ${bookingId} ready for tracking (staff: ${booking.staffId})`);
          }
       }
       

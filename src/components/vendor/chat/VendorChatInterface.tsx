@@ -345,12 +345,13 @@ export function VendorChatInterface({
           <div className="flex-1">
             <p className="text-sm font-medium">Prescription attached</p>
             {msg.prescriptionId && (
-              <Button onClick={() => downloadFile(msg.prescriptionId!, `prescription_${bookingId}.pdf`)}
+              <button
+                onClick={() => downloadFile(msg.prescriptionId!, `prescription_${bookingId}.pdf`)}
                 className="text-xs underline mt-1 flex items-center gap-1"
               >
                 <Download className="w-3 h-3" />
                 Download PDF
-              </Button>
+              </button>
             )}
           </div>
         </div>
@@ -367,18 +368,20 @@ export function VendorChatInterface({
             />
           </div>
           <div className="flex gap-2">
-            <Button onClick={() => previewFileFunc(msg.fileId!, msg.fileType!, msg.fileName!)}
+            <button
+              onClick={() => previewFileFunc(msg.fileId!, msg.fileType!, msg.fileName!)}
               className="text-xs flex items-center gap-1"
             >
               <Eye className="w-3 h-3" />
               View
-            </Button>
-            <Button onClick={() => downloadFile(msg.fileId!, msg.fileName!)}
+            </button>
+            <button
+              onClick={() => downloadFile(msg.fileId!, msg.fileName!)}
               className="text-xs flex items-center gap-1"
             >
               <Download className="w-3 h-3" />
               Download
-            </Button>
+            </button>
           </div>
           {msg.message && msg.message !== `Sent a ${msg.messageType}` && (
             <p className="text-sm mt-1">{msg.message}</p>
@@ -396,18 +399,20 @@ export function VendorChatInterface({
             </div>
           </div>
           <div className="flex gap-2">
-            <Button onClick={() => previewFileFunc(msg.fileId!, msg.fileType!, msg.fileName!)}
+            <button
+              onClick={() => previewFileFunc(msg.fileId!, msg.fileType!, msg.fileName!)}
               className="text-xs flex items-center gap-1"
             >
               <Eye className="w-3 h-3" />
               View
-            </Button>
-            <Button onClick={() => downloadFile(msg.fileId!, msg.fileName!)}
+            </button>
+            <button
+              onClick={() => downloadFile(msg.fileId!, msg.fileName!)}
               className="text-xs flex items-center gap-1"
             >
               <Download className="w-3 h-3" />
               Download
-            </Button>
+            </button>
           </div>
           {msg.message && msg.message !== `Sent a ${msg.messageType}` && (
             <p className="text-sm mt-1">{msg.message}</p>
@@ -425,18 +430,20 @@ export function VendorChatInterface({
             </div>
           </div>
           <div className="flex gap-2">
-            <Button onClick={() => previewFileFunc(msg.fileId!, msg.fileType!, msg.fileName!)}
+            <button
+              onClick={() => previewFileFunc(msg.fileId!, msg.fileType!, msg.fileName!)}
               className="text-xs flex items-center gap-1"
             >
               <Eye className="w-3 h-3" />
               View
-            </Button>
-            <Button onClick={() => downloadFile(msg.fileId!, msg.fileName!)}
+            </button>
+            <button
+              onClick={() => downloadFile(msg.fileId!, msg.fileName!)}
               className="text-xs flex items-center gap-1"
             >
               <Download className="w-3 h-3" />
               Download
-            </Button>
+            </button>
           </div>
           {msg.message && msg.message !== `Sent a ${msg.messageType}` && (
             <p className="text-sm mt-1">{msg.message}</p>
@@ -453,10 +460,10 @@ export function VendorChatInterface({
       <div className="w-full max-w-[430px] mx-auto bg-white flex flex-col h-screen">
         {/* Header */}
         <div className="bg-gradient-to-br from-[#FF8C42] to-[#FF7029] text-white px-4 py-4">
-          <Button onClick={onBack} className="flex items-center gap-2 mb-3">
+          <button onClick={onBack} className="flex items-center gap-2 mb-3">
             <ArrowLeft className="w-5 h-5" />
             <span>Back</span>
-          </Button>
+          </button>
           
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center flex-shrink-0">
@@ -467,12 +474,13 @@ export function VendorChatInterface({
               <div className="flex items-center gap-2">
                 <h1 className="font-bold truncate">{customerName}</h1>
                 {customerHistory.length > 0 && (
-                  <Button onClick={() => setShowHistory(!showHistory)}
+                  <button
+                    onClick={() => setShowHistory(!showHistory)}
                     className="p-1 hover:bg-white/20 rounded transition-colors"
                     title="View customer history"
                   >
                     <History className="w-4 h-4" />
-                  </Button>
+                  </button>
                 )}
               </div>
               <p className="text-xs text-white/80 truncate">Pet: {petName}</p>
@@ -597,7 +605,8 @@ export function VendorChatInterface({
               accept="image/*,video/*,application/pdf"
               className="hidden"
             />
-            <Button onClick={() => fileInputRef.current?.click()}
+            <button
+              onClick={() => fileInputRef.current?.click()}
               disabled={uploading}
               className="p-2 hover:bg-gray-100 rounded-full transition-colors"
             >
@@ -606,7 +615,7 @@ export function VendorChatInterface({
               ) : (
                 <Paperclip className="w-5 h-5 text-gray-600" />
               )}
-            </Button>
+            </button>
             <Input
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
@@ -645,11 +654,12 @@ export function VendorChatInterface({
       {/* File Preview Modal */}
       {previewFile && (
         <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center" onClick={() => setPreviewFile(null)}>
-          <Button onClick={() => setPreviewFile(null)}
+          <button
+            onClick={() => setPreviewFile(null)}
             className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-white/20 rounded-full"
           >
             <X className="w-6 h-6 text-white" />
-          </Button>
+          </button>
           
           <div className="w-full max-w-4xl max-h-screen p-4" onClick={(e) => e.stopPropagation()}>
             {previewFile.type.startsWith('image/') ? (

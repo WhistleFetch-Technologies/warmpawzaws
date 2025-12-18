@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-// Brand color: #FF8C42
 import { Calendar, Image, Video, UtensilsCrossed, Activity, ChevronRight } from 'lucide-react';
 import { Card } from '../ui/card';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';

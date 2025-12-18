@@ -334,9 +334,9 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
       <div className="bg-white border-b sticky top-0 z-10">
         <div className="max-w-6xl mx-auto px-4 py-4">
           <div className="flex items-center gap-4">
-            <Button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg">
+            <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg">
               <ArrowLeft className="w-5 h-5" />
-            </Button>
+            </button>
             <div className="flex-1">
               <h1 className="font-bold text-gray-900">Center Profile & Timings</h1>
               <p className="text-sm text-gray-600">{profile.centerName}</p>
@@ -365,7 +365,7 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
             ].map(tab => {
               const Icon = tab.icon;
               return (
-                <Button
+                <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id as any)}
                   className={`flex items-center gap-2 px-4 py-3 border-b-2 font-medium text-sm transition-colors whitespace-nowrap ${
@@ -376,7 +376,7 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
                 >
                   <Icon className="w-4 h-4" />
                   {tab.label}
-                </Button>
+                </button>
               );
             })}
           </div>
@@ -463,22 +463,24 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
                 {profile.photos.map((photo, idx) => (
                   <div key={idx} className="relative aspect-video rounded-lg overflow-hidden bg-gray-100">
                     <img src={photo} alt={`Photo ${idx + 1}`} className="w-full h-full object-cover" />
-                    <Button onClick={() => removeExistingPhoto(idx)}
+                    <button
+                      onClick={() => removeExistingPhoto(idx)}
                       className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-xs"
                     >
                       ×
-                    </Button>
+                    </button>
                   </div>
                 ))}
                 
                 {newPhotos.map((photo, idx) => (
                   <div key={`new-${idx}`} className="relative aspect-video rounded-lg overflow-hidden bg-gray-100">
                     <img src={URL.createObjectURL(photo)} alt={`New ${idx + 1}`} className="w-full h-full object-cover" />
-                    <Button onClick={() => removeNewPhoto(idx)}
+                    <button
+                      onClick={() => removeNewPhoto(idx)}
                       className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-xs"
                     >
                       ×
-                    </Button>
+                    </button>
                     <Badge className="absolute bottom-2 left-2 bg-blue-500">New</Badge>
                   </div>
                 ))}
@@ -706,14 +708,15 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
                 {profile.customAmenities.map((amenity, idx) => (
                   <Badge key={idx} variant="secondary" className="gap-2">
                     {amenity}
-                    <Button onClick={() => setProfile(prev => ({
+                    <button
+                      onClick={() => setProfile(prev => ({
                         ...prev,
                         customAmenities: prev.customAmenities.filter((_, i) => i !== idx)
                       }))}
                       className="text-red-500 hover:text-red-700"
                     >
                       ×
-                    </Button>
+                    </button>
                   </Badge>
                 ))}
               </div>
