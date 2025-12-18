@@ -91,61 +91,42 @@ export default function HavePetJourneyScreen({
     const isValid = validateStep(currentStep);
     if (!isValid) return;
 
-    // Build updated data object by merging current step's temp selections
-    // Use functional update pattern to ensure we get the latest accumulated state
-    // This fixes the bug where final save would lose data from previous steps
-    let updatedData: OnboardingData;
-    
-    // Use functional update to get the latest state and build complete data
-    setData((prevData) => {
-      // Start with the latest state to include all previous step changes
-      let newData = { ...prevData };
+    // Build updated data object with temp selections merged in
+    // This ensures we use the latest data when saving, not stale state
+    let updatedData = { ...data };
 
-      // Merge temp selections based on current step
-      if (currentStep === 3) {
-        newData = {
-          ...prevData,
-          livingSpace: {
-            homeType: tempSelections.homeType || prevData.livingSpace.homeType || '',
-            outdoorSpace: tempSelections.outdoorSpace || prevData.livingSpace.outdoorSpace || '',
-          },
-        };
-      } else if (currentStep === 4) {
-        newData = {
-          ...prevData,
-          lifestyle: {
-            workSchedule: tempSelections.workSchedule || prevData.lifestyle.workSchedule || '',
-            activityLevel: tempSelections.activityLevel || prevData.lifestyle.activityLevel || '',
-            travelFrequency: tempSelections.travelFrequency || prevData.lifestyle.travelFrequency || '',
-          },
-        };
-      } else if (currentStep === 5) {
-        newData = {
-          ...prevData,
-          budget: tempSelections.budget || prevData.budget || '',
-        };
-      } else {
-        // For other steps, merge any temp selections into newData
-        // This ensures we don't lose data when reaching final step from other steps
-        newData = {
-          ...prevData,
-          ...tempSelections,
-        };
-      }
+    if (currentStep === 3) {
+      updatedData = {
+        ...data,
+        livingSpace: {
+          homeType: tempSelections.homeType || '',
+          outdoorSpace: tempSelections.outdoorSpace || '',
+        },
+      };
+      setData(updatedData);
+    } else if (currentStep === 4) {
+      updatedData = {
+        ...data,
+        lifestyle: {
+          workSchedule: tempSelections.workSchedule || '',
+          activityLevel: tempSelections.activityLevel || '',
+          travelFrequency: tempSelections.travelFrequency || '',
+        },
+      };
+      setData(updatedData);
+    } else if (currentStep === 5) {
+      updatedData = {
+        ...data,
+        budget: tempSelections.budget || '',
+      };
+      setData(updatedData);
+    }
 
-      // Store the complete data for use outside the callback
-      updatedData = newData;
-      return newData;
-    });
-
-    // After state update, handle navigation or saving
-    // updatedData is now guaranteed to have all accumulated changes from previous steps
     if (currentStep === totalSteps) {
-      // Save with the complete data that includes all accumulated changes
+      // Use updatedData instead of stale data state
       await saveOnboarding(updatedData);
       onComplete();
     } else {
-      // Move to next step
       setCurrentStep(currentStep + 1);
       setTempSelections({});
     }
