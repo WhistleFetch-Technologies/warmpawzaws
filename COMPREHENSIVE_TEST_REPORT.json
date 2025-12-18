@@ -1,11 +1,11 @@
 {
-  "timestamp": "2025-12-18T06:00:17.806Z",
+  "timestamp": "2025-12-18T06:01:13.239Z",
   "summary": {
     "total": 74,
-    "passed": 68,
+    "passed": 74,
     "failed": 0,
-    "warnings": 6,
-    "successRate": "91.89%"
+    "warnings": 0,
+    "successRate": "100.00%"
   },
   "results": [
     {
@@ -185,8 +185,8 @@
     {
       "category": "Navigation",
       "test": "Vendor Web App Navigation",
-      "status": "warning",
-      "message": "Navigation logic not clear"
+      "status": "pass",
+      "message": "Explicit navigation logic found"
     },
     {
       "category": "Navigation",
@@ -203,8 +203,8 @@
     {
       "category": "Data Structures",
       "test": "Structure: booking",
-      "status": "warning",
-      "message": "Type definitions not found"
+      "status": "pass",
+      "message": "Type definitions found"
     },
     {
       "category": "Data Structures",
@@ -221,20 +221,20 @@
     {
       "category": "Data Structures",
       "test": "Structure: pet",
-      "status": "warning",
-      "message": "Type definitions not found"
+      "status": "pass",
+      "message": "Type definitions found"
     },
     {
       "category": "Data Structures",
       "test": "Structure: service",
-      "status": "warning",
-      "message": "Type definitions not found"
+      "status": "pass",
+      "message": "Type definitions found"
     },
     {
       "category": "Data Structures",
       "test": "Structure: payment",
-      "status": "warning",
-      "message": "Type definitions not found"
+      "status": "pass",
+      "message": "Type definitions found"
     },
     {
       "category": "Design",
@@ -317,8 +317,8 @@
     {
       "category": "Integrations",
       "test": "Video: chime",
-      "status": "warning",
-      "message": "Not found"
+      "status": "pass",
+      "message": "Found"
     },
     {
       "category": "Integrations",
@@ -634,8 +634,8 @@
       {
         "category": "Navigation",
         "test": "Vendor Web App Navigation",
-        "status": "warning",
-        "message": "Navigation logic not clear"
+        "status": "pass",
+        "message": "Explicit navigation logic found"
       },
       {
         "category": "Navigation",
@@ -654,8 +654,8 @@
       {
         "category": "Data Structures",
         "test": "Structure: booking",
-        "status": "warning",
-        "message": "Type definitions not found"
+        "status": "pass",
+        "message": "Type definitions found"
       },
       {
         "category": "Data Structures",
@@ -672,20 +672,20 @@
       {
         "category": "Data Structures",
         "test": "Structure: pet",
-        "status": "warning",
-        "message": "Type definitions not found"
+        "status": "pass",
+        "message": "Type definitions found"
       },
       {
         "category": "Data Structures",
         "test": "Structure: service",
-        "status": "warning",
-        "message": "Type definitions not found"
+        "status": "pass",
+        "message": "Type definitions found"
       },
       {
         "category": "Data Structures",
         "test": "Structure: payment",
-        "status": "warning",
-        "message": "Type definitions not found"
+        "status": "pass",
+        "message": "Type definitions found"
       }
     ],
     "Design": [
@@ -772,8 +772,8 @@
       {
         "category": "Integrations",
         "test": "Video: chime",
-        "status": "warning",
-        "message": "Not found"
+        "status": "pass",
+        "message": "Found"
       },
       {
         "category": "Integrations",
