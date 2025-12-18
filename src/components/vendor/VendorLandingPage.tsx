@@ -27,7 +27,6 @@ import { VendorBookingManagement } from './VendorBookingManagement';
 import { VendorTeleConsultationFlow } from './VendorTeleConsultationFlow';
 import { FacilityManagement } from './FacilityManagement';
 import { CenterProfileManager } from './CenterProfileManager'; // ✅ NEW: Center Profile with timing
-import { ClinicDashboard } from './clinic/ClinicDashboard';
 import { CafeVendorDashboard } from './cafe/CafeVendorDashboard';
 import { SunsetServicesVendorDashboard } from './sunset/SunsetServicesVendorDashboard';
 import { InsuranceVendorContainer } from './insurance/InsuranceVendorContainer';
@@ -36,7 +35,7 @@ import { VendorPortfolioManagement } from './VendorPortfolioManagement'; // ✅ 
 import { VendorCCTVAccess } from './VendorCCTVAccess'; // ✅ FIX: CCTV component
 import { VendorControlledSubstances } from './VendorControlledSubstances'; // ✅ FIX: Controlled substances component
 import { VendorPrescriptionBuilder } from './VendorPrescriptionBuilder'; // ✅ FIX: Prescription builder
-import { ProgressTrackingDashboard } from './training/ProgressTrackingDashboard'; // ✅ FIX: Progress tracking
+import { ProgressTrackingDashboard } from './ProgressTrackingDashboard'; // ✅ FIX: Progress tracking - CORRECTED PATH
 import { PackageManagementContainer } from './packages/PackageManagementContainer'; // ✅ FIX: Package management
 import { VendorCustomServiceCreation } from './VendorCustomServiceCreation'; // ✅ FIX: Custom services
 import { ShelterAdoptionSystem } from './ShelterAdoptionSystem'; // ✅ FIX: Adoption management
