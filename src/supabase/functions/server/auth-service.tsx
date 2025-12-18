@@ -182,10 +182,28 @@ export async function updateUser(userId: string, updates: Partial<User>): Promis
 /**
  * Create a new session for user
  */
-export async function createUserSession(userId: string, phone: string, role: string): Promise<Session> {
+/**
+ * Create a new session for user
+ * @param userId - User ID
+ * @param phone - User phone number
+ * @param role - User role
+ * @param platform - Platform type: 'web' (48 hours) or 'mobile' (365 days). Defaults to 'web'
+ */
+export async function createUserSession(
+  userId: string, 
+  phone: string, 
+  role: string, 
+  platform: 'web' | 'mobile' = 'web'
+): Promise<Session> {
   const sessionId = generateId('session');
   const now = new Date().toISOString();
-  const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(); // ✅ EXTENDED: 48 hours (was 30 days, now aligned with frontend)
+  
+  // Token expiration: 48 hours for web apps, 365 days for mobile apps
+  const expirationMs = platform === 'mobile' 
+    ? 365 * 24 * 60 * 60 * 1000  // 365 days for mobile
+    : 48 * 60 * 60 * 1000;        // 48 hours for web
+  
+  const expiresAt = new Date(Date.now() + expirationMs).toISOString();
   
   const session: Session = {
     sessionId,
@@ -194,7 +212,8 @@ export async function createUserSession(userId: string, phone: string, role: str
     role: role as 'customer' | 'vendor' | 'staff' | 'admin',
     token: createSession(userId, role as 'customer' | 'vendor' | 'staff' | 'admin'),
     createdAt: now,
-    expiresAt
+    expiresAt,
+    platform // Store platform type for reference
   };
   
   // Store session
@@ -202,7 +221,7 @@ export async function createUserSession(userId: string, phone: string, role: str
   await kv.set(`session:user:${userId}`, session.sessionId);
   await kv.set(`session:phone:${normalizePhone(phone)}`, session.sessionId);
   
-  console.log(`🔑 Session created: ${session.sessionId} for user ${userId}`);
+  console.log(`🔑 Session created: ${session.sessionId} for user ${userId} (${platform}, expires in ${platform === 'mobile' ? '365 days' : '48 hours'})`);
   
   return session;
 }
