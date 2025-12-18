@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Plus, Check, Search, X } from 'lucide-react';
+import { ArrowLeft, Plus, Check, Search, X, CheckSquare, Square } from 'lucide-react'; // ✅ FIX: Add CheckSquare and Square icons
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';

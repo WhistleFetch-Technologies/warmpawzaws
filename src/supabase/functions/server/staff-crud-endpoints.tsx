@@ -13,14 +13,16 @@ import {
   deriveServiceStyle 
 } from './validation-middleware.tsx';
 import { sendSuccess, sendError } from './response-utils.ts';
+import { requireAuth } from './auth-middleware.tsx'; // ✅ FIX: Import auth middleware
 
 const app = new Hono();
 
 /**
  * CREATE NEW STAFF
  * POST /staff/create
+ * ✅ PROTECTED: Requires authentication
  */
-app.post('/make-server-3dd53475/staff/create', async (c) => {
+app.post('/make-server-3dd53475/staff/create', requireAuth, async (c) => {
   try {
     const staffData = await c.req.json();
     
@@ -132,8 +134,9 @@ app.post('/make-server-3dd53475/staff/create', async (c) => {
 /**
  * UPDATE EXISTING STAFF
  * PUT /staff/:staffId
+ * ✅ PROTECTED: Requires authentication
  */
-app.put('/make-server-3dd53475/staff/:staffId', async (c) => {
+app.put('/make-server-3dd53475/staff/:staffId', requireAuth, async (c) => {
   try {
     const { staffId } = c.req.param();
     const updates = await c.req.json();

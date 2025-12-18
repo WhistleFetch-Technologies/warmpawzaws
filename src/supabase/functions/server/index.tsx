@@ -78,6 +78,8 @@ import { transactionMonitoringEndpoints } from './transaction-monitoring-endpoin
 import enhancedServicePublishing from './enhanced-service-publishing.tsx';
 import enhancedStaffAvailability from './enhanced-staff-availability-routes.tsx';
 import { pharmacyPrescriptionEndpoints } from './pharmacy-prescription-endpoints.tsx';
+import vetSpecializedServices from './vet-specialized-services.tsx'; // ✅ FIX: Import vet specialized services (ambulance, diagnostics, pharmacy)
+import staffCrudEndpoints from './staff-crud-endpoints.tsx'; // ✅ FIX: Import staff CRUD endpoints (create, read, update, delete staff)
 import { homeSampleCollectionEndpoints } from './home-sample-collection-endpoints.tsx';
 import { holidayPackageEndpoints } from './holiday-package-endpoints.tsx';
 import { smsNotificationServiceEnhanced } from './sms-notification-service-enhanced.tsx';
@@ -467,6 +469,22 @@ registerVendorServiceEndpoints(app);
 registerVendorCatalogAPIV2(app);
 customServiceEndpoints(app, kv); // ✅ FIX: Register custom service endpoints
 app.route('/make-server-3dd53475', vendorScheduleV2Endpoints);
+
+// ✅ FIX: Register Vet Specialized Services (ambulance, diagnostics, pharmacy, emergency protocols)
+if (vetSpecializedServices && typeof vetSpecializedServices === 'object') {
+  console.log('✅ Registering Vet Specialized Services (Ambulance, Diagnostics, Pharmacy)...');
+  app.route('/make-server-3dd53475', vetSpecializedServices);
+} else {
+  console.warn('⚠️ Vet Specialized Services module undefined, skipping');
+}
+
+// ✅ FIX: Register Staff CRUD Endpoints (create, read, update, delete staff members)
+if (staffCrudEndpoints && typeof staffCrudEndpoints === 'object') {
+  console.log('✅ Registering Staff CRUD Endpoints (Create, Read, Update, Delete)...');
+  app.route('/', staffCrudEndpoints); // Mount without prefix as it already has /make-server-3dd53475
+} else {
+  console.warn('⚠️ Staff CRUD Endpoints module undefined, skipping');
+}
 
 // 3. Admin Routes
 registerAdminVendorRoutes(app);
