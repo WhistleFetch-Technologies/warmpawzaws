@@ -53,6 +53,7 @@ export interface Session {
   token?: string;
   createdAt: string;
   expiresAt: string;
+  platform?: 'web' | 'mobile'; // Platform type: 'web' (48 hours) or 'mobile' (365 days)
 }
 
 export interface VendorProfile {
