@@ -355,7 +355,7 @@ export function VendorApp() {
     );
   }
 
-  // EXISTING VENDOR - Check if pet_product seller or regular vendor
+  // EXISTING VENDOR - Explicit routing based on vendor state
   if (vendorData && !isNewVendor) {
     console.log('🎯 Routing EXISTING vendor');
     console.log('   Vendor Role:', vendorData.roleId);
@@ -365,7 +365,7 @@ export function VendorApp() {
     
     // ✅ PET PRODUCT SELLER - Route to Seller Portal if approved and active
     if (vendorData.roleId === 'pet_product' && vendorData.isActive && vendorData.status === 'approved') {
-      console.log('🛍️ Routing to Seller Portal for pet_product seller');
+      console.log('🛍️ [NAVIGATION] Routing to Seller Portal for pet_product seller');
       return (
         <SellerPortal
           vendorData={vendorData}
@@ -379,10 +379,73 @@ export function VendorApp() {
       );
     }
     
-    // ✅ OTHER VENDORS - use VendorLandingPage for smart routing
-    console.log('✅ Forwarding to VendorLandingPage for smart routing');
+    // ✅ EXPLICIT NAVIGATION LOGIC - Route based on vendor status
+    // Status: pending -> ApplicationUnderReview
+    if (vendorData.status === 'pending' && !justSubmittedApplication) {
+      console.log('⏳ [NAVIGATION] Vendor pending approval - showing review screen');
+      return (
+        <VendorLandingPage
+          vendorId={vendorData.id}
+          phone={session.phone}
+          vendorType={vendorData.vendorType}
+          serviceStyle={vendorData.serviceStyle}
+          initialVendorData={vendorData}
+          justSubmitted={false}
+          onComplete={() => checkExistingVendor(session.phone)}
+        />
+      );
+    }
     
-    // VendorLandingPage will handle all routing based on vendor status
+    // Status: rejected -> ApplicationRejected
+    if (vendorData.status === 'rejected') {
+      console.log('❌ [NAVIGATION] Vendor rejected - showing rejection screen');
+      return (
+        <VendorLandingPage
+          vendorId={vendorData.id}
+          phone={session.phone}
+          vendorType={vendorData.vendorType}
+          serviceStyle={vendorData.serviceStyle}
+          initialVendorData={vendorData}
+          justSubmitted={false}
+          onComplete={() => checkExistingVendor(session.phone)}
+        />
+      );
+    }
+    
+    // Status: approved but setup not completed -> Setup flow
+    if (vendorData.status === 'approved' && !vendorData.setupCompleted) {
+      console.log('⚙️ [NAVIGATION] Vendor approved but setup incomplete - showing setup flow');
+      return (
+        <VendorLandingPage
+          vendorId={vendorData.id}
+          phone={session.phone}
+          vendorType={vendorData.vendorType}
+          serviceStyle={vendorData.serviceStyle}
+          initialVendorData={vendorData}
+          justSubmitted={false}
+          onComplete={() => checkExistingVendor(session.phone)}
+        />
+      );
+    }
+    
+    // Status: approved and active -> Dashboard
+    if (vendorData.status === 'approved' && vendorData.isActive && vendorData.setupCompleted) {
+      console.log('✅ [NAVIGATION] Vendor active - routing to dashboard');
+      return (
+        <VendorLandingPage
+          vendorId={vendorData.id}
+          phone={session.phone}
+          vendorType={vendorData.vendorType}
+          serviceStyle={vendorData.serviceStyle}
+          initialVendorData={vendorData}
+          justSubmitted={false}
+          onComplete={() => checkExistingVendor(session.phone)}
+        />
+      );
+    }
+    
+    // ✅ FALLBACK - use VendorLandingPage for smart routing
+    console.log('🔄 [NAVIGATION] Using VendorLandingPage for routing');
     return (
       <VendorLandingPage
         vendorId={vendorData.id}
@@ -390,11 +453,8 @@ export function VendorApp() {
         vendorType={vendorData.vendorType}
         serviceStyle={vendorData.serviceStyle}
         initialVendorData={vendorData}
-        justSubmitted={justSubmittedApplication} // ✅ Pass justSubmittedApplication
-        onComplete={() => {
-          // Reload vendor data after completing setup
-          checkExistingVendor(session.phone);
-        }}
+        justSubmitted={justSubmittedApplication}
+        onComplete={() => checkExistingVendor(session.phone)}
       />
     );
   }
