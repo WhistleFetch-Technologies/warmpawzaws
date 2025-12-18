@@ -1,0 +1,1657 @@
+{
+  "timestamp": "2025-12-18T06:25:15.016Z",
+  "summary": {
+    "total": 89,
+    "passed": 81,
+    "failed": 0,
+    "warnings": 8,
+    "skipped": 0,
+    "successRate": "91.01%"
+  },
+  "results": [
+    {
+      "category": "Customer Journey",
+      "test": "Home Services",
+      "status": "pass",
+      "message": "All screens found",
+      "details": {
+        "found": [
+          "home",
+          "HomeServiceSelectionEnhanced"
+        ],
+        "missing": []
+      },
+      "flow": [
+        "home",
+        "HomeServiceSelectionEnhanced"
+      ]
+    },
+    {
+      "category": "Customer Journey",
+      "test": "Center Booking",
+      "status": "pass",
+      "message": "All screens found",
+      "details": {
+        "found": [
+          "vet",
+          "grooming",
+          "training",
+          "boarding"
+        ],
+        "missing": []
+      },
+      "flow": [
+        "vet",
+        "grooming",
+        "training",
+        "boarding"
+      ]
+    },
+    {
+      "category": "Customer Journey",
+      "test": "Buy Puppy",
+      "status": "pass",
+      "message": "All screens found",
+      "details": {
+        "found": [
+          "PuppyProfileBrowse",
+          "PuppyProfileDetail"
+        ],
+        "missing": []
+      },
+      "flow": [
+        "PuppyProfileBrowse",
+        "PuppyProfileDetail"
+      ]
+    },
+    {
+      "category": "Customer Journey",
+      "test": "Buy Insurance",
+      "status": "pass",
+      "message": "All screens found",
+      "details": {
+        "found": [
+          "insurance",
+          "InsurancePlans",
+          "InsurancePurchase"
+        ],
+        "missing": []
+      },
+      "flow": [
+        "insurance",
+        "InsurancePlans",
+        "InsurancePurchase"
+      ]
+    },
+    {
+      "category": "Customer Journey",
+      "test": "Pet Friendly Cafe",
+      "status": "pass",
+      "message": "All screens found",
+      "details": {
+        "found": [
+          "cafes",
+          "cafe_detail",
+          "cafe_reservation"
+        ],
+        "missing": []
+      },
+      "flow": [
+        "cafes",
+        "cafe_detail",
+        "cafe_reservation"
+      ]
+    },
+    {
+      "category": "Customer Journey",
+      "test": "Adopt Pet",
+      "status": "pass",
+      "message": "All screens found",
+      "details": {
+        "found": [
+          "adoption",
+          "AdoptionListing",
+          "AdoptionApplication"
+        ],
+        "missing": []
+      },
+      "flow": [
+        "adoption",
+        "AdoptionListing",
+        "AdoptionApplication"
+      ]
+    },
+    {
+      "category": "Customer Journey",
+      "test": "Book Boarding",
+      "status": "pass",
+      "message": "All screens found",
+      "details": {
+        "found": [
+          "boarding",
+          "boarding_facility"
+        ],
+        "missing": []
+      },
+      "flow": [
+        "boarding",
+        "boarding_facility"
+      ]
+    },
+    {
+      "category": "Customer Journey",
+      "test": "Pet Holiday Resort",
+      "status": "pass",
+      "message": "All screens found",
+      "details": {
+        "found": [
+          "resort_booking",
+          "ResortBoardingBookingEnhanced"
+        ],
+        "missing": []
+      },
+      "flow": [
+        "resort_booking",
+        "ResortBoardingBookingEnhanced"
+      ]
+    },
+    {
+      "category": "Customer Journey",
+      "test": "Buy Holiday Plan",
+      "status": "pass",
+      "message": "All screens found",
+      "details": {
+        "found": [
+          "holiday",
+          "HolidayPackages",
+          "HolidayPackageDetail",
+          "HolidayBooking"
+        ],
+        "missing": []
+      },
+      "flow": [
+        "holiday",
+        "HolidayPackages",
+        "HolidayPackageDetail",
+        "HolidayBooking"
+      ]
+    },
+    {
+      "category": "Customer Journey",
+      "test": "Call Ambulance",
+      "status": "pass",
+      "message": "All screens found",
+      "details": {
+        "found": [
+          "ambulance",
+          "ambulance_sos",
+          "AmbulanceSOS"
+        ],
+        "missing": []
+      },
+      "flow": [
+        "ambulance",
+        "ambulance_sos",
+        "AmbulanceSOS"
+      ]
+    },
+    {
+      "category": "Customer Journey",
+      "test": "Online Medicine Order",
+      "status": "pass",
+      "message": "All screens found",
+      "details": {
+        "found": [
+          "pharmacy_store",
+          "MedicineCatalog",
+          "MedicineOrder"
+        ],
+        "missing": []
+      },
+      "flow": [
+        "pharmacy_store",
+        "MedicineCatalog",
+        "MedicineOrder"
+      ]
+    },
+    {
+      "category": "Customer Journey",
+      "test": "Home Sample Collection",
+      "status": "warning",
+      "message": "Some screens missing: home_sample_collection",
+      "details": {
+        "found": [],
+        "missing": [
+          "home_sample_collection"
+        ]
+      },
+      "flow": [
+        "home_sample_collection"
+      ]
+    },
+    {
+      "category": "Customer Journey",
+      "test": "Grooming Center",
+      "status": "pass",
+      "message": "All screens found",
+      "details": {
+        "found": [
+          "grooming"
+        ],
+        "missing": []
+      },
+      "flow": [
+        "grooming"
+      ]
+    },
+    {
+      "category": "Customer Journey",
+      "test": "Buy Package",
+      "status": "warning",
+      "message": "Some screens missing: service-package",
+      "details": {
+        "found": [
+          "PackageBookingPage"
+        ],
+        "missing": [
+          "service-package"
+        ]
+      },
+      "flow": [
+        "PackageBookingPage",
+        "service-package"
+      ]
+    },
+    {
+      "category": "Customer Journey",
+      "test": "Vet at Home",
+      "status": "warning",
+      "message": "Some screens missing: vet_home",
+      "details": {
+        "found": [
+          "vet"
+        ],
+        "missing": [
+          "vet_home"
+        ]
+      },
+      "flow": [
+        "vet",
+        "vet_home"
+      ]
+    },
+    {
+      "category": "Customer Journey",
+      "test": "Groomer at Home",
+      "status": "warning",
+      "message": "Some screens missing: grooming_home",
+      "details": {
+        "found": [
+          "grooming"
+        ],
+        "missing": [
+          "grooming_home"
+        ]
+      },
+      "flow": [
+        "grooming",
+        "grooming_home"
+      ]
+    },
+    {
+      "category": "Customer Journey",
+      "test": "Meal Plan Subscription",
+      "status": "pass",
+      "message": "All screens found",
+      "details": {
+        "found": [
+          "nutritionist",
+          "MealPlanBrowse",
+          "MealPlanDetail",
+          "MealOrder"
+        ],
+        "missing": []
+      },
+      "flow": [
+        "nutritionist",
+        "MealPlanBrowse",
+        "MealPlanDetail",
+        "MealOrder"
+      ]
+    },
+    {
+      "category": "Customer Journey",
+      "test": "Behaviorist Training",
+      "status": "pass",
+      "message": "All screens found",
+      "details": {
+        "found": [
+          "training",
+          "BehaviorAssessment",
+          "ProgressTracking"
+        ],
+        "missing": []
+      },
+      "flow": [
+        "training",
+        "BehaviorAssessment",
+        "ProgressTracking"
+      ]
+    },
+    {
+      "category": "Customer Journey",
+      "test": "Training Package",
+      "status": "pass",
+      "message": "All screens found",
+      "details": {
+        "found": [
+          "training",
+          "TrainingProgress",
+          "TrainingSessionDetail"
+        ],
+        "missing": []
+      },
+      "flow": [
+        "training",
+        "TrainingProgress",
+        "TrainingSessionDetail"
+      ]
+    },
+    {
+      "category": "Customer Journey",
+      "test": "Instant Video Consulting",
+      "status": "warning",
+      "message": "Some screens missing: instant-tele",
+      "details": {
+        "found": [
+          "VideoCall",
+          "tele"
+        ],
+        "missing": [
+          "instant-tele"
+        ]
+      },
+      "flow": [
+        "VideoCall",
+        "tele",
+        "instant-tele"
+      ]
+    },
+    {
+      "category": "Customer Journey",
+      "test": "Medical Records",
+      "status": "pass",
+      "message": "All screens found",
+      "details": {
+        "found": [
+          "MedicalHistory",
+          "MedicalRecordsPage"
+        ],
+        "missing": []
+      },
+      "flow": [
+        "MedicalHistory",
+        "MedicalRecordsPage"
+      ]
+    },
+    {
+      "category": "Customer Journey",
+      "test": "Prescription Management",
+      "status": "warning",
+      "message": "Some screens missing: PrescriptionView, PrescriptionUpload",
+      "details": {
+        "found": [
+          "PrescriptionMedicineMatch"
+        ],
+        "missing": [
+          "PrescriptionView",
+          "PrescriptionUpload"
+        ]
+      },
+      "flow": [
+        "PrescriptionView",
+        "PrescriptionUpload",
+        "PrescriptionMedicineMatch"
+      ]
+    },
+    {
+      "category": "Booking Lifecycle",
+      "test": "Create Booking",
+      "status": "pass",
+      "message": "Endpoint found: /bookings/create"
+    },
+    {
+      "category": "Booking Lifecycle",
+      "test": "Get Booking Details",
+      "status": "pass",
+      "message": "Endpoint found: /bookings/:bookingId"
+    },
+    {
+      "category": "Booking Lifecycle",
+      "test": "Update Booking Status",
+      "status": "pass",
+      "message": "Endpoint found: /bookings/:bookingId/status"
+    },
+    {
+      "category": "Booking Lifecycle",
+      "test": "Cancel Booking",
+      "status": "pass",
+      "message": "Endpoint found: /bookings/:bookingId/cancel"
+    },
+    {
+      "category": "Booking Lifecycle",
+      "test": "Reschedule Booking",
+      "status": "pass",
+      "message": "Endpoint found: /bookings/:bookingId/reschedule"
+    },
+    {
+      "category": "Booking Lifecycle",
+      "test": "Accept Booking",
+      "status": "pass",
+      "message": "Endpoint found: /bookings/:bookingId/accept"
+    },
+    {
+      "category": "Booking Lifecycle",
+      "test": "Reject Booking",
+      "status": "pass",
+      "message": "Endpoint found: /bookings/:bookingId/reject"
+    },
+    {
+      "category": "Booking Lifecycle",
+      "test": "Booking History",
+      "status": "pass",
+      "message": "Endpoint found: /customer/bookings"
+    },
+    {
+      "category": "Booking Lifecycle",
+      "test": "Booking Complete Flow",
+      "status": "pass",
+      "message": "Endpoint found: /booking/:bookingId/complete-with-otp"
+    },
+    {
+      "category": "Payment Integration",
+      "test": "Payment Initiation",
+      "status": "pass",
+      "message": "Endpoint found: /ecommerce/payments/initiate"
+    },
+    {
+      "category": "Payment Integration",
+      "test": "Payment Verification",
+      "status": "pass",
+      "message": "Endpoint found: /ecommerce/payments/verify"
+    },
+    {
+      "category": "Payment Integration",
+      "test": "Payment Processing",
+      "status": "pass",
+      "message": "Endpoint found: /ecommerce/payments/process"
+    },
+    {
+      "category": "Payment Integration",
+      "test": "Refund Processing",
+      "status": "pass",
+      "message": "Endpoint found: /ecommerce/payments/:paymentId/refund"
+    },
+    {
+      "category": "Payment Integration",
+      "test": "Razorpay Integration",
+      "status": "pass",
+      "message": "File exists"
+    },
+    {
+      "category": "Payment Integration",
+      "test": "Wallet Top-up",
+      "status": "pass",
+      "message": "Endpoint found: /customer/:customerId/wallet/topup"
+    },
+    {
+      "category": "Payment Integration",
+      "test": "Wallet Balance",
+      "status": "pass",
+      "message": "Endpoint found: /wallet/:customerId"
+    },
+    {
+      "category": "Payment Integration",
+      "test": "Coupons with Payment",
+      "status": "pass",
+      "message": "Endpoint found: /coupons/apply"
+    },
+    {
+      "category": "Payment Integration",
+      "test": "Auto Settlement",
+      "status": "pass",
+      "message": "File exists"
+    },
+    {
+      "category": "Payment Integration",
+      "test": "Vendor Settlement",
+      "status": "pass",
+      "message": "Endpoint found: /settlements/vendor"
+    },
+    {
+      "category": "Logistics Integration",
+      "test": "shiprocket-integration",
+      "status": "pass",
+      "message": "Integration found with endpoints"
+    },
+    {
+      "category": "Logistics Integration",
+      "test": "delhivery-integration",
+      "status": "pass",
+      "message": "Integration found with endpoints"
+    },
+    {
+      "category": "Logistics Integration",
+      "test": "logistics-routing-engine",
+      "status": "pass",
+      "message": "Integration found with endpoints"
+    },
+    {
+      "category": "Logistics Integration",
+      "test": "delivery-assignment-utils",
+      "status": "warning",
+      "message": "File exists but no endpoints"
+    },
+    {
+      "category": "Vendor Management",
+      "test": "Vendor Onboarding",
+      "status": "pass",
+      "message": "Feature found"
+    },
+    {
+      "category": "Vendor Management",
+      "test": "Service Catalog Management",
+      "status": "pass",
+      "message": "Feature found"
+    },
+    {
+      "category": "Vendor Management",
+      "test": "Service Creation",
+      "status": "pass",
+      "message": "Feature found"
+    },
+    {
+      "category": "Vendor Management",
+      "test": "Staff Creation",
+      "status": "pass",
+      "message": "Feature found"
+    },
+    {
+      "category": "Vendor Management",
+      "test": "Puppy Profile Creation",
+      "status": "pass",
+      "message": "Feature found"
+    },
+    {
+      "category": "Vendor Management",
+      "test": "Customer Services Publishing",
+      "status": "pass",
+      "message": "Feature found"
+    },
+    {
+      "category": "Specialized Services",
+      "test": "Ambulance Management",
+      "status": "pass",
+      "message": "Service found"
+    },
+    {
+      "category": "Specialized Services",
+      "test": "Emergency Care",
+      "status": "pass",
+      "message": "Service found"
+    },
+    {
+      "category": "Specialized Services",
+      "test": "Nutritionist Meal Plans",
+      "status": "pass",
+      "message": "Service found"
+    },
+    {
+      "category": "Specialized Services",
+      "test": "Behaviorist Service",
+      "status": "pass",
+      "message": "Service found"
+    },
+    {
+      "category": "Specialized Services",
+      "test": "Holiday Packages",
+      "status": "pass",
+      "message": "Service found"
+    },
+    {
+      "category": "Specialized Services",
+      "test": "Universal Problem Grid",
+      "status": "pass",
+      "message": "Service found"
+    },
+    {
+      "category": "Tier & Settlement",
+      "test": "Vendor Auto Settlement",
+      "status": "pass",
+      "message": "Feature found"
+    },
+    {
+      "category": "Tier & Settlement",
+      "test": "Tier Management",
+      "status": "pass",
+      "message": "Feature found"
+    },
+    {
+      "category": "Tier & Settlement",
+      "test": "Settlement Automation",
+      "status": "pass",
+      "message": "Feature found"
+    },
+    {
+      "category": "GPS Tracking",
+      "test": "GPS Tracking for Home Services",
+      "status": "pass",
+      "message": "Feature found"
+    },
+    {
+      "category": "GPS Tracking",
+      "test": "Walker Session Route Map",
+      "status": "pass",
+      "message": "Feature found"
+    },
+    {
+      "category": "GPS Tracking",
+      "test": "Home Service Tracking",
+      "status": "pass",
+      "message": "Feature found"
+    },
+    {
+      "category": "GPS Tracking",
+      "test": "Staff Tracking",
+      "status": "pass",
+      "message": "Feature found"
+    },
+    {
+      "category": "Profile Management",
+      "test": "Customer Profile",
+      "status": "pass",
+      "message": "Endpoint found: /customer/profile"
+    },
+    {
+      "category": "Profile Management",
+      "test": "Pet Profile",
+      "status": "pass",
+      "message": "Endpoint found: /customer/pets"
+    },
+    {
+      "category": "Profile Management",
+      "test": "Center Profile",
+      "status": "pass",
+      "message": "Endpoint found: /customer/center/:vendorId"
+    },
+    {
+      "category": "Profile Management",
+      "test": "Vendor Profile",
+      "status": "pass",
+      "message": "Feature found"
+    },
+    {
+      "category": "Refund & Cancellation",
+      "test": "Refund Policy Engine",
+      "status": "pass",
+      "message": "Policy found"
+    },
+    {
+      "category": "Refund & Cancellation",
+      "test": "Cancellation Policy",
+      "status": "pass",
+      "message": "Endpoint found: /bookings/:bookingId/cancel"
+    },
+    {
+      "category": "Refund & Cancellation",
+      "test": "Refund Processing",
+      "status": "pass",
+      "message": "Endpoint found: /refunds/process"
+    },
+    {
+      "category": "Refund & Cancellation",
+      "test": "Rescheduling Policy",
+      "status": "pass",
+      "message": "Policy found"
+    },
+    {
+      "category": "UI Components",
+      "test": "Customer Components",
+      "status": "pass",
+      "message": "Found 192 components (min: 100)"
+    },
+    {
+      "category": "UI Components",
+      "test": "Vendor Components",
+      "status": "pass",
+      "message": "Found 106 components (min: 50)"
+    },
+    {
+      "category": "UI Components",
+      "test": "UI Components",
+      "status": "pass",
+      "message": "Found 56 components (min: 30)"
+    },
+    {
+      "category": "Integrations",
+      "test": "Razorpay Payment",
+      "status": "pass",
+      "message": "Integration found"
+    },
+    {
+      "category": "Integrations",
+      "test": "SMS Notifications",
+      "status": "pass",
+      "message": "Integration found"
+    },
+    {
+      "category": "Integrations",
+      "test": "Push Notifications",
+      "status": "pass",
+      "message": "Integration found"
+    },
+    {
+      "category": "Integrations",
+      "test": "Video Providers",
+      "status": "pass",
+      "message": "Integration found"
+    },
+    {
+      "category": "Integrations",
+      "test": "Elasticsearch",
+      "status": "pass",
+      "message": "Integration found"
+    },
+    {
+      "category": "Integrations",
+      "test": "Shiprocket",
+      "status": "pass",
+      "message": "Integration found"
+    },
+    {
+      "category": "Integrations",
+      "test": "Delhivery",
+      "status": "pass",
+      "message": "Integration found"
+    },
+    {
+      "category": "Integrations",
+      "test": "Google Places",
+      "status": "pass",
+      "message": "Integration found"
+    },
+    {
+      "category": "Wireframe Consistency",
+      "test": "Design Pattern Consistency",
+      "status": "warning",
+      "message": "47.5% consistency (19/40 checks passed)"
+    },
+    {
+      "category": "Production Readiness",
+      "test": "Error Handling",
+      "status": "pass",
+      "message": "Feature found"
+    },
+    {
+      "category": "Production Readiness",
+      "test": "Input Validation",
+      "status": "pass",
+      "message": "Feature found"
+    },
+    {
+      "category": "Production Readiness",
+      "test": "Environment Variables",
+      "status": "pass",
+      "message": "Feature found"
+    },
+    {
+      "category": "Production Readiness",
+      "test": "Logging",
+      "status": "pass",
+      "message": "Feature found"
+    },
+    {
+      "category": "Production Readiness",
+      "test": "Health Check Endpoint",
+      "status": "pass",
+      "message": "Feature found"
+    }
+  ],
+  "byCategory": {
+    "Customer Journey": [
+      {
+        "category": "Customer Journey",
+        "test": "Home Services",
+        "status": "pass",
+        "message": "All screens found",
+        "details": {
+          "found": [
+            "home",
+            "HomeServiceSelectionEnhanced"
+          ],
+          "missing": []
+        },
+        "flow": [
+          "home",
+          "HomeServiceSelectionEnhanced"
+        ]
+      },
+      {
+        "category": "Customer Journey",
+        "test": "Center Booking",
+        "status": "pass",
+        "message": "All screens found",
+        "details": {
+          "found": [
+            "vet",
+            "grooming",
+            "training",
+            "boarding"
+          ],
+          "missing": []
+        },
+        "flow": [
+          "vet",
+          "grooming",
+          "training",
+          "boarding"
+        ]
+      },
+      {
+        "category": "Customer Journey",
+        "test": "Buy Puppy",
+        "status": "pass",
+        "message": "All screens found",
+        "details": {
+          "found": [
+            "PuppyProfileBrowse",
+            "PuppyProfileDetail"
+          ],
+          "missing": []
+        },
+        "flow": [
+          "PuppyProfileBrowse",
+          "PuppyProfileDetail"
+        ]
+      },
+      {
+        "category": "Customer Journey",
+        "test": "Buy Insurance",
+        "status": "pass",
+        "message": "All screens found",
+        "details": {
+          "found": [
+            "insurance",
+            "InsurancePlans",
+            "InsurancePurchase"
+          ],
+          "missing": []
+        },
+        "flow": [
+          "insurance",
+          "InsurancePlans",
+          "InsurancePurchase"
+        ]
+      },
+      {
+        "category": "Customer Journey",
+        "test": "Pet Friendly Cafe",
+        "status": "pass",
+        "message": "All screens found",
+        "details": {
+          "found": [
+            "cafes",
+            "cafe_detail",
+            "cafe_reservation"
+          ],
+          "missing": []
+        },
+        "flow": [
+          "cafes",
+          "cafe_detail",
+          "cafe_reservation"
+        ]
+      },
+      {
+        "category": "Customer Journey",
+        "test": "Adopt Pet",
+        "status": "pass",
+        "message": "All screens found",
+        "details": {
+          "found": [
+            "adoption",
+            "AdoptionListing",
+            "AdoptionApplication"
+          ],
+          "missing": []
+        },
+        "flow": [
+          "adoption",
+          "AdoptionListing",
+          "AdoptionApplication"
+        ]
+      },
+      {
+        "category": "Customer Journey",
+        "test": "Book Boarding",
+        "status": "pass",
+        "message": "All screens found",
+        "details": {
+          "found": [
+            "boarding",
+            "boarding_facility"
+          ],
+          "missing": []
+        },
+        "flow": [
+          "boarding",
+          "boarding_facility"
+        ]
+      },
+      {
+        "category": "Customer Journey",
+        "test": "Pet Holiday Resort",
+        "status": "pass",
+        "message": "All screens found",
+        "details": {
+          "found": [
+            "resort_booking",
+            "ResortBoardingBookingEnhanced"
+          ],
+          "missing": []
+        },
+        "flow": [
+          "resort_booking",
+          "ResortBoardingBookingEnhanced"
+        ]
+      },
+      {
+        "category": "Customer Journey",
+        "test": "Buy Holiday Plan",
+        "status": "pass",
+        "message": "All screens found",
+        "details": {
+          "found": [
+            "holiday",
+            "HolidayPackages",
+            "HolidayPackageDetail",
+            "HolidayBooking"
+          ],
+          "missing": []
+        },
+        "flow": [
+          "holiday",
+          "HolidayPackages",
+          "HolidayPackageDetail",
+          "HolidayBooking"
+        ]
+      },
+      {
+        "category": "Customer Journey",
+        "test": "Call Ambulance",
+        "status": "pass",
+        "message": "All screens found",
+        "details": {
+          "found": [
+            "ambulance",
+            "ambulance_sos",
+            "AmbulanceSOS"
+          ],
+          "missing": []
+        },
+        "flow": [
+          "ambulance",
+          "ambulance_sos",
+          "AmbulanceSOS"
+        ]
+      },
+      {
+        "category": "Customer Journey",
+        "test": "Online Medicine Order",
+        "status": "pass",
+        "message": "All screens found",
+        "details": {
+          "found": [
+            "pharmacy_store",
+            "MedicineCatalog",
+            "MedicineOrder"
+          ],
+          "missing": []
+        },
+        "flow": [
+          "pharmacy_store",
+          "MedicineCatalog",
+          "MedicineOrder"
+        ]
+      },
+      {
+        "category": "Customer Journey",
+        "test": "Home Sample Collection",
+        "status": "warning",
+        "message": "Some screens missing: home_sample_collection",
+        "details": {
+          "found": [],
+          "missing": [
+            "home_sample_collection"
+          ]
+        },
+        "flow": [
+          "home_sample_collection"
+        ]
+      },
+      {
+        "category": "Customer Journey",
+        "test": "Grooming Center",
+        "status": "pass",
+        "message": "All screens found",
+        "details": {
+          "found": [
+            "grooming"
+          ],
+          "missing": []
+        },
+        "flow": [
+          "grooming"
+        ]
+      },
+      {
+        "category": "Customer Journey",
+        "test": "Buy Package",
+        "status": "warning",
+        "message": "Some screens missing: service-package",
+        "details": {
+          "found": [
+            "PackageBookingPage"
+          ],
+          "missing": [
+            "service-package"
+          ]
+        },
+        "flow": [
+          "PackageBookingPage",
+          "service-package"
+        ]
+      },
+      {
+        "category": "Customer Journey",
+        "test": "Vet at Home",
+        "status": "warning",
+        "message": "Some screens missing: vet_home",
+        "details": {
+          "found": [
+            "vet"
+          ],
+          "missing": [
+            "vet_home"
+          ]
+        },
+        "flow": [
+          "vet",
+          "vet_home"
+        ]
+      },
+      {
+        "category": "Customer Journey",
+        "test": "Groomer at Home",
+        "status": "warning",
+        "message": "Some screens missing: grooming_home",
+        "details": {
+          "found": [
+            "grooming"
+          ],
+          "missing": [
+            "grooming_home"
+          ]
+        },
+        "flow": [
+          "grooming",
+          "grooming_home"
+        ]
+      },
+      {
+        "category": "Customer Journey",
+        "test": "Meal Plan Subscription",
+        "status": "pass",
+        "message": "All screens found",
+        "details": {
+          "found": [
+            "nutritionist",
+            "MealPlanBrowse",
+            "MealPlanDetail",
+            "MealOrder"
+          ],
+          "missing": []
+        },
+        "flow": [
+          "nutritionist",
+          "MealPlanBrowse",
+          "MealPlanDetail",
+          "MealOrder"
+        ]
+      },
+      {
+        "category": "Customer Journey",
+        "test": "Behaviorist Training",
+        "status": "pass",
+        "message": "All screens found",
+        "details": {
+          "found": [
+            "training",
+            "BehaviorAssessment",
+            "ProgressTracking"
+          ],
+          "missing": []
+        },
+        "flow": [
+          "training",
+          "BehaviorAssessment",
+          "ProgressTracking"
+        ]
+      },
+      {
+        "category": "Customer Journey",
+        "test": "Training Package",
+        "status": "pass",
+        "message": "All screens found",
+        "details": {
+          "found": [
+            "training",
+            "TrainingProgress",
+            "TrainingSessionDetail"
+          ],
+          "missing": []
+        },
+        "flow": [
+          "training",
+          "TrainingProgress",
+          "TrainingSessionDetail"
+        ]
+      },
+      {
+        "category": "Customer Journey",
+        "test": "Instant Video Consulting",
+        "status": "warning",
+        "message": "Some screens missing: instant-tele",
+        "details": {
+          "found": [
+            "VideoCall",
+            "tele"
+          ],
+          "missing": [
+            "instant-tele"
+          ]
+        },
+        "flow": [
+          "VideoCall",
+          "tele",
+          "instant-tele"
+        ]
+      },
+      {
+        "category": "Customer Journey",
+        "test": "Medical Records",
+        "status": "pass",
+        "message": "All screens found",
+        "details": {
+          "found": [
+            "MedicalHistory",
+            "MedicalRecordsPage"
+          ],
+          "missing": []
+        },
+        "flow": [
+          "MedicalHistory",
+          "MedicalRecordsPage"
+        ]
+      },
+      {
+        "category": "Customer Journey",
+        "test": "Prescription Management",
+        "status": "warning",
+        "message": "Some screens missing: PrescriptionView, PrescriptionUpload",
+        "details": {
+          "found": [
+            "PrescriptionMedicineMatch"
+          ],
+          "missing": [
+            "PrescriptionView",
+            "PrescriptionUpload"
+          ]
+        },
+        "flow": [
+          "PrescriptionView",
+          "PrescriptionUpload",
+          "PrescriptionMedicineMatch"
+        ]
+      }
+    ],
+    "Booking Lifecycle": [
+      {
+        "category": "Booking Lifecycle",
+        "test": "Create Booking",
+        "status": "pass",
+        "message": "Endpoint found: /bookings/create"
+      },
+      {
+        "category": "Booking Lifecycle",
+        "test": "Get Booking Details",
+        "status": "pass",
+        "message": "Endpoint found: /bookings/:bookingId"
+      },
+      {
+        "category": "Booking Lifecycle",
+        "test": "Update Booking Status",
+        "status": "pass",
+        "message": "Endpoint found: /bookings/:bookingId/status"
+      },
+      {
+        "category": "Booking Lifecycle",
+        "test": "Cancel Booking",
+        "status": "pass",
+        "message": "Endpoint found: /bookings/:bookingId/cancel"
+      },
+      {
+        "category": "Booking Lifecycle",
+        "test": "Reschedule Booking",
+        "status": "pass",
+        "message": "Endpoint found: /bookings/:bookingId/reschedule"
+      },
+      {
+        "category": "Booking Lifecycle",
+        "test": "Accept Booking",
+        "status": "pass",
+        "message": "Endpoint found: /bookings/:bookingId/accept"
+      },
+      {
+        "category": "Booking Lifecycle",
+        "test": "Reject Booking",
+        "status": "pass",
+        "message": "Endpoint found: /bookings/:bookingId/reject"
+      },
+      {
+        "category": "Booking Lifecycle",
+        "test": "Booking History",
+        "status": "pass",
+        "message": "Endpoint found: /customer/bookings"
+      },
+      {
+        "category": "Booking Lifecycle",
+        "test": "Booking Complete Flow",
+        "status": "pass",
+        "message": "Endpoint found: /booking/:bookingId/complete-with-otp"
+      }
+    ],
+    "Payment Integration": [
+      {
+        "category": "Payment Integration",
+        "test": "Payment Initiation",
+        "status": "pass",
+        "message": "Endpoint found: /ecommerce/payments/initiate"
+      },
+      {
+        "category": "Payment Integration",
+        "test": "Payment Verification",
+        "status": "pass",
+        "message": "Endpoint found: /ecommerce/payments/verify"
+      },
+      {
+        "category": "Payment Integration",
+        "test": "Payment Processing",
+        "status": "pass",
+        "message": "Endpoint found: /ecommerce/payments/process"
+      },
+      {
+        "category": "Payment Integration",
+        "test": "Refund Processing",
+        "status": "pass",
+        "message": "Endpoint found: /ecommerce/payments/:paymentId/refund"
+      },
+      {
+        "category": "Payment Integration",
+        "test": "Razorpay Integration",
+        "status": "pass",
+        "message": "File exists"
+      },
+      {
+        "category": "Payment Integration",
+        "test": "Wallet Top-up",
+        "status": "pass",
+        "message": "Endpoint found: /customer/:customerId/wallet/topup"
+      },
+      {
+        "category": "Payment Integration",
+        "test": "Wallet Balance",
+        "status": "pass",
+        "message": "Endpoint found: /wallet/:customerId"
+      },
+      {
+        "category": "Payment Integration",
+        "test": "Coupons with Payment",
+        "status": "pass",
+        "message": "Endpoint found: /coupons/apply"
+      },
+      {
+        "category": "Payment Integration",
+        "test": "Auto Settlement",
+        "status": "pass",
+        "message": "File exists"
+      },
+      {
+        "category": "Payment Integration",
+        "test": "Vendor Settlement",
+        "status": "pass",
+        "message": "Endpoint found: /settlements/vendor"
+      }
+    ],
+    "Logistics Integration": [
+      {
+        "category": "Logistics Integration",
+        "test": "shiprocket-integration",
+        "status": "pass",
+        "message": "Integration found with endpoints"
+      },
+      {
+        "category": "Logistics Integration",
+        "test": "delhivery-integration",
+        "status": "pass",
+        "message": "Integration found with endpoints"
+      },
+      {
+        "category": "Logistics Integration",
+        "test": "logistics-routing-engine",
+        "status": "pass",
+        "message": "Integration found with endpoints"
+      },
+      {
+        "category": "Logistics Integration",
+        "test": "delivery-assignment-utils",
+        "status": "warning",
+        "message": "File exists but no endpoints"
+      }
+    ],
+    "Vendor Management": [
+      {
+        "category": "Vendor Management",
+        "test": "Vendor Onboarding",
+        "status": "pass",
+        "message": "Feature found"
+      },
+      {
+        "category": "Vendor Management",
+        "test": "Service Catalog Management",
+        "status": "pass",
+        "message": "Feature found"
+      },
+      {
+        "category": "Vendor Management",
+        "test": "Service Creation",
+        "status": "pass",
+        "message": "Feature found"
+      },
+      {
+        "category": "Vendor Management",
+        "test": "Staff Creation",
+        "status": "pass",
+        "message": "Feature found"
+      },
+      {
+        "category": "Vendor Management",
+        "test": "Puppy Profile Creation",
+        "status": "pass",
+        "message": "Feature found"
+      },
+      {
+        "category": "Vendor Management",
+        "test": "Customer Services Publishing",
+        "status": "pass",
+        "message": "Feature found"
+      }
+    ],
+    "Specialized Services": [
+      {
+        "category": "Specialized Services",
+        "test": "Ambulance Management",
+        "status": "pass",
+        "message": "Service found"
+      },
+      {
+        "category": "Specialized Services",
+        "test": "Emergency Care",
+        "status": "pass",
+        "message": "Service found"
+      },
+      {
+        "category": "Specialized Services",
+        "test": "Nutritionist Meal Plans",
+        "status": "pass",
+        "message": "Service found"
+      },
+      {
+        "category": "Specialized Services",
+        "test": "Behaviorist Service",
+        "status": "pass",
+        "message": "Service found"
+      },
+      {
+        "category": "Specialized Services",
+        "test": "Holiday Packages",
+        "status": "pass",
+        "message": "Service found"
+      },
+      {
+        "category": "Specialized Services",
+        "test": "Universal Problem Grid",
+        "status": "pass",
+        "message": "Service found"
+      }
+    ],
+    "Tier & Settlement": [
+      {
+        "category": "Tier & Settlement",
+        "test": "Vendor Auto Settlement",
+        "status": "pass",
+        "message": "Feature found"
+      },
+      {
+        "category": "Tier & Settlement",
+        "test": "Tier Management",
+        "status": "pass",
+        "message": "Feature found"
+      },
+      {
+        "category": "Tier & Settlement",
+        "test": "Settlement Automation",
+        "status": "pass",
+        "message": "Feature found"
+      }
+    ],
+    "GPS Tracking": [
+      {
+        "category": "GPS Tracking",
+        "test": "GPS Tracking for Home Services",
+        "status": "pass",
+        "message": "Feature found"
+      },
+      {
+        "category": "GPS Tracking",
+        "test": "Walker Session Route Map",
+        "status": "pass",
+        "message": "Feature found"
+      },
+      {
+        "category": "GPS Tracking",
+        "test": "Home Service Tracking",
+        "status": "pass",
+        "message": "Feature found"
+      },
+      {
+        "category": "GPS Tracking",
+        "test": "Staff Tracking",
+        "status": "pass",
+        "message": "Feature found"
+      }
+    ],
+    "Profile Management": [
+      {
+        "category": "Profile Management",
+        "test": "Customer Profile",
+        "status": "pass",
+        "message": "Endpoint found: /customer/profile"
+      },
+      {
+        "category": "Profile Management",
+        "test": "Pet Profile",
+        "status": "pass",
+        "message": "Endpoint found: /customer/pets"
+      },
+      {
+        "category": "Profile Management",
+        "test": "Center Profile",
+        "status": "pass",
+        "message": "Endpoint found: /customer/center/:vendorId"
+      },
+      {
+        "category": "Profile Management",
+        "test": "Vendor Profile",
+        "status": "pass",
+        "message": "Feature found"
+      }
+    ],
+    "Refund & Cancellation": [
+      {
+        "category": "Refund & Cancellation",
+        "test": "Refund Policy Engine",
+        "status": "pass",
+        "message": "Policy found"
+      },
+      {
+        "category": "Refund & Cancellation",
+        "test": "Cancellation Policy",
+        "status": "pass",
+        "message": "Endpoint found: /bookings/:bookingId/cancel"
+      },
+      {
+        "category": "Refund & Cancellation",
+        "test": "Refund Processing",
+        "status": "pass",
+        "message": "Endpoint found: /refunds/process"
+      },
+      {
+        "category": "Refund & Cancellation",
+        "test": "Rescheduling Policy",
+        "status": "pass",
+        "message": "Policy found"
+      }
+    ],
+    "UI Components": [
+      {
+        "category": "UI Components",
+        "test": "Customer Components",
+        "status": "pass",
+        "message": "Found 192 components (min: 100)"
+      },
+      {
+        "category": "UI Components",
+        "test": "Vendor Components",
+        "status": "pass",
+        "message": "Found 106 components (min: 50)"
+      },
+      {
+        "category": "UI Components",
+        "test": "UI Components",
+        "status": "pass",
+        "message": "Found 56 components (min: 30)"
+      }
+    ],
+    "Integrations": [
+      {
+        "category": "Integrations",
+        "test": "Razorpay Payment",
+        "status": "pass",
+        "message": "Integration found"
+      },
+      {
+        "category": "Integrations",
+        "test": "SMS Notifications",
+        "status": "pass",
+        "message": "Integration found"
+      },
+      {
+        "category": "Integrations",
+        "test": "Push Notifications",
+        "status": "pass",
+        "message": "Integration found"
+      },
+      {
+        "category": "Integrations",
+        "test": "Video Providers",
+        "status": "pass",
+        "message": "Integration found"
+      },
+      {
+        "category": "Integrations",
+        "test": "Elasticsearch",
+        "status": "pass",
+        "message": "Integration found"
+      },
+      {
+        "category": "Integrations",
+        "test": "Shiprocket",
+        "status": "pass",
+        "message": "Integration found"
+      },
+      {
+        "category": "Integrations",
+        "test": "Delhivery",
+        "status": "pass",
+        "message": "Integration found"
+      },
+      {
+        "category": "Integrations",
+        "test": "Google Places",
+        "status": "pass",
+        "message": "Integration found"
+      }
+    ],
+    "Wireframe Consistency": [
+      {
+        "category": "Wireframe Consistency",
+        "test": "Design Pattern Consistency",
+        "status": "warning",
+        "message": "47.5% consistency (19/40 checks passed)"
+      }
+    ],
+    "Production Readiness": [
+      {
+        "category": "Production Readiness",
+        "test": "Error Handling",
+        "status": "pass",
+        "message": "Feature found"
+      },
+      {
+        "category": "Production Readiness",
+        "test": "Input Validation",
+        "status": "pass",
+        "message": "Feature found"
+      },
+      {
+        "category": "Production Readiness",
+        "test": "Environment Variables",
+        "status": "pass",
+        "message": "Feature found"
+      },
+      {
+        "category": "Production Readiness",
+        "test": "Logging",
+        "status": "pass",
+        "message": "Feature found"
+      },
+      {
+        "category": "Production Readiness",
+        "test": "Health Check Endpoint",
+        "status": "pass",
+        "message": "Feature found"
+      }
+    ]
+  }
+}
