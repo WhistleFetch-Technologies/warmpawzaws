@@ -98,6 +98,9 @@ export type RootStackParamList = {
   ProgressTracking: { bookingId: string };
   ProgressView: { bookingId: string };
   ProgressChart: { bookingId: string };
+  OrderHistory: undefined;
+  OrderDetail: { orderId: string };
+  OrderTracking: { orderId: string };
 };
 
 export type TabParamList = {
