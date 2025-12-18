@@ -6,7 +6,6 @@ import { CatalogServicesManagement } from './admin/CatalogServicesManagement';
 import { PaymentRefundManagement } from './admin/PaymentRefundManagement';
 import { ECommerceManagement } from './admin/ecommerce/ECommerceManagement';
 import { SupportCRM } from './admin/SupportCRM';
-import { EnterpriseSupportCRM } from './admin/EnterpriseSupportCRM';
 import { RegionManager } from './admin/RegionManager';
 import { PlatformSettings } from './admin/PlatformSettings';
 import { FinanceManagement } from './admin/finance/FinanceManagement';
@@ -117,7 +116,7 @@ export function AdminApp() {
   }
   
   if (currentView === 'support') {
-    return <EnterpriseSupportCRM onNavigate={handleNavigation} />;
+    return <SupportCRM />;
   }
 
   if (currentView === 'finance') {

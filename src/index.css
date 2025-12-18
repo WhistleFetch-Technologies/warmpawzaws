@@ -1186,10 +1186,6 @@
     margin-right: calc(var(--spacing) * 2);
   }
 
-  .mr-3 {
-    margin-right: calc(var(--spacing) * 3);
-  }
-
   .mr-4 {
     margin-right: calc(var(--spacing) * 4);
   }
@@ -7516,12 +7512,6 @@
   @media (hover: hover) {
     .hover\:text-\[\#FF7029\]:hover {
       color: #ff7029;
-    }
-  }
-
-  @media (hover: hover) {
-    .hover\:text-\[\#FF7829\]:hover {
-      color: #ff7829;
     }
   }
 

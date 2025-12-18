@@ -113,6 +113,46 @@ export function VendorCustomServiceCreation({
   const [availableCategories, setAvailableCategories] = useState<any[]>([]);
   const [availableMicroCategories, setAvailableMicroCategories] = useState<MicroCategory[]>([]);
   const [selectedMicroCategory, setSelectedMicroCategory] = useState<MicroCategory | null>(null);
+  const [catalogCategories, setCatalogCategories] = useState<any[]>([]); // ✅ NEW: Categories from admin catalog
+
+  // ✅ NEW: Load categories from admin catalog (441 services)
+  useEffect(() => {
+    const loadCatalogCategories = async () => {
+      try {
+        console.log('📚 [CUSTOM-SERVICE] Loading catalog categories...');
+        const response = await fetch(
+          `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/service-catalog`,
+          {
+            headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          }
+        );
+
+        if (response.ok) {
+          const data = await response.json();
+          console.log('📚 [CUSTOM-SERVICE] Loaded catalog services:', data.services?.length || 0);
+          
+          // Extract unique categories from services
+          const categoriesMap = new Map();
+          (data.services || []).forEach((service: any) => {
+            if (service.categoryId && service.categoryName) {
+              categoriesMap.set(service.categoryId, {
+                id: service.categoryId,
+                name: service.categoryName
+              });
+            }
+          });
+          
+          const uniqueCategories = Array.from(categoriesMap.values());
+          console.log('✅ [CUSTOM-SERVICE] Unique categories:', uniqueCategories.length);
+          setCatalogCategories(uniqueCategories);
+        }
+      } catch (error) {
+        console.error('❌ [CUSTOM-SERVICE] Error loading catalog categories:', error);
+      }
+    };
+
+    loadCatalogCategories();
+  }, []);
 
   // Load available categories and micro-categories for this vendor role
   useEffect(() => {
@@ -635,12 +675,49 @@ export function VendorCustomServiceCreation({
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
               >
                 <option value="">Select Category...</option>
-                {availableCategories.map(cat => (
-                  <option key={cat.category} value={cat.category}>
-                    {cat.categoryLabel} ({cat.microCategories.length} templates)
-                  </option>
-                ))}
+                
+                {/* ✅ AI-POWERED CATEGORIES (with templates) */}
+                {availableCategories.length > 0 && (
+                  <optgroup label="📚 Suggested Categories (With Templates)">
+                    {availableCategories.map(cat => (
+                      <option key={cat.category} value={cat.category}>
+                        {cat.categoryLabel} ({cat.microCategories.length} templates)
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                
+                {/* ✅ CATALOG CATEGORIES (from 441 services) */}
+                {catalogCategories.length > 0 && (
+                  <optgroup label="🗂️ All Platform Categories">
+                    {catalogCategories.map(cat => (
+                      <option key={cat.id} value={cat.name}>
+                        {cat.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                
+                {/* ✅ OTHER OPTION - Always Available */}
+                <optgroup label="✨ Custom">
+                  <option value="other">Other (Custom Category)</option>
+                </optgroup>
               </select>
+              
+              {/* ✅ Custom Category Name Input (when "Other" selected) */}
+              {categoryName === 'other' && (
+                <div className="mt-2">
+                  <Input
+                    placeholder="Enter custom category name..."
+                    value={subCategoryName}
+                    onChange={(e) => setSubCategoryName(e.target.value)}
+                    className="border-[#FF8C42]"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    💡 Define your own category name (e.g., "Spa Services", "Pet Photography")
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* 🎨 AI-POWERED MICRO-CATEGORY TEMPLATES */}

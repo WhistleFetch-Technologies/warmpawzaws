@@ -115,6 +115,8 @@ import { packageEndpoints } from './package-endpoints.tsx';
 
 import { ambulanceServiceEndpoints } from './ambulance-service-endpoints.tsx';
 import { diagnosticsCenterEndpoints } from './diagnostics-center-endpoints.tsx';
+import specializedVendorConfigEndpoints from './specialized-vendor-config-endpoints.tsx'; // ✅ NEW: Specialized vendor configurations
+import { backwardsCompatibleEndpoints } from './backwards-compatible-endpoints.tsx'; // ✅ NEW: Backwards compatible routes for UI
 import { razorpayPaymentEndpoints } from './razorpay-payment-endpoints.tsx';
 import { specializedServicesEndpoints } from './specialized-services-endpoints.tsx';
 import { insuranceEndpoints } from './insurance-endpoints.tsx';
@@ -582,6 +584,22 @@ if (specializedServicesEndpoints && typeof specializedServicesEndpoints === 'fun
   console.warn('⚠️ Specialized Services Endpoints module undefined, skipping');
 }
 
+// ✅ NEW: Specialized Vendor Configuration Endpoints
+if (specializedVendorConfigEndpoints && typeof specializedVendorConfigEndpoints === 'function') {
+  console.log('✅ Registering Specialized Vendor Config Endpoints...');
+  specializedVendorConfigEndpoints(app, kv);
+} else {
+  console.warn('⚠️ Specialized Vendor Config Endpoints module undefined, skipping');
+}
+
+// ✅ NEW: Backwards Compatible Endpoints (UI Compatibility Layer)
+if (backwardsCompatibleEndpoints && typeof backwardsCompatibleEndpoints === 'function') {
+  console.log('🔄 Registering Backwards Compatible Endpoints...');
+  backwardsCompatibleEndpoints(app, kv);
+} else {
+  console.warn('⚠️ Backwards Compatible Endpoints module undefined, skipping');
+}
+
 if (insuranceEndpoints && typeof insuranceEndpoints === 'function') {
   console.log('✅ Registering Insurance Endpoints...');
   insuranceEndpoints(app, kv);
@@ -743,6 +761,14 @@ if (enhancedStaffAvailability && typeof enhancedStaffAvailability === 'object') 
   app.route('/make-server-3dd53475', enhancedStaffAvailability);
 } else {
   console.warn('⚠️ Enhanced Staff Availability module undefined, skipping');
+}
+
+// ✅ CRITICAL: Specialized Vendor Configuration Endpoints
+if (specializedVendorConfigEndpoints && typeof specializedVendorConfigEndpoints === 'object') {
+  console.log('✅ Registering Specialized Vendor Config Endpoints...');
+  app.route('/make-server-3dd53475', specializedVendorConfigEndpoints);
+} else {
+  console.warn('⚠️ Specialized Vendor Config Endpoints module undefined, skipping');
 }
 
 // ✅ P1 Vendor-Specific Features

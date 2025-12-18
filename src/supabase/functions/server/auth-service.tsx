@@ -182,28 +182,10 @@ export async function updateUser(userId: string, updates: Partial<User>): Promis
 /**
  * Create a new session for user
  */
-/**
- * Create a new session for user
- * @param userId - User ID
- * @param phone - User phone number
- * @param role - User role
- * @param platform - Platform type: 'web' (48 hours) or 'mobile' (365 days). Defaults to 'web'
- */
-export async function createUserSession(
-  userId: string, 
-  phone: string, 
-  role: string, 
-  platform: 'web' | 'mobile' = 'web'
-): Promise<Session> {
+export async function createUserSession(userId: string, phone: string, role: string): Promise<Session> {
   const sessionId = generateId('session');
   const now = new Date().toISOString();
-  
-  // Token expiration: 48 hours for web apps, 365 days for mobile apps
-  const expirationMs = platform === 'mobile' 
-    ? 365 * 24 * 60 * 60 * 1000  // 365 days for mobile
-    : 48 * 60 * 60 * 1000;        // 48 hours for web
-  
-  const expiresAt = new Date(Date.now() + expirationMs).toISOString();
+  const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(); // ✅ EXTENDED: 48 hours (was 30 days, now aligned with frontend)
   
   const session: Session = {
     sessionId,
@@ -212,8 +194,7 @@ export async function createUserSession(
     role: role as 'customer' | 'vendor' | 'staff' | 'admin',
     token: createSession(userId, role as 'customer' | 'vendor' | 'staff' | 'admin'),
     createdAt: now,
-    expiresAt,
-    platform // Store platform type for reference
+    expiresAt
   };
   
   // Store session
@@ -221,7 +202,7 @@ export async function createUserSession(
   await kv.set(`session:user:${userId}`, session.sessionId);
   await kv.set(`session:phone:${normalizePhone(phone)}`, session.sessionId);
   
-  console.log(`🔑 Session created: ${session.sessionId} for user ${userId} (${platform}, expires in ${platform === 'mobile' ? '365 days' : '48 hours'})`);
+  console.log(`🔑 Session created: ${session.sessionId} for user ${userId}`);
   
   return session;
 }
@@ -283,8 +264,8 @@ export async function generateAccessToken(userId: string, phone: string, role: s
   // Create token with user info embedded
   const token = `${userId}_${cleanedPhone}_${timestamp}_${randomPart}`;
   
-  // Store token in KV for validation (expires in 24 hours)
-  const expiresAt = timestamp + (24 * 60 * 60 * 1000);
+  // ✅ EXTENDED: Store token in KV for validation (expires in 48 hours to match session expiry)
+  const expiresAt = timestamp + (48 * 60 * 60 * 1000); // 48 hours
   const tokenData = {
     token,
     userId,
@@ -297,7 +278,7 @@ export async function generateAccessToken(userId: string, phone: string, role: s
   await kv.set(`token:${token}`, tokenData);
   await kv.set(`token:user:${userId}`, token); // For quick user→token lookup
   
-  console.log(`🔐 Access token created: ${token.substring(0, 20)}... for user ${userId}`);
+  console.log(`🔐 Access token created: ${token.substring(0, 20)}... for user ${userId}, expires in 48 hours`);
   
   return token;
 }

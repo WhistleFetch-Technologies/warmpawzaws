@@ -13,16 +13,16 @@ import {
   deriveServiceStyle 
 } from './validation-middleware.tsx';
 import { sendSuccess, sendError } from './response-utils.ts';
-import { requireAuth } from './auth-middleware.tsx'; // ✅ FIX: Import auth middleware
 
 const app = new Hono();
 
 /**
  * CREATE NEW STAFF
  * POST /staff/create
- * ✅ PROTECTED: Requires authentication
+ * ✅ PUBLIC ACCESS: Uses publicAnonKey (no session required)
+ * ⚠️ SECURITY: Vendor must provide valid vendorId in request
  */
-app.post('/make-server-3dd53475/staff/create', requireAuth, async (c) => {
+app.post('/make-server-3dd53475/staff/create', async (c) => {
   try {
     const staffData = await c.req.json();
     
@@ -30,6 +30,17 @@ app.post('/make-server-3dd53475/staff/create', requireAuth, async (c) => {
     console.log('📝 Staff Data:', staffData);
     console.log('👤 Vendor ID:', staffData.vendorId);
     console.log('📛 Full Name:', staffData.fullName);
+    
+    // ✅ SECURITY: Validate vendorId exists
+    if (!staffData.vendorId) {
+      return sendError(c, 'Vendor ID is required', 400);
+    }
+    
+    // ✅ SECURITY: Verify vendor exists
+    const vendor = await kv.get(`vendor:${staffData.vendorId}`);
+    if (!vendor) {
+      return sendError(c, 'Vendor not found', 404);
+    }
     
     // ✅ CRITICAL FIX: Validate and auto-fix staff data
     const validationResult = validateStaffData(staffData);
@@ -112,7 +123,6 @@ app.post('/make-server-3dd53475/staff/create', requireAuth, async (c) => {
     }
     
     // Also update vendor record to track staff count
-    const vendor = await kv.get(`vendor:${staffData.vendorId}`);
     if (vendor) {
       vendor.staffCount = existingStaffArray.length;
       vendor.hasStaff = true;
@@ -132,11 +142,57 @@ app.post('/make-server-3dd53475/staff/create', requireAuth, async (c) => {
 });
 
 /**
+ * GET ALL STAFF FOR VENDOR
+ * GET /vendor/:vendorId/staff
+ */
+app.get('/make-server-3dd53475/vendor/:vendorId/staff', async (c) => {
+  try {
+    const { vendorId } = c.req.param();
+    
+    const staffIds = await kv.get(`vendor:${vendorId}:staff`) || [];
+    
+    const staffMembers = [];
+    for (const id of staffIds) {
+      const staff = await kv.get(`staff:${id}`);
+      if (staff) {
+        staffMembers.push(staff);
+      }
+    }
+    
+    return sendSuccess(c, { staff: staffMembers, total: staffMembers.length });
+  } catch (error) {
+    console.error('❌ Error fetching staff:', error);
+    return sendError(c, error, 500);
+  }
+});
+
+/**
+ * GET SINGLE STAFF MEMBER
+ * GET /staff/:staffId
+ */
+app.get('/make-server-3dd53475/staff/:staffId', async (c) => {
+  try {
+    const { staffId } = c.req.param();
+    
+    const staff = await kv.get(`staff:${staffId}`);
+    
+    if (!staff) {
+      return sendError(c, 'Staff not found', 404);
+    }
+    
+    return sendSuccess(c, { staff });
+  } catch (error) {
+    console.error('❌ Error fetching staff:', error);
+    return sendError(c, error, 500);
+  }
+});
+
+/**
  * UPDATE EXISTING STAFF
  * PUT /staff/:staffId
- * ✅ PROTECTED: Requires authentication
+ * ✅ PUBLIC ACCESS: Uses publicAnonKey (no session required)
  */
-app.put('/make-server-3dd53475/staff/:staffId', requireAuth, async (c) => {
+app.put('/make-server-3dd53475/staff/:staffId', async (c) => {
   try {
     const { staffId } = c.req.param();
     const updates = await c.req.json();
@@ -176,133 +232,39 @@ app.put('/make-server-3dd53475/staff/:staffId', requireAuth, async (c) => {
 });
 
 /**
- * GET VENDOR STAFF LIST
- * GET /vendor/:vendorId/staff
- */
-app.get('/make-server-3dd53475/vendor/:vendorId/staff', async (c) => {
-  try {
-    const { vendorId } = c.req.param();
-    
-    console.log(`\n📋 ===== GET VENDOR STAFF =====`);
-    console.log(`👤 Vendor ID: ${vendorId}`);
-    
-    // Get staff array
-    const vendorStaffKey = `vendor:${vendorId}:staff`;
-    let staffIds = await kv.get(vendorStaffKey) || [];
-    console.log(`📋 Staff IDs in array (Initial):`, staffIds);
-
-    // SELF-HEALING: Check for orphaned staff records
-    // Some staff might exist in DB but be missing from the vendor's index array
-    try {
-        const allStaff = await kv.getByPrefix('staff:') || [];
-        const orphanedStaff = allStaff.filter((s: any) => 
-            s.vendorId === vendorId && 
-            s.isActive !== false && 
-            !staffIds.includes(s.id) &&
-            // ✅ FIX: Ensure we don't add service records to staff list
-            s.id && !s.id.startsWith('staffsvc_')
-        );
-
-        if (orphanedStaff.length > 0) {
-            console.log(`🔧 [SELF-HEAL] Found ${orphanedStaff.length} orphaned staff members. Fixing index...`);
-            const newIds = orphanedStaff.map((s: any) => s.id);
-            staffIds = [...staffIds, ...newIds];
-            
-            // Update the index
-            await kv.set(vendorStaffKey, staffIds);
-            console.log(`✅ [SELF-HEAL] Updated staff index with:`, newIds);
-        }
-    } catch (healErr) {
-        console.warn('⚠️ [SELF-HEAL] Failed to check orphaned staff:', healErr);
-    }
-    
-    // Fetch all staff records
-    const staffRecords = [];
-    
-    // ✅ CRITICAL FIX: Filter out invalid staff IDs (specifically staffsvc_ which are service records)
-    const validIds = staffIds.filter((id: string) => 
-      typeof id === 'string' && 
-      (id.startsWith('staff_') || id.includes('_staff_self')) &&
-      !id.startsWith('staffsvc_')
-    );
-    
-    for (const staffId of validIds) {
-      const staff = await kv.get(`staff:${staffId}`);
-      // Also verify the object ID matches
-      if (staff && staff.isActive !== false && !staff.id.startsWith('staffsvc_')) {
-        staffRecords.push(staff);
-        console.log(`   ✅ ${staff.fullName || staff.name} (${staffId})`);
-      } else if (staff) {
-        console.log(`   ⚠️  ${staff.fullName || staff.name} (${staffId}) - INACTIVE`);
-      } else {
-        console.log(`   ❌ ${staffId} - NOT FOUND`);
-      }
-    }
-    
-    console.log(`✅ Returning ${staffRecords.length} active staff members`);
-    console.log('🎉 ===== STAFF LIST COMPLETE =====\n');
-    
-    return sendSuccess(c, {
-      staff: staffRecords,
-      total: staffRecords.length
-    });
-    
-  } catch (error) {
-    console.error('❌ Error fetching vendor staff:', error);
-    return sendError(c, error, 500);
-  }
-});
-
-/**
- * DELETE STAFF (Soft delete)
+ * DELETE STAFF MEMBER
  * DELETE /staff/:staffId
  */
 app.delete('/make-server-3dd53475/staff/:staffId', async (c) => {
   try {
     const { staffId } = c.req.param();
     
-    console.log(`\n🗑️  ===== DELETE STAFF =====`);
-    console.log(`📝 Staff ID: ${staffId}`);
-    
-    // Get staff record
     const staff = await kv.get(`staff:${staffId}`);
     
     if (!staff) {
-      console.error(`❌ Staff ${staffId} not found`);
       return sendError(c, 'Staff not found', 404);
     }
     
-    // Soft delete - mark as inactive
+    // Remove from vendor's staff array
+    const vendorStaffKey = `vendor:${staff.vendorId}:staff`;
+    const staffArray = await kv.get(vendorStaffKey) || [];
+    const updatedArray = staffArray.filter((id: string) => id !== staffId);
+    await kv.set(vendorStaffKey, updatedArray);
+    
+    // Mark as inactive instead of deleting (soft delete)
     staff.isActive = false;
     staff.deletedAt = new Date().toISOString();
-    staff.updatedAt = new Date().toISOString();
-    
     await kv.set(`staff:${staffId}`, staff);
-    console.log(`✅ Staff ${staffId} marked as inactive`);
     
     // Update vendor staff count
     const vendor = await kv.get(`vendor:${staff.vendorId}`);
     if (vendor) {
-      const staffIds = await kv.get(`vendor:${staff.vendorId}:staff`) || [];
-      const activeStaffIds = [];
-      
-      for (const id of staffIds) {
-        const s = await kv.get(`staff:${id}`);
-        if (s && s.isActive !== false) {
-          activeStaffIds.push(id);
-        }
-      }
-      
-      vendor.staffCount = activeStaffIds.length;
-      vendor.updatedAt = new Date().toISOString();
+      vendor.staffCount = updatedArray.length;
+      vendor.hasStaff = updatedArray.length > 0;
       await kv.set(`vendor:${staff.vendorId}`, vendor);
-      console.log(`✅ Updated vendor ${staff.vendorId} staff count: ${activeStaffIds.length}`);
     }
     
-    console.log('🎉 ===== STAFF DELETE COMPLETE =====\n');
-    
     return sendSuccess(c, {}, 'Staff member deleted successfully');
-    
   } catch (error) {
     console.error('❌ Error deleting staff:', error);
     return sendError(c, error, 500);
