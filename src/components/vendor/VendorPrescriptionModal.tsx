@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { X, Pill, Save, AlertCircle } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { Button } from '../ui/button';
 
 interface VendorPrescriptionModalProps {
   bookingId: string;
@@ -84,12 +83,12 @@ export function VendorPrescriptionModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-[#FF8C42] black/50 z-[60] flex items-end sm:items-center justify-center">
-      <div className="bg-[#FF8C42] white w-full max-w-[430px] rounded-t-[32px] sm:rounded-[32px] max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 bg-black/50 z-[60] flex items-end sm:items-center justify-center">
+      <div className="bg-white w-full max-w-[430px] rounded-t-[32px] sm:rounded-[32px] max-h-[90vh] flex flex-col">
         {/* Header */}
-        <div className="bg-[#FF8C42] gradient-to-r from-green-500 to-emerald-500 px-6 py-4 flex items-center justify-between rounded-t-[32px]">
+        <div className="bg-gradient-to-r from-green-500 to-emerald-500 px-6 py-4 flex items-center justify-between rounded-t-[32px]">
           <div className="flex items-center gap-3 flex-1">
-            <div className="w-10 h-10 bg-[#FF8C42] white/20 rounded-full flex items-center justify-center">
+            <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
               <Pill className="w-5 h-5 text-white" />
             </div>
             <div>
@@ -97,17 +96,18 @@ export function VendorPrescriptionModal({
               <p className="text-xs text-white/80">{petName} - {customerName}</p>
             </div>
           </div>
-          <Button onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-full bg-white/20 hover:bg-[#FF8C42] white/30 transition-colors"
+          <button
+            onClick={onClose}
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-white/20 hover:bg-white/30 transition-colors"
           >
             <X className="w-5 h-5 text-white" />
-          </Button>
+          </button>
         </div>
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 space-y-4">
           {error && (
-            <div className="bg-[#FF8C42] red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2">
               <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
               <p className="text-sm text-red-700">{error}</p>
             </div>
@@ -226,17 +226,18 @@ export function VendorPrescriptionModal({
         </form>
 
         {/* Actions */}
-        <div className="bg-[#FF8C42] white border-t border-gray-200 p-4 flex gap-2">
-          <Button
+        <div className="bg-white border-t border-gray-200 p-4 flex gap-2">
+          <button
             type="button"
             onClick={onClose}
-            className="flex-1 py-3 border border-gray-300 text-gray-700 rounded-xl font-medium hover:bg-[#FF8C42] gray-50"
+            className="flex-1 py-3 border border-gray-300 text-gray-700 rounded-xl font-medium hover:bg-gray-50"
           >
             Cancel
-          </Button>
-          <Button onClick={handleSubmit}
+          </button>
+          <button
+            onClick={handleSubmit}
             disabled={saving || !formData.medications.trim()}
-            className="flex-1 py-3 bg-green-500 hover:bg-green-600 disabled:bg-[#FF8C42] gray-300 text-white rounded-xl font-medium flex items-center justify-center gap-2"
+            className="flex-1 py-3 bg-green-500 hover:bg-green-600 disabled:bg-gray-300 text-white rounded-xl font-medium flex items-center justify-center gap-2"
           >
             {saving ? (
               <>
@@ -249,7 +250,7 @@ export function VendorPrescriptionModal({
                 Save Prescription
               </>
             )}
-          </Button>
+          </button>
         </div>
       </div>
     </div>

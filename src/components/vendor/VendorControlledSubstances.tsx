@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { Pill, Plus, X, AlertTriangle, Clock, Package, TrendingDown, Search, Download } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { toast } from 'sonner@2.0.3';
-import { Button } from '../ui/button';
 
 interface ControlledSubstance {
   id: string;
@@ -112,21 +111,22 @@ export function VendorControlledSubstances({ vendorId, vendorData, onBack }: Ven
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
                 {onBack && (
-                  <Button onClick={onBack} className="text-gray-600">
+                  <button onClick={onBack} className="text-gray-600">
                     <X className="w-6 h-6" />
-                  </Button>
+                  </button>
                 )}
                 <div>
                   <h1 className="text-xl font-bold text-gray-900">Controlled Substances</h1>
                   <p className="text-sm text-gray-500">Pharmacy Inventory Management</p>
                 </div>
               </div>
-              <Button onClick={() => setAddModalOpen(true)}
+              <button
+                onClick={() => setAddModalOpen(true)}
                 className="bg-orange-500 text-white px-4 py-2 rounded-lg text-sm hover:bg-orange-600"
               >
                 <Plus className="w-4 h-4 inline mr-1" />
                 Add
-              </Button>
+              </button>
             </div>
 
             {/* Stats Cards */}
@@ -160,7 +160,7 @@ export function VendorControlledSubstances({ vendorId, vendorData, onBack }: Ven
               
               <div className="flex gap-2 overflow-x-auto pb-2">
                 {['all', 'I', 'II', 'III', 'IV', 'V'].map(schedule => (
-                  <Button
+                  <button
                     key={schedule}
                     onClick={() => setFilterSchedule(schedule)}
                     className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
@@ -170,7 +170,7 @@ export function VendorControlledSubstances({ vendorId, vendorData, onBack }: Ven
                     }`}
                   >
                     {schedule === 'all' ? 'All' : `Schedule ${schedule}`}
-                  </Button>
+                  </button>
                 ))}
               </div>
             </div>
@@ -189,11 +189,12 @@ export function VendorControlledSubstances({ vendorId, vendorData, onBack }: Ven
                 {searchQuery ? 'Try a different search term' : 'Add controlled substances to your inventory'}
               </p>
               {!searchQuery && (
-                <Button onClick={() => setAddModalOpen(true)}
+                <button
+                  onClick={() => setAddModalOpen(true)}
                   className="bg-orange-500 text-white px-6 py-2 rounded-lg hover:bg-orange-600"
                 >
                   Add First Item
-                </Button>
+                </button>
               )}
             </div>
           ) : (
@@ -266,17 +267,18 @@ export function VendorControlledSubstances({ vendorId, vendorData, onBack }: Ven
 
                     {/* Actions */}
                     <div className="flex gap-2">
-                      <Button onClick={() => {
+                      <button
+                        onClick={() => {
                           setSelectedSubstance(substance);
                           setTransactionModalOpen(true);
                         }}
                         className="flex-1 px-3 py-2 bg-orange-50 text-orange-600 rounded-lg text-sm font-medium hover:bg-orange-100"
                       >
                         Record Transaction
-                      </Button>
-                      <Button className="px-3 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm hover:bg-gray-200">
+                      </button>
+                      <button className="px-3 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm hover:bg-gray-200">
                         History
-                      </Button>
+                      </button>
                     </div>
                   </div>
                 );
@@ -292,9 +294,9 @@ export function VendorControlledSubstances({ vendorId, vendorData, onBack }: Ven
               <div className="sticky top-0 bg-white border-b border-gray-200 p-4">
                 <div className="flex items-center justify-between">
                   <h2 className="text-xl font-bold text-gray-900">Add Controlled Substance</h2>
-                  <Button onClick={() => setAddModalOpen(false)}>
+                  <button onClick={() => setAddModalOpen(false)}>
                     <X className="w-6 h-6 text-gray-400" />
-                  </Button>
+                  </button>
                 </div>
               </div>
 
@@ -404,14 +406,14 @@ export function VendorControlledSubstances({ vendorId, vendorData, onBack }: Ven
                 </div>
 
                 <div className="flex gap-3 pt-4 border-t">
-                  <Button
+                  <button
                     type="button"
                     onClick={() => setAddModalOpen(false)}
                     className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
                   >
                     Cancel
-                  </Button>
-                  <Button
+                  </button>
+                  <button
                     type="submit"
                     onClick={(e) => {
                       e.preventDefault();
@@ -422,7 +424,7 @@ export function VendorControlledSubstances({ vendorId, vendorData, onBack }: Ven
                     className="flex-1 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600"
                   >
                     Add Substance
-                  </Button>
+                  </button>
                 </div>
               </form>
             </div>
@@ -435,9 +437,9 @@ export function VendorControlledSubstances({ vendorId, vendorData, onBack }: Ven
             <div className="bg-white rounded-xl max-w-md w-full p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-bold text-gray-900">Record Transaction</h2>
-                <Button onClick={() => setTransactionModalOpen(false)}>
+                <button onClick={() => setTransactionModalOpen(false)}>
                   <X className="w-6 h-6 text-gray-400" />
-                </Button>
+                </button>
               </div>
 
               <div className="mb-4 p-3 bg-gray-50 rounded-lg">
@@ -481,14 +483,14 @@ export function VendorControlledSubstances({ vendorId, vendorData, onBack }: Ven
                 </div>
 
                 <div className="flex gap-3 pt-4 border-t">
-                  <Button
+                  <button
                     type="button"
                     onClick={() => setTransactionModalOpen(false)}
                     className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
                   >
                     Cancel
-                  </Button>
-                  <Button
+                  </button>
+                  <button
                     type="submit"
                     onClick={(e) => {
                       e.preventDefault();
@@ -499,7 +501,7 @@ export function VendorControlledSubstances({ vendorId, vendorData, onBack }: Ven
                     className="flex-1 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600"
                   >
                     Record
-                  </Button>
+                  </button>
                 </div>
               </form>
             </div>

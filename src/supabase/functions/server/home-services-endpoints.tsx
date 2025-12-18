@@ -52,31 +52,14 @@ export function homeServicesEndpoints(app: Hono) {
       booking.status = 'accepted';
       booking.acceptedAt = new Date().toISOString();
       booking.acceptedBy = staffId;
-      booking.assignedStaffId = staffId;
-      booking.staffId = staffId;
       booking.estimatedArrivalTime = estimatedArrivalTime || null;
-      booking.trackingReady = true; // ✅ FIX: Mark ready for tracking
       booking.updatedAt = new Date().toISOString();
       
       await kv.set(`booking:${bookingId}`, booking);
       
       console.log(`✅ [HOME] Booking ${bookingId} accepted by staff ${staffId}`);
       
-      // ✅ FIX: Send notification to customer
-      try {
-        const { triggerBookingNotification } = await import('./sms-notification-service-enhanced.tsx');
-        const customer = await kv.get(`customer:${booking.customerId}`);
-        if (triggerBookingNotification && customer) {
-          await triggerBookingNotification(kv, 'booking.accepted', { 
-            booking, 
-            customer,
-            staffName: booking.staffName || 'Service provider'
-          });
-        }
-      } catch (notifError) {
-        console.error('Failed to send acceptance notification:', notifError);
-        // Non-blocking: continue even if notification fails
-      }
+      // TODO: Send notification to customer
       
       return c.json({
         success: true,
@@ -160,23 +143,7 @@ export function homeServicesEndpoints(app: Hono) {
       
       console.log(`✅ [HOME] Travel started for booking ${bookingId}, tracking: ${trackingSessionId}`);
       
-      // ✅ FIX: Send notification to customer with tracking link
-      try {
-        const { triggerBookingNotification } = await import('./sms-notification-service-enhanced.tsx');
-        const customer = await kv.get(`customer:${booking.customerId}`);
-        if (triggerBookingNotification && customer) {
-          await triggerBookingNotification(kv, 'booking.travel_started', {
-            booking,
-            customer,
-            trackingSessionId,
-            staffName: booking.staffName || 'Service provider',
-            estimatedArrival: booking.estimatedArrivalTime
-          });
-        }
-      } catch (notifError) {
-        console.error('Failed to send travel started notification:', notifError);
-        // Non-blocking: continue even if notification fails
-      }
+      // TODO: Send notification to customer with tracking link
       
       return c.json({
         success: true,
@@ -290,22 +257,7 @@ export function homeServicesEndpoints(app: Hono) {
       
       console.log(`✅ [HOME] Staff arrived, booking ${bookingId} now in progress`);
       
-      // ✅ FIX: Send notification to customer
-      try {
-        const { triggerBookingNotification } = await import('./sms-notification-service-enhanced.tsx');
-        const customer = await kv.get(`customer:${booking.customerId}`);
-        if (triggerBookingNotification && customer) {
-          await triggerBookingNotification(kv, 'booking.staff_arrived', {
-            booking,
-            customer,
-            staffName: booking.staffName || 'Service provider',
-            staffId: staffId
-          });
-        }
-      } catch (notifError) {
-        console.error('Failed to send arrival notification:', notifError);
-        // Non-blocking: continue even if notification fails
-      }
+      // TODO: Send notification to customer
       
       return c.json({
         success: true,

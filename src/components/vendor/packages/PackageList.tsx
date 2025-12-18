@@ -132,9 +132,9 @@ export function PackageList({
       {/* Header */}
       <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] p-4 text-white sticky top-0 z-10">
         <div className="flex items-center gap-3 mb-4">
-          <Button onClick={onBack} className="p-1 hover:bg-white/10 rounded-full transition-colors">
+          <button onClick={onBack} className="p-1 hover:bg-white/10 rounded-full transition-colors">
             <ArrowLeft className="w-5 h-5" />
-          </Button>
+          </button>
           <div className="flex-1">
             <h1 className="text-xl font-bold">My Packages</h1>
             <p className="text-sm text-white/90">Manage your service packages</p>
@@ -170,7 +170,7 @@ export function PackageList({
       <div className="bg-white p-3 border-b sticky top-[180px] z-10">
         <div className="flex gap-2 overflow-x-auto">
           {['all', 'approved', 'pending', 'rejected'].map(status => (
-            <Button
+            <button
               key={status}
               onClick={() => setFilterStatus(status)}
               className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
@@ -185,7 +185,7 @@ export function PackageList({
                   ({stats[status as keyof typeof stats]})
                 </span>
               )}
-            </Button>
+            </button>
           ))}
         </div>
       </div>

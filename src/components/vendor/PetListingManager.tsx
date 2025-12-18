@@ -211,21 +211,21 @@ export function PetListingManager({ vendorId, vendorName, vendorType, onBack }: 
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#FF8C42] gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#FF8C42] gray-50">
+    <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-[#FF8C42] white border-b sticky top-0 z-10">
+      <div className="bg-white border-b sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center gap-4">
-            <Button onClick={onBack} className="p-2 hover:bg-[#FF8C42] gray-100 rounded-lg">
+            <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg">
               <ArrowLeft className="w-5 h-5" />
-            </Button>
+            </button>
             <div className="flex-1">
               <h1 className="font-bold text-gray-900">
                 {isBreeder ? 'Pet Listings' : 'Adoption Listings'}
@@ -234,7 +234,7 @@ export function PetListingManager({ vendorId, vendorName, vendorType, onBack }: 
             </div>
             <Button
               onClick={() => setShowAddModal(true)}
-              className="bg-blue-600 hover:bg-[#FF8C42] blue-700 text-white"
+              className="bg-blue-600 hover:bg-blue-700 text-white"
             >
               <Plus className="w-4 h-4 mr-2" />
               {isBreeder ? 'Add Pet' : 'Add for Adoption'}
@@ -245,7 +245,7 @@ export function PetListingManager({ vendorId, vendorName, vendorType, onBack }: 
 
       <div className="max-w-7xl mx-auto px-4 py-6">
         {listings.length === 0 ? (
-          <div className="bg-[#FF8C42] white rounded-xl border p-12 text-center">
+          <div className="bg-white rounded-xl border p-12 text-center">
             <Heart className="w-16 h-16 mx-auto mb-4 text-gray-300" />
             <h3 className="font-bold text-gray-900 mb-2">No Listings Yet</h3>
             <p className="text-gray-600 mb-6">
@@ -253,7 +253,7 @@ export function PetListingManager({ vendorId, vendorName, vendorType, onBack }: 
             </p>
             <Button
               onClick={() => setShowAddModal(true)}
-              className="bg-blue-600 hover:bg-[#FF8C42] blue-700 text-white"
+              className="bg-blue-600 hover:bg-blue-700 text-white"
             >
               <Plus className="w-4 h-4 mr-2" />
               Add Listing
@@ -264,7 +264,7 @@ export function PetListingManager({ vendorId, vendorName, vendorType, onBack }: 
             {listings.map((listing) => (
               <div
                 key={listing.id}
-                className="bg-[#FF8C42] white rounded-xl border hover:shadow-lg transition-shadow overflow-hidden"
+                className="bg-white rounded-xl border hover:shadow-lg transition-shadow overflow-hidden"
               >
                 {listing.photoUrls?.[0] && (
                   <img
@@ -295,7 +295,7 @@ export function PetListingManager({ vendorId, vendorName, vendorType, onBack }: 
                   {listing.behavior?.length > 0 && (
                     <div className="flex flex-wrap gap-1 mb-3">
                       {listing.behavior.slice(0, 3).map((b: string, idx: number) => (
-                        <span key={idx} className="px-2 py-0.5 bg-[#FF8C42] blue-100 text-blue-700 rounded text-xs">
+                        <span key={idx} className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">
                           {b}
                         </span>
                       ))}
@@ -321,7 +321,8 @@ export function PetListingManager({ vendorId, vendorName, vendorType, onBack }: 
 
                   {/* Actions */}
                   <div className="flex gap-2 pt-3 border-t">
-                    <Button onClick={() => {
+                    <button
+                      onClick={() => {
                         setEditingListing(listing);
                         setFormData({
                           name: listing.name || '',
@@ -343,16 +344,17 @@ export function PetListingManager({ vendorId, vendorName, vendorType, onBack }: 
                         });
                         setShowAddModal(true);
                       }}
-                      className="flex-1 py-2 border rounded-lg hover:bg-[#FF8C42] gray-50 flex items-center justify-center gap-2 text-sm"
+                      className="flex-1 py-2 border rounded-lg hover:bg-gray-50 flex items-center justify-center gap-2 text-sm"
                     >
                       <Edit className="w-4 h-4" />
                       Edit
-                    </Button>
-                    <Button onClick={() => handleDelete(listing.id)}
-                      className="p-2 border border-red-200 rounded-lg hover:bg-[#FF8C42] red-50 text-red-600"
+                    </button>
+                    <button
+                      onClick={() => handleDelete(listing.id)}
+                      className="p-2 border border-red-200 rounded-lg hover:bg-red-50 text-red-600"
                     >
                       <Trash2 className="w-4 h-4" />
-                    </Button>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -426,7 +428,7 @@ export function PetListingManager({ vendorId, vendorName, vendorType, onBack }: 
               <label className="block text-sm font-medium mb-2">Behavior</label>
               <div className="flex flex-wrap gap-2">
                 {BEHAVIORS.map(behavior => (
-                  <label key={behavior} className="flex items-center gap-2 p-2 border rounded cursor-pointer hover:bg-[#FF8C42] gray-50">
+                  <label key={behavior} className="flex items-center gap-2 p-2 border rounded cursor-pointer hover:bg-gray-50">
                     <input
                       type="checkbox"
                       checked={formData.behavior.includes(behavior)}
@@ -555,7 +557,7 @@ export function PetListingManager({ vendorId, vendorName, vendorType, onBack }: 
               <Button onClick={() => { setShowAddModal(false); setEditingListing(null); resetForm(); }} variant="outline">
                 Cancel
               </Button>
-              <Button onClick={handleSubmit} className="bg-blue-600 hover:bg-[#FF8C42] blue-700 text-white" disabled={uploading}>
+              <Button onClick={handleSubmit} className="bg-blue-600 hover:bg-blue-700 text-white" disabled={uploading}>
                 <Save className="w-4 h-4 mr-2" />
                 {editingListing ? 'Update' : 'Create'} Listing
               </Button>

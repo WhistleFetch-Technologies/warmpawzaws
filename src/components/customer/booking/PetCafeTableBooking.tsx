@@ -151,11 +151,11 @@ export function PetCafeTableBooking({ vendorId, vendorName, onBack, onBookingCom
   }
 
   return (
-    <div className="min-h-screen bg-[#FF8C42] gray-50 max-w-md mx-auto pb-24">
+    <div className="min-h-screen bg-gray-50 max-w-md mx-auto pb-24">
       {/* Header */}
-      <div className="bg-[#FF8C42] white px-6 pt-8 pb-4 shadow-sm sticky top-0 z-10">
+      <div className="bg-white px-6 pt-8 pb-4 shadow-sm sticky top-0 z-10">
         <div className="flex items-center gap-3 mb-4">
-          <button onClick={onBack} className="w-10 h-10 rounded-full bg-[#FF8C42] gray-100 flex items-center justify-center">
+          <button onClick={onBack} className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">
             <ArrowLeft className="w-5 h-5 text-gray-600" />
           </button>
           <h1 className="text-lg font-bold flex-1">{vendorName || 'Reserve Table'}</h1>
@@ -167,12 +167,12 @@ export function PetCafeTableBooking({ vendorId, vendorName, onBack, onBookingCom
             <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold mb-1 ${step === 'date' ? 'bg-amber-100 text-amber-600' : 'bg-gray-100'}`}>1</div>
             <span className="text-xs">Date & Time</span>
           </div>
-          <div className="h-[1px] bg-[#FF8C42] gray-200 flex-1 mx-2" />
+          <div className="h-[1px] bg-gray-200 flex-1 mx-2" />
           <div className={`flex flex-col items-center ${step === 'table' ? 'text-amber-600' : 'text-gray-400'}`}>
             <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold mb-1 ${step === 'table' ? 'bg-amber-100 text-amber-600' : 'bg-gray-100'}`}>2</div>
             <span className="text-xs">Select Table</span>
           </div>
-          <div className="h-[1px] bg-[#FF8C42] gray-200 flex-1 mx-2" />
+          <div className="h-[1px] bg-gray-200 flex-1 mx-2" />
           <div className={`flex flex-col items-center ${step === 'confirm' ? 'text-amber-600' : 'text-gray-400'}`}>
             <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold mb-1 ${step === 'confirm' ? 'bg-amber-100 text-amber-600' : 'bg-gray-100'}`}>3</div>
             <span className="text-xs">Confirm</span>
@@ -219,7 +219,7 @@ export function PetCafeTableBooking({ vendorId, vendorName, onBack, onBookingCom
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Guests</label>
-                <div className="flex items-center border border-gray-300 rounded-xl bg-[#FF8C42] white">
+                <div className="flex items-center border border-gray-300 rounded-xl bg-white">
                   <button 
                     onClick={() => setGuests(Math.max(1, guests - 1))}
                     className="p-3 text-gray-500 hover:text-amber-600"
@@ -237,7 +237,7 @@ export function PetCafeTableBooking({ vendorId, vendorName, onBack, onBookingCom
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Pets</label>
-                <div className="flex items-center border border-gray-300 rounded-xl bg-[#FF8C42] white">
+                <div className="flex items-center border border-gray-300 rounded-xl bg-white">
                   <button 
                     onClick={() => setPets(Math.max(0, pets - 1))}
                     className="p-3 text-gray-500 hover:text-amber-600"
@@ -264,7 +264,7 @@ export function PetCafeTableBooking({ vendorId, vendorName, onBack, onBookingCom
                   toast.error('Please select date and time');
                 }
               }}
-              className="w-full bg-amber-600 hover:bg-[#FF8C42] amber-700 h-12 text-lg mt-4"
+              className="w-full bg-amber-600 hover:bg-amber-700 h-12 text-lg mt-4"
             >
               Find Tables
             </Button>
@@ -280,7 +280,7 @@ export function PetCafeTableBooking({ vendorId, vendorName, onBack, onBookingCom
                 <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-amber-600"></div>
               </div>
             ) : availableTables.length === 0 ? (
-              <div className="text-center py-12 bg-[#FF8C42] gray-100 rounded-xl">
+              <div className="text-center py-12 bg-gray-100 rounded-xl">
                 <Coffee className="w-12 h-12 text-gray-400 mx-auto mb-2" />
                 <p className="text-gray-500">No tables available for this time.</p>
                 <Button variant="link" onClick={() => setStep('date')} className="text-amber-600">
@@ -309,7 +309,7 @@ export function PetCafeTableBooking({ vendorId, vendorName, onBack, onBookingCom
                     )}
                     
                     {selectedTable?.id === table.id && (
-                      <div className="absolute top-2 right-2 w-5 h-5 bg-[#FF8C42] amber-600 rounded-full flex items-center justify-center">
+                      <div className="absolute top-2 right-2 w-5 h-5 bg-amber-600 rounded-full flex items-center justify-center">
                         <Check className="w-3 h-3 text-white" />
                       </div>
                     )}
@@ -324,7 +324,7 @@ export function PetCafeTableBooking({ vendorId, vendorName, onBack, onBookingCom
                 else toast.error('Please select a table');
               }}
               disabled={!selectedTable}
-              className="w-full bg-amber-600 hover:bg-[#FF8C42] amber-700 h-12 text-lg mt-4"
+              className="w-full bg-amber-600 hover:bg-amber-700 h-12 text-lg mt-4"
             >
               Continue
             </Button>
@@ -333,7 +333,7 @@ export function PetCafeTableBooking({ vendorId, vendorName, onBack, onBookingCom
 
         {step === 'confirm' && (
           <div className="space-y-4">
-            <Card className="p-5 border-amber-200 bg-[#FF8C42] amber-50">
+            <Card className="p-5 border-amber-200 bg-amber-50">
               <h3 className="font-bold text-lg text-amber-900 mb-4">Booking Summary</h3>
               
               <div className="space-y-3">
@@ -356,7 +356,7 @@ export function PetCafeTableBooking({ vendorId, vendorName, onBack, onBookingCom
               </div>
             </Card>
 
-            <div className="bg-[#FF8C42] blue-50 p-4 rounded-xl flex gap-3 items-start">
+            <div className="bg-blue-50 p-4 rounded-xl flex gap-3 items-start">
               <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
               <div className="text-sm text-blue-800">
                 <p className="font-medium mb-1">Cancellation Policy</p>
@@ -367,7 +367,7 @@ export function PetCafeTableBooking({ vendorId, vendorName, onBack, onBookingCom
             <Button
               onClick={handleBooking}
               disabled={loading}
-              className="w-full bg-green-600 hover:bg-[#FF8C42] green-700 h-12 text-lg shadow-lg shadow-green-200"
+              className="w-full bg-green-600 hover:bg-green-700 h-12 text-lg shadow-lg shadow-green-200"
             >
               {loading ? 'Confirming...' : 'Confirm Booking'}
             </Button>

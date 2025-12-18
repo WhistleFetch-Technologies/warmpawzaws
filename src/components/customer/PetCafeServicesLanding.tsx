@@ -4,7 +4,6 @@ import { Button } from '../ui/button';
 import { Card } from '../ui/card';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { UniversalVendorCard } from './UniversalVendorCard';
-// Brand color: #FF8C42
 
 interface PetCafeServicesLandingProps {
   onBack: () => void;

@@ -147,7 +147,7 @@ export function MatingAppointmentScheduler({
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#FF8C42] gradient-to-br from-pink-50 via-purple-50 to-blue-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-500 mx-auto mb-4"></div>
           <p className="text-gray-600">Finding nearby vet clinics...</p>
@@ -157,9 +157,9 @@ export function MatingAppointmentScheduler({
   }
 
   return (
-    <div className="min-h-screen bg-[#FF8C42] gradient-to-br from-pink-50 via-purple-50 to-blue-50">
+    <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50">
       {/* Header */}
-      <div className="bg-[#FF8C42] white border-b border-gray-200 sticky top-0 z-10">
+      <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="max-w-md mx-auto px-4 py-4 flex items-center gap-3">
           <button onClick={onBack} className="text-gray-600">
             <ChevronLeft className="w-6 h-6" />
@@ -173,7 +173,7 @@ export function MatingAppointmentScheduler({
 
       <div className="max-w-md mx-auto p-4 space-y-6 pb-32">
         {/* Info Banner */}
-        <div className="bg-[#FF8C42] blue-50 border border-blue-200 rounded-xl p-4">
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
           <div className="flex gap-3">
             <Shield className="w-5 h-5 text-blue-600 flex-shrink-0" />
             <div>
@@ -187,7 +187,7 @@ export function MatingAppointmentScheduler({
 
         {/* Vets List */}
         {vets.length === 0 ? (
-          <div className="bg-[#FF8C42] white rounded-xl p-8 text-center">
+          <div className="bg-white rounded-xl p-8 text-center">
             <Stethoscope className="w-16 h-16 text-gray-300 mx-auto mb-4" />
             <p className="text-gray-600 mb-2">No vet clinics found nearby</p>
             <p className="text-sm text-gray-500">Try adjusting your location or check back later</p>
@@ -212,7 +212,7 @@ export function MatingAppointmentScheduler({
                     }`}
                   >
                     <div className="flex items-start gap-3">
-                      <div className="w-12 h-12 rounded-lg bg-[#FF8C42] gradient-to-br from-blue-400 to-purple-400 flex items-center justify-center flex-shrink-0">
+                      <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-blue-400 to-purple-400 flex items-center justify-center flex-shrink-0">
                         <Stethoscope className="w-6 h-6 text-white" />
                       </div>
                       
@@ -235,7 +235,7 @@ export function MatingAppointmentScheduler({
                             <span>4.8</span>
                           </div>
                           
-                          <div className="flex items-center gap-1 text-xs text-green-600 bg-[#FF8C42] green-50 px-2 py-0.5 rounded-full">
+                          <div className="flex items-center gap-1 text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
                             <Award className="w-3 h-3" />
                             <span>Verified</span>
                           </div>
@@ -269,7 +269,7 @@ export function MatingAppointmentScheduler({
 
         {/* Date & Time Selection */}
         {selectedVet && (
-          <div className="bg-[#FF8C42] white rounded-xl p-4 shadow-sm space-y-4">
+          <div className="bg-white rounded-xl p-4 shadow-sm space-y-4">
             <h3 className="font-bold text-gray-900">Select Date & Time</h3>
             
             <div>
@@ -324,7 +324,7 @@ export function MatingAppointmentScheduler({
 
         {/* Service Details */}
         {selectedVet && (
-          <div className="bg-[#FF8C42] green-50 rounded-xl p-4 border border-green-200">
+          <div className="bg-green-50 rounded-xl p-4 border border-green-200">
             <h4 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
               <Shield className="w-5 h-5 text-green-600" />
               What's Included
@@ -348,7 +348,7 @@ export function MatingAppointmentScheduler({
 
         {/* Booking Summary */}
         {selectedVet && selectedDate && selectedTime && (
-          <div className="bg-[#FF8C42] gradient-to-r from-purple-50 to-pink-50 rounded-xl p-4 border border-purple-200">
+          <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl p-4 border border-purple-200">
             <h4 className="font-bold text-gray-900 mb-2">Appointment Summary</h4>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
@@ -383,12 +383,12 @@ export function MatingAppointmentScheduler({
 
       {/* Fixed Bottom Button */}
       {selectedVet && (
-        <div className="fixed bottom-0 left-0 right-0 bg-[#FF8C42] white border-t border-gray-200 p-4 shadow-lg z-10">
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 shadow-lg z-10">
           <div className="max-w-md mx-auto">
             <Button
               onClick={handleBookAppointment}
               disabled={!selectedDate || !selectedTime || booking}
-              className="w-full bg-[#FF8C42] gradient-to-r from-pink-500 to-purple-500 text-white py-3"
+              className="w-full bg-gradient-to-r from-pink-500 to-purple-500 text-white py-3"
             >
               {booking ? (
                 <div className="flex items-center justify-center gap-2">

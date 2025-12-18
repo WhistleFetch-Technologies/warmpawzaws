@@ -154,7 +154,7 @@ export function LiveGPSTracking({
   const renderMap = () => {
     if (!trackingData.currentLocation) {
       return (
-        <div className="h-full flex items-center justify-center bg-[#FF8C42] gray-100 rounded-lg">
+        <div className="h-full flex items-center justify-center bg-gray-100 rounded-lg">
           <div className="text-center">
             <RefreshCw className="w-8 h-8 animate-spin text-gray-400 mx-auto mb-2" />
             <p className="text-sm text-gray-500">Loading location...</p>
@@ -165,7 +165,7 @@ export function LiveGPSTracking({
 
     // Simple map representation
     return (
-      <div className="h-full relative bg-[#FF8C42] gradient-to-br from-blue-50 to-green-50 rounded-lg overflow-hidden">
+      <div className="h-full relative bg-gradient-to-br from-blue-50 to-green-50 rounded-lg overflow-hidden">
         {/* Map placeholder */}
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="text-center">
@@ -182,10 +182,10 @@ export function LiveGPSTracking({
         {/* Vendor marker */}
         <div className="absolute top-1/4 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
           <div className="relative">
-            <div className="w-12 h-12 bg-[#FF8C42] green-500 rounded-full flex items-center justify-center animate-pulse shadow-lg">
+            <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center animate-pulse shadow-lg">
               <Navigation className="w-6 h-6 text-white" />
             </div>
-            <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-[#FF8C42] white px-3 py-1 rounded-full shadow-md whitespace-nowrap">
+            <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-white px-3 py-1 rounded-full shadow-md whitespace-nowrap">
               <p className="text-xs font-semibold text-gray-800">{vendorName}</p>
             </div>
           </div>
@@ -194,10 +194,10 @@ export function LiveGPSTracking({
         {/* Customer marker */}
         <div className="absolute bottom-1/4 left-1/2 transform -translate-x-1/2 translate-y-1/2">
           <div className="relative">
-            <div className="w-12 h-12 bg-[#FF8C42] red-500 rounded-full flex items-center justify-center shadow-lg">
+            <div className="w-12 h-12 bg-red-500 rounded-full flex items-center justify-center shadow-lg">
               <MapPin className="w-6 h-6 text-white" />
             </div>
-            <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-[#FF8C42] white px-3 py-1 rounded-full shadow-md whitespace-nowrap">
+            <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-white px-3 py-1 rounded-full shadow-md whitespace-nowrap">
               <p className="text-xs font-semibold text-gray-800">Your Location</p>
             </div>
           </div>
@@ -224,21 +224,21 @@ export function LiveGPSTracking({
     switch (trackingData.status) {
       case 'arrived':
         return (
-          <div className="flex items-center gap-2 bg-[#FF8C42] green-100 text-green-800 px-4 py-2 rounded-full">
+          <div className="flex items-center gap-2 bg-green-100 text-green-800 px-4 py-2 rounded-full">
             <CheckCircle className="w-5 h-5" />
             <span className="font-semibold">Vendor has arrived!</span>
           </div>
         );
       case 'nearby':
         return (
-          <div className="flex items-center gap-2 bg-[#FF8C42] yellow-100 text-yellow-800 px-4 py-2 rounded-full">
+          <div className="flex items-center gap-2 bg-yellow-100 text-yellow-800 px-4 py-2 rounded-full">
             <Navigation className="w-5 h-5 animate-pulse" />
             <span className="font-semibold">Nearby - Arriving soon</span>
           </div>
         );
       default:
         return (
-          <div className="flex items-center gap-2 bg-[#FF8C42] blue-100 text-blue-800 px-4 py-2 rounded-full">
+          <div className="flex items-center gap-2 bg-blue-100 text-blue-800 px-4 py-2 rounded-full">
             <Navigation className="w-5 h-5" />
             <span className="font-semibold">On the way</span>
           </div>
@@ -247,17 +247,17 @@ export function LiveGPSTracking({
   };
 
   return (
-    <div className="fixed inset-0 bg-[#FF8C42] black/50 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
       <Card className="w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="p-4 border-b flex items-center justify-between bg-[#FF8C42] gradient-to-r from-blue-500 to-blue-600 text-white">
+        <div className="p-4 border-b flex items-center justify-between bg-gradient-to-r from-blue-500 to-blue-600 text-white">
           <div>
             <h2 className="text-xl font-bold">Live Tracking</h2>
             <p className="text-sm opacity-90">{vendorName} is on the way</p>
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-[#FF8C42] white/20 rounded-full transition-colors"
+            className="p-2 hover:bg-white/20 rounded-full transition-colors"
           >
             <X className="w-6 h-6" />
           </button>
@@ -274,8 +274,8 @@ export function LiveGPSTracking({
         </div>
 
         {/* Info Cards */}
-        <div className="p-4 grid grid-cols-3 gap-3 border-t bg-[#FF8C42] gray-50">
-          <div className="bg-[#FF8C42] white p-3 rounded-lg shadow-sm text-center">
+        <div className="p-4 grid grid-cols-3 gap-3 border-t bg-gray-50">
+          <div className="bg-white p-3 rounded-lg shadow-sm text-center">
             <MapPin className="w-6 h-6 text-blue-600 mx-auto mb-1" />
             <p className="text-xs text-gray-500">Distance</p>
             <p className="text-lg font-bold text-gray-800">
@@ -283,7 +283,7 @@ export function LiveGPSTracking({
             </p>
           </div>
 
-          <div className="bg-[#FF8C42] white p-3 rounded-lg shadow-sm text-center">
+          <div className="bg-white p-3 rounded-lg shadow-sm text-center">
             <Clock className="w-6 h-6 text-green-600 mx-auto mb-1" />
             <p className="text-xs text-gray-500">ETA</p>
             <p className="text-lg font-bold text-gray-800">
@@ -291,7 +291,7 @@ export function LiveGPSTracking({
             </p>
           </div>
 
-          <div className="bg-[#FF8C42] white p-3 rounded-lg shadow-sm text-center">
+          <div className="bg-white p-3 rounded-lg shadow-sm text-center">
             <Navigation className="w-6 h-6 text-purple-600 mx-auto mb-1" />
             <p className="text-xs text-gray-500">Status</p>
             <p className="text-sm font-semibold text-gray-800 capitalize">
@@ -302,7 +302,7 @@ export function LiveGPSTracking({
 
         {/* Last Updated */}
         {lastUpdated && (
-          <div className="px-4 py-2 border-t bg-[#FF8C42] gray-50 flex items-center justify-between">
+          <div className="px-4 py-2 border-t bg-gray-50 flex items-center justify-between">
             <p className="text-xs text-gray-500">
               Last updated: {lastUpdated.toLocaleTimeString()}
             </p>
@@ -321,7 +321,7 @@ export function LiveGPSTracking({
         <div className="p-4 border-t flex gap-3">
           <Button
             onClick={() => window.open(`tel:${vendorPhone}`)}
-            className="flex-1 bg-green-600 hover:bg-[#FF8C42] green-700 text-white"
+            className="flex-1 bg-green-600 hover:bg-green-700 text-white"
           >
             <Phone className="w-4 h-4 mr-2" />
             Call {vendorName}

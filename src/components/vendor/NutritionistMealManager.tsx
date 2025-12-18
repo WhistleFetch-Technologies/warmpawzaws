@@ -202,21 +202,21 @@ export function NutritionistMealManager({ vendorId, vendorName, onBack }: Nutrit
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#FF8C42] gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#FF8C42] gray-50">
+    <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-[#FF8C42] white border-b sticky top-0 z-10">
+      <div className="bg-white border-b sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center gap-4">
-            <Button onClick={onBack} className="p-2 hover:bg-[#FF8C42] gray-100 rounded-lg">
+            <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg">
               <ArrowLeft className="w-5 h-5" />
-            </Button>
+            </button>
             <div className="flex-1">
               <h1 className="font-bold text-gray-900">Meal Products</h1>
               <p className="text-sm text-gray-600">{vendorName}</p>
@@ -224,7 +224,7 @@ export function NutritionistMealManager({ vendorId, vendorName, onBack }: Nutrit
             {activeTab === 'products' && (
               <Button
                 onClick={() => setShowAddProduct(true)}
-                className="bg-blue-600 hover:bg-[#FF8C42] blue-700 text-white"
+                className="bg-blue-600 hover:bg-blue-700 text-white"
               >
                 <Plus className="w-4 h-4 mr-2" />
                 Add Product
@@ -234,22 +234,26 @@ export function NutritionistMealManager({ vendorId, vendorName, onBack }: Nutrit
 
           {/* Tabs */}
           <div className="flex gap-4 mt-4">
-            <Button onClick={() => setActiveTab('products')} className={`px-4 py-2 rounded-lg ${
+            <button
+              onClick={() => setActiveTab('products')}
+              className={`px-4 py-2 rounded-lg ${
                 activeTab === 'products'
                   ? 'bg-blue-100 text-blue-700'
                   : 'text-gray-600 hover:bg-gray-100'
               }`}
             >
               Products ({products.length})
-            </Button>
-            <Button onClick={() => setActiveTab('orders')} className={`px-4 py-2 rounded-lg ${
+            </button>
+            <button
+              onClick={() => setActiveTab('orders')}
+              className={`px-4 py-2 rounded-lg ${
                 activeTab === 'orders'
                   ? 'bg-blue-100 text-blue-700'
                   : 'text-gray-600 hover:bg-gray-100'
               }`}
             >
               Orders ({orders.filter(o => o.status === 'pending').length} pending)
-            </Button>
+            </button>
           </div>
         </div>
       </div>
@@ -259,13 +263,13 @@ export function NutritionistMealManager({ vendorId, vendorName, onBack }: Nutrit
         {activeTab === 'products' && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {products.map((product) => (
-              <div key={product.id} className="bg-[#FF8C42] white rounded-xl border hover:shadow-lg transition-shadow p-6">
+              <div key={product.id} className="bg-white rounded-xl border hover:shadow-lg transition-shadow p-6">
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex-1">
                     <h3 className="font-bold text-gray-900">{product.name}</h3>
                     <p className="text-sm text-gray-600 mt-1">{product.packSize}</p>
                   </div>
-                  <span className="px-2 py-0.5 bg-[#FF8C42] green-100 text-green-700 rounded text-xs">
+                  <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded text-xs">
                     {product.dietType}
                   </span>
                 </div>
@@ -278,12 +282,12 @@ export function NutritionistMealManager({ vendorId, vendorName, onBack }: Nutrit
                   <p className="text-xs text-gray-500 mb-1">Ingredients</p>
                   <div className="flex flex-wrap gap-1">
                     {product.ingredients.slice(0, 3).map((ing: string, idx: number) => (
-                      <span key={idx} className="px-2 py-0.5 bg-[#FF8C42] gray-100 text-gray-700 rounded text-xs">
+                      <span key={idx} className="px-2 py-0.5 bg-gray-100 text-gray-700 rounded text-xs">
                         {ing}
                       </span>
                     ))}
                     {product.ingredients.length > 3 && (
-                      <span className="px-2 py-0.5 bg-[#FF8C42] gray-100 text-gray-700 rounded text-xs">
+                      <span className="px-2 py-0.5 bg-gray-100 text-gray-700 rounded text-xs">
                         +{product.ingredients.length - 3}
                       </span>
                     )}
@@ -298,7 +302,8 @@ export function NutritionistMealManager({ vendorId, vendorName, onBack }: Nutrit
                 <p className="font-bold text-green-600 mb-4">₹{product.price}</p>
 
                 <div className="flex gap-2 pt-3 border-t">
-                  <Button onClick={() => {
+                  <button
+                    onClick={() => {
                       setEditingProduct(product);
                       setFormData({
                         name: product.name,
@@ -318,16 +323,17 @@ export function NutritionistMealManager({ vendorId, vendorName, onBack }: Nutrit
                       });
                       setShowAddProduct(true);
                     }}
-                    className="flex-1 py-2 border rounded-lg hover:bg-[#FF8C42] gray-50 flex items-center justify-center gap-2 text-sm"
+                    className="flex-1 py-2 border rounded-lg hover:bg-gray-50 flex items-center justify-center gap-2 text-sm"
                   >
                     <Edit className="w-4 h-4" />
                     Edit
-                  </Button>
-                  <Button onClick={() => handleDeleteProduct(product.id)}
-                    className="p-2 border border-red-200 rounded-lg hover:bg-[#FF8C42] red-50 text-red-600"
+                  </button>
+                  <button
+                    onClick={() => handleDeleteProduct(product.id)}
+                    className="p-2 border border-red-200 rounded-lg hover:bg-red-50 text-red-600"
                   >
                     <Trash2 className="w-4 h-4" />
-                  </Button>
+                  </button>
                 </div>
               </div>
             ))}
@@ -338,7 +344,7 @@ export function NutritionistMealManager({ vendorId, vendorName, onBack }: Nutrit
         {activeTab === 'orders' && (
           <div className="space-y-4">
             {orders.map((order) => (
-              <div key={order.id} className="bg-[#FF8C42] white rounded-xl border p-6">
+              <div key={order.id} className="bg-white rounded-xl border p-6">
                 <div className="flex items-start justify-between mb-4">
                   <div>
                     <h3 className="font-bold text-gray-900">{order.productName}</h3>
@@ -384,7 +390,7 @@ export function NutritionistMealManager({ vendorId, vendorName, onBack }: Nutrit
                 )}
 
                 {order.specialInstructions && (
-                  <div className="mb-4 p-3 bg-[#FF8C42] yellow-50 rounded-lg">
+                  <div className="mb-4 p-3 bg-yellow-50 rounded-lg">
                     <p className="text-xs text-yellow-800 font-medium mb-1">Special Instructions</p>
                     <p className="text-sm text-yellow-900">{order.specialInstructions}</p>
                   </div>
@@ -395,7 +401,7 @@ export function NutritionistMealManager({ vendorId, vendorName, onBack }: Nutrit
                   {order.status === 'pending' && (
                     <Button
                       onClick={() => handleUpdateOrderStatus(order.id, 'preparing')}
-                      className="bg-blue-600 hover:bg-[#FF8C42] blue-700 text-white"
+                      className="bg-blue-600 hover:bg-blue-700 text-white"
                     >
                       Start Preparing
                     </Button>
@@ -403,7 +409,7 @@ export function NutritionistMealManager({ vendorId, vendorName, onBack }: Nutrit
                   {order.status === 'preparing' && (
                     <Button
                       onClick={() => handleUpdateOrderStatus(order.id, 'ready')}
-                      className="bg-green-600 hover:bg-[#FF8C42] green-700 text-white"
+                      className="bg-green-600 hover:bg-green-700 text-white"
                     >
                       Mark as Ready
                     </Button>
@@ -411,7 +417,7 @@ export function NutritionistMealManager({ vendorId, vendorName, onBack }: Nutrit
                   {order.status === 'ready' && (
                     <Button
                       onClick={() => handleUpdateOrderStatus(order.id, 'out_for_delivery')}
-                      className="bg-purple-600 hover:bg-[#FF8C42] purple-700 text-white"
+                      className="bg-purple-600 hover:bg-purple-700 text-white"
                     >
                       Dispatch for Delivery
                     </Button>
@@ -421,7 +427,7 @@ export function NutritionistMealManager({ vendorId, vendorName, onBack }: Nutrit
             ))}
 
             {orders.length === 0 && (
-              <div className="bg-[#FF8C42] white rounded-xl border p-12 text-center">
+              <div className="bg-white rounded-xl border p-12 text-center">
                 <Package className="w-16 h-16 mx-auto mb-4 text-gray-300" />
                 <h3 className="font-bold text-gray-900 mb-2">No Orders Yet</h3>
                 <p className="text-gray-600">Orders will appear here when customers place them</p>
@@ -521,11 +527,11 @@ export function NutritionistMealManager({ vendorId, vendorName, onBack }: Nutrit
               </div>
               <div className="flex flex-wrap gap-2">
                 {formData.ingredients.map((ing, idx) => (
-                  <span key={idx} className="px-3 py-1 bg-[#FF8C42] gray-100 rounded-full text-sm flex items-center gap-2">
+                  <span key={idx} className="px-3 py-1 bg-gray-100 rounded-full text-sm flex items-center gap-2">
                     {ing}
-                    <Button onClick={() => removeIngredient(idx)} className="text-red-600 hover:text-red-800">
+                    <button onClick={() => removeIngredient(idx)} className="text-red-600 hover:text-red-800">
                       ×
-                    </Button>
+                    </button>
                   </span>
                 ))}
               </div>
@@ -561,7 +567,7 @@ export function NutritionistMealManager({ vendorId, vendorName, onBack }: Nutrit
               <Button onClick={() => { setShowAddProduct(false); setEditingProduct(null); resetForm(); }} variant="outline">
                 Cancel
               </Button>
-              <Button onClick={handleSubmit} className="bg-blue-600 hover:bg-[#FF8C42] blue-700 text-white">
+              <Button onClick={handleSubmit} className="bg-blue-600 hover:bg-blue-700 text-white">
                 <Save className="w-4 h-4 mr-2" />
                 {editingProduct ? 'Update' : 'Create'} Product
               </Button>

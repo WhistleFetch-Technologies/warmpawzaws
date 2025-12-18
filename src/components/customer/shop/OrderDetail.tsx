@@ -95,7 +95,7 @@ export function OrderDetail({ orderId, onBack }: OrderDetailProps) {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#FF8C42] gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
       </div>
     );
@@ -122,9 +122,9 @@ export function OrderDetail({ orderId, onBack }: OrderDetailProps) {
   const currentStepIndex = getCurrentStepIndex();
 
   return (
-    <div className="min-h-screen bg-[#FF8C42] gray-50 pb-10">
+    <div className="min-h-screen bg-gray-50 pb-10">
       {/* Header */}
-      <div className="bg-[#FF8C42] white border-b px-4 py-3 flex items-center gap-3 sticky top-0 z-30">
+      <div className="bg-white border-b px-4 py-3 flex items-center gap-3 sticky top-0 z-30">
         <Button variant="ghost" size="icon" onClick={onBack}>
           <ArrowLeft className="w-5 h-5" />
         </Button>
@@ -136,7 +136,7 @@ export function OrderDetail({ orderId, onBack }: OrderDetailProps) {
 
       <div className="p-4 space-y-4">
         {/* Status Card */}
-        <Card className="p-5 bg-[#FF8C42] white">
+        <Card className="p-5 bg-white">
           {order.status === 'cancelled' ? (
              <div className="flex items-center gap-3 text-red-600 mb-4">
                <XCircle className="w-6 h-6" />
@@ -188,7 +188,7 @@ export function OrderDetail({ orderId, onBack }: OrderDetailProps) {
         </Card>
 
         {/* Shipping Address */}
-        <Card className="p-4 bg-[#FF8C42] white">
+        <Card className="p-4 bg-white">
           <div className="flex items-center gap-2 mb-3 text-gray-900">
             <MapPin className="w-4 h-4 text-indigo-600" />
             <h3 className="font-semibold text-sm">Delivery Address</h3>
@@ -202,12 +202,12 @@ export function OrderDetail({ orderId, onBack }: OrderDetailProps) {
         </Card>
 
         {/* Order Items */}
-        <Card className="p-4 bg-[#FF8C42] white">
+        <Card className="p-4 bg-white">
            <h3 className="font-semibold text-sm text-gray-900 mb-3">Order Items ({order.items.length})</h3>
            <div className="space-y-4">
              {order.items.map((item: any) => (
                <div key={item.id} className="flex gap-3">
-                 <div className="w-16 h-16 bg-[#FF8C42] gray-100 rounded-md overflow-hidden flex-shrink-0 border border-gray-100">
+                 <div className="w-16 h-16 bg-gray-100 rounded-md overflow-hidden flex-shrink-0 border border-gray-100">
                    <ImageWithFallback src={item.image} alt={item.name} className="w-full h-full object-cover" />
                  </div>
                  <div className="flex-1">
@@ -223,7 +223,7 @@ export function OrderDetail({ orderId, onBack }: OrderDetailProps) {
         </Card>
 
         {/* Payment Summary */}
-        <Card className="p-4 bg-[#FF8C42] white space-y-2">
+        <Card className="p-4 bg-white space-y-2">
           <h3 className="font-semibold text-sm text-gray-900 mb-2">Payment Details</h3>
           <div className="space-y-2 text-sm">
             <div className="flex justify-between text-gray-600">
@@ -257,7 +257,7 @@ export function OrderDetail({ orderId, onBack }: OrderDetailProps) {
         {canCancel && (
           <Button 
             variant="outline" 
-            className="w-full border-red-200 text-red-600 hover:bg-[#FF8C42] red-50 hover:text-red-700"
+            className="w-full border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
             onClick={handleCancelOrder}
             disabled={cancelling}
           >

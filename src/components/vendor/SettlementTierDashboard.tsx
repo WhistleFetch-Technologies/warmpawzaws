@@ -241,7 +241,7 @@ export function SettlementTierDashboard({ vendorId }: SettlementTierDashboardPro
         </div>
         
         {tierInfo && tierInfo.canUpgrade && (
-          <Button onClick={handleTierUpgrade} className="bg-[#FF8C42] gradient-to-r from-purple-600 to-blue-600 text-white">
+          <Button onClick={handleTierUpgrade} className="bg-gradient-to-r from-purple-600 to-blue-600 text-white">
             <ArrowUp className="w-4 h-4 mr-2" />
             Upgrade to {tierInfo.nextTier}
           </Button>
@@ -250,7 +250,7 @@ export function SettlementTierDashboard({ vendorId }: SettlementTierDashboardPro
 
       {/* Tier Badge */}
       {tierInfo && (
-        <Card className="p-6 bg-[#FF8C42] gradient-to-r from-blue-50 to-purple-50">
+        <Card className="p-6 bg-gradient-to-r from-blue-50 to-purple-50">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               {getTierIcon(tierInfo.current)}
@@ -285,7 +285,7 @@ export function SettlementTierDashboard({ vendorId }: SettlementTierDashboardPro
 
       {/* Bank Account Status */}
       {!bankAccount && (
-        <Card className="p-6 bg-[#FF8C42] yellow-50 border-yellow-200">
+        <Card className="p-6 bg-yellow-50 border-yellow-200">
           <div className="flex items-start gap-3">
             <Info className="w-5 h-5 text-yellow-600 mt-0.5" />
             <div className="flex-1">
@@ -378,30 +378,36 @@ export function SettlementTierDashboard({ vendorId }: SettlementTierDashboardPro
 
       {/* Tabs */}
       <div className="flex gap-2 border-b border-gray-200">
-        <Button onClick={() => setActiveTab('overview')} className={`px-4 py-3 text-sm font-medium transition-colors ${
+        <button
+          onClick={() => setActiveTab('overview')}
+          className={`px-4 py-3 text-sm font-medium transition-colors ${
             activeTab === 'overview'
               ? 'text-blue-600 border-b-2 border-blue-600'
               : 'text-gray-600 hover:text-gray-900'
           }`}
         >
           Overview
-        </Button>
-        <Button onClick={() => setActiveTab('history')} className={`px-4 py-3 text-sm font-medium transition-colors ${
+        </button>
+        <button
+          onClick={() => setActiveTab('history')}
+          className={`px-4 py-3 text-sm font-medium transition-colors ${
             activeTab === 'history'
               ? 'text-blue-600 border-b-2 border-blue-600'
               : 'text-gray-600 hover:text-gray-900'
           }`}
         >
           Settlement History
-        </Button>
-        <Button onClick={() => setActiveTab('tier')} className={`px-4 py-3 text-sm font-medium transition-colors ${
+        </button>
+        <button
+          onClick={() => setActiveTab('tier')}
+          className={`px-4 py-3 text-sm font-medium transition-colors ${
             activeTab === 'tier'
               ? 'text-blue-600 border-b-2 border-blue-600'
               : 'text-gray-600 hover:text-gray-900'
           }`}
         >
           Tier Benefits
-        </Button>
+        </button>
       </div>
 
       {/* Tab Content */}
@@ -475,7 +481,7 @@ export function SettlementTierDashboard({ vendorId }: SettlementTierDashboardPro
                   </div>
                   <div>
                     <p className="text-sm text-gray-600">Status</p>
-                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-[#FF8C42] green-100 text-green-700 text-xs font-semibold rounded-full">
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 text-xs font-semibold rounded-full">
                       <CheckCircle className="w-3 h-3" />
                       Verified
                     </span>
@@ -486,7 +492,7 @@ export function SettlementTierDashboard({ vendorId }: SettlementTierDashboardPro
 
             {/* Upgrade Prompt */}
             {tierInfo && tierInfo.canUpgrade && (
-              <Card className="p-6 bg-[#FF8C42] gradient-to-r from-purple-50 to-blue-50 border-purple-200">
+              <Card className="p-6 bg-gradient-to-r from-purple-50 to-blue-50 border-purple-200">
                 <div className="flex items-start gap-4">
                   <div className="flex-1">
                     <h3 className="font-bold text-gray-900 mb-2">
@@ -505,7 +511,7 @@ export function SettlementTierDashboard({ vendorId }: SettlementTierDashboardPro
                         </li>
                       ))}
                     </ul>
-                    <Button onClick={handleTierUpgrade} className="bg-purple-600 hover:bg-[#FF8C42] purple-700">
+                    <Button onClick={handleTierUpgrade} className="bg-purple-600 hover:bg-purple-700">
                       Upgrade for ₹{tierInfo.upgradeRequirements.upgradeCost.toLocaleString()}
                     </Button>
                   </div>
@@ -582,7 +588,7 @@ export function SettlementTierDashboard({ vendorId }: SettlementTierDashboardPro
                   <h3 className="font-bold text-gray-900">Basic</h3>
                 </div>
                 {tierInfo.current === 'basic' && (
-                  <span className="px-2 py-1 bg-[#FF8C42] gray-100 text-gray-700 text-xs font-semibold rounded-full">
+                  <span className="px-2 py-1 bg-gray-100 text-gray-700 text-xs font-semibold rounded-full">
                     Current
                   </span>
                 )}
@@ -615,7 +621,7 @@ export function SettlementTierDashboard({ vendorId }: SettlementTierDashboardPro
                   <h3 className="font-bold text-gray-900">Premium</h3>
                 </div>
                 {tierInfo.current === 'premium' && (
-                  <span className="px-2 py-1 bg-[#FF8C42] purple-100 text-purple-700 text-xs font-semibold rounded-full">
+                  <span className="px-2 py-1 bg-purple-100 text-purple-700 text-xs font-semibold rounded-full">
                     Current
                   </span>
                 )}
@@ -646,7 +652,7 @@ export function SettlementTierDashboard({ vendorId }: SettlementTierDashboardPro
               {tierInfo.current === 'basic' && (
                 <Button
                   onClick={handleTierUpgrade}
-                  className="w-full bg-purple-600 hover:bg-[#FF8C42] purple-700"
+                  className="w-full bg-purple-600 hover:bg-purple-700"
                   disabled={!tierInfo.canUpgrade}
                 >
                   Upgrade - ₹5,000
@@ -662,7 +668,7 @@ export function SettlementTierDashboard({ vendorId }: SettlementTierDashboardPro
                   <h3 className="font-bold text-gray-900">Enterprise</h3>
                 </div>
                 {tierInfo.current === 'enterprise' && (
-                  <span className="px-2 py-1 bg-[#FF8C42] yellow-100 text-yellow-700 text-xs font-semibold rounded-full">
+                  <span className="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs font-semibold rounded-full">
                     Current
                   </span>
                 )}
@@ -697,7 +703,7 @@ export function SettlementTierDashboard({ vendorId }: SettlementTierDashboardPro
               {tierInfo.current === 'premium' && (
                 <Button
                   onClick={handleTierUpgrade}
-                  className="w-full bg-yellow-600 hover:bg-[#FF8C42] yellow-700"
+                  className="w-full bg-yellow-600 hover:bg-yellow-700"
                   disabled={!tierInfo.canUpgrade}
                 >
                   Upgrade - ₹15,000

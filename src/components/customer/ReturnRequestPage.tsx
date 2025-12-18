@@ -14,7 +14,6 @@
 import React, { useState, useEffect } from 'react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { Package, Camera, Upload, Clock, CheckCircle, XCircle, Truck, RefreshCw, AlertCircle, ChevronRight } from 'lucide-react';
-// Brand color: #FF8C42
 
 interface OrderItem {
   id: string;

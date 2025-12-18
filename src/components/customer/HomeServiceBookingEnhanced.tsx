@@ -3,7 +3,6 @@ import { Button } from '../ui/button';
 import { MapPin, Clock, Star, Calendar, ChevronRight, Heart, TrendingUp, Navigation, User } from 'lucide-react';
 import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-// Brand color: #FF8C42
 
 interface Provider {
   id: string;

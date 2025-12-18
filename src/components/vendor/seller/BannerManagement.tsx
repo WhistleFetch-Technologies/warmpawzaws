@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Image as ImageIcon, Plus } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
-import { Button } from '../../ui/button';
 
 interface BannerManagementProps {
   sellerId: string;
@@ -49,10 +48,10 @@ export function BannerManagement({ sellerId }: BannerManagementProps) {
           <h1 className="text-black">Banner Management</h1>
           <p className="text-gray-500 mt-1">Upload and manage promotional banners</p>
         </div>
-        <Button className="bg-[#FF8C42] text-white px-4 py-2 rounded-lg hover:bg-[#E67A32] flex items-center gap-2">
+        <button className="bg-[#FF8C42] text-white px-4 py-2 rounded-lg hover:bg-[#E67A32] flex items-center gap-2">
           <Plus className="w-5 h-5" />
           Upload Banner
-        </Button>
+        </button>
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">

@@ -2,7 +2,6 @@ import { ArrowRight } from 'lucide-react';
 import logoImage from 'figma:asset/1ee3459260cb17d9119000df586f10f31d016a25.png';
 import { useState, useEffect } from 'react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { Button } from '../ui/button';
 
 interface VendorRoleSelectionProps {
   onRoleSelect: (role: string) => void;
@@ -326,7 +325,7 @@ export function VendorRoleSelection({ onRoleSelect }: VendorRoleSelectionProps) 
               : role.capabilities;
             
             return (
-              <Button
+              <button
                 key={role.id}
                 onClick={() => onRoleSelect(role.id)}
                 className="w-full bg-white border-2 border-gray-200 rounded-xl p-3.5 hover:border-[#FF8C42] transition-all text-left group active:scale-[0.98]"
@@ -367,7 +366,7 @@ export function VendorRoleSelection({ onRoleSelect }: VendorRoleSelectionProps) 
                   {/* Compact Arrow */}
                   <ArrowRight className="w-4 h-4 text-gray-400 group-hover:text-[#FF8C42] flex-shrink-0 mt-0.5" />
                 </div>
-              </Button>
+              </button>
             );
           })}
         </div>

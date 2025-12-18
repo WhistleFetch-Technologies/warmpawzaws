@@ -30,7 +30,7 @@ export function vendorOnboardingEndpoints(app: Hono, kv: any) {
   app.post("/make-server-3dd53475/vendor/apply", async (c) => {
     try {
       const body = await c.req.json();
-      const { roleId, phone, email, serviceStyle, location } = body;
+      const { roleId, phone, email, serviceStyle, location, specializations } = body;
       const formData = body.formData || {};
       const documents = body.documents || {};
       
@@ -38,6 +38,7 @@ export function vendorOnboardingEndpoints(app: Hono, kv: any) {
       console.log(`   Role ID: ${roleId}`);
       console.log(`   Phone: ${phone}`);
       console.log(`   Business Name: ${formData.businessName}`);
+      console.log(`   Specializations:`, specializations);
       console.log(`   Full Name: ${formData.fullName}`);
       
       // ✅ CRITICAL FIX #1: Validate phone number doesn't already exist
@@ -195,6 +196,9 @@ export function vendorOnboardingEndpoints(app: Hono, kv: any) {
         vendorType,
         serviceStyle: serviceStyle || role.defaultServiceStyle || null,
         
+        // ✅ NEW: Specializations for center/vendor
+        specializations: specializations || [],
+        
         // ✅ FIX: Names with proper priority
         businessName: formData.businessName || null,
         fullName: formData.fullName || null,
@@ -330,6 +334,101 @@ export function vendorOnboardingEndpoints(app: Hono, kv: any) {
       
     } catch (error) {
       console.error('❌ Error checking phone:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  /**
+   * PUT /make-server-3dd53475/vendor/profile/:vendorId
+   * Update vendor/center profile (for edit mode)
+   * 
+   * ✅ NEW ENDPOINT: Save/update center profile with specializations
+   */
+  app.put("/make-server-3dd53475/vendor/profile/:vendorId", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const body = await c.req.json();
+      const { formData, documents, specializations, location } = body;
+
+      console.log(`📝 Updating vendor profile: ${vendorId}`);
+      console.log(`   Specializations:`, specializations);
+      console.log(`   Location:`, location);
+
+      // Get existing vendor
+      const vendorKey = `vendor:${vendorId}`;
+      const existingVendor = await kv.get(vendorKey);
+
+      if (!existingVendor) {
+        console.error(`❌ Vendor not found: ${vendorId}`);
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+
+      // Update vendor with new data
+      const updatedVendor = {
+        ...existingVendor,
+        // Update form data
+        ...formData,
+        // Update specializations
+        specializations: specializations || existingVendor.specializations || [],
+        // Update location
+        location: location || formData?.location || existingVendor.location,
+        coordinates: location || formData?.coordinates || existingVendor.coordinates,
+        // Update documents if provided
+        documents: documents ? [...(existingVendor.documents || []), ...documents] : existingVendor.documents,
+        // Track update
+        updatedAt: new Date().toISOString(),
+        lastProfileUpdate: new Date().toISOString()
+      };
+
+      await kv.set(vendorKey, updatedVendor);
+
+      console.log(`✅ Vendor profile updated successfully: ${vendorId}`);
+
+      return sendSuccess(c, {
+        vendorId,
+        message: 'Profile updated successfully',
+        vendor: updatedVendor
+      });
+
+    } catch (error) {
+      console.error('❌ Error updating vendor profile:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  /**
+   * GET /make-server-3dd53475/vendor/profile/:vendorId
+   * Get vendor/center profile for editing
+   * 
+   * ✅ NEW ENDPOINT: Load center profile data for edit mode
+   */
+  app.get("/make-server-3dd53475/vendor/profile/:vendorId", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+
+      console.log(`📖 Loading vendor profile: ${vendorId}`);
+
+      const vendorKey = `vendor:${vendorId}`;
+      const vendor = await kv.get(vendorKey);
+
+      if (!vendor) {
+        console.error(`❌ Vendor not found: ${vendorId}`);
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+
+      console.log(`✅ Vendor profile loaded: ${vendorId}`);
+
+      return sendSuccess(c, {
+        vendor: {
+          ...vendor,
+          formData: vendor.customFields || vendor.formData || {},
+          specializations: vendor.specializations || [],
+          location: vendor.location || vendor.coordinates || null
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Error loading vendor profile:', error);
       return sendError(c, error, 500);
     }
   });

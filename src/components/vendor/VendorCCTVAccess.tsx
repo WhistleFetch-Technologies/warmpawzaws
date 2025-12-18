@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { Camera, Play, Pause, Download, RefreshCw, X, Video, Clock, MapPin, Settings } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { toast } from 'sonner@2.0.3';
-import { Button } from '../ui/button';
 
 interface CCTVCamera {
   id: string;
@@ -143,9 +142,9 @@ export function VendorCCTVAccess({ vendorId, vendorData, onBack }: VendorCCTVAcc
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
                 {onBack && (
-                  <Button onClick={onBack} className="text-gray-600">
+                  <button onClick={onBack} className="text-gray-600">
                     <X className="w-6 h-6" />
-                  </Button>
+                  </button>
                 )}
                 <div>
                   <h1 className="text-xl font-bold text-gray-900">CCTV Monitoring</h1>
@@ -154,31 +153,36 @@ export function VendorCCTVAccess({ vendorId, vendorData, onBack }: VendorCCTVAcc
                   </p>
                 </div>
               </div>
-              <Button onClick={() => setAddCameraModal(true)}
+              <button
+                onClick={() => setAddCameraModal(true)}
                 className="bg-orange-500 text-white px-4 py-2 rounded-lg text-sm hover:bg-orange-600"
               >
                 Add Camera
-              </Button>
+              </button>
             </div>
 
             {/* Tabs */}
             <div className="flex gap-2">
-              <Button onClick={() => setActiveTab('cameras')} className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              <button
+                onClick={() => setActiveTab('cameras')}
+                className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                   activeTab === 'cameras'
                     ? 'bg-orange-500 text-white'
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 }`}
               >
                 My Cameras ({cameras.length})
-              </Button>
-              <Button onClick={() => setActiveTab('shared')} className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              </button>
+              <button
+                onClick={() => setActiveTab('shared')}
+                className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                   activeTab === 'shared'
                     ? 'bg-orange-500 text-white'
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 }`}
               >
                 Shared Access ({sharedAccess.length})
-              </Button>
+              </button>
             </div>
           </div>
         </div>
@@ -192,11 +196,12 @@ export function VendorCCTVAccess({ vendorId, vendorData, onBack }: VendorCCTVAcc
                   <Camera className="w-16 h-16 text-gray-300 mx-auto mb-4" />
                   <h3 className="text-lg font-semibold text-gray-900 mb-2">No Cameras Added</h3>
                   <p className="text-gray-500 mb-4">Add CCTV cameras to monitor your facility</p>
-                  <Button onClick={() => setAddCameraModal(true)}
+                  <button
+                    onClick={() => setAddCameraModal(true)}
                     className="bg-orange-500 text-white px-6 py-2 rounded-lg hover:bg-orange-600"
                   >
                     Add First Camera
-                  </Button>
+                  </button>
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -233,18 +238,20 @@ export function VendorCCTVAccess({ vendorId, vendorData, onBack }: VendorCCTVAcc
 
                         {/* Controls */}
                         <div className="absolute bottom-3 right-3 flex gap-2">
-                          <Button onClick={() => refreshSnapshot(camera.id)}
+                          <button
+                            onClick={() => refreshSnapshot(camera.id)}
                             className="p-2 bg-black bg-opacity-60 text-white rounded-full hover:bg-opacity-80"
                             title="Refresh snapshot"
                           >
                             <RefreshCw className="w-4 h-4" />
-                          </Button>
-                          <Button onClick={() => setSelectedCamera(camera)}
+                          </button>
+                          <button
+                            onClick={() => setSelectedCamera(camera)}
                             className="p-2 bg-orange-500 text-white rounded-full hover:bg-orange-600"
                             title="Watch live"
                           >
                             <Play className="w-4 h-4" />
-                          </Button>
+                          </button>
                         </div>
                       </div>
 
@@ -258,14 +265,15 @@ export function VendorCCTVAccess({ vendorId, vendorData, onBack }: VendorCCTVAcc
                               {camera.location}
                             </div>
                           </div>
-                          <Button onClick={() => {
+                          <button
+                            onClick={() => {
                               setSelectedCameraForShare(camera);
                               setShareModal(true);
                             }}
                             className="text-sm text-orange-500 hover:text-orange-600 font-medium"
                           >
                             Share
-                          </Button>
+                          </button>
                         </div>
 
                         <div className="flex items-center gap-4 text-xs text-gray-500">
@@ -330,9 +338,9 @@ export function VendorCCTVAccess({ vendorId, vendorData, onBack }: VendorCCTVAcc
                     <h2 className="font-semibold">{selectedCamera.name}</h2>
                     <p className="text-sm text-gray-300">{selectedCamera.location}</p>
                   </div>
-                  <Button onClick={() => setSelectedCamera(null)}>
+                  <button onClick={() => setSelectedCamera(null)}>
                     <X className="w-6 h-6" />
-                  </Button>
+                  </button>
                 </div>
               </div>
 
@@ -370,21 +378,22 @@ export function VendorCCTVAccess({ vendorId, vendorData, onBack }: VendorCCTVAcc
             <div className="bg-white rounded-xl max-w-md w-full p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-bold text-gray-900">Add Camera</h2>
-                <Button onClick={() => setAddCameraModal(false)}>
+                <button onClick={() => setAddCameraModal(false)}>
                   <X className="w-6 h-6 text-gray-400" />
-                </Button>
+                </button>
               </div>
               <p className="text-sm text-gray-600 mb-4">
                 Contact support to configure CCTV cameras for your facility. We'll help you set up the streaming and storage.
               </p>
-              <Button onClick={() => {
+              <button
+                onClick={() => {
                   toast.info('Please contact support for CCTV setup');
                   setAddCameraModal(false);
                 }}
                 className="w-full bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600"
               >
                 Contact Support
-              </Button>
+              </button>
             </div>
           </div>
         )}
@@ -395,9 +404,9 @@ export function VendorCCTVAccess({ vendorId, vendorData, onBack }: VendorCCTVAcc
             <div className="bg-white rounded-xl max-w-md w-full p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-bold text-gray-900">Share Camera Access</h2>
-                <Button onClick={() => setShareModal(false)}>
+                <button onClick={() => setShareModal(false)}>
                   <X className="w-6 h-6 text-gray-400" />
-                </Button>
+                </button>
               </div>
               <p className="text-sm text-gray-600 mb-4">
                 Share access to "{selectedCameraForShare.name}" with a customer for their booking.
@@ -408,14 +417,15 @@ export function VendorCCTVAccess({ vendorId, vendorData, onBack }: VendorCCTVAcc
                   placeholder="Customer name or booking ID"
                   className="w-full border border-gray-300 rounded-lg p-2"
                 />
-                <Button onClick={() => {
+                <button
+                  onClick={() => {
                     toast.success('Camera access shared');
                     setShareModal(false);
                   }}
                   className="w-full bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600"
                 >
                   Share Access
-                </Button>
+                </button>
               </div>
             </div>
           </div>

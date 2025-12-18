@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { Tag, Plus, Edit2, Trash2, Calendar, X, Loader2 } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
 import { toast } from 'sonner@2.0.3';
-import { Button } from '../../ui/button';
 
 interface PromotionsManagementProps {
   sellerId: string;
@@ -60,13 +59,13 @@ export function PromotionsManagement({ sellerId }: PromotionsManagementProps) {
           <h1 className="text-black">Promotions Management</h1>
           <p className="text-gray-500 mt-1">Create and manage promotional offers</p>
         </div>
-        <Button 
+        <button 
           className="bg-[#FF8C42] text-white px-4 py-2 rounded-lg hover:bg-[#E67A32] flex items-center gap-2"
           onClick={() => setShowCreateModal(true)}
         >
           <Plus className="w-5 h-5" />
           Create Promotion
-        </Button>
+        </button>
       </div>
 
       {promotions.length === 0 ? (
@@ -176,9 +175,9 @@ function CreatePromotionModal({ sellerId, onClose, onSuccess }: { sellerId: stri
       <div className="bg-white rounded-xl max-w-lg w-full overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
           <h3 className="font-semibold text-gray-900">Create New Promotion</h3>
-          <Button onClick={onClose} className="text-gray-400 hover:text-gray-500">
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-500">
             <X className="w-5 h-5" />
-          </Button>
+          </button>
         </div>
         
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
@@ -257,21 +256,21 @@ function CreatePromotionModal({ sellerId, onClose, onSuccess }: { sellerId: stri
           </div>
 
           <div className="pt-4 flex gap-3">
-            <Button
+            <button
               type="button"
               onClick={onClose}
               className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
             >
               Cancel
-            </Button>
-            <Button
+            </button>
+            <button
               type="submit"
               disabled={loading}
               className="flex-1 bg-[#FF8C42] text-white px-4 py-2 rounded-lg hover:bg-[#E67A32] disabled:opacity-50 flex justify-center items-center gap-2"
             >
               {loading && <Loader2 className="w-4 h-4 animate-spin" />}
               Create Promotion
-            </Button>
+            </button>
           </div>
         </form>
       </div>

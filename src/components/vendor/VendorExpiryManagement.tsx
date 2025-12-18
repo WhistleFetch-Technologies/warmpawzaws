@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Bell, Package, AlertTriangle, Calendar, Plus, Trash2, Search, Filter } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { Button } from '../ui/button';
 
 interface ProductBatch {
   id: string;
@@ -319,9 +318,9 @@ export function VendorExpiryManagement({ vendorId, vendorData, onBack }: VendorE
         {/* Header */}
         <div className="mb-6">
           {onBack && (
-            <Button onClick={onBack} className="text-blue-600 hover:text-blue-700 mb-4">
+            <button onClick={onBack} className="text-blue-600 hover:text-blue-700 mb-4">
               ← Back to Dashboard
-            </Button>
+            </button>
           )}
           <h1 className="text-3xl text-gray-900 mb-2">Expiry Management</h1>
           <p className="text-gray-600">Track product batches, expiry alerts, and disposal records</p>
@@ -376,30 +375,36 @@ export function VendorExpiryManagement({ vendorId, vendorData, onBack }: VendorE
         <div className="bg-white rounded-lg shadow mb-6">
           <div className="border-b border-gray-200">
             <div className="flex space-x-8 px-6">
-              <Button onClick={() => setActiveTab('batches')} className={`py-4 px-2 border-b-2 transition-colors ${
+              <button
+                onClick={() => setActiveTab('batches')}
+                className={`py-4 px-2 border-b-2 transition-colors ${
                   activeTab === 'batches'
                     ? 'border-blue-500 text-blue-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700'
                 }`}
               >
                 Product Batches
-              </Button>
-              <Button onClick={() => setActiveTab('alerts')} className={`py-4 px-2 border-b-2 transition-colors ${
+              </button>
+              <button
+                onClick={() => setActiveTab('alerts')}
+                className={`py-4 px-2 border-b-2 transition-colors ${
                   activeTab === 'alerts'
                     ? 'border-blue-500 text-blue-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700'
                 }`}
               >
                 Expiry Alerts
-              </Button>
-              <Button onClick={() => setActiveTab('disposal')} className={`py-4 px-2 border-b-2 transition-colors ${
+              </button>
+              <button
+                onClick={() => setActiveTab('disposal')}
+                className={`py-4 px-2 border-b-2 transition-colors ${
                   activeTab === 'disposal'
                     ? 'border-blue-500 text-blue-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700'
                 }`}
               >
                 Disposal Records
-              </Button>
+              </button>
             </div>
           </div>
 
@@ -429,12 +434,13 @@ export function VendorExpiryManagement({ vendorId, vendorData, onBack }: VendorE
                   <option value="expired">Expired</option>
                   <option value="depleted">Depleted</option>
                 </select>
-                <Button onClick={() => setShowAddBatch(true)}
+                <button
+                  onClick={() => setShowAddBatch(true)}
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
                 >
                   <Plus size={20} />
                   Add Batch
-                </Button>
+                </button>
               </div>
 
               {/* Batches List */}
@@ -484,7 +490,8 @@ export function VendorExpiryManagement({ vendorId, vendorData, onBack }: VendorE
                             </div>
                           </div>
                           {(batch.status === 'expired' || batch.status === 'expiring_soon') && batch.remainingQuantity > 0 && (
-                            <Button onClick={() => {
+                            <button
+                              onClick={() => {
                                 setSelectedBatch(batch);
                                 setShowDisposal(true);
                               }}
@@ -492,7 +499,7 @@ export function VendorExpiryManagement({ vendorId, vendorData, onBack }: VendorE
                             >
                               <Trash2 size={16} />
                               Record Disposal
-                            </Button>
+                            </button>
                           )}
                         </div>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-gray-600">
@@ -545,11 +552,12 @@ export function VendorExpiryManagement({ vendorId, vendorData, onBack }: VendorE
                           </p>
                         </div>
                         {alert.status === 'active' && (
-                          <Button onClick={() => acknowledgeAlert(alert.id)}
+                          <button
+                            onClick={() => acknowledgeAlert(alert.id)}
                             className="px-4 py-2 bg-white text-gray-700 rounded hover:bg-gray-100 text-sm"
                           >
                             Acknowledge
-                          </Button>
+                          </button>
                         )}
                         {alert.status === 'acknowledged' && (
                           <span className="text-sm text-gray-600">
@@ -758,19 +766,19 @@ export function VendorExpiryManagement({ vendorId, vendorData, onBack }: VendorE
                   />
                 </div>
                 <div className="flex gap-4">
-                  <Button
+                  <button
                     type="submit"
                     className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                   >
                     Add Batch
-                  </Button>
-                  <Button
+                  </button>
+                  <button
                     type="button"
                     onClick={() => setShowAddBatch(false)}
                     className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
                   >
                     Cancel
-                  </Button>
+                  </button>
                 </div>
               </form>
             </div>
@@ -862,13 +870,13 @@ export function VendorExpiryManagement({ vendorId, vendorData, onBack }: VendorE
                   />
                 </div>
                 <div className="flex gap-4">
-                  <Button
+                  <button
                     type="submit"
                     className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
                   >
                     Record Disposal
-                  </Button>
-                  <Button
+                  </button>
+                  <button
                     type="button"
                     onClick={() => {
                       setShowDisposal(false);
@@ -877,7 +885,7 @@ export function VendorExpiryManagement({ vendorId, vendorData, onBack }: VendorE
                     className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
                   >
                     Cancel
-                  </Button>
+                  </button>
                 </div>
               </form>
             </div>

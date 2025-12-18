@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { X, FileText, Pill, Calendar, Download, AlertCircle, Stethoscope, Clipboard, Activity } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { Button } from '../ui/button';
 
 interface MedicalHistoryModalProps {
   petId: string;
@@ -127,40 +126,49 @@ export function MedicalHistoryModal({ petId, bookingId, petName, vendorId, onClo
                 </p>
               </div>
             </div>
-            <Button onClick={onClose} 
+            <button 
+              onClick={onClose} 
               className="p-2 hover:bg-white/50 rounded-full transition-colors text-blue-700"
             >
               <X className="w-6 h-6" />
-            </Button>
+            </button>
           </div>
         </div>
 
         {/* Tabs */}
         <div className="flex border-b border-gray-200 px-6 pt-2 bg-white sticky top-0 z-10">
-          <Button onClick={() => setActiveTab('all')} className={`pb-3 px-4 text-sm font-medium border-b-2 transition-colors ${
+          <button
+            onClick={() => setActiveTab('all')}
+            className={`pb-3 px-4 text-sm font-medium border-b-2 transition-colors ${
               activeTab === 'all' ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
             All Records
-          </Button>
-          <Button onClick={() => setActiveTab('prescriptions')} className={`pb-3 px-4 text-sm font-medium border-b-2 transition-colors ${
+          </button>
+          <button
+            onClick={() => setActiveTab('prescriptions')}
+            className={`pb-3 px-4 text-sm font-medium border-b-2 transition-colors ${
               activeTab === 'prescriptions' ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
             Prescriptions
-          </Button>
-          <Button onClick={() => setActiveTab('reports')} className={`pb-3 px-4 text-sm font-medium border-b-2 transition-colors ${
+          </button>
+          <button
+            onClick={() => setActiveTab('reports')}
+            className={`pb-3 px-4 text-sm font-medium border-b-2 transition-colors ${
               activeTab === 'reports' ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
             Labs & Uploads
-          </Button>
-          <Button onClick={() => setActiveTab('notes')} className={`pb-3 px-4 text-sm font-medium border-b-2 transition-colors ${
+          </button>
+          <button
+            onClick={() => setActiveTab('notes')}
+            className={`pb-3 px-4 text-sm font-medium border-b-2 transition-colors ${
               activeTab === 'notes' ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
             Consultation Notes
-          </Button>
+          </button>
         </div>
 
         {/* Content */}

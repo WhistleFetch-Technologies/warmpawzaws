@@ -6,7 +6,6 @@ import { toast } from 'sonner@2.0.3';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { MessageCircle, Send, X, Paperclip, FileText, Video, Phone, Clock } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-// Brand color: #FF8C42
 
 /**
  * 💬 BOOKING CHAT WIDGET

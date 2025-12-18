@@ -5,7 +5,6 @@ import {
 } from 'lucide-react';
 import { Badge } from '../ui/badge';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-// Brand color: #FF8C42
 
 interface Problem {
   problemId: string;

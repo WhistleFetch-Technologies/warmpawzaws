@@ -6,7 +6,6 @@
 import { useEffect, useState } from 'react';
 import { CheckCircle, XCircle, Clock, AlertCircle, RefreshCw } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { Button } from '../ui/button';
 
 interface VendorStatusResponse {
   status: 'pending' | 'approved' | 'rejected' | 'more_info_required' | 'resubmitted' | 'not_found';
@@ -112,12 +111,13 @@ export function VendorStatusChecker({
           </div>
           <h3 className="text-xl text-center mb-2">Error</h3>
           <p className="text-sm text-gray-600 text-center mb-6">{error || 'Unknown error occurred'}</p>
-          <Button onClick={checkStatus}
+          <button
+            onClick={checkStatus}
             className="w-full h-12 bg-[#FF8C42] hover:bg-[#FF7A2E] text-white rounded-xl flex items-center justify-center gap-2"
           >
             <RefreshCw className="w-5 h-5" />
             Retry
-          </Button>
+          </button>
         </div>
       </div>
     );
@@ -206,11 +206,12 @@ export function VendorStatusChecker({
             <p>Approved on {new Date(status.approvedAt || '').toLocaleDateString()}</p>
             <p className="mt-1">Redirecting to dashboard...</p>
           </div>
-          <Button onClick={() => onNavigateToDashboard?.()}
+          <button
+            onClick={() => onNavigateToDashboard?.()}
             className="w-full h-12 bg-[#FF8C42] hover:bg-[#FF7A2E] text-white rounded-xl"
           >
             Go to Dashboard
-          </Button>
+          </button>
         </div>
       </div>
     );
@@ -275,11 +276,12 @@ export function VendorStatusChecker({
               </div>
             )}
           </div>
-          <Button onClick={() => status.vendorId && onNavigateToEdit?.(status.vendorId)}
+          <button
+            onClick={() => status.vendorId && onNavigateToEdit?.(status.vendorId)}
             className="w-full h-12 bg-[#FF8C42] hover:bg-[#FF7A2E] text-white rounded-xl mb-3"
           >
             Edit & Resubmit Application
-          </Button>
+          </button>
           <p className="text-xs text-center text-gray-500">
             Application ID: {status.applicationId}
           </p>

@@ -175,9 +175,9 @@ export function VendorServiceManagementComplete({
         {/* Header */}
         <div className="p-4 bg-white border-b sticky top-0 z-10">
           <div className="flex items-center gap-3 mb-3">
-            <Button onClick={onBack} className="w-8 h-8 flex items-center justify-center">
+            <button onClick={onBack} className="w-8 h-8 flex items-center justify-center">
               <ArrowLeft className="w-5 h-5 text-gray-700" />
-            </Button>
+            </button>
             <div className="flex-1">
               <h1 className="font-semibold text-gray-900">Service Management</h1>
               <p className="text-xs text-gray-500">{vendorData?.businessName || vendorData?.fullName}</p>
@@ -217,7 +217,7 @@ export function VendorServiceManagementComplete({
             ]
               .filter(type => Array.isArray(allowedServiceStyles) && allowedServiceStyles.includes(type.value))
               .map(type => (
-                <Button
+                <button
                   key={type.value}
                   onClick={() => setSelectedServiceStyle(type.value)}
                   className={`w-full p-4 rounded-xl border-2 transition-all text-left ${type.color}`}
@@ -234,7 +234,7 @@ export function VendorServiceManagementComplete({
                       </svg>
                     </div>
                   </div>
-                </Button>
+                </button>
               ))}
           </div>
 

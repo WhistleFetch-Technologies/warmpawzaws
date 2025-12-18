@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-// Brand color: #FF8C42
 import { ArrowLeft, Calendar, Clock, MapPin, Star, Copy, Check, Navigation, Route, Timer, TrendingUp, Play } from 'lucide-react';
 import { Button } from '../ui/button';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';

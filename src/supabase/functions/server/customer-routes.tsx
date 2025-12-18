@@ -1221,44 +1221,6 @@ app.post("/make-server-3dd53475/booking/:bookingId/cancel", async (c) => {
     booking.cancelledBy = cancelledBy;
     booking.updatedAt = new Date().toISOString();
     
-    // ✅ FIX: Trigger refund if payment was made
-    if (booking.paymentStatus === 'paid' && (booking.amount > 0 || booking.totalAmount > 0)) {
-      booking.refundStatus = 'pending';
-      const refundAmount = booking.amount || booking.totalAmount || 0;
-      
-      // Call refund processor endpoint
-      try {
-        const refundResponse = await fetch(
-          `${c.req.url.split('/make-server-3dd53475')[0]}/make-server-3dd53475/refunds/process`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              bookingId,
-              amount: refundAmount,
-              reason: reason || `Cancelled by ${cancelledBy}`
-            })
-          }
-        );
-        
-        if (refundResponse.ok) {
-          const refundData = await refundResponse.json();
-          booking.refundId = refundData.refundId;
-          booking.refundStatus = refundData.status || 'processing';
-          booking.refundAmount = refundAmount;
-          console.log(`✅ Refund initiated for booking ${bookingId}: ${refundData.refundId}`);
-        } else {
-          console.error(`❌ Refund processing failed for booking ${bookingId}`);
-          booking.refundStatus = 'pending'; // Will retry via webhook
-        }
-      } catch (refundError) {
-        console.error(`❌ Error initiating refund for booking ${bookingId}:`, refundError);
-        booking.refundStatus = 'pending'; // Will retry later
-      }
-    }
-    
     await kv.set(`booking:${bookingId}`, booking);
     
     // Update customer stats

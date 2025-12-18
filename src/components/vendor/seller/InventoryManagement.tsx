@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from 'react';
 import { Package, AlertTriangle, TrendingUp, Search, Download, Edit2, Check, Upload } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
 import { toast } from 'sonner@2.0.3';
-import { Button } from '../../ui/button';
 
 interface InventoryManagementProps {
   sellerId: string;
@@ -268,18 +267,20 @@ export function InventoryManagement({ sellerId }: InventoryManagementProps) {
             accept=".csv"
             className="hidden"
           />
-          <Button onClick={() => fileInputRef.current?.click()}
+          <button 
+            onClick={() => fileInputRef.current?.click()}
             className="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
           >
             <Upload className="w-5 h-5" />
             Import CSV
-          </Button>
-          <Button onClick={handleExportCSV}
+          </button>
+          <button 
+            onClick={handleExportCSV}
             className="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
           >
             <Download className="w-5 h-5" />
             Export CSV
-          </Button>
+          </button>
         </div>
       </div>
 
@@ -389,11 +390,12 @@ export function InventoryManagement({ sellerId }: InventoryManagementProps) {
                             className="w-20 px-2 py-1 border border-gray-300 rounded text-center focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
                             autoFocus
                           />
-                          <Button onClick={() => handleUpdateStock(item.productId)}
+                          <button
+                            onClick={() => handleUpdateStock(item.productId)}
                             className="p-1 bg-green-50 text-green-600 rounded hover:bg-green-100"
                           >
                             <Check className="w-4 h-4" />
-                          </Button>
+                          </button>
                         </div>
                       ) : (
                         <span className={`font-semibold ${
@@ -434,13 +436,15 @@ export function InventoryManagement({ sellerId }: InventoryManagementProps) {
                     </td>
                     <td className="px-6 py-4 text-center">
                       {editingStock === item.productId ? (
-                        <Button onClick={() => setEditingStock(null)}
+                        <button
+                          onClick={() => setEditingStock(null)}
                           className="text-gray-600 hover:text-gray-800 text-sm"
                         >
                           Cancel
-                        </Button>
+                        </button>
                       ) : (
-                        <Button onClick={() => {
+                        <button
+                          onClick={() => {
                             setEditingStock(item.productId);
                             setStockValues({ ...stockValues, [item.productId]: item.stock });
                           }}
@@ -448,7 +452,7 @@ export function InventoryManagement({ sellerId }: InventoryManagementProps) {
                         >
                           <Edit2 className="w-4 h-4" />
                           Update
-                        </Button>
+                        </button>
                       )}
                     </td>
                   </tr>

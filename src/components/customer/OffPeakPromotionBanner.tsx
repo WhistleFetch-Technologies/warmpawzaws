@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { Clock, Tag, TrendingDown, X } from 'lucide-react';
 import { Card } from '../ui/card';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-// Brand color: #FF8C42
 
 interface OffPeakPromotionBannerProps {
   serviceType?: string;

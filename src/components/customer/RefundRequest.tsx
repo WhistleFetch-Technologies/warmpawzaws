@@ -209,7 +209,7 @@ export function RefundRequest({ bookingId, onSuccess, onCancel }: RefundRequestP
             <Button
               onClick={handleSubmit}
               disabled={submitting || !reason.trim()}
-              className="flex-1 bg-red-600 hover:bg-[#FF8C42] red-700"
+              className="flex-1 bg-red-600 hover:bg-red-700"
             >
               {submitting ? 'Submitting...' : 'Submit Cancellation Request'}
             </Button>

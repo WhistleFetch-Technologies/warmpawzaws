@@ -285,9 +285,9 @@ export function FacilityManagement({ vendorId, vendorData, onBack }: FacilityMan
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-gray-200 p-4 z-10">
           <div className="flex items-center gap-3">
-            <Button onClick={onBack}>
+            <button onClick={onBack}>
               <ArrowLeft className="w-6 h-6 text-gray-600" />
-            </Button>
+            </button>
             <div className="flex-1">
               <h1 className="font-semibold text-gray-900">Facility Photos & Description</h1>
               <p className="text-xs text-gray-500">Upload up to {MAX_PHOTOS} photos</p>
@@ -362,11 +362,12 @@ export function FacilityManagement({ vendorId, vendorData, onBack }: FacilityMan
                     alt={`Facility photo ${index + 1}`}
                     className="w-full h-full object-cover"
                   />
-                  <Button onClick={() => removeExistingPhoto(index)}
+                  <button
+                    onClick={() => removeExistingPhoto(index)}
                     className="absolute top-2 right-2 w-7 h-7 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
                   >
                     <X className="w-4 h-4" />
-                  </Button>
+                  </button>
                   <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/50 to-transparent p-2">
                     <span className="text-xs text-white">Saved</span>
                   </div>
@@ -388,11 +389,12 @@ export function FacilityManagement({ vendorId, vendorData, onBack }: FacilityMan
                     alt={`New photo ${index + 1}`}
                     className="w-full h-full object-cover"
                   />
-                  <Button onClick={() => removePhoto(index)}
+                  <button
+                    onClick={() => removePhoto(index)}
                     className="absolute top-2 right-2 w-7 h-7 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
                   >
                     <X className="w-4 h-4" />
-                  </Button>
+                  </button>
                   <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-orange-500/80 to-transparent p-2">
                     <span className="text-xs text-white font-medium">Ready to upload</span>
                   </div>
@@ -481,7 +483,7 @@ export function FacilityManagement({ vendorId, vendorData, onBack }: FacilityMan
                     const IconComponent = amenity.icon;
 
                     return (
-                      <Button
+                      <button
                         key={amenity.id}
                         onClick={() => toggleAmenity(amenity.id)}
                         className={`flex items-center gap-3 p-3 rounded-lg border-2 transition-all text-left ${
@@ -510,7 +512,7 @@ export function FacilityManagement({ vendorId, vendorData, onBack }: FacilityMan
                         {isSelected && (
                           <Check className="w-5 h-5 text-[#FF8C42] flex-shrink-0" />
                         )}
-                      </Button>
+                      </button>
                     );
                   })}
                 </div>

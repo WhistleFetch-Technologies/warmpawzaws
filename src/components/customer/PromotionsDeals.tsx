@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Tag, Calendar, ChevronRight, X, Sparkles } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-// Brand color: #FF8C42
 
 /**
  * 🎯 CUSTOMER MARKETING INTEGRATION - Promotions & Deals

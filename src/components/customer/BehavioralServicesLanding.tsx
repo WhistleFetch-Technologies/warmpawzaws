@@ -17,7 +17,6 @@ import {
   Heart
 } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-// Brand color: #FF8C42
 
 interface BehavioralServicesLandingProps {
   onBack: () => void;

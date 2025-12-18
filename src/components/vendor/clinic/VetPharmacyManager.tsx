@@ -497,9 +497,9 @@ export function VetPharmacyManager({ vendorId, vendorData, onBack, embedded }: V
         {!embedded && (
           <div className="p-4 bg-gradient-to-r from-teal-600 to-teal-700 text-white sticky top-0 z-10">
             <div className="flex items-center gap-3 mb-4">
-              <Button onClick={onBack} className="p-2 hover:bg-teal-500 rounded-full transition-colors">
+              <button onClick={onBack} className="p-2 hover:bg-teal-500 rounded-full transition-colors">
                 <ArrowLeft className="w-5 h-5" />
-              </Button>
+              </button>
               <div>
                 <h1 className="font-semibold text-lg">Pharmacy Management</h1>
                 <p className="text-sm text-teal-100">{vendorData?.businessName}</p>
@@ -508,7 +508,9 @@ export function VetPharmacyManager({ vendorId, vendorData, onBack, embedded }: V
 
             {/* Tab Navigation */}
             <div className="flex gap-2">
-              <Button onClick={() => setActiveTab('prescriptions')} className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
+              <button
+                onClick={() => setActiveTab('prescriptions')}
+                className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
                   activeTab === 'prescriptions'
                     ? 'bg-white text-teal-700'
                     : 'bg-teal-500 text-white hover:bg-teal-400'
@@ -516,8 +518,10 @@ export function VetPharmacyManager({ vendorId, vendorData, onBack, embedded }: V
               >
                 <FileText className="w-4 h-4 inline mr-1" />
                 Prescriptions
-              </Button>
-              <Button onClick={() => setActiveTab('inventory')} className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
+              </button>
+              <button
+                onClick={() => setActiveTab('inventory')}
+                className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
                   activeTab === 'inventory'
                     ? 'bg-white text-teal-700'
                     : 'bg-teal-500 text-white hover:bg-teal-400'
@@ -525,7 +529,7 @@ export function VetPharmacyManager({ vendorId, vendorData, onBack, embedded }: V
               >
                 <Package className="w-4 h-4 inline mr-1" />
                 Inventory
-              </Button>
+              </button>
             </div>
           </div>
         )}

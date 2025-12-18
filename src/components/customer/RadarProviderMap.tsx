@@ -3,7 +3,6 @@ import { motion, AnimatePresence } from 'motion/react';
 import { MapPin, Navigation, User, Briefcase, Star, Clock } from 'lucide-react';
 import { Button } from '../ui/button';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-// Brand color: #FF8C42
 
 interface Provider {
   id: string;

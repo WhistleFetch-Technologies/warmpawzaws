@@ -42,7 +42,6 @@ import {
   MapPin
 } from 'lucide-react';
 import { Badge } from '../ui/badge';
-import { Button } from '../ui/button';
 import { VendorNotificationModal } from './VendorNotificationModal';
 import { CommunicationHub } from './CommunicationHub';
 import { AppointmentDetailModal } from './AppointmentDetailModal';
@@ -437,17 +436,15 @@ export function VendorDashboard({
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="ghost" size="icon" onClick={() => fetchDashboardData(true)} disabled={refreshing}>
+              <button onClick={() => fetchDashboardData(true)} disabled={refreshing}>
                 <RefreshCw className={`w-5 h-5 text-gray-400 ${refreshing ? 'animate-spin' : ''}`} />
-              </Button>
+              </button>
               
               {capabilities.chat && (
                 <iconTheme.actions.messages className="w-5 h-5 text-gray-400" />
               )}
 
-              <Button 
-                variant="ghost"
-                size="icon"
+              <button 
                 className="relative"
                 onClick={() => setNotificationModalOpen(true)}
               >
@@ -455,7 +452,7 @@ export function VendorDashboard({
                 {notifications.filter(n => !n.isRead).length > 0 && (
                   <div className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
                 )}
-              </Button>
+              </button>
             </div>
           </div>
 
@@ -489,14 +486,13 @@ export function VendorDashboard({
           <div className="flex flex-wrap gap-3">
             {/* Staff Management - For Clinics/Hospitals */}
             {onNavigateToStaffManagement && (capabilities.staff_management || VendorUtils.isHealthcareProvider(vendorData?.roleId)) && (
-              <Button
-                variant="outline"
+              <button
                 onClick={onNavigateToStaffManagement}
                 className="flex-1 min-w-[140px] bg-white border-2 border-[#FF8C42] text-[#FF8C42] rounded-xl p-4 flex flex-col items-center justify-center hover:bg-[#FF8C42] hover:text-white transition-colors group text-center"
               >
                 <Users className="w-6 h-6 mb-2" />
                 <span className="font-semibold text-sm">Manage Staff</span>
-              </Button>
+              </button>
             )}
             
             {/* ✅ FIX: Center Profile - Use capability-based check with fallbacks */}
@@ -506,26 +502,24 @@ export function VendorDashboard({
               vendorData?.serviceStyle === 'at_center' ||  // ✅ FALLBACK: Check service style
               vendorData?.serviceStyles?.includes('at_center')  // ✅ FALLBACK: Check if array includes at_center
             ) && (
-              <Button
-                variant="outline"
+              <button
                 onClick={onNavigateToCenterProfile}
                 className="flex-1 min-w-[140px] bg-white border-2 border-purple-500 text-purple-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-purple-500 hover:text-white transition-colors group text-center"
               >
                 <Building2 className="w-6 h-6 mb-2" />
                 <span className="font-semibold text-sm">Center Profile</span>
-              </Button>
+              </button>
             )}
             
             {/* Inventory/Store - For Pet Stores/Pharmacies */}
             {onNavigateToBusinessHub && (capabilities.inventory || VendorUtils.isStore(vendorData?.roleId)) && (
-              <Button
-                variant="outline"
+              <button
                 onClick={onNavigateToBusinessHub}
                 className="flex-1 min-w-[140px] bg-white border-2 border-blue-500 text-blue-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-blue-500 hover:text-white transition-colors group text-center"
               >
                 <Package className="w-6 h-6 mb-2" />
                 <span className="font-semibold text-sm">Inventory & Store</span>
-              </Button>
+              </button>
             )}
           </div>
         </div>
@@ -541,8 +535,7 @@ export function VendorDashboard({
           <div className="p-4 border-b border-gray-100">
             <h2 className="font-semibold text-gray-900 mb-3">Vet Center Services</h2>
             <div className="grid grid-cols-3 gap-2">
-              <Button
-                variant="outline"
+              <button
                 onClick={() => onNavigateToSpecializedServices?.()}
                 className="bg-teal-50 border border-teal-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-teal-100 transition-colors"
               >
@@ -550,10 +543,9 @@ export function VendorDashboard({
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
                 </svg>
                 <span className="text-xs font-medium text-gray-900">Pharmacy</span>
-              </Button>
+              </button>
               
-              <Button
-                variant="outline"
+              <button
                 onClick={() => onNavigateToSpecializedServices?.()}
                 className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-blue-100 transition-colors"
               >
@@ -561,10 +553,9 @@ export function VendorDashboard({
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
                 </svg>
                 <span className="text-xs font-medium text-gray-900">Diagnostics</span>
-              </Button>
+              </button>
               
-              <Button
-                variant="outline"
+              <button
                 onClick={() => onNavigateToSpecializedServices?.()}
                 className="bg-red-50 border border-red-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-red-100 transition-colors"
               >
@@ -572,7 +563,7 @@ export function VendorDashboard({
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                 </svg>
                 <span className="text-xs font-medium text-gray-900">Ambulance</span>
-              </Button>
+              </button>
             </div>
             <p className="text-xs text-gray-500 mt-2 text-center">
               Manage specialized vet services, equipment, and protocols
@@ -590,226 +581,245 @@ export function VendorDashboard({
             <div className="grid grid-cols-3 gap-2">
               {/* Gallery Management */}
               {onNavigateToGallery && capabilities.gallery && (
-                <Button
-                  variant="outline"
+                <button
                   onClick={onNavigateToGallery}
                   className="bg-pink-50 border border-pink-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-pink-100 transition-colors"
                 >
                   <Camera className="w-6 h-6 text-pink-600 mb-1" />
                   <span className="text-xs font-medium text-gray-900">Gallery</span>
-                </Button>
+                </button>
               )}
               
               {/* Portfolio Management */}
               {onNavigateToPortfolio && capabilities.portfolio && (
-                <Button onClick={onNavigateToPortfolio}
+                <button
+                  onClick={onNavigateToPortfolio}
                   className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-indigo-100 transition-colors"
                 >
                   <Briefcase className="w-6 h-6 text-indigo-600 mb-1" />
                   <span className="text-xs font-medium text-gray-900">Portfolio</span>
-                </Button>
+                </button>
               )}
               
               {/* CCTV Access */}
               {onNavigateToCCTV && capabilities.cctv_access && (
-                <Button onClick={onNavigateToCCTV}
+                <button
+                  onClick={onNavigateToCCTV}
                   className="bg-gray-50 border border-gray-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-gray-100 transition-colors"
                 >
                   <Monitor className="w-6 h-6 text-gray-600 mb-1" />
                   <span className="text-xs font-medium text-gray-900">CCTV</span>
-                </Button>
+                </button>
               )}
               
               {/* Controlled Substances */}
               {onNavigateToControlledSubstances && capabilities.controlled_substances && (
-                <Button onClick={onNavigateToControlledSubstances}
+                <button
+                  onClick={onNavigateToControlledSubstances}
                   className="bg-red-50 border border-red-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-red-100 transition-colors"
                 >
                   <Pill className="w-6 h-6 text-red-600 mb-1" />
                   <span className="text-xs font-medium text-gray-900">Substances</span>
-                </Button>
+                </button>
               )}
               
               {/* Prescription Builder */}
               {onNavigateToPrescription && capabilities.prescription && (
-                <Button onClick={onNavigateToPrescription}
+                <button
+                  onClick={onNavigateToPrescription}
                   className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-blue-100 transition-colors"
                 >
                   <FileText className="w-6 h-6 text-blue-600 mb-1" />
                   <span className="text-xs font-medium text-gray-900">Rx</span>
-                </Button>
+                </button>
               )}
               
               {/* Progress Tracking */}
               {onNavigateToProgressTracking && capabilities.progress_tracking && (
-                <Button onClick={onNavigateToProgressTracking}
+                <button
+                  onClick={onNavigateToProgressTracking}
                   className="bg-green-50 border border-green-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-green-100 transition-colors"
                 >
                   <TrendingUp className="w-6 h-6 text-green-600 mb-1" />
                   <span className="text-xs font-medium text-gray-900">Progress</span>
-                </Button>
+                </button>
               )}
               
               {/* Package Management */}
               {onNavigateToPackages && capabilities.package_management && (
-                <Button onClick={onNavigateToPackages}
+                <button
+                  onClick={onNavigateToPackages}
                   className="bg-purple-50 border border-purple-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-purple-100 transition-colors"
                 >
                   <Gift className="w-6 h-6 text-purple-600 mb-1" />
                   <span className="text-xs font-medium text-gray-900">Packages</span>
-                </Button>
+                </button>
               )}
               
               {/* Custom Services */}
               {onNavigateToCustomServices && capabilities.custom_services && (
-                <Button onClick={onNavigateToCustomServices}
+                <button
+                  onClick={onNavigateToCustomServices}
                   className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-yellow-100 transition-colors"
                 >
                   <Plus className="w-6 h-6 text-yellow-600 mb-1" />
                   <span className="text-xs font-medium text-gray-900">Custom</span>
-                </Button>
+                </button>
               )}
               
               {/* Adoption Management */}
               {onNavigateToAdoptionSystem && capabilities.adoption && (
-                <Button onClick={onNavigateToAdoptionSystem}
+                <button
+                  onClick={onNavigateToAdoptionSystem}
                   className="bg-rose-50 border border-rose-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-rose-100 transition-colors"
                 >
                   <Heart className="w-6 h-6 text-rose-600 mb-1" />
                   <span className="text-xs font-medium text-gray-900">Adoption</span>
-                </Button>
+                </button>
               )}
               
               {/* Memorial Services */}
               {onNavigateToMemorialServices && capabilities.memorial && (
-                <Button onClick={onNavigateToMemorialServices}
+                <button
+                  onClick={onNavigateToMemorialServices}
                   className="bg-purple-50 border border-purple-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-purple-100 transition-colors"
                 >
                   <Heart className="w-6 h-6 text-purple-600 mb-1" />
                   <span className="text-xs font-medium text-gray-900">Memorial</span>
-                </Button>
+                </button>
               )}
               
               {/* Expiry Management */}
               {onNavigateToExpiryManagement && capabilities.expiry_management && (
-                <Button onClick={onNavigateToExpiryManagement}
+                <button
+                  onClick={onNavigateToExpiryManagement}
                   className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-amber-100 transition-colors"
                 >
                   <svg className="w-6 h-6 text-amber-600 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                   <span className="text-xs font-medium text-gray-900">Expiry</span>
-                </Button>
+                </button>
               )}
               
               {/* Donation Management */}
               {onNavigateToDonationManagement && capabilities.donation && (
-                <Button onClick={onNavigateToDonationManagement}
+                <button
+                  onClick={onNavigateToDonationManagement}
                   className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-emerald-100 transition-colors"
                 >
                   <svg className="w-6 h-6 text-emerald-600 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                   <span className="text-xs font-medium text-gray-900">Donations</span>
-                </Button>
+                </button>
               )}
               
               {/* Event Management */}
               {onNavigateToEventManagement && capabilities.events && (
-                <Button onClick={onNavigateToEventManagement}
+                <button
+                  onClick={onNavigateToEventManagement}
                   className="bg-sky-50 border border-sky-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-sky-100 transition-colors"
                 >
                   <svg className="w-6 h-6 text-sky-600 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
                   <span className="text-xs font-medium text-gray-900">Events</span>
-                </Button>
+                </button>
               )}
               
               {/* Patient Monitoring */}
               {onNavigateToPatientMonitoring && capabilities.patient_monitoring && (
-                <Button onClick={onNavigateToPatientMonitoring}
+                <button
+                  onClick={onNavigateToPatientMonitoring}
                   className="bg-red-50 border border-red-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-red-100 transition-colors"
                 >
                   <Activity className="w-6 h-6 text-red-600 mb-1" />
                   <span className="text-xs font-medium text-gray-900">Monitor</span>
-                </Button>
+                </button>
               )}
               
               {/* ✅ NEW: Prescription Verification */}
               {onNavigateToPrescriptionVerification && capabilities.prescription_verification && (
-                <Button onClick={onNavigateToPrescriptionVerification}
+                <button
+                  onClick={onNavigateToPrescriptionVerification}
                   className="bg-teal-50 border border-teal-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-teal-100 transition-colors"
                 >
                   <FileText className="w-6 h-6 text-teal-600 mb-1" />
                   <span className="text-xs font-medium text-gray-900">Rx Verify</span>
-                </Button>
+                </button>
               )}
               
               {/* ✅ NEW: Delivery Management */}
               {onNavigateToDeliveryManagement && capabilities.delivery && (
-                <Button onClick={onNavigateToDeliveryManagement}
+                <button
+                  onClick={onNavigateToDeliveryManagement}
                   className="bg-orange-50 border border-orange-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-orange-100 transition-colors"
                 >
                   <Truck className="w-6 h-6 text-orange-600 mb-1" />
                   <span className="text-xs font-medium text-gray-900">Delivery</span>
-                </Button>
+                </button>
               )}
               
               {/* ✅ NEW: Diet Charts */}
               {onNavigateToDietCharts && capabilities.diet_charts && (
-                <Button onClick={onNavigateToDietCharts}
+                <button
+                  onClick={onNavigateToDietCharts}
                   className="bg-lime-50 border border-lime-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-lime-100 transition-colors"
                 >
                   <svg className="w-6 h-6 text-lime-600 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
                   <span className="text-xs font-medium text-gray-900">Diet</span>
-                </Button>
+                </button>
               )}
               
               {/* ✅ NEW: Counseling */}
               {onNavigateToCounseling && capabilities.counseling && (
-                <Button onClick={onNavigateToCounseling}
+                <button
+                  onClick={onNavigateToCounseling}
                   className="bg-violet-50 border border-violet-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-violet-100 transition-colors"
                 >
                   <svg className="w-6 h-6 text-violet-600 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2v4l-4-4H9a1.994 1.994 0 01-1.414-.586m0 0L11 14h4a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2v4l.586-.586z" />
                   </svg>
                   <span className="text-xs font-medium text-gray-900">Counsel</span>
-                </Button>
+                </button>
               )}
               
               {/* ✅ NEW: Policy Management */}
               {onNavigateToPolicyManagement && capabilities.policy_management && (
-                <Button onClick={onNavigateToPolicyManagement}
+                <button
+                  onClick={onNavigateToPolicyManagement}
                   className="bg-cyan-50 border border-cyan-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-cyan-100 transition-colors"
                 >
                   <Shield className="w-6 h-6 text-cyan-600 mb-1" />
                   <span className="text-xs font-medium text-gray-900">Policies</span>
-                </Button>
+                </button>
               )}
               
               {/* ✅ NEW: Distance Pricing */}
               {onNavigateToDistancePricing && capabilities.distance_pricing && (
-                <Button onClick={onNavigateToDistancePricing}
+                <button
+                  onClick={onNavigateToDistancePricing}
                   className="bg-fuchsia-50 border border-fuchsia-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-fuchsia-100 transition-colors"
                 >
                   <MapPin className="w-6 h-6 text-fuchsia-600 mb-1" />
                   <span className="text-xs font-medium text-gray-900">Pricing</span>
-                </Button>
+                </button>
               )}
               
               {/* Cafe Menu Management */}
               {onNavigateToCafeMenuManagement && capabilities.menu && (
-                <Button onClick={onNavigateToCafeMenuManagement}
+                <button
+                  onClick={onNavigateToCafeMenuManagement}
                   className="bg-orange-50 border border-orange-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-orange-100 transition-colors"
                 >
                   <svg className="w-6 h-6 text-orange-600 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
                   </svg>
                   <span className="text-xs font-medium text-gray-900">Menu</span>
-                </Button>
+                </button>
               )}
             </div>
           </div>
@@ -818,12 +828,18 @@ export function VendorDashboard({
         {/* Stats Dashboard - Conditionally Rendered */}
         <div className="p-4 border-b border-gray-100">
           <div className="flex gap-2 mb-3">
-             <Button onClick={() => setActiveTab('today')} className={`px-4 py-1.5 rounded-full text-sm ${activeTab === 'today' ? 'bg-[#FF8C42] text-white' : 'bg-gray-100 text-gray-600'}`}
-            >Today</Button>
-            <Button onClick={() => setActiveTab('week')} className={`px-4 py-1.5 rounded-full text-sm ${activeTab === 'week' ? 'bg-[#FF8C42] text-white' : 'bg-gray-100 text-gray-600'}`}
-            >Week</Button>
-            <Button onClick={() => setActiveTab('month')} className={`px-4 py-1.5 rounded-full text-sm ${activeTab === 'month' ? 'bg-[#FF8C42] text-white' : 'bg-gray-100 text-gray-600'}`}
-            >Month</Button>
+             <button
+              onClick={() => setActiveTab('today')}
+              className={`px-4 py-1.5 rounded-full text-sm ${activeTab === 'today' ? 'bg-[#FF8C42] text-white' : 'bg-gray-100 text-gray-600'}`}
+            >Today</button>
+            <button
+              onClick={() => setActiveTab('week')}
+              className={`px-4 py-1.5 rounded-full text-sm ${activeTab === 'week' ? 'bg-[#FF8C42] text-white' : 'bg-gray-100 text-gray-600'}`}
+            >Week</button>
+            <button
+              onClick={() => setActiveTab('month')}
+              className={`px-4 py-1.5 rounded-full text-sm ${activeTab === 'month' ? 'bg-[#FF8C42] text-white' : 'bg-gray-100 text-gray-600'}`}
+            >Month</button>
           </div>
 
           <div className="grid grid-cols-3 gap-3">
@@ -870,20 +886,20 @@ export function VendorDashboard({
             
             {/* Appointment Type Filter */}
             <div className="flex gap-2 mb-3 overflow-x-auto pb-2">
-              <Button onClick={() => setAppointmentTypeFilter('all')} className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${appointmentTypeFilter === 'all' ? 'bg-[#FF8C42] text-white' : 'bg-gray-100 text-gray-600'}`}>All Types</Button>
+              <button onClick={() => setAppointmentTypeFilter('all')} className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${appointmentTypeFilter === 'all' ? 'bg-[#FF8C42] text-white' : 'bg-gray-100 text-gray-600'}`}>All Types</button>
               
-              <Button onClick={() => setAppointmentTypeFilter('clinic')} className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${appointmentTypeFilter === 'clinic' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-600'}`}>
+              <button onClick={() => setAppointmentTypeFilter('clinic')} className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${appointmentTypeFilter === 'clinic' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-600'}`}>
                 <Stethoscope className="w-3.5 h-3.5" /> Clinic
-              </Button>
+              </button>
               
-              <Button onClick={() => setAppointmentTypeFilter('home')} className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${appointmentTypeFilter === 'home' ? 'bg-green-500 text-white' : 'bg-gray-100 text-gray-600'}`}>
+              <button onClick={() => setAppointmentTypeFilter('home')} className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${appointmentTypeFilter === 'home' ? 'bg-green-500 text-white' : 'bg-gray-100 text-gray-600'}`}>
                 <Home className="w-3.5 h-3.5" /> Home
-              </Button>
+              </button>
               
               {capabilities.tele && (
-                <Button onClick={() => setAppointmentTypeFilter('tele')} className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${appointmentTypeFilter === 'tele' ? 'bg-purple-500 text-white' : 'bg-gray-100 text-gray-600'}`}>
+                <button onClick={() => setAppointmentTypeFilter('tele')} className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${appointmentTypeFilter === 'tele' ? 'bg-purple-500 text-white' : 'bg-gray-100 text-gray-600'}`}>
                   <Monitor className="w-3.5 h-3.5" /> Tele
-                </Button>
+                </button>
               )}
             </div>
 
@@ -896,7 +912,8 @@ export function VendorDashboard({
                 <p className="text-sm text-gray-500 mb-4 max-w-[250px] mx-auto">
                   Share your profile with customers to start getting bookings!
                 </p>
-                <Button onClick={async () => {
+                <button 
+                  onClick={async () => {
                     const shareData = {
                       title: vendor?.businessName || 'My Pet Service',
                       text: `Book your pet appointment with ${vendor?.businessName || 'us'} on Warmpawz!`,
@@ -918,12 +935,12 @@ export function VendorDashboard({
                 >
                   <RefreshCw className="w-4 h-4" />
                   Share Profile
-                </Button>
+                </button>
               </div>
             ) : (
               <>
                 <div className="flex items-center justify-end mb-2">
-                  <Button className="text-sm text-[#FF8C42]" onClick={onNavigateToBookingManagement}>View All →</Button>
+                  <button className="text-sm text-[#FF8C42]" onClick={onNavigateToBookingManagement}>View All →</button>
                 </div>
                 <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
                   {todaySchedule
@@ -983,21 +1000,24 @@ export function VendorDashboard({
                                 <div className="text-xs font-medium text-[#FF8C42] mt-1 mb-2">{appointment.serviceName}</div>
                                 
                                  <div className="flex gap-2">
-                                   <Button onClick={() => {
+                                   <button 
+                                     onClick={() => {
                                         setSelectedAppointment(appointment);
                                         setAppointmentDetailModalOpen(true);
                                      }}
                                      className="flex-1 py-1.5 px-3 bg-gray-100 text-gray-700 rounded-lg text-xs font-medium flex items-center justify-center gap-1"
                                    >
                                       Details
-                                   </Button>
-                                   <Button onClick={() => window.location.href = `tel:${appointment.customerPhone}`}
+                                   </button>
+                                   <button 
+                                     onClick={() => window.location.href = `tel:${appointment.customerPhone}`}
                                      className="flex-1 py-1.5 px-3 bg-blue-50 text-blue-700 rounded-lg text-xs font-medium flex items-center justify-center gap-1"
                                    >
                                       <Phone className="w-3.5 h-3.5" /> Call
-                                   </Button>
+                                   </button>
                                    {capabilities.chat && (
-                                     <Button onClick={() => {
+                                     <button 
+                                       onClick={() => {
                                           setSelectedAppointment(appointment);
                                           setCommunicationMode('chat');
                                        }}
@@ -1007,7 +1027,7 @@ export function VendorDashboard({
                                         {appointment.hasUnreadMessages && (
                                           <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-pulse" />
                                         )}
-                                     </Button>
+                                     </button>
                                    )}
                                    {/* TELE-HEALTH DIRECT JOIN */}
                                    {(serviceType === 'tele' || serviceType === 'teleconsultation') && (
@@ -1040,15 +1060,16 @@ export function VendorDashboard({
               {capabilities.catalog && !capabilities.booking ? 'Your Products' : 'Your Services'}
             </h2>
             <div className="flex items-center justify-center mb-2">
-              <Button className="text-sm text-[#FF8C42]" onClick={onNavigateToServiceManagement}>See All →</Button>
+              <button className="text-sm text-[#FF8C42]" onClick={onNavigateToServiceManagement}>See All →</button>
             </div>
             <div className="flex gap-2 overflow-x-auto pb-2 justify-center">
-              <Button onClick={onNavigateToServiceManagement}
+              <button 
+                onClick={onNavigateToServiceManagement}
                 className="flex-shrink-0 w-16 h-16 bg-purple-100 rounded-xl flex flex-col items-center justify-center hover:bg-purple-200 transition-colors"
               >
                 <Plus className="w-6 h-6 text-purple-600 mb-1" />
                 <span className="text-xs">Add</span>
-              </Button>
+              </button>
               {Array.isArray(services) && services.slice(0, 4).map((service) => (
                 <div key={service.serviceId} className="flex-shrink-0 w-16 h-16 bg-blue-100 rounded-xl flex flex-col items-center justify-center">
                   {capabilities.catalog && !capabilities.booking ? (
@@ -1068,10 +1089,10 @@ export function VendorDashboard({
           <div className="p-4 border-b border-gray-100">
             <div className="flex items-center justify-between mb-3">
               <h2 className="font-semibold text-gray-900">Watchlisted</h2>
-              <Button className="flex items-center gap-1 text-sm text-[#FF8C42]">
+              <button className="flex items-center gap-1 text-sm text-[#FF8C42]">
                 <Plus className="w-4 h-4" />
                 Add visit
-              </Button>
+              </button>
             </div>
             <div className="space-y-2">
               {watchlist.slice(0, 3).map(patient => (
@@ -1102,16 +1123,19 @@ export function VendorDashboard({
         {/* Bottom Navigation */}
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-10">
           <div className="max-w-[430px] mx-auto flex items-center justify-around py-3">
-            <Button onClick={() => setActiveBottomTab('home')} className={`flex flex-col items-center gap-1 ${
+            <button 
+              onClick={() => setActiveBottomTab('home')}
+              className={`flex flex-col items-center gap-1 ${
                 activeBottomTab === 'home' ? 'text-[#FF8C42]' : 'text-gray-400'
               }`}
             >
               <div className="w-6 h-6">🏠</div>
               <span className="text-xs">Home</span>
-            </Button>
+            </button>
             
             {capabilities.booking && (
-              <Button onClick={() => {
+              <button 
+                onClick={() => {
                   onNavigateToBookingManagement?.();
                   setActiveBottomTab('bookings');
                 }}
@@ -1121,18 +1145,21 @@ export function VendorDashboard({
               >
                 <Calendar className="w-6 h-6" />
                 <span className="text-xs">Bookings</span>
-              </Button>
+              </button>
             )}
 
-            <Button onClick={() => setActiveBottomTab('reporting')} className={`flex flex-col items-center gap-1 ${
+            <button 
+              onClick={() => setActiveBottomTab('reporting')}
+              className={`flex flex-col items-center gap-1 ${
                 activeBottomTab === 'reporting' ? 'text-[#FF8C42]' : 'text-gray-400'
               }`}
             >
               <BarChart3 className="w-6 h-6" />
               <span className="text-xs">Reporting</span>
-            </Button>
+            </button>
             
-            <Button onClick={() => {
+            <button 
+              onClick={() => {
                 setActiveBottomTab('settings');
                 // onNavigateToFacilityManagement?.(); // Using internal settings now
               }}
@@ -1142,7 +1169,7 @@ export function VendorDashboard({
             >
               <Settings className="w-6 h-6" />
               <span className="text-xs">Settings</span>
-            </Button>
+            </button>
           </div>
         </div>
 
@@ -1201,9 +1228,9 @@ export function VendorDashboard({
       {activeBottomTab === 'settings' && (
         <div className="fixed inset-0 bg-gray-50 z-20 overflow-y-auto pb-24">
           <div className="p-4 bg-white border-b border-gray-200 sticky top-0 z-30 flex items-center gap-3">
-            <Button onClick={() => setActiveBottomTab('home')} className="p-2 hover:bg-gray-100 rounded-full">
+            <button onClick={() => setActiveBottomTab('home')} className="p-2 hover:bg-gray-100 rounded-full">
               <ChevronRight className="w-5 h-5 rotate-180 text-gray-600" />
-            </Button>
+            </button>
             <h2 className="text-lg font-semibold text-gray-900">Settings & Payouts</h2>
           </div>
           <div className="p-4">

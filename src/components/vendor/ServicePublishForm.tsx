@@ -342,7 +342,7 @@ export function ServicePublishForm({
 
           <div className="grid grid-cols-2 gap-3 mt-3">
             {allowedCategories.map((category) => (
-              <Button
+              <button
                 key={category.id}
                 onClick={() => setFormData({ ...formData, category: category.id })}
                 className={`p-3 rounded-lg border-2 transition-all ${
@@ -358,7 +358,7 @@ export function ServicePublishForm({
                     GPS Required
                   </Badge>
                 )}
-              </Button>
+              </button>
             ))}
           </div>
         </Card>
@@ -418,7 +418,8 @@ export function ServicePublishForm({
         <div>
           <Label className="mb-2 block">Service Style *</Label>
           <div className="grid grid-cols-3 gap-2">
-            <Button onClick={() => setFormData({ ...formData, serviceStyle: 'at_center' })}
+            <button
+              onClick={() => setFormData({ ...formData, serviceStyle: 'at_center' })}
               className={`p-3 rounded-lg border-2 text-center transition-all ${
                 formData.serviceStyle === 'at_center'
                   ? 'border-blue-500 bg-blue-50'
@@ -427,9 +428,10 @@ export function ServicePublishForm({
             >
               <Building2 className="w-5 h-5 mx-auto mb-1 text-blue-600" />
               <div className="text-xs font-medium">At Center</div>
-            </Button>
+            </button>
 
-            <Button onClick={() => setFormData({ ...formData, serviceStyle: 'at_home' })}
+            <button
+              onClick={() => setFormData({ ...formData, serviceStyle: 'at_home' })}
               className={`p-3 rounded-lg border-2 text-center transition-all ${
                 formData.serviceStyle === 'at_home'
                   ? 'border-green-500 bg-green-50'
@@ -438,9 +440,10 @@ export function ServicePublishForm({
             >
               <MapPin className="w-5 h-5 mx-auto mb-1 text-green-600" />
               <div className="text-xs font-medium">At Home</div>
-            </Button>
+            </button>
 
-            <Button onClick={() => setFormData({ ...formData, serviceStyle: 'tele' })}
+            <button
+              onClick={() => setFormData({ ...formData, serviceStyle: 'tele' })}
               className={`p-3 rounded-lg border-2 text-center transition-all ${
                 formData.serviceStyle === 'tele'
                   ? 'border-purple-500 bg-purple-50'
@@ -449,7 +452,7 @@ export function ServicePublishForm({
             >
               <Radio className="w-5 h-5 mx-auto mb-1 text-purple-600" />
               <div className="text-xs font-medium">Tele</div>
-            </Button>
+            </button>
           </div>
         </div>
 

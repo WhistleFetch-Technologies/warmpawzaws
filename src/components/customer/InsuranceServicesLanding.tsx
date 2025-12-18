@@ -17,7 +17,6 @@ import {
   FileText
 } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-// Brand color: #FF8C42
 
 interface InsuranceServicesLandingProps {
   onBack: () => void;

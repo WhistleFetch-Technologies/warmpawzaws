@@ -174,11 +174,12 @@ export function OTPCompletionModal({
                 : 'Complete Service'
             )}
           </h2>
-          <Button onClick={onClose}
+          <button
+            onClick={onClose}
             className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
           >
             <X className="w-5 h-5" />
-          </Button>
+          </button>
         </div>
 
         {/* Content */}

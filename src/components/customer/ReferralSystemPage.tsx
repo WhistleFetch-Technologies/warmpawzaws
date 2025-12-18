@@ -5,7 +5,6 @@ import { Badge } from '../../ui/badge';
 import { Coins, Share2, Copy, Trophy, Check, ChevronRight } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
 import { toast } from 'sonner@2.0.3';
-// Brand color: #FF8C42
 
 interface ReferralSystemPageProps {
   userId: string;

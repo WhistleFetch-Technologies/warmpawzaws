@@ -1,5 +1,4 @@
 import { cn } from "../../../lib/utils";
-// Brand color: #FF8C42
 
 interface PriceDisplayProps {
   basePrice: number;

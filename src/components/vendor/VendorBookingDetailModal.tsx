@@ -140,11 +140,12 @@ export function VendorBookingDetailModal({
           {/* Header */}
           <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between rounded-t-[32px] z-10">
             <h2 className="font-bold text-gray-800">Booking Details</h2>
-            <Button onClick={onClose}
+            <button
+              onClick={onClose}
               className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
             >
               <X className="w-5 h-5 text-gray-600" />
-            </Button>
+            </button>
           </div>
 
           {loading ? (
@@ -191,7 +192,8 @@ export function VendorBookingDetailModal({
                     </div>
                   </div>
 
-                  <Button onClick={handleCopyOtp}
+                  <button
+                    onClick={handleCopyOtp}
                     className="w-full bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
                   >
                     {copiedOtp ? (
@@ -205,7 +207,7 @@ export function VendorBookingDetailModal({
                         Copy OTP
                       </>
                     )}
-                  </Button>
+                  </button>
                 </div>
               )}
 
@@ -248,12 +250,13 @@ export function VendorBookingDetailModal({
                 </div>
 
                 {/* View Medical History Button */}
-                <Button onClick={() => setShowMedicalHistory(true)}
+                <button
+                  onClick={() => setShowMedicalHistory(true)}
                   className="w-full mt-4 bg-purple-500 hover:bg-purple-600 text-white py-2 rounded-xl flex items-center justify-center gap-2 transition-colors"
                 >
                   <History className="w-4 h-4" />
                   View Complete Medical History
-                </Button>
+                </button>
               </div>
 
               {/* Customer Information */}

@@ -86,7 +86,7 @@ export function GPSTrackingWidget({ staffId, isSoloProvider, onUpdate }: GPSTrac
   };
 
   return (
-    <div className="bg-[#FF8C42] white rounded-lg p-4 border">
+    <div className="bg-white rounded-lg p-4 border">
       <div className="flex items-center justify-between mb-4">
         <div>
           <h3 className="font-semibold">GPS Tracking</h3>
@@ -107,7 +107,7 @@ export function GPSTrackingWidget({ staffId, isSoloProvider, onUpdate }: GPSTrac
       </div>
 
       {trackingEnabled && (
-        <div className="bg-[#FF8C42] green-50 border border-green-200 rounded p-3">
+        <div className="bg-green-50 border border-green-200 rounded p-3">
           <p className="text-sm text-green-800">
             ✓ Your location is being shared with customers
           </p>

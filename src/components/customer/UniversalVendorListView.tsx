@@ -145,11 +145,11 @@ export function UniversalVendorListView({ roleId, roleName, phone, onBack, onNav
   };
 
   return (
-    <div className="min-h-screen bg-[#FF8C42] white max-w-md mx-auto">
+    <div className="min-h-screen bg-white max-w-md mx-auto">
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-[#FF8C42] white border-b border-gray-100 px-6 pt-12 pb-4">
+      <div className="sticky top-0 z-10 bg-white border-b border-gray-100 px-6 pt-12 pb-4">
         <div className="flex items-center gap-3 mb-4">
-          <button onClick={onBack} className="p-2 hover:bg-[#FF8C42] gray-100 rounded-full transition-colors">
+          <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
             <ArrowLeft className="w-5 h-5 text-gray-900" />
           </button>
           <div className="flex-1">
@@ -161,7 +161,7 @@ export function UniversalVendorListView({ roleId, roleName, phone, onBack, onNav
         </div>
 
         {/* Search Type Toggle */}
-        <div className="flex gap-2 mb-4 p-1 bg-[#FF8C42] gray-100 rounded-xl border border-gray-200">
+        <div className="flex gap-2 mb-4 p-1 bg-gray-100 rounded-xl border border-gray-200">
           <button
             onClick={() => setSearchType('centers')}
             className={`flex-1 py-2 px-4 rounded-lg font-medium text-sm transition-all ${
@@ -198,7 +198,7 @@ export function UniversalVendorListView({ roleId, roleName, phone, onBack, onNav
             placeholder={`Search ${roleName.toLowerCase()}...`}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-10 py-2 h-10 rounded-xl bg-gray-50 border-gray-200 text-sm focus:bg-[#FF8C42] white transition-all"
+            className="w-full pl-10 pr-10 py-2 h-10 rounded-xl bg-gray-50 border-gray-200 text-sm focus:bg-white transition-all"
           />
           {searchQuery && (
             <button
@@ -212,7 +212,7 @@ export function UniversalVendorListView({ roleId, roleName, phone, onBack, onNav
       </div>
 
       {/* Results */}
-      <div className="px-6 py-6 min-h-[calc(100vh-200px)] bg-[#FF8C42] gray-50">
+      <div className="px-6 py-6 min-h-[calc(100vh-200px)] bg-gray-50">
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="w-8 h-8 text-gray-400 animate-spin" />
@@ -227,14 +227,14 @@ export function UniversalVendorListView({ roleId, roleName, phone, onBack, onNav
                   <Card
                     key={person.id}
                     onClick={() => onNavigate('staff_details', person)}
-                    className="p-4 border border-gray-200 hover:border-gray-300 hover:shadow-md transition-all cursor-pointer rounded-xl bg-[#FF8C42] white"
+                    className="p-4 border border-gray-200 hover:border-gray-300 hover:shadow-md transition-all cursor-pointer rounded-xl bg-white"
                   >
                     <div className="flex gap-3">
                       <div className="flex-shrink-0">
                         {person.photo ? (
                           <img src={person.photo} alt={person.name} className="w-14 h-14 rounded-full object-cover" />
                         ) : (
-                          <div className="w-14 h-14 rounded-full bg-[#FF8C42] gray-100 flex items-center justify-center">
+                          <div className="w-14 h-14 rounded-full bg-gray-100 flex items-center justify-center">
                             <UserCircle2 className="w-8 h-8 text-gray-400" />
                           </div>
                         )}
@@ -264,7 +264,7 @@ export function UniversalVendorListView({ roleId, roleName, phone, onBack, onNav
                   <Card
                     key={center.id}
                     onClick={() => onNavigate('vendor_profile', center)}
-                    className="p-4 border border-gray-200 hover:border-gray-300 hover:shadow-md transition-all cursor-pointer rounded-xl bg-[#FF8C42] white"
+                    className="p-4 border border-gray-200 hover:border-gray-300 hover:shadow-md transition-all cursor-pointer rounded-xl bg-white"
                   >
                     <div className="flex justify-between items-start mb-2">
                       <div>
@@ -272,7 +272,7 @@ export function UniversalVendorListView({ roleId, roleName, phone, onBack, onNav
                         <p className="text-xs text-gray-500 line-clamp-1">{center.address}</p>
                       </div>
                       {center.rating > 0 && (
-                        <Badge variant="secondary" className="flex gap-1 items-center bg-green-50 text-green-700 hover:bg-[#FF8C42] green-100">
+                        <Badge variant="secondary" className="flex gap-1 items-center bg-green-50 text-green-700 hover:bg-green-100">
                           {center.rating} <Star className="w-3 h-3 fill-green-700" />
                         </Badge>
                       )}
@@ -284,7 +284,7 @@ export function UniversalVendorListView({ roleId, roleName, phone, onBack, onNav
                         {center.distance ? `${center.distance} km away` : center.city}
                       </div>
                       {center.isVerified && (
-                        <Badge variant="outline" className="text-[10px] border-blue-200 text-blue-700 bg-[#FF8C42] blue-50">
+                        <Badge variant="outline" className="text-[10px] border-blue-200 text-blue-700 bg-blue-50">
                           Verified
                         </Badge>
                       )}

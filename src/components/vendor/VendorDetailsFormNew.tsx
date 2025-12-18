@@ -313,10 +313,10 @@ export function VendorDetailsFormNew({ vendorId, onSubmit, onNext, onBack, servi
     <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white w-full max-w-[430px] mx-auto pb-32">
       {onBack && (
         <div className="px-6 pt-6">
-          <Button onClick={onBack} className="flex items-center gap-2 text-gray-600 hover:text-[#FF8C42]">
+          <button onClick={onBack} className="flex items-center gap-2 text-gray-600 hover:text-[#FF8C42]">
             <ArrowLeft className="w-5 h-5" />
             <span className="text-sm font-semibold">Back</span>
-          </Button>
+          </button>
         </div>
       )}
 
@@ -354,10 +354,10 @@ export function VendorDetailsFormNew({ vendorId, onSubmit, onNext, onBack, servi
             <Textarea value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} className={errors.address ? 'border-red-500' : ''} />
             
             <div className="mt-2 flex gap-2">
-                <Button onClick={detectCurrentLocation} disabled={detectingLocation} className="flex-1 bg-blue-50 text-blue-600 text-xs py-2 rounded-lg flex items-center justify-center gap-1 font-medium">
+                <button onClick={detectCurrentLocation} disabled={detectingLocation} className="flex-1 bg-blue-50 text-blue-600 text-xs py-2 rounded-lg flex items-center justify-center gap-1 font-medium">
                    {detectingLocation ? <Loader2 className="w-3 h-3 animate-spin"/> : <MapPin className="w-3 h-3" />} Detect
-                </Button>
-                <Button onClick={initializeMap} className="flex-1 bg-gray-100 text-gray-600 text-xs py-2 rounded-lg font-medium">Show Map</Button>
+                </button>
+                <button onClick={initializeMap} className="flex-1 bg-gray-100 text-gray-600 text-xs py-2 rounded-lg font-medium">Show Map</button>
             </div>
             <div ref={mapRef} className="w-full h-40 mt-2 rounded-lg bg-gray-100 border overflow-hidden" />
         </div>

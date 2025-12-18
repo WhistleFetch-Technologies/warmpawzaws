@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Coffee, Upload, Plus, Edit2, Trash2, Grid, Table, Download } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { Button } from '../ui/button';
 
 interface MenuItem {
   id: string;
@@ -309,24 +308,26 @@ Pet-Safe Pupcake,Pet Treats,Dog-friendly cupcake with carob frosting,80,Yes,Yes,
   };
 
   return (
-    <div className="min-h-screen bg-[#FF8C42] gray-50 p-6">
+    <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-6">
           {onBack && (
-            <Button onClick={onBack} className="text-blue-600 hover:text-blue-700 mb-4">
+            <button onClick={onBack} className="text-blue-600 hover:text-blue-700 mb-4">
               ← Back to Dashboard
-            </Button>
+            </button>
           )}
           <h1 className="text-3xl text-gray-900 mb-2">Cafe Management</h1>
           <p className="text-gray-600">Manage your menu items and table configurations</p>
         </div>
 
         {/* Tabs */}
-        <div className="bg-[#FF8C42] white rounded-lg shadow mb-6">
+        <div className="bg-white rounded-lg shadow mb-6">
           <div className="border-b border-gray-200">
             <div className="flex space-x-8 px-6">
-              <Button onClick={() => setActiveTab('menu')} className={`py-4 px-2 border-b-2 transition-colors flex items-center gap-2 ${
+              <button
+                onClick={() => setActiveTab('menu')}
+                className={`py-4 px-2 border-b-2 transition-colors flex items-center gap-2 ${
                   activeTab === 'menu'
                     ? 'border-blue-500 text-blue-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700'
@@ -334,8 +335,10 @@ Pet-Safe Pupcake,Pet Treats,Dog-friendly cupcake with carob frosting,80,Yes,Yes,
               >
                 <Coffee size={20} />
                 Menu Management
-              </Button>
-              <Button onClick={() => setActiveTab('tables')} className={`py-4 px-2 border-b-2 transition-colors flex items-center gap-2 ${
+              </button>
+              <button
+                onClick={() => setActiveTab('tables')}
+                className={`py-4 px-2 border-b-2 transition-colors flex items-center gap-2 ${
                   activeTab === 'tables'
                     ? 'border-blue-500 text-blue-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700'
@@ -343,7 +346,7 @@ Pet-Safe Pupcake,Pet Treats,Dog-friendly cupcake with carob frosting,80,Yes,Yes,
               >
                 <Table size={20} />
                 Table Management
-              </Button>
+              </button>
             </div>
           </div>
 
@@ -365,13 +368,14 @@ Pet-Safe Pupcake,Pet Treats,Dog-friendly cupcake with carob frosting,80,Yes,Yes,
                   </select>
                 </div>
                 <div className="flex gap-2">
-                  <Button onClick={downloadMenuTemplate}
-                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-[#FF8C42] gray-200 flex items-center gap-2"
+                  <button
+                    onClick={downloadMenuTemplate}
+                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 flex items-center gap-2"
                   >
                     <Download size={20} />
                     Download Template
-                  </Button>
-                  <label className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-[#FF8C42] green-700 flex items-center gap-2 cursor-pointer">
+                  </button>
+                  <label className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 cursor-pointer">
                     <Upload size={20} />
                     {uploadingMenu ? 'Uploading...' : 'Bulk Upload'}
                     <input
@@ -382,7 +386,8 @@ Pet-Safe Pupcake,Pet Treats,Dog-friendly cupcake with carob frosting,80,Yes,Yes,
                       disabled={uploadingMenu}
                     />
                   </label>
-                  <Button onClick={() => {
+                  <button
+                    onClick={() => {
                       setEditingItem(null);
                       setItemForm({
                         name: '',
@@ -398,11 +403,11 @@ Pet-Safe Pupcake,Pet Treats,Dog-friendly cupcake with carob frosting,80,Yes,Yes,
                       });
                       setShowAddItem(true);
                     }}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-[#FF8C42] blue-700 flex items-center gap-2"
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
                   >
                     <Plus size={20} />
                     Add Item
-                  </Button>
+                  </button>
                 </div>
               </div>
 
@@ -416,16 +421,17 @@ Pet-Safe Pupcake,Pet Treats,Dog-friendly cupcake with carob frosting,80,Yes,Yes,
                 <div className="text-center py-12">
                   <Coffee className="mx-auto text-gray-400 mb-4" size={48} />
                   <p className="text-gray-600">No menu items found</p>
-                  <Button onClick={() => setShowAddItem(true)}
-                    className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-[#FF8C42] blue-700"
+                  <button
+                    onClick={() => setShowAddItem(true)}
+                    className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                   >
                     Add Your First Item
-                  </Button>
+                  </button>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {filteredMenuItems.map((item) => (
-                    <div key={item.id} className="bg-[#FF8C42] white border border-gray-200 rounded-lg overflow-hidden hover:shadow-lg transition-shadow">
+                    <div key={item.id} className="bg-white border border-gray-200 rounded-lg overflow-hidden hover:shadow-lg transition-shadow">
                       {item.imageUrl && (
                         <img src={item.imageUrl} alt={item.name} className="w-full h-48 object-cover" />
                       )}
@@ -436,27 +442,28 @@ Pet-Safe Pupcake,Pet Treats,Dog-friendly cupcake with carob frosting,80,Yes,Yes,
                         </div>
                         <p className="text-sm text-gray-600 mb-3">{item.description}</p>
                         <div className="flex flex-wrap gap-2 mb-3">
-                          <span className="px-2 py-1 bg-[#FF8C42] gray-100 text-gray-700 rounded text-xs">
+                          <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs">
                             {item.category}
                           </span>
                           {item.isVegetarian && (
-                            <span className="px-2 py-1 bg-[#FF8C42] green-100 text-green-700 rounded text-xs">
+                            <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs">
                               🥬 Veg
                             </span>
                           )}
                           {item.isPetFriendly && (
-                            <span className="px-2 py-1 bg-[#FF8C42] purple-100 text-purple-700 rounded text-xs">
+                            <span className="px-2 py-1 bg-purple-100 text-purple-700 rounded text-xs">
                               🐾 Pet-Friendly
                             </span>
                           )}
                           {!item.isAvailable && (
-                            <span className="px-2 py-1 bg-[#FF8C42] red-100 text-red-700 rounded text-xs">
+                            <span className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs">
                               Unavailable
                             </span>
                           )}
                         </div>
                         <div className="flex gap-2">
-                          <Button onClick={() => {
+                          <button
+                            onClick={() => {
                               setEditingItem(item);
                               setItemForm({
                                 name: item.name,
@@ -472,17 +479,18 @@ Pet-Safe Pupcake,Pet Treats,Dog-friendly cupcake with carob frosting,80,Yes,Yes,
                               });
                               setShowAddItem(true);
                             }}
-                            className="flex-1 px-3 py-2 bg-blue-50 text-blue-600 rounded hover:bg-[#FF8C42] blue-100 flex items-center justify-center gap-2 text-sm"
+                            className="flex-1 px-3 py-2 bg-blue-50 text-blue-600 rounded hover:bg-blue-100 flex items-center justify-center gap-2 text-sm"
                           >
                             <Edit2 size={16} />
                             Edit
-                          </Button>
-                          <Button onClick={() => handleDeleteMenuItem(item.id)}
-                            className="flex-1 px-3 py-2 bg-red-50 text-red-600 rounded hover:bg-[#FF8C42] red-100 flex items-center justify-center gap-2 text-sm"
+                          </button>
+                          <button
+                            onClick={() => handleDeleteMenuItem(item.id)}
+                            className="flex-1 px-3 py-2 bg-red-50 text-red-600 rounded hover:bg-red-100 flex items-center justify-center gap-2 text-sm"
                           >
                             <Trash2 size={16} />
                             Delete
-                          </Button>
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -498,20 +506,21 @@ Pet-Safe Pupcake,Pet Treats,Dog-friendly cupcake with carob frosting,80,Yes,Yes,
               {/* Table Actions */}
               <div className="flex justify-between mb-6">
                 <div className="flex gap-4">
-                  <div className="px-4 py-2 bg-[#FF8C42] green-50 border border-green-200 rounded-lg">
+                  <div className="px-4 py-2 bg-green-50 border border-green-200 rounded-lg">
                     <span className="text-sm text-gray-600">Available: </span>
                     <span className="text-green-700">{tables.filter(t => t.status === 'available').length}</span>
                   </div>
-                  <div className="px-4 py-2 bg-[#FF8C42] red-50 border border-red-200 rounded-lg">
+                  <div className="px-4 py-2 bg-red-50 border border-red-200 rounded-lg">
                     <span className="text-sm text-gray-600">Occupied: </span>
                     <span className="text-red-700">{tables.filter(t => t.status === 'occupied').length}</span>
                   </div>
-                  <div className="px-4 py-2 bg-[#FF8C42] yellow-50 border border-yellow-200 rounded-lg">
+                  <div className="px-4 py-2 bg-yellow-50 border border-yellow-200 rounded-lg">
                     <span className="text-sm text-gray-600">Reserved: </span>
                     <span className="text-yellow-700">{tables.filter(t => t.status === 'reserved').length}</span>
                   </div>
                 </div>
-                <Button onClick={() => {
+                <button
+                  onClick={() => {
                     setEditingTable(null);
                     setTableForm({
                       tableNumber: '',
@@ -522,11 +531,11 @@ Pet-Safe Pupcake,Pet Treats,Dog-friendly cupcake with carob frosting,80,Yes,Yes,
                     });
                     setShowAddTable(true);
                   }}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-[#FF8C42] blue-700 flex items-center gap-2"
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
                 >
                   <Plus size={20} />
                   Add Table
-                </Button>
+                </button>
               </div>
 
               {/* Tables Grid */}
@@ -539,16 +548,17 @@ Pet-Safe Pupcake,Pet Treats,Dog-friendly cupcake with carob frosting,80,Yes,Yes,
                 <div className="text-center py-12">
                   <Grid className="mx-auto text-gray-400 mb-4" size={48} />
                   <p className="text-gray-600">No tables configured</p>
-                  <Button onClick={() => setShowAddTable(true)}
-                    className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-[#FF8C42] blue-700"
+                  <button
+                    onClick={() => setShowAddTable(true)}
+                    className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                   >
                     Add Your First Table
-                  </Button>
+                  </button>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                   {tables.map((table) => (
-                    <div key={table.id} className="bg-[#FF8C42] white border-2 border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                    <div key={table.id} className="bg-white border-2 border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
                       <div className="flex justify-between items-start mb-3">
                         <div>
                           <h3 className="text-lg text-gray-900">Table {table.tableNumber}</h3>
@@ -556,7 +566,8 @@ Pet-Safe Pupcake,Pet Treats,Dog-friendly cupcake with carob frosting,80,Yes,Yes,
                             Capacity: {table.capacity} {table.capacity === 1 ? 'person' : 'people'}
                           </p>
                         </div>
-                        <Button onClick={() => {
+                        <button
+                          onClick={() => {
                             setEditingTable(table);
                             setTableForm({
                               tableNumber: table.tableNumber,
@@ -570,7 +581,7 @@ Pet-Safe Pupcake,Pet Treats,Dog-friendly cupcake with carob frosting,80,Yes,Yes,
                           className="text-gray-400 hover:text-gray-600"
                         >
                           <Edit2 size={18} />
-                        </Button>
+                        </button>
                       </div>
                       <div className="mb-3">
                         <span className={`px-3 py-1 rounded-full text-sm ${getStatusColor(table.status)}`}>
@@ -578,43 +589,47 @@ Pet-Safe Pupcake,Pet Treats,Dog-friendly cupcake with carob frosting,80,Yes,Yes,
                         </span>
                       </div>
                       <div className="flex flex-wrap gap-2 mb-3 text-xs">
-                        <span className="px-2 py-1 bg-[#FF8C42] gray-100 text-gray-700 rounded">
+                        <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded">
                           {table.location.charAt(0).toUpperCase() + table.location.slice(1)}
                         </span>
                         {table.petFriendly && (
-                          <span className="px-2 py-1 bg-[#FF8C42] purple-100 text-purple-700 rounded">
+                          <span className="px-2 py-1 bg-purple-100 text-purple-700 rounded">
                             🐾 Pet-Friendly
                           </span>
                         )}
                       </div>
                       <div className="flex gap-2">
                         {table.status === 'available' && (
-                          <Button onClick={() => handleUpdateTableStatus(table.id, 'occupied')}
-                            className="flex-1 px-3 py-1 bg-red-600 text-white rounded hover:bg-[#FF8C42] red-700 text-sm"
+                          <button
+                            onClick={() => handleUpdateTableStatus(table.id, 'occupied')}
+                            className="flex-1 px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm"
                           >
                             Mark Occupied
-                          </Button>
+                          </button>
                         )}
                         {table.status === 'occupied' && (
-                          <Button onClick={() => handleUpdateTableStatus(table.id, 'available')}
-                            className="flex-1 px-3 py-1 bg-green-600 text-white rounded hover:bg-[#FF8C42] green-700 text-sm"
+                          <button
+                            onClick={() => handleUpdateTableStatus(table.id, 'available')}
+                            className="flex-1 px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 text-sm"
                           >
                             Mark Available
-                          </Button>
+                          </button>
                         )}
                         {(table.status === 'available' || table.status === 'occupied') && (
-                          <Button onClick={() => handleUpdateTableStatus(table.id, 'reserved')}
-                            className="flex-1 px-3 py-1 bg-yellow-600 text-white rounded hover:bg-[#FF8C42] yellow-700 text-sm"
+                          <button
+                            onClick={() => handleUpdateTableStatus(table.id, 'reserved')}
+                            className="flex-1 px-3 py-1 bg-yellow-600 text-white rounded hover:bg-yellow-700 text-sm"
                           >
                             Reserve
-                          </Button>
+                          </button>
                         )}
                         {table.status === 'reserved' && (
-                          <Button onClick={() => handleUpdateTableStatus(table.id, 'available')}
-                            className="flex-1 px-3 py-1 bg-green-600 text-white rounded hover:bg-[#FF8C42] green-700 text-sm"
+                          <button
+                            onClick={() => handleUpdateTableStatus(table.id, 'available')}
+                            className="flex-1 px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 text-sm"
                           >
                             Clear
-                          </Button>
+                          </button>
                         )}
                       </div>
                     </div>
@@ -628,8 +643,8 @@ Pet-Safe Pupcake,Pet Treats,Dog-friendly cupcake with carob frosting,80,Yes,Yes,
 
       {/* Add/Edit Menu Item Modal */}
       {showAddItem && (
-        <div className="fixed inset-0 bg-black bg-[#FF8C42] opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-[#FF8C42] white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6">
               <h2 className="text-2xl text-gray-900 mb-4">
                 {editingItem ? 'Edit Menu Item' : 'Add Menu Item'}
@@ -743,22 +758,22 @@ Pet-Safe Pupcake,Pet Treats,Dog-friendly cupcake with carob frosting,80,Yes,Yes,
                   </label>
                 </div>
                 <div className="flex gap-4">
-                  <Button
+                  <button
                     type="submit"
-                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-[#FF8C42] blue-700"
+                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                   >
                     {editingItem ? 'Update Item' : 'Add Item'}
-                  </Button>
-                  <Button
+                  </button>
+                  <button
                     type="button"
                     onClick={() => {
                       setShowAddItem(false);
                       setEditingItem(null);
                     }}
-                    className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-[#FF8C42] gray-300"
+                    className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
                   >
                     Cancel
-                  </Button>
+                  </button>
                 </div>
               </form>
             </div>
@@ -768,8 +783,8 @@ Pet-Safe Pupcake,Pet Treats,Dog-friendly cupcake with carob frosting,80,Yes,Yes,
 
       {/* Add/Edit Table Modal */}
       {showAddTable && (
-        <div className="fixed inset-0 bg-black bg-[#FF8C42] opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-[#FF8C42] white rounded-lg max-w-lg w-full">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg max-w-lg w-full">
             <div className="p-6">
               <h2 className="text-2xl text-gray-900 mb-4">
                 {editingTable ? 'Edit Table' : 'Add Table'}
@@ -822,22 +837,22 @@ Pet-Safe Pupcake,Pet Treats,Dog-friendly cupcake with carob frosting,80,Yes,Yes,
                   </label>
                 </div>
                 <div className="flex gap-4">
-                  <Button
+                  <button
                     type="submit"
-                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-[#FF8C42] blue-700"
+                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                   >
                     {editingTable ? 'Update Table' : 'Add Table'}
-                  </Button>
-                  <Button
+                  </button>
+                  <button
                     type="button"
                     onClick={() => {
                       setShowAddTable(false);
                       setEditingTable(null);
                     }}
-                    className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-[#FF8C42] gray-300"
+                    className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
                   >
                     Cancel
-                  </Button>
+                  </button>
                 </div>
               </form>
             </div>

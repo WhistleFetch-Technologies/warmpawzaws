@@ -4,7 +4,6 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
-// Brand color: #FF8C42
 import { MapPin, Navigation, Clock, Circle } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 

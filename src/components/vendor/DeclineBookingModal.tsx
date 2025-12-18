@@ -91,7 +91,7 @@ export function DeclineBookingModal({ booking, vendorId, onClose, onSuccess }: D
 
         <div className="space-y-4 py-4">
           {/* Booking Info */}
-          <div className="p-4 bg-[#FF8C42] gray-50 rounded-lg">
+          <div className="p-4 bg-gray-50 rounded-lg">
             <p className="text-sm text-gray-600">Declining booking for:</p>
             <p className="font-semibold text-gray-900">{booking.customerName}</p>
             <p className="text-sm text-gray-600 mt-1">
@@ -150,7 +150,7 @@ export function DeclineBookingModal({ booking, vendorId, onClose, onSuccess }: D
           </div>
 
           {/* Warning */}
-          <div className="flex items-start gap-2 p-3 bg-[#FF8C42] yellow-50 border border-yellow-200 rounded-lg">
+          <div className="flex items-start gap-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
             <AlertTriangle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
             <div className="text-sm text-yellow-800">
               <p className="font-medium">Refund Policy</p>
@@ -174,7 +174,7 @@ export function DeclineBookingModal({ booking, vendorId, onClose, onSuccess }: D
               (selectedReason === 'Other (please specify)' && !customReason.trim())
             }
             variant="destructive"
-            className="bg-red-600 hover:bg-[#FF8C42] red-700"
+            className="bg-red-600 hover:bg-red-700"
           >
             {loading ? 'Declining...' : 'Decline Booking'}
           </Button>

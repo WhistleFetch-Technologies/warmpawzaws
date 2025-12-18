@@ -52,10 +52,10 @@ export function PhotographyServicesLanding({ onBack, onNavigate, phone }: Photog
   };
 
   return (
-    <div className="min-h-screen bg-[#FF8C42] gray-50">
-      <div className="bg-[#FF8C42] gradient-to-r from-pink-500 to-rose-500 text-white px-4 py-4 sticky top-0 z-50">
+    <div className="min-h-screen bg-gray-50">
+      <div className="bg-gradient-to-r from-pink-500 to-rose-500 text-white px-4 py-4 sticky top-0 z-50">
         <div className="flex items-center gap-3">
-          <button onClick={onBack} className="p-2 hover:bg-[#FF8C42] white/10 rounded-full">
+          <button onClick={onBack} className="p-2 hover:bg-white/10 rounded-full">
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div className="flex-1">
@@ -66,12 +66,12 @@ export function PhotographyServicesLanding({ onBack, onNavigate, phone }: Photog
       </div>
 
       <div className="p-4 space-y-6 pb-24">
-        <Card className="bg-[#FF8C42] gradient-to-br from-pink-50 to-rose-50 border-pink-200 p-6">
+        <Card className="bg-gradient-to-br from-pink-50 to-rose-50 border-pink-200 p-6">
           <div className="flex items-start justify-between">
             <div className="flex-1">
               <h2 className="text-xl font-bold text-gray-900 mb-2">Professional Shoots</h2>
               <p className="text-gray-700 mb-4">Studio sessions & outdoor portraits</p>
-              <Button className="bg-pink-600 hover:bg-[#FF8C42] pink-700">Find Photographers</Button>
+              <Button className="bg-pink-600 hover:bg-pink-700">Find Photographers</Button>
             </div>
             <div className="text-5xl">📸</div>
           </div>

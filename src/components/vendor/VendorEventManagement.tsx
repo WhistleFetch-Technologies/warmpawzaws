@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { Calendar, Users, CheckCircle, XCircle, MapPin, Clock, Plus, Edit2 } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { toast } from 'react-toastify';
-import { Button } from '../ui/button';
 
 interface Event {
   id: string;
@@ -341,9 +340,9 @@ export function VendorEventManagement({ vendorId, vendorData, vendorType = 'othe
         {/* Header */}
         <div className="mb-6">
           {onBack && (
-            <Button onClick={onBack} className="text-blue-600 hover:text-blue-700 mb-4">
+            <button onClick={onBack} className="text-blue-600 hover:text-blue-700 mb-4">
               ← Back to Dashboard
-            </Button>
+            </button>
           )}
           <h1 className="text-3xl text-gray-900 mb-2">Event Management</h1>
           <p className="text-gray-600">Manage events, track registrations, and monitor attendance</p>
@@ -405,7 +404,8 @@ export function VendorEventManagement({ vendorId, vendorData, vendorType = 'othe
             <div className="p-6">
               <div className="flex justify-between mb-6">
                 <h2 className="text-xl text-gray-900">All Events</h2>
-                <Button onClick={() => {
+                <button
+                  onClick={() => {
                     setEditingEvent(null);
                     resetForm();
                     setShowAddEvent(true);
@@ -414,7 +414,7 @@ export function VendorEventManagement({ vendorId, vendorData, vendorType = 'othe
                 >
                   <Plus size={20} />
                   Create Event
-                </Button>
+                </button>
               </div>
 
               {loading ? (
@@ -490,7 +490,8 @@ export function VendorEventManagement({ vendorId, vendorData, vendorType = 'othe
                           )}
                         </div>
                         <div className="flex gap-2">
-                          <Button onClick={() => {
+                          <button
+                            onClick={() => {
                               setEditingEvent(event);
                               setEventForm({
                                 name: event.name,
@@ -519,38 +520,43 @@ export function VendorEventManagement({ vendorId, vendorData, vendorType = 'othe
                           >
                             <Edit2 size={14} />
                             Edit
-                          </Button>
-                          <Button onClick={() => setSelectedEvent(event)}
+                          </button>
+                          <button
+                            onClick={() => setSelectedEvent(event)}
                             className="px-3 py-1 bg-purple-600 text-white rounded hover:bg-purple-700 text-sm"
                           >
                             View Registrations
-                          </Button>
+                          </button>
                           {event.status === 'draft' && (
-                            <Button onClick={() => updateEventStatus(event.id, 'published')}
+                            <button
+                              onClick={() => updateEventStatus(event.id, 'published')}
                               className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 text-sm"
                             >
                               Publish
-                            </Button>
+                            </button>
                           )}
                           {event.status === 'published' && (
-                            <Button onClick={() => updateEventStatus(event.id, 'ongoing')}
+                            <button
+                              onClick={() => updateEventStatus(event.id, 'ongoing')}
                               className="px-3 py-1 bg-orange-600 text-white rounded hover:bg-orange-700 text-sm"
                             >
                               Start
-                            </Button>
+                            </button>
                           )}
                           {event.status === 'ongoing' && (
-                            <Button onClick={() => updateEventStatus(event.id, 'completed')}
+                            <button
+                              onClick={() => updateEventStatus(event.id, 'completed')}
                               className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
                             >
                               Complete
-                            </Button>
+                            </button>
                           )}
-                          <Button onClick={() => handleDeleteEvent(event.id)}
+                          <button
+                            onClick={() => handleDeleteEvent(event.id)}
                             className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 text-sm"
                           >
                             Delete
-                          </Button>
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -562,11 +568,12 @@ export function VendorEventManagement({ vendorId, vendorData, vendorType = 'othe
             /* Registrations View */
             <div className="p-6">
               <div className="mb-6">
-                <Button onClick={() => setSelectedEvent(null)}
+                <button
+                  onClick={() => setSelectedEvent(null)}
                   className="text-blue-600 hover:text-blue-700 mb-4"
                 >
                   ← Back to Events
-                </Button>
+                </button>
                 <h2 className="text-2xl text-gray-900 mb-2">{selectedEvent.name}</h2>
                 <p className="text-gray-600">Registrations and Check-ins</p>
               </div>
@@ -633,12 +640,13 @@ export function VendorEventManagement({ vendorId, vendorData, vendorType = 'othe
                           </div>
                         </div>
                         {reg.checkInStatus === 'pending' && reg.status === 'confirmed' && (
-                          <Button onClick={() => handleCheckIn(selectedEvent.id, reg.id)}
+                          <button
+                            onClick={() => handleCheckIn(selectedEvent.id, reg.id)}
                             className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 flex items-center gap-2"
                           >
                             <CheckCircle size={18} />
                             Check In
-                          </Button>
+                          </button>
                         )}
                       </div>
                     </div>
@@ -829,13 +837,13 @@ export function VendorEventManagement({ vendorId, vendorData, vendorType = 'othe
                 </div>
 
                 <div className="flex gap-4 pt-4">
-                  <Button
+                  <button
                     type="submit"
                     className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                   >
                     {editingEvent ? 'Update Event' : 'Create Event'}
-                  </Button>
-                  <Button
+                  </button>
+                  <button
                     type="button"
                     onClick={() => {
                       setShowAddEvent(false);
@@ -844,7 +852,7 @@ export function VendorEventManagement({ vendorId, vendorData, vendorType = 'othe
                     className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
                   >
                     Cancel
-                  </Button>
+                  </button>
                 </div>
               </form>
             </div>

@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Package, Plus, Edit, Trash } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { Button } from '../ui/button';
 
 /**
  * 🍽️ FOOD DELIVERY VENDOR MANAGEMENT
@@ -110,30 +109,35 @@ export default function FoodDeliveryManagement({ vendorId }: { vendorId: string 
         <div className="flex items-center justify-between mb-8">
           <h1 className="text-gray-900">Food Delivery Management</h1>
           {activeTab === 'menu' && (
-            <Button onClick={() => setShowAddItem(true)}
+            <button
+              onClick={() => setShowAddItem(true)}
               className="bg-orange-500 text-white px-6 py-3 rounded-lg hover:bg-orange-600 flex items-center gap-2"
             >
               <Plus className="w-5 h-5" />
               Add Menu Item
-            </Button>
+            </button>
           )}
         </div>
 
         {/* Tabs */}
         <div className="bg-white rounded-lg shadow-sm mb-6">
           <div className="border-b border-gray-200 flex">
-            <Button onClick={() => setActiveTab('menu')} className={`px-6 py-4 ${
+            <button
+              onClick={() => setActiveTab('menu')}
+              className={`px-6 py-4 ${
                 activeTab === 'menu' ? 'border-b-2 border-orange-500 text-orange-500' : 'text-gray-600'
               }`}
             >
               Menu Items
-            </Button>
-            <Button onClick={() => setActiveTab('orders')} className={`px-6 py-4 ${
+            </button>
+            <button
+              onClick={() => setActiveTab('orders')}
+              className={`px-6 py-4 ${
                 activeTab === 'orders' ? 'border-b-2 border-orange-500 text-orange-500' : 'text-gray-600'
               }`}
             >
               Orders
-            </Button>
+            </button>
           </div>
 
           <div className="p-6">
@@ -240,16 +244,16 @@ export default function FoodDeliveryManagement({ vendorId }: { vendorId: string 
                   />
                 </div>
                 <div className="flex gap-3">
-                  <Button type="submit" className="flex-1 bg-orange-500 text-white py-2 rounded-lg hover:bg-orange-600">
+                  <button type="submit" className="flex-1 bg-orange-500 text-white py-2 rounded-lg hover:bg-orange-600">
                     Add Item
-                  </Button>
-                  <Button
+                  </button>
+                  <button
                     type="button"
                     onClick={() => setShowAddItem(false)}
                     className="flex-1 bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400"
                   >
                     Cancel
-                  </Button>
+                  </button>
                 </div>
               </form>
             </div>

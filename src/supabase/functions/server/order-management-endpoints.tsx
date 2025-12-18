@@ -151,50 +151,6 @@ orderRoutes.patch('/:orderId/status', async (c) => {
       message: message || `Order ${status}`,
       timestamp: new Date().toISOString()
     };
-    
-    // ✅ FIX: Auto-assign delivery partner when order is shipped
-    if (status === 'shipped' && !order.deliveryPartnerId) {
-      try {
-        const { autoAssignDeliveryPartner, extractPickupLocation, extractDeliveryLocation } = await import('./delivery-assignment-utils.tsx');
-        
-        // Get pickup location
-        let pickupLocation = extractPickupLocation(order);
-        
-        // If no pickup location, try vendor location
-        if (!pickupLocation && order.vendorId) {
-          const vendor = await kv.get(`vendor:${order.vendorId}`);
-          if (vendor && vendor.latitude && vendor.longitude) {
-            pickupLocation = {
-              lat: vendor.latitude,
-              lng: vendor.longitude,
-              address: vendor.address || vendor.businessAddress
-            };
-          }
-        }
-        
-        const deliveryLocation = extractDeliveryLocation(order);
-        
-        if (pickupLocation && pickupLocation.lat && pickupLocation.lng) {
-          const assignedPartner = await autoAssignDeliveryPartner(
-            orderId,
-            order.type || 'product_order',
-            pickupLocation,
-            deliveryLocation || undefined
-          );
-          
-          if (assignedPartner) {
-            order.deliveryPartnerId = assignedPartner.partnerId;
-            order.deliveryPartnerName = assignedPartner.partnerName;
-            order.deliveryPartnerPhone = assignedPartner.partnerPhone;
-            order.deliveryDistance = assignedPartner.distance;
-            console.log(`✅ [ORDER-MGMT] Auto-assigned delivery partner ${assignedPartner.partnerId} to order ${orderId}`);
-          }
-        }
-      } catch (assignError) {
-        console.error(`❌ [ORDER-MGMT] Error auto-assigning delivery partner:`, assignError);
-        // Non-blocking
-      }
-    }
 
     await kv.set(`order:${orderId}`, order);
 

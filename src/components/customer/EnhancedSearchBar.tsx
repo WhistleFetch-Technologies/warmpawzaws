@@ -1,9 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, X, Clock, TrendingUp, MapPin, Star, ChevronRight } from 'lucide-react';
 import { Badge } from '../ui/badge';
-import { Button } from '../ui/button';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-// Brand color: #FF8C42
 
 interface SearchResult {
   id: string;
@@ -257,10 +255,8 @@ export function EnhancedSearchBar({
             className="w-full pl-12 pr-12 py-3 bg-white border border-gray-200 rounded-full shadow-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all"
           />
           {query && (
-            <Button
+            <button
               type="button"
-              variant="ghost"
-              size="icon"
               onClick={() => {
                 setQuery('');
                 setResults([]);
@@ -269,7 +265,7 @@ export function EnhancedSearchBar({
               className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
             >
               <X className="w-5 h-5" />
-            </Button>
+            </button>
           )}
         </div>
       </form>
@@ -291,9 +287,8 @@ export function EnhancedSearchBar({
                 Recent Searches
               </h3>
               {recentSearches.map((term, idx) => (
-                <Button
+                <button
                   key={idx}
-                  variant="ghost"
                   onClick={() => {
                     setQuery(term);
                     handleSearch(term);
@@ -302,7 +297,7 @@ export function EnhancedSearchBar({
                 >
                   <Clock className="w-4 h-4 text-gray-400 group-hover:text-orange-500" />
                   <span className="text-gray-700 group-hover:text-gray-900">{term}</span>
-                </Button>
+                </button>
               ))}
             </div>
           )}
@@ -314,9 +309,8 @@ export function EnhancedSearchBar({
                 Trending Searches
               </h3>
               {suggestions.slice(0, 5).map((suggestion, idx) => (
-                <Button
+                <button
                   key={idx}
-                  variant="ghost"
                   onClick={() => {
                     setQuery(suggestion.text);
                     handleSearch(suggestion.text);
@@ -327,7 +321,7 @@ export function EnhancedSearchBar({
                   <span className="text-gray-700 group-hover:text-gray-900 capitalize">
                     {suggestion.text}
                   </span>
-                </Button>
+                </button>
               ))}
             </div>
           )}
@@ -339,9 +333,8 @@ export function EnhancedSearchBar({
                 Results
               </h3>
               {results.map((result) => (
-                <Button
+                <button
                   key={result.id}
-                  variant="ghost"
                   onClick={() => handleResultClick(result)}
                   className="w-full flex items-start gap-3 p-3 hover:bg-gray-50 rounded-lg transition-colors text-left group"
                 >
@@ -397,7 +390,7 @@ export function EnhancedSearchBar({
                   </div>
 
                   <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-orange-500 self-center" />
-                </Button>
+                </button>
               ))}
             </div>
           )}

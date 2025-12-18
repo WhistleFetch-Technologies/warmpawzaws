@@ -25,7 +25,6 @@ import { Separator } from '../ui/separator';
 import { useCart } from '../../context/CartContext';
 import { toast } from 'sonner@2.0.3';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-// Brand color: #FF8C42
 
 interface CheckoutViewProps {
   onBack: () => void;

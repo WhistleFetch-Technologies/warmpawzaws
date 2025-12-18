@@ -9,7 +9,6 @@ import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { ArrowLeft, Calendar as CalendarIcon, Clock, Check, Plus, FileText, Upload, Stethoscope, AlertCircle, MessageCircle, DollarSign } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { BookingChatWidget } from './BookingChatWidget';
-// Brand color: #FF8C42
 
 /**
  * 🏥 CENTER BOOKING FLOW ENHANCED

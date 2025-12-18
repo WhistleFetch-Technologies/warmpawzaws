@@ -20,6 +20,7 @@ import { vendorApprovalWorkflowEndpoints } from './vendor-approval-workflow.tsx'
 import { vendorDashboardEndpoints } from './vendor-dashboard-endpoints.tsx';
 import { vendorRoleConfigEndpoints } from './vendor-role-config.tsx';
 import { registerDynamicOnboarding } from './dynamic-onboarding-management.tsx';
+import { onboardingConfigEndpoints } from './onboarding-config-endpoints.tsx';
 import { registerVendorServiceEndpoints } from './vendor-services-endpoints.tsx';
 import { registerVendorCatalogAPIV2 } from './vendor-catalog-api-v2.tsx';
 import { customServiceEndpoints } from './custom-service-endpoints.tsx';
@@ -163,22 +164,6 @@ import { integratedServicesManagerEndpoints } from './integrated-services-manage
 
 import { tierSystemEndpoints } from './tier-system.tsx';
 import { razorpayMarketplaceSettlement } from './razorpay-marketplace-settlement.tsx';
-
-// ✅ RULE 15: Production-ready integrations
-import { automatedSettlementProcessor } from './automated-settlement-processor.tsx';
-import { bankVerificationIntegration } from './bank-verification-integration.tsx';
-
-// ✅ RULE 16 & 17: Vendor onboarding and schedule management
-import { scheduleValidationTemplates } from './schedule-validation-templates.tsx';
-
-// ✅ NEW: Gap Fixes - Critical Infrastructure
-import { registerEnhancedSearchEndpoints } from './enhanced-search-endpoints.tsx';
-import { registerVideoProviderEndpoints } from './video-provider-integration.tsx';
-import { registerPushNotificationEndpoints } from './push-notification-service.tsx';
-import { registerSettlementEndpoints } from './settlement-automation.tsx';
-import { registerPolicyPDFEndpoints } from './policy-pdf-generator.tsx';
-import { registerMedicineCatalogEndpoints } from './medicine-catalog-endpoints.tsx';
-import { initializeAndSyncIndices } from './search-indexing.tsx';
 
 const app = new Hono();
 
@@ -477,6 +462,7 @@ vendorApprovalWorkflowEndpoints(app, kv);
 vendorDashboardEndpoints(app, kv);
 vendorRoleConfigEndpoints(app);
 registerDynamicOnboarding(app);
+onboardingConfigEndpoints(app, kv); // ✅ NEW: Register onboarding config endpoints for multi-staff applications
 registerVendorServiceEndpoints(app);
 registerVendorCatalogAPIV2(app);
 customServiceEndpoints(app, kv); // ✅ FIX: Register custom service endpoints
@@ -1254,67 +1240,6 @@ if (razorpayMarketplaceSettlement && typeof razorpayMarketplaceSettlement === 'f
   console.log('✅ Registering Razorpay Marketplace Settlement...');
   razorpayMarketplaceSettlement(app, kv);
 }
-
-// ✅ NEW: Automated Settlement Processor (Rule 15)
-if (automatedSettlementProcessor && typeof automatedSettlementProcessor === 'function') {
-  console.log('✅ Registering Automated Settlement Processor...');
-  automatedSettlementProcessor(app, kv);
-}
-
-// ✅ NEW: Bank Verification Integration (Rule 15)
-if (bankVerificationIntegration && typeof bankVerificationIntegration === 'function') {
-  console.log('✅ Registering Bank Verification Integration...');
-  bankVerificationIntegration(app, kv);
-}
-
-// ✅ NEW: Schedule Validation Templates (Rule 16 & 17)
-if (scheduleValidationTemplates && typeof scheduleValidationTemplates === 'function') {
-  console.log('✅ Registering Schedule Validation Templates...');
-  scheduleValidationTemplates(app, kv);
-}
-
-// ✅ NEW: Gap Fixes - Critical Infrastructure Endpoints
-console.log('✅ Registering Enhanced Search Endpoints (Elasticsearch)...');
-registerEnhancedSearchEndpoints(app);
-
-console.log('✅ Registering Video Provider Endpoints (100ms/Agora/Zoom)...');
-registerVideoProviderEndpoints(app);
-
-console.log('✅ Registering Push Notification Endpoints...');
-registerPushNotificationEndpoints(app);
-
-console.log('✅ Registering Settlement Automation Endpoints...');
-registerSettlementEndpoints(app);
-
-console.log('✅ Registering Policy PDF Endpoints...');
-registerPolicyPDFEndpoints(app);
-
-console.log('✅ Registering Medicine Catalog Endpoints...');
-registerMedicineCatalogEndpoints(app);
-
-console.log('✅ Registering Ambulance Service Complete...');
-import { registerAmbulanceServiceComplete } from './ambulance-service-complete.tsx';
-registerAmbulanceServiceComplete(app);
-
-console.log('✅ Registering Nutritionist Meal Plan Complete...');
-import { registerNutritionistMealPlanComplete } from './nutritionist-meal-plan-complete.tsx';
-registerNutritionistMealPlanComplete(app);
-
-console.log('✅ Registering Puppy Profile Publishing...');
-import { registerPuppyProfilePublishing } from './puppy-profile-publishing.tsx';
-registerPuppyProfilePublishing(app);
-
-console.log('✅ Registering Behaviorist Service Complete...');
-import { registerBehavioristServiceComplete } from './behaviorist-service-complete.tsx';
-registerBehavioristServiceComplete(app);
-
-// Holiday package endpoints already registered via holidayPackageEndpoints
-// Verify it's registered in the endpoint registration section below
-
-// Initialize Elasticsearch indices (async, non-blocking)
-initializeAndSyncIndices().catch((error) => {
-  console.warn('⚠️ Elasticsearch initialization failed (will use KV store fallback):', error);
-});
 
 // ------------------------------------------------------------------
 // GLOBAL ERROR HANDLERS

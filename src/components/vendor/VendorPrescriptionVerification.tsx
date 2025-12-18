@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { X, CheckCircle, XCircle, AlertTriangle, FileText, User, Calendar, Pill, Search, Filter } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { toast } from 'sonner@2.0.3';
-import { Button } from '../ui/button';
 
 interface PrescriptionVerificationProps {
   vendorId: string;
@@ -119,10 +118,10 @@ export function VendorPrescriptionVerification({ vendorId, onClose }: Prescripti
   };
 
   return (
-    <div className="fixed inset-0 bg-[#FF8C42] black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-[#FF8C42] white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="p-6 border-b border-gray-200 bg-[#FF8C42] gradient-to-r from-blue-50 to-indigo-50">
+        <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
@@ -131,26 +130,26 @@ export function VendorPrescriptionVerification({ vendorId, onClose }: Prescripti
               </h2>
               <p className="text-sm text-gray-600 mt-1">Verify and approve customer prescriptions</p>
             </div>
-            <Button onClick={onClose} className="p-2 hover:bg-[#FF8C42] white rounded-full transition-colors">
+            <button onClick={onClose} className="p-2 hover:bg-white rounded-full transition-colors">
               <X className="w-6 h-6 text-gray-500" />
-            </Button>
+            </button>
           </div>
 
           {/* Stats */}
           <div className="grid grid-cols-4 gap-3">
-            <div className="bg-[#FF8C42] white rounded-lg p-3 text-center">
+            <div className="bg-white rounded-lg p-3 text-center">
               <div className="text-2xl font-bold text-gray-900">{stats.total}</div>
               <div className="text-xs text-gray-600">Total</div>
             </div>
-            <div className="bg-[#FF8C42] yellow-50 rounded-lg p-3 text-center border border-yellow-200">
+            <div className="bg-yellow-50 rounded-lg p-3 text-center border border-yellow-200">
               <div className="text-2xl font-bold text-yellow-700">{stats.pending}</div>
               <div className="text-xs text-yellow-700">Pending</div>
             </div>
-            <div className="bg-[#FF8C42] green-50 rounded-lg p-3 text-center border border-green-200">
+            <div className="bg-green-50 rounded-lg p-3 text-center border border-green-200">
               <div className="text-2xl font-bold text-green-700">{stats.verified}</div>
               <div className="text-xs text-green-700">Verified</div>
             </div>
-            <div className="bg-[#FF8C42] red-50 rounded-lg p-3 text-center border border-red-200">
+            <div className="bg-red-50 rounded-lg p-3 text-center border border-red-200">
               <div className="text-2xl font-bold text-red-700">{stats.rejected}</div>
               <div className="text-xs text-red-700">Rejected</div>
             </div>
@@ -158,7 +157,7 @@ export function VendorPrescriptionVerification({ vendorId, onClose }: Prescripti
         </div>
 
         {/* Filters & Search */}
-        <div className="p-4 border-b border-gray-200 bg-[#FF8C42] gray-50">
+        <div className="p-4 border-b border-gray-200 bg-gray-50">
           <div className="flex gap-3 mb-3">
             <div className="flex-1 relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -170,37 +169,45 @@ export function VendorPrescriptionVerification({ vendorId, onClose }: Prescripti
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
-            <Button className="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-[#FF8C42] gray-50 flex items-center gap-2">
+            <button className="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-2">
               <Filter className="w-4 h-4" />
               Filters
-            </Button>
+            </button>
           </div>
 
           <div className="flex gap-2">
-            <Button onClick={() => setFilter('all')} className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
+            <button
+              onClick={() => setFilter('all')}
+              className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
                 filter === 'all' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 border border-gray-300'
               }`}
             >
               All
-            </Button>
-            <Button onClick={() => setFilter('pending')} className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
+            </button>
+            <button
+              onClick={() => setFilter('pending')}
+              className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
                 filter === 'pending' ? 'bg-yellow-500 text-white' : 'bg-white text-gray-700 border border-gray-300'
               }`}
             >
               Pending ({stats.pending})
-            </Button>
-            <Button onClick={() => setFilter('verified')} className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
+            </button>
+            <button
+              onClick={() => setFilter('verified')}
+              className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
                 filter === 'verified' ? 'bg-green-600 text-white' : 'bg-white text-gray-700 border border-gray-300'
               }`}
             >
               Verified
-            </Button>
-            <Button onClick={() => setFilter('rejected')} className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
+            </button>
+            <button
+              onClick={() => setFilter('rejected')}
+              className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
                 filter === 'rejected' ? 'bg-red-600 text-white' : 'bg-white text-gray-700 border border-gray-300'
               }`}
             >
               Rejected
-            </Button>
+            </button>
           </div>
         </div>
 
@@ -224,7 +231,7 @@ export function VendorPrescriptionVerification({ vendorId, onClose }: Prescripti
               {filteredPrescriptions.map((prescription) => (
                 <div
                   key={prescription.id}
-                  className="bg-[#FF8C42] white border-2 border-gray-200 rounded-xl p-4 hover:border-blue-300 transition-colors"
+                  className="bg-white border-2 border-gray-200 rounded-xl p-4 hover:border-blue-300 transition-colors"
                 >
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-start gap-3">
@@ -281,7 +288,7 @@ export function VendorPrescriptionVerification({ vendorId, onClose }: Prescripti
                       </div>
                       <div className="space-y-2">
                         {prescription.medications.slice(0, 3).map((med: any, idx: number) => (
-                          <div key={idx} className="bg-[#FF8C42] gray-50 rounded-lg p-2 text-sm">
+                          <div key={idx} className="bg-gray-50 rounded-lg p-2 text-sm">
                             <div className="font-medium text-gray-900">{med.name}</div>
                             <div className="text-gray-600 text-xs">
                               {med.dosage} • {med.frequency} • {med.duration}
@@ -299,7 +306,7 @@ export function VendorPrescriptionVerification({ vendorId, onClose }: Prescripti
 
                   {/* Notes */}
                   {prescription.notes && (
-                    <div className="mb-3 p-3 bg-[#FF8C42] gray-50 rounded-lg">
+                    <div className="mb-3 p-3 bg-gray-50 rounded-lg">
                       <div className="text-xs font-medium text-gray-700 mb-1">Notes:</div>
                       <div className="text-sm text-gray-600">{prescription.notes}</div>
                     </div>
@@ -307,7 +314,7 @@ export function VendorPrescriptionVerification({ vendorId, onClose }: Prescripti
 
                   {/* Rejection Reason */}
                   {prescription.status === 'rejected' && prescription.rejectionReason && (
-                    <div className="mb-3 p-3 bg-[#FF8C42] red-50 rounded-lg border border-red-200">
+                    <div className="mb-3 p-3 bg-red-50 rounded-lg border border-red-200">
                       <div className="text-xs font-medium text-red-700 mb-1">Rejection Reason:</div>
                       <div className="text-sm text-red-600">{prescription.rejectionReason}</div>
                     </div>
@@ -317,32 +324,35 @@ export function VendorPrescriptionVerification({ vendorId, onClose }: Prescripti
                   <div className="flex gap-2 mt-3">
                     {prescription.status === 'pending' && (
                       <>
-                        <Button onClick={() => {
+                        <button
+                          onClick={() => {
                             setSelectedPrescription(prescription);
                             setShowVerifyModal(true);
                           }}
-                          className="flex-1 py-2 px-4 bg-green-600 hover:bg-[#FF8C42] green-700 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
+                          className="flex-1 py-2 px-4 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
                         >
                           <CheckCircle className="w-4 h-4" />
                           Verify
-                        </Button>
-                        <Button onClick={() => {
+                        </button>
+                        <button
+                          onClick={() => {
                             setSelectedPrescription(prescription);
                             setShowVerifyModal(true);
                           }}
-                          className="flex-1 py-2 px-4 bg-red-600 hover:bg-[#FF8C42] red-700 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
+                          className="flex-1 py-2 px-4 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
                         >
                           <XCircle className="w-4 h-4" />
                           Reject
-                        </Button>
+                        </button>
                       </>
                     )}
                     {prescription.imageUrl && (
-                      <Button onClick={() => window.open(prescription.imageUrl, '_blank')}
-                        className="flex-1 py-2 px-4 bg-blue-50 hover:bg-[#FF8C42] blue-100 text-blue-700 rounded-lg font-medium transition-colors"
+                      <button
+                        onClick={() => window.open(prescription.imageUrl, '_blank')}
+                        className="flex-1 py-2 px-4 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg font-medium transition-colors"
                       >
                         View Image
-                      </Button>
+                      </button>
                     )}
                   </div>
                 </div>
@@ -353,8 +363,8 @@ export function VendorPrescriptionVerification({ vendorId, onClose }: Prescripti
 
         {/* Verification Modal */}
         {showVerifyModal && selectedPrescription && (
-          <div className="absolute inset-0 bg-[#FF8C42] black/50 flex items-center justify-center p-4">
-            <div className="bg-[#FF8C42] white rounded-xl p-6 max-w-md w-full">
+          <div className="absolute inset-0 bg-black/50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-xl p-6 max-w-md w-full">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">
                 Verify Prescription
               </h3>
@@ -389,26 +399,29 @@ export function VendorPrescriptionVerification({ vendorId, onClose }: Prescripti
               </div>
 
               <div className="flex gap-2">
-                <Button onClick={() => {
+                <button
+                  onClick={() => {
                     setShowVerifyModal(false);
                     setSelectedPrescription(null);
                     setVerificationNotes('');
                     setRejectionReason('');
                   }}
-                  className="flex-1 py-2 px-4 bg-gray-100 hover:bg-[#FF8C42] gray-200 text-gray-700 rounded-lg font-medium transition-colors"
+                  className="flex-1 py-2 px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition-colors"
                 >
                   Cancel
-                </Button>
-                <Button onClick={() => verifyPrescription(selectedPrescription.prescriptionId, 'rejected', verificationNotes)}
-                  className="flex-1 py-2 px-4 bg-red-600 hover:bg-[#FF8C42] red-700 text-white rounded-lg font-medium transition-colors"
+                </button>
+                <button
+                  onClick={() => verifyPrescription(selectedPrescription.prescriptionId, 'rejected', verificationNotes)}
+                  className="flex-1 py-2 px-4 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors"
                 >
                   Reject
-                </Button>
-                <Button onClick={() => verifyPrescription(selectedPrescription.prescriptionId, 'verified', verificationNotes)}
-                  className="flex-1 py-2 px-4 bg-green-600 hover:bg-[#FF8C42] green-700 text-white rounded-lg font-medium transition-colors"
+                </button>
+                <button
+                  onClick={() => verifyPrescription(selectedPrescription.prescriptionId, 'verified', verificationNotes)}
+                  className="flex-1 py-2 px-4 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors"
                 >
                   Approve
-                </Button>
+                </button>
               </div>
             </div>
           </div>

@@ -353,7 +353,8 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
 
         {/* Back Button */}
         <div className="px-6 py-4">
-          <Button onClick={() => {
+          <button
+            onClick={() => {
               setShowOtpScreen(false);
               setOtpCode('');
               setError('');
@@ -364,7 +365,7 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
               <path d="M12 16L6 10L12 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
             <span className="text-sm">Back</span>
-          </Button>
+          </button>
         </div>
 
         <div className="flex-1 flex flex-col items-center justify-center px-6 pb-12">
@@ -414,14 +415,14 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
               {loading ? 'Verifying...' : 'Verify Code'}
             </Button>
 
-            <Button
+            <button
               type="button"
               onClick={handleSendCode}
               disabled={loading}
               className="w-full mt-4 text-[#FF8C42] hover:text-[#FF7A29] text-sm disabled:opacity-50"
             >
               Resend code
-            </Button>
+            </button>
           </form>
         </div>
       </div>
@@ -579,7 +580,7 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
             </form>
 
             <div className="mt-6 text-center">
-              <Button
+              <button
                 type="button"
                 onClick={() => {
                   setIsSignUp(true);
@@ -589,7 +590,7 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
                 className="text-[#FF8C42] hover:underline"
               >
                 New vendor? Register here
-              </Button>
+              </button>
             </div>
           </div>
         </div>
@@ -605,11 +606,12 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
           {/* Header */}
           <div className="flex items-center gap-4 mb-6">
             {currentStep > 2 && (
-              <Button onClick={() => setCurrentStep(currentStep - 1)}
+              <button
+                onClick={() => setCurrentStep(currentStep - 1)}
                 className="p-2 hover:bg-gray-100 rounded-full"
               >
                 <ChevronLeft className="w-5 h-5" />
-              </Button>
+              </button>
             )}
             <div className="flex-1">
               <h2 className="text-2xl text-[#FF8C42]">Vendor Registration</h2>

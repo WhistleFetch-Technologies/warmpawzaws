@@ -107,7 +107,7 @@ export function RescheduleBookingModal({
 
         <div className="space-y-6 py-4">
           {/* Current Schedule */}
-          <div className="p-4 bg-[#FF8C42] gray-50 rounded-lg">
+          <div className="p-4 bg-gray-50 rounded-lg">
             <p className="text-sm text-gray-600 mb-1">Current Schedule</p>
             <p className="font-semibold text-gray-900">
               {new Date(currentDate).toLocaleDateString()} at {currentTime}
@@ -192,7 +192,7 @@ export function RescheduleBookingModal({
           <Button
             onClick={handleReschedule}
             disabled={loading || !selectedDate || !selectedSlot}
-            className="bg-blue-600 hover:bg-[#FF8C42] blue-700 text-white"
+            className="bg-blue-600 hover:bg-blue-700 text-white"
           >
             {loading ? 'Rescheduling...' : 'Confirm Reschedule'}
           </Button>

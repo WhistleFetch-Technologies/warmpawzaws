@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Tag, Check, X, Loader2, AlertCircle } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-// Brand color: #FF8C42
 
 /**
  * 🎫 COUPON CODE INPUT COMPONENT

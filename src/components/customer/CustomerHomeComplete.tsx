@@ -363,11 +363,9 @@ export function CustomerHome({
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Button 
-              variant="ghost"
-              size="icon"
+            <button 
               onClick={() => onNavigate && onNavigate('cart')}
-              className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm relative hover:bg-white/30"
+              className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm relative"
             >
               <ShoppingCart className="w-5 h-5 text-white" />
               {itemCount > 0 && (
@@ -375,10 +373,10 @@ export function CustomerHome({
                   {itemCount}
                 </span>
               )}
-            </Button>
-            <Button variant="ghost" size="icon" className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm hover:bg-white/30">
+            </button>
+            <button className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm">
               <Heart className="w-5 h-5 text-white" />
-            </Button>
+            </button>
           </div>
         </div>
 
@@ -387,15 +385,13 @@ export function CustomerHome({
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <p className="text-white/90 text-sm font-medium">Your Pets</p>
-              <Button
-                variant="ghost"
-                size="sm"
+              <button
                 onClick={handleAddPet}
                 className="text-white/90 text-xs flex items-center gap-1 hover:text-white transition-colors"
               >
                 <Plus className="w-4 h-4" />
                 Add Pet
-              </Button>
+              </button>
             </div>
             <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide -mx-6 px-6">
               {userData.pets.map((pet) => (
@@ -460,13 +456,13 @@ export function CustomerHome({
                   ? 'Ready for a new companion? Add your pet profile to get started'
                   : 'Add your pet profile to unlock personalized services'}
               </p>
-              <Button
+              <button
                 onClick={handleAddPet}
-                className="bg-white text-[#FF8C42] px-4 py-2 rounded-full text-sm font-medium flex items-center gap-2 mx-auto hover:bg-orange-50"
+                className="bg-white text-[#FF8C42] px-4 py-2 rounded-full text-sm font-medium flex items-center gap-2 mx-auto"
               >
                 <Plus className="w-4 h-4" />
                 Add Your First Pet
-              </Button>
+              </button>
             </div>
           </div>
         )}
@@ -1051,9 +1047,9 @@ export function CustomerHome({
                     <p className="text-xs text-white/80">250+ reviews</p>
                   </div>
                 </div>
-                <Button className="bg-white text-indigo-600 px-5 py-2.5 rounded-full text-sm font-medium hover:bg-indigo-50">
+                <button className="bg-white text-indigo-600 px-5 py-2.5 rounded-full text-sm font-medium">
                   Book Boarding
-                </Button>
+                </button>
               </div>
               <HomeIcon className="w-16 h-16 text-white/80" />
             </div>
@@ -1068,12 +1064,12 @@ export function CustomerHome({
               Our support team is available 24/7 for you
             </p>
             <div className="flex gap-3">
-              <Button variant="outline" className="flex-1 bg-white border-2 border-[#FF8C42] text-[#FF8C42] py-3 rounded-full font-medium text-sm flex items-center justify-center gap-2 hover:bg-orange-50">
+              <button className="flex-1 bg-white border-2 border-[#FF8C42] text-[#FF8C42] py-3 rounded-full font-medium text-sm flex items-center justify-center gap-2">
                 <Phone className="w-4 h-4" /> Call Us
-              </Button>
-              <Button className="flex-1 bg-[#FF8C42] text-white py-3 rounded-full font-medium text-sm flex items-center justify-center gap-2 hover:bg-[#FF7A2E]">
+              </button>
+              <button className="flex-1 bg-[#FF8C42] text-white py-3 rounded-full font-medium text-sm flex items-center justify-center gap-2">
                 <Video className="w-4 h-4" /> Live Chat
-              </Button>
+              </button>
             </div>
           </div>
         </div>
@@ -1086,7 +1082,7 @@ export function CustomerHome({
             <HomeIcon className="w-6 h-6 text-[#FF8C42]" />
             <span className="text-xs font-medium text-[#FF8C42]">Home</span>
           </button>
-          <Button variant="ghost"
+          <button 
             onClick={() => onNavigate && onNavigate('cart')}
             className="flex flex-col items-center gap-1 relative"
           >
@@ -1099,21 +1095,21 @@ export function CustomerHome({
               )}
             </div>
             <span className="text-xs text-gray-400">Cart</span>
-          </Button>
-          <Button variant="ghost"
+          </button>
+          <button 
             onClick={() => onOpenMenu && onOpenMenu()}
             className="flex flex-col items-center gap-1"
           >
             <Calendar className="w-6 h-6 text-gray-400" />
             <span className="text-xs text-gray-400">Bookings</span>
-          </Button>
-          <Button variant="ghost"
+          </button>
+          <button 
             onClick={() => onProfileClick && onProfileClick()}
             className="flex flex-col items-center gap-1"
           >
             <User className="w-6 h-6 text-gray-400" />
             <span className="text-xs text-gray-400">Profile</span>
-          </Button>
+          </button>
         </div>
         {/* Home Indicator */}
         <div className="flex justify-center mt-2">
