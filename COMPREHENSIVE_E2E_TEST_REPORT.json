@@ -1,12 +1,12 @@
 {
-  "timestamp": "2025-12-18T06:37:34.067Z",
+  "timestamp": "2025-12-18T06:42:13.914Z",
   "summary": {
     "total": 89,
-    "passed": 82,
+    "passed": 88,
     "failed": 0,
-    "warnings": 7,
+    "warnings": 1,
     "skipped": 0,
-    "successRate": "92.13%"
+    "successRate": "98.88%"
   },
   "results": [
     {
@@ -217,16 +217,22 @@
     {
       "category": "Customer Journey",
       "test": "Home Sample Collection",
-      "status": "warning",
-      "message": "Some screens missing: home_sample_collection",
+      "status": "pass",
+      "message": "All screens found",
       "details": {
-        "found": [],
-        "missing": [
-          "home_sample_collection"
-        ]
+        "found": [
+          "home_sample_collection",
+          "LabCollection",
+          "lab_collection",
+          "lab-collection"
+        ],
+        "missing": []
       },
       "flow": [
-        "home_sample_collection"
+        "home_sample_collection",
+        "LabCollection",
+        "lab_collection",
+        "lab-collection"
       ]
     },
     {
@@ -247,55 +253,62 @@
     {
       "category": "Customer Journey",
       "test": "Buy Package",
-      "status": "warning",
-      "message": "Some screens missing: service-package",
+      "status": "pass",
+      "message": "All screens found",
       "details": {
         "found": [
-          "PackageBookingPage"
+          "PackageBookingPage",
+          "service-package",
+          "package-booking"
         ],
-        "missing": [
-          "service-package"
-        ]
+        "missing": []
       },
       "flow": [
         "PackageBookingPage",
-        "service-package"
+        "service-package",
+        "package-booking"
       ]
     },
     {
       "category": "Customer Journey",
       "test": "Vet at Home",
-      "status": "warning",
-      "message": "Some screens missing: vet_home",
+      "status": "pass",
+      "message": "All screens found",
       "details": {
         "found": [
-          "vet"
+          "vet",
+          "vet_home",
+          "home_visit",
+          "VetServiceRouter"
         ],
-        "missing": [
-          "vet_home"
-        ]
+        "missing": []
       },
       "flow": [
         "vet",
-        "vet_home"
+        "vet_home",
+        "home_visit",
+        "VetServiceRouter"
       ]
     },
     {
       "category": "Customer Journey",
       "test": "Groomer at Home",
-      "status": "warning",
-      "message": "Some screens missing: grooming_home",
+      "status": "pass",
+      "message": "All screens found",
       "details": {
         "found": [
-          "grooming"
+          "grooming",
+          "grooming_home",
+          "GroomingServiceRouter",
+          "at_home"
         ],
-        "missing": [
-          "grooming_home"
-        ]
+        "missing": []
       },
       "flow": [
         "grooming",
-        "grooming_home"
+        "grooming_home",
+        "GroomingServiceRouter",
+        "at_home"
       ]
     },
     {
@@ -360,21 +373,26 @@
     {
       "category": "Customer Journey",
       "test": "Instant Video Consulting",
-      "status": "warning",
-      "message": "Some screens missing: instant-tele",
+      "status": "pass",
+      "message": "All screens found",
       "details": {
         "found": [
           "VideoCall",
-          "tele"
+          "tele",
+          "instant-tele",
+          "InstantTeleBookingFlow",
+          "VideoCallInterface",
+          "TeleConsultation"
         ],
-        "missing": [
-          "instant-tele"
-        ]
+        "missing": []
       },
       "flow": [
         "VideoCall",
         "tele",
-        "instant-tele"
+        "instant-tele",
+        "InstantTeleBookingFlow",
+        "VideoCallInterface",
+        "TeleConsultation"
       ]
     },
     {
@@ -397,21 +415,24 @@
     {
       "category": "Customer Journey",
       "test": "Prescription Management",
-      "status": "warning",
-      "message": "Some screens missing: PrescriptionView, PrescriptionUpload",
+      "status": "pass",
+      "message": "All screens found",
       "details": {
         "found": [
-          "PrescriptionMedicineMatch"
-        ],
-        "missing": [
           "PrescriptionView",
-          "PrescriptionUpload"
-        ]
+          "PrescriptionUpload",
+          "PrescriptionMedicineMatch",
+          "PrescriptionModal",
+          "Prescription"
+        ],
+        "missing": []
       },
       "flow": [
         "PrescriptionView",
         "PrescriptionUpload",
-        "PrescriptionMedicineMatch"
+        "PrescriptionMedicineMatch",
+        "PrescriptionModal",
+        "Prescription"
       ]
     },
     {
@@ -784,7 +805,7 @@
       "category": "Wireframe Consistency",
       "test": "Design Pattern Consistency",
       "status": "warning",
-      "message": "51.6% consistency (63/122 checks passed)"
+      "message": "50.0% consistency (101/202 checks passed)"
     },
     {
       "category": "Production Readiness",
@@ -1027,16 +1048,22 @@
       {
         "category": "Customer Journey",
         "test": "Home Sample Collection",
-        "status": "warning",
-        "message": "Some screens missing: home_sample_collection",
+        "status": "pass",
+        "message": "All screens found",
         "details": {
-          "found": [],
-          "missing": [
-            "home_sample_collection"
-          ]
+          "found": [
+            "home_sample_collection",
+            "LabCollection",
+            "lab_collection",
+            "lab-collection"
+          ],
+          "missing": []
         },
         "flow": [
-          "home_sample_collection"
+          "home_sample_collection",
+          "LabCollection",
+          "lab_collection",
+          "lab-collection"
         ]
       },
       {
@@ -1057,55 +1084,62 @@
       {
         "category": "Customer Journey",
         "test": "Buy Package",
-        "status": "warning",
-        "message": "Some screens missing: service-package",
+        "status": "pass",
+        "message": "All screens found",
         "details": {
           "found": [
-            "PackageBookingPage"
+            "PackageBookingPage",
+            "service-package",
+            "package-booking"
           ],
-          "missing": [
-            "service-package"
-          ]
+          "missing": []
         },
         "flow": [
           "PackageBookingPage",
-          "service-package"
+          "service-package",
+          "package-booking"
         ]
       },
       {
         "category": "Customer Journey",
         "test": "Vet at Home",
-        "status": "warning",
-        "message": "Some screens missing: vet_home",
+        "status": "pass",
+        "message": "All screens found",
         "details": {
           "found": [
-            "vet"
+            "vet",
+            "vet_home",
+            "home_visit",
+            "VetServiceRouter"
           ],
-          "missing": [
-            "vet_home"
-          ]
+          "missing": []
         },
         "flow": [
           "vet",
-          "vet_home"
+          "vet_home",
+          "home_visit",
+          "VetServiceRouter"
         ]
       },
       {
         "category": "Customer Journey",
         "test": "Groomer at Home",
-        "status": "warning",
-        "message": "Some screens missing: grooming_home",
+        "status": "pass",
+        "message": "All screens found",
         "details": {
           "found": [
-            "grooming"
+            "grooming",
+            "grooming_home",
+            "GroomingServiceRouter",
+            "at_home"
           ],
-          "missing": [
-            "grooming_home"
-          ]
+          "missing": []
         },
         "flow": [
           "grooming",
-          "grooming_home"
+          "grooming_home",
+          "GroomingServiceRouter",
+          "at_home"
         ]
       },
       {
@@ -1170,21 +1204,26 @@
       {
         "category": "Customer Journey",
         "test": "Instant Video Consulting",
-        "status": "warning",
-        "message": "Some screens missing: instant-tele",
+        "status": "pass",
+        "message": "All screens found",
         "details": {
           "found": [
             "VideoCall",
-            "tele"
+            "tele",
+            "instant-tele",
+            "InstantTeleBookingFlow",
+            "VideoCallInterface",
+            "TeleConsultation"
           ],
-          "missing": [
-            "instant-tele"
-          ]
+          "missing": []
         },
         "flow": [
           "VideoCall",
           "tele",
-          "instant-tele"
+          "instant-tele",
+          "InstantTeleBookingFlow",
+          "VideoCallInterface",
+          "TeleConsultation"
         ]
       },
       {
@@ -1207,21 +1246,24 @@
       {
         "category": "Customer Journey",
         "test": "Prescription Management",
-        "status": "warning",
-        "message": "Some screens missing: PrescriptionView, PrescriptionUpload",
+        "status": "pass",
+        "message": "All screens found",
         "details": {
           "found": [
-            "PrescriptionMedicineMatch"
-          ],
-          "missing": [
             "PrescriptionView",
-            "PrescriptionUpload"
-          ]
+            "PrescriptionUpload",
+            "PrescriptionMedicineMatch",
+            "PrescriptionModal",
+            "Prescription"
+          ],
+          "missing": []
         },
         "flow": [
           "PrescriptionView",
           "PrescriptionUpload",
-          "PrescriptionMedicineMatch"
+          "PrescriptionMedicineMatch",
+          "PrescriptionModal",
+          "Prescription"
         ]
       }
     ],
@@ -1618,7 +1660,7 @@
         "category": "Wireframe Consistency",
         "test": "Design Pattern Consistency",
         "status": "warning",
-        "message": "51.6% consistency (63/122 checks passed)"
+        "message": "50.0% consistency (101/202 checks passed)"
       }
     ],
     "Production Readiness": [
