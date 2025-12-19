@@ -139,12 +139,39 @@ app.post("/make-server-3dd53475/otp/verify", async (c) => {
     if (customerId) {
       // Existing customer
       customer = await kv.get(`customer:${customerId}`);
-      customer.lastLoginAt = new Date().toISOString();
-      await kv.set(`customer:${customerId}`, customer);
       
-      // Get pet IDs to check if user has pets
-      const petIds = await kv.get(`customer:${customerId}:pets`) || [];
-      customer.petIds = petIds;
+      // ✅ FIX: Handle case where customer ID exists but record doesn't
+      if (!customer) {
+        console.warn(`⚠️ [OTP-VERIFY] Customer ID found but record missing: ${customerId}`);
+        // Treat as new user
+        isNewUser = true;
+        const newCustomerId = `customer_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+        
+        customer = {
+          id: newCustomerId,
+          phone,
+          onboardingComplete: false,
+          onboardingStep: 'name',
+          notificationsEnabled: true,
+          totalBookings: 0,
+          activeBookings: 0,
+          completedBookings: 0,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          lastLoginAt: new Date().toISOString()
+        };
+        
+        await kv.set(`customer:${newCustomerId}`, customer);
+        await kv.set(`customer:phone:${phone}`, newCustomerId);
+      } else {
+        // Update existing customer
+        customer.lastLoginAt = new Date().toISOString();
+        await kv.set(`customer:${customerId}`, customer);
+        
+        // Get pet IDs to check if user has pets
+        const petIds = await kv.get(`customer:${customerId}:pets`) || [];
+        customer.petIds = petIds;
+      }
     } else {
       // New customer
       isNewUser = true;

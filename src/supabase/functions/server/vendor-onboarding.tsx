@@ -397,7 +397,6 @@ export function vendorOnboardingEndpoints(app: Hono, kv: any) {
   });
 
   /**
-   * GET /make-server-3dd53475/vendor/profile/:vendorId
    * Get vendor/center profile for editing
    * 
    * ✅ NEW ENDPOINT: Load center profile data for edit mode
@@ -429,6 +428,42 @@ export function vendorOnboardingEndpoints(app: Hono, kv: any) {
 
     } catch (error) {
       console.error('❌ Error loading vendor profile:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  /**
+   * Get vendor application data (for re-editing/correction/clarification)
+   * 
+   * ✅ NEW ENDPOINT: Load vendor application data for correction mode
+   */
+  app.get("/make-server-3dd53475/vendor/:vendorId/application", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+
+      console.log(`📖 Loading vendor application: ${vendorId}`);
+
+      const vendorKey = `vendor:${vendorId}`;
+      const vendor = await kv.get(vendorKey);
+
+      if (!vendor) {
+        console.error(`❌ Vendor not found: ${vendorId}`);
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+
+      console.log(`✅ Vendor application loaded: ${vendorId}`);
+
+      return sendSuccess(c, {
+        application: {
+          ...vendor,
+          formData: vendor.customFields || vendor.formData || {},
+          specializations: vendor.specializations || [],
+          location: vendor.location || vendor.coordinates || null
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Error loading vendor application:', error);
       return sendError(c, error, 500);
     }
   });

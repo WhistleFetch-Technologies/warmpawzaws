@@ -427,6 +427,181 @@ export function soloProviderEndpoints(app: Hono, kv: any) {
   });
 
   /**
+   * POST /make-server-3dd53475/center/:centerId/services
+   * Add a new service to center catalog
+   */
+  app.post("/make-server-3dd53475/center/:centerId/services", async (c) => {
+    try {
+      const { centerId } = c.req.param();
+      const { name, description, price, duration, category } = await c.req.json();
+
+      console.log(`➕ Adding service to center: ${centerId}`);
+
+      const center = await kv.get(`center:${centerId}`);
+      if (!center) {
+        return c.json({ error: 'Center not found' }, 404);
+      }
+
+      const newService = {
+        id: `service_${Date.now()}`,
+        name,
+        description,
+        price,
+        duration,
+        category,
+        createdAt: new Date().toISOString()
+      };
+
+      center.services = center.services || [];
+      center.services.push(newService);
+      center.updatedAt = new Date().toISOString();
+
+      await kv.set(`center:${centerId}`, center);
+
+      // Auto-sync to staff if solo provider
+      let autoSynced = false;
+      if (center.isSoloProvider) {
+        const staffRecords = await kv.get(`vendor:${center.vendorId}:staff`);
+        if (staffRecords && staffRecords.length > 0) {
+          const staffId = staffRecords[0];
+          const staff = await kv.get(`staff:${staffId}`);
+          if (staff) {
+            staff.services = center.services;
+            staff.updatedAt = new Date().toISOString();
+            await kv.set(`staff:${staffId}`, staff);
+            autoSynced = true;
+            console.log(`✅ Auto-synced service to staff: ${staffId}`);
+          }
+        }
+      }
+
+      console.log(`✅ Service added: ${newService.id}`);
+
+      return sendSuccess(c, {
+        service: newService,
+        autoSynced,
+        message: 'Service added successfully'
+      });
+
+    } catch (error) {
+      console.error('❌ Add service error:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  /**
+   * PUT /make-server-3dd53475/center/:centerId/services/:serviceId
+   * Update an existing service
+   */
+  app.put("/make-server-3dd53475/center/:centerId/services/:serviceId", async (c) => {
+    try {
+      const { centerId, serviceId } = c.req.param();
+      const { name, description, price, duration, category } = await c.req.json();
+
+      console.log(`✏️ Updating service: ${serviceId} in center: ${centerId}`);
+
+      const center = await kv.get(`center:${centerId}`);
+      if (!center) {
+        return c.json({ error: 'Center not found' }, 404);
+      }
+
+      const serviceIndex = center.services?.findIndex((s: any) => s.id === serviceId);
+      if (serviceIndex === -1 || serviceIndex === undefined) {
+        return c.json({ error: 'Service not found' }, 404);
+      }
+
+      center.services[serviceIndex] = {
+        ...center.services[serviceIndex],
+        name,
+        description,
+        price,
+        duration,
+        category,
+        updatedAt: new Date().toISOString()
+      };
+      center.updatedAt = new Date().toISOString();
+
+      await kv.set(`center:${centerId}`, center);
+
+      // Auto-sync to staff if solo provider
+      let autoSynced = false;
+      if (center.isSoloProvider) {
+        const staffRecords = await kv.get(`vendor:${center.vendorId}:staff`);
+        if (staffRecords && staffRecords.length > 0) {
+          const staffId = staffRecords[0];
+          const staff = await kv.get(`staff:${staffId}`);
+          if (staff) {
+            staff.services = center.services;
+            staff.updatedAt = new Date().toISOString();
+            await kv.set(`staff:${staffId}`, staff);
+            autoSynced = true;
+            console.log(`✅ Auto-synced updated service to staff: ${staffId}`);
+          }
+        }
+      }
+
+      console.log(`✅ Service updated: ${serviceId}`);
+
+      return sendSuccess(c, {
+        service: center.services[serviceIndex],
+        autoSynced,
+        message: 'Service updated successfully'
+      });
+
+    } catch (error) {
+      console.error('❌ Update service error:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  /**
+   * DELETE /make-server-3dd53475/center/:centerId/services/:serviceId
+   * Delete a service
+   */
+  app.delete("/make-server-3dd53475/center/:centerId/services/:serviceId", async (c) => {
+    try {
+      const { centerId, serviceId } = c.req.param();
+
+      console.log(`🗑️ Deleting service: ${serviceId} from center: ${centerId}`);
+
+      const center = await kv.get(`center:${centerId}`);
+      if (!center) {
+        return c.json({ error: 'Center not found' }, 404);
+      }
+
+      center.services = center.services?.filter((s: any) => s.id !== serviceId) || [];
+      center.updatedAt = new Date().toISOString();
+
+      await kv.set(`center:${centerId}`, center);
+
+      // Auto-sync to staff if solo provider
+      if (center.isSoloProvider) {
+        const staffRecords = await kv.get(`vendor:${center.vendorId}:staff`);
+        if (staffRecords && staffRecords.length > 0) {
+          const staffId = staffRecords[0];
+          const staff = await kv.get(`staff:${staffId}`);
+          if (staff) {
+            staff.services = center.services;
+            staff.updatedAt = new Date().toISOString();
+            await kv.set(`staff:${staffId}`, staff);
+            console.log(`✅ Auto-synced service deletion to staff: ${staffId}`);
+          }
+        }
+      }
+
+      console.log(`✅ Service deleted: ${serviceId}`);
+
+      return sendSuccess(c, {
+        message: 'Service deleted successfully'
+      });
+
+    } catch (error) {
+      console.error('❌ Delete service error:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  /**
    * POST /make-server-3dd53475/center/:centerId/services/sync-to-staff
    * Manually trigger service sync from center to staff (for solo providers)
    */

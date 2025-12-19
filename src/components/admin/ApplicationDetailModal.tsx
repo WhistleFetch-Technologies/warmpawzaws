@@ -33,6 +33,10 @@ export function ApplicationDetailModal({
   // Use the correct application ID (try applicationId first, fallback to id)
   const appId = application.applicationId || application.id;
   console.log('📋 Using application ID:', appId);
+  
+  // ✅ FIX: Extract custom fields for display
+  const customFields = application.customFields || application.formData || {};
+  console.log('📋 Custom fields:', customFields);
 
   const handleApprove = async () => {
     try {
@@ -272,10 +276,12 @@ export function ApplicationDetailModal({
               <div className="bg-gray-50 rounded-xl p-6">
                 <h3 className="text-base mb-4">Business Information</h3>
                 <div className="grid grid-cols-2 gap-4">
-                  <InfoRow label="GST Number" value={application.gstNumber || 'Not provided'} />
-                  <InfoRow label="PAN Number" value={application.panNumber || 'Not provided'} />
-                  <InfoRow label="License Number" value={application.licenseNumber || 'Not provided'} />
-                  <InfoRow label="License Expiry" value={application.licenseExpiryDate || 'Not provided'} />
+                  <InfoRow label="Application ID" value={application.applicationId || application.id} />
+                  <InfoRow label="GST Number" value={customFields.gstNumber || application.gstNumber || 'Not provided'} />
+                  <InfoRow label="PAN Number" value={customFields.panNumber || application.panNumber || 'Not provided'} />
+                  <InfoRow label="License Number" value={customFields.licenseNumber || application.licenseNumber || 'Not provided'} />
+                  <InfoRow label="License Expiry" value={customFields.licenseExpiryDate || application.licenseExpiryDate || 'Not provided'} />
+                  <InfoRow label="Years of Experience" value={customFields.yearsOfExperience || application.yearsOfExperience || 'Not provided'} />
                 </div>
               </div>
 

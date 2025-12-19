@@ -4,9 +4,7 @@ import { Card } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Badge } from '../../ui/badge';
 import { ServiceCatalogManager } from './ServiceCatalogManager';
-import { ServiceAreaConfigModal } from './ServiceAreaConfigModal';
-import { OperatingHoursManager } from './OperatingHoursManager';
-import { BusinessInfoEditor } from './BusinessInfoEditor';
+import { ServiceAreaConfigModal, OperatingHoursManager, BusinessInfoEditor } from './SoloProviderHelpers';
 
 interface CenterModeContentProps {
   session: {
