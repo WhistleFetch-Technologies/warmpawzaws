@@ -856,6 +856,120 @@ export function registerVendorServiceManagementRoutes(app: Hono) {
   });
   
   // ============================================
+  // UNPUBLISH SERVICE
+  // ============================================
+  app.post("/make-server-3dd53475/vendor/:vendorId/services/:serviceId/unpublish", async (c) => {
+    try {
+      const { vendorId, serviceId } = c.req.param();
+      
+      console.log(`📴 [VENDOR-SERVICES] Unpublishing service ${serviceId} for vendor ${vendorId}`);
+      
+      // Find the service across all service styles
+      const serviceStyles = ['at_home', 'at_center', 'tele'];
+      let found = false;
+      
+      for (const style of serviceStyles) {
+        const vendorServicesKey = `vendor_services:${vendorId}:${style}`;
+        const vendorServices = await kv.get(vendorServicesKey);
+        
+        if (vendorServices && vendorServices.services) {
+          const serviceIndex = vendorServices.services.findIndex((s: any) => s.serviceId === serviceId);
+          
+          if (serviceIndex !== -1) {
+            // Update service status to draft
+            vendorServices.services[serviceIndex].publishStatus = 'draft';
+            vendorServices.services[serviceIndex].unpublishedAt = new Date().toISOString();
+            delete vendorServices.services[serviceIndex].publishedAt;
+            
+            await kv.set(vendorServicesKey, vendorServices);
+            console.log(`✅ [VENDOR-SERVICES] Service ${serviceId} unpublished successfully`);
+            found = true;
+            break;
+          }
+        }
+      }
+      
+      if (!found) {
+        return c.json({ error: 'Service not found' }, 404);
+      }
+      
+      return c.json({
+        success: true,
+        message: 'Service unpublished successfully'
+      });
+      
+    } catch (error) {
+      console.error('❌ [VENDOR-SERVICES] Error unpublishing service:', error);
+      return c.json({ error: String(error) }, 500);
+    }
+  });
+  
+  // ============================================
+  // DELETE SERVICE (CUSTOM SERVICES ONLY)
+  // ============================================
+  app.delete("/make-server-3dd53475/vendor/:vendorId/services/:serviceId", async (c) => {
+    try {
+      const { vendorId, serviceId } = c.req.param();
+      
+      console.log(`🗑️ [VENDOR-SERVICES] Deleting service ${serviceId} for vendor ${vendorId}`);
+      
+      // Find the service across all service styles
+      const serviceStyles = ['at_home', 'at_center', 'tele'];
+      let found = false;
+      let isCustomService = false;
+      
+      for (const style of serviceStyles) {
+        const vendorServicesKey = `vendor_services:${vendorId}:${style}`;
+        const vendorServices = await kv.get(vendorServicesKey);
+        
+        if (vendorServices && vendorServices.services) {
+          const serviceIndex = vendorServices.services.findIndex((s: any) => s.serviceId === serviceId);
+          
+          if (serviceIndex !== -1) {
+            const service = vendorServices.services[serviceIndex];
+            
+            // Only allow deletion of custom services
+            if (!service.isCustomService) {
+              return c.json({ 
+                error: 'Cannot delete platform services. You can only disable them.' 
+              }, 400);
+            }
+            
+            // Only allow deletion if not published or if draft/rejected
+            if (service.publishStatus === 'published') {
+              return c.json({ 
+                error: 'Cannot delete published services. Please unpublish first.' 
+              }, 400);
+            }
+            
+            // Remove service from array
+            vendorServices.services.splice(serviceIndex, 1);
+            await kv.set(vendorServicesKey, vendorServices);
+            
+            console.log(`✅ [VENDOR-SERVICES] Service ${serviceId} deleted successfully`);
+            found = true;
+            isCustomService = true;
+            break;
+          }
+        }
+      }
+      
+      if (!found) {
+        return c.json({ error: 'Service not found' }, 404);
+      }
+      
+      return c.json({
+        success: true,
+        message: 'Service deleted successfully'
+      });
+      
+    } catch (error) {
+      console.error('❌ [VENDOR-SERVICES] Error deleting service:', error);
+      return c.json({ error: String(error) }, 500);
+    }
+  });
+  
+  // ============================================
   // GET PENDING APPROVAL REQUESTS (Admin)
   // ============================================
   app.get("/make-server-3dd53475/admin/rate-change-requests", async (c) => {

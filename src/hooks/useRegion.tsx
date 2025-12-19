@@ -1,7 +1,7 @@
 // useRegion Hook - React Hook for Multi-Region Support
 // Provides region context and utilities to components
 
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useMemo, useCallback, ReactNode } from 'react';
 import {
   Region,
   getCurrentRegionId,
@@ -103,7 +103,7 @@ export function RegionProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const setRegion = async (newRegionId: string) => {
+  const setRegion = useCallback(async (newRegionId: string) => {
     // For India deployment, only allow 'india' region
     if (newRegionId !== 'india') {
       console.warn('⚠️ Only India region is supported in this deployment');
@@ -128,24 +128,25 @@ export function RegionProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
-  const refreshRegion = async () => {
+  const refreshRegion = useCallback(async () => {
     await loadRegion();
     await loadActiveRegions();
-  };
+  }, []);
 
-  // Utility functions with current region
-  const formatCurrency = (amount: number) => formatCurrencyUtil(amount, region);
-  const validatePhone = (phone: string) => validatePhoneUtil(phone, region);
-  const formatPhoneDisplay = (phone: string) => formatPhoneDisplayUtil(phone, region);
-  const phoneToE164 = (phone: string) => phoneToE164Util(phone, region);
-  const formatDate = (date: Date | string) => formatDateUtil(date, region);
-  const formatTime = (time: string) => formatTimeUtil(time, region);
-  const isServiceEnabled = (serviceId: string) => isServiceEnabledUtil(serviceId, region);
-  const getPopularBreeds = (species: 'dogs' | 'cats') => getPopularBreedsUtil(species, region);
+  // ✅ FIX: Memoize utility functions to prevent recreation
+  const formatCurrency = useCallback((amount: number) => formatCurrencyUtil(amount, region), [region]);
+  const validatePhone = useCallback((phone: string) => validatePhoneUtil(phone, region), [region]);
+  const formatPhoneDisplay = useCallback((phone: string) => formatPhoneDisplayUtil(phone, region), [region]);
+  const phoneToE164 = useCallback((phone: string) => phoneToE164Util(phone, region), [region]);
+  const formatDate = useCallback((date: Date | string) => formatDateUtil(date, region), [region]);
+  const formatTime = useCallback((time: string) => formatTimeUtil(time, region), [region]);
+  const isServiceEnabled = useCallback((serviceId: string) => isServiceEnabledUtil(serviceId, region), [region]);
+  const getPopularBreeds = useCallback((species: 'dogs' | 'cats') => getPopularBreedsUtil(species, region), [region]);
 
-  const value: RegionContextType = {
+  // ✅ FIX: Memoize context value to prevent infinite loops
+  const value: RegionContextType = useMemo(() => ({
     region,
     regionId,
     isLoading,
@@ -160,7 +161,22 @@ export function RegionProvider({ children }: { children: ReactNode }) {
     formatTime,
     isServiceEnabled,
     getPopularBreeds,
-  };
+  }), [
+    region, 
+    regionId, 
+    isLoading, 
+    activeRegions, 
+    setRegion, 
+    refreshRegion,
+    formatCurrency,
+    validatePhone,
+    formatPhoneDisplay,
+    phoneToE164,
+    formatDate,
+    formatTime,
+    isServiceEnabled,
+    getPopularBreeds
+  ]);
 
   return (
     <RegionContext.Provider value={value}>

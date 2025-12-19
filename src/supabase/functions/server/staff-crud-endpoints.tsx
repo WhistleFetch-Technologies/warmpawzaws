@@ -167,6 +167,43 @@ app.get('/make-server-3dd53475/vendor/:vendorId/staff', async (c) => {
 });
 
 /**
+ * GET ALL STAFF FOR VENDOR (ALIAS ROUTE)
+ * GET /staff/vendor/:vendorId
+ * ✅ ALIAS: This route provides the same functionality as /vendor/:vendorId/staff
+ * to maintain compatibility with frontend components
+ */
+app.get('/make-server-3dd53475/staff/vendor/:vendorId', async (c) => {
+  try {
+    const { vendorId } = c.req.param();
+    
+    console.log(`\n📋 ===== FETCH STAFF FOR VENDOR =====`);
+    console.log(`👤 Vendor ID: ${vendorId}`);
+    
+    const staffIds = await kv.get(`vendor:${vendorId}:staff`) || [];
+    console.log(`📊 Staff IDs in array: ${staffIds.length}`, staffIds);
+    
+    const staffMembers = [];
+    for (const id of staffIds) {
+      const staff = await kv.get(`staff:${id}`);
+      if (staff) {
+        console.log(`✅ Loaded staff: ${staff.fullName} (${staff.id})`);
+        staffMembers.push(staff);
+      } else {
+        console.warn(`⚠️  Staff ID ${id} not found in KV store`);
+      }
+    }
+    
+    console.log(`✅ Returning ${staffMembers.length} staff members`);
+    console.log(`🎉 ===== FETCH COMPLETE =====\n`);
+    
+    return sendSuccess(c, { staff: staffMembers, total: staffMembers.length });
+  } catch (error) {
+    console.error('❌ Error fetching staff:', error);
+    return sendError(c, error, 500);
+  }
+});
+
+/**
  * GET SINGLE STAFF MEMBER
  * GET /staff/:staffId
  */

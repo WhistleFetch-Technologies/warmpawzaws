@@ -235,8 +235,34 @@ export function VendorDashboard({
   }
 
   // Fetch dashboard data
-  const fetchDashboardData = async (showRefresh = false) => {
+  const fetchDashboardData = useCallback(async (showRefresh = false) => {
     try {
+      // ✅ PERFORMANCE: Check cache first (unless explicitly refreshing)
+      if (!showRefresh) {
+        const cacheKey = `dashboard_${vendorId}_${activeTab}`;
+        const cached = sessionStorage.getItem(cacheKey);
+        if (cached) {
+          try {
+            const { data, timestamp } = JSON.parse(cached);
+            const age = Date.now() - timestamp;
+            // Use cache if less than 2 minutes old
+            if (age < 120000) {
+              console.log('📦 Using cached dashboard data (age:', Math.round(age / 1000), 's)');
+              setStats(data.stats);
+              setTodaySchedule(data.schedule || []);
+              setNotifications(data.notifications || []);
+              setServices(data.services || []);
+              setWatchlist(data.watchlist || []);
+              setVendor(data.vendor);
+              setLoading(false);
+              return;
+            }
+          } catch (e) {
+            console.warn('Cache parse error, fetching fresh data');
+          }
+        }
+      }
+
       if (showRefresh) setRefreshing(true);
       else setLoading(true);
 
@@ -369,6 +395,27 @@ export function VendorDashboard({
         
         await Promise.all(backgroundParsing);
         console.log('✅ Non-critical dashboard data loaded (background)');
+        
+        // ✅ PERFORMANCE: Save to cache for next visit (capture all state in closure)
+        setTimeout(() => {
+          try {
+            const cacheKey = `dashboard_${vendorId}_${activeTab}`;
+            const cacheData = {
+              data: {
+                stats,
+                schedule: todaySchedule,
+                notifications,
+                services,
+                watchlist,
+                vendor
+              },
+              timestamp: Date.now()
+            };
+            sessionStorage.setItem(cacheKey, JSON.stringify(cacheData));
+          } catch (e) {
+            console.warn('Failed to cache dashboard data:', e);
+          }
+        }, 0);
       }).catch(error => {
         console.error('⚠️ Error loading non-critical data:', error);
       });
@@ -378,14 +425,16 @@ export function VendorDashboard({
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [vendorId, activeTab, capabilities, stats, todaySchedule, notifications, services, watchlist, vendor]); // ✅ FIX: Memoize with proper deps
 
   // Fetch data on mount and when activeTab changes
+  // ✅ PERFORMANCE FIX: Only re-fetch when vendorId or activeTab changes, not on every capability change
   useEffect(() => {
     if (vendorId && !capsLoading) {
       fetchDashboardData();
     }
-  }, [vendorId, activeTab, capsLoading, capabilities.booking, capabilities.medical_records]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vendorId, activeTab, capsLoading]); // ✅ FIX: Intentionally excluding fetchDashboardData to prevent infinite loop
 
   // Format time ago
   const formatTimeAgo = (dateString: string) => {
@@ -402,10 +451,31 @@ export function VendorDashboard({
     return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
   };
 
-  // 🎨 GET DYNAMIC ICON THEME FOR THIS VENDOR
-  const iconTheme = getVendorIconTheme(vendorData?.roleId);
-  const RoleIconComponent = getRoleIcon(vendorData?.roleId);
-  const colorScheme = getRoleColorScheme(vendorData?.roleId);
+  // 🎨 GET DYNAMIC ICON THEME FOR THIS VENDOR (memoized)
+  const iconTheme = useMemo(() => getVendorIconTheme(vendorData?.roleId), [vendorData?.roleId]);
+  const RoleIconComponent = useMemo(() => getRoleIcon(vendorData?.roleId), [vendorData?.roleId]);
+  const colorScheme = useMemo(() => getRoleColorScheme(vendorData?.roleId), [vendorData?.roleId]);
+
+  // ✅ PERFORMANCE: Memoize filtered schedule to avoid re-filtering on every render
+  const filteredSchedule = useMemo(() => {
+    return todaySchedule.filter(appointment => {
+      if (appointmentTypeFilter === 'all') return true;
+      const typeMap: Record<string, string> = {
+        'at_center': 'clinic',
+        'clinic': 'clinic',
+        'at_home': 'home',
+        'home': 'home',
+        'tele': 'tele',
+        'teleconsultation': 'tele'
+      };
+      return typeMap[appointment.serviceType?.toLowerCase()] === appointmentTypeFilter;
+    });
+  }, [todaySchedule, appointmentTypeFilter]);
+
+  // ✅ PERFORMANCE: Memoize unread notification count
+  const unreadNotificationCount = useMemo(() => {
+    return notifications.filter(n => !n.isRead).length;
+  }, [notifications]);
 
   if (loading || capsLoading) {
     return (
@@ -449,7 +519,7 @@ export function VendorDashboard({
                 onClick={() => setNotificationModalOpen(true)}
               >
                 <iconTheme.actions.notifications className="w-5 h-5 text-gray-400 hover:text-[#FF8C42] transition-colors" />
-                {notifications.filter(n => !n.isRead).length > 0 && (
+                {unreadNotificationCount > 0 && (
                   <div className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
                 )}
               </button>
@@ -943,20 +1013,7 @@ export function VendorDashboard({
                   <button className="text-sm text-[#FF8C42]" onClick={onNavigateToBookingManagement}>View All →</button>
                 </div>
                 <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
-                  {todaySchedule
-                    .filter(appointment => {
-                      if (appointmentTypeFilter === 'all') return true;
-                      const typeMap: Record<string, string> = {
-                        'at_center': 'clinic',
-                        'clinic': 'clinic',
-                        'at_home': 'home',
-                        'home': 'home',
-                        'tele': 'tele',
-                        'teleconsultation': 'tele'
-                      };
-                      return typeMap[appointment.serviceType?.toLowerCase()] === appointmentTypeFilter;
-                    })
-                    .map(appointment => {
+                  {filteredSchedule.map(appointment => {
                        const serviceType = appointment.serviceType?.toLowerCase();
                        let typeIcon = Stethoscope;
                        let typeColor = 'bg-blue-100';

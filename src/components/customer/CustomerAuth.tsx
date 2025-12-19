@@ -303,7 +303,7 @@ export function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
           Welcome to Warmpawz
         </h1>
         <p className="text-gray-600 text-center mb-10">
-          Your 360° pet care companion
+          Pet Care. Reimagined.
         </p>
 
         {error && (

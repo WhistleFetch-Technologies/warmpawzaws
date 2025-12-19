@@ -733,7 +733,7 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
             </p>
             
             <SpecializationSelector
-              selectedSpecializations={profile.specializations}
+              selected={profile.specializations}
               onChange={(specs) => setProfile(prev => ({ ...prev, specializations: specs }))}
               roleId={vendorData?.roleId}
             />
