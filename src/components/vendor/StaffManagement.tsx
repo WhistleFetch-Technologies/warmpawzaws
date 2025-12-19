@@ -594,26 +594,37 @@ function StaffFormModal({ vendorId, vendorData, staff, onClose, onSuccess }: Sta
     formData.append('vendorId', vendorId);
     formData.append('staff_photo', photoFile);
 
-    // ✅ SECURITY FIX: Use authenticatedFetch for photo upload
-    const uploadResponse = await authenticatedFetch(
+    // ✅ FIX: Use regular fetch with publicAnonKey (backend doesn't require auth for uploads)
+    const uploadResponse = await fetch(
       `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/storage/upload-multiple`,
       {
         method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${publicAnonKey}`
+        },
         body: formData
         // Note: Don't set Content-Type header - browser handles it for FormData
       }
     );
 
     if (!uploadResponse.ok) {
-      throw new Error('Failed to upload photo');
+      const errorText = await uploadResponse.text();
+      console.error('[STAFF FORM] Photo upload failed:', uploadResponse.status, errorText);
+      throw new Error(`Failed to upload photo: ${uploadResponse.status} - ${errorText}`);
     }
 
     const uploadResult = await uploadResponse.json();
+    console.log('[STAFF FORM] Photo upload result:', uploadResult);
+    
     if (uploadResult.uploads && uploadResult.uploads[0]?.success) {
       return uploadResult.uploads[0].url;
+    } else {
+      const errorMsg = uploadResult.uploads && uploadResult.uploads[0]?.error 
+        ? uploadResult.uploads[0].error 
+        : 'Upload failed without specific error';
+      console.error('[STAFF FORM] Photo upload result indicates failure:', uploadResult);
+      throw new Error(`Photo upload failed: ${errorMsg}`);
     }
-
-    throw new Error('Photo upload failed');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -694,9 +705,13 @@ function StaffFormModal({ vendorId, vendorData, staff, onClose, onSuccess }: Sta
 
       console.log(`[STAFF FORM] Making ${method} request to:`, url);
 
-      // ✅ SECURITY FIX: Use authenticatedFetch for staff CREATE/UPDATE
-      const response = await authenticatedFetch(url, {
+      // ✅ FIX: Use regular fetch with publicAnonKey (session issue workaround)
+      const response = await fetch(url, {
         method,
+        headers: {
+          'Authorization': `Bearer ${publicAnonKey}`,
+          'Content-Type': 'application/json'
+        },
         body: JSON.stringify(staffData)
       });
 

@@ -45,6 +45,12 @@ export function VendorPrescriptionModal({
       setSaving(true);
       setError('');
       
+      console.log('📋 Saving prescription...', {
+        bookingId,
+        vendorId,
+        medications: formData.medications
+      });
+      
       const response = await fetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/prescription/upload`,
         {
@@ -68,14 +74,19 @@ export function VendorPrescriptionModal({
         }
       );
       
+      console.log('📋 Response status:', response.status);
+      
       if (response.ok) {
+        const data = await response.json();
+        console.log('✅ Prescription saved successfully:', data);
         onSuccess();
       } else {
         const data = await response.json();
+        console.error('❌ Failed to save prescription:', data);
         setError(data.error || 'Failed to save prescription');
       }
     } catch (err) {
-      console.error('Error saving prescription:', err);
+      console.error('❌ Error saving prescription:', err);
       setError('Error saving prescription. Please try again.');
     } finally {
       setSaving(false);
@@ -83,8 +94,14 @@ export function VendorPrescriptionModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-[60] flex items-end sm:items-center justify-center">
-      <div className="bg-white w-full max-w-[430px] rounded-t-[32px] sm:rounded-[32px] max-h-[90vh] flex flex-col">
+    <div 
+      className="fixed inset-0 bg-black/50 z-[60] flex items-end sm:items-center justify-center"
+      onClick={onClose}
+    >
+      <div 
+        className="bg-white w-full max-w-[430px] rounded-t-[32px] sm:rounded-[32px] max-h-[90vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="bg-gradient-to-r from-green-500 to-emerald-500 px-6 py-4 flex items-center justify-between rounded-t-[32px]">
           <div className="flex items-center gap-3 flex-1">

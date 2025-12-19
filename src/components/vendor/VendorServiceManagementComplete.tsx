@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Plus, X } from 'lucide-react';
+import { ArrowLeft, Plus, X, Package } from 'lucide-react';
 import { Button } from '../ui/button';
 import { toast } from 'sonner@2.0.3';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
@@ -307,33 +307,31 @@ export function VendorServiceManagementComplete({
           </div>
         )}
 
-        {/* ✅ NEW: Catalog View Section (Only for at_center or both) */}
-        {canCreateCustomServices && (
-          <div className="p-4">
-            <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] rounded-2xl p-6 text-white">
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex-1">
-                  <h3 className="font-semibold mb-2 text-lg">Service Catalog</h3>
-                  <p className="text-sm text-white/90 mb-4">
-                    Browse and enable services from our catalog
-                  </p>
-                </div>
-                <Plus className="w-6 h-6 flex-shrink-0" />
+        {/* ✅ Service Catalog Section - Available for ALL vendors */}
+        <div className="p-4">
+          <div className="bg-gradient-to-r from-[#26C6DA] to-[#00ACC1] rounded-2xl p-6 text-white">
+            <div className="flex items-start justify-between mb-4">
+              <div className="flex-1">
+                <h3 className="font-semibold mb-2 text-lg">Service Catalog</h3>
+                <p className="text-sm text-white/90 mb-4">
+                  Browse and enable certified services from the admin catalog
+                </p>
               </div>
-              
-              <Button
-                onClick={() => setShowCatalogView(true)}
-                className="w-full bg-white text-[#FF8C42] hover:bg-gray-100 font-semibold"
-              >
-                Browse Catalog
-              </Button>
-              
-              <p className="text-xs text-white/80 mt-3 text-center">
-                ⭐ Only available for center-based services
-              </p>
+              <Package className="w-6 h-6 flex-shrink-0" />
             </div>
+            
+            <Button
+              onClick={() => setShowCatalogView(true)}
+              className="w-full bg-white text-[#26C6DA] hover:bg-gray-100 font-semibold"
+            >
+              Browse Service Catalog
+            </Button>
+            
+            <p className="text-xs text-white/80 mt-3 text-center">
+              📋 All tele and home services are controlled from here
+            </p>
           </div>
-        )}
+        </div>
 
         {/* Help Section */}
         <div className="p-4 mt-8">

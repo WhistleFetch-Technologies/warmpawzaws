@@ -4021,6 +4021,11 @@
     background-image: url("https://maps.googleapis.com/maps/api/staticmap?center=28.61,77.20&zoom=14&size=400x200&key=YOUR_KEY");
   }
 
+  .from-\[\#26C6DA\] {
+    --tw-gradient-from: #26c6da;
+    --tw-gradient-stops: var(--tw-gradient-via-stops, var(--tw-gradient-position), var(--tw-gradient-from) var(--tw-gradient-from-position), var(--tw-gradient-to) var(--tw-gradient-to-position));
+  }
+
   .from-\[\#FF8C42\] {
     --tw-gradient-from: #ff8c42;
     --tw-gradient-stops: var(--tw-gradient-via-stops, var(--tw-gradient-position), var(--tw-gradient-from) var(--tw-gradient-from-position), var(--tw-gradient-to) var(--tw-gradient-to-position));
@@ -4413,6 +4418,11 @@
     --tw-gradient-via: transparent;
     --tw-gradient-via-stops: var(--tw-gradient-position), var(--tw-gradient-from) var(--tw-gradient-from-position), var(--tw-gradient-via) var(--tw-gradient-via-position), var(--tw-gradient-to) var(--tw-gradient-to-position);
     --tw-gradient-stops: var(--tw-gradient-via-stops);
+  }
+
+  .to-\[\#00ACC1\] {
+    --tw-gradient-to: #00acc1;
+    --tw-gradient-stops: var(--tw-gradient-via-stops, var(--tw-gradient-position), var(--tw-gradient-from) var(--tw-gradient-from-position), var(--tw-gradient-to) var(--tw-gradient-to-position));
   }
 
   .to-\[\#FF6B1A\] {
@@ -5404,6 +5414,10 @@
 
   .whitespace-pre-wrap {
     white-space: pre-wrap;
+  }
+
+  .text-\[\#26C6DA\] {
+    color: #26c6da;
   }
 
   .text-\[\#FF8C42\] {

@@ -168,6 +168,10 @@ import { integratedServicesManagerEndpoints } from './integrated-services-manage
 
 import { tierSystemEndpoints } from './tier-system.tsx';
 import { razorpayMarketplaceSettlement } from './razorpay-marketplace-settlement.tsx';
+import appointmentDetailEndpoints from './appointment-detail-endpoints.tsx'; // ✅ FIX: Prescription upload endpoints
+import { registerStorageEndpoints } from './storage-handler.tsx'; // ✅ FIX: Storage upload endpoints
+import { staffServiceEndpoints } from './staff-service-endpoints.tsx'; // ✅ FIX: Staff service management endpoints
+import { soloProviderEndpoints } from './solo-provider-endpoints.tsx'; // ✅ FIX: Solo provider onboarding endpoints
 
 const app = new Hono();
 
@@ -462,6 +466,7 @@ enhancedSearchEngineEndpoints(app, kv);
 // These must be registered BEFORE customer-routes because customer-routes
 // contains a generic /vendor/:vendorId wildcard that would shadow these.
 vendorOnboardingEndpoints(app, kv);
+soloProviderEndpoints(app, kv); // ✅ FIX: Solo provider onboarding endpoints
 vendorApprovalWorkflowEndpoints(app, kv);
 vendorDashboardEndpoints(app, kv);
 vendorRoleConfigEndpoints(app);
@@ -894,6 +899,14 @@ if (additionalCapabilitiesEndpoints && typeof additionalCapabilitiesEndpoints ==
   console.warn('⚠️ Additional Capabilities Endpoints module undefined, skipping');
 }
 
+// ✅ Appointment Detail & Prescription Endpoints
+if (appointmentDetailEndpoints && typeof appointmentDetailEndpoints === 'object') {
+  app.route('/', appointmentDetailEndpoints);
+  console.log('✅ Registered Appointment Detail & Prescription Endpoints');
+} else {
+  console.warn('⚠️ Appointment Detail Endpoints module undefined, skipping');
+}
+
 // ✅ P0 Features
 registerP0Features(app);
 
@@ -1284,6 +1297,14 @@ if (razorpayMarketplaceSettlement && typeof razorpayMarketplaceSettlement === 'f
   console.log('✅ Registering Razorpay Marketplace Settlement...');
   razorpayMarketplaceSettlement(app, kv);
 }
+
+// ✅ CRITICAL: Storage Upload Endpoints (Photos, Documents, etc.)
+console.log('✅ Registering Storage Upload Endpoints...');
+registerStorageEndpoints(app);
+
+// ✅ CRITICAL: Staff Service Management Endpoints (Service Assignment, Custom Services)
+console.log('✅ Registering Staff Service Management Endpoints...');
+staffServiceEndpoints(app, kv);
 
 // ------------------------------------------------------------------
 // GLOBAL ERROR HANDLERS

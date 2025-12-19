@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import { toast } from 'sonner@2.0.3';
 
 export interface CartItem {
@@ -142,20 +142,23 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const cartTotal = items.reduce((total, item) => total + (item.price * item.quantity), 0);
   const itemCount = items.reduce((count, item) => count + item.quantity, 0);
 
+  // ✅ FIX: Memoize context value to prevent infinite loops
+  const contextValue = useMemo(() => ({
+    items,
+    savedItems,
+    addToCart,
+    removeFromCart,
+    updateQuantity,
+    clearCart,
+    saveForLater,
+    moveToCart,
+    removeSavedItem,
+    cartTotal,
+    itemCount
+  }), [items, savedItems, cartTotal, itemCount]);
+
   return (
-    <CartContext.Provider value={{
-      items,
-      savedItems,
-      addToCart,
-      removeFromCart,
-      updateQuantity,
-      clearCart,
-      saveForLater,
-      moveToCart,
-      removeSavedItem,
-      cartTotal,
-      itemCount
-    }}>
+    <CartContext.Provider value={contextValue}>
       {children}
     </CartContext.Provider>
   );

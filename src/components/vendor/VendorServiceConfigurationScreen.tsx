@@ -66,6 +66,9 @@ export function VendorServiceConfigurationScreen({
   const [showAddCustomDialog, setShowAddCustomDialog] = useState(false);
   const [searchQuery, setSearchQuery] = useState(''); // ✅ NEW: Search state
   const [showBulkActions, setShowBulkActions] = useState(false); // ✅ NEW: Bulk actions state
+  const [viewMode, setViewMode] = useState<'all' | 'enabled' | 'published'>('all'); // ✅ NEW: View mode filter
+  const [editingService, setEditingService] = useState<Service | null>(null); // ✅ NEW: Service being edited
+  const [showDeleteDialog, setShowDeleteDialog] = useState<Service | null>(null); // ✅ NEW: Delete confirmation
   
   // Custom service form
   const [customServiceForm, setCustomServiceForm] = useState({
@@ -206,6 +209,55 @@ export function VendorServiceConfigurationScreen({
     ));
     setHasChanges(true);
     toast.success(`All ${category} services disabled`);
+  };
+
+  // ✅ NEW: Delete Service (for custom services only)
+  const deleteService = async (serviceId: string) => {
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/services/${serviceId}`,
+        {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        }
+      );
+
+      if (response.ok) {
+        toast.success('Service deleted successfully');
+        setServices(services.filter(s => s.id !== serviceId));
+        setShowDeleteDialog(null);
+      } else {
+        const error = await response.json();
+        toast.error(error.error || 'Failed to delete service');
+      }
+    } catch (error) {
+      console.error('Error deleting service:', error);
+      toast.error('Error deleting service');
+    }
+  };
+
+  // ✅ NEW: Unpublish Service
+  const unpublishService = async (serviceId: string) => {
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/services/${serviceId}/unpublish`,
+        {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        }
+      );
+
+      if (response.ok) {
+        toast.success('Service unpublished successfully');
+        await loadServices(); // Reload to get updated status
+      } else {
+        const error = await response.json();
+        toast.error(error.error || 'Failed to unpublish service');
+      }
+    } catch (error) {
+      console.error('Error unpublishing service:', error);
+      toast.error('Error unpublishing service');
+    }
   };
 
   const saveConfiguration = async () => {
@@ -874,6 +926,36 @@ export function VendorServiceConfigurationScreen({
 
                             {/* Description Preview */}
                             <p className="text-xs text-gray-600 line-clamp-2">{service.description}</p>
+
+                            {/* ✅ NEW: Service Action Buttons */}
+                            {service.isEnabled && (
+                              <div className="flex gap-1 mt-2">
+                                {/* Unpublish Button - Only for published services */}
+                                {service.publishStatus === 'published' && (
+                                  <button
+                                    onClick={() => unpublishService(service.id)}
+                                    className="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors flex items-center gap-1"
+                                    title="Unpublish service"
+                                  >
+                                    📴 Unpublish
+                                  </button>
+                                )
+                                } 
+                                
+                                {/* Delete Button - Only for custom services that are NOT published */}
+                                {service.isCustomService && service.publishStatus !== 'published' && (
+                                  <button
+                                    onClick={() => setShowDeleteDialog(service)}
+                                    className="text-xs px-2 py-1 bg-red-50 text-red-600 rounded hover:bg-red-100 transition-colors flex items-center gap-1"
+                                    title="Delete custom service"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                    Delete
+                                  </button>
+                                )
+                                }
+                              </div>
+                            )}
                           </div>
 
                           {/* Enable Toggle */}
@@ -1016,6 +1098,29 @@ export function VendorServiceConfigurationScreen({
           description: s.description
         }))}
       />
+      
+      {/* ✅ NEW: Delete Confirmation Dialog */}
+      <Dialog open={!!showDeleteDialog} onOpenChange={() => setShowDeleteDialog(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete Service?</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete <strong>{showDeleteDialog?.name}</strong>? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDeleteDialog(null)}>
+              Cancel
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={() => showDeleteDialog && deleteService(showDeleteDialog.id)}
+            >
+              Delete Service
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
