@@ -290,9 +290,14 @@ app.post("/make-server-3dd53475/admin/vendor/application/:vendorId/approve", asy
       return c.json({ error: 'Vendor not found' }, 404);
     }
     
-    // Accept both 'pending' and 'pending_approval' statuses
-    if (vendor.status !== 'pending_approval' && vendor.status !== 'pending') {
-      return c.json({ error: 'Vendor is not pending approval', currentStatus: vendor.status }, 400);
+    // Accept multiple statuses including rejected and clarification_requested for re-review
+    const validStatuses = ['pending_approval', 'pending', 'rejected', 'clarification_requested', 'pending_reverification', 'more_info_required'];
+    if (!validStatuses.includes(vendor.status)) {
+      return c.json({ 
+        error: 'Vendor cannot be approved from current status', 
+        currentStatus: vendor.status,
+        validStatuses 
+      }, 400);
     }
     
     // Update vendor status
@@ -407,10 +412,15 @@ app.post("/make-server-3dd53475/admin/vendors/applications/:vendorId/approve", a
     
     console.log('📋 Vendor found with status:', vendor.status);
     
-    // Accept both 'pending' and 'pending_approval' statuses
-    if (vendor.status !== 'pending_approval' && vendor.status !== 'pending') {
-      console.error('❌ Vendor status is not pending:', vendor.status);
-      return c.json({ error: 'Vendor is not pending approval', currentStatus: vendor.status }, 400);
+    // Accept multiple statuses including rejected and clarification_requested for re-review
+    const validApprovalStatuses = ['pending_approval', 'pending', 'rejected', 'clarification_requested', 'pending_reverification', 'more_info_required'];
+    if (!validApprovalStatuses.includes(vendor.status)) {
+      console.error('❌ Vendor status is not valid for approval:', vendor.status);
+      return c.json({ 
+        error: 'Vendor cannot be approved from current status', 
+        currentStatus: vendor.status,
+        validStatuses: validApprovalStatuses 
+      }, 400);
     }
     
     // ✅ DUPLICATE CHECK: Before approving, check if phone/email are already used by an approved vendor
@@ -854,10 +864,15 @@ app.post("/make-server-3dd53475/admin/vendors/applications/:vendorId/reject", as
     
     console.log('📋 Vendor found with status:', vendor.status);
     
-    // Accept both 'pending' and 'pending_approval' statuses
-    if (vendor.status !== 'pending_approval' && vendor.status !== 'pending') {
-      console.error('❌ Vendor status is not pending:', vendor.status);
-      return c.json({ error: 'Vendor is not pending approval', currentStatus: vendor.status }, 400);
+    // Accept multiple statuses for rejection (can reject from various states)
+    const validRejectionStatuses = ['pending_approval', 'pending', 'clarification_requested', 'pending_reverification', 'more_info_required'];
+    if (!validRejectionStatuses.includes(vendor.status)) {
+      console.error('❌ Vendor status is not valid for rejection:', vendor.status);
+      return c.json({ 
+        error: 'Vendor cannot be rejected from current status', 
+        currentStatus: vendor.status,
+        validStatuses: validRejectionStatuses 
+      }, 400);
     }
     
     // Update vendor status
@@ -963,12 +978,14 @@ app.post("/make-server-3dd53475/admin/vendor/application/:vendorId/request-clari
     
     console.log('📋 Vendor found with status:', vendor.status);
     
-    // Validate vendor is in a state where clarification can be requested
-    if (vendor.status !== 'pending_approval' && vendor.status !== 'pending') {
-      console.error('❌ Vendor status is not pending:', vendor.status);
+    // Accept multiple statuses for clarification requests
+    const validClarificationStatuses = ['pending_approval', 'pending', 'rejected', 'clarification_requested', 'pending_reverification'];
+    if (!validClarificationStatuses.includes(vendor.status)) {
+      console.error('❌ Vendor status is not valid for clarification:', vendor.status);
       return c.json({ 
-        error: 'Vendor is not pending approval', 
-        currentStatus: vendor.status 
+        error: 'Cannot request clarification from current status', 
+        currentStatus: vendor.status,
+        validStatuses: validClarificationStatuses 
       }, 400);
     }
     
@@ -1104,12 +1121,14 @@ app.post("/make-server-3dd53475/admin/vendor/request-info", async (c) => {
     
     console.log('📋 Vendor found with status:', vendor.status);
     
-    // Validate vendor is in a state where info can be requested
-    if (vendor.status !== 'pending_approval' && vendor.status !== 'pending') {
-      console.error('❌ Vendor status is not pending:', vendor.status);
+    // Accept multiple statuses for info requests
+    const validInfoStatuses = ['pending_approval', 'pending', 'rejected', 'clarification_requested', 'more_info_required', 'pending_reverification'];
+    if (!validInfoStatuses.includes(vendor.status)) {
+      console.error('❌ Vendor status is not valid for info request:', vendor.status);
       return c.json({ 
-        error: 'Vendor is not pending approval', 
-        currentStatus: vendor.status 
+        error: 'Cannot request info from current status', 
+        currentStatus: vendor.status,
+        validStatuses: validInfoStatuses 
       }, 400);
     }
     

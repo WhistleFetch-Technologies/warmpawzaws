@@ -3265,6 +3265,10 @@
     border-left-color: var(--color-indigo-500);
   }
 
+  .border-l-orange-600 {
+    border-left-color: var(--color-orange-600);
+  }
+
   .border-l-pink-500 {
     border-left-color: var(--color-pink-500);
   }
