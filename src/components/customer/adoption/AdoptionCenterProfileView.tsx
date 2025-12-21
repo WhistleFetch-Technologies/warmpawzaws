@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, MapPin, Star, Heart, Users } from 'lucide-react';
+import { ArrowLeft, MapPin, Star, Heart, Users, Calendar } from 'lucide-react';
+import { Button } from '../../ui/button';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
 import { ImageWithFallback } from '../../figma/ImageWithFallback';
 
@@ -113,6 +114,29 @@ export function AdoptionCenterProfileView({ phone, centerId, onBack, onNavigate 
           <p className="text-sm text-gray-600 leading-relaxed">{center.description}</p>
         </div>
       )}
+
+      {/* ✅ PHASE 3: Events & Donations Quick Actions */}
+      <div className="bg-white mt-2 p-4 border-b border-gray-200">
+        <h3 className="font-semibold mb-3">Get Involved</h3>
+        <div className="space-y-2">
+          <Button
+            onClick={() => onNavigate('events-list', { vendorId: centerId, vendorName: center.businessName })}
+            variant="outline"
+            className="w-full bg-pink-50 hover:bg-pink-100 border-pink-200 text-pink-700"
+          >
+            <Calendar className="w-4 h-4 mr-2" />
+            View Events
+          </Button>
+          <Button
+            onClick={() => onNavigate('donation-campaigns', { vendorId: centerId, vendorName: center.businessName })}
+            variant="outline"
+            className="w-full bg-pink-50 hover:bg-pink-100 border-pink-200 text-pink-700"
+          >
+            <Heart className="w-4 h-4 mr-2" />
+            View Donation Campaigns
+          </Button>
+        </div>
+      </div>
 
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 max-w-md mx-auto">
         <button

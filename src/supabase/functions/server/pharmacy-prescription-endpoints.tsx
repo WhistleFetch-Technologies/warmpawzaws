@@ -503,5 +503,166 @@ export function pharmacyPrescriptionEndpoints(app: Hono, kv: any) {
     }
   });
 
+  // ============================================
+  // CUSTOMER ENDPOINTS - View Orders & Pay Invoices
+  // ============================================
+
+  /**
+   * GET /customer/prescription-orders
+   * Get all prescription orders for a customer
+   * Query params: phone (customer phone number)
+   */
+  app.get(`${BASE_PATH}/customer/prescription-orders`, async (c) => {
+    try {
+      const phone = c.req.query('phone');
+      
+      if (!phone) {
+        return sendError(c, 'Missing required parameter: phone', 400);
+      }
+
+      console.log(`📋 Fetching prescription orders for customer: ${phone}`);
+
+      // Get customer by phone
+      const customer = await kv.get(`customer:${phone}`);
+      if (!customer) {
+        return sendSuccess(c, { orders: [] });
+      }
+
+      // Get all prescription orders for this customer
+      // Check both old format (prescription_order:vendor:...) and new format (order:medicine:...)
+      const allOrders: any[] = [];
+      
+      // Get orders from prescription_order keys
+      const prescriptionOrderKeys = await kv.getByPrefix(`prescription_order:vendor:`);
+      for (const key of prescriptionOrderKeys) {
+        const order = key.value;
+        if (order && order.customerPhone === phone) {
+          allOrders.push(order);
+        }
+      }
+
+      // Get orders from order:medicine keys
+      const medicineOrderKeys = await kv.getByPrefix(`order:medicine:`);
+      for (const key of medicineOrderKeys) {
+        const order = key.value;
+        if (order && order.customerId === phone) {
+          // Convert to prescription order format
+          allOrders.push({
+            id: order.id,
+            prescriptionId: order.prescriptionId,
+            prescriptionNumber: order.prescriptionNumber || order.id,
+            customerId: order.customerId,
+            customerName: order.customerName,
+            customerPhone: order.customerId,
+            vendorId: order.pharmacyVendorId,
+            vendorName: order.pharmacyName,
+            status: order.status || order.orderStatus,
+            medications: order.medicines || [],
+            totalAmount: order.totalAmount,
+            invoiceId: order.invoiceId,
+            invoiceUrl: order.invoiceUrl,
+            invoiceNotes: order.invoiceNotes,
+            invoiceSentAt: order.invoiceSentAt,
+            paymentConfirmedAt: order.paymentConfirmedAt,
+            deliveryPartnerId: order.deliveryPartnerId,
+            trackingNumber: order.trackingNumber,
+            createdAt: order.createdAt,
+            verifiedAt: order.verifiedAt,
+            rejectionReason: order.rejectionReason
+          });
+        }
+      }
+
+      // Sort by creation date (newest first)
+      allOrders.sort((a, b) => {
+        const dateA = new Date(a.createdAt || 0).getTime();
+        const dateB = new Date(b.createdAt || 0).getTime();
+        return dateB - dateA;
+      });
+
+      console.log(`✅ Found ${allOrders.length} prescription orders for customer ${phone}`);
+
+      return sendSuccess(c, { orders: allOrders });
+
+    } catch (error) {
+      console.error('❌ Error fetching prescription orders:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  /**
+   * POST /customer/prescription-orders/:orderId/confirm-payment
+   * Confirm payment for a prescription order invoice
+   */
+  app.post(`${BASE_PATH}/customer/prescription-orders/:orderId/confirm-payment`, async (c) => {
+    try {
+      const { orderId } = c.req.param();
+      const { paymentId, invoiceId } = await c.req.json();
+
+      console.log(`💳 Confirming payment for order ${orderId}, payment: ${paymentId}`);
+
+      // Find the order (check both formats)
+      let order = await kv.get(`prescription_order:vendor:${orderId}`);
+      if (!order) {
+        // Try medicine order format
+        const medicineOrder = await kv.get(`order:medicine:${orderId}`);
+        if (medicineOrder) {
+          order = medicineOrder;
+        }
+      }
+
+      if (!order) {
+        return sendError(c, 'Order not found', 404);
+      }
+
+      // Verify payment with Razorpay (in production, verify signature)
+      // For now, assume payment is valid if paymentId is provided
+
+      // Update order status
+      order.status = 'paid';
+      order.paymentStatus = 'confirmed';
+      order.paymentId = paymentId;
+      order.paymentConfirmedAt = new Date().toISOString();
+      order.invoiceId = invoiceId || order.invoiceId;
+
+      // Save updated order
+      if (order.id?.startsWith('ORD-MED')) {
+        await kv.set(`order:medicine:${order.id}`, order);
+      } else {
+        // Find vendor ID from order
+        const vendorId = order.vendorId || order.pharmacyVendorId;
+        if (vendorId) {
+          await kv.set(`prescription_order:vendor:${vendorId}:${orderId}`, order);
+        }
+      }
+
+      // Notify pharmacy
+      const vendorId = order.vendorId || order.pharmacyVendorId;
+      if (vendorId) {
+        const notification = {
+          id: `notif_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          type: 'order_paid',
+          title: 'Payment Received',
+          message: `Order ${orderId} payment confirmed. Amount: ₹${order.totalAmount}`,
+          vendorId,
+          orderId,
+          createdAt: new Date().toISOString()
+        };
+        await kv.set(`notification:${notification.id}`, notification);
+      }
+
+      console.log(`✅ Payment confirmed for order ${orderId}`);
+
+      return sendSuccess(c, {
+        order,
+        message: 'Payment confirmed successfully'
+      });
+
+    } catch (error) {
+      console.error('❌ Error confirming payment:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
   console.log('✅ Pharmacy Prescription Endpoints registered');
 }

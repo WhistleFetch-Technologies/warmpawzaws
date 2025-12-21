@@ -18,7 +18,7 @@ import {
   Camera
 } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
-import { toast } from 'sonner';
+import { toast } from 'sonner@2.0.3';
 
 interface DoctorManagementProps {
   clinicId: string;
@@ -115,15 +115,23 @@ export function DoctorManagement({ clinicId, clinicData, onBack }: DoctorManagem
 
       if (response.ok) {
         const result = await response.json();
+        // ✅ FIX: Handle standardized response format
+        const migrationResult = result.results || result.data?.results || result;
+        const migratedCount = migrationResult.migrated || 0;
         console.log('✅ Migration successful:', result);
-        toast.success(`Migrated ${result.results.migrated} doctors to new system`);
+        toast.success(`Migrated ${migratedCount} doctors to new system`);
         return true;
       } else {
-        console.error('❌ Migration failed');
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Migration failed';
+        console.error('❌ Migration failed:', errorMessage);
+        toast.error(errorMessage);
         return false;
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('[MIGRATION] Error:', error);
+      const errorMessage = error?.message || 'Network error during migration. Please try again.';
+      toast.error(errorMessage);
       return false;
     } finally {
       setMigrating(false);
@@ -146,11 +154,19 @@ export function DoctorManagement({ clinicId, clinicData, onBack }: DoctorManagem
 
       if (response.ok) {
         const data = await response.json();
-        setStaff(data.staff || []);
+        // ✅ FIX: Handle standardized response format
+        // Response format: { success: true, staff: [...], total: ... }
+        const staffList = data.staff || data.data?.staff || [];
+        setStaff(staffList);
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('Failed to load staff:', errorData);
+        // Don't show error toast on initial load - just log
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('[STAFF MANAGEMENT] Error fetching staff:', error);
-      toast.error('Failed to load staff members');
+      const errorMessage = error?.message || 'Failed to load staff members. Please try again.';
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -185,13 +201,16 @@ export function DoctorManagement({ clinicId, clinicData, onBack }: DoctorManagem
 
       if (response.ok) {
         toast.success('Staff member removed successfully');
-        fetchStaff();
+        await fetchStaff(); // ✅ Ensure staff reloads
       } else {
-        throw new Error('Failed to remove staff member');
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to remove staff member';
+        throw new Error(errorMessage);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('[REMOVE STAFF] Error:', error);
-      toast.error('Failed to remove staff member. Please try again.');
+      const errorMessage = error?.message || 'Failed to remove staff member. Please try again.';
+      toast.error(errorMessage);
     }
   };
 

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Camera, Play, Pause, Download, RefreshCw, X, Video, Clock, MapPin, Settings } from 'lucide-react';
+import { Camera, Play, Pause, Download, RefreshCw, X, Video, Clock, MapPin, Settings, Trash2 } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { toast } from 'sonner@2.0.3';
 
@@ -45,6 +45,9 @@ export function VendorCCTVAccess({ vendorId, vendorData, onBack }: VendorCCTVAcc
   const [addCameraModal, setAddCameraModal] = useState(false);
   const [shareModal, setShareModal] = useState(false);
   const [selectedCameraForShare, setSelectedCameraForShare] = useState<CCTVCamera | null>(null);
+  const [editingCamera, setEditingCamera] = useState<CCTVCamera | null>(null); // ✅ LIFECYCLE FIX: Track editing state
+  // ✅ FIX Bug 4: Use React state for edit form instead of uncontrolled inputs
+  const [editFormData, setEditFormData] = useState({ name: '', location: '', streamUrl: '' });
 
   const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
 
@@ -62,12 +65,19 @@ export function VendorCCTVAccess({ vendorId, vendorData, onBack }: VendorCCTVAcc
 
       if (response.ok) {
         const data = await response.json();
-        setCameras(data.cameras || []);
+        // ✅ FIX: Handle standardized response format
+        // Response format: { success: true, cameras: [...], total: ... }
+        setCameras(data.cameras || data.data?.cameras || []);
       } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('Failed to fetch cameras:', errorData);
+        toast.error(errorData.error || 'Failed to load cameras');
         setCameras([]);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching cameras:', error);
+      const errorMessage = error?.message || 'Failed to load cameras. Please try again.';
+      toast.error(errorMessage);
       setCameras([]);
     } finally {
       setLoading(false);
@@ -82,12 +92,18 @@ export function VendorCCTVAccess({ vendorId, vendorData, onBack }: VendorCCTVAcc
 
       if (response.ok) {
         const data = await response.json();
-        setSharedAccess(data.shared || []);
+        // ✅ FIX: Handle standardized response format
+        // Response format: { success: true, shared: [...], total: ... }
+        setSharedAccess(data.shared || data.data?.shared || []);
       } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('Failed to fetch shared access:', errorData);
+        // Don't show toast for shared access - it's not critical
         setSharedAccess([]);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching shared access:', error);
+      // Don't show toast for shared access - it's not critical
       setSharedAccess([]);
     }
   };
@@ -100,14 +116,87 @@ export function VendorCCTVAccess({ vendorId, vendorData, onBack }: VendorCCTVAcc
       });
 
       if (response.ok) {
-        toast.success('Snapshot refreshed');
-        fetchCameras();
+        toast.success('Snapshot refreshed successfully');
+        await fetchCameras(); // ✅ Ensure cameras reload
       } else {
-        toast.error('Failed to refresh snapshot');
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to refresh snapshot';
+        toast.error(errorMessage);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error refreshing snapshot:', error);
-      toast.error('Failed to refresh');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
+    }
+  };
+
+  // ✅ LIFECYCLE FIX: Add delete camera handler
+  const handleDeleteCamera = async (cameraId: string, cameraName: string) => {
+    if (!confirm(`Are you sure you want to delete "${cameraName}"? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE}/vendor/cctv/${vendorId}/${cameraId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          toast.success(`Camera "${cameraName}" deleted successfully`);
+          await fetchCameras(); // ✅ Ensure cameras reload
+        } else {
+          const errorMessage = data.error || data.message || 'Failed to delete camera';
+          toast.error(errorMessage);
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to delete camera';
+        toast.error(errorMessage);
+      }
+    } catch (error: any) {
+      console.error('Error deleting camera:', error);
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
+    }
+  };
+
+  // ✅ LIFECYCLE FIX: Add update camera handler
+  const handleUpdateCamera = async (cameraId: string, updates: Partial<CCTVCamera>) => {
+    try {
+      const response = await fetch(`${API_BASE}/vendor/cctv/${vendorId}/${cameraId}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${publicAnonKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(updates)
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          toast.success('Camera updated successfully');
+          await fetchCameras(); // ✅ Ensure cameras reload
+          setAddCameraModal(false);
+          setSelectedCamera(null);
+          setEditingCamera(null); // ✅ FIX Bug 4: Reset editing state
+          setEditFormData({ name: '', location: '', streamUrl: '' }); // ✅ FIX Bug 4: Reset form data
+        } else {
+          const errorMessage = data.error || data.message || 'Failed to update camera';
+          toast.error(errorMessage);
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to update camera';
+        toast.error(errorMessage);
+      }
+    } catch (error: any) {
+      console.error('Error updating camera:', error);
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 
@@ -276,14 +365,42 @@ export function VendorCCTVAccess({ vendorId, vendorData, onBack }: VendorCCTVAcc
                           </button>
                         </div>
 
-                        <div className="flex items-center gap-4 text-xs text-gray-500">
-                          <span>{camera.resolution}</span>
-                          {camera.hasRecording && (
-                            <span className="flex items-center gap-1">
-                              <Clock className="w-3 h-3" />
-                              Recording
-                            </span>
-                          )}
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-4 text-xs text-gray-500">
+                            <span>{camera.resolution}</span>
+                            {camera.hasRecording && (
+                              <span className="flex items-center gap-1">
+                                <Clock className="w-3 h-3" />
+                                Recording
+                              </span>
+                            )}
+                          </div>
+                          {/* ✅ LIFECYCLE FIX: Add Edit and Delete buttons */}
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => {
+                                setEditingCamera(camera);
+                                // ✅ FIX Bug 4: Initialize form data when editing starts
+                                setEditFormData({
+                                  name: camera.name,
+                                  location: camera.location,
+                                  streamUrl: camera.streamUrl
+                                });
+                                setAddCameraModal(true); // Reuse add modal for editing
+                              }}
+                              className="px-3 py-1.5 text-sm text-orange-600 hover:text-orange-700 hover:bg-orange-50 rounded-lg border border-orange-200"
+                              title="Edit camera"
+                            >
+                              <Settings className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteCamera(camera.id, camera.name)}
+                              className="px-3 py-1.5 text-sm text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg border border-red-200"
+                              title="Delete camera"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -372,28 +489,97 @@ export function VendorCCTVAccess({ vendorId, vendorData, onBack }: VendorCCTVAcc
           </div>
         )}
 
-        {/* Add Camera Modal */}
+        {/* Add/Edit Camera Modal */}
         {addCameraModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-xl max-w-md w-full p-6">
+            <div className="bg-white rounded-xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold text-gray-900">Add Camera</h2>
-                <button onClick={() => setAddCameraModal(false)}>
+                <h2 className="text-xl font-bold text-gray-900">
+                  {editingCamera ? 'Edit Camera' : 'Add Camera'}
+                </h2>
+                <button onClick={() => {
+                  setAddCameraModal(false);
+                  setEditingCamera(null);
+                  setEditFormData({ name: '', location: '', streamUrl: '' }); // ✅ FIX Bug 4: Reset form on close
+                }}>
                   <X className="w-6 h-6 text-gray-400" />
                 </button>
               </div>
-              <p className="text-sm text-gray-600 mb-4">
-                Contact support to configure CCTV cameras for your facility. We'll help you set up the streaming and storage.
-              </p>
-              <button
-                onClick={() => {
-                  toast.info('Please contact support for CCTV setup');
-                  setAddCameraModal(false);
-                }}
-                className="w-full bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600"
-              >
-                Contact Support
-              </button>
+              
+              {editingCamera ? (
+                // ✅ FIX Bug 4: Edit camera form with controlled components
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Camera Name</label>
+                    <input
+                      type="text"
+                      value={editFormData.name}
+                      onChange={(e) => setEditFormData(prev => ({ ...prev, name: e.target.value }))}
+                      className="w-full border border-gray-300 rounded-lg p-2"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Location</label>
+                    <input
+                      type="text"
+                      value={editFormData.location}
+                      onChange={(e) => setEditFormData(prev => ({ ...prev, location: e.target.value }))}
+                      className="w-full border border-gray-300 rounded-lg p-2"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Stream URL</label>
+                    <input
+                      type="text"
+                      value={editFormData.streamUrl}
+                      onChange={(e) => setEditFormData(prev => ({ ...prev, streamUrl: e.target.value }))}
+                      className="w-full border border-gray-300 rounded-lg p-2"
+                    />
+                  </div>
+                  <div className="flex gap-3 pt-4 border-t">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAddCameraModal(false);
+                        setEditingCamera(null);
+                        setEditFormData({ name: '', location: '', streamUrl: '' }); // ✅ FIX Bug 4: Reset form on cancel
+                      }}
+                      className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => {
+                        // ✅ FIX Bug 4: Use React state instead of document.getElementById
+                        handleUpdateCamera(editingCamera.id, { 
+                          name: editFormData.name || editingCamera.name,
+                          location: editFormData.location || editingCamera.location,
+                          streamUrl: editFormData.streamUrl || editingCamera.streamUrl
+                        });
+                      }}
+                      className="flex-1 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600"
+                    >
+                      Save Changes
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                // Add camera (contact support)
+                <>
+                  <p className="text-sm text-gray-600 mb-4">
+                    Contact support to configure CCTV cameras for your facility. We'll help you set up the streaming and storage.
+                  </p>
+                  <button
+                    onClick={() => {
+                      toast.info('Please contact support for CCTV setup');
+                      setAddCameraModal(false);
+                    }}
+                    className="w-full bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600"
+                  >
+                    Contact Support
+                  </button>
+                </>
+              )}
             </div>
           </div>
         )}

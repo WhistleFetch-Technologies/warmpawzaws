@@ -1,5 +1,6 @@
 import { Hono } from 'npm:hono';
 import * as kv from './kv_store.tsx';
+import { createNotificationHelper } from './notification-system.tsx';
 
 const app = new Hono();
 
@@ -133,6 +134,30 @@ app.post('/make-server-3dd53475/prescription/create', async (c) => {
     vendorPrescriptions.unshift(prescriptionId);
     await kv.set(vendorPrescriptionsKey, vendorPrescriptions);
     console.log(`✅ [PRESCRIPTION-CREATE] Added to vendor list: ${vendorPrescriptionsKey}`);
+    
+    // ✅ NOTIFICATION: Prescription Uploaded
+    try {
+      const customer = await kv.get(`customer:${booking.customerId}`);
+      
+      await createNotificationHelper(kv, {
+        recipientId: booking.customerId,
+        recipientType: 'customer',
+        type: 'prescription_uploaded',
+        category: 'bookings',
+        title: 'Prescription Uploaded',
+        message: `Your prescription has been uploaded for ${booking.serviceName}. You can now order medicines from nearby pharmacies.`,
+        recipientEmail: customer?.email,
+        recipientPhone: booking.customerPhone || customer?.phone,
+        channels: { email: false, sms: true, inApp: true, push: false },
+        data: { prescriptionId, bookingId, serviceName: booking.serviceName, vendorName: booking.vendorName },
+        priority: 'medium'
+      });
+
+      console.log(`📱 [NOTIFICATION] Prescription uploaded notification sent to customer`);
+    } catch (notifError) {
+      console.error(`⚠️ [NOTIFICATION] Failed to send prescription uploaded notification:`, notifError);
+      // Don't fail the request if notification fails
+    }
     
     // ✅ SEND PRESCRIPTION TO CUSTOMER VIA CHAT
     try {

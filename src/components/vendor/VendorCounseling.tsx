@@ -66,12 +66,19 @@ export function VendorCounseling({ vendorId, onClose }: CounselingProps) {
       );
 
       const data = await response.json();
+      // ✅ FIX: Handle standardized response format
+      // Response format: { success: true, sessions: [...], total: ... }
       if (data.success) {
-        setSessions(data.sessions || []);
+        setSessions(data.sessions || data.data?.sessions || []);
+      } else {
+        const errorData = data.error || data.message || 'Unknown error';
+        console.error('Failed to fetch sessions:', errorData);
+        toast.error(errorData);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching sessions:', error);
-      toast.error('Failed to load counseling sessions');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -97,13 +104,15 @@ export function VendorCounseling({ vendorId, onClose }: CounselingProps) {
         setShowCreateModal(false);
         setSelectedSession(null);
         resetForm();
-        fetchSessions();
+        await fetchSessions(); // ✅ Ensure sessions reload
       } else {
-        toast.error(data.error || 'Failed to save session');
+        const errorData = data.error || data.message || 'Failed to save session';
+        toast.error(errorData);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving session:', error);
-      toast.error('Failed to save session');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 
@@ -123,12 +132,16 @@ export function VendorCounseling({ vendorId, onClose }: CounselingProps) {
 
       const data = await response.json();
       if (data.success) {
-        toast.success('Session status updated');
-        fetchSessions();
+        toast.success('Session status updated successfully');
+        await fetchSessions(); // ✅ Ensure sessions reload
+      } else {
+        const errorData = data.error || data.message || 'Failed to update status';
+        toast.error(errorData);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error updating status:', error);
-      toast.error('Failed to update status');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 

@@ -93,18 +93,20 @@ export function VetSpecializedServicesManager({
     try {
       setLoading(true);
       
-      // ✅ FIXED: Load ambulance services using correct endpoint
+      // ✅ FIXED: Load ambulance services using standardized backwards-compatible endpoint
       const ambulanceRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/ambulance/vehicles`,
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/ambulance-services`,
         { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
       );
       
       if (ambulanceRes.ok) {
         const data = await ambulanceRes.json();
-        setAmbulances(data.ambulances || []);
+        // ✅ FIX: Handle standardized response format from backwards-compatible-endpoints
+        // Response format: { success: true, ambulances: [...], total: ... }
+        setAmbulances(data.ambulances || data.data?.ambulances || []);
       }
 
-      // Load diagnostic tests
+      // ✅ FIXED: Load diagnostic tests using standardized backwards-compatible endpoint
       const diagRes = await fetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/diagnostic-tests`,
         { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
@@ -112,10 +114,12 @@ export function VetSpecializedServicesManager({
       
       if (diagRes.ok) {
         const data = await diagRes.json();
-        setDiagnostics(data.tests || []);
+        // ✅ FIX: Handle standardized response format
+        // Response format: { success: true, tests: [...], total: ... }
+        setDiagnostics(data.tests || data.data?.tests || []);
       }
 
-      // Load emergency protocols
+      // ✅ FIXED: Load emergency protocols using standardized backwards-compatible endpoint
       const emergRes = await fetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/emergency-protocols`,
         { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
@@ -123,12 +127,15 @@ export function VetSpecializedServicesManager({
       
       if (emergRes.ok) {
         const data = await emergRes.json();
-        setEmergencyProtocols(data.protocols || []);
+        // ✅ FIX: Handle standardized response format
+        // Response format: { success: true, protocols: [...], total: ... }
+        setEmergencyProtocols(data.protocols || data.data?.protocols || []);
       }
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading vet services:', error);
-      toast.error('Failed to load specialized services');
+      const errorMessage = error?.message || 'Failed to load specialized services. Please try again.';
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -140,7 +147,7 @@ export function VetSpecializedServicesManager({
     setShowAddModal(true);
   };
 
-  // ✅ FIX: Implement EDIT functionality for ambulance
+  // ✅ FIX: Implement EDIT functionality for ambulance with comprehensive error handling
   const handleSaveAmbulance = async (ambulanceData: Partial<AmbulanceService>) => {
     try {
       const url = editingAmbulance
@@ -154,23 +161,31 @@ export function VetSpecializedServicesManager({
       });
 
       if (response.ok) {
+        const result = await response.json();
         toast.success(editingAmbulance ? 'Ambulance updated successfully' : 'Ambulance added successfully');
         setEditingAmbulance(null);
         setShowAddModal(false);
-        loadServices();
+        await loadServices(); // ✅ Ensure services reload before closing
       } else {
-        const error = await response.json();
-        toast.error(error.error || `Failed to ${editingAmbulance ? 'update' : 'add'} ambulance`);
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || `Failed to ${editingAmbulance ? 'update' : 'add'} ambulance`;
+        toast.error(errorMessage);
+        throw new Error(errorMessage);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving ambulance:', error);
-      toast.error('Error saving ambulance');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
+      throw error; // Re-throw to let modal handle it
     }
   };
 
-  // ✅ FIX: Add delete handler for ambulance
+  // ✅ FIX: Add delete handler for ambulance with better confirmation and error handling
   const handleDeleteAmbulance = async (ambulanceId: string) => {
-    if (!confirm('Are you sure you want to delete this ambulance? This action cannot be undone.')) {
+    const ambulance = ambulances.find(a => a.id === ambulanceId);
+    const vehicleNumber = ambulance?.vehicleNumber || 'this ambulance';
+    
+    if (!confirm(`Are you sure you want to delete ${vehicleNumber}? This action cannot be undone.`)) {
       return;
     }
 
@@ -184,15 +199,17 @@ export function VetSpecializedServicesManager({
       );
 
       if (response.ok) {
-        toast.success('Ambulance deleted successfully');
-        loadServices();
+        toast.success(`Ambulance ${vehicleNumber} deleted successfully`);
+        await loadServices(); // ✅ Ensure services reload
       } else {
-        const error = await response.json();
-        toast.error(error.error || 'Failed to delete ambulance');
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to delete ambulance';
+        toast.error(errorMessage);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error deleting ambulance:', error);
-      toast.error('Error deleting ambulance');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 
@@ -202,7 +219,7 @@ export function VetSpecializedServicesManager({
     setShowAddModal(true);
   };
 
-  // ✅ ADD: Save handler for diagnostic tests
+  // ✅ ADD: Save handler for diagnostic tests with comprehensive error handling
   const handleSaveDiagnostic = async (diagnosticData: Partial<DiagnosticTest>) => {
     try {
       const url = editingDiagnostic
@@ -216,23 +233,31 @@ export function VetSpecializedServicesManager({
       });
 
       if (response.ok) {
+        const result = await response.json();
         toast.success(editingDiagnostic ? 'Diagnostic test updated successfully' : 'Diagnostic test added successfully');
         setEditingDiagnostic(null);
         setShowAddModal(false);
-        loadServices();
+        await loadServices(); // ✅ Ensure services reload before closing
       } else {
-        const error = await response.json();
-        toast.error(error.error || `Failed to ${editingDiagnostic ? 'update' : 'add'} diagnostic test`);
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || `Failed to ${editingDiagnostic ? 'update' : 'add'} diagnostic test`;
+        toast.error(errorMessage);
+        throw new Error(errorMessage);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving diagnostic test:', error);
-      toast.error('Error saving diagnostic test');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
+      throw error; // Re-throw to let modal handle it
     }
   };
 
-  // ✅ FIX: Add delete handler for diagnostic test
+  // ✅ FIX: Add delete handler for diagnostic test with better confirmation and error handling
   const handleDeleteDiagnostic = async (testId: string) => {
-    if (!confirm('Are you sure you want to delete this diagnostic test? This action cannot be undone.')) {
+    const test = diagnostics.find(t => t.id === testId);
+    const testName = test?.testName || 'this diagnostic test';
+    
+    if (!confirm(`Are you sure you want to delete "${testName}"? This action cannot be undone.`)) {
       return;
     }
 
@@ -246,15 +271,17 @@ export function VetSpecializedServicesManager({
       );
 
       if (response.ok) {
-        toast.success('Diagnostic test deleted successfully');
-        loadServices();
+        toast.success(`Diagnostic test "${testName}" deleted successfully`);
+        await loadServices(); // ✅ Ensure services reload
       } else {
-        const error = await response.json();
-        toast.error(error.error || 'Failed to delete diagnostic test');
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to delete diagnostic test';
+        toast.error(errorMessage);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error deleting diagnostic test:', error);
-      toast.error('Error deleting diagnostic test');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 
@@ -264,62 +291,69 @@ export function VetSpecializedServicesManager({
     setShowAddModal(true);
   };
 
-  // ✅ ADD: Save handler for emergency protocols
+  // ✅ ADD: Save handler for emergency protocols with comprehensive error handling
   const handleSaveProtocol = async (protocolData: Partial<EmergencyProtocol>) => {
     try {
       const url = editingProtocol
         ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/emergency-protocols/${editingProtocol.id}`
         : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/emergency-protocols`;
 
-      const response = await fetch(url, {
+      // ✅ FIX: Use authenticatedFetch instead of manual fetch with publicAnonKey
+      const response = await authenticatedFetch(url, {
         method: editingProtocol ? 'PUT' : 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
-        },
         body: JSON.stringify(protocolData)
       });
 
       if (response.ok) {
+        const result = await response.json();
         toast.success(editingProtocol ? 'Emergency protocol updated successfully' : 'Emergency protocol added successfully');
         setEditingProtocol(null);
         setShowAddModal(false);
-        loadServices();
+        await loadServices(); // ✅ Ensure services reload before closing
       } else {
-        const error = await response.json();
-        toast.error(error.error || `Failed to ${editingProtocol ? 'update' : 'add'} emergency protocol`);
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || `Failed to ${editingProtocol ? 'update' : 'add'} emergency protocol`;
+        toast.error(errorMessage);
+        throw new Error(errorMessage);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving emergency protocol:', error);
-      toast.error('Error saving emergency protocol');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
+      throw error; // Re-throw to let modal handle it
     }
   };
 
-  // ✅ FIX: Add delete handler for emergency protocol
+  // ✅ FIX: Add delete handler for emergency protocol with better confirmation and error handling
   const handleDeleteProtocol = async (protocolId: string) => {
-    if (!confirm('Are you sure you want to delete this emergency protocol? This action cannot be undone.')) {
+    const protocol = emergencyProtocols.find(p => p.id === protocolId);
+    const protocolName = protocol?.protocolName || 'this emergency protocol';
+    
+    if (!confirm(`Are you sure you want to delete "${protocolName}"? This action cannot be undone.`)) {
       return;
     }
 
     try {
-      const response = await fetch(
+      // ✅ FIX: Use authenticatedFetch instead of manual fetch with publicAnonKey
+      const response = await authenticatedFetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/emergency-protocols/${protocolId}`,
         {
-          method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          method: 'DELETE'
         }
       );
 
       if (response.ok) {
-        toast.success('Emergency protocol deleted successfully');
-        loadServices();
+        toast.success(`Emergency protocol "${protocolName}" deleted successfully`);
+        await loadServices(); // ✅ Ensure services reload
       } else {
-        const error = await response.json();
-        toast.error(error.error || 'Failed to delete emergency protocol');
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to delete emergency protocol';
+        toast.error(errorMessage);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error deleting emergency protocol:', error);
-      toast.error('Error deleting emergency protocol');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 
@@ -682,7 +716,8 @@ export function VetSpecializedServicesManager({
           <div className="flex items-center justify-center py-12">
             <div className="text-center">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mx-auto mb-4"></div>
-              <p className="text-gray-600">Loading services...</p>
+              <p className="text-gray-600">Loading specialized services...</p>
+              <p className="text-xs text-gray-500 mt-2">Please wait</p>
             </div>
           </div>
         ) : (

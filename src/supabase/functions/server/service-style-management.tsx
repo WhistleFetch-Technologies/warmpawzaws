@@ -36,7 +36,6 @@ export function serviceStyleManagement(app: Hono) {
             enabled: false, // Off by default
             available: false,
             maxDistance: 10, // km
-            travelChargePerKm: 0, // Optional travel charge
             acceptInstantBooking: true
           },
           tele: {
@@ -95,9 +94,16 @@ export function serviceStyleManagement(app: Hono) {
         updatedAt: new Date().toISOString()
       };
       
-      // Validation: Distance must be positive
-      if (updated.at_home?.maxDistance && updated.at_home.maxDistance < 0) {
-        return c.json({ error: 'Max distance must be positive' }, 400);
+      // ✅ VALIDATION: If at_home is enabled, maxDistance is REQUIRED
+      if (updated.at_home?.enabled) {
+        if (!updated.at_home.maxDistance || updated.at_home.maxDistance <= 0) {
+          return c.json({ 
+            error: 'maxDistance is required and must be greater than 0 when at_home service is enabled' 
+          }, 400);
+        }
+        if (updated.at_home.maxDistance > 100) {
+          return c.json({ error: 'Max distance cannot exceed 100 km' }, 400);
+        }
       }
       
       // Validation: Max session duration reasonable
@@ -145,6 +151,16 @@ export function serviceStyleManagement(app: Hono) {
       if (preferences[style]) {
         preferences[style].enabled = enabled;
         preferences[style].available = enabled; // Also update availability
+        
+        // ✅ VALIDATION: If enabling at_home, ensure maxDistance is set
+        if (style === 'at_home' && enabled) {
+          if (!preferences.at_home.maxDistance || preferences.at_home.maxDistance <= 0) {
+            return c.json({ 
+              error: 'Cannot enable at_home service: maxDistance is required and must be greater than 0. Please set maxDistance first.' 
+            }, 400);
+          }
+        }
+        
         preferences.updatedAt = new Date().toISOString();
       }
       
@@ -172,7 +188,7 @@ export function serviceStyleManagement(app: Hono) {
   app.put('/make-server-3dd53475/staff/:staffId/home-distance', async (c) => {
     try {
       const { staffId } = c.req.param();
-      const { maxDistance, travelChargePerKm } = await c.req.json();
+      const { maxDistance } = await c.req.json();
       
       if (maxDistance < 0 || maxDistance > 100) {
         return c.json({ error: 'Distance must be between 0-100 km' }, 400);
@@ -191,9 +207,6 @@ export function serviceStyleManagement(app: Hono) {
       }
       
       preferences.at_home.maxDistance = maxDistance;
-      if (travelChargePerKm !== undefined) {
-        preferences.at_home.travelChargePerKm = travelChargePerKm;
-      }
       preferences.updatedAt = new Date().toISOString();
       
       await kv.set(`staff:${staffId}:style_preferences`, preferences);
@@ -202,8 +215,7 @@ export function serviceStyleManagement(app: Hono) {
       
       return c.json({
         success: true,
-        maxDistance,
-        travelChargePerKm: preferences.at_home.travelChargePerKm
+        maxDistance
       });
       
     } catch (error) {

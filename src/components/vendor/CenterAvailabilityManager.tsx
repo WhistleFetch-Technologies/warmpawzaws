@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Clock, Calendar, Ambulance, Home, Pill, Activity, Save, ArrowLeft } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { toast } from 'sonner';
+import { toast } from 'sonner@2.0.3';
 import { Button } from '../ui/button';
 
 interface CenterAvailabilityManagerProps {
@@ -36,13 +36,18 @@ export function CenterAvailabilityManager({
 
       if (response.ok) {
         const data = await response.json();
-        setAvailability(data.availability);
+        // ✅ FIX: Handle standardized response format
+        // Response format: { success: true, availability: {...}, ... }
+        setAvailability(data.availability || data.data?.availability);
       } else {
-        toast.error('Failed to load availability settings');
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('Failed to load availability settings:', errorData);
+        // Don't show error toast on initial load - just log
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error:', error);
-      toast.error('Network error');
+      const errorMessage = error?.message || 'Failed to load availability settings. Please try again.';
+      // Don't show error toast on initial load - just log
     } finally {
       setLoading(false);
     }
@@ -64,12 +69,23 @@ export function CenterAvailabilityManager({
       );
 
       if (response.ok) {
-        toast.success('Settings saved successfully');
+        const data = await response.json();
+        // ✅ FIX: Handle standardized response format
+        if (data.success || data.data?.success) {
+          toast.success('Settings saved successfully');
+        } else {
+          const errorMessage = data.error || data.message || 'Failed to save settings';
+          toast.error(errorMessage);
+        }
       } else {
-        toast.error('Failed to save settings');
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to save settings';
+        toast.error(errorMessage);
       }
-    } catch (error) {
-      toast.error('Network error');
+    } catch (error: any) {
+      console.error('Error saving availability:', error);
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     } finally {
       setSaving(false);
     }

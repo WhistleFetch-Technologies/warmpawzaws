@@ -48,7 +48,9 @@ export function CafeVendorDashboard({ vendorId }: CafeVendorDashboardProps) {
 
       if (response.ok) {
         const data = await response.json();
-        const bookingsList = data.bookings || [];
+        // ✅ FIX: Handle standardized response format
+        // Response format: { success: true, bookings: [...], total: ... }
+        const bookingsList = data.bookings || data.data?.bookings || [];
         setBookings(bookingsList);
 
         // Calculate stats
@@ -70,9 +72,14 @@ export function CafeVendorDashboard({ vendorId }: CafeVendorDashboardProps) {
           totalPax,
           revenue
         });
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('Failed to load bookings:', errorData);
+        // Don't show error toast on initial load - just log
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading bookings:', error);
+      // Don't show error toast on initial load - just log
     } finally {
       setLoading(false);
     }
@@ -97,10 +104,17 @@ export function CafeVendorDashboard({ vendorId }: CafeVendorDashboardProps) {
       );
 
       if (response.ok) {
-        loadBookings();
+        toast.success('Booking status updated successfully');
+        await loadBookings(); // ✅ Ensure bookings reload
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to update booking status';
+        toast.error(errorMessage);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error updating status:', error);
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 

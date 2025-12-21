@@ -228,6 +228,11 @@ export function registerVendorServiceManagementRoutes(app: Hono) {
   // GET AVAILABLE SERVICES FOR VENDOR (LEGACY - Uses vendorType)
   // ============================================
   // Fetches services from catalog filtered by vendor type and service style
+  /**
+   * GET /vendor/:vendorId/available-services/:serviceStyle
+   * Get available services with fallback to defaults if catalog is empty
+   * ✅ FIX: Service Catalog Dependency - Provides fallback services
+   */
   app.get("/make-server-3dd53475/vendor/:vendorId/available-services/:serviceStyle", async (c) => {
     try {
       const { vendorId, serviceStyle } = c.req.param();
@@ -332,19 +337,50 @@ export function registerVendorServiceManagementRoutes(app: Hono) {
       
       console.log(`✅ [VENDOR-SERVICES] Found ${availableServices.length} matching services`);
       
+      // ✅ FIX: If catalog is empty, provide fallback services
+      let servicesWithStatus = availableServices;
+      
+      if (availableServices.length === 0) {
+        console.log(`⚠️ [VENDOR-SERVICES] Catalog is empty, providing fallback services`);
+        
+        // Get vendor role for fallback services
+        const roleId = vendor.roleId || 'veterinarian';
+        
+        // Fetch default services
+        try {
+          const defaultServicesResponse = await fetch(
+            `${Deno.env.get('SUPABASE_URL')}/functions/v1/make-server-3dd53475/vendor/${vendorId}/default-services/${roleId}?serviceStyle=${serviceStyle}`,
+            {
+              headers: {
+                'Authorization': `Bearer ${Deno.env.get('SUPABASE_ANON_KEY')}`
+              }
+            }
+          );
+          
+          if (defaultServicesResponse.ok) {
+            const defaultData = await defaultServicesResponse.json();
+            servicesWithStatus = defaultData.services || [];
+            console.log(`✅ [VENDOR-SERVICES] Loaded ${servicesWithStatus.length} default services`);
+          }
+        } catch (fallbackError) {
+          console.error('Error loading fallback services:', fallbackError);
+        }
+      }
+      
       // Get vendor's already configured services for this style
       const vendorServicesKey = `vendor_services:${vendorId}:${serviceStyle}`;
       const vendorServices = await kv.get(vendorServicesKey) || { services: [] };
       
       // Mark which services are already enabled
-      const servicesWithStatus = availableServices.map((service: any) => {
+      servicesWithStatus = servicesWithStatus.map((service: any) => {
         const vendorService = vendorServices.services.find((vs: any) => vs.serviceId === service.id);
         return {
           ...service,
           isEnabled: vendorService?.isEnabled || false,
           customPrice: vendorService?.customPrice,
           customDuration: vendorService?.customDuration,
-          publishStatus: vendorService?.publishStatus || 'draft'
+          publishStatus: vendorService?.publishStatus || 'draft',
+          isDefaultService: service.isDefaultService || false
         };
       });
       
@@ -353,7 +389,9 @@ export function registerVendorServiceManagementRoutes(app: Hono) {
         vendorType,
         serviceStyle,
         services: servicesWithStatus,
-        isPlatformManaged: serviceStyle === 'at_home' || serviceStyle === 'tele'
+        isPlatformManaged: serviceStyle === 'at_home' || serviceStyle === 'tele',
+        isUsingDefaults: availableServices.length === 0 && servicesWithStatus.length > 0,
+        message: availableServices.length === 0 ? 'Using default services. Please configure catalog in admin panel.' : undefined
       });
       
     } catch (error) {
@@ -535,15 +573,53 @@ export function registerVendorServiceManagementRoutes(app: Hono) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
       
-      // ✅ FIX #5: VALIDATE VENDOR HAS STAFF BEFORE PUBLISHING
+      // ✅ FIX #1: Smart staff requirement check (solo vs center-based)
       const vendorStaffList = await kv.get(`vendor:${vendorId}:staff`) || [];
       
-      if (vendorStaffList.length === 0) {
-        console.error(`❌ [VENDOR-SERVICES] Cannot publish: Vendor ${vendorId} has no staff members`);
+      // Check if vendor is solo provider
+      const isSoloProvider = vendor.isSoloProvider || 
+                            vendor.vendorType === 'service_provider' ||
+                            ['pet_walker', 'nutritionist', 'pet_sitter', 'pet_trainer'].includes(vendor.roleId);
+      
+      // Check if vendor is center-based
+      const isCenterBased = vendor.vendorType === 'healthcare_provider' ||
+                           vendor.serviceStyle === 'at_center' ||
+                           ['veterinary_clinic', 'pet_boarding', 'pet_resort', 'pet_cafe'].includes(vendor.roleId);
+      
+      // Solo providers can publish without staff (they ARE the staff)
+      if (isSoloProvider && vendorStaffList.length === 0) {
+        // Auto-create staff profile for solo vendor
+        const staffId = `${vendorId}_staff_self`;
+        const soloStaff = {
+          id: staffId,
+          vendorId,
+          fullName: vendor.fullName || vendor.businessName,
+          phone: vendor.phone,
+          email: vendor.email,
+          role: vendor.roleId,
+          roleType: vendor.roleId,
+          isSoloProvider: true,
+          isActive: true,
+          isOnline: true,
+          services: [],
+          availability: vendor.availability || {},
+          createdAt: new Date().toISOString()
+        };
+
+        await kv.set(`staff:${staffId}`, soloStaff);
+        await kv.set(`vendor:${vendorId}:staff`, [staffId]);
+
+        console.log(`✅ Auto-created staff profile for solo vendor: ${vendorId}`);
+      }
+      
+      // Center-based vendors still need staff
+      if (isCenterBased && vendorStaffList.length === 0) {
+        console.error(`❌ [VENDOR-SERVICES] Cannot publish: Center-based vendor ${vendorId} has no staff members`);
         return c.json({ 
           error: 'Cannot publish services without staff',
-          message: 'You must add at least one staff member before publishing services. Staff members are automatically created when your vendor account is approved. If you do not see any staff, please contact support.',
-          requiresStaff: true
+          message: 'Center-based vendors must have at least one staff member before publishing services.',
+          requiresStaff: true,
+          isCenterBased: true
         }, 400);
       }
       

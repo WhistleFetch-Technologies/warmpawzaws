@@ -39,15 +39,17 @@ import {
   RotateCcw,
   Star,
   Zap,
-  Tag
+  Tag,
+  Image as ImageIcon
 } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { toast } from 'sonner@2.0.3';
 import { CouponManagement } from './marketing/CouponManagement';
 import { AdvancedPromotionsEngine } from './marketing/AdvancedPromotionsEngine';
+import { BannerAdmin } from './ecommerce/BannerAdmin';
 
 export function MarketingPromotionsTab() {
-  const [activeTab, setActiveTab] = useState<'promotions' | 'ui-config' | 'spotlight' | 'coupons' | 'advanced'>('promotions');
+  const [activeTab, setActiveTab] = useState<'promotions' | 'ui-config' | 'spotlight' | 'coupons' | 'banners' | 'advanced'>('promotions');
   const [loading, setLoading] = useState(false);
   
   // Spotlight State
@@ -433,6 +435,17 @@ export function MarketingPromotionsTab() {
           >
             <Tag className="w-4 h-4 inline mr-2" />
             Coupons
+          </button>
+          <button
+            onClick={() => setActiveTab('banners')}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+              activeTab === 'banners' 
+                ? 'bg-[#FF8C42] text-white shadow-sm' 
+                : 'text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            <ImageIcon className="w-4 h-4 inline mr-2" />
+            Banners
           </button>
           <button
             onClick={() => setActiveTab('advanced')}
@@ -849,6 +862,11 @@ export function MarketingPromotionsTab() {
       {/* COUPONS TAB */}
       {activeTab === 'coupons' && (
         <CouponManagement />
+      )}
+
+      {/* BANNERS TAB */}
+      {activeTab === 'banners' && (
+        <BannerAdmin />
       )}
 
       {/* ADVANCED TAB */}

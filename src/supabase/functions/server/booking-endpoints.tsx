@@ -1,28 +1,19 @@
 import { Hono } from "npm:hono";
+import { createNotificationHelper } from "./notification-system.tsx";
 
 export function bookingEndpoints(app: Hono, kv: any) {
   
-  // Helper: Trigger Notification
+  // ✅ FIX: Use existing notification system (no duplicate code)
+  // Helper: Trigger Notification using existing infrastructure
   async function triggerNotification(notification: any) {
     try {
-      const notificationId = `NOTIF-${Date.now()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
-      const fullNotification = {
-        id: notificationId,
+      // Use existing createNotificationHelper which handles AWS SNS integration
+      await createNotificationHelper(kv, {
         ...notification,
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-        channels: notification.channels || { email: true, sms: true, inApp: true, push: true }
-      };
+        channels: notification.channels || { email: true, sms: true, inApp: true, push: false }
+      });
       
-      // Save notification
-      await kv.set(`notification:${notificationId}`, fullNotification);
-      
-      // Add to recipient list
-      const recipientNotifs = await kv.get(`notifications:${notification.recipientType}:${notification.recipientId}`) || [];
-      recipientNotifs.unshift(notificationId);
-      await kv.set(`notifications:${notification.recipientType}:${notification.recipientId}`, recipientNotifs);
-      
-      console.log(`📨 Notification queued: ${notificationId} for ${notification.recipientType}:${notification.recipientId}`);
+      console.log(`📨 Notification sent via existing system for ${notification.recipientType}:${notification.recipientId}`);
     } catch (e) {
       console.error('Failed to trigger notification:', e);
     }
@@ -625,17 +616,31 @@ export function bookingEndpoints(app: Hono, kv: any) {
 
       await kv.set(`booking:${bookingId}`, booking);
 
-      // Notify Customer
-      await triggerNotification({
-        recipientId: booking.customerId,
-        recipientType: 'customer',
-        type: 'booking_confirmed',
-        category: 'bookings',
-        title: 'Booking Confirmed!',
-        message: `Your booking for ${booking.serviceName} has been confirmed by the vendor.`,
-        data: { bookingId },
-        priority: 'high'
-      });
+      // ✅ NOTIFICATION: Booking Accepted - Use existing notification system
+      try {
+        const customer = await kv.get(`customer:${booking.customerId}`);
+        const vendor = await kv.get(`vendor:${vendorId}`);
+        const startOTP = booking.otp?.start || booking.completionOTP;
+
+        await createNotificationHelper(kv, {
+          recipientId: booking.customerId,
+          recipientType: 'customer',
+          type: 'booking_confirmed',
+          category: 'bookings',
+          title: 'Booking Confirmed!',
+          message: `Your booking for ${booking.serviceName} on ${booking.bookingDate} at ${booking.bookingTime} has been confirmed!${startOTP ? ` Start OTP: ${startOTP}` : ''}`,
+          recipientEmail: customer?.email,
+          recipientPhone: booking.customerPhone || customer?.phone,
+          channels: { email: true, sms: true, inApp: true, push: false },
+          data: { bookingId, serviceName: booking.serviceName, bookingDate: booking.bookingDate, bookingTime: booking.bookingTime, vendorName: vendor?.businessName, startOTP },
+          priority: 'high'
+        });
+
+        console.log(`📱 [NOTIFICATION] Booking accepted notification sent to customer`);
+      } catch (notifError) {
+        console.error(`⚠️ [NOTIFICATION] Failed to send booking accepted notification:`, notifError);
+        // Don't fail the request if notification fails
+      }
 
       console.log(`✅ Booking ${bookingId} accepted by vendor`);
       return c.json({ success: true, booking });

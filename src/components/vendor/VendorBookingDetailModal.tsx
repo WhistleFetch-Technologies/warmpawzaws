@@ -26,6 +26,7 @@ export function VendorBookingDetailModal({
   const [showChat, setShowChat] = useState(false);
   const [showMedicalHistory, setShowMedicalHistory] = useState(false);
   const [hasPrescription, setHasPrescription] = useState(false);
+  const [prescriptionId, setPrescriptionId] = useState<string | undefined>(undefined); // ✅ ENHANCEMENT: Store prescription ID for editing
   const [copiedOtp, setCopiedOtp] = useState(false);
 
   useEffect(() => {
@@ -67,9 +68,24 @@ export function VendorBookingDetailModal({
           headers: { 'Authorization': `Bearer ${publicAnonKey}` }
         }
       );
-      setHasPrescription(response.ok);
+      
+      if (response.ok) {
+        const result = await response.json();
+        // ✅ ENHANCEMENT: Store prescription ID for editing
+        if (result.success && result.prescription) {
+          setHasPrescription(true);
+          setPrescriptionId(result.prescription.id);
+        } else {
+          setHasPrescription(false);
+          setPrescriptionId(undefined);
+        }
+      } else {
+        setHasPrescription(false);
+        setPrescriptionId(undefined);
+      }
     } catch (error) {
       setHasPrescription(false);
+      setPrescriptionId(undefined);
     }
   };
 
@@ -405,6 +421,7 @@ export function VendorBookingDetailModal({
           bookingId={bookingId}
           booking={booking}
           vendorPhone={vendorPhone}
+          existingPrescriptionId={prescriptionId} // ✅ ENHANCEMENT: Pass prescription ID for editing
           onClose={() => {
             setShowPrescriptionForm(false);
             checkPrescription(bookingId); // Refresh prescription status
@@ -412,6 +429,7 @@ export function VendorBookingDetailModal({
           onSuccess={() => {
             setShowPrescriptionForm(false);
             setHasPrescription(true);
+            checkPrescription(bookingId); // Refresh to get updated prescription ID
             onRefresh();
           }}
         />

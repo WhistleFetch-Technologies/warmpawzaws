@@ -51,12 +51,19 @@ export function VendorDeliveryManagement({ vendorId, onClose }: DeliveryManageme
       );
 
       const data = await response.json();
+      // ✅ FIX: Handle standardized response format
+      // Response format: { success: true, deliveries: [...], total: ... }
       if (data.success) {
-        setDeliveries(data.deliveries || []);
+        setDeliveries(data.deliveries || data.data?.deliveries || []);
+      } else {
+        const errorData = data.error || data.message || 'Unknown error';
+        console.error('Failed to fetch deliveries:', errorData);
+        toast.error(errorData);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching deliveries:', error);
-      toast.error('Failed to load deliveries');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -78,15 +85,17 @@ export function VendorDeliveryManagement({ vendorId, onClose }: DeliveryManageme
 
       const data = await response.json();
       if (data.success) {
-        toast.success('Delivery status updated');
-        fetchDeliveries();
+        toast.success('Delivery status updated successfully');
+        await fetchDeliveries(); // ✅ Ensure deliveries reload
         setShowDetailsModal(false);
       } else {
-        toast.error(data.error || 'Failed to update status');
+        const errorData = data.error || data.message || 'Failed to update status';
+        toast.error(errorData);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error updating delivery:', error);
-      toast.error('Failed to update delivery status');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 

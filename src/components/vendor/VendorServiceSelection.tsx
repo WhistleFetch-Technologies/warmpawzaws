@@ -1,7 +1,10 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '../ui/button';
 import { ChevronRight, Check } from 'lucide-react';
-import logoImage from 'figma:asset/da6636b92da744b3db8eed5288ca6da9ab889afe.png';
+import { LOGO_CIRCULAR_ORANGE, WARM_ORANGE } from '../../assets/design-tokens';
+import { WarmpawzButton } from '../shared/design-system/WarmpawzButton';
+
+const logoImage = LOGO_CIRCULAR_ORANGE;
 
 interface ServiceType {
   id: string;
@@ -112,7 +115,7 @@ export function VendorServiceSelection({ onNext }: { onNext: (data: any) => void
       {/* Header */}
       <div className="px-6 pt-12 pb-8 text-center">
         {/* Logo */}
-        <div className="w-20 h-20 bg-gradient-to-br from-[#FF8C42] to-[#FF6B35] rounded-full mx-auto mb-6 flex items-center justify-center shadow-lg">
+        <div className="w-20 h-20 rounded-full mx-auto mb-6 flex items-center justify-center shadow-lg" style={{ background: `linear-gradient(to bottom right, ${WARM_ORANGE}, #FF6B35)` }}>
           <div className="w-12 h-12 flex items-center justify-center">
             <img src={logoImage} alt="Warmpawz" className="w-10 h-10" />
           </div>
@@ -138,41 +141,45 @@ export function VendorServiceSelection({ onNext }: { onNext: (data: any) => void
             Services You Can Offer
           </h3>
           <div className="grid grid-cols-2 gap-3">
-            {services.map((service) => (
-              <button
-                key={service.id}
-                onClick={() => toggleService(service.id)}
-                className={`relative bg-white rounded-2xl p-4 border-2 transition-all ${
-                  selectedServices.includes(service.id)
-                    ? 'border-[#FF8C42] shadow-md'
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
-              >
-                {/* Selection Checkmark */}
-                {selectedServices.includes(service.id) && (
-                  <div className="absolute top-2 right-2 w-6 h-6 bg-[#FF8C42] rounded-full flex items-center justify-center">
-                    <Check className="w-4 h-4 text-white" />
-                  </div>
-                )}
+            {services.map((service) => {
+              const isSelected = selectedServices.includes(service.id);
+              const cardStyles = isSelected 
+                ? { border: `2px solid ${WARM_ORANGE}`, boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }
+                : { border: '1px solid #E5E7EB' };
+              
+              return (
+                <button
+                  key={service.id}
+                  onClick={() => toggleService(service.id)}
+                  className="relative bg-white rounded-2xl p-4 transition-all text-left"
+                  style={cardStyles}
+                >
+                  {/* Selection Checkmark */}
+                  {isSelected && (
+                    <div className="absolute top-2 right-2 w-6 h-6 rounded-full flex items-center justify-center" style={{ backgroundColor: WARM_ORANGE }}>
+                      <Check className="w-4 h-4 text-white" />
+                    </div>
+                  )}
 
-                {/* Popular Badge */}
-                {service.popular && (
-                  <div className="absolute -top-2 left-1/2 transform -translate-x-1/2">
-                    <span className="bg-green-500 text-white text-xs px-2 py-0.5 rounded-full font-semibold">
-                      Popular
-                    </span>
-                  </div>
-                )}
+                  {/* Popular Badge */}
+                  {service.popular && (
+                    <div className="absolute -top-2 left-1/2 transform -translate-x-1/2">
+                      <span className="bg-green-500 text-white text-xs px-2 py-0.5 rounded-full font-semibold">
+                        Popular
+                      </span>
+                    </div>
+                  )}
 
-                {/* Service Content */}
-                <div className="text-center">
-                  <div className="text-4xl mb-2">{service.icon}</div>
-                  <p className="text-sm font-semibold text-gray-800">
-                    {service.name}
-                  </p>
-                </div>
-              </button>
-            ))}
+                  {/* Service Content */}
+                  <div className="text-center">
+                    <div className="text-4xl mb-2">{service.icon}</div>
+                    <p className="text-sm font-semibold text-gray-800">
+                      {service.name}
+                    </p>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -310,14 +317,17 @@ export function VendorServiceSelection({ onNext }: { onNext: (data: any) => void
 
       {/* Fixed Bottom Button */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-4 max-w-[430px] mx-auto">
-        <Button
-          onClick={handleContinue}
+        <WarmpawzButton
+          variant={selectedServices.length === 0 || !selectedStyle ? 'disabled' : 'solid'}
           disabled={selectedServices.length === 0 || !selectedStyle}
-          className="w-full bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] text-white py-6 rounded-xl font-semibold disabled:opacity-50"
+          fullWidth
+          onClick={handleContinue}
+          icon={ChevronRight}
+          iconPosition="right"
+          style={{ height: '56px', fontSize: '16px', fontWeight: 600 }}
         >
           Start your pet service business
-          <ChevronRight className="w-5 h-5 ml-2" />
-        </Button>
+        </WarmpawzButton>
       </div>
     </div>
   );

@@ -6,6 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import { AlertCircle, Activity, Heart, Thermometer, Wind, Droplets, Brain, Plus, Search, Filter, Bell, Eye, FileText, TrendingUp, TrendingDown, Minus, CheckCircle, XCircle } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { toast } from 'sonner@2.0.3';
 
 interface VendorPatientMonitoringProps {
   vendorId: string;
@@ -136,12 +137,19 @@ export function VendorPatientMonitoring({ vendorId }: VendorPatientMonitoringPro
         }
       );
       const data = await response.json();
+      // ✅ FIX: Handle standardized response format
+      // Response format: { success: true, stats: {...}, criticalPatients: [...], total: ... }
       if (data.success) {
-        setStats(data.stats);
-        setMonitors(data.criticalPatients || []);
+        setStats(data.stats || data.data?.stats);
+        setMonitors(data.criticalPatients || data.data?.criticalPatients || []);
+      } else {
+        const errorData = data.error || data.message || 'Unknown error';
+        console.error('Failed to fetch dashboard:', errorData);
+        // Don't show error toast on initial load - just log
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching dashboard:', error);
+      // Don't show error toast on initial load - just log
     } finally {
       setLoading(false);
     }
@@ -158,12 +166,19 @@ export function VendorPatientMonitoring({ vendorId }: VendorPatientMonitoringPro
         headers: { 'Authorization': `Bearer ${publicAnonKey}` }
       });
       const data = await response.json();
+      // ✅ FIX: Handle standardized response format
+      // Response format: { success: true, monitors: [...], stats: {...}, total: ... }
       if (data.success) {
-        setMonitors(data.monitors);
-        setStats(data.stats);
+        setMonitors(data.monitors || data.data?.monitors || []);
+        setStats(data.stats || data.data?.stats);
+      } else {
+        const errorData = data.error || data.message || 'Unknown error';
+        console.error('Failed to fetch monitors:', errorData);
+        // Don't show error toast on initial load - just log
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching monitors:', error);
+      // Don't show error toast on initial load - just log
     } finally {
       setLoading(false);
     }
@@ -178,11 +193,18 @@ export function VendorPatientMonitoring({ vendorId }: VendorPatientMonitoringPro
         }
       );
       const data = await response.json();
+      // ✅ FIX: Handle standardized response format
+      // Response format: { success: true, vitals: [...], total: ... }
       if (data.success) {
-        setVitals(data.vitals || []);
+        setVitals(data.vitals || data.data?.vitals || []);
+      } else {
+        const errorData = data.error || data.message || 'Unknown error';
+        console.error('Failed to fetch vitals:', errorData);
+        // Don't show error toast - it's not critical
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching vitals:', error);
+      // Don't show error toast - it's not critical
     }
   };
 
@@ -216,9 +238,9 @@ export function VendorPatientMonitoring({ vendorId }: VendorPatientMonitoringPro
       );
       const data = await response.json();
       if (data.success) {
-        alert('Patient admitted successfully!');
+        toast.success('Patient admitted successfully');
         setView('list');
-        fetchMonitors();
+        await fetchMonitors(); // ✅ Ensure monitors reload
         // Reset form
         setAdmitForm({
           petName: '', petType: 'dog', petBreed: '', petAge: 0,
@@ -226,10 +248,14 @@ export function VendorPatientMonitoring({ vendorId }: VendorPatientMonitoringPro
           bedNumber: '', assignedVet: '', priority: 'medium',
           diagnosis: '', symptoms: '', allergies: '', notes: ''
         });
+      } else {
+        const errorData = data.error || data.message || 'Failed to admit patient';
+        toast.error(errorData);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error admitting patient:', error);
-      alert('Failed to admit patient');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 
@@ -268,8 +294,8 @@ export function VendorPatientMonitoring({ vendorId }: VendorPatientMonitoringPro
       );
       const data = await response.json();
       if (data.success) {
-        alert(data.message);
-        fetchVitals(selectedMonitor.id);
+        toast.success(data.message || 'Vitals recorded successfully');
+        await fetchVitals(selectedMonitor.id); // ✅ Ensure vitals reload
         // Reset form
         setVitalForm({
           temperature: '', heartRate: '', respiratoryRate: '',
@@ -277,10 +303,14 @@ export function VendorPatientMonitoring({ vendorId }: VendorPatientMonitoringPro
           oxygenSaturation: '', painScore: '', consciousness: 'alert',
           notes: '', recordedBy: 'Staff'
         });
+      } else {
+        const errorData = data.error || data.message || 'Failed to record vitals';
+        toast.error(errorData);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error recording vitals:', error);
-      alert('Failed to record vitals');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 
@@ -288,6 +318,90 @@ export function VendorPatientMonitoring({ vendorId }: VendorPatientMonitoringPro
     if (!selectedMonitor) return;
     // In a real implementation, this would call the API to acknowledge the alert
     alert('Alert acknowledged');
+  };
+
+  // ✅ LIFECYCLE FIX: Add delete monitor handler
+  const handleDeleteMonitor = async (monitorId: string, petName: string) => {
+    if (!confirm(`Are you sure you want to delete the monitoring record for "${petName}"? This action cannot be undone and will delete all associated vital signs records.`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/patient-monitoring/${vendorId}/monitors/${monitorId}`,
+        {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          toast.success(`Monitoring record for "${petName}" deleted successfully`);
+          if (view === 'list') {
+            await fetchMonitors(); // ✅ Ensure monitors reload
+          } else {
+            setView('list');
+            setSelectedMonitor(null);
+            await fetchMonitors(); // ✅ Ensure monitors reload
+          }
+        } else {
+          const errorMessage = data.error || data.message || 'Failed to delete monitor';
+          toast.error(errorMessage);
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to delete monitor';
+        toast.error(errorMessage);
+      }
+    } catch (error: any) {
+      console.error('Error deleting monitor:', error);
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
+    }
+  };
+
+  // ✅ LIFECYCLE FIX: Add update monitor status handler
+  const updateMonitorStatus = async (monitorId: string, status: 'active' | 'stable' | 'critical' | 'discharged') => {
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/patient-monitoring/${vendorId}/monitors/${monitorId}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ status })
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          toast.success('Monitor status updated successfully');
+          if (selectedMonitor && selectedMonitor.id === monitorId) {
+            setSelectedMonitor({ ...selectedMonitor, status });
+          }
+          await fetchMonitors(); // ✅ Ensure monitors reload
+        } else {
+          const errorMessage = data.error || data.message || 'Failed to update monitor status';
+          toast.error(errorMessage);
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to update monitor status';
+        toast.error(errorMessage);
+      }
+    } catch (error: any) {
+      console.error('Error updating monitor status:', error);
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
+    }
   };
 
   const getPriorityColor = (priority: string) => {
@@ -565,16 +679,26 @@ export function VendorPatientMonitoring({ vendorId }: VendorPatientMonitoringPro
                       )}
                     </td>
                     <td className="px-6 py-4">
-                      <button
-                        onClick={() => {
-                          setSelectedMonitor(monitor);
-                          setView('detail');
-                        }}
-                        className="text-orange-600 hover:text-orange-700 flex items-center gap-1"
-                      >
-                        <Eye className="w-4 h-4" />
-                        View
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            setSelectedMonitor(monitor);
+                            setView('detail');
+                          }}
+                          className="text-orange-600 hover:text-orange-700 flex items-center gap-1"
+                        >
+                          <Eye className="w-4 h-4" />
+                          View
+                        </button>
+                        {/* ✅ LIFECYCLE FIX: Add delete button */}
+                        <button
+                          onClick={() => handleDeleteMonitor(monitor.id, monitor.petName)}
+                          className="text-red-600 hover:text-red-700 flex items-center gap-1"
+                          title="Delete monitor"
+                        >
+                          <XCircle className="w-4 h-4" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

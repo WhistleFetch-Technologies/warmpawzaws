@@ -12,6 +12,7 @@ import {
   AlertCircle, Shield, Camera, Trash2, DollarSign, Award
 } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { toast } from 'sonner@2.0.3';
 
 interface AdoptablePet {
   id: string;
@@ -129,9 +130,9 @@ export function ShelterAdoptionSystem({ vendorId }: { vendorId: string }) {
     try {
       setLoading(true);
       
-      // Load pets
+      // Load pets - using correct endpoint
       const petsResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/adoption/pets`,
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/adoption/listings`,
         {
           headers: { 'Authorization': `Bearer ${publicAnonKey}` }
         }
@@ -139,10 +140,16 @@ export function ShelterAdoptionSystem({ vendorId }: { vendorId: string }) {
 
       if (petsResponse.ok) {
         const petsData = await petsResponse.json();
-        setPets(petsData.pets || []);
+        // ✅ FIX: Handle standardized response format
+        // Response format: { success: true, listings: [...], total: ... }
+        setPets(petsData.listings || petsData.pets || petsData.data?.listings || petsData.data?.pets || []);
+      } else {
+        const errorData = await petsResponse.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('Failed to load pets:', errorData);
+        // Don't show error toast on initial load - just log
       }
 
-      // Load applications
+      // Load applications - using correct endpoint
       const appsResponse = await fetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/adoption/applications`,
         {
@@ -152,7 +159,14 @@ export function ShelterAdoptionSystem({ vendorId }: { vendorId: string }) {
 
       if (appsResponse.ok) {
         const appsData = await appsResponse.json();
-        setApplications(appsData.applications || []);
+        // ✅ FIX Bug 1: Handle standardized response format
+        // Response format: { success: true, applications: [...], total: ... }
+        setApplications(appsData.applications || appsData.data?.applications || []);
+      } else {
+        const errorData = await appsResponse.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('Failed to load applications:', errorData);
+        // Don't show error toast on initial load - just log
+        setApplications([]); // ✅ FIX Bug 1: Set empty array on error
       }
     } catch (error) {
       console.error('Error loading adoption data:', error);
@@ -202,7 +216,7 @@ export function ShelterAdoptionSystem({ vendorId }: { vendorId: string }) {
   const addPet = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/adoption/pets`,
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/adoption/listings`,
         {
           method: 'POST',
           headers: {
@@ -214,20 +228,43 @@ export function ShelterAdoptionSystem({ vendorId }: { vendorId: string }) {
       );
 
       if (response.ok) {
-        await loadData();
-        setShowAddPetModal(false);
-        alert('✅ Pet added successfully!');
+        const data = await response.json();
+        if (data.success) {
+          toast.success('Pet added successfully!');
+          await loadData();
+          setShowAddPetModal(false);
+          // Reset form
+          setNewPet({
+            name: '',
+            species: 'dog',
+            breed: '',
+            age: '',
+            gender: 'male',
+            description: '',
+            vaccinated: false,
+            neutered: false,
+            adoptionFee: 0
+          });
+        } else {
+          const errorMessage = data.error || data.message || 'Failed to add pet';
+          toast.error(errorMessage);
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to add pet';
+        toast.error(errorMessage);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error adding pet:', error);
-      alert('Failed to add pet');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 
   const updatePetStatus = async (petId: string, status: string) => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/adoption/pets/${petId}/status`,
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/adoption/listings/${petId}`,
         {
           method: 'PUT',
           headers: {
@@ -239,10 +276,116 @@ export function ShelterAdoptionSystem({ vendorId }: { vendorId: string }) {
       );
 
       if (response.ok) {
-        await loadData();
+        const data = await response.json();
+        if (data.success) {
+          toast.success('Pet status updated successfully');
+          await loadData();
+        } else {
+          const errorMessage = data.error || data.message || 'Failed to update pet status';
+          toast.error(errorMessage);
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to update pet status';
+        toast.error(errorMessage);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error updating pet status:', error);
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
+    }
+  };
+
+  // ✅ LIFECYCLE FIX: Add UPDATE functionality for full pet details
+  const updatePet = async () => {
+    if (!selectedPet) return;
+
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/adoption/listings/${selectedPet.id}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(newPet)
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          toast.success('Pet updated successfully!');
+          await loadData();
+          setShowEditPetModal(false);
+          setSelectedPet(null);
+          // Reset form
+          setNewPet({
+            name: '',
+            species: 'dog',
+            breed: '',
+            age: '',
+            gender: 'male',
+            description: '',
+            vaccinated: false,
+            neutered: false,
+            adoptionFee: 0
+          });
+        } else {
+          const errorMessage = data.error || data.message || 'Failed to update pet';
+          toast.error(errorMessage);
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to update pet';
+        toast.error(errorMessage);
+      }
+    } catch (error: any) {
+      console.error('Error updating pet:', error);
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
+    }
+  };
+
+  // ✅ LIFECYCLE FIX: Add DELETE functionality for pets
+  const deletePet = async (petId: string) => {
+    const pet = pets.find(p => p.id === petId);
+    const petName = pet?.name || 'this pet';
+    
+    if (!confirm(`Are you sure you want to delete "${petName}"? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/adoption/listings/${petId}`,
+        {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`
+          }
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          toast.success(`Pet "${petName}" deleted successfully`);
+          await loadData();
+        } else {
+          const errorMessage = data.error || data.message || 'Failed to delete pet';
+          toast.error(errorMessage);
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to delete pet';
+        toast.error(errorMessage);
+      }
+    } catch (error: any) {
+      console.error('Error deleting pet:', error);
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 
@@ -261,13 +404,24 @@ export function ShelterAdoptionSystem({ vendorId }: { vendorId: string }) {
       );
 
       if (response.ok) {
-        await loadData();
-        setShowApplicationModal(false);
-        alert(approved ? '✅ Application approved!' : '❌ Application rejected');
+        const data = await response.json();
+        if (data.success) {
+          toast.success(approved ? 'Application approved!' : 'Application rejected');
+          await loadData();
+          setShowApplicationModal(false);
+        } else {
+          const errorMessage = data.error || data.message || 'Failed to review application';
+          toast.error(errorMessage);
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to review application';
+        toast.error(errorMessage);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error reviewing application:', error);
-      alert('Failed to review application');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 
@@ -505,6 +659,14 @@ export function ShelterAdoptionSystem({ vendorId }: { vendorId: string }) {
                     >
                       <Edit className="w-4 h-4 mr-2" />
                       Edit
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => deletePet(pet.id)}
+                      className="border-red-300 text-red-700 hover:bg-red-50"
+                    >
+                      <Trash2 className="w-4 h-4" />
                     </Button>
                   </div>
                 </div>
@@ -761,6 +923,135 @@ export function ShelterAdoptionSystem({ vendorId }: { vendorId: string }) {
                 Add Pet
               </Button>
               <Button variant="outline" onClick={() => setShowAddPetModal(false)} className="flex-1">
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Pet Modal */}
+      <Dialog open={showEditPetModal} onOpenChange={setShowEditPetModal}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Adoptable Pet</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Pet Name *</Label>
+                <Input
+                  value={newPet.name}
+                  onChange={(e) => setNewPet({...newPet, name: e.target.value})}
+                  placeholder="e.g., Max"
+                />
+              </div>
+              <div>
+                <Label>Species *</Label>
+                <select
+                  value={newPet.species}
+                  onChange={(e) => setNewPet({...newPet, species: e.target.value as any})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                >
+                  <option value="dog">Dog</option>
+                  <option value="cat">Cat</option>
+                  <option value="bird">Bird</option>
+                  <option value="rabbit">Rabbit</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <Label>Breed</Label>
+                <Input
+                  value={newPet.breed}
+                  onChange={(e) => setNewPet({...newPet, breed: e.target.value})}
+                  placeholder="e.g., Labrador"
+                />
+              </div>
+              <div>
+                <Label>Age</Label>
+                <Input
+                  value={newPet.age}
+                  onChange={(e) => setNewPet({...newPet, age: e.target.value})}
+                  placeholder="e.g., 2 years"
+                />
+              </div>
+              <div>
+                <Label>Gender</Label>
+                <select
+                  value={newPet.gender}
+                  onChange={(e) => setNewPet({...newPet, gender: e.target.value as any})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                >
+                  <option value="male">Male</option>
+                  <option value="female">Female</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <Label>Description</Label>
+              <Textarea
+                value={newPet.description}
+                onChange={(e) => setNewPet({...newPet, description: e.target.value})}
+                placeholder="Describe the pet's characteristics..."
+                rows={4}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={newPet.vaccinated}
+                  onChange={(e) => setNewPet({...newPet, vaccinated: e.target.checked})}
+                  id="edit-vaccinated"
+                />
+                <Label htmlFor="edit-vaccinated">Vaccinated</Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={newPet.neutered}
+                  onChange={(e) => setNewPet({...newPet, neutered: e.target.checked})}
+                  id="edit-neutered"
+                />
+                <Label htmlFor="edit-neutered">Neutered/Spayed</Label>
+              </div>
+            </div>
+
+            <div>
+              <Label>Adoption Fee (₹)</Label>
+              <Input
+                type="number"
+                value={newPet.adoptionFee}
+                onChange={(e) => setNewPet({...newPet, adoptionFee: parseFloat(e.target.value)})}
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <Button onClick={updatePet} className="flex-1 bg-[#FF8C42] hover:bg-[#ff7a2e]">
+                <Edit className="w-4 h-4 mr-2" />
+                Update Pet
+              </Button>
+              <Button variant="outline" onClick={() => {
+                setShowEditPetModal(false);
+                setSelectedPet(null);
+                setNewPet({
+                  name: '',
+                  species: 'dog',
+                  breed: '',
+                  age: '',
+                  gender: 'male',
+                  description: '',
+                  vaccinated: false,
+                  neutered: false,
+                  adoptionFee: 0
+                });
+              }} className="flex-1">
                 Cancel
               </Button>
             </div>

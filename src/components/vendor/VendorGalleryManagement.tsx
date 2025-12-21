@@ -54,13 +54,18 @@ export function VendorGalleryManagement({ vendorId, vendorData, onBack }: Vendor
 
       if (response.ok) {
         const data = await response.json();
-        setGallery(data.images || []);
+        // ✅ FIX: Handle standardized response format
+        // Response format: { success: true, images: [...], total: ... }
+        setGallery(data.images || data.data?.images || []);
       } else {
-        console.error('Failed to fetch gallery');
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('Failed to fetch gallery:', errorData);
+        toast.error(errorData.error || 'Failed to load gallery');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching gallery:', error);
-      toast.error('Failed to load gallery');
+      const errorMessage = error?.message || 'Failed to load gallery. Please try again.';
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -104,13 +109,15 @@ export function VendorGalleryManagement({ vendorId, vendorData, onBack }: Vendor
         });
 
         if (response.ok) {
+          const result = await response.json();
           toast.success('Image uploaded successfully');
           setUploadModalOpen(false);
           setUploadForm({ caption: '', category: 'work_showcase', isFeatured: false });
-          fetchGallery();
+          await fetchGallery(); // ✅ Ensure gallery reloads
         } else {
-          const error = await response.text();
-          toast.error(`Upload failed: ${error}`);
+          const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+          const errorMessage = errorData.error || errorData.message || 'Upload failed. Please try again.';
+          toast.error(errorMessage);
         }
       };
 
@@ -126,7 +133,12 @@ export function VendorGalleryManagement({ vendorId, vendorData, onBack }: Vendor
   };
 
   const handleDeleteImage = async (imageId: string) => {
-    if (!confirm('Are you sure you want to delete this image?')) return;
+    const image = gallery.find(img => img.id === imageId);
+    const imageLabel = image?.caption || 'this image';
+    
+    if (!confirm(`Are you sure you want to delete "${imageLabel}"? This action cannot be undone.`)) {
+      return;
+    }
 
     try {
       const response = await fetch(`${API_BASE}/groomer-gallery/${vendorId}/${imageId}`, {
@@ -135,14 +147,17 @@ export function VendorGalleryManagement({ vendorId, vendorData, onBack }: Vendor
       });
 
       if (response.ok) {
-        toast.success('Image deleted');
-        fetchGallery();
+        toast.success('Image deleted successfully');
+        await fetchGallery(); // ✅ Ensure gallery reloads
       } else {
-        toast.error('Failed to delete image');
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to delete image';
+        toast.error(errorMessage);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error deleting image:', error);
-      toast.error('Failed to delete image');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 

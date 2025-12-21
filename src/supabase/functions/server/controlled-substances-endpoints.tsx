@@ -392,6 +392,51 @@ app.get('/:vendorId/audit-history', async (c) => {
 });
 
 /**
+ * DELETE /vendor/controlled-substances/:vendorId/:substanceId
+ * Delete a controlled substance
+ * ✅ LIFECYCLE FIX: Add DELETE endpoint for complete CRUD
+ */
+app.delete('/:vendorId/:substanceId', async (c) => {
+  try {
+    const { vendorId, substanceId } = c.req.param();
+    
+    const substance = await kv.get<ControlledSubstance>(`substance:${vendorId}:${substanceId}`);
+    
+    if (!substance) {
+      return c.json({ 
+        success: false, 
+        error: 'Controlled substance not found' 
+      }, 404);
+    }
+    
+    // Delete the substance
+    await kv.del(`substance:${vendorId}:${substanceId}`);
+    
+    // Optionally: Delete all associated transactions (or keep for audit trail)
+    // For compliance, we might want to keep transactions even after substance deletion
+    // const transactions = await kv.getByPrefix<SubstanceTransaction>(`substance:transaction:${vendorId}:`);
+    // const relatedTransactions = transactions.filter(t => t.substanceId === substanceId);
+    // for (const txn of relatedTransactions) {
+    //   await kv.del(`substance:transaction:${vendorId}:${txn.id}`);
+    // }
+    
+    console.log(`✅ Controlled substance deleted: ${substanceId}`);
+    
+    return c.json({
+      success: true,
+      message: 'Controlled substance deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting controlled substance:', error);
+    return c.json({ 
+      success: false, 
+      error: 'Failed to delete controlled substance',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+/**
  * POST /vendor/controlled-substances/:vendorId/audit
  * Create a new compliance audit
  */

@@ -101,7 +101,6 @@ export function staffDiscoveryEndpoints(app: Hono) {
                 enabled: serviceStyle === 'at_home', 
                 available: serviceStyle === 'at_home',
                 maxDistance: 10,
-                travelChargePerKm: 0,
                 acceptInstantBooking: true
               },
               tele: { 

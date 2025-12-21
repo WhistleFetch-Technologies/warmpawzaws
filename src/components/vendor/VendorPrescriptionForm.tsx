@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { X, Plus, Trash2, AlertCircle, Save, Calendar } from 'lucide-react';
 import { Button } from '../ui/button';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
@@ -7,6 +7,7 @@ interface VendorPrescriptionFormProps {
   bookingId: string;
   booking: any;
   vendorPhone: string;
+  existingPrescriptionId?: string; // ✅ ENHANCEMENT: Optional prescription ID for editing
   onClose: () => void;
   onSuccess: () => void;
 }
@@ -35,10 +36,12 @@ export function VendorPrescriptionForm({
   bookingId,
   booking,
   vendorPhone,
+  existingPrescriptionId,
   onClose,
   onSuccess
 }: VendorPrescriptionFormProps) {
   const isVet = booking.vendorType === 'vet' || booking.serviceType === 'vet';
+  const isEditMode = !!existingPrescriptionId;
   
   // Medical Details
   const [diagnosis, setDiagnosis] = useState('');
@@ -70,7 +73,88 @@ export function VendorPrescriptionForm({
   const [followUpReason, setFollowUpReason] = useState('');
   
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // ✅ ENHANCEMENT: Load existing prescription data for editing
+  useEffect(() => {
+    // Load if we have prescription ID or if we should check for existing prescription
+    if (existingPrescriptionId || isEditMode) {
+      loadExistingPrescription();
+    }
+  }, [existingPrescriptionId, bookingId]);
+
+  const loadExistingPrescription = async () => {
+    try {
+      setLoading(true);
+      setError('');
+
+      // Fetch prescription by booking ID (standard endpoint)
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/prescription/booking/${bookingId}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      if (!response.ok) {
+        // No prescription found - this is OK for new prescriptions
+        console.log('ℹ️ [PRESCRIPTION] No existing prescription found - will create new');
+        setLoading(false);
+        return;
+      }
+
+      const result = await response.json();
+      
+      if (result.success && result.prescription) {
+        const prescription = result.prescription;
+        
+        // Pre-populate form fields
+        setDiagnosis(prescription.diagnosis || '');
+        setObservations(prescription.observations || '');
+        setGeneralNotes(prescription.generalNotes || prescription.notes || '');
+        setRecommendations(prescription.recommendations || '');
+        setNextFollowUpDate(prescription.nextFollowUpDate || prescription.followUpDate || '');
+        setFollowUpReason(prescription.followUpReason || '');
+
+        // Medications
+        if (prescription.medications && Array.isArray(prescription.medications)) {
+          setMedications(prescription.medications);
+        }
+
+        // Products Used
+        if (prescription.productsUsed && Array.isArray(prescription.productsUsed)) {
+          setProductsUsed(prescription.productsUsed);
+        }
+
+        // Tests Recommended
+        if (prescription.testsRecommended && Array.isArray(prescription.testsRecommended)) {
+          setTestsRecommended(prescription.testsRecommended);
+        }
+
+        // Vitals
+        if (prescription.vitals) {
+          setWeight(prescription.vitals.weight?.toString() || '');
+          setTemperature(prescription.vitals.temperature?.toString() || '');
+          setHeartRate(prescription.vitals.heartRate?.toString() || '');
+          setRespiratoryRate(prescription.vitals.respiratoryRate?.toString() || '');
+          setBloodPressure(prescription.vitals.bloodPressure || '');
+          setVitalNotes(prescription.vitals.notes || '');
+        }
+
+        console.log('✅ [PRESCRIPTION] Loaded existing prescription data:', prescription.id);
+      }
+    } catch (err: any) {
+      console.error('❌ [PRESCRIPTION] Error loading prescription:', err);
+      const errorMessage = err?.message || 'Failed to load prescription data';
+      setError(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const addMedication = () => {
     setMedications([...medications, {
@@ -170,31 +254,68 @@ export function VendorPrescriptionForm({
 
       console.log('📝 [VENDOR-PRESCRIPTION] Submitting:', prescriptionData);
 
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/prescription/create`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(prescriptionData)
+      // ✅ ENHANCEMENT: Use PUT for updates, POST for creates
+      // First, check if prescription exists by trying to fetch it
+      let prescriptionIdToUpdate = existingPrescriptionId;
+      
+      // If we don't have prescription ID but are in edit mode, try to fetch it
+      if (!prescriptionIdToUpdate && isEditMode) {
+        try {
+          const checkResponse = await fetch(
+            `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/prescription/booking/${bookingId}`,
+            {
+              headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+            }
+          );
+          if (checkResponse.ok) {
+            const checkResult = await checkResponse.json();
+            if (checkResult.success && checkResult.prescription?.id) {
+              prescriptionIdToUpdate = checkResult.prescription.id;
+            }
+          }
+        } catch (err) {
+          console.log('⚠️ [PRESCRIPTION] Could not fetch prescription ID, will create new');
         }
-      );
+      }
+      
+      const isUpdate = !!prescriptionIdToUpdate;
+      const endpoint = isUpdate
+        ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/prescription/update/${prescriptionIdToUpdate}`
+        : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/prescription/create`;
+      
+      const method = isUpdate ? 'PUT' : 'POST';
+
+      const response = await fetch(endpoint, {
+        method,
+        headers: {
+          'Authorization': `Bearer ${publicAnonKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(prescriptionData)
+      });
 
       const result = await response.json();
 
       if (response.ok && result.success) {
-        console.log('✅ [VENDOR-PRESCRIPTION] Created:', result.prescriptionId);
+        const { toast } = await import('sonner@2.0.3');
+        if (isUpdate) {
+          console.log('✅ [VENDOR-PRESCRIPTION] Updated:', existingPrescriptionId);
+          toast.success('Prescription updated successfully');
+        } else {
+          console.log('✅ [VENDOR-PRESCRIPTION] Created:', result.prescriptionId);
+          toast.success('Prescription saved successfully');
+        }
         onSuccess();
       } else {
         console.error('❌ [VENDOR-PRESCRIPTION] Error:', result.error);
-        setError(result.error || 'Failed to save prescription');
+        const errorMessage = result.error || result.message || `Failed to ${isUpdate ? 'update' : 'save'} prescription`;
+        setError(errorMessage);
         setSaving(false);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('❌ [VENDOR-PRESCRIPTION] Exception:', err);
-      setError('Failed to save prescription');
+      const errorMessage = err?.message || 'Network error. Please check your connection and try again.';
+      setError(errorMessage);
       setSaving(false);
     }
   };
@@ -208,7 +329,10 @@ export function VendorPrescriptionForm({
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between rounded-t-[32px] z-10">
           <h2 className="font-bold text-gray-800">
-            {isVet ? 'Add Prescription' : 'Add Service Notes'}
+            {isEditMode 
+              ? (isVet ? 'Edit Prescription' : 'Edit Service Notes')
+              : (isVet ? 'Add Prescription' : 'Add Service Notes')
+            }
           </h2>
           <button
             onClick={onClose}
@@ -219,6 +343,14 @@ export function VendorPrescriptionForm({
         </div>
 
         <div className="p-6 space-y-6 pb-32">
+          {/* Loading State */}
+          {loading && (
+            <div className="flex items-center justify-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500"></div>
+              <span className="ml-3 text-gray-600">Loading prescription...</span>
+            </div>
+          )}
+
           {/* Error Message */}
           {error && (
             <div className="bg-red-50 border-2 border-red-200 rounded-xl p-4 flex items-center gap-3">
@@ -226,6 +358,10 @@ export function VendorPrescriptionForm({
               <p className="text-sm text-red-800">{error}</p>
             </div>
           )}
+
+          {/* Content (hidden while loading) */}
+          {!loading && (
+            <>
 
           {/* Booking Info */}
           <div className="bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 rounded-2xl p-4">
@@ -610,24 +746,26 @@ export function VendorPrescriptionForm({
               </div>
             )}
           </div>
+          </>
+          )}
         </div>
 
         {/* Fixed Bottom Actions */}
         <div className="sticky bottom-0 bg-white border-t border-gray-200 px-6 py-4 space-y-3">
           <Button
             onClick={handleSubmit}
-            disabled={saving}
+            disabled={saving || loading}
             className="w-full bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white py-4 rounded-xl flex items-center justify-center gap-2 transition-all disabled:opacity-50"
           >
             {saving ? (
               <>
                 <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                Saving...
+                {isEditMode ? 'Updating...' : 'Saving...'}
               </>
             ) : (
               <>
                 <Save className="w-5 h-5" />
-                Save {isVet ? 'Prescription' : 'Service Notes'}
+                {isEditMode ? 'Update' : 'Save'} {isVet ? 'Prescription' : 'Service Notes'}
               </>
             )}
           </Button>

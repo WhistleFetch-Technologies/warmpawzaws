@@ -15,15 +15,40 @@ export function AdoptionPetListView({ phone, centerId, centerName, onBack, onNav
   const [pets, setPets] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+
   useEffect(() => {
-    // Mock pets for now - can be replaced with real API call
-    setPets([
-      { id: '1', name: 'Max', breed: 'Golden Retriever', age: '2 years', gender: 'Male', vaccinated: true },
-      { id: '2', name: 'Bella', breed: 'Labrador', age: '1 year', gender: 'Female', vaccinated: true },
-      { id: '3', name: 'Charlie', breed: 'Beagle', age: '3 years', gender: 'Male', vaccinated: true }
-    ]);
-    setLoading(false);
+    loadAdoptablePets();
   }, [centerId]);
+
+  const loadAdoptablePets = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${API_BASE}/customer/adoption/${centerId}/pets`, {
+        headers: {
+          'Authorization': `Bearer ${publicAnonKey}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        // ✅ FIX: Handle standardized response format
+        const petsList = data.pets || data.data?.pets || [];
+        setPets(petsList);
+        console.log('✅ Loaded adoptable pets:', petsList.length);
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('Failed to load adoptable pets:', errorData);
+        setPets([]);
+      }
+    } catch (error: any) {
+      console.error('Error loading adoptable pets:', error);
+      setPets([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -48,36 +73,54 @@ export function AdoptionPetListView({ phone, centerId, centerName, onBack, onNav
       </div>
 
       <div className="p-4 space-y-3">
-        {pets.map((pet) => (
-          <div key={pet.id} className="bg-white rounded-xl p-4 border border-gray-200">
-            <div className="flex gap-3">
-              <div className="w-24 h-24 bg-gradient-to-br from-pink-400 to-rose-500 rounded-xl flex items-center justify-center text-white text-2xl font-bold">
-                {pet.name.charAt(0)}
-              </div>
-              <div className="flex-1">
-                <h3 className="font-semibold">{pet.name}</h3>
-                <p className="text-sm text-gray-600 mt-1">{pet.breed}</p>
-                <div className="flex items-center gap-3 mt-2 text-xs text-gray-500">
-                  <span>{pet.age}</span>
-                  <span>•</span>
-                  <span>{pet.gender}</span>
-                  {pet.vaccinated && (
-                    <>
-                      <span>•</span>
-                      <span className="text-green-600">✓ Vaccinated</span>
-                    </>
+        {pets.length === 0 ? (
+          <div className="text-center py-12">
+            <p className="text-gray-500">No pets available for adoption at this center</p>
+          </div>
+        ) : (
+          pets.map((pet) => (
+            <div key={pet.id} className="bg-white rounded-xl p-4 border border-gray-200">
+              <div className="flex gap-3">
+                {/* ✅ FIX: Use pet image if available, otherwise use initial */}
+                {pet.images && pet.images.length > 0 ? (
+                  <img 
+                    src={pet.images[0]} 
+                    alt={pet.name || 'Pet'}
+                    className="w-24 h-24 rounded-xl object-cover"
+                  />
+                ) : (
+                  <div className="w-24 h-24 bg-gradient-to-br from-pink-400 to-rose-500 rounded-xl flex items-center justify-center text-white text-2xl font-bold">
+                    {pet.name?.charAt(0) || '?'}
+                  </div>
+                )}
+                <div className="flex-1">
+                  <h3 className="font-semibold">{pet.name || 'Unnamed Pet'}</h3>
+                  <p className="text-sm text-gray-600 mt-1">{pet.breed || 'Unknown breed'}</p>
+                  <div className="flex items-center gap-3 mt-2 text-xs text-gray-500">
+                    {pet.age && <span>{pet.age}</span>}
+                    {pet.age && pet.gender && <span>•</span>}
+                    {pet.gender && <span className="capitalize">{pet.gender}</span>}
+                    {pet.vaccinated && (
+                      <>
+                        {(pet.age || pet.gender) && <span>•</span>}
+                        <span className="text-green-600">✓ Vaccinated</span>
+                      </>
+                    )}
+                  </div>
+                  {pet.description && (
+                    <p className="text-xs text-gray-500 mt-2 line-clamp-2">{pet.description}</p>
                   )}
                 </div>
               </div>
+              <button
+                onClick={() => onNavigate('apply', { petId: pet.id, petData: pet })}
+                className="w-full mt-3 bg-gradient-to-r from-pink-500 to-rose-600 text-white py-2 rounded-lg font-medium hover:shadow-lg transition-all"
+              >
+                Apply to Adopt
+              </button>
             </div>
-            <button
-              onClick={() => onNavigate('apply', { petId: pet.id, petData: pet })}
-              className="w-full mt-3 bg-gradient-to-r from-pink-500 to-rose-600 text-white py-2 rounded-lg font-medium hover:shadow-lg transition-all"
-            >
-              Apply to Adopt
-            </button>
-          </div>
-        ))}
+          ))
+        )}
       </div>
     </div>
   );

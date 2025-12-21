@@ -257,7 +257,6 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
     { icon: Database, label: 'Database Seeding', id: 'database-seeding' }, // Added Database Seeding
     { icon: Calendar, label: 'Event Management', id: 'events' },
     { icon: FileText, label: 'Content Management', id: 'content' },
-    { icon: DollarSignIcon, label: 'Payment & Refund', id: 'payment-refund' },
     { icon: Package, label: 'Pet Info Management', id: 'pet-info' },
     { icon: Wallet, label: 'Finance & Logistics', id: 'finance' },
     { icon: UserCog, label: 'Role & User Management', id: 'roles' },

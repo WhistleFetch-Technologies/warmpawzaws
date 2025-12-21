@@ -104,6 +104,32 @@ app.post('/bookings/:bookingId/progress-notes', async (c) => {
     booking.progressNoteId = progressId;
     booking.hasProgressNotes = true;
     booking.sessionRating = rating;
+    
+    // ✅ FIX: Update package booking progress if this is a package booking
+    if (booking.isPackage && booking.packageDetails) {
+      // Increment completed sessions
+      booking.packageDetails.completedSessions = (booking.packageDetails.completedSessions || 0) + 1;
+      booking.completedSessions = booking.packageDetails.completedSessions;
+      booking.upcomingSessions = (booking.packageDetails.totalSessions || 0) - booking.packageDetails.completedSessions;
+      
+      // Calculate completion percentage
+      const totalSessions = booking.packageDetails.totalSessions || 1;
+      booking.completionPercentage = Math.round((booking.packageDetails.completedSessions / totalSessions) * 100);
+      
+      // Check if package is fully completed
+      if (booking.packageDetails.completedSessions >= totalSessions) {
+        booking.packageStatus = 'completed';
+        booking.status = 'completed'; // Mark entire package as completed
+        booking.completedAt = new Date().toISOString();
+        console.log(`✅ Package booking ${bookingId} fully completed (${booking.packageDetails.completedSessions}/${totalSessions} sessions)`);
+      } else {
+        booking.packageStatus = 'in_progress';
+        console.log(`📊 Package booking ${bookingId} progress: ${booking.packageDetails.completedSessions}/${totalSessions} sessions completed`);
+      }
+      
+      booking.updatedAt = new Date().toISOString();
+    }
+    
     await kv.set(`booking:${bookingId}`, booking);
     
     // Add to pet's progress timeline

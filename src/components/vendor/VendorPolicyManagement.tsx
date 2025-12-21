@@ -74,12 +74,19 @@ export function VendorPolicyManagement({ vendorId, onClose }: PolicyManagementPr
       );
 
       const data = await response.json();
+      // ✅ FIX: Handle standardized response format
+      // Response format: { success: true, policies: [...], total: ... }
       if (data.success) {
-        setPolicies(data.policies || []);
+        setPolicies(data.policies || data.data?.policies || []);
+      } else {
+        const errorData = data.error || data.message || 'Unknown error';
+        console.error('Failed to fetch policies:', errorData);
+        toast.error(errorData);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching policies:', error);
-      toast.error('Failed to load policies');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -105,18 +112,25 @@ export function VendorPolicyManagement({ vendorId, onClose }: PolicyManagementPr
         setShowCreateModal(false);
         setSelectedPolicy(null);
         resetForm();
-        fetchPolicies();
+        await fetchPolicies(); // ✅ Ensure policies reload
       } else {
-        toast.error(data.error || 'Failed to save policy');
+        const errorData = data.error || data.message || 'Failed to save policy';
+        toast.error(errorData);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving policy:', error);
-      toast.error('Failed to save policy');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 
   const deletePolicy = async (policyId: string) => {
-    if (!confirm('Are you sure you want to delete this policy?')) return;
+    const policy = policies.find(p => p.id === policyId);
+    const policyName = policy?.policyName || 'this policy';
+    
+    if (!confirm(`Are you sure you want to delete "${policyName}"? This action cannot be undone.`)) {
+      return;
+    }
 
     try {
       const response = await fetch(
@@ -129,12 +143,16 @@ export function VendorPolicyManagement({ vendorId, onClose }: PolicyManagementPr
 
       const data = await response.json();
       if (data.success) {
-        toast.success('Policy deleted');
-        fetchPolicies();
+        toast.success(`Policy "${policyName}" deleted successfully`);
+        await fetchPolicies(); // ✅ Ensure policies reload
+      } else {
+        const errorData = data.error || data.message || 'Failed to delete policy';
+        toast.error(errorData);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error deleting policy:', error);
-      toast.error('Failed to delete policy');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 

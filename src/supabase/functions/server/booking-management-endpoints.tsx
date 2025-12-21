@@ -199,6 +199,7 @@ app.post('/make-server-3dd53475/booking/:bookingId/complete', async (c) => {
 
 /**
  * Helper function to update earnings
+ * ✅ UPDATED: Uses tier-based commission calculation
  */
 async function updateEarnings(booking: any, staffId?: string) {
   try {
@@ -206,8 +207,17 @@ async function updateEarnings(booking: any, staffId?: string) {
     const dateKey = now.toISOString().split('T')[0]; // YYYY-MM-DD
     const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`; // YYYY-MM
     
-    // Calculate earnings (booking price minus platform commission)
-    const platformCommission = booking.price * 0.15; // 15% platform fee
+    // ✅ Get vendor tier and commission rate
+    const vendor = await kv.get(`vendor:${booking.vendorId}`);
+    const tierData = await kv.get(`vendor:${booking.vendorId}:tier`) || await kv.get(`vendor_tier_${booking.vendorId}`);
+    const tier = tierData?.currentTier || vendor?.tier || 'tier_1';
+    
+    // Get tier config from payment tiers
+    const tiers = await kv.get('payment:tiers') || [];
+    const tierConfig = tiers.find((t: any) => t.id === tier) || tiers.find((t: any) => t.isDefault) || { commissionRate: 15 };
+    
+    const commissionRate = tierConfig.commissionRate || 15;
+    const platformCommission = (booking.price * commissionRate) / 100;
     const vendorEarnings = booking.price - platformCommission;
     
     // Update vendor daily earnings
@@ -254,17 +264,35 @@ async function updateEarnings(booking: any, staffId?: string) {
     vendorLifetime.platformFees += platformCommission;
     await kv.set(vendorLifetimeKey, vendorLifetime);
     
-    // If staff member completed it, update their earnings too
+    // ✅ UPDATED: Staff earnings tracking (center vs solo logic)
     if (staffId && staffId !== booking.vendorId) {
+      // Get vendor to determine if it's center-based
+      const vendor = await kv.get(`vendor:${booking.vendorId}`);
+      const isCenterBased = vendor?.vendorType === 'healthcare_provider' || 
+                           vendor?.serviceStyle === 'at_center' ||
+                           vendor?.roleId === 'veterinary_clinic' ||
+                           vendor?.roleId === 'pet_boarding' ||
+                           vendor?.roleId === 'pet_resort' ||
+                           vendor?.roleId === 'pet_cafe';
+      
+      // For center-based: Track full booking amount (center pays staff separately)
+      // For solo vendors: Track vendor earnings percentage (actual staff payout)
+      const staffRevenue = isCenterBased 
+        ? booking.price // Full amount for tracking
+        : vendorEarnings * 0.8; // 80% of vendor earnings for solo vendors
+      
       // Update staff daily earnings
       const staffDailyKey = `staff:${staffId}:earnings:daily:${dateKey}`;
       const staffDaily = await kv.get(staffDailyKey) || {
         date: dateKey,
         totalBookings: 0,
-        totalRevenue: 0
+        totalRevenue: 0,
+        staffRevenue: 0, // ✅ Track staff revenue separately
+        isCenterBased: isCenterBased
       };
       staffDaily.totalBookings += 1;
-      staffDaily.totalRevenue += booking.price;
+      staffDaily.totalRevenue += booking.price; // Total booking amount
+      staffDaily.staffRevenue += staffRevenue; // Actual staff revenue
       await kv.set(staffDailyKey, staffDaily);
       
       // Update staff monthly earnings
@@ -272,21 +300,40 @@ async function updateEarnings(booking: any, staffId?: string) {
       const staffMonthly = await kv.get(staffMonthlyKey) || {
         month: monthKey,
         totalBookings: 0,
-        totalRevenue: 0
+        totalRevenue: 0,
+        staffRevenue: 0,
+        isCenterBased: isCenterBased
       };
       staffMonthly.totalBookings += 1;
       staffMonthly.totalRevenue += booking.price;
+      staffMonthly.staffRevenue += staffRevenue;
       await kv.set(staffMonthlyKey, staffMonthly);
       
       // Update staff lifetime earnings
       const staffLifetimeKey = `staff:${staffId}:earnings:lifetime`;
       const staffLifetime = await kv.get(staffLifetimeKey) || {
         totalBookings: 0,
-        totalRevenue: 0
+        totalRevenue: 0,
+        staffRevenue: 0,
+        isCenterBased: isCenterBased
       };
       staffLifetime.totalBookings += 1;
       staffLifetime.totalRevenue += booking.price;
+      staffLifetime.staffRevenue += staffRevenue;
       await kv.set(staffLifetimeKey, staffLifetime);
+      
+      // ✅ Store staff revenue breakdown for payout tracking
+      const staffBreakupKey = `staff:${staffId}:breakup:${booking.id}`;
+      await kv.set(staffBreakupKey, {
+        bookingId: booking.id,
+        bookingAmount: booking.price,
+        vendorEarnings,
+        platformCommission,
+        staffRevenue,
+        isCenterBased,
+        commissionRate,
+        completedAt: new Date().toISOString()
+      });
     }
     
     console.log(`💰 Earnings updated - Vendor: ₹${vendorEarnings.toFixed(2)}, Platform: ₹${platformCommission.toFixed(2)}`);

@@ -43,34 +43,69 @@ export function WalkerSessionTracking({
   const routePolylineRef = useRef<any>(null);
   const walkerMarkerRef = useRef<any>(null);
 
-  // Load Google Maps
+  // Load Google Maps from platform settings
   useEffect(() => {
-    const googleMapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+    let isMounted = true;
     
-    if (!googleMapsApiKey) {
-      setLoading(false);
-      return;
-    }
+    async function loadGoogleMaps() {
+      try {
+        // Check env var first (fallback)
+        const envApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+        if (envApiKey) {
+          if (window.google && window.google.maps) {
+            if (isMounted) setMapLoaded(true);
+            return;
+          }
+          const script = document.createElement('script');
+          script.src = `https://maps.googleapis.com/maps/api/js?key=${envApiKey}&libraries=geometry`;
+          script.async = true;
+          script.defer = true;
+          script.onload = () => { if (isMounted) setMapLoaded(true); };
+          script.onerror = () => { if (isMounted) setLoading(false); };
+          document.head.appendChild(script);
+          return;
+        }
+        
+        // Fetch from admin portal settings
+        const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/integrations/settings`, {
+          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          const apiKey = data.settings?.googleMaps?.apiKey;
+          
+          if (!apiKey) {
+            if (isMounted) setLoading(false);
+            return;
+          }
 
-    if (window.google && window.google.maps) {
-      setMapLoaded(true);
-      return;
-    }
+          if (window.google && window.google.maps) {
+            if (isMounted) setMapLoaded(true);
+            return;
+          }
 
-    const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${googleMapsApiKey}&libraries=geometry`;
-    script.async = true;
-    script.defer = true;
-    script.onload = () => {
-      console.log('✅ Google Maps loaded');
-      setMapLoaded(true);
-    };
-    script.onerror = () => {
-      console.error('❌ Failed to load Google Maps');
-      setLoading(false);
-    };
+          const script = document.createElement('script');
+          script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=geometry`;
+          script.async = true;
+          script.defer = true;
+          script.onload = () => { if (isMounted) setMapLoaded(true); };
+          script.onerror = () => { if (isMounted) setLoading(false); };
+          document.head.appendChild(script);
+        } else {
+          if (isMounted) setLoading(false);
+        }
+      } catch (err) {
+        console.error('❌ Error loading Google Maps:', err);
+        if (isMounted) setLoading(false);
+      }
+    }
     
-    document.head.appendChild(script);
+    loadGoogleMaps();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   // Check session status

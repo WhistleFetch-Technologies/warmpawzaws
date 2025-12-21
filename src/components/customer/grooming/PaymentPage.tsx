@@ -48,6 +48,13 @@ export function PaymentPage({ bookingData, phone, onBack, onPaymentSuccess }: Pa
     loadWalletBalance();
   }, []);
 
+  // ✅ Calculate GST using rule engine
+  useEffect(() => {
+    if (bookingData.services && bookingData.services.length > 0) {
+      calculateGST();
+    }
+  }, [bookingData]);
+
   const loadWalletBalance = async () => {
     try {
       // Fetch real wallet balance from API
@@ -76,10 +83,62 @@ export function PaymentPage({ bookingData, phone, onBack, onPaymentSuccess }: Pa
   }, 0);
   const addOnsPrice = (bookingData.addOns || []).reduce((sum, addon) => sum + (addon.price || 0), 0);
   const subtotal = servicesPrice + addOnsPrice;
-  const gst = subtotal * 0.18; // 18% GST
+  
+  // ✅ Use GST rule engine for dynamic GST calculation
+  const [gstCalculation, setGstCalculation] = useState<any>(null);
+  const [gstLoading, setGstLoading] = useState(false);
+  
+  useEffect(() => {
+    calculateGST();
+  }, [subtotal, bookingData]);
+  
+  const calculateGST = async () => {
+    if (subtotal <= 0) return;
+    
+    setGstLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/calculate-gst`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${publicAnonKey}`
+        },
+        body: JSON.stringify({
+          amount: subtotal,
+          category: bookingData.category,
+          roleId: bookingData.vendorRoleId,
+          serviceType: bookingData.serviceStyle || 'at_center',
+          customerState: bookingData.customerState,
+          vendorState: bookingData.vendorState
+        })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setGstCalculation(data);
+      } else {
+        // Fallback to default 18% GST
+        setGstCalculation({
+          gstAmount: subtotal * 0.18,
+          total: subtotal * 1.18
+        });
+      }
+    } catch (error) {
+      console.error('Error calculating GST:', error);
+      // Fallback to default 18% GST
+      setGstCalculation({
+        gstAmount: subtotal * 0.18,
+        total: subtotal * 1.18
+      });
+    } finally {
+      setGstLoading(false);
+    }
+  };
+  
+  const gst = gstCalculation?.gstAmount || subtotal * 0.18; // Fallback to 18% if not calculated
   const discount = appliedCoupon ? (subtotal * appliedCoupon.discount / 100) : 0;
   const walletDeduction = useWallet ? Math.min(walletBalance, subtotal - discount) : 0;
-  const finalAmount = subtotal + gst - discount - walletDeduction;
+  const finalAmount = (gstCalculation?.total || (subtotal + gst)) - discount - walletDeduction;
 
   const handleApplyCoupon = async () => {
     if (!couponCode) return;

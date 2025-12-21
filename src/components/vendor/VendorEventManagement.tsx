@@ -116,11 +116,17 @@ export function VendorEventManagement({ vendorId, vendorData, vendorType = 'othe
         }
       );
       const data = await response.json();
+      // ✅ FIX: Handle standardized response format
       if (data.success) {
-        setStats(data.stats);
+        setStats(data.stats || data.data?.stats);
+      } else {
+        const errorData = data.error || data.message || 'Unknown error';
+        console.error('Failed to load dashboard:', errorData);
+        // Don't show error toast on initial load - just log
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading dashboard:', error);
+      // Don't show error toast on initial load - just log
     }
   };
 
@@ -134,12 +140,19 @@ export function VendorEventManagement({ vendorId, vendorData, vendorType = 'othe
         }
       );
       const data = await response.json();
+      // ✅ FIX: Handle standardized response format
+      // Response format: { success: true, events: [...], stats: {...}, total: ... }
       if (data.success) {
-        setEvents(data.events);
-        setStats(data.stats);
+        setEvents(data.events || data.data?.events || []);
+        setStats(data.stats || data.data?.stats);
+      } else {
+        const errorData = data.error || data.message || 'Unknown error';
+        console.error('Failed to load events:', errorData);
+        // Don't show error toast on initial load - just log
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading events:', error);
+      // Don't show error toast on initial load - just log
     } finally {
       setLoading(false);
     }
@@ -196,14 +209,20 @@ export function VendorEventManagement({ vendorId, vendorData, vendorType = 'othe
 
       const data = await response.json();
       if (data.success) {
+        toast.success(editingEvent ? 'Event updated successfully' : 'Event created successfully');
         setShowAddEvent(false);
         setEditingEvent(null);
         resetForm();
-        loadEvents();
-        loadDashboard();
+        await loadEvents(); // ✅ Ensure events reload
+        await loadDashboard(); // ✅ Ensure dashboard reloads
+      } else {
+        const errorData = data.error || data.message || 'Unknown error occurred';
+        toast.error(errorData);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving event:', error);
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 
@@ -222,17 +241,26 @@ export function VendorEventManagement({ vendorId, vendorData, vendorType = 'othe
       );
       const data = await response.json();
       if (data.success) {
-        loadEvents();
-        loadDashboard();
+        toast.success('Event status updated successfully');
+        await loadEvents(); // ✅ Ensure events reload
+        await loadDashboard(); // ✅ Ensure dashboard reloads
+      } else {
+        const errorData = data.error || data.message || 'Failed to update event status';
+        toast.error(errorData);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error updating event status:', error);
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 
-  // ✅ FIX: Priority 2 Gap #1 - Add DELETE handler
+  // ✅ FIX: Priority 2 Gap #1 - Add DELETE handler with improved error handling
   const handleDeleteEvent = async (eventId: string) => {
-    if (!confirm('Are you sure you want to delete this event? This will also delete all registrations. This action cannot be undone.')) {
+    const event = events.find(e => e.id === eventId);
+    const eventName = event?.name || 'this event';
+    
+    if (!confirm(`Are you sure you want to delete "${eventName}"? This will also delete all registrations. This action cannot be undone.`)) {
       return;
     }
 
@@ -249,15 +277,17 @@ export function VendorEventManagement({ vendorId, vendorData, vendorType = 'othe
 
       const data = await response.json();
       if (data.success) {
-        toast.success('Event deleted successfully');
-        loadEvents();
-        loadDashboard();
+        toast.success(`Event "${eventName}" deleted successfully`);
+        await loadEvents(); // ✅ Ensure events reload
+        await loadDashboard(); // ✅ Ensure dashboard reloads
       } else {
-        toast.error(data.error || 'Failed to delete event');
+        const errorData = data.error || data.message || 'Failed to delete event';
+        toast.error(errorData);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error deleting event:', error);
-      toast.error('Error deleting event');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 

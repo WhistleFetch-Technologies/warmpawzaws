@@ -6,8 +6,11 @@ import { Checkbox } from '../ui/checkbox';
 import { supabase } from '../../utils/supabase/client';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { ChevronLeft, CheckCircle2 } from 'lucide-react';
-import logoImage from 'figma:asset/da6636b92da744b3db8eed5288ca6da9ab889afe.png';
+import { LOGO_CIRCULAR_ORANGE } from '../../assets/design-tokens';
+import { WarmpawzButton } from '../shared/design-system/WarmpawzButton';
 import { storeSession } from '../../utils/session-manager'; // ✅ SECURITY FIX
+
+const logoImage = LOGO_CIRCULAR_ORANGE;
 
 interface VendorAuthProps {
   onAuthSuccess: (session: any) => void;
@@ -501,13 +504,23 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
               </p>
             </div>
 
-            <Button
-              type="submit"
-              disabled={loading || phoneNumber.length !== 10}
-              className="w-full bg-[#FF8C42] hover:bg-[#FF7A29] text-white h-14 rounded-xl text-base disabled:opacity-50"
-            >
-              {loading ? 'Sending code...' : 'Continue'}
-            </Button>
+            <div className="w-full">
+              <WarmpawzButton
+                variant={loading || phoneNumber.length !== 10 ? 'disabled' : 'solid'}
+                disabled={loading || phoneNumber.length !== 10}
+                fullWidth
+                onClick={(e) => {
+                  e.preventDefault();
+                  const form = e.currentTarget.closest('form');
+                  if (form && !loading && phoneNumber.length === 10) {
+                    form.requestSubmit();
+                  }
+                }}
+                style={{ height: '56px', fontSize: '16px' }}
+              >
+                {loading ? 'Sending code...' : 'Continue'}
+              </WarmpawzButton>
+            </div>
           </form>
 
           <p className="text-xs text-gray-400 text-center mt-10 max-w-xs">

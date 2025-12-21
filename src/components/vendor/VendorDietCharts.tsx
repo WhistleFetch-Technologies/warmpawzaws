@@ -80,12 +80,19 @@ export function VendorDietCharts({ vendorId, onClose }: DietChartsProps) {
       );
 
       const data = await response.json();
+      // ✅ FIX: Handle standardized response format
+      // Response format: { success: true, charts: [...], total: ... }
       if (data.success) {
-        setCharts(data.charts || []);
+        setCharts(data.charts || data.data?.charts || []);
+      } else {
+        const errorData = data.error || data.message || 'Unknown error';
+        console.error('Failed to fetch diet charts:', errorData);
+        toast.error(errorData);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching diet charts:', error);
-      toast.error('Failed to load diet charts');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -111,18 +118,25 @@ export function VendorDietCharts({ vendorId, onClose }: DietChartsProps) {
         setShowCreateModal(false);
         setSelectedChart(null);
         resetForm();
-        fetchDietCharts();
+        await fetchDietCharts(); // ✅ Ensure charts reload
       } else {
-        toast.error(data.error || 'Failed to save diet chart');
+        const errorData = data.error || data.message || 'Failed to save diet chart';
+        toast.error(errorData);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving diet chart:', error);
-      toast.error('Failed to save diet chart');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 
   const deleteDietChart = async (chartId: string) => {
-    if (!confirm('Are you sure you want to delete this diet chart?')) return;
+    const chart = charts.find(c => c.id === chartId);
+    const chartName = chart?.chartName || 'this diet chart';
+    
+    if (!confirm(`Are you sure you want to delete "${chartName}"? This action cannot be undone.`)) {
+      return;
+    }
 
     try {
       const response = await fetch(
@@ -135,12 +149,16 @@ export function VendorDietCharts({ vendorId, onClose }: DietChartsProps) {
 
       const data = await response.json();
       if (data.success) {
-        toast.success('Diet chart deleted');
-        fetchDietCharts();
+        toast.success(`Diet chart "${chartName}" deleted successfully`);
+        await fetchDietCharts(); // ✅ Ensure charts reload
+      } else {
+        const errorData = data.error || data.message || 'Failed to delete diet chart';
+        toast.error(errorData);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error deleting chart:', error);
-      toast.error('Failed to delete chart');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 

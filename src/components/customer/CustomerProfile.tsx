@@ -157,18 +157,30 @@ export function CustomerProfile({ phone, onBack, onNavigate }: CustomerProfilePr
         <Card className="p-0 overflow-hidden">
           <div className="divide-y">
             {onNavigate && (
-              <button 
-                onClick={() => onNavigate('bookings')}
-                className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors text-left"
-              >
-                <div className="flex items-center gap-3">
-                  <Calendar className="w-5 h-5 text-blue-500" />
-                  <span className="font-medium text-gray-700">My Bookings</span>
-                </div>
-                <ChevronRight className="w-4 h-4 text-gray-400" />
-              </button>
+              <>
+                <button 
+                  onClick={() => onNavigate('bookings')}
+                  className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors text-left"
+                >
+                  <div className="flex items-center gap-3">
+                    <Calendar className="w-5 h-5 text-blue-500" />
+                    <span className="font-medium text-gray-700">My Bookings</span>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-gray-400" />
+                </button>
+                {/* ✅ PHASE 3: Diet Charts Link */}
+                <button 
+                  onClick={() => onNavigate('diet-charts', { customerId: phone })}
+                  className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors text-left"
+                >
+                  <div className="flex items-center gap-3">
+                    <Utensils className="w-5 h-5 text-green-500" />
+                    <span className="font-medium text-gray-700">Diet Charts</span>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-gray-400" />
+                </button>
+              </>
             )}
-            {/* Add more links here if needed */}
           </div>
         </Card>
       </div>

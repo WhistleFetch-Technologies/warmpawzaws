@@ -66,12 +66,19 @@ export function VendorDistancePricing({ vendorId, onClose }: DistancePricingProp
       );
 
       const data = await response.json();
+      // ✅ FIX: Handle standardized response format
+      // Response format: { success: true, rules: [...], total: ... }
       if (data.success) {
-        setRules(data.rules || []);
+        setRules(data.rules || data.data?.rules || []);
+      } else {
+        const errorData = data.error || data.message || 'Unknown error';
+        console.error('Failed to fetch pricing rules:', errorData);
+        toast.error(errorData);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching pricing rules:', error);
-      toast.error('Failed to load pricing rules');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -107,18 +114,25 @@ export function VendorDistancePricing({ vendorId, onClose }: DistancePricingProp
         setShowCreateModal(false);
         setSelectedRule(null);
         resetForm();
-        fetchRules();
+        await fetchRules(); // ✅ Ensure rules reload
       } else {
-        toast.error(data.error || 'Failed to save pricing rule');
+        const errorData = data.error || data.message || 'Failed to save pricing rule';
+        toast.error(errorData);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving pricing rule:', error);
-      toast.error('Failed to save pricing rule');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 
   const deleteRule = async (ruleId: string) => {
-    if (!confirm('Are you sure you want to delete this pricing rule?')) return;
+    const rule = rules.find(r => r.id === ruleId);
+    const ruleName = rule?.serviceName || 'this pricing rule';
+    
+    if (!confirm(`Are you sure you want to delete "${ruleName}"? This action cannot be undone.`)) {
+      return;
+    }
 
     try {
       const response = await fetch(
@@ -131,12 +145,16 @@ export function VendorDistancePricing({ vendorId, onClose }: DistancePricingProp
 
       const data = await response.json();
       if (data.success) {
-        toast.success('Pricing rule deleted');
-        fetchRules();
+        toast.success(`Pricing rule "${ruleName}" deleted successfully`);
+        await fetchRules(); // ✅ Ensure rules reload
+      } else {
+        const errorData = data.error || data.message || 'Failed to delete pricing rule';
+        toast.error(errorData);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error deleting rule:', error);
-      toast.error('Failed to delete rule');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 

@@ -78,10 +78,17 @@ export function StaffManagement({ vendorId, vendorData, onBack, onNavigateToServ
 
       if (staffResponse.ok) {
         const data = await staffResponse.json();
+        // ✅ FIX: Handle standardized response format
+        // Response format: { success: true, staff: [...], total: ... }
+        const staffList = data.staff || data.data?.staff || [];
         // ✅ FIX: Filter out null values AND invalid IDs (staffsvc_ are service records, not staff)
-        setStaff((data.staff || [])
+        setStaff(staffList
           .filter((s: any) => s !== null && s !== undefined && s.id && !s.id.startsWith('staffsvc_'))
         );
+      } else {
+        const errorData = await staffResponse.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('Failed to load staff:', errorData);
+        // Don't show error toast on initial load - just log
       }
 
       // Fetch vendor services - using the vendor-service-management endpoint for consistent structure
@@ -158,9 +165,10 @@ export function StaffManagement({ vendorId, vendorData, onBack, onNavigateToServ
         console.log('[STAFF MANAGEMENT] Processed services:', allServices.length, allServices);
         setServices(allServices);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('[STAFF MANAGEMENT] Error fetching data:', error);
-      toast.error('Failed to load data');
+      const errorMessage = error?.message || 'Failed to load data. Please try again.';
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -197,13 +205,16 @@ export function StaffManagement({ vendorId, vendorData, onBack, onNavigateToServ
 
       if (response.ok) {
         toast.success('Staff member removed successfully');
-        fetchData();
+        await fetchData(); // ✅ Ensure data reloads
       } else {
-        throw new Error('Failed to remove staff member');
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to remove staff member';
+        throw new Error(errorMessage);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('[REMOVE STAFF] Error:', error);
-      toast.error('Failed to remove staff member. Please try again.');
+      const errorMessage = error?.message || 'Failed to remove staff member. Please try again.';
+      toast.error(errorMessage);
     }
   };
 

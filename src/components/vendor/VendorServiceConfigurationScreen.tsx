@@ -322,15 +322,19 @@ export function VendorServiceConfigurationScreen({
       
       console.log('🚀 Publishing services...');
       
+      // ✅ FIX: Use enhanced publish endpoint with smart staff check
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/services/publish`,
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/services/publish-with-staff-check`,
         {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${publicAnonKey}`,
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({ serviceStyle })
+          body: JSON.stringify({ 
+            serviceStyle,
+            allowSoloPublish: true // Allow solo vendors to publish without staff
+          })
         }
       );
 
@@ -338,9 +342,11 @@ export function VendorServiceConfigurationScreen({
         const data = await response.json();
         console.log('✅ Services published:', data);
         
-        if (data.status === 'published') {
-          toast.success(`${data.publishedCount} service(s) published successfully!`);
-        } else if (data.status === 'pending_approval') {
+        if (data.autoCreatedStaff) {
+          toast.success('Staff profile auto-created for solo vendor. Services published successfully!');
+        } else if (data.published > 0) {
+          toast.success(`${data.published} service(s) published successfully!`);
+        } else {
           toast.success('Services submitted for admin approval');
         }
         
@@ -349,7 +355,13 @@ export function VendorServiceConfigurationScreen({
       } else {
         const error = await response.json();
         console.error('❌ Failed to publish:', error);
-        toast.error(error.error || 'Failed to publish services');
+        
+        // Show helpful error message
+        if (error.requiresStaff && error.isCenterBased) {
+          toast.error('Center-based vendors must add staff members before publishing services. Please add staff in Staff Management.');
+        } else {
+          toast.error(error.message || error.error || 'Failed to publish services');
+        }
       }
     } catch (error) {
       console.error('❌ Error publishing services:', error);

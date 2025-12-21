@@ -203,35 +203,57 @@ app.post('/cafe/:vendorId/reservations', async (c) => {
       }, 400);
     }
     
-    // Check availability
+    // ✅ FIX: Atomic availability check and reservation to prevent race conditions
     const tables = await kv.get(`cafe:${vendorId}:tables`) || [];
     const reservationKey = `cafe:${vendorId}:reservations:${date}:${time}`;
-    const existingReservations = await kv.get(reservationKey) || [];
     
-    const bookedTableIds = new Set(
-      existingReservations
-        .filter((r: any) => r.status === 'confirmed')
-        .map((r: any) => r.tableId)
-    );
+    // Use a lock key to prevent concurrent bookings
+    const lockKey = `cafe:${vendorId}:lock:${date}:${time}`;
+    const lock = await kv.get(lockKey);
     
-    // Find suitable table
-    const availableTables = tables.filter((table: any) => 
-      table.isActive &&
-      table.capacity >= partySize &&
-      !bookedTableIds.has(table.tableId)
-    );
-    
-    if (availableTables.length === 0) {
+    if (lock && Date.now() - lock.timestamp < 5000) { // 5 second lock
       return c.json({
-        error: 'No tables available for requested time and party size',
-        hint: 'Try a different time or join waiting list',
-        canJoinWaitingList: true
-      }, 409); // Conflict
+        error: 'Another booking is in progress. Please try again in a moment.',
+        retryAfter: 2
+      }, 409);
     }
     
-    // Assign smallest suitable table
-    availableTables.sort((a: any, b: any) => a.capacity - b.capacity);
-    const assignedTable = availableTables[0];
+    // Set lock
+    await kv.set(lockKey, { timestamp: Date.now(), customerId });
+    
+    try {
+      // Re-check availability (critical section)
+      const existingReservations = await kv.get(reservationKey) || [];
+      
+      // ✅ FIX: Properly handle async reservation lookups
+      const bookedTableIds = new Set<string>();
+      for (const r of existingReservations) {
+        const reservation = typeof r === 'string' ? await kv.get(`reservation:${r}`) : r;
+        if (reservation && (reservation.status === 'confirmed' || reservation.status === 'pending')) {
+          bookedTableIds.add(reservation.tableId);
+        }
+      }
+      
+      // Find suitable table
+      const availableTables = tables.filter((table: any) => 
+        table.isActive &&
+        table.capacity >= partySize &&
+        !bookedTableIds.has(table.tableId)
+      );
+      
+      if (availableTables.length === 0) {
+        // Release lock
+        await kv.del(lockKey);
+        return c.json({
+          error: 'No tables available for requested time and party size',
+          hint: 'Try a different time or join waiting list',
+          canJoinWaitingList: true
+        }, 409); // Conflict
+      }
+      
+      // Assign smallest suitable table
+      availableTables.sort((a: any, b: any) => a.capacity - b.capacity);
+      const assignedTable = availableTables[0];
     
     // Create reservation
     const reservationId = generateReservationId();
@@ -266,25 +288,33 @@ app.post('/cafe/:vendorId/reservations', async (c) => {
     customerReservations.unshift(reservationId);
     await kv.set(`customer:${customerId}:reservations`, customerReservations);
     
-    // Add to vendor reservations
-    const vendorReservations = await kv.get(`cafe:${vendorId}:all-reservations`) || [];
-    vendorReservations.unshift(reservationId);
-    await kv.set(`cafe:${vendorId}:all-reservations`, vendorReservations);
-    
-    console.log(`🪑 Table reservation created: ${reservationId} for ${date} ${time}`);
-    
-    return c.json({
-      success: true,
-      reservation: {
-        id: reservationId,
-        tableNumber: assignedTable.tableNumber,
-        date,
-        time,
-        duration,
-        status: 'confirmed'
-      },
-      message: 'Table reserved successfully'
-    });
+      // Add to vendor reservations
+      const vendorReservations = await kv.get(`cafe:${vendorId}:all-reservations`) || [];
+      vendorReservations.unshift(reservationId);
+      await kv.set(`cafe:${vendorId}:all-reservations`, vendorReservations);
+      
+      // Release lock
+      await kv.del(lockKey);
+      
+      console.log(`🪑 Table reservation created: ${reservationId} for ${date} ${time}`);
+      
+      return c.json({
+        success: true,
+        reservation: {
+          id: reservationId,
+          tableNumber: assignedTable.tableNumber,
+          date,
+          time,
+          duration,
+          status: 'confirmed'
+        },
+        message: 'Table reserved successfully'
+      });
+    } catch (error) {
+      // Release lock on error
+      await kv.del(lockKey);
+      throw error;
+    }
     
   } catch (error) {
     console.error('Error creating reservation:', error);

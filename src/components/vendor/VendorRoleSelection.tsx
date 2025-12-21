@@ -1,7 +1,9 @@
+import React, { useState, useEffect } from 'react';
 import { ArrowRight } from 'lucide-react';
-import logoImage from 'figma:asset/1ee3459260cb17d9119000df586f10f31d016a25.png';
-import { useState, useEffect } from 'react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { LOGO_CIRCULAR_ORANGE, WARM_ORANGE } from '../../assets/design-tokens';
+
+const logoImage = LOGO_CIRCULAR_ORANGE;
 
 interface VendorRoleSelectionProps {
   onRoleSelect: (role: string) => void;
@@ -247,7 +249,7 @@ export function VendorRoleSelection({ onRoleSelect }: VendorRoleSelectionProps) 
   };
 
   return (
-    <div className="min-h-screen bg-[#FF8C42] flex flex-col w-full max-w-[430px] mx-auto">
+    <div className="min-h-screen flex flex-col w-full max-w-[430px] mx-auto" style={{ backgroundColor: WARM_ORANGE }}>
       {/* Status Bar */}
       <div className="px-6 pt-3 pb-2 flex justify-between items-center">
         <span className="text-black text-xs">09:41</span>
@@ -329,6 +331,13 @@ export function VendorRoleSelection({ onRoleSelect }: VendorRoleSelectionProps) 
                 key={role.id}
                 onClick={() => onRoleSelect(role.id)}
                 className="w-full bg-white border-2 border-gray-200 rounded-xl p-3.5 hover:border-[#FF8C42] transition-all text-left group active:scale-[0.98]"
+                style={{ borderColor: '#E5E7EB' }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = WARM_ORANGE;
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = '#E5E7EB';
+                }}
               >
                 <div className="flex items-start gap-3">
                   {/* Compact Icon */}

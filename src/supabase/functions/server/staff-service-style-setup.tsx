@@ -24,7 +24,6 @@ interface StylePreferences {
     enabled: boolean;
     available: boolean;
     maxDistance: number; // in km
-    travelChargePerKm: number; // ₹ per km
     acceptInstantBooking: boolean;
   };
   tele: {
@@ -200,7 +199,6 @@ function createStylePreferences(
       enabled: hasAtHome,
       available: hasAtHome,
       maxDistance: 10, // 10 km radius
-      travelChargePerKm: 20, // ₹20 per km
       acceptInstantBooking: true
     },
     tele: {

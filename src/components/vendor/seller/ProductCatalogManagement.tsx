@@ -13,11 +13,11 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "../../../ui/table";
-import { Badge } from '../../../ui/badge';
-import { Button } from '../../../ui/button';
-import { Input } from '../../../ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../ui/select';
+} from "../../ui/table";
+import { Badge } from '../../ui/badge';
+import { Button } from '../../ui/button';
+import { Input } from '../../ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
 
 interface ProductCatalogManagementProps {
   sellerId: string;

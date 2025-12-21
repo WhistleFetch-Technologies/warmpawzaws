@@ -13,6 +13,7 @@ import { TierUpgradeModal } from './TierUpgradeModal';
 import { BankAccountValidation } from './BankAccountValidation';
 import { CenterProfileManager } from './CenterProfileManager';
 import { FacilityManagement } from './FacilityManagement';
+import { VendorPayoutRecords } from './VendorPayoutRecords';
 import { useVendorCapabilities } from './hooks/useVendorCapabilities';
 
 interface VendorPaymentSettingsProps {
@@ -132,10 +133,14 @@ export function VendorPaymentSettings({ vendorId, vendorData }: VendorPaymentSet
 
       {/* Tabs for Payment Settings and Bank Verification */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-2">
+        <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="overview">
             <Crown className="w-4 h-4 mr-2" />
             Tier & Earnings
+          </TabsTrigger>
+          <TabsTrigger value="payouts">
+            <Wallet className="w-4 h-4 mr-2" />
+            Payout Records
           </TabsTrigger>
           <TabsTrigger value="bank">
             <Landmark className="w-4 h-4 mr-2" />
@@ -301,6 +306,10 @@ export function VendorPaymentSettings({ vendorId, vendorData }: VendorPaymentSet
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+
+        <TabsContent value="payouts" className="mt-6">
+          <VendorPayoutRecords vendorId={vendorId} />
         </TabsContent>
 
         <TabsContent value="bank" className="mt-6">

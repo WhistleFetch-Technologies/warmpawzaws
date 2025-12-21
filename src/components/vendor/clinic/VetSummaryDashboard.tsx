@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '../../ui/button';
 import { Calendar, TrendingUp, Users, FileText, Clock, Activity, DollarSign, AlertCircle, CheckCircle } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from 'sonner@2.0.3';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
 
 interface VetSummaryDashboardProps {
@@ -66,7 +66,9 @@ export function VetSummaryDashboard({ vendorId, vendorName }: VetSummaryDashboar
 
       if (bookingsResponse.ok) {
         const bookingsData = await bookingsResponse.json();
-        const bookings = bookingsData.bookings || [];
+        // ✅ FIX: Handle standardized response format
+        // Response format: { success: true, bookings: [...], total: ... }
+        const bookings = bookingsData.bookings || bookingsData.data?.bookings || [];
 
         // Calculate stats
         const now = new Date();
@@ -139,9 +141,10 @@ export function VetSummaryDashboard({ vendorId, vendorName }: VetSummaryDashboar
           recentActivity
         });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading summary data:', error);
-      toast.error('Failed to load vet summary data');
+      const errorMessage = error?.message || 'Failed to load vet summary data. Please try again.';
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }

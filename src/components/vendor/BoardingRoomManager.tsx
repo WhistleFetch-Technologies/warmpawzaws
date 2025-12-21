@@ -16,7 +16,7 @@ import {
   Home as HomeIcon
 } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { toast } from 'sonner';
+import { toast } from 'sonner@2.0.3';
 import { Button } from '../ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
 
@@ -109,13 +109,18 @@ export function BoardingRoomManager({
 
       if (response.ok) {
         const data = await response.json();
-        setRooms(data.rooms || []);
+        // ✅ FIX: Handle standardized response format
+        // Response format: { success: true, rooms: [...], total: ... }
+        setRooms(data.rooms || data.data?.rooms || []);
       } else {
-        toast.error('Failed to load rooms');
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('Failed to load rooms:', errorData);
+        // Don't show error toast on initial load - just log
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error:', error);
-      toast.error('Network error');
+      const errorMessage = error?.message || 'Failed to load rooms. Please try again.';
+      // Don't show error toast on initial load - just log
     } finally {
       setLoading(false);
     }
@@ -166,14 +171,16 @@ export function BoardingRoomManager({
         toast.success('Room created successfully');
         setShowAddRoom(false);
         resetForm();
-        loadRooms();
+        await loadRooms(); // ✅ Ensure rooms reload
       } else {
-        const error = await response.json();
-        toast.error(error.error || 'Failed to create room');
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to create room';
+        toast.error(errorMessage);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error:', error);
-      toast.error('Network error');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 
@@ -213,17 +220,26 @@ export function BoardingRoomManager({
         toast.success('Room updated successfully');
         setEditingRoom(null);
         resetForm();
-        loadRooms();
+        await loadRooms(); // ✅ Ensure rooms reload
       } else {
-        toast.error('Failed to update room');
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to update room';
+        toast.error(errorMessage);
       }
-    } catch (error) {
-      toast.error('Network error');
+    } catch (error: any) {
+      console.error('Error updating room:', error);
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 
   const handleDeleteRoom = async (roomId: string) => {
-    if (!confirm('Are you sure? This will delete all photos and videos.')) return;
+    const room = rooms.find(r => r.id === roomId);
+    const roomName = room?.name || 'this room';
+    
+    if (!confirm(`Are you sure you want to delete "${roomName}"? This will delete all photos and videos. This action cannot be undone.`)) {
+      return;
+    }
 
     try {
       const response = await fetch(
@@ -235,13 +251,17 @@ export function BoardingRoomManager({
       );
 
       if (response.ok) {
-        toast.success('Room deleted successfully');
-        loadRooms();
+        toast.success(`Room "${roomName}" deleted successfully`);
+        await loadRooms(); // ✅ Ensure rooms reload
       } else {
-        toast.error('Failed to delete room');
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to delete room';
+        toast.error(errorMessage);
       }
-    } catch (error) {
-      toast.error('Network error');
+    } catch (error: any) {
+      console.error('Error deleting room:', error);
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 
@@ -287,13 +307,28 @@ export function BoardingRoomManager({
           setVideos([...videos, data.filePath]);
         }
 
-        toast.success(`${isPhoto ? 'Photo' : 'Video'} uploaded successfully`);
+        // ✅ FIX: Handle standardized response format
+        const filePath = data.filePath || data.data?.filePath || data.url || data.data?.url;
+        
+        if (filePath) {
+          if (isPhoto) {
+            setPhotos([...photos, filePath]);
+          } else {
+            setVideos([...videos, filePath]);
+          }
+          toast.success(`${isPhoto ? 'Photo' : 'Video'} uploaded successfully`);
+        } else {
+          toast.error('Upload succeeded but file path not returned');
+        }
       } else {
-        toast.error('Upload failed');
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to upload file';
+        toast.error(errorMessage);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Upload error:', error);
-      toast.error('Upload failed');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     } finally {
       setUploadingMedia(false);
     }

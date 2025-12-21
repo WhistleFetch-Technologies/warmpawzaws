@@ -51,12 +51,19 @@ export function VendorPrescriptionVerification({ vendorId, onClose }: Prescripti
       );
 
       const data = await response.json();
+      // ✅ FIX: Handle standardized response format
+      // Response format: { success: true, prescriptions: [...], total: ... }
       if (data.success) {
-        setPrescriptions(data.prescriptions || []);
+        setPrescriptions(data.prescriptions || data.data?.prescriptions || []);
+      } else {
+        const errorData = data.error || data.message || 'Unknown error';
+        console.error('Failed to fetch prescriptions:', errorData);
+        toast.error(errorData);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching prescriptions:', error);
-      toast.error('Failed to load prescriptions');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -88,13 +95,15 @@ export function VendorPrescriptionVerification({ vendorId, onClose }: Prescripti
         setSelectedPrescription(null);
         setVerificationNotes('');
         setRejectionReason('');
-        fetchPrescriptions();
+        await fetchPrescriptions(); // ✅ Ensure prescriptions reload
       } else {
-        toast.error(data.error || 'Failed to verify prescription');
+        const errorData = data.error || data.message || 'Failed to verify prescription';
+        toast.error(errorData);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error verifying prescription:', error);
-      toast.error('Failed to verify prescription');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 

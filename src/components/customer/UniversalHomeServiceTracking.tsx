@@ -51,40 +51,78 @@ export function UniversalHomeServiceTracking({
   const customerMarkerRef = useRef<any>(null);
   const routePolylineRef = useRef<any>(null);
 
-  // Load Google Maps script
+  // Load Google Maps script from platform settings
   useEffect(() => {
-    const googleMapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+    let isMounted = true;
     
-    if (!googleMapsApiKey) {
-      setError('Google Maps API key not configured');
-      setLoading(false);
-      return;
-    }
+    async function loadGoogleMaps() {
+      try {
+        // Fetch from backend like existing components do
+        const envApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+        if (envApiKey) {
+          // Use env var if available (fallback)
+          if (window.google && window.google.maps) {
+            if (isMounted) setMapLoaded(true);
+            return;
+          }
+          const script = document.createElement('script');
+          script.src = `https://maps.googleapis.com/maps/api/js?key=${envApiKey}&libraries=geometry`;
+          script.async = true;
+          script.defer = true;
+          script.onload = () => { if (isMounted) setMapLoaded(true); };
+          script.onerror = () => { if (isMounted) { setError('Failed to load map'); setLoading(false); } };
+          document.head.appendChild(script);
+          return;
+        }
+        
+        // Fetch from admin portal settings
+        const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/integrations/settings`, {
+          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          const apiKey = data.settings?.googleMaps?.apiKey;
+          
+          if (!apiKey) {
+            if (isMounted) {
+              setError('Google Maps API key not configured. Please configure it in Admin Portal → Platform Settings → Cloud & Maps.');
+              setLoading(false);
+            }
+            return;
+          }
 
-    if (window.google && window.google.maps) {
-      setMapLoaded(true);
-      return;
-    }
+          if (window.google && window.google.maps) {
+            if (isMounted) setMapLoaded(true);
+            return;
+          }
 
-    const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${googleMapsApiKey}&libraries=geometry`;
-    script.async = true;
-    script.defer = true;
-    script.onload = () => {
-      setMapLoaded(true);
-    };
-    script.onerror = () => {
-      console.error('❌ Failed to load Google Maps');
-      setError('Failed to load map');
-      setLoading(false);
-    };
+          const script = document.createElement('script');
+          script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=geometry`;
+          script.async = true;
+          script.defer = true;
+          script.onload = () => { if (isMounted) setMapLoaded(true); };
+          script.onerror = () => { if (isMounted) { setError('Failed to load map'); setLoading(false); } };
+          document.head.appendChild(script);
+        } else {
+          if (isMounted) {
+            setError('Failed to load Google Maps configuration');
+            setLoading(false);
+          }
+        }
+      } catch (err) {
+        console.error('❌ Error loading Google Maps:', err);
+        if (isMounted) {
+          setError('Failed to load Google Maps configuration');
+          setLoading(false);
+        }
+      }
+    }
     
-    document.head.appendChild(script);
+    loadGoogleMaps();
 
     return () => {
-      if (script.parentNode) {
-        script.parentNode.removeChild(script);
-      }
+      isMounted = false;
     };
   }, []);
 

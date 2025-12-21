@@ -107,11 +107,18 @@ export function VendorCafeMenuManagement({ vendorId, vendorData, onBack }: Vendo
         }
       );
       const data = await response.json();
+      // ✅ FIX: Handle standardized response format
+      // Response format: { success: true, items: [...], total: ... }
       if (data.success) {
-        setMenuItems(data.items || []);
+        setMenuItems(data.items || data.data?.items || []);
+      } else {
+        const errorData = data.error || data.message || 'Unknown error';
+        console.error('Failed to load menu items:', errorData);
+        // Don't show error toast on initial load - just log
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading menu items:', error);
+      // Don't show error toast on initial load - just log
     }
   };
 
@@ -124,11 +131,18 @@ export function VendorCafeMenuManagement({ vendorId, vendorData, onBack }: Vendo
         }
       );
       const data = await response.json();
+      // ✅ FIX: Handle standardized response format
+      // Response format: { success: true, tables: [...], total: ... }
       if (data.success) {
-        setTables(data.tables || []);
+        setTables(data.tables || data.data?.tables || []);
+      } else {
+        const errorData = data.error || data.message || 'Unknown error';
+        console.error('Failed to load tables:', errorData);
+        // Don't show error toast on initial load - just log
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading tables:', error);
+      // Don't show error toast on initial load - just log
     }
   };
 
@@ -157,6 +171,7 @@ export function VendorCafeMenuManagement({ vendorId, vendorData, onBack }: Vendo
 
       const data = await response.json();
       if (data.success) {
+        toast.success(editingItem ? 'Menu item updated successfully' : 'Menu item added successfully');
         setShowAddItem(false);
         setEditingItem(null);
         setItemForm({
@@ -171,15 +186,25 @@ export function VendorCafeMenuManagement({ vendorId, vendorData, onBack }: Vendo
           allergens: '',
           preparationTime: ''
         });
-        loadMenuItems();
+        await loadMenuItems(); // ✅ Ensure menu items reload
+      } else {
+        const errorData = data.error || data.message || 'Unknown error occurred';
+        toast.error(errorData);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving menu item:', error);
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 
   const handleDeleteMenuItem = async (itemId: string) => {
-    if (!confirm('Are you sure you want to delete this menu item?')) return;
+    const item = menuItems.find(i => i.id === itemId);
+    const itemName = item?.name || 'this menu item';
+    
+    if (!confirm(`Are you sure you want to delete "${itemName}"? This action cannot be undone.`)) {
+      return;
+    }
 
     try {
       const response = await fetch(
@@ -192,10 +217,16 @@ export function VendorCafeMenuManagement({ vendorId, vendorData, onBack }: Vendo
 
       const data = await response.json();
       if (data.success) {
-        loadMenuItems();
+        toast.success(`Menu item "${itemName}" deleted successfully`);
+        await loadMenuItems(); // ✅ Ensure menu items reload
+      } else {
+        const errorData = data.error || data.message || 'Failed to delete menu item';
+        toast.error(errorData);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error deleting menu item:', error);
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 
@@ -222,6 +253,7 @@ export function VendorCafeMenuManagement({ vendorId, vendorData, onBack }: Vendo
 
       const data = await response.json();
       if (data.success) {
+        toast.success(editingTable ? 'Table updated successfully' : 'Table added successfully');
         setShowAddTable(false);
         setEditingTable(null);
         setTableForm({
@@ -231,10 +263,15 @@ export function VendorCafeMenuManagement({ vendorId, vendorData, onBack }: Vendo
           status: 'available',
           petFriendly: false
         });
-        loadTables();
+        await loadTables(); // ✅ Ensure tables reload
+      } else {
+        const errorData = data.error || data.message || 'Unknown error occurred';
+        toast.error(errorData);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving table:', error);
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 

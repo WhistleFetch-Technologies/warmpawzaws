@@ -43,7 +43,7 @@ import {
 } from 'lucide-react';
 import { Badge } from '../ui/badge';
 import { VendorNotificationModal } from './VendorNotificationModal';
-import { CommunicationHub } from './CommunicationHub';
+import { CommunicationHub } from '../communication/CommunicationHub';
 import { AppointmentDetailModal } from './AppointmentDetailModal';
 import { VendorAnalytics } from './VendorAnalytics';
 import { VendorPaymentSettings } from './VendorPaymentSettings';

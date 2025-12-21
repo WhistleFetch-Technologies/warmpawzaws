@@ -9,6 +9,7 @@
 
 import { Hono } from "npm:hono";
 import * as kv from './kv_store.tsx';
+import { getProblemGridByRole } from './problem-grid-catalog.tsx';
 
 export function registerProblemGridSpecializationSystem(app: Hono) {
   
@@ -22,15 +23,7 @@ export function registerProblemGridSpecializationSystem(app: Hono) {
     try {
       const { roleId } = c.req.param();
       
-      // Import problem grid catalog
-      const { 
-        vetHealthProblems, 
-        groomingNeeds, 
-        trainingNeeds, 
-        walkingNeeds,
-        behavioralIssues,
-        boardingNeeds 
-      } = await import('./problem-grid-catalog.tsx');
+      // ✅ FIX: Use centralized getProblemGridByRole (already imported at top)
       
       // Normalize role ID
       const normalizedRoleId = roleId.replace(/^role_/, '').toLowerCase();
@@ -38,69 +31,93 @@ export function registerProblemGridSpecializationSystem(app: Hono) {
       let problemGrid: any[] = [];
       let roleType = '';
       
-      // Map role to problem grid
+      // ✅ FIX: Use centralized getProblemGridByRole function (no duplicate logic)
+      problemGrid = getProblemGridByRole(normalizedRoleId);
+      
+      // Determine role type for display
       if (['veterinarian', 'vet_clinic', 'pet_clinic', 'clinic', 'hospital'].includes(normalizedRoleId)) {
-        problemGrid = vetHealthProblems;
         roleType = 'Healthcare';
       } else if (['groomer', 'pet_groomer', 'grooming_center', 'grooming_salon', 'pet_salon'].includes(normalizedRoleId)) {
-        problemGrid = groomingNeeds;
         roleType = 'Grooming';
       } else if (['trainer', 'pet_trainer', 'training_center', 'dog_trainer'].includes(normalizedRoleId)) {
-        problemGrid = trainingNeeds;
         roleType = 'Training';
       } else if (['walker', 'dog_walker', 'pet_walker'].includes(normalizedRoleId)) {
-        problemGrid = walkingNeeds;
         roleType = 'Walking';
       } else if (['behaviourist', 'behaviorist', 'pet_behaviorist'].includes(normalizedRoleId)) {
-        problemGrid = behavioralIssues;
         roleType = 'Behavioral';
-      } else if (['boarding', 'pet_boarding', 'boarding_center', 'pet_sitter', 'pet_resort', 'kennel'].includes(normalizedRoleId)) {
-        problemGrid = boardingNeeds;
+      } else if (['boarding', 'pet_boarding', 'boarding_center', 'pet_sitter', 'kennel'].includes(normalizedRoleId)) {
         roleType = 'Boarding/Sitting';
+      } else if (['nutritionist', 'pet_nutritionist', 'nutrition_center'].includes(normalizedRoleId)) {
+        roleType = 'Nutrition';
+      } else if (['pharmacist', 'pet_pharmacist', 'pharmacy_center', 'pet_pharmacy'].includes(normalizedRoleId)) {
+        roleType = 'Pharmacy';
+      } else if (['adoption_center', 'pet_adoption_center', 'adoption_agency', 'pet_shelter'].includes(normalizedRoleId)) {
+        roleType = 'Adoption';
+      } else if (['insurance', 'pet_insurance', 'insurance_provider', 'insurance_agent'].includes(normalizedRoleId)) {
+        roleType = 'Insurance';
+      } else if (['ambulance', 'pet_ambulance', 'ambulance_service'].includes(normalizedRoleId)) {
+        roleType = 'Ambulance';
+      } else if (['diagnostics', 'diagnostic_lab', 'diagnostics_lab', 'lab'].includes(normalizedRoleId)) {
+        roleType = 'Diagnostics';
+      } else if (['cafe', 'pet_cafe', 'cafes'].includes(normalizedRoleId)) {
+        roleType = 'Cafe';
+      } else if (['resort', 'pet_resort', 'boarding_resort'].includes(normalizedRoleId)) {
+        roleType = 'Resort';
+      } else if (['holiday', 'pet_holiday', 'pet_holiday_planner', 'holiday_planner'].includes(normalizedRoleId)) {
+        roleType = 'Holiday';
+      } else if (['photography', 'pet_photographer'].includes(normalizedRoleId)) {
+        roleType = 'Photography';
+      } else if (['relocation', 'pet_relocation'].includes(normalizedRoleId)) {
+        roleType = 'Relocation';
+      } else if (['breeder', 'pet_breeder'].includes(normalizedRoleId)) {
+        roleType = 'Breeder';
+      } else if (['sunset', 'pet_sunset', 'pet_sunset_services'].includes(normalizedRoleId)) {
+        roleType = 'Sunset Services';
       } else {
-        // ✅ FALLBACK: Return generic capabilities instead of error
-        // This ensures custom roles or new roles can still create staff
+        // ✅ FALLBACK: Return generic capabilities if no problem grid found
         console.warn(`[PROBLEM GRID] Unknown roleId: ${roleId}, falling back to General Services`);
         
-        problemGrid = [
-          {
-            id: 'general_service',
-            name: 'General Service',
-            displayName: 'General Service',
-            icon: '🐾',
-            color: '#10B981',
-            gradient: 'from-green-500 to-green-600',
-            description: 'General pet care services',
-            keywords: ['general', 'service', 'care'],
-            mappedSubCategories: ['sub_general'],
-            order: 1
-          },
-          {
-            id: 'consultation',
-            name: 'Consultation',
-            displayName: 'Consultation',
-            icon: '💬',
-            color: '#3B82F6',
-            gradient: 'from-blue-500 to-blue-600',
-            description: 'Professional consultation',
-            keywords: ['consult', 'advice'],
-            mappedSubCategories: ['sub_consultation'],
-            order: 2
-          },
-          {
-            id: 'emergency',
-            name: 'Emergency',
-            displayName: 'Emergency Support',
-            icon: '🚨',
-            color: '#EF4444',
-            gradient: 'from-red-500 to-red-600',
-            description: 'Urgent assistance',
-            keywords: ['urgent', 'emergency'],
-            mappedSubCategories: ['sub_emergency'],
-            order: 3
-          }
-        ];
-        roleType = 'General Service';
+        if (problemGrid.length === 0) {
+          problemGrid = [
+            {
+              id: 'general_service',
+              name: 'General Service',
+              displayName: 'General Service',
+              icon: '🐾',
+              color: '#10B981',
+              gradient: 'from-green-500 to-green-600',
+              description: 'General pet care services',
+              keywords: ['general', 'service', 'care'],
+              mappedSubCategories: ['sub_general'],
+              order: 1
+            },
+            {
+              id: 'consultation',
+              name: 'Consultation',
+              displayName: 'Consultation',
+              icon: '💬',
+              color: '#3B82F6',
+              gradient: 'from-blue-500 to-blue-600',
+              description: 'Professional consultation',
+              keywords: ['consult', 'advice'],
+              mappedSubCategories: ['sub_consultation'],
+              order: 2
+            },
+            {
+              id: 'emergency',
+              name: 'Emergency',
+              displayName: 'Emergency Support',
+              icon: '🚨',
+              color: '#EF4444',
+              gradient: 'from-red-500 to-red-600',
+              description: 'Urgent assistance',
+              keywords: ['urgent', 'emergency'],
+              mappedSubCategories: ['sub_emergency'],
+              order: 3
+            }
+          ];
+        }
+        roleType = roleType || 'General Service';
       }
       
       // Format specializations using problem grid data
@@ -157,8 +174,8 @@ export function registerProblemGridSpecializationSystem(app: Hono) {
       }
       
       // Update vendor with specializations
-      const updatedVendor = {
-        ...vendor,
+      const updatedVendor: any = {
+        ...(vendor as any),
         specializations,  // Array of problem IDs (e.g., ['surgery', 'cardiology', 'dermatology'])
         updatedAt: new Date().toISOString()
       };
@@ -204,32 +221,10 @@ export function registerProblemGridSpecializationSystem(app: Hono) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
       
-      // Get problem grid to validate and get display names
-      const { 
-        vetHealthProblems, 
-        groomingNeeds, 
-        trainingNeeds, 
-        walkingNeeds,
-        behavioralIssues,
-        boardingNeeds 
-      } = await import('./problem-grid-catalog.tsx');
-      
-      const normalizedRoleId = vendor.roleId.replace(/^role_/, '').toLowerCase();
-      let problemGrid: any[] = [];
-      
-      if (['veterinarian', 'vet_clinic', 'pet_clinic'].includes(normalizedRoleId)) {
-        problemGrid = vetHealthProblems;
-      } else if (['groomer', 'pet_groomer', 'grooming_center'].includes(normalizedRoleId)) {
-        problemGrid = groomingNeeds;
-      } else if (['trainer', 'pet_trainer', 'training_center'].includes(normalizedRoleId)) {
-        problemGrid = trainingNeeds;
-      } else if (['walker', 'dog_walker', 'pet_walker'].includes(normalizedRoleId)) {
-        problemGrid = walkingNeeds;
-      } else if (['behaviourist', 'behaviorist', 'pet_behaviorist'].includes(normalizedRoleId)) {
-        problemGrid = behavioralIssues;
-      } else if (['boarding', 'pet_boarding', 'boarding_center'].includes(normalizedRoleId)) {
-        problemGrid = boardingNeeds;
-      }
+      // ✅ FIX: Use centralized getProblemGridByRole function
+      const vendorData = vendor as any;
+      const normalizedRoleId = (vendorData.roleId || '').replace(/^role_/, '').toLowerCase();
+      const problemGrid = getProblemGridByRole(normalizedRoleId);
       
       // Get display names for selected specializations
       const specializationDetails = specializations.map(specId => {
@@ -243,8 +238,8 @@ export function registerProblemGridSpecializationSystem(app: Hono) {
       }).filter(Boolean);
       
       // Update staff with specializations
-      const updatedStaff = {
-        ...staff,
+      const updatedStaff: any = {
+        ...(staff as any),
         specializations,  // Array of problem IDs
         specializationDetails,  // Full details for display
         updatedAt: new Date().toISOString()
@@ -320,17 +315,24 @@ export function registerProblemGridSpecializationSystem(app: Hono) {
       // Now get staff for matching vendors
       const results: any[] = [];
       
-      for (const vendor of matchingVendors) {
+      for (const vendorItem of matchingVendors) {
+        const vendor = vendorItem.value || vendorItem;
+        const vendorId = (vendor as any).id || (vendorItem as any).key?.replace('vendor:vendor_', '') || '';
+        
+        if (!vendorId) continue;
+        
         // Get vendor's staff
-        const staffMembers = await kv.getByPrefix(`vendor:${vendor.id}:staff:`);
+        const staffMembers = await kv.getByPrefix(`vendor:${vendorId}:staff:`);
         
         // Filter staff by specialization
-        const matchingStaff = staffMembers.filter((staff: any) => {
-          return staff.specializations && staff.specializations.includes(problemId);
+        const matchingStaff = (staffMembers || []).filter((staffItem: any) => {
+          const staff = staffItem.value || staffItem;
+          return (staff as any).specializations && (staff as any).specializations.includes(problemId);
         });
         
         // If vendor has specialization OR has staff with specialization
-        if (vendor.specializations?.includes(problemId) || matchingStaff.length > 0) {
+        const vendorSpecializations = (vendor as any).specializations || [];
+        if (vendorSpecializations.includes(problemId) || matchingStaff.length > 0) {
           results.push({
             vendor,
             staff: matchingStaff

@@ -73,26 +73,56 @@ export function AmbulanceEditModal({
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
 
+    // Vehicle number validation
     if (!formData.vehicleNumber.trim()) {
       newErrors.vehicleNumber = 'Vehicle number is required';
+    } else if (formData.vehicleNumber.trim().length < 3) {
+      newErrors.vehicleNumber = 'Vehicle number must be at least 3 characters';
+    } else if (formData.vehicleNumber.trim().length > 20) {
+      newErrors.vehicleNumber = 'Vehicle number must be less than 20 characters';
     }
 
+    // Driver name validation
     if (!formData.driverName.trim()) {
       newErrors.driverName = 'Driver name is required';
+    } else if (formData.driverName.trim().length < 2) {
+      newErrors.driverName = 'Driver name must be at least 2 characters';
+    } else if (formData.driverName.trim().length > 50) {
+      newErrors.driverName = 'Driver name must be less than 50 characters';
+    } else if (!/^[a-zA-Z\s\.\-']+$/.test(formData.driverName.trim())) {
+      newErrors.driverName = 'Driver name can only contain letters, spaces, dots, hyphens, and apostrophes';
     }
 
+    // Driver phone validation
     if (!formData.driverPhone.trim()) {
       newErrors.driverPhone = 'Driver phone is required';
-    } else if (!/^[\d\s\-\+\(\)]+$/.test(formData.driverPhone)) {
-      newErrors.driverPhone = 'Invalid phone number format';
+    } else {
+      const phoneRegex = /^[\d\s\-\+\(\)]{10,15}$/;
+      const cleanPhone = formData.driverPhone.replace(/[\s\-\+\(\)]/g, '');
+      if (!phoneRegex.test(formData.driverPhone)) {
+        newErrors.driverPhone = 'Invalid phone number format';
+      } else if (cleanPhone.length < 10 || cleanPhone.length > 15) {
+        newErrors.driverPhone = 'Phone number must be between 10 and 15 digits';
+      }
     }
 
+    // Base price validation
     if (formData.basePrice <= 0) {
       newErrors.basePrice = 'Base price must be greater than 0';
+    } else if (formData.basePrice > 10000) {
+      newErrors.basePrice = 'Base price cannot exceed ₹10,000';
     }
 
+    // Price per KM validation
     if (formData.pricePerKm <= 0) {
       newErrors.pricePerKm = 'Price per KM must be greater than 0';
+    } else if (formData.pricePerKm > 100) {
+      newErrors.pricePerKm = 'Price per KM cannot exceed ₹100';
+    }
+
+    // Current location validation (optional but if provided, should be reasonable)
+    if (formData.currentLocation && formData.currentLocation.length > 100) {
+      newErrors.currentLocation = 'Location must be less than 100 characters';
     }
 
     setErrors(newErrors);
@@ -110,9 +140,13 @@ export function AmbulanceEditModal({
     setSaving(true);
     try {
       await onSave(formData);
+      toast.success(ambulance ? 'Ambulance updated successfully' : 'Ambulance added successfully');
       onClose();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving ambulance:', error);
+      const errorMessage = error?.message || 'Failed to save ambulance. Please try again.';
+      toast.error(errorMessage);
+      // Don't close modal on error so user can fix and retry
     } finally {
       setSaving(false);
     }

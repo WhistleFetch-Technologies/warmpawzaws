@@ -1,5 +1,6 @@
 import { Hono } from 'npm:hono';
 import * as kv from './kv_store.tsx';
+import { createNotificationHelper } from './notification-system.tsx';
 
 const app = new Hono();
 
@@ -266,20 +267,31 @@ app.post('/vendor/:vendorId/pharmacy/dispatch-order', async (c) => {
 
     await kv.set(`prescription_order:vendor:${vendorId}:${orderId}`, updatedOrder);
 
-    // Create notification for customer
-    const notification = {
-      id: `notif_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      type: 'order_dispatched',
-      title: 'Order Dispatched',
-      message: `Your order #${order.orderId} has been dispatched and is on the way!`,
-      customerPhone: order.customerPhone || order.customerId,
-      vendorId,
-      orderId,
-      createdAt: new Date().toISOString(),
-      read: false
-    };
+    // ✅ NOTIFICATION: Delivery Dispatched - Use existing notification system
+    try {
+      const customerId = order.customerPhone || order.customerId;
+      const customer = await kv.get(`customer:${customerId}`);
+      const trackingUrl = order.trackingUrl || `https://warmpawz.com/track/${orderId}`;
 
-    await kv.set(`notification:customer:${order.customerPhone || order.customerId}:${notification.id}`, notification);
+      await createNotificationHelper(kv, {
+        recipientId: customerId,
+        recipientType: 'customer',
+        type: 'order_dispatched',
+        category: 'orders',
+        title: 'Order Dispatched',
+        message: `Your order #${order.orderId || orderId} has been dispatched! Track: ${trackingUrl}`,
+        recipientEmail: customer?.email,
+        recipientPhone: order.customerPhone || customer?.phone,
+        channels: { email: false, sms: true, inApp: true, push: false },
+        data: { orderId, trackingUrl, deliveryPartnerId },
+        priority: 'high'
+      });
+
+      console.log(`📱 [NOTIFICATION] Delivery dispatched notification sent to customer`);
+    } catch (notifError) {
+      console.error(`⚠️ [NOTIFICATION] Failed to send delivery dispatched notification:`, notifError);
+      // Don't fail the request if notification fails
+    }
 
     return c.json({
       success: true,

@@ -107,12 +107,6 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
       onClick: () => onNavigate('content')
     },
     { 
-      icon: DollarSign, 
-      label: 'Payment & Refund', 
-      id: 'payment-refund',
-      onClick: () => onNavigate('payment-refund')
-    },
-    { 
       icon: Package, 
       label: 'Pet Info Management', 
       id: 'pet-info',
@@ -181,10 +175,10 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
       <div className="border-t border-gray-200 p-3 space-y-1">
         <button 
           className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-600 hover:bg-gray-50 hover:text-gray-900 rounded-lg transition-colors"
-          onClick={() => onNavigate('reports')}
+          onClick={() => onNavigate('analytics')}
         >
           <BarChart3 className="w-4 h-4 flex-shrink-0" />
-          <span>Reports</span>
+          <span>Analytics & Insights</span>
         </button>
         <button 
           className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-600 hover:bg-gray-50 hover:text-gray-900 rounded-lg transition-colors"

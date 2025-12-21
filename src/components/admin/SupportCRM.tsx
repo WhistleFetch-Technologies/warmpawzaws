@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
+import { Textarea } from '../ui/textarea';
 import { Badge } from '../ui/badge';
 import { toast } from 'sonner@2.0.3';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
@@ -56,6 +57,9 @@ export function SupportCRM() {
   const [replyText, setReplyText] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [showRefundModal, setShowRefundModal] = useState(false);
+  const [showPartialRefundModal, setShowPartialRefundModal] = useState(false);
+  const [partialRefundAmount, setPartialRefundAmount] = useState('');
+  const [partialRefundReason, setPartialRefundReason] = useState('');
 
   useEffect(() => {
     loadTickets();
@@ -155,27 +159,120 @@ export function SupportCRM() {
     }
   };
 
-  const handleRefund = async () => {
-      setShowRefundModal(false);
-      toast.success('Refund process initiated for Ticket #' + selectedTicket?.id);
-      // Simulate refund process - would call backend here
-      const newMsg: TicketMessage = {
-          id: Date.now().toString(),
-          sender: 'System',
-          content: 'Refund of ₹500 initiated to original payment method.',
-          timestamp: new Date().toISOString(),
-          role: 'system'
-      };
-      
-      if (selectedTicket) {
-          const updatedTicket = {
-              ...selectedTicket,
-              messages: [...(selectedTicket.messages || []), newMsg],
-              status: 'resolved' as const
-          };
-          setSelectedTicket(updatedTicket);
-          setTickets(tickets.map(t => t.id === updatedTicket.id ? updatedTicket : t));
+  // Helper function to call CRM action endpoint
+  const handleAction = async (action: string, amount?: number, reason?: string): Promise<boolean> => {
+    if (!selectedTicket) return false;
+
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/crm/action`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${publicAnonKey}`
+          },
+          body: JSON.stringify({
+            ticketId: selectedTicket.id,
+            action,
+            amount,
+            reason
+          })
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        throw new Error(errorData.error || 'Failed to process action');
       }
+
+      const data = await response.json();
+      if (data.success) {
+        await loadTickets();
+        return true;
+      }
+      return false;
+    } catch (error: any) {
+      console.error('Error processing action:', error);
+      // Re-throw to allow caller to handle
+      throw error;
+    }
+  };
+
+  const handleRefund = async () => {
+    if (!selectedTicket) return;
+
+    try {
+      const success = await handleAction('refund', 500, 'Full refund');
+      
+      // ✅ FIX: Only reset state on successful completion
+      if (success) {
+        setShowRefundModal(false);
+        toast.success('Refund process initiated for Ticket #' + selectedTicket.id);
+      } else {
+        // Keep modal open on failure
+        toast.error('Failed to process refund. Please try again.');
+      }
+    } catch (error: any) {
+      // ✅ FIX: On exception, keep modal open and preserve inputs
+      console.error('Error processing refund:', error);
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
+      // Modal stays open
+    }
+  };
+
+  const handlePartialRefund = async () => {
+    // ✅ FIX: Validate inputs first - early returns don't reset state
+    if (!partialRefundAmount || parseFloat(partialRefundAmount) <= 0) {
+      toast.error('Please enter a valid refund amount');
+      return; // Early return - don't reset state
+    }
+
+    if (!partialRefundReason?.trim()) {
+      toast.error('Please provide a reason for the partial refund');
+      return; // Early return - don't reset state
+    }
+
+    if (!selectedTicket) return;
+
+    try {
+      // Call handleAction and await the result
+      const success = await handleAction(
+        'partial_refund',
+        parseFloat(partialRefundAmount),
+        partialRefundReason.trim()
+      );
+
+      // ✅ FIX Bug 1 & 2: Only reset state on successful completion
+      if (success) {
+        // ✅ FIX Bug 1: Store and format amount BEFORE clearing state for toast message
+        const refundAmount = partialRefundAmount || '0';
+        const formattedAmount = parseFloat(refundAmount).toLocaleString('en-IN', {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2
+        });
+        
+        // Show success toast BEFORE clearing state to ensure amount is displayed
+        toast.success(`Partial refund of ₹${formattedAmount} processed successfully`);
+        
+        // Reset modal state and input fields AFTER showing toast
+        setShowPartialRefundModal(false);
+        setPartialRefundAmount('');
+        setPartialRefundReason('');
+      } else {
+        // ✅ FIX Bug 2: On failure, keep modal open and preserve inputs
+        // This allows user to retry with same values or correct them
+        toast.error('Failed to process partial refund. Please try again.');
+        // Modal stays open, inputs remain populated
+      }
+    } catch (error: any) {
+      // ✅ FIX Bug 2: On exception, keep modal open and preserve inputs
+      console.error('Error processing partial refund:', error);
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
+      // Modal stays open, inputs remain populated
+    }
   };
 
   const getStatusColor = (status: string) => {
@@ -290,6 +387,10 @@ export function SupportCRM() {
                        <AlertTriangle className="w-4 h-4 mr-2" />
                        Issue Refund
                    </Button>
+                   <Button variant="outline" className="text-orange-600 border-orange-200 hover:bg-orange-50" onClick={() => setShowPartialRefundModal(true)}>
+                       <DollarSign className="w-4 h-4 mr-2" />
+                       Partial Refund
+                   </Button>
                 </div>
               </div>
             </div>
@@ -377,6 +478,60 @@ export function SupportCRM() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowRefundModal(false)}>Cancel</Button>
             <Button variant="destructive" onClick={handleRefund}>Confirm Refund</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Partial Refund Modal */}
+      <Dialog open={showPartialRefundModal} onOpenChange={setShowPartialRefundModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Issue Partial Refund</DialogTitle>
+            <DialogDescription>
+              Enter the partial refund amount and reason. This action will be logged in the ticket.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 flex items-start gap-2">
+                <AlertTriangle className="w-5 h-5 text-yellow-600 mt-0.5" />
+                <div>
+                    <p className="text-sm font-medium text-yellow-800">Warning</p>
+                    <p className="text-xs text-yellow-700">Partial refunds will be processed to the original payment method within 5-7 business days.</p>
+                </div>
+            </div>
+            <div>
+                <label className="text-sm font-medium text-gray-700">Refund Amount *</label>
+                <div className="relative mt-1">
+                    <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                    <Input 
+                      className="pl-9" 
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={partialRefundAmount}
+                      onChange={(e) => setPartialRefundAmount(e.target.value)}
+                      placeholder="Enter amount"
+                    />
+                </div>
+            </div>
+            <div>
+                <label className="text-sm font-medium text-gray-700">Reason *</label>
+                <Textarea
+                  className="mt-1"
+                  rows={3}
+                  value={partialRefundReason}
+                  onChange={(e) => setPartialRefundReason(e.target.value)}
+                  placeholder="Enter reason for partial refund..."
+                />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setShowPartialRefundModal(false);
+              setPartialRefundAmount('');
+              setPartialRefundReason('');
+            }}>Cancel</Button>
+            <Button variant="destructive" onClick={handlePartialRefund}>Confirm Partial Refund</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

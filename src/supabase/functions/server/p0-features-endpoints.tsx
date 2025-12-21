@@ -448,6 +448,241 @@ export function registerP0Features(app: Hono, kv: any) {
   });
 
   /**
+   * PUT /vendor/:vendorId/progress-trackers/:trackerId/notes/:noteId
+   * Update a progress note
+   * ✅ LIFECYCLE FIX: Add UPDATE endpoint for notes
+   */
+  app.put("/make-server-3dd53475/vendor/:vendorId/progress-trackers/:trackerId/notes/:noteId", async (c) => {
+    try {
+      const { vendorId, trackerId, noteId } = c.req.param();
+      const updates = await c.req.json();
+      
+      const tracker = await kv.get(`progress:tracker:${vendorId}:${trackerId}`);
+      
+      if (!tracker) {
+        return sendError(c, 'Tracker not found', 404);
+      }
+      
+      const noteIndex = tracker.notes?.findIndex((n: any) => n.id === noteId);
+      if (noteIndex === -1 || noteIndex === undefined) {
+        return sendError(c, 'Note not found', 404);
+      }
+      
+      const updatedNote = {
+        ...tracker.notes[noteIndex],
+        ...updates,
+        updatedAt: new Date().toISOString()
+      };
+      
+      const updatedNotes = [...tracker.notes];
+      updatedNotes[noteIndex] = updatedNote;
+      
+      const updatedTracker = {
+        ...tracker,
+        notes: updatedNotes,
+        updatedAt: new Date().toISOString()
+      };
+      
+      await kv.set(`progress:tracker:${vendorId}:${trackerId}`, updatedTracker);
+      
+      return sendSuccess(c, { tracker: updatedTracker, note: updatedNote });
+    } catch (error) {
+      console.error('Error updating note:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  /**
+   * DELETE /vendor/:vendorId/progress-trackers/:trackerId/notes/:noteId
+   * Delete a progress note
+   * ✅ LIFECYCLE FIX: Add DELETE endpoint for notes
+   */
+  app.delete("/make-server-3dd53475/vendor/:vendorId/progress-trackers/:trackerId/notes/:noteId", async (c) => {
+    try {
+      const { vendorId, trackerId, noteId } = c.req.param();
+      
+      const tracker = await kv.get(`progress:tracker:${vendorId}:${trackerId}`);
+      
+      if (!tracker) {
+        return sendError(c, 'Tracker not found', 404);
+      }
+      
+      const updatedNotes = tracker.notes?.filter((n: any) => n.id !== noteId) || [];
+      
+      const updatedTracker = {
+        ...tracker,
+        notes: updatedNotes,
+        sessionsCompleted: Math.max(0, tracker.sessionsCompleted - 1),
+        completionPercentage: tracker.totalSessions > 0 
+          ? Math.min(100, Math.round((updatedNotes.length / tracker.totalSessions) * 100))
+          : 0,
+        updatedAt: new Date().toISOString()
+      };
+      
+      await kv.set(`progress:tracker:${vendorId}:${trackerId}`, updatedTracker);
+      
+      return sendSuccess(c, { tracker: updatedTracker });
+    } catch (error) {
+      console.error('Error deleting note:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  /**
+   * PUT /vendor/:vendorId/progress-trackers/:trackerId/milestones/:milestoneId
+   * Update a milestone
+   * ✅ LIFECYCLE FIX: Add UPDATE endpoint for milestones
+   */
+  app.put("/make-server-3dd53475/vendor/:vendorId/progress-trackers/:trackerId/milestones/:milestoneId", async (c) => {
+    try {
+      const { vendorId, trackerId, milestoneId } = c.req.param();
+      const updates = await c.req.json();
+      
+      const tracker = await kv.get(`progress:tracker:${vendorId}:${trackerId}`);
+      
+      if (!tracker) {
+        return sendError(c, 'Tracker not found', 404);
+      }
+      
+      const milestoneIndex = tracker.milestones?.findIndex((m: any) => m.id === milestoneId);
+      if (milestoneIndex === -1 || milestoneIndex === undefined) {
+        return sendError(c, 'Milestone not found', 404);
+      }
+      
+      const updatedMilestone = {
+        ...tracker.milestones[milestoneIndex],
+        ...updates,
+        updatedAt: new Date().toISOString()
+      };
+      
+      const updatedMilestones = [...tracker.milestones];
+      updatedMilestones[milestoneIndex] = updatedMilestone;
+      
+      const updatedTracker = {
+        ...tracker,
+        milestones: updatedMilestones,
+        updatedAt: new Date().toISOString()
+      };
+      
+      await kv.set(`progress:tracker:${vendorId}:${trackerId}`, updatedTracker);
+      
+      return sendSuccess(c, { tracker: updatedTracker, milestone: updatedMilestone });
+    } catch (error) {
+      console.error('Error updating milestone:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  /**
+   * DELETE /vendor/:vendorId/progress-trackers/:trackerId/milestones/:milestoneId
+   * Delete a milestone
+   * ✅ LIFECYCLE FIX: Add DELETE endpoint for milestones
+   */
+  app.delete("/make-server-3dd53475/vendor/:vendorId/progress-trackers/:trackerId/milestones/:milestoneId", async (c) => {
+    try {
+      const { vendorId, trackerId, milestoneId } = c.req.param();
+      
+      const tracker = await kv.get(`progress:tracker:${vendorId}:${trackerId}`);
+      
+      if (!tracker) {
+        return sendError(c, 'Tracker not found', 404);
+      }
+      
+      const updatedMilestones = tracker.milestones?.filter((m: any) => m.id !== milestoneId) || [];
+      
+      const updatedTracker = {
+        ...tracker,
+        milestones: updatedMilestones,
+        updatedAt: new Date().toISOString()
+      };
+      
+      await kv.set(`progress:tracker:${vendorId}:${trackerId}`, updatedTracker);
+      
+      return sendSuccess(c, { tracker: updatedTracker });
+    } catch (error) {
+      console.error('Error deleting milestone:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  /**
+   * PUT /vendor/:vendorId/progress-trackers/:trackerId/measurements/:measurementId
+   * Update a measurement
+   * ✅ LIFECYCLE FIX: Add UPDATE endpoint for measurements
+   */
+  app.put("/make-server-3dd53475/vendor/:vendorId/progress-trackers/:trackerId/measurements/:measurementId", async (c) => {
+    try {
+      const { vendorId, trackerId, measurementId } = c.req.param();
+      const updates = await c.req.json();
+      
+      const tracker = await kv.get(`progress:tracker:${vendorId}:${trackerId}`);
+      
+      if (!tracker) {
+        return sendError(c, 'Tracker not found', 404);
+      }
+      
+      const measurementIndex = tracker.measurements?.findIndex((m: any) => m.id === measurementId);
+      if (measurementIndex === -1 || measurementIndex === undefined) {
+        return sendError(c, 'Measurement not found', 404);
+      }
+      
+      const updatedMeasurement = {
+        ...tracker.measurements[measurementIndex],
+        ...updates,
+        updatedAt: new Date().toISOString()
+      };
+      
+      const updatedMeasurements = [...tracker.measurements];
+      updatedMeasurements[measurementIndex] = updatedMeasurement;
+      
+      const updatedTracker = {
+        ...tracker,
+        measurements: updatedMeasurements,
+        updatedAt: new Date().toISOString()
+      };
+      
+      await kv.set(`progress:tracker:${vendorId}:${trackerId}`, updatedTracker);
+      
+      return sendSuccess(c, { tracker: updatedTracker, measurement: updatedMeasurement });
+    } catch (error) {
+      console.error('Error updating measurement:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  /**
+   * DELETE /vendor/:vendorId/progress-trackers/:trackerId/measurements/:measurementId
+   * Delete a measurement
+   * ✅ LIFECYCLE FIX: Add DELETE endpoint for measurements
+   */
+  app.delete("/make-server-3dd53475/vendor/:vendorId/progress-trackers/:trackerId/measurements/:measurementId", async (c) => {
+    try {
+      const { vendorId, trackerId, measurementId } = c.req.param();
+      
+      const tracker = await kv.get(`progress:tracker:${vendorId}:${trackerId}`);
+      
+      if (!tracker) {
+        return sendError(c, 'Tracker not found', 404);
+      }
+      
+      const updatedMeasurements = tracker.measurements?.filter((m: any) => m.id !== measurementId) || [];
+      
+      const updatedTracker = {
+        ...tracker,
+        measurements: updatedMeasurements,
+        updatedAt: new Date().toISOString()
+      };
+      
+      await kv.set(`progress:tracker:${vendorId}:${trackerId}`, updatedTracker);
+      
+      return sendSuccess(c, { tracker: updatedTracker });
+    } catch (error) {
+      console.error('Error deleting measurement:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  /**
    * PUT /vendor/:vendorId/progress-trackers/:trackerId/milestones/:milestoneId/complete
    * Mark milestone as complete
    */

@@ -225,15 +225,19 @@ export function VendorCustomServiceCreation({
       if (response.ok) {
         const data = await response.json();
         console.log('✅ Custom services loaded:', data);
-        setCustomServices(data.services || []);
+        // ✅ FIX: Handle standardized response format
+        // Response format: { success: true, services: [...], total: ... }
+        setCustomServices(data.services || data.data?.services || []);
       } else {
-        const error = await response.json();
-        console.error('❌ Failed to load custom services:', error);
-        toast.error(error.error || 'Failed to load custom services');
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('❌ Failed to load custom services:', errorData);
+        const errorMessage = errorData.error || errorData.message || 'Failed to load custom services';
+        toast.error(errorMessage);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Error loading custom services:', error);
-      toast.error('Error loading custom services');
+      const errorMessage = error?.message || 'Failed to load custom services. Please try again.';
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -372,13 +376,15 @@ export function VendorCustomServiceCreation({
         await loadCustomServices();
         onServiceCreated();
       } else {
-        const error = await response.json();
-        console.error('❌ Failed to create custom service:', error);
-        toast.error(error.error || 'Failed to create custom service');
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        console.error('❌ Failed to create custom service:', errorData);
+        const errorMessage = errorData.error || errorData.message || 'Failed to create custom service';
+        toast.error(errorMessage);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Error creating custom service:', error);
-      toast.error('Error creating custom service');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     } finally {
       setSaving(false);
     }
@@ -400,20 +406,27 @@ export function VendorCustomServiceCreation({
         const data = await response.json();
         console.log('✅ Service published:', data);
         toast.success('Service submitted for admin approval!');
-        await loadCustomServices();
+        await loadCustomServices(); // ✅ Ensure services reload
       } else {
-        const error = await response.json();
-        console.error('❌ Failed to publish service:', error);
-        toast.error(error.error || 'Failed to publish service');
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        console.error('❌ Failed to publish service:', errorData);
+        const errorMessage = errorData.error || errorData.message || 'Failed to publish service';
+        toast.error(errorMessage);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Error publishing service:', error);
-      toast.error('Error publishing service');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 
   const handleDeleteService = async (serviceId: string) => {
-    if (!confirm('Are you sure you want to delete this service?')) return;
+    const service = customServices.find(s => s.id === serviceId);
+    const serviceName = service?.serviceName || 'this service';
+    
+    if (!confirm(`Are you sure you want to delete "${serviceName}"? This action cannot be undone.`)) {
+      return;
+    }
     
     try {
       console.log(`🗑️ Deleting custom service: ${serviceId}`);
@@ -428,16 +441,18 @@ export function VendorCustomServiceCreation({
 
       if (response.ok) {
         console.log('✅ Service deleted');
-        toast.success('Service deleted successfully');
-        await loadCustomServices();
+        toast.success(`Service "${serviceName}" deleted successfully`);
+        await loadCustomServices(); // ✅ Ensure services reload
       } else {
-        const error = await response.json();
-        console.error('❌ Failed to delete service:', error);
-        toast.error(error.error || 'Failed to delete service');
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        console.error('❌ Failed to delete service:', errorData);
+        const errorMessage = errorData.error || errorData.message || 'Failed to delete service';
+        toast.error(errorMessage);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Error deleting service:', error);
-      toast.error('Error deleting service');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 
