@@ -60,6 +60,7 @@ import { registerUniversalServiceDiscovery } from './universal-service-discovery
 import { registerUniversalOTPSystem } from './universal-otp-system.tsx';
 import { registerHomeServiceBookingFlow } from './home-service-booking-flow.tsx';
 import { registerBookingLifecycleManagement } from './booking-lifecycle-management.tsx';
+import { bookingLifecycleCompleteEndpoints } from './booking-lifecycle-complete.tsx';
 import { registerSmsOtpService } from './sms-otp-service.tsx';
 import { registerRazorpayRefundProcessor } from './razorpay-refund-processor.tsx';
 import { registerGooglePlacesService } from './google-places-service.tsx';
@@ -128,6 +129,11 @@ import { resortPreCheckEndpoints } from './resort-precheck-endpoints.tsx';
 import { notificationTemplateSystem } from './notification-template-system.tsx';
 import { bankVerificationEndpoints } from './bank-verification-endpoints.tsx';
 import { tierUpgradeEndpoints } from './tier-upgrade-endpoints.tsx';
+import { settlementScheduleEndpoints } from './settlement-schedule-endpoints.tsx';
+import { gstRuleEngineEndpoints } from './gst-rule-engine.tsx';
+import { gstConfigurationEndpoints } from './gst-configuration-endpoints.tsx';
+import { cancellationPolicyEndpoints } from './cancellation-policy-endpoints.tsx';
+import { comprehensiveGapFixes } from './gap-fixes-comprehensive.tsx';
 import { analyticsDashboardEndpoints } from './analytics-dashboard-endpoints.tsx';
 import { performanceMonitoringEndpoints } from './performance-monitoring-endpoints.tsx';
 import { systemOptimizationEndpoints } from './system-optimization-endpoints.tsx';
@@ -172,6 +178,7 @@ import appointmentDetailEndpoints from './appointment-detail-endpoints.tsx'; // 
 import { registerStorageEndpoints } from './storage-handler.tsx'; // ✅ FIX: Storage upload endpoints
 import { staffServiceEndpoints } from './staff-service-endpoints.tsx'; // ✅ FIX: Staff service management endpoints
 import { soloProviderEndpoints } from './solo-provider-endpoints.tsx'; // ✅ FIX: Solo provider onboarding endpoints
+import { registerMedicalAISummaryEndpoints } from './medical-ai-summary-endpoints.tsx'; // ✅ NEW: Medical AI summary endpoints
 
 const app = new Hono();
 
@@ -540,6 +547,7 @@ registerUniversalServiceDiscovery(app);
 registerUniversalOTPSystem(app);
 registerHomeServiceBookingFlow(app);
 registerBookingLifecycleManagement(app);
+bookingLifecycleCompleteEndpoints(app, kv);
 registerSmsOtpService(app);
 registerRazorpayRefundProcessor(app);
 registerGooglePlacesService(app);
@@ -668,6 +676,41 @@ if (tierUpgradeEndpoints && typeof tierUpgradeEndpoints === 'function') {
   tierUpgradeEndpoints(app, kv);
 } else {
   console.warn('⚠️ Tier Upgrade Endpoints module undefined, skipping');
+}
+
+if (settlementScheduleEndpoints && typeof settlementScheduleEndpoints === 'function') {
+  console.log('✅ Registering Settlement Schedule Endpoints...');
+  settlementScheduleEndpoints(app);
+} else {
+  console.warn('⚠️ Settlement Schedule Endpoints module undefined, skipping');
+}
+
+if (gstRuleEngineEndpoints && typeof gstRuleEngineEndpoints === 'function') {
+  console.log('✅ Registering GST Rule Engine Endpoints...');
+  gstRuleEngineEndpoints(app);
+} else {
+  console.warn('⚠️ GST Rule Engine Endpoints module undefined, skipping');
+}
+
+if (gstConfigurationEndpoints && typeof gstConfigurationEndpoints === 'function') {
+  console.log('✅ Registering GST Configuration Endpoints...');
+  gstConfigurationEndpoints(app);
+} else {
+  console.warn('⚠️ GST Configuration Endpoints module undefined, skipping');
+}
+
+if (cancellationPolicyEndpoints && typeof cancellationPolicyEndpoints === 'function') {
+  console.log('✅ Registering Cancellation Policy Endpoints...');
+  cancellationPolicyEndpoints(app);
+} else {
+  console.warn('⚠️ Cancellation Policy Endpoints module undefined, skipping');
+}
+
+if (comprehensiveGapFixes && typeof comprehensiveGapFixes === 'function') {
+  console.log('✅ Registering Comprehensive Gap Fixes Endpoints...');
+  comprehensiveGapFixes(app);
+} else {
+  console.warn('⚠️ Comprehensive Gap Fixes module undefined, skipping');
 }
 
 if (analyticsDashboardEndpoints && typeof analyticsDashboardEndpoints === 'function') {
@@ -1305,6 +1348,10 @@ registerStorageEndpoints(app);
 // ✅ CRITICAL: Staff Service Management Endpoints (Service Assignment, Custom Services)
 console.log('✅ Registering Staff Service Management Endpoints...');
 staffServiceEndpoints(app, kv);
+
+// ✅ NEW: Medical AI Summary Endpoints (AI-powered consultation summaries)
+console.log('✅ Registering Medical AI Summary Endpoints...');
+registerMedicalAISummaryEndpoints(app);
 
 // ------------------------------------------------------------------
 // GLOBAL ERROR HANDLERS

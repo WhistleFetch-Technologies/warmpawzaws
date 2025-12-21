@@ -3,7 +3,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { AWSIntegrationsSettings } from './integrations/AWSIntegrationsSettings';
 import PaymentGatewayIntegration from './integrations/PaymentGatewayIntegration';
 import LogisticsIntegration from './integrations/LogisticsIntegration';
-import { CreditCard, Truck, Cloud, ArrowLeft, Settings } from 'lucide-react';
+import { RewardsLoyaltyManagement } from './settings/RewardsLoyaltyManagement';
+import { CreditCard, Truck, Cloud, ArrowLeft, Settings, Gift } from 'lucide-react';
 
 interface PlatformSettingsProps {
   onBack?: () => void;
@@ -37,7 +38,7 @@ export function PlatformSettings({ onBack }: PlatformSettingsProps) {
       {/* Main Content */}
       <div className="container mx-auto max-w-6xl px-6 py-8">
         <Tabs defaultValue="cloud" className="space-y-8">
-          <TabsList className="grid w-full grid-cols-3 h-auto p-1 bg-white border rounded-xl shadow-sm">
+          <TabsList className="grid w-full grid-cols-4 h-auto p-1 bg-white border rounded-xl shadow-sm">
             <TabsTrigger 
               value="cloud" 
               className="flex flex-col md:flex-row items-center gap-3 py-3 md:py-4 px-4 data-[state=active]:bg-orange-50 data-[state=active]:text-orange-700 data-[state=active]:border-orange-200 border border-transparent rounded-lg transition-all"
@@ -76,6 +77,19 @@ export function PlatformSettings({ onBack }: PlatformSettingsProps) {
                 <div className="text-xs text-slate-500 hidden md:block mt-0.5">Shiprocket, Delhivery, BlueDart</div>
               </div>
             </TabsTrigger>
+            
+            <TabsTrigger 
+              value="loyalty" 
+              className="flex flex-col md:flex-row items-center gap-3 py-3 md:py-4 px-4 data-[state=active]:bg-orange-50 data-[state=active]:text-orange-700 data-[state=active]:border-orange-200 border border-transparent rounded-lg transition-all"
+            >
+              <div className="p-2 bg-slate-100 rounded-md group-data-[state=active]:bg-white">
+                <Gift className="w-5 h-5 text-slate-600 group-data-[state=active]:text-orange-600" />
+              </div>
+              <div className="text-center md:text-left">
+                <div className="font-semibold text-slate-900 group-data-[state=active]:text-orange-900">Loyalty & Rewards</div>
+                <div className="text-xs text-slate-500 hidden md:block mt-0.5">Points, Rewards, Redemption</div>
+              </div>
+            </TabsTrigger>
           </TabsList>
 
           <div className="min-h-[500px]">
@@ -89,6 +103,10 @@ export function PlatformSettings({ onBack }: PlatformSettingsProps) {
             
             <TabsContent value="logistics" className="m-0 focus-visible:ring-0 outline-none">
               <LogisticsIntegration />
+            </TabsContent>
+            
+            <TabsContent value="loyalty" className="m-0 focus-visible:ring-0 outline-none">
+              <RewardsLoyaltyManagement />
             </TabsContent>
           </div>
         </Tabs>

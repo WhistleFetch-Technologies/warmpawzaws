@@ -301,10 +301,51 @@ async function findAlternativeSlots(
  */
 app.post('/bookings/validate-slot', async (c) => {
   try {
-    const { vendorId, scheduledDate, scheduledTime, duration, serviceStyle } = await c.req.json();
+    const { vendorId, scheduledDate, scheduledTime, duration, serviceStyle, serviceType, tableId, date, time } = await c.req.json();
     
+    // ✅ FIX: Support cafe table bookings
+    if (serviceType === 'pet_cafe' || serviceStyle === 'pet_cafe') {
+      const cafeDate = date || scheduledDate;
+      const cafeTime = time || scheduledTime;
+      
+      if (!vendorId || !cafeDate || !cafeTime || !tableId) {
+        return c.json({
+          valid: false,
+          error: 'Missing required fields for cafe booking',
+          required: ['vendorId', 'date', 'time', 'tableId']
+        }, 400);
+      }
+      
+      // Check if table is available
+      const reservationKey = `cafe:${vendorId}:reservations:${cafeDate}:${cafeTime}`;
+      const existingReservations = await kv.get(reservationKey) || [];
+      
+      // Check if table is already booked
+      for (const r of existingReservations) {
+        const reservation = typeof r === 'string' ? await kv.get(`reservation:${r}`) : r;
+        if (reservation && reservation.tableId === tableId && 
+            (reservation.status === 'confirmed' || reservation.status === 'pending')) {
+          return c.json({
+            valid: false,
+            error: 'Table is already booked for this time slot',
+            message: 'This table is no longer available. Please select another table.'
+          }, 409);
+        }
+      }
+      
+      return c.json({
+        valid: true,
+        message: 'Table is available',
+        tableId,
+        date: cafeDate,
+        time: cafeTime
+      });
+    }
+    
+    // Standard slot validation for other services
     if (!vendorId || !scheduledDate || !scheduledTime || !duration || !serviceStyle) {
       return c.json({
+        valid: false,
         error: 'Missing required fields',
         required: ['vendorId', 'scheduledDate', 'scheduledTime', 'duration', 'serviceStyle']
       }, 400);
@@ -329,7 +370,7 @@ app.post('/bookings/validate-slot', async (c) => {
       );
       
       return c.json({
-        available: false,
+        valid: false,
         error: 'Time slot not available',
         conflicts: conflictCheck.conflicts,
         alternatives,
@@ -340,7 +381,7 @@ app.post('/bookings/validate-slot', async (c) => {
     }
     
     return c.json({
-      available: true,
+      valid: true,
       message: 'Time slot available',
       scheduledTime,
       scheduledDate
@@ -348,7 +389,7 @@ app.post('/bookings/validate-slot', async (c) => {
     
   } catch (error) {
     console.error('Error validating slot:', error);
-    return c.json({ error: String(error) }, 500);
+    return c.json({ valid: false, error: String(error) }, 500);
   }
 });
 

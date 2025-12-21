@@ -72,16 +72,32 @@ export function DiagnosticEditModal({
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
 
+    // Test name validation
     if (!formData.testName.trim()) {
       newErrors.testName = 'Test name is required';
+    } else if (formData.testName.trim().length < 3) {
+      newErrors.testName = 'Test name must be at least 3 characters';
+    } else if (formData.testName.trim().length > 100) {
+      newErrors.testName = 'Test name must be less than 100 characters';
     }
 
+    // Price validation
     if (formData.price <= 0) {
       newErrors.price = 'Price must be greater than 0';
+    } else if (formData.price > 100000) {
+      newErrors.price = 'Price cannot exceed ₹1,00,000';
     }
 
+    // Duration validation
     if (formData.duration <= 0) {
       newErrors.duration = 'Duration must be greater than 0';
+    } else if (formData.duration > 1440) {
+      newErrors.duration = 'Duration cannot exceed 1440 minutes (24 hours)';
+    }
+
+    // Description validation (optional but if provided, should be reasonable)
+    if (formData.description && formData.description.length > 500) {
+      newErrors.description = 'Description must be less than 500 characters';
     }
 
     setErrors(newErrors);
@@ -99,9 +115,13 @@ export function DiagnosticEditModal({
     setSaving(true);
     try {
       await onSave(formData);
+      toast.success(diagnostic ? 'Diagnostic test updated successfully' : 'Diagnostic test added successfully');
       onClose();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving diagnostic test:', error);
+      const errorMessage = error?.message || 'Failed to save diagnostic test. Please try again.';
+      toast.error(errorMessage);
+      // Don't close modal on error so user can fix and retry
     } finally {
       setSaving(false);
     }

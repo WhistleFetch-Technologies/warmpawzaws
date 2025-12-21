@@ -257,6 +257,9 @@ app.post('/bookings/package/create', async (c) => {
       packageId,
       totalSessions,
       scheduledDates, // Array of dates for each session
+      timeSlots, // ✅ NEW: General schedule slots for subscription packages (morning/afternoon/evening)
+      packageType, // ✅ NEW: Package type (bundle, subscription, etc.)
+      isRecurring, // ✅ NEW: Whether package is recurring
       paymentMethod,
       transactionId
     } = await c.req.json();
@@ -284,15 +287,18 @@ app.post('/bookings/package/create', async (c) => {
       petId,
       vendorId,
       packageId,
-      packageName: packageData.name,
+      packageName: packageData.packageName || packageData.name,
+      packageType: packageType || packageData.packageType || 'bundle',
+      isRecurring: isRecurring || packageData.isRecurring || false,
       totalSessions,
       completedSessions: 0,
-      totalAmount: packageData.totalPrice,
+      totalAmount: packageData.packagePrice || packageData.totalPrice,
       paymentMethod,
       transactionId,
       status: 'active',
       isPackage: true,
       sessions: [],
+      timeSlots: timeSlots || [], // ✅ NEW: Store general schedule slots for subscription packages
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
@@ -303,6 +309,11 @@ app.post('/bookings/package/create', async (c) => {
     for (let i = 0; i < totalSessions; i++) {
       const sessionBookingId = `session_${Date.now()}_${i}_${Math.random().toString(36).substr(2, 9)}`;
       
+      // ✅ FIX: Get time slot for subscription packages
+      const timeSlot = timeSlots && timeSlots[i] ? timeSlots[i] : null;
+      const scheduledDate = scheduledDates && scheduledDates[i] ? scheduledDates[i] : null;
+      
+      // ✅ FIX: For subscription packages with general schedule, store time slot info
       const sessionBooking = {
         id: sessionBookingId,
         customerPhone,
@@ -312,9 +323,17 @@ app.post('/bookings/package/create', async (c) => {
         packageBookingId,
         sessionNumber: i + 1,
         totalSessions,
-        scheduledDate: scheduledDates && scheduledDates[i] ? scheduledDates[i] : null,
-        status: i === 0 ? 'scheduled' : 'pending_schedule',
+        scheduledDate,
+        timeSlot: timeSlot?.timeSlot || null, // ✅ NEW: General schedule slot (morning/afternoon/evening)
+        timeSlotWindow: timeSlot?.timeSlot 
+          ? (timeSlot.timeSlot === 'morning' ? '08:00-12:00' 
+             : timeSlot.timeSlot === 'afternoon' ? '12:00-16:00' 
+             : timeSlot.timeSlot === 'evening' ? '16:00-20:00' 
+             : null)
+          : null, // ✅ NEW: Time window for the slot
+        status: i === 0 && scheduledDate ? 'scheduled' : 'pending_schedule',
         isPackageSession: true,
+        isSubscription: isRecurring || packageType === 'subscription',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };

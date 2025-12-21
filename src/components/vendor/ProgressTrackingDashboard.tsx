@@ -10,9 +10,11 @@ import {
   TrendingUp, Plus, Eye, Calendar, User, Award, Target,
   Camera, FileText, BarChart3, CheckCircle, AlertCircle,
   Clock, Heart, Activity, Weight, Ruler, Brain, Bone,
-  Search, Filter, Download, Upload, Video, Image as ImageIcon
+  Search, Filter, Download, Upload, Video, Image as ImageIcon,
+  Edit, Trash2
 } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { toast } from 'sonner@2.0.3';
 
 interface ProgressTracker {
   id: string;
@@ -100,6 +102,14 @@ export function ProgressTrackingDashboard({ vendorId, roleType }: { vendorId: st
   const [showAddMilestoneModal, setShowAddMilestoneModal] = useState(false);
   const [showAddMeasurementModal, setShowAddMeasurementModal] = useState(false);
   const [showMediaUploadModal, setShowMediaUploadModal] = useState(false);
+  const [showEditNoteModal, setShowEditNoteModal] = useState(false);
+  const [showEditMilestoneModal, setShowEditMilestoneModal] = useState(false);
+  const [showEditMeasurementModal, setShowEditMeasurementModal] = useState(false);
+  
+  // Editing states
+  const [editingNote, setEditingNote] = useState<ProgressNote | null>(null);
+  const [editingMilestone, setEditingMilestone] = useState<Milestone | null>(null);
+  const [editingMeasurement, setEditingMeasurement] = useState<Measurement | null>(null);
   
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -151,10 +161,18 @@ export function ProgressTrackingDashboard({ vendorId, roleType }: { vendorId: st
 
       if (response.ok) {
         const data = await response.json();
-        setTrackers(data.trackers || []);
+        // ✅ FIX: Handle standardized response format
+        // Response format: { success: true, trackers: [...], total: ... }
+        setTrackers(data.trackers || data.data?.trackers || []);
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('Failed to load trackers:', errorData);
+        // Don't show error toast on initial load - just log
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading trackers:', error);
+      const errorMessage = error?.message || 'Failed to load trackers. Please try again.';
+      // Don't show error toast on initial load - just log
     } finally {
       setLoading(false);
     }
@@ -203,7 +221,8 @@ export function ProgressTrackingDashboard({ vendorId, roleType }: { vendorId: st
       );
 
       if (response.ok) {
-        await loadTrackers();
+        toast.success('Progress note added successfully');
+        await loadTrackers(); // ✅ Ensure trackers reload
         setShowAddNoteModal(false);
         setNewNote({
           title: '',
@@ -214,11 +233,15 @@ export function ProgressTrackingDashboard({ vendorId, roleType }: { vendorId: st
           nextSteps: '',
           rating: 3
         });
-        alert('✅ Progress note added successfully!');
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to add progress note';
+        toast.error(errorMessage);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error adding note:', error);
-      alert('Failed to add progress note');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 
@@ -242,12 +265,18 @@ export function ProgressTrackingDashboard({ vendorId, roleType }: { vendorId: st
       );
 
       if (response.ok) {
-        await loadTrackers();
+        toast.success('Milestone added successfully');
+        await loadTrackers(); // ✅ Ensure trackers reload
         setShowAddMilestoneModal(false);
-        alert('✅ Milestone added successfully!');
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to add milestone';
+        toast.error(errorMessage);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error adding milestone:', error);
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 
@@ -271,12 +300,288 @@ export function ProgressTrackingDashboard({ vendorId, roleType }: { vendorId: st
       );
 
       if (response.ok) {
-        await loadTrackers();
+        toast.success('Measurement recorded successfully');
+        await loadTrackers(); // ✅ Ensure trackers reload
         setShowAddMeasurementModal(false);
-        alert('✅ Measurement recorded successfully!');
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to record measurement';
+        toast.error(errorMessage);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error adding measurement:', error);
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
+    }
+  };
+
+  // ✅ LIFECYCLE FIX: Add UPDATE functionality for notes
+  const updateNote = async () => {
+    if (!selectedTracker || !editingNote) return;
+
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/progress-trackers/${selectedTracker.id}/notes/${editingNote.id}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(newNote)
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success || data.tracker) {
+          toast.success('Progress note updated successfully');
+          await loadTrackers(); // ✅ Ensure trackers reload
+          setShowEditNoteModal(false);
+          setEditingNote(null);
+          setNewNote({
+            title: '',
+            observations: '',
+            improvements: [],
+            challenges: [],
+            recommendations: '',
+            nextSteps: '',
+            rating: 3
+          });
+        } else {
+          const errorMessage = data.error || data.message || 'Failed to update progress note';
+          toast.error(errorMessage);
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to update progress note';
+        toast.error(errorMessage);
+      }
+    } catch (error: any) {
+      console.error('Error updating note:', error);
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
+    }
+  };
+
+  // ✅ LIFECYCLE FIX: Add DELETE functionality for notes
+  const deleteNote = async (noteId: string) => {
+    if (!selectedTracker) return;
+
+    const note = selectedTracker.notes.find(n => n.id === noteId);
+    const noteTitle = note?.title || 'this note';
+    
+    if (!confirm(`Are you sure you want to delete "${noteTitle}"? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/progress-trackers/${selectedTracker.id}/notes/${noteId}`,
+        {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`
+          }
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success || data.tracker) {
+          toast.success(`Note "${noteTitle}" deleted successfully`);
+          await loadTrackers(); // ✅ Ensure trackers reload
+        } else {
+          const errorMessage = data.error || data.message || 'Failed to delete progress note';
+          toast.error(errorMessage);
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to delete progress note';
+        toast.error(errorMessage);
+      }
+    } catch (error: any) {
+      console.error('Error deleting note:', error);
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
+    }
+  };
+
+  // ✅ LIFECYCLE FIX: Add UPDATE functionality for milestones
+  const updateMilestone = async () => {
+    if (!selectedTracker || !editingMilestone) return;
+
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/progress-trackers/${selectedTracker.id}/milestones/${editingMilestone.id}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(newMilestone)
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success || data.tracker) {
+          toast.success('Milestone updated successfully');
+          await loadTrackers(); // ✅ Ensure trackers reload
+          setShowEditMilestoneModal(false);
+          setEditingMilestone(null);
+          setNewMilestone({
+            title: '',
+            description: '',
+            targetDate: '',
+            category: ''
+          });
+        } else {
+          const errorMessage = data.error || data.message || 'Failed to update milestone';
+          toast.error(errorMessage);
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to update milestone';
+        toast.error(errorMessage);
+      }
+    } catch (error: any) {
+      console.error('Error updating milestone:', error);
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
+    }
+  };
+
+  // ✅ LIFECYCLE FIX: Add DELETE functionality for milestones
+  const deleteMilestone = async (milestoneId: string) => {
+    if (!selectedTracker) return;
+
+    const milestone = selectedTracker.milestones.find(m => m.id === milestoneId);
+    const milestoneTitle = milestone?.title || 'this milestone';
+    
+    if (!confirm(`Are you sure you want to delete "${milestoneTitle}"? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/progress-trackers/${selectedTracker.id}/milestones/${milestoneId}`,
+        {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`
+          }
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success || data.tracker) {
+          toast.success(`Milestone "${milestoneTitle}" deleted successfully`);
+          await loadTrackers(); // ✅ Ensure trackers reload
+        } else {
+          const errorMessage = data.error || data.message || 'Failed to delete milestone';
+          toast.error(errorMessage);
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to delete milestone';
+        toast.error(errorMessage);
+      }
+    } catch (error: any) {
+      console.error('Error deleting milestone:', error);
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
+    }
+  };
+
+  // ✅ LIFECYCLE FIX: Add UPDATE functionality for measurements
+  const updateMeasurement = async () => {
+    if (!selectedTracker || !editingMeasurement) return;
+
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/progress-trackers/${selectedTracker.id}/measurements/${editingMeasurement.id}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(newMeasurement)
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success || data.tracker) {
+          toast.success('Measurement updated successfully');
+          await loadTrackers(); // ✅ Ensure trackers reload
+          setShowEditMeasurementModal(false);
+          setEditingMeasurement(null);
+          setNewMeasurement({
+            type: 'weight',
+            value: 0,
+            unit: 'kg',
+            notes: ''
+          });
+        } else {
+          const errorMessage = data.error || data.message || 'Failed to update measurement';
+          toast.error(errorMessage);
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to update measurement';
+        toast.error(errorMessage);
+      }
+    } catch (error: any) {
+      console.error('Error updating measurement:', error);
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
+    }
+  };
+
+  // ✅ LIFECYCLE FIX: Add DELETE functionality for measurements
+  const deleteMeasurement = async (measurementId: string) => {
+    if (!selectedTracker) return;
+
+    const measurement = selectedTracker.measurements.find(m => m.id === measurementId);
+    const measurementType = measurement?.type || 'this measurement';
+    
+    if (!confirm(`Are you sure you want to delete this ${measurementType} measurement? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/progress-trackers/${selectedTracker.id}/measurements/${measurementId}`,
+        {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`
+          }
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success || data.tracker) {
+          toast.success('Measurement deleted successfully');
+          await loadTrackers(); // ✅ Ensure trackers reload
+        } else {
+          const errorMessage = data.error || data.message || 'Failed to delete measurement';
+          toast.error(errorMessage);
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to delete measurement';
+        toast.error(errorMessage);
+      }
+    } catch (error: any) {
+      console.error('Error deleting measurement:', error);
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 
@@ -601,28 +906,55 @@ export function ProgressTrackingDashboard({ vendorId, roleType }: { vendorId: st
                             )}
                           </div>
                         </div>
-                        <Badge
-                          variant="outline"
-                          className={
-                            milestone.status === 'completed'
-                              ? 'bg-green-50 text-green-700'
-                              : milestone.status === 'in_progress'
-                              ? 'bg-blue-50 text-blue-700'
-                              : milestone.status === 'missed'
-                              ? 'bg-red-50 text-red-700'
-                              : 'bg-gray-50 text-gray-700'
-                          }
-                        >
-                          {milestone.status.replace('_', ' ')}
-                        </Badge>
+                        <div className="flex items-center gap-2">
+                          <Badge
+                            variant="outline"
+                            className={
+                              milestone.status === 'completed'
+                                ? 'bg-green-50 text-green-700'
+                                : milestone.status === 'in_progress'
+                                ? 'bg-blue-50 text-blue-700'
+                                : milestone.status === 'missed'
+                                ? 'bg-red-50 text-red-700'
+                                : 'bg-gray-50 text-gray-700'
+                            }
+                          >
+                            {milestone.status.replace('_', ' ')}
+                          </Badge>
+                          {/* ✅ LIFECYCLE FIX: Add Edit/Delete buttons */}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setEditingMilestone(milestone);
+                              setNewMilestone({
+                                title: milestone.title,
+                                description: milestone.description,
+                                targetDate: milestone.targetDate,
+                                category: milestone.category
+                              });
+                              setShowEditMilestoneModal(true);
+                            }}
+                          >
+                            <Edit className="w-3 h-3" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => deleteMilestone(milestone.id)}
+                            className="border-red-300 text-red-700 hover:bg-red-50"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+                        </div>
                       </div>
                     </Card>
                   ))}
                 </div>
               </div>
 
-              {/* Measurements Chart Placeholder */}
-              <Card className="p-4">
+              {/* Measurements */}
+              <div>
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="font-semibold text-lg">Measurements</h3>
                   <Button
@@ -634,13 +966,69 @@ export function ProgressTrackingDashboard({ vendorId, roleType }: { vendorId: st
                     Record Measurement
                   </Button>
                 </div>
-                <div className="h-48 bg-gray-100 rounded-lg flex items-center justify-center">
-                  <div className="text-center text-gray-500">
-                    <BarChart3 className="w-12 h-12 mx-auto mb-2" />
-                    <div>Measurement chart visualization</div>
-                  </div>
+                <div className="space-y-3">
+                  {selectedTracker.measurements.length > 0 ? (
+                    selectedTracker.measurements.map((measurement) => (
+                      <Card key={measurement.id} className="p-4">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-2">
+                              {measurement.type === 'weight' && <Weight className="w-5 h-5 text-blue-600" />}
+                              {measurement.type === 'height' && <Ruler className="w-5 h-5 text-green-600" />}
+                              {measurement.type === 'chest' && <Activity className="w-5 h-5 text-purple-600" />}
+                              {measurement.type === 'waist' && <Ruler className="w-5 h-5 text-orange-600" />}
+                              <span className="font-semibold capitalize">{measurement.type.replace('_', ' ')}</span>
+                            </div>
+                            <div className="text-lg font-bold text-gray-900 mb-1">
+                              {measurement.value} {measurement.unit}
+                            </div>
+                            <div className="text-xs text-gray-600 mb-1">
+                              {new Date(measurement.date).toLocaleDateString()}
+                            </div>
+                            {measurement.notes && (
+                              <div className="text-sm text-gray-700">{measurement.notes}</div>
+                            )}
+                          </div>
+                          {/* ✅ LIFECYCLE FIX: Add Edit/Delete buttons */}
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setEditingMeasurement(measurement);
+                                setNewMeasurement({
+                                  type: measurement.type,
+                                  value: measurement.value,
+                                  unit: measurement.unit,
+                                  notes: measurement.notes || ''
+                                });
+                                setShowEditMeasurementModal(true);
+                              }}
+                            >
+                              <Edit className="w-3 h-3" />
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => deleteMeasurement(measurement.id)}
+                              className="border-red-300 text-red-700 hover:bg-red-50"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        </div>
+                      </Card>
+                    ))
+                  ) : (
+                    <Card className="p-8">
+                      <div className="text-center text-gray-500">
+                        <BarChart3 className="w-12 h-12 mx-auto mb-2" />
+                        <div>No measurements recorded yet</div>
+                      </div>
+                    </Card>
+                  )}
                 </div>
-              </Card>
+              </div>
 
               {/* Recent Notes */}
               <div>
@@ -659,17 +1047,51 @@ export function ProgressTrackingDashboard({ vendorId, roleType }: { vendorId: st
                   {selectedTracker.notes.slice(0, 3).map((note) => (
                     <Card key={note.id} className="p-4">
                       <div className="flex items-start justify-between mb-2">
-                        <div>
-                          <div className="font-semibold">Session {note.sessionNumber}: {note.title}</div>
-                          <div className="text-xs text-gray-600">{new Date(note.date).toLocaleDateString()}</div>
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between mb-1">
+                            <div>
+                              <div className="font-semibold">Session {note.sessionNumber}: {note.title}</div>
+                              <div className="text-xs text-gray-600">{new Date(note.date).toLocaleDateString()}</div>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              {Array.from({ length: 5 }).map((_, i) => (
+                                <Heart
+                                  key={i}
+                                  className={`w-4 h-4 ${i < note.rating ? 'fill-[#FF8C42] text-[#FF8C42]' : 'text-gray-300'}`}
+                                />
+                              ))}
+                            </div>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-1">
-                          {Array.from({ length: 5 }).map((_, i) => (
-                            <Heart
-                              key={i}
-                              className={`w-4 h-4 ${i < note.rating ? 'fill-[#FF8C42] text-[#FF8C42]' : 'text-gray-300'}`}
-                            />
-                          ))}
+                        {/* ✅ LIFECYCLE FIX: Add Edit/Delete buttons */}
+                        <div className="flex items-center gap-2 ml-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setEditingNote(note);
+                              setNewNote({
+                                title: note.title,
+                                observations: note.observations,
+                                improvements: note.improvements,
+                                challenges: note.challenges,
+                                recommendations: note.recommendations,
+                                nextSteps: note.nextSteps,
+                                rating: note.rating
+                              });
+                              setShowEditNoteModal(true);
+                            }}
+                          >
+                            <Edit className="w-3 h-3" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => deleteNote(note.id)}
+                            className="border-red-300 text-red-700 hover:bg-red-50"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
                         </div>
                       </div>
                       <div className="text-sm text-gray-700 mb-2">{note.observations}</div>
@@ -867,6 +1289,206 @@ export function ProgressTrackingDashboard({ vendorId, roleType }: { vendorId: st
                 Record
               </Button>
               <Button variant="outline" onClick={() => setShowAddMeasurementModal(false)} className="flex-1">
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ✅ LIFECYCLE FIX: Edit Note Modal */}
+      <Dialog open={showEditNoteModal} onOpenChange={setShowEditNoteModal}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Edit Progress Note</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Session Title *</Label>
+              <Input
+                value={newNote.title}
+                onChange={(e) => setNewNote({...newNote, title: e.target.value})}
+                placeholder="e.g., Basic obedience training"
+              />
+            </div>
+
+            <div>
+              <Label>Observations *</Label>
+              <Textarea
+                value={newNote.observations}
+                onChange={(e) => setNewNote({...newNote, observations: e.target.value})}
+                placeholder="Describe what happened during this session..."
+                rows={4}
+              />
+            </div>
+
+            <div>
+              <Label>Recommendations</Label>
+              <Textarea
+                value={newNote.recommendations}
+                onChange={(e) => setNewNote({...newNote, recommendations: e.target.value})}
+                placeholder="Recommendations for next session..."
+                rows={3}
+              />
+            </div>
+
+            <div>
+              <Label>Session Rating</Label>
+              <div className="flex gap-2 mt-2">
+                {[1, 2, 3, 4, 5].map((rating) => (
+                  <button
+                    key={rating}
+                    onClick={() => setNewNote({...newNote, rating})}
+                    className="p-2"
+                  >
+                    <Heart
+                      className={`w-6 h-6 ${rating <= newNote.rating ? 'fill-[#FF8C42] text-[#FF8C42]' : 'text-gray-300'}`}
+                    />
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <Button onClick={updateNote} className="flex-1 bg-[#FF8C42] hover:bg-[#ff7a2e]">
+                <Edit className="w-4 h-4 mr-2" />
+                Update Note
+              </Button>
+              <Button variant="outline" onClick={() => {
+                setShowEditNoteModal(false);
+                setEditingNote(null);
+                setNewNote({
+                  title: '',
+                  observations: '',
+                  improvements: [],
+                  challenges: [],
+                  recommendations: '',
+                  nextSteps: '',
+                  rating: 3
+                });
+              }} className="flex-1">
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ✅ LIFECYCLE FIX: Edit Milestone Modal */}
+      <Dialog open={showEditMilestoneModal} onOpenChange={setShowEditMilestoneModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Milestone</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Milestone Title *</Label>
+              <Input
+                value={newMilestone.title}
+                onChange={(e) => setNewMilestone({...newMilestone, title: e.target.value})}
+                placeholder="e.g., Master sit command"
+              />
+            </div>
+            <div>
+              <Label>Description</Label>
+              <Textarea
+                value={newMilestone.description}
+                onChange={(e) => setNewMilestone({...newMilestone, description: e.target.value})}
+                rows={3}
+              />
+            </div>
+            <div>
+              <Label>Target Date</Label>
+              <Input
+                type="date"
+                value={newMilestone.targetDate}
+                onChange={(e) => setNewMilestone({...newMilestone, targetDate: e.target.value})}
+              />
+            </div>
+            <div className="flex gap-3">
+              <Button onClick={updateMilestone} className="flex-1 bg-[#FF8C42] hover:bg-[#ff7a2e]">
+                <Edit className="w-4 h-4 mr-2" />
+                Update Milestone
+              </Button>
+              <Button variant="outline" onClick={() => {
+                setShowEditMilestoneModal(false);
+                setEditingMilestone(null);
+                setNewMilestone({
+                  title: '',
+                  description: '',
+                  targetDate: '',
+                  category: ''
+                });
+              }} className="flex-1">
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ✅ LIFECYCLE FIX: Edit Measurement Modal */}
+      <Dialog open={showEditMeasurementModal} onOpenChange={setShowEditMeasurementModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Measurement</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Measurement Type</Label>
+              <select
+                value={newMeasurement.type}
+                onChange={(e) => setNewMeasurement({...newMeasurement, type: e.target.value as any})}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2"
+              >
+                <option value="weight">Weight</option>
+                <option value="height">Height</option>
+                <option value="body_score">Body Condition Score</option>
+                <option value="behavior_score">Behavior Score</option>
+                <option value="skill_level">Skill Level</option>
+              </select>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Value *</Label>
+                <Input
+                  type="number"
+                  value={newMeasurement.value}
+                  onChange={(e) => setNewMeasurement({...newMeasurement, value: parseFloat(e.target.value)})}
+                />
+              </div>
+              <div>
+                <Label>Unit</Label>
+                <Input
+                  value={newMeasurement.unit}
+                  onChange={(e) => setNewMeasurement({...newMeasurement, unit: e.target.value})}
+                  placeholder="kg, cm, score..."
+                />
+              </div>
+            </div>
+            <div>
+              <Label>Notes</Label>
+              <Textarea
+                value={newMeasurement.notes}
+                onChange={(e) => setNewMeasurement({...newMeasurement, notes: e.target.value})}
+                rows={2}
+              />
+            </div>
+            <div className="flex gap-3">
+              <Button onClick={updateMeasurement} className="flex-1 bg-[#FF8C42] hover:bg-[#ff7a2e]">
+                <Edit className="w-4 h-4 mr-2" />
+                Update Measurement
+              </Button>
+              <Button variant="outline" onClick={() => {
+                setShowEditMeasurementModal(false);
+                setEditingMeasurement(null);
+                setNewMeasurement({
+                  type: 'weight',
+                  value: 0,
+                  unit: 'kg',
+                  notes: ''
+                });
+              }} className="flex-1">
                 Cancel
               </Button>
             </div>

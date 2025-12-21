@@ -968,5 +968,873 @@ export function backwardsCompatibleEndpoints(app: Hono, kv: any) {
     }
   });
 
-  console.log('✅ Backwards-compatible endpoints registered (extended)');
+  // ============================================
+  // GALLERY ENDPOINTS (BACKWARDS COMPATIBLE)
+  // ============================================
+
+  /**
+   * GET /groomer-gallery/:vendorId
+   * OLD PATH: Maps to /vendor/:vendorId/gallery
+   */
+  app.get(`${BASE_PATH}/groomer-gallery/:vendorId`, async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const galleryPhotoIds = await kv.get(`vendor:${vendorId}:gallery`) || [];
+      
+      const photos: any[] = [];
+      for (const photoId of galleryPhotoIds) {
+        const photo = await kv.get(`gallery:photo:${photoId}`);
+        if (photo) {
+          photos.push({
+            id: photo.id,
+            imageUrl: photo.afterPhoto || photo.beforePhoto || photo.imageUrl,
+            caption: photo.description,
+            category: photo.category || 'other',
+            isFeatured: photo.isPublic || false,
+            orderIndex: photos.length,
+            uploadedAt: photo.uploadedAt,
+            metadata: {
+              petName: photo.petName,
+              serviceType: photo.serviceName,
+              date: photo.uploadedAt
+            }
+          });
+        }
+      }
+      
+      return sendSuccess(c, { images: photos, total: photos.length });
+    } catch (error) {
+      console.error('Error fetching gallery:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  /**
+   * POST /groomer-gallery/:vendorId
+   * OLD PATH: Upload gallery image
+   */
+  app.post(`${BASE_PATH}/groomer-gallery/:vendorId`, async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const { image, caption, category, isFeatured } = await c.req.json();
+      
+      if (!image) {
+        return sendError(c, 'Image is required', 400);
+      }
+      
+      const photoId = `gallery_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
+      const galleryEntry = {
+        id: photoId,
+        vendorId,
+        imageUrl: image, // Base64 or URL
+        afterPhoto: image,
+        description: caption || '',
+        category: category || 'other',
+        tags: [],
+        isPublic: isFeatured || false,
+        uploadedAt: new Date().toISOString(),
+        likes: 0,
+        views: 0
+      };
+      
+      await kv.set(`gallery:photo:${photoId}`, galleryEntry);
+      
+      const vendorGallery = await kv.get(`vendor:${vendorId}:gallery`) || [];
+      vendorGallery.unshift(photoId);
+      await kv.set(`vendor:${vendorId}:gallery`, vendorGallery);
+      
+      if (isFeatured) {
+        const portfolio = await kv.get(`vendor:${vendorId}:portfolio`) || [];
+        if (!portfolio.includes(photoId)) {
+          portfolio.unshift(photoId);
+          await kv.set(`vendor:${vendorId}:portfolio`, portfolio);
+        }
+      }
+      
+      return sendSuccess(c, { image: galleryEntry }, 'Image uploaded successfully');
+    } catch (error) {
+      console.error('Error uploading gallery image:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  /**
+   * DELETE /groomer-gallery/:vendorId/:imageId
+   * OLD PATH: Delete gallery image
+   */
+  app.delete(`${BASE_PATH}/groomer-gallery/:vendorId/:imageId`, async (c) => {
+    try {
+      const { vendorId, imageId } = c.req.param();
+      
+      const photo = await kv.get(`gallery:photo:${imageId}`);
+      if (!photo || photo.vendorId !== vendorId) {
+        return sendError(c, 'Photo not found or unauthorized', 404);
+      }
+      
+      await kv.del(`gallery:photo:${imageId}`);
+      
+      const vendorGallery = await kv.get(`vendor:${vendorId}:gallery`) || [];
+      const filtered = vendorGallery.filter((id: string) => id !== imageId);
+      await kv.set(`vendor:${vendorId}:gallery`, filtered);
+      
+      const portfolio = await kv.get(`vendor:${vendorId}:portfolio`) || [];
+      const filteredPortfolio = portfolio.filter((id: string) => id !== imageId);
+      await kv.set(`vendor:${vendorId}:portfolio`, filteredPortfolio);
+      
+      return sendSuccess(c, {}, 'Image deleted successfully');
+    } catch (error) {
+      console.error('Error deleting gallery image:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  // ============================================
+  // PORTFOLIO ENDPOINTS (BACKWARDS COMPATIBLE)
+  // ============================================
+
+  /**
+   * GET /vendor/portfolio/:vendorId
+   * Standardized endpoint - already exists in portfolio-endpoints.tsx
+   * This is just for reference - the actual endpoint is registered separately
+   */
+
+  // ============================================
+  // CUSTOMER-FACING ENDPOINTS FOR DIAGNOSTIC TESTS
+  // ============================================
+
+  /**
+   * GET /customer/clinic/:vendorId/diagnostic-tests
+   * Get all active diagnostic tests for a clinic (customer-facing)
+   */
+  app.get(`${BASE_PATH}/customer/clinic/:vendorId/diagnostic-tests`, async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      
+      // Get vendor's diagnostic tests
+      const tests = await kv.get(`vendor:${vendorId}:diagnostic:tests`) || [];
+      
+      // Filter only active tests
+      const activeTests = tests.filter((t: any) => t.isActive !== false);
+      
+      return sendSuccess(c, { tests: activeTests, total: activeTests.length });
+    } catch (error) {
+      console.error('Error fetching diagnostic tests for customer:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  /**
+   * GET /customer/clinic/:vendorId/emergency-protocols
+   * Get all active emergency protocols for a clinic (customer-facing)
+   */
+  app.get(`${BASE_PATH}/customer/clinic/:vendorId/emergency-protocols`, async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      
+      // Get vendor's emergency protocols
+      const protocols = await kv.get(`vendor:${vendorId}:emergency:protocols`) || [];
+      
+      // Filter only active protocols
+      const activeProtocols = protocols.filter((p: any) => p.isActive !== false);
+      
+      return sendSuccess(c, { protocols: activeProtocols, total: activeProtocols.length });
+    } catch (error) {
+      console.error('Error fetching emergency protocols for customer:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  // ============================================
+  // CUSTOMER-FACING ENDPOINTS FOR GALLERY & PORTFOLIO
+  // ============================================
+
+  /**
+   * GET /customer/clinic/:vendorId/gallery
+   * Get vendor's public gallery photos (customer-facing)
+   */
+  app.get(`${BASE_PATH}/customer/clinic/:vendorId/gallery`, async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const limit = parseInt(c.req.query('limit') || '50');
+      const offset = parseInt(c.req.query('offset') || '0');
+      
+      // Get gallery photo IDs
+      const galleryPhotoIds = await kv.get(`vendor:${vendorId}:gallery`) || [];
+      
+      // Fetch photo details (only public photos for customers)
+      const photos: any[] = [];
+      for (const photoId of galleryPhotoIds) {
+        const photo = await kv.get(`gallery:photo:${photoId}`);
+        if (photo && photo.isPublic !== false) {
+          photos.push(photo);
+        }
+      }
+      
+      // Apply pagination
+      const totalCount = photos.length;
+      const paginatedPhotos = photos.slice(offset, offset + limit);
+      
+      return sendSuccess(c, {
+        photos: paginatedPhotos,
+        pagination: {
+          totalCount,
+          limit,
+          offset,
+          hasMore: offset + limit < totalCount
+        }
+      });
+    } catch (error) {
+      console.error('Error fetching gallery for customer:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  /**
+   * GET /customer/clinic/:vendorId/portfolio
+   * Get vendor's public portfolio items (customer-facing)
+   */
+  app.get(`${BASE_PATH}/customer/clinic/:vendorId/portfolio`, async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const limit = parseInt(c.req.query('limit') || '20');
+      const offset = parseInt(c.req.query('offset') || '0');
+      
+      // Get portfolio photo IDs
+      const portfolioPhotoIds = await kv.get(`vendor:${vendorId}:portfolio`) || [];
+      
+      // Fetch photo details (only public portfolio items)
+      const photos: any[] = [];
+      for (const photoId of portfolioPhotoIds) {
+        const photo = await kv.get(`gallery:photo:${photoId}`);
+        if (photo && photo.isPublic !== false) {
+          photos.push(photo);
+        }
+      }
+      
+      // Also check portfolio items from portfolio-endpoints
+      const portfolioItems = await kv.getByPrefix(`portfolio:${vendorId}:`);
+      const publicPortfolioItems = portfolioItems.filter((item: any) => item.isPublic !== false);
+      
+      // Combine gallery photos and portfolio items
+      const allItems = [
+        ...photos.map(p => ({ type: 'photo', ...p })),
+        ...publicPortfolioItems.map((item: any) => ({ type: 'portfolio', ...item }))
+      ];
+      
+      // Apply pagination
+      const totalCount = allItems.length;
+      const paginatedItems = allItems.slice(offset, offset + limit);
+      
+      return sendSuccess(c, {
+        items: paginatedItems,
+        portfolioCount: totalCount,
+        pagination: {
+          totalCount,
+          limit,
+          offset,
+          hasMore: offset + limit < totalCount
+        }
+      });
+    } catch (error) {
+      console.error('Error fetching portfolio for customer:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  // ============================================
+  // CUSTOMER-FACING ADOPTION ENDPOINTS
+  // ============================================
+
+  /**
+   * GET /customer/adoption/:vendorId/pets
+   * Get all available adoptable pets for a vendor (customer-facing)
+   */
+  app.get(`${BASE_PATH}/customer/adoption/:vendorId/pets`, async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const { status } = c.req.query(); // Optional: filter by status
+      
+      // Get all adoptable pets for this vendor
+      const allPets = await kv.getByPrefix(`adoption:pet:${vendorId}:`) || [];
+      
+      // Filter by status (default: only 'available')
+      let filteredPets = allPets;
+      if (status) {
+        filteredPets = allPets.filter((p: any) => p.status === status);
+      } else {
+        // Default: only show available pets to customers
+        filteredPets = allPets.filter((p: any) => p.status === 'available');
+      }
+      
+      // Sort by arrival date (newest first)
+      const sortedPets = filteredPets.sort((a: any, b: any) => 
+        new Date(b.arrivalDate || b.createdAt || 0).getTime() - 
+        new Date(a.arrivalDate || a.createdAt || 0).getTime()
+      );
+      
+      return sendSuccess(c, { pets: sortedPets, total: sortedPets.length });
+    } catch (error) {
+      console.error('Error fetching adoptable pets for customer:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  /**
+   * GET /customer/adoption/:vendorId/pets/:petId
+   * Get details of a specific adoptable pet (customer-facing)
+   */
+  app.get(`${BASE_PATH}/customer/adoption/:vendorId/pets/:petId`, async (c) => {
+    try {
+      const { vendorId, petId } = c.req.param();
+      
+      const pet = await kv.get(`adoption:pet:${vendorId}:${petId}`);
+      
+      if (!pet) {
+        return sendError(c, 'Pet not found', 404);
+      }
+      
+      // Only return if pet is available or explicitly requested
+      if (pet.status !== 'available' && c.req.query('includeAll') !== 'true') {
+        return sendError(c, 'Pet is not available for adoption', 404);
+      }
+      
+      return sendSuccess(c, { pet });
+    } catch (error) {
+      console.error('Error fetching pet details for customer:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  // ============================================
+  // CUSTOMER-FACING EVENT ENDPOINTS
+  // ============================================
+
+  /**
+   * GET /customer/events/:vendorId
+   * Get all published events for a vendor (customer-facing)
+   */
+  app.get(`${BASE_PATH}/customer/events/:vendorId`, async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const { upcoming, category } = c.req.query();
+      
+      // Get all events for this vendor
+      const allEvents = await kv.getByPrefix(`event:${vendorId}:`) || [];
+      
+      // Filter only published events
+      let filteredEvents = allEvents.filter((e: any) => e.status === 'published' || e.status === 'ongoing');
+      
+      // Filter by category if provided
+      if (category) {
+        filteredEvents = filteredEvents.filter((e: any) => e.category === category);
+      }
+      
+      // Filter upcoming events if requested
+      if (upcoming === 'true') {
+        const now = new Date();
+        filteredEvents = filteredEvents.filter((e: any) => {
+          const eventDate = new Date(e.eventDate);
+          return eventDate >= now && e.status !== 'completed' && e.status !== 'cancelled';
+        });
+      }
+      
+      // Sort by event date (upcoming first)
+      filteredEvents.sort((a: any, b: any) => 
+        new Date(a.eventDate).getTime() - new Date(b.eventDate).getTime()
+      );
+      
+      return sendSuccess(c, { events: filteredEvents, total: filteredEvents.length });
+    } catch (error) {
+      console.error('Error fetching events for customer:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  /**
+   * GET /customer/events/:vendorId/:eventId
+   * Get details of a specific event (customer-facing)
+   */
+  app.get(`${BASE_PATH}/customer/events/:vendorId/:eventId`, async (c) => {
+    try {
+      const { vendorId, eventId } = c.req.param();
+      
+      const event = await kv.get(`event:${vendorId}:${eventId}`);
+      
+      if (!event) {
+        return sendError(c, 'Event not found', 404);
+      }
+      
+      // Only return published/ongoing events to customers
+      if (event.status !== 'published' && event.status !== 'ongoing') {
+        return sendError(c, 'Event is not available', 404);
+      }
+      
+      return sendSuccess(c, { event });
+    } catch (error) {
+      console.error('Error fetching event details for customer:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  // ============================================
+  // CUSTOMER-FACING MEMORIAL SERVICES ENDPOINTS
+  // ============================================
+
+  /**
+   * GET /customer/memorial/:vendorId/services
+   * Get all available memorial services for a vendor (customer-facing)
+   */
+  app.get(`${BASE_PATH}/customer/memorial/:vendorId/services`, async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      
+      // Get all memorial services for this vendor
+      const allServices = await kv.getByPrefix(`memorial:service:${vendorId}:`) || [];
+      
+      // Filter only active/available services
+      const availableServices = allServices.filter((s: any) => 
+        s.status === 'scheduled' || s.status === 'in_progress' || s.status === 'completed'
+      );
+      
+      // Sort by creation date (newest first)
+      availableServices.sort((a: any, b: any) => 
+        new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+      );
+      
+      return sendSuccess(c, { services: availableServices, total: availableServices.length });
+    } catch (error) {
+      console.error('Error fetching memorial services for customer:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  /**
+   * GET /customer/memorial/:vendorId/products
+   * Get all available memorial products for a vendor (customer-facing)
+   */
+  app.get(`${BASE_PATH}/customer/memorial/:vendorId/products`, async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      
+      // Get all memorial products for this vendor
+      const allProducts = await kv.getByPrefix(`memorial:product:${vendorId}:`) || [];
+      
+      // Filter only in-stock products
+      const availableProducts = allProducts.filter((p: any) => p.inStock !== false);
+      
+      // Sort by creation date (newest first)
+      availableProducts.sort((a: any, b: any) => 
+        new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+      );
+      
+      return sendSuccess(c, { products: availableProducts, total: availableProducts.length });
+    } catch (error) {
+      console.error('Error fetching memorial products for customer:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  // ============================================
+  // CUSTOMER-FACING PROGRESS TRACKING ENDPOINTS
+  // ============================================
+
+  /**
+   * GET /customer/progress/:customerId/trackers
+   * Get all progress trackers for a customer's pets (customer-facing)
+   */
+  app.get(`${BASE_PATH}/customer/progress/:customerId/trackers`, async (c) => {
+    try {
+      const { customerId } = c.req.param();
+      const { petId, status } = c.req.query();
+      
+      // Get all progress trackers
+      const allTrackers = await kv.getByPrefix('progress:tracker:') || [];
+      
+      // Filter by customer
+      let customerTrackers = allTrackers.filter((t: any) => 
+        t.customerId === customerId || t.customerPhone === customerId
+      );
+      
+      // Filter by petId if provided
+      if (petId) {
+        customerTrackers = customerTrackers.filter((t: any) => t.petId === petId);
+      }
+      
+      // Filter by status if provided
+      if (status) {
+        customerTrackers = customerTrackers.filter((t: any) => t.status === status);
+      }
+      
+      // Sort by start date (newest first)
+      customerTrackers.sort((a: any, b: any) => 
+        new Date(b.startDate || 0).getTime() - new Date(a.startDate || 0).getTime()
+      );
+      
+      return sendSuccess(c, { trackers: customerTrackers, total: customerTrackers.length });
+    } catch (error) {
+      console.error('Error fetching progress trackers for customer:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  /**
+   * GET /customer/progress/:customerId/trackers/:trackerId
+   * Get details of a specific progress tracker (customer-facing)
+   */
+  app.get(`${BASE_PATH}/customer/progress/:customerId/trackers/:trackerId`, async (c) => {
+    try {
+      const { customerId, trackerId } = c.req.param();
+      
+      // Find tracker by ID
+      const allTrackers = await kv.getByPrefix('progress:tracker:') || [];
+      const tracker = allTrackers.find((t: any) => 
+        t.id === trackerId && (t.customerId === customerId || t.customerPhone === customerId)
+      );
+      
+      if (!tracker) {
+        return sendError(c, 'Progress tracker not found', 404);
+      }
+      
+      return sendSuccess(c, { tracker });
+    } catch (error) {
+      console.error('Error fetching progress tracker details for customer:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  // ============================================
+  // CUSTOMER-FACING MEAL PLANS ENDPOINTS
+  // ============================================
+
+  /**
+   * GET /customer/meals/:vendorId/products
+   * Get all available meal products for a vendor (customer-facing)
+   */
+  app.get(`${BASE_PATH}/customer/meals/:vendorId/products`, async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const { dietType, suitableFor, petType } = c.req.query();
+      
+      // Get all meal products for this vendor
+      const allProducts = await kv.get(`vendor:${vendorId}:meal-products`) || [];
+      
+      // Filter products
+      let filteredProducts = allProducts;
+      
+      // Filter by diet type if provided
+      if (dietType) {
+        filteredProducts = filteredProducts.filter((p: any) => p.dietType === dietType);
+      }
+      
+      // Filter by suitable for if provided
+      if (suitableFor) {
+        filteredProducts = filteredProducts.filter((p: any) => 
+          p.suitableFor && p.suitableFor.includes(suitableFor)
+        );
+      }
+      
+      // Filter by pet type if provided
+      if (petType) {
+        filteredProducts = filteredProducts.filter((p: any) => 
+          p.petTypes && p.petTypes.includes(petType)
+        );
+      }
+      
+      // Sort by creation date (newest first)
+      filteredProducts.sort((a: any, b: any) => 
+        new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+      );
+      
+      return sendSuccess(c, { products: filteredProducts, total: filteredProducts.length });
+    } catch (error) {
+      console.error('Error fetching meal products for customer:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  /**
+   * GET /customer/meals/:vendorId/products/:productId
+   * Get details of a specific meal product (customer-facing)
+   */
+  app.get(`${BASE_PATH}/customer/meals/:vendorId/products/:productId`, async (c) => {
+    try {
+      const { vendorId, productId } = c.req.param();
+      
+      // Get all meal products for this vendor
+      const allProducts = await kv.get(`vendor:${vendorId}:meal-products`) || [];
+      const product = allProducts.find((p: any) => p.id === productId);
+      
+      if (!product) {
+        return sendError(c, 'Meal product not found', 404);
+      }
+      
+      return sendSuccess(c, { product });
+    } catch (error) {
+      console.error('Error fetching meal product details for customer:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  // ============================================
+  // CUSTOMER-FACING DONATION ENDPOINTS
+  // ============================================
+
+  /**
+   * GET /customer/donations/:vendorId/campaigns
+   * Get all active donation campaigns for a vendor (customer-facing)
+   */
+  app.get(`${BASE_PATH}/customer/donations/:vendorId/campaigns`, async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      
+      // Get all campaigns for this vendor
+      const allCampaigns = await kv.getByPrefix(`donation:campaign:${vendorId}:`) || [];
+      
+      // Filter only active campaigns
+      const activeCampaigns = allCampaigns.filter((campaign: any) => 
+        campaign.status === 'active' || campaign.status === 'ongoing'
+      );
+      
+      // Sort by creation date (newest first)
+      activeCampaigns.sort((a: any, b: any) => 
+        new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+      );
+      
+      return sendSuccess(c, { campaigns: activeCampaigns, total: activeCampaigns.length });
+    } catch (error) {
+      console.error('Error fetching donation campaigns for customer:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  /**
+   * POST /customer/donations/:vendorId/contribute
+   * Customer contributes to a donation campaign
+   */
+  app.post(`${BASE_PATH}/customer/donations/:vendorId/contribute`, async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const { campaignId, customerId, customerName, customerPhone, amount, paymentMethod, transactionId, message } = await c.req.json();
+      
+      if (!campaignId || !amount || amount <= 0) {
+        return sendError(c, 'Campaign ID and valid amount are required', 400);
+      }
+      
+      // Get campaign
+      const campaign = await kv.get(`donation:campaign:${vendorId}:${campaignId}`);
+      if (!campaign) {
+        return sendError(c, 'Campaign not found', 404);
+      }
+      
+      if (campaign.status !== 'active' && campaign.status !== 'ongoing') {
+        return sendError(c, 'Campaign is not accepting donations', 400);
+      }
+      
+      // Create donation record
+      const donationId = `donation_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const donation = {
+        id: donationId,
+        vendorId,
+        campaignId,
+        customerId,
+        customerName,
+        customerPhone,
+        amount,
+        paymentMethod: paymentMethod || 'online',
+        transactionId,
+        message,
+        status: transactionId ? 'completed' : 'pending',
+        createdAt: new Date().toISOString()
+      };
+      
+      await kv.set(`donation:record:${vendorId}:${donationId}`, donation);
+      
+      // Update campaign total
+      const updatedCampaign = {
+        ...campaign,
+        totalRaised: (campaign.totalRaised || 0) + amount,
+        donationCount: (campaign.donationCount || 0) + 1,
+        updatedAt: new Date().toISOString()
+      };
+      await kv.set(`donation:campaign:${vendorId}:${campaignId}`, updatedCampaign);
+      
+      return sendSuccess(c, { donation }, 'Donation recorded successfully');
+    } catch (error) {
+      console.error('Error processing donation:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  // ============================================
+  // CUSTOMER-FACING COUNSELING ENDPOINTS
+  // ============================================
+
+  /**
+   * GET /customer/counseling/:vendorId/sessions
+   * Get available counseling sessions for a vendor (customer-facing)
+   */
+  app.get(`${BASE_PATH}/customer/counseling/:vendorId/sessions`, async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const { status } = c.req.query();
+      
+      // Get all counseling sessions for this vendor
+      const allSessions = await kv.getByPrefix(`counseling:session:${vendorId}:`) || [];
+      
+      // Filter by status if provided
+      let filteredSessions = allSessions;
+      if (status) {
+        filteredSessions = allSessions.filter((s: any) => s.status === status);
+      } else {
+        // Default: only show available sessions to customers
+        filteredSessions = allSessions.filter((s: any) => 
+          s.status === 'available' || s.status === 'scheduled'
+        );
+      }
+      
+      // Sort by date (upcoming first)
+      filteredSessions.sort((a: any, b: any) => 
+        new Date(a.scheduledDate || a.startDate || 0).getTime() - 
+        new Date(b.scheduledDate || b.startDate || 0).getTime()
+      );
+      
+      return sendSuccess(c, { sessions: filteredSessions, total: filteredSessions.length });
+    } catch (error) {
+      console.error('Error fetching counseling sessions for customer:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  /**
+   * POST /customer/counseling/:vendorId/book
+   * Customer books a counseling session
+   */
+  app.post(`${BASE_PATH}/customer/counseling/:vendorId/book`, async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const { sessionId, customerId, customerName, customerPhone, petId, petName, concerns, preferredDate, preferredTime } = await c.req.json();
+      
+      if (!customerId || !customerName || !customerPhone) {
+        return sendError(c, 'Customer information is required', 400);
+      }
+      
+      // If sessionId provided, book existing session
+      if (sessionId) {
+        const session = await kv.get(`counseling:session:${vendorId}:${sessionId}`);
+        if (!session) {
+          return sendError(c, 'Session not found', 404);
+        }
+        
+        if (session.status !== 'available') {
+          return sendError(c, 'Session is not available for booking', 400);
+        }
+        
+        // Update session
+        const updatedSession = {
+          ...session,
+          customerId,
+          customerName,
+          customerPhone,
+          petId,
+          petName,
+          concerns,
+          status: 'booked',
+          bookedAt: new Date().toISOString()
+        };
+        await kv.set(`counseling:session:${vendorId}:${sessionId}`, updatedSession);
+        
+        return sendSuccess(c, { session: updatedSession }, 'Session booked successfully');
+      } else {
+        // Create new session request
+        const newSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const newSession = {
+          id: newSessionId,
+          vendorId,
+          customerId,
+          customerName,
+          customerPhone,
+          petId,
+          petName,
+          concerns,
+          preferredDate,
+          preferredTime,
+          status: 'requested',
+          createdAt: new Date().toISOString()
+        };
+        
+        await kv.set(`counseling:session:${vendorId}:${newSessionId}`, newSession);
+        
+        return sendSuccess(c, { session: newSession }, 'Session request submitted successfully');
+      }
+    } catch (error) {
+      console.error('Error booking counseling session:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  // ============================================
+  // CUSTOMER-FACING DIET CHARTS ENDPOINTS
+  // ============================================
+
+  /**
+   * GET /customer/diet-charts/:customerId
+   * Get all diet charts for a customer's pets (customer-facing)
+   */
+  app.get(`${BASE_PATH}/customer/diet-charts/:customerId`, async (c) => {
+    try {
+      const { customerId } = c.req.param();
+      const { petId } = c.req.query();
+      
+      // Get all diet charts
+      const allCharts = await kv.getByPrefix('diet:chart:') || [];
+      
+      // Filter by customer
+      let customerCharts = allCharts.filter((chart: any) => 
+        chart.customerId === customerId || chart.customerPhone === customerId
+      );
+      
+      // Filter by petId if provided
+      if (petId) {
+        customerCharts = customerCharts.filter((chart: any) => chart.petId === petId);
+      }
+      
+      // Sort by creation date (newest first)
+      customerCharts.sort((a: any, b: any) => 
+        new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+      );
+      
+      return sendSuccess(c, { charts: customerCharts, total: customerCharts.length });
+    } catch (error) {
+      console.error('Error fetching diet charts for customer:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  /**
+   * GET /customer/diet-charts/:customerId/:chartId
+   * Get details of a specific diet chart (customer-facing)
+   */
+  app.get(`${BASE_PATH}/customer/diet-charts/:customerId/:chartId`, async (c) => {
+    try {
+      const { customerId, chartId } = c.req.param();
+      
+      // Find chart by ID
+      const allCharts = await kv.getByPrefix('diet:chart:') || [];
+      const chart = allCharts.find((c: any) => 
+        c.id === chartId && (c.customerId === customerId || c.customerPhone === customerId)
+      );
+      
+      if (!chart) {
+        return sendError(c, 'Diet chart not found', 404);
+      }
+      
+      return sendSuccess(c, { chart });
+    } catch (error) {
+      console.error('Error fetching diet chart details for customer:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  console.log('✅ Backwards-compatible endpoints registered (extended with customer-facing diagnostic/emergency/gallery/portfolio/adoption/events/memorial/progress/meals/donations/counseling/diet-charts)');
 }

@@ -34,9 +34,10 @@ interface CafeDetails {
 interface PetCafeListingZomatoStyleProps {
   cafeId: string;
   onBack: () => void;
+  onNavigate?: (screen: string, data?: any) => void;
 }
 
-export function PetCafeListingZomatoStyle({ cafeId, onBack }: PetCafeListingZomatoStyleProps) {
+export function PetCafeListingZomatoStyle({ cafeId, onBack, onNavigate }: PetCafeListingZomatoStyleProps) {
   const [cafe, setCafe] = useState<CafeDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');

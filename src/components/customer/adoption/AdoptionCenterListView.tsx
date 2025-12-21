@@ -27,10 +27,19 @@ export function AdoptionCenterListView({ phone, onBack, onNavigate }: AdoptionCe
       });
       if (response.ok) {
         const data = await response.json();
-        setCenters(data.vendors || []);
+        // ✅ FIX: Handle standardized response format
+        const centersList = data.vendors || data.data?.vendors || [];
+        setCenters(centersList);
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('Failed to load adoption centers:', errorData);
+        setCenters([]);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading adoption centers:', error);
+      const errorMessage = error?.message || 'Failed to load adoption centers';
+      // Don't show error toast - just log
+      setCenters([]);
     } finally {
       setLoading(false);
     }

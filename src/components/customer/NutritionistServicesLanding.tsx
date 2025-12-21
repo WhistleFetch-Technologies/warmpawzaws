@@ -113,7 +113,14 @@ export function NutritionistServicesLanding({ onBack, onNavigate, customerId, ph
                   }}
                   onBook={(vendorId) => {
                     console.log('Book nutritionist:', vendorId);
-                    // TODO: Navigate to consultation booking
+                    // Navigate to meal products catalog
+                    if (onNavigate) {
+                      const vendor = nutritionists.find(n => n.vendorId === vendorId || n.id === vendorId);
+                      onNavigate('meal-products', {
+                        vendorId: vendorId,
+                        vendorName: vendor?.businessName || vendor?.vendorName || 'Nutritionist'
+                      });
+                    }
                   }}
                 />
               ))}

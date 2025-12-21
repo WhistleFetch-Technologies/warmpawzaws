@@ -51,17 +51,29 @@ export function PackageList({
 
       if (response.ok) {
         const data = await response.json();
-        setPackages(data.packages || []);
+        // ✅ FIX: Handle standardized response format
+        // Response format: { success: true, packages: [...], total: ... }
+        setPackages(data.packages || data.data?.packages || []);
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('Failed to load packages:', errorData);
+        // Don't show error toast on initial load - just log
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading packages:', error);
+      // Don't show error toast on initial load - just log
     } finally {
       setLoading(false);
     }
   };
 
   const handleDelete = async (packageId: string) => {
-    if (!confirm('Are you sure you want to delete this package?')) return;
+    const pkg = packages.find(p => p.id === packageId);
+    const packageName = pkg?.packageName || 'this package';
+    
+    if (!confirm(`Are you sure you want to delete "${packageName}"? This action cannot be undone.`)) {
+      return;
+    }
 
     try {
       const response = await fetch(
@@ -73,15 +85,17 @@ export function PackageList({
       );
 
       if (response.ok) {
-        alert('✅ Package deleted successfully');
-        loadPackages();
+        toast.success(`Package "${packageName}" deleted successfully`);
+        await loadPackages(); // ✅ Ensure packages reload
       } else {
-        const error = await response.json();
-        alert(`Error: ${error.error}`);
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to delete package';
+        toast.error(errorMessage);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error deleting package:', error);
-      alert('Failed to delete package');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 

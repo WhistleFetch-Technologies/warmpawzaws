@@ -1248,6 +1248,36 @@ app.post("/make-server-3dd53475/booking/:bookingId/cancel", async (c) => {
     booking.cancelledBy = cancelledBy;
     booking.updatedAt = new Date().toISOString();
     
+    // ✅ FIX: Process refund automatically
+    try {
+      const refundResponse = await fetch(
+        `${Deno.env.get('SUPABASE_URL')}/functions/v1/make-server-3dd53475/bookings/${bookingId}/process-refund`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${Deno.env.get('SUPABASE_ANON_KEY')}`
+          },
+          body: JSON.stringify({
+            refundMethod: 'wallet', // Default to wallet
+            reason: reason || 'Booking cancelled'
+          })
+        }
+      );
+
+      if (refundResponse.ok) {
+        const refundData = await refundResponse.json();
+        booking.refundStatus = 'refunded';
+        booking.refundId = refundData.refund?.id;
+        booking.refundAmount = refundData.refund?.amount;
+      } else {
+        booking.refundStatus = 'pending';
+      }
+    } catch (refundError) {
+      console.error('Error processing refund:', refundError);
+      booking.refundStatus = 'pending'; // Will be retried
+    }
+    
     await kv.set(`booking:${bookingId}`, booking);
     
     // Update customer stats

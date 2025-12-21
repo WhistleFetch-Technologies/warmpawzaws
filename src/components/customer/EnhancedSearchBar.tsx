@@ -153,6 +153,7 @@ export function EnhancedSearchBar({
   const performSearch = async (searchQuery: string) => {
     setLoading(true);
     try {
+      // ✅ FIX: Use Elasticsearch endpoint for better search
       const params = new URLSearchParams({
         q: searchQuery,
         limit: '10'
@@ -167,19 +168,63 @@ export function EnhancedSearchBar({
         params.append('customerId', customerId);
       }
 
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/search/enhanced?${params}`,
+      // Try Elasticsearch first, fallback to enhanced search
+      let response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/search/elastic?${params}`,
         {
           headers: { 'Authorization': `Bearer ${publicAnonKey}` }
         }
       );
 
+      // If Elasticsearch fails, fallback to enhanced search
+      if (!response.ok) {
+        response = await fetch(
+          `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/search/enhanced?${params}`,
+          {
+            headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          }
+        );
+      }
+
       if (response.ok) {
         const data = await response.json();
-        setResults(data.data?.results || data.results || []);
+        // Handle both Elasticsearch and enhanced search response formats
+        const searchResults = data.data?.results || data.results || data.hits || [];
+        
+        // Transform Elasticsearch results to SearchResult format if needed
+        const transformedResults: SearchResult[] = searchResults.map((item: any) => {
+          if (item._source) {
+            // Elasticsearch format
+            const source = item._source;
+            return {
+              id: item._id || source.id,
+              type: source.type || 'vendor',
+              category: source.category,
+              data: source.data || source,
+              relevanceScore: item._score || 0,
+              distance: source.distance,
+              matchedFields: item.matched_fields || []
+            };
+          } else {
+            // Enhanced search format
+            return {
+              id: item.id,
+              type: item.type || 'vendor',
+              category: item.category,
+              data: item.data || item,
+              relevanceScore: item.relevanceScore || item.score || 0,
+              distance: item.distance,
+              matchedFields: item.matchedFields || []
+            };
+          }
+        });
+        
+        setResults(transformedResults);
       }
     } catch (error) {
       console.error('Error performing search:', error);
+      // Fallback to empty results on error
+      setResults([]);
     } finally {
       setLoading(false);
     }

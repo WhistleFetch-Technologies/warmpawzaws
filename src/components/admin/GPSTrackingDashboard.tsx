@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { trackingApi } from '../../utils/api/client';
+import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Badge } from '../ui/badge';
@@ -60,8 +61,63 @@ export function GPSTrackingDashboard() {
   const mapRef = useRef<any>(null);
   const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Mock Google Maps API key - replace with actual
-  const GOOGLE_MAPS_API_KEY = process.env.VITE_GOOGLE_MAPS_API_KEY || 'YOUR_GOOGLE_MAPS_API_KEY';
+  // Google Maps API key from platform settings (using existing pattern)
+  const [googleMapsApiKey, setGoogleMapsApiKey] = useState<string>(process.env.VITE_GOOGLE_MAPS_API_KEY || '');
+  const [mapsLoaded, setMapsLoaded] = useState(false);
+  
+  // ✅ FIX Bug 1: Load Google Maps API key from platform settings and load the script
+  useEffect(() => {
+    async function loadApiKey() {
+      try {
+        // Fetch from admin portal settings (existing pattern)
+        const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/integrations/settings`, {
+          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          const apiKey = data.settings?.googleMaps?.apiKey;
+          if (apiKey) {
+            setGoogleMapsApiKey(apiKey);
+          }
+        }
+      } catch (err) {
+        console.error('❌ Error loading Google Maps API key:', err);
+      }
+    }
+    if (!googleMapsApiKey) {
+      loadApiKey();
+    }
+  }, []);
+
+  // ✅ FIX Bug 1: Load Google Maps script when API key is available
+  useEffect(() => {
+    if (googleMapsApiKey && !mapsLoaded && typeof window !== 'undefined' && !window.google?.maps) {
+      const script = document.createElement('script');
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${googleMapsApiKey}&libraries=places,geometry`;
+      script.async = true;
+      script.defer = true;
+      script.onload = () => {
+        setMapsLoaded(true);
+        console.log('✅ Google Maps script loaded successfully');
+      };
+      script.onerror = () => {
+        console.error('❌ Failed to load Google Maps script');
+      };
+      document.head.appendChild(script);
+      
+      return () => {
+        // Cleanup: remove script if component unmounts
+        const existingScript = document.querySelector(`script[src*="maps.googleapis.com"]`);
+        if (existingScript) {
+          existingScript.remove();
+        }
+      };
+    } else if (window.google?.maps) {
+      // Maps already loaded
+      setMapsLoaded(true);
+    }
+  }, [googleMapsApiKey, mapsLoaded]);
 
   useEffect(() => {
     loadActiveSessions();

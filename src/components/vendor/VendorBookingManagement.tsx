@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Button } from '../ui/button';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { toast } from 'sonner@2.0.3';
 import { VendorChatModal } from './VendorChatModal';
 import { VendorTeleConsultationFlow } from './VendorTeleConsultationFlow';
 import { AppointmentDetailModal } from './AppointmentDetailModal';
@@ -141,8 +142,12 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
         console.log('📦 [VENDOR-UI] Raw booking data from API:', data);
         console.log('📊 [VENDOR-UI] Debug info:', data.debug);
         
+        // ✅ FIX: Handle standardized response format
+        // Response format: { success: true, bookings: [...], total: ... }
+        const bookingsList = data.bookings || data.data?.bookings || [];
+        
         // Map bookings to expected format
-        const mappedBookings = (data.bookings || []).map((booking: any) => ({
+        const mappedBookings = bookingsList.map((booking: any) => ({
           id: booking.id,
           time: booking.scheduledTime || booking.time || '10:00 AM',
           customerName: booking.customerName || 'Customer',
@@ -175,11 +180,15 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
         setBookings(mappedBookings);
         console.log(`✅ Loaded ${mappedBookings.length} bookings for vendor ${vendorId}`);
       } else {
-        console.error('Failed to load bookings:', response.statusText);
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('Failed to load bookings:', errorData);
+        // Don't show error toast on initial load - just log
         setBookings([]);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading bookings:', error);
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      // Don't show error toast on initial load - just log
       setBookings([]);
     } finally {
       setLoading(false);
@@ -187,7 +196,12 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
   };
 
   const handleCancelBooking = async (bookingId: string) => {
-    if (!confirm('Are you sure you want to cancel this booking?')) return;
+    const booking = bookings.find(b => b.id === bookingId);
+    const bookingName = booking ? `${booking.customerName}'s booking` : 'this booking';
+    
+    if (!confirm(`Are you sure you want to cancel ${bookingName}? This action cannot be undone.`)) {
+      return;
+    }
 
     try {
       const response = await fetch(
@@ -202,10 +216,17 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
       );
 
       if (response.ok) {
-        loadBookings(); // Reload bookings
+        toast.success('Booking cancelled successfully');
+        await loadBookings(); // ✅ Ensure bookings reload
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to cancel booking';
+        toast.error(errorMessage);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error cancelling booking:', error);
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 
@@ -231,15 +252,17 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
       );
 
       if (response.ok) {
-        alert('✅ Booking accepted!');
-        loadBookings();
+        toast.success('Booking accepted successfully');
+        await loadBookings(); // ✅ Ensure bookings reload
       } else {
-        const err = await response.json();
-        alert(`❌ Failed to accept: ${err.error}`);
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to accept booking';
+        toast.error(errorMessage);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error accepting booking:', error);
-      alert('❌ Error accepting booking');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     } finally {
       setCompletingBooking(false);
     }
@@ -299,14 +322,18 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
       
       if (response.ok) {
         setShowOTPModal(false);
-        alert('✅ Session started! Customer can now track your location.');
-        loadBookings(); // Reload bookings
+        toast.success('Session started! Customer can now track your location.');
+        await loadBookings(); // ✅ Ensure bookings reload
       } else {
-        setOtpError(data.error || 'Invalid OTP. Please try again.');
+        const errorMessage = data.error || data.message || 'Invalid OTP. Please try again.';
+        setOtpError(errorMessage);
+        toast.error(errorMessage);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error starting session:', error);
-      setOtpError('Error starting session. Please try again.');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      setOtpError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setCompletingBooking(false);
     }
@@ -336,14 +363,16 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
       const data = await response.json();
       
       if (response.ok) {
-        alert('✅ Session ended and booking completed!');
-        loadBookings(); // Reload bookings
+        toast.success('Session ended and booking completed successfully');
+        await loadBookings(); // ✅ Ensure bookings reload
       } else {
-        alert(`❌ Error: ${data.error || 'Failed to end session'}`);
+        const errorMessage = data.error || data.message || 'Failed to end session';
+        toast.error(errorMessage);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error ending session:', error);
-      alert('❌ Error ending session. Please try again.');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     } finally {
       setCompletingBooking(false);
     }
@@ -372,20 +401,22 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
       const data = await response.json();
       
       if (response.ok) {
-        alert('✅ Booking completed successfully!');
-        loadBookings(); // Reload bookings
+        toast.success('Booking completed successfully');
+        await loadBookings(); // ✅ Ensure bookings reload
       } else {
-        alert(`❌ Error: ${data.error || 'Failed to complete booking'}`);
+        const errorMessage = data.error || data.message || 'Failed to complete booking';
+        toast.error(errorMessage);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error completing booking:', error);
-      alert('❌ Error completing booking. Please try again.');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     } finally {
       setCompletingBooking(false);
     }
   };
   
-  // Complete booking with OTP verification
+  // ✅ MIGRATION: Complete booking with OTP verification using new lifecycle endpoint
   const handleOTPSubmit = async () => {
     if (!selectedBooking) return;
     
@@ -398,8 +429,11 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
       setCompletingBooking(true);
       setOtpError('');
       
+      const bookingId = selectedBooking.bookingId || selectedBooking.id;
+      
+      // ✅ NEW: Use complete lifecycle endpoint (OTP → Earnings → Settlement → Payout)
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/bookings/${selectedBooking.id}/complete`,
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/booking/${bookingId}/verify-otp-complete`,
         {
           method: 'POST',
           headers: {
@@ -407,24 +441,35 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            vendorId,
-            otp: otpInput
+            otp: otpInput,
+            action: 'end', // 'end' or 'complete' for completion OTP
+            vendorId
           })
         }
       );
       
       const data = await response.json();
       
-      if (response.ok) {
+      if (response.ok && data.success) {
         setShowOTPModal(false);
-        alert('✅ Booking completed successfully!');
-        loadBookings(); // Reload bookings
+        setOtpInput('');
+        
+        // Show success message with earnings info if available
+        const earningsInfo = data.earnings ? ` Earnings: ₹${data.earnings.vendorEarnings}` : '';
+        const settlementInfo = data.settlement ? ` Settlement: ${data.settlement.status}` : '';
+        toast.success(`Booking completed successfully!${earningsInfo}${settlementInfo}`);
+        
+        await loadBookings(); // ✅ Ensure bookings reload
       } else {
-        setOtpError(data.error || 'Invalid OTP. Please try again.');
+        const errorMessage = data.error || data.message || 'Invalid OTP. Please try again.';
+        setOtpError(errorMessage);
+        toast.error(errorMessage);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error completing booking:', error);
-      setOtpError('Error completing booking. Please try again.');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      setOtpError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setCompletingBooking(false);
     }
@@ -466,14 +511,21 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
         
         if (response.ok) {
           const data = await response.json();
-          const prescription = data.prescription;
-          alert(`📋 Prescription Details\n\nPet: ${booking.petName}\nCustomer: ${booking.customerName}\n\nNotes:\n${prescription.notes}\n\nUploaded: ${new Date(prescription.uploadedAt).toLocaleString()}`);
+          const prescription = data.prescription || data.data?.prescription;
+          if (prescription) {
+            toast.success(`Prescription Details\n\nPet: ${booking.petName}\nCustomer: ${booking.customerName}\n\nNotes: ${prescription.notes}\n\nUploaded: ${new Date(prescription.uploadedAt).toLocaleString()}`);
+          } else {
+            toast.error('Prescription data not found');
+          }
         } else {
-          alert('❌ Failed to load prescription');
+          const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+          const errorMessage = errorData.error || errorData.message || 'Failed to load prescription';
+          toast.error(errorMessage);
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error('❌ Error fetching prescription:', error);
-        alert('❌ Error loading prescription');
+        const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+        toast.error(errorMessage);
       }
     } else {
       // Upload new prescription
@@ -499,15 +551,17 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
         );
         
         if (response.ok) {
-          alert('✅ Prescription uploaded successfully!');
-          loadBookings(); // Reload to show prescription badge
+          toast.success('Prescription uploaded successfully');
+          await loadBookings(); // ✅ Ensure bookings reload to show prescription badge
         } else {
-          const data = await response.json();
-          alert('❌ Failed to upload prescription:\n' + (data.error || 'Unknown error'));
+          const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+          const errorMessage = errorData.error || errorData.message || 'Failed to upload prescription';
+          toast.error(errorMessage);
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error('❌ Error uploading prescription:', error);
-        alert('❌ Error uploading prescription');
+        const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+        toast.error(errorMessage);
       }
     }
   };
@@ -1227,6 +1281,7 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
           vendorName={vendorData?.fullName || vendorData?.businessName || 'Vendor'}
           customerPhone={chatBooking.phone}
           customerName={chatBooking.customerName}
+          petName={chatBooking.petName}
           onClose={() => {
             setShowChatModal(false);
             setChatBooking(null);

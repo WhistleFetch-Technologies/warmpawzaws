@@ -16,6 +16,7 @@ import {
   Settings
 } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { toast } from 'sonner@2.0.3';
 
 interface VendorScheduleManagementProps {
   vendorId: string;
@@ -273,19 +274,25 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
       if (res.ok) {
         const data = await res.json();
         console.log('📊 Save API response data:', data);
-        if (data.success) {
-          alert('✅ Schedule saved and published to customer app!');
+        // ✅ FIX: Handle standardized response format
+        if (data.success || data.data?.success) {
+          toast.success('Schedule saved and published to customer app');
           setHasPublishedSchedule(true);
           setIsEditMode(false);
+        } else {
+          const errorMessage = data.error || data.message || 'Failed to save schedule';
+          toast.error(errorMessage);
         }
       } else {
-        const errorText = await res.text();
-        console.error('❌ Save API error response:', errorText);
-        alert('❌ Failed to save schedule: ' + res.status);
+        const errorData = await res.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || `Failed to save schedule (${res.status})`;
+        console.error('❌ Save API error response:', errorMessage);
+        toast.error(errorMessage);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Error saving availability:', error);
-      alert('❌ Failed to save schedule: ' + error);
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     } finally {
       setSaving(false);
       console.log('✅ Save process completed');
@@ -299,19 +306,19 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
     console.log('🔍 Looking for day in availability...');
     
     if (!newTimeWindow.startTime || !newTimeWindow.endTime) {
-      alert('Please select both start and end times');
+      toast.error('Please select both start and end times');
       return;
     }
     
     if (newTimeWindow.startTime >= newTimeWindow.endTime) {
-      alert('End time must be after start time');
+      toast.error('End time must be after start time');
       return;
     }
 
     // Ensure availability is initialized
     if (!availability || availability.length === 0) {
       console.error('❌ Availability array is empty or null!');
-      alert('Error: Schedule data not loaded. Please refresh the page.');
+      toast.error('Schedule data not loaded. Please refresh the page.');
       return;
     }
 
@@ -324,7 +331,7 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
     if (!dayAvail) {
       console.error('❌ Day availability not found for:', selectedDay);
       console.error('Available days:', availability.map(a => a.dayOfWeek));
-      alert('Error: Day not found. Please try again.');
+      toast.error('Day not found. Please try again.');
       return;
     }
 
@@ -380,7 +387,7 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
     // Check if config already exists
     const exists = dayAvail.serviceConfigs.some(c => c.serviceStyle === serviceStyle);
     if (exists) {
-      alert('Configuration for this service style already exists. Remove it first to update.');
+      toast.error('Configuration for this service style already exists. Remove it first to update.');
       return;
     }
 
@@ -421,7 +428,7 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
       serviceConfigs: [...currentDay.serviceConfigs]
     })));
 
-    alert('✅ Schedule copied to all days!');
+    toast.success('Schedule copied to all days');
   };
 
   if (loading) {

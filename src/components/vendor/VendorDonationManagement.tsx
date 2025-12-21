@@ -92,11 +92,17 @@ export function VendorDonationManagement({ vendorId, vendorData, onBack }: Vendo
         }
       );
       const data = await response.json();
+      // ✅ FIX: Handle standardized response format
       if (data.success) {
-        setStats(data.stats);
+        setStats(data.stats || data.data?.stats);
+      } else {
+        const errorData = data.error || data.message || 'Unknown error';
+        console.error('Failed to load dashboard:', errorData);
+        // Don't show error toast on initial load - just log
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading dashboard:', error);
+      // Don't show error toast on initial load - just log
     }
   };
 
@@ -126,12 +132,19 @@ export function VendorDonationManagement({ vendorId, vendorData, onBack }: Vendo
         }
       );
       const data = await response.json();
+      // ✅ FIX: Handle standardized response format
+      // Response format: { success: true, donations: [...], stats: {...}, total: ... }
       if (data.success) {
-        setDonations(data.donations);
-        setStats(data.stats);
+        setDonations(data.donations || data.data?.donations || []);
+        setStats(data.stats || data.data?.stats);
+      } else {
+        const errorData = data.error || data.message || 'Unknown error';
+        console.error('Failed to load donations:', errorData);
+        // Don't show error toast on initial load - just log
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading donations:', error);
+      // Don't show error toast on initial load - just log
     }
   };
 
@@ -144,11 +157,18 @@ export function VendorDonationManagement({ vendorId, vendorData, onBack }: Vendo
         }
       );
       const data = await response.json();
+      // ✅ FIX: Handle standardized response format
+      // Response format: { success: true, donors: [...], total: ... }
       if (data.success) {
-        setDonors(data.donors);
+        setDonors(data.donors || data.data?.donors || []);
+      } else {
+        const errorData = data.error || data.message || 'Unknown error';
+        console.error('Failed to load donors:', errorData);
+        // Don't show error toast on initial load - just log
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading donors:', error);
+      // Don't show error toast on initial load - just log
     }
   };
 

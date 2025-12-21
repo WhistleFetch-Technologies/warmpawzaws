@@ -772,82 +772,447 @@ export const adoptionNeeds = [
 ];
 
 /**
+ * INSURANCE NEEDS
+ * Maps to Pet Insurance subcategories
+ */
+export const insuranceNeeds = [
+  {
+    id: 'health_insurance',
+    name: 'Health Insurance',
+    displayName: 'Health Coverage',
+    icon: '🏥',
+    color: '#10B981',
+    gradient: 'from-green-500 to-green-600',
+    description: 'Comprehensive health insurance for pets',
+    keywords: ['health', 'medical', 'coverage', 'insurance'],
+    mappedSubCategories: ['sub_insurance_health'],
+    serviceTypes: ['health_insurance'],
+    order: 1
+  },
+  {
+    id: 'accident_insurance',
+    name: 'Accident Coverage',
+    displayName: 'Accident Insurance',
+    icon: '🚨',
+    color: '#EF4444',
+    gradient: 'from-red-500 to-red-600',
+    description: 'Accident and emergency coverage',
+    keywords: ['accident', 'emergency', 'coverage'],
+    mappedSubCategories: ['sub_insurance_accident'],
+    serviceTypes: ['accident_insurance'],
+    order: 2
+  },
+  {
+    id: 'third_party_liability',
+    name: 'Third Party Liability',
+    displayName: 'Liability Coverage',
+    icon: '🛡️',
+    color: '#3B82F6',
+    gradient: 'from-blue-500 to-blue-600',
+    description: 'Third party liability insurance',
+    keywords: ['liability', 'third party', 'coverage'],
+    mappedSubCategories: ['sub_insurance_liability'],
+    serviceTypes: ['liability_insurance'],
+    order: 3
+  }
+];
+
+/**
+ * AMBULANCE & EMERGENCY NEEDS
+ * Maps to Ambulance Service subcategories
+ */
+export const ambulanceNeeds = [
+  {
+    id: 'emergency_transport',
+    name: 'Emergency Transport',
+    displayName: 'Emergency Transport',
+    icon: '🚑',
+    color: '#DC2626',
+    gradient: 'from-red-600 to-red-700',
+    description: 'Urgent pet transportation to clinic',
+    keywords: ['emergency', 'transport', 'urgent', 'ambulance'],
+    mappedSubCategories: ['sub_ambulance_emergency'],
+    serviceTypes: ['emergency_transport'],
+    order: 1
+  },
+  {
+    id: 'scheduled_transport',
+    name: 'Scheduled Transport',
+    displayName: 'Scheduled Pickup',
+    icon: '🚗',
+    color: '#F59E0B',
+    gradient: 'from-amber-500 to-amber-600',
+    description: 'Scheduled pet transportation',
+    keywords: ['scheduled', 'transport', 'pickup'],
+    mappedSubCategories: ['sub_ambulance_scheduled'],
+    serviceTypes: ['scheduled_transport'],
+    order: 2
+  }
+];
+
+/**
+ * DIAGNOSTICS NEEDS
+ * Maps to Diagnostics Lab subcategories
+ */
+export const diagnosticsNeeds = [
+  {
+    id: 'blood_tests',
+    name: 'Blood Tests',
+    displayName: 'Blood Work',
+    icon: '🩸',
+    color: '#EF4444',
+    gradient: 'from-red-500 to-red-600',
+    description: 'Complete blood count, biochemistry',
+    keywords: ['blood', 'cbc', 'biochemistry', 'lab'],
+    mappedSubCategories: ['sub_diagnostics_blood'],
+    serviceTypes: ['blood_test'],
+    order: 1
+  },
+  {
+    id: 'imaging',
+    name: 'Imaging',
+    displayName: 'X-Ray & Ultrasound',
+    icon: '📷',
+    color: '#3B82F6',
+    gradient: 'from-blue-500 to-blue-600',
+    description: 'X-ray, ultrasound, imaging services',
+    keywords: ['xray', 'ultrasound', 'imaging', 'scan'],
+    mappedSubCategories: ['sub_diagnostics_imaging'],
+    serviceTypes: ['imaging'],
+    order: 2
+  },
+  {
+    id: 'home_sample_collection',
+    name: 'Home Sample Collection',
+    displayName: 'Home Collection',
+    icon: '🏠',
+    color: '#10B981',
+    gradient: 'from-green-500 to-green-600',
+    description: 'Sample collection at your home',
+    keywords: ['home', 'sample', 'collection', 'pickup'],
+    mappedSubCategories: ['sub_diagnostics_home'],
+    serviceTypes: ['home_collection'],
+    order: 3
+  }
+];
+
+/**
+ * CAFE & DINING NEEDS
+ * Maps to Pet Cafe subcategories
+ */
+export const cafeNeeds = [
+  {
+    id: 'dine_in',
+    name: 'Dine In',
+    displayName: 'Dine In',
+    icon: '🍽️',
+    color: '#FF8C42',
+    gradient: 'from-orange-500 to-orange-600',
+    description: 'Dine in with your pet',
+    keywords: ['dine', 'restaurant', 'food', 'meal'],
+    mappedSubCategories: ['sub_cafe_dining'],
+    serviceTypes: ['dine_in'],
+    order: 1
+  },
+  {
+    id: 'table_booking',
+    name: 'Table Booking',
+    displayName: 'Reserve Table',
+    icon: '🪑',
+    color: '#3B82F6',
+    gradient: 'from-blue-500 to-blue-600',
+    description: 'Book a table for you and your pet',
+    keywords: ['table', 'booking', 'reservation'],
+    mappedSubCategories: ['sub_cafe_booking'],
+    serviceTypes: ['table_booking'],
+    order: 2
+  }
+];
+
+/**
+ * RESORT & HOLIDAY NEEDS
+ * Maps to Pet Resort/Holiday subcategories
+ */
+export const resortHolidayNeeds = [
+  {
+    id: 'resort_stay',
+    name: 'Resort Stay',
+    displayName: 'Resort Accommodation',
+    icon: '🏖️',
+    color: '#06B6D4',
+    gradient: 'from-cyan-500 to-cyan-600',
+    description: 'Luxury resort stay for pets',
+    keywords: ['resort', 'stay', 'accommodation', 'luxury'],
+    mappedSubCategories: ['sub_resort_stay'],
+    serviceTypes: ['resort_stay'],
+    order: 1
+  },
+  {
+    id: 'holiday_package',
+    name: 'Holiday Package',
+    displayName: 'Holiday Package',
+    icon: '✈️',
+    color: '#8B5CF6',
+    gradient: 'from-purple-500 to-purple-600',
+    description: 'Pet-friendly holiday packages',
+    keywords: ['holiday', 'package', 'tour', 'travel'],
+    mappedSubCategories: ['sub_holiday_package'],
+    serviceTypes: ['holiday_package'],
+    order: 2
+  }
+];
+
+/**
  * Helper function to get problem grid by vendor role
  */
 export function getProblemGridByRole(roleId: string): any[] {
+  // Normalize roleId (remove 'role_' prefix, lowercase)
+  const normalizedRoleId = roleId.replace(/^role_/, '').toLowerCase();
+  
   const roleMapping: Record<string, any[]> = {
     // ✅ VETERINARY - All variations
     'veterinarian': vetHealthProblems,
-    'role_veterinarian': vetHealthProblems,
     'vet_clinic': vetHealthProblems,
-    'role_vet_clinic': vetHealthProblems,
     'pet_clinic': vetHealthProblems,
-    'role_pet_clinic': vetHealthProblems,
+    'veterinary_clinic': vetHealthProblems,
     
     // ✅ GROOMING - All variations
     'groomer': groomingNeeds,
-    'role_groomer': groomingNeeds,
     'pet_groomer': groomingNeeds,
-    'role_pet_groomer': groomingNeeds,
     'grooming_center': groomingNeeds,
-    'role_grooming_center': groomingNeeds,
     
     // ✅ TRAINING - All variations
     'trainer': trainingGoals,
-    'role_trainer': trainingGoals,
     'pet_trainer': trainingGoals,
-    'role_pet_trainer': trainingGoals,
     'training_center': trainingGoals,
-    'role_training_center': trainingGoals,
     
     // ✅ WALKING - All variations
     'dog_walker': walkingNeeds,
-    'role_dog_walker': walkingNeeds,
     'pet_walker': walkingNeeds,
-    'role_pet_walker': walkingNeeds,
+    'walker': walkingNeeds,
     
     // ✅ BEHAVIORAL - All variations
     'behaviourist': behavioralIssues,
-    'role_behaviourist': behavioralIssues,
     'pet_behaviorist': behavioralIssues,
-    'role_pet_behaviorist': behavioralIssues,
     'behaviorist': behavioralIssues,
-    'role_behaviorist': behavioralIssues,
     
     // ✅ BOARDING - All variations
     'boarding': boardingNeeds,
-    'role_boarding': boardingNeeds,
     'pet_boarding': boardingNeeds,
-    'role_pet_boarding': boardingNeeds,
     'boarding_center': boardingNeeds,
-    'role_boarding_center': boardingNeeds,
+    'pet_sitter': boardingNeeds,
     
     // ✅ NUTRITION - All variations
     'nutritionist': nutritionNeeds,
-    'role_nutritionist': nutritionNeeds,
     'pet_nutritionist': nutritionNeeds,
-    'role_pet_nutritionist': nutritionNeeds,
     'nutrition_center': nutritionNeeds,
-    'role_nutrition_center': nutritionNeeds,
     
     // ✅ PHARMACY - All variations
     'pharmacist': pharmacyNeeds,
-    'role_pharmacist': pharmacyNeeds,
     'pet_pharmacist': pharmacyNeeds,
-    'role_pet_pharmacist': pharmacyNeeds,
     'pharmacy_center': pharmacyNeeds,
-    'role_pharmacy_center': pharmacyNeeds,
+    'pet_pharmacy': pharmacyNeeds,
     
     // ✅ ADOPTION - All variations
     'adoption_center': adoptionNeeds,
-    'role_adoption_center': adoptionNeeds,
     'pet_adoption_center': adoptionNeeds,
-    'role_pet_adoption_center': adoptionNeeds,
     'adoption_agency': adoptionNeeds,
-    'role_adoption_agency': adoptionNeeds,
+    'pet_shelter': adoptionNeeds,
+    
+    // ✅ INSURANCE - All variations (NEW)
+    'insurance': insuranceNeeds,
+    'pet_insurance': insuranceNeeds,
+    'insurance_provider': insuranceNeeds,
+    'insurance_agent': insuranceNeeds,
+    
+    // ✅ AMBULANCE - All variations (NEW)
+    'ambulance': ambulanceNeeds,
+    'pet_ambulance': ambulanceNeeds,
+    'ambulance_service': ambulanceNeeds,
+    
+    // ✅ DIAGNOSTICS - All variations (NEW)
+    'diagnostics': diagnosticsNeeds,
+    'diagnostic_lab': diagnosticsNeeds,
+    'diagnostics_lab': diagnosticsNeeds,
+    'lab': diagnosticsNeeds,
+    
+    // ✅ CAFE - All variations (NEW)
+    'cafe': cafeNeeds,
+    'pet_cafe': cafeNeeds,
+    'cafes': cafeNeeds,
+    
+    // ✅ RESORT - All variations (NEW)
+    'resort': resortHolidayNeeds,
+    'pet_resort': resortHolidayNeeds,
+    'boarding_resort': resortHolidayNeeds,
+    
+    // ✅ HOLIDAY - All variations (NEW)
+    'holiday': resortHolidayNeeds,
+    'pet_holiday': resortHolidayNeeds,
+    'pet_holiday_planner': resortHolidayNeeds,
+    'holiday_planner': resortHolidayNeeds,
+    
+    // ✅ PHOTOGRAPHY - Use general service (NEW)
+    'photography': [
+      {
+        id: 'pet_photography',
+        name: 'Pet Photography',
+        displayName: 'Pet Photography',
+        icon: '📸',
+        color: '#EC4899',
+        gradient: 'from-pink-500 to-pink-600',
+        description: 'Professional pet photography services',
+        keywords: ['photography', 'photo', 'portrait', 'session'],
+        mappedSubCategories: ['sub_photography'],
+        serviceTypes: ['photography'],
+        order: 1
+      }
+    ],
+    'pet_photographer': [
+      {
+        id: 'pet_photography',
+        name: 'Pet Photography',
+        displayName: 'Pet Photography',
+        icon: '📸',
+        color: '#EC4899',
+        gradient: 'from-pink-500 to-pink-600',
+        description: 'Professional pet photography services',
+        keywords: ['photography', 'photo', 'portrait', 'session'],
+        mappedSubCategories: ['sub_photography'],
+        serviceTypes: ['photography'],
+        order: 1
+      }
+    ],
+    
+    // ✅ RELOCATION - Use general service (NEW)
+    'relocation': [
+      {
+        id: 'pet_relocation',
+        name: 'Pet Relocation',
+        displayName: 'Pet Relocation',
+        icon: '🚚',
+        color: '#F59E0B',
+        gradient: 'from-amber-500 to-amber-600',
+        description: 'Pet relocation and transportation services',
+        keywords: ['relocation', 'transport', 'moving', 'travel'],
+        mappedSubCategories: ['sub_relocation'],
+        serviceTypes: ['relocation'],
+        order: 1
+      }
+    ],
+    'pet_relocation': [
+      {
+        id: 'pet_relocation',
+        name: 'Pet Relocation',
+        displayName: 'Pet Relocation',
+        icon: '🚚',
+        color: '#F59E0B',
+        gradient: 'from-amber-500 to-amber-600',
+        description: 'Pet relocation and transportation services',
+        keywords: ['relocation', 'transport', 'moving', 'travel'],
+        mappedSubCategories: ['sub_relocation'],
+        serviceTypes: ['relocation'],
+        order: 1
+      }
+    ],
+    
+    // ✅ BREEDER - Use general service (NEW)
+    'breeder': [
+      {
+        id: 'puppy_kitten',
+        name: 'Puppy/Kitten',
+        displayName: 'Puppy/Kitten',
+        icon: '🐶',
+        color: '#10B981',
+        gradient: 'from-green-500 to-green-600',
+        description: 'Find puppies and kittens from breeders',
+        keywords: ['puppy', 'kitten', 'breeder', 'breeding'],
+        mappedSubCategories: ['sub_breeder'],
+        serviceTypes: ['breeding'],
+        order: 1
+      }
+    ],
+    'pet_breeder': [
+      {
+        id: 'puppy_kitten',
+        name: 'Puppy/Kitten',
+        displayName: 'Puppy/Kitten',
+        icon: '🐶',
+        color: '#10B981',
+        gradient: 'from-green-500 to-green-600',
+        description: 'Find puppies and kittens from breeders',
+        keywords: ['puppy', 'kitten', 'breeder', 'breeding'],
+        mappedSubCategories: ['sub_breeder'],
+        serviceTypes: ['breeding'],
+        order: 1
+      }
+    ],
+    
+    // ✅ SUNSET SERVICES - Use general service (NEW)
+    'sunset': [
+      {
+        id: 'sunset_services',
+        name: 'Sunset Services',
+        displayName: 'End of Life Care',
+        icon: '🌅',
+        color: '#6366F1',
+        gradient: 'from-indigo-500 to-indigo-600',
+        description: 'Cremation, burial, and memorial services',
+        keywords: ['sunset', 'cremation', 'burial', 'memorial', 'funeral'],
+        mappedSubCategories: ['sub_sunset'],
+        serviceTypes: ['sunset_services'],
+        order: 1
+      }
+    ],
+    'pet_sunset': [
+      {
+        id: 'sunset_services',
+        name: 'Sunset Services',
+        displayName: 'End of Life Care',
+        icon: '🌅',
+        color: '#6366F1',
+        gradient: 'from-indigo-500 to-indigo-600',
+        description: 'Cremation, burial, and memorial services',
+        keywords: ['sunset', 'cremation', 'burial', 'memorial', 'funeral'],
+        mappedSubCategories: ['sub_sunset'],
+        serviceTypes: ['sunset_services'],
+        order: 1
+      }
+    ],
+    'pet_sunset_services': [
+      {
+        id: 'sunset_services',
+        name: 'Sunset Services',
+        displayName: 'End of Life Care',
+        icon: '🌅',
+        color: '#6366F1',
+        gradient: 'from-indigo-500 to-indigo-600',
+        description: 'Cremation, burial, and memorial services',
+        keywords: ['sunset', 'cremation', 'burial', 'memorial', 'funeral'],
+        mappedSubCategories: ['sub_sunset'],
+        serviceTypes: ['sunset_services'],
+        order: 1
+      }
+    ],
   };
   
-  return roleMapping[roleId] || [];
+  // Try exact match first
+  if (roleMapping[normalizedRoleId]) {
+    return roleMapping[normalizedRoleId];
+  }
+  
+  // Try with 'role_' prefix
+  if (roleMapping[roleId]) {
+    return roleMapping[roleId];
+  }
+  
+  // Try original roleId as-is
+  if (roleMapping[roleId.toLowerCase()]) {
+    return roleMapping[roleId.toLowerCase()];
+  }
+  
+  // Return empty array if no match (fallback handled by caller)
+  return [];
 }
 
 /**
@@ -863,7 +1228,13 @@ export function getAllProblemGrids() {
     boarding: boardingNeeds,
     nutrition: nutritionNeeds,
     pharmacy: pharmacyNeeds,
-    adoption: adoptionNeeds
+    adoption: adoptionNeeds,
+    insurance: insuranceNeeds,
+    ambulance: ambulanceNeeds,
+    diagnostics: diagnosticsNeeds,
+    cafe: cafeNeeds,
+    resort: resortHolidayNeeds,
+    holiday: resortHolidayNeeds
   };
 }
 

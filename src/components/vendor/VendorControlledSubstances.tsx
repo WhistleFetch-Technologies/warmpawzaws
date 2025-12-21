@@ -50,14 +50,23 @@ export function VendorControlledSubstances({ vendorId, vendorData, onBack }: Ven
 
       if (response.ok) {
         const data = await response.json();
-        setSubstances(data.substances || []);
-        setStats(data.stats || { total: 0, lowStock: 0, expiringSoon: 0 });
+        // ✅ FIX: Handle standardized response format
+        // Response format: { success: true, substances: [...], stats: {...}, total: ... }
+        setSubstances(data.substances || data.data?.substances || []);
+        setStats(data.stats || data.data?.stats || { total: 0, lowStock: 0, expiringSoon: 0 });
       } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('Failed to fetch controlled substances:', errorData);
+        toast.error(errorData.error || 'Failed to load controlled substances');
         setSubstances([]);
+        setStats({ total: 0, lowStock: 0, expiringSoon: 0 });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching controlled substances:', error);
+      const errorMessage = error?.message || 'Failed to load controlled substances. Please try again.';
+      toast.error(errorMessage);
       setSubstances([]);
+      setStats({ total: 0, lowStock: 0, expiringSoon: 0 });
     } finally {
       setLoading(false);
     }
@@ -82,6 +91,83 @@ export function VendorControlledSubstances({ vendorId, vendorData, onBack }: Ven
       'V': 'bg-green-100 text-green-700 border-green-300'
     };
     return colors[schedule as keyof typeof colors] || 'bg-gray-100 text-gray-700';
+  };
+
+  // ✅ LIFECYCLE FIX: Add delete substance handler
+  const handleDeleteSubstance = async (substanceId: string, substanceName: string) => {
+    if (!confirm(`Are you sure you want to delete "${substanceName}"? This action cannot be undone and will delete all transaction history.`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `${API_BASE}/vendor/controlled-substances/${vendorId}/${substanceId}`,
+        {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          toast.success(`Controlled substance "${substanceName}" deleted successfully`);
+          await fetchSubstances(); // ✅ Ensure substances reload
+        } else {
+          const errorMessage = data.error || data.message || 'Failed to delete substance';
+          toast.error(errorMessage);
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to delete substance';
+        toast.error(errorMessage);
+      }
+    } catch (error: any) {
+      console.error('Error deleting controlled substance:', error);
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
+    }
+  };
+
+  // ✅ LIFECYCLE FIX: Add update substance handler
+  const handleUpdateSubstance = async (substanceId: string, updates: any) => {
+    try {
+      const response = await fetch(
+        `${API_BASE}/vendor/controlled-substances/${vendorId}/${substanceId}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(updates)
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          toast.success('Controlled substance updated successfully');
+          await fetchSubstances(); // ✅ Ensure substances reload
+          setAddModalOpen(false);
+          setEditingSubstance(null);
+        } else {
+          const errorMessage = data.error || data.message || 'Failed to update substance';
+          toast.error(errorMessage);
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to update substance';
+        toast.error(errorMessage);
+      }
+    } catch (error: any) {
+      console.error('Error updating controlled substance:', error);
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
+    }
   };
 
   const filteredSubstances = substances.filter(s => {
@@ -276,8 +362,24 @@ export function VendorControlledSubstances({ vendorId, vendorData, onBack }: Ven
                       >
                         Record Transaction
                       </button>
-                      <button className="px-3 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm hover:bg-gray-200">
-                        History
+                      {/* ✅ LIFECYCLE FIX: Add Edit button */}
+                      <button
+                        onClick={() => {
+                          setEditingSubstance(substance);
+                          setAddModalOpen(true); // Reuse add modal for editing
+                        }}
+                        className="px-3 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm hover:bg-blue-100"
+                        title="Edit substance"
+                      >
+                        Edit
+                      </button>
+                      {/* ✅ LIFECYCLE FIX: Add Delete button */}
+                      <button
+                        onClick={() => handleDeleteSubstance(substance.id, substance.drugName)}
+                        className="px-3 py-2 bg-red-50 text-red-600 rounded-lg text-sm hover:bg-red-100"
+                        title="Delete substance"
+                      >
+                        Delete
                       </button>
                     </div>
                   </div>
@@ -287,26 +389,33 @@ export function VendorControlledSubstances({ vendorId, vendorData, onBack }: Ven
           )}
         </div>
 
-        {/* Add Modal */}
+        {/* Add/Edit Modal */}
         {addModalOpen && (
           <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
               <div className="sticky top-0 bg-white border-b border-gray-200 p-4">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-xl font-bold text-gray-900">Add Controlled Substance</h2>
-                  <button onClick={() => setAddModalOpen(false)}>
+                  <h2 className="text-xl font-bold text-gray-900">
+                    {editingSubstance ? 'Edit Controlled Substance' : 'Add Controlled Substance'}
+                  </h2>
+                  <button onClick={() => {
+                    setAddModalOpen(false);
+                    setEditingSubstance(null);
+                  }}>
                     <X className="w-6 h-6 text-gray-400" />
                   </button>
                 </div>
               </div>
 
-              <form className="p-4 space-y-4">
+              <form className="p-4 space-y-4" id="substance-form">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Drug Name *
                   </label>
                   <input
                     type="text"
+                    name="drugName"
+                    defaultValue={editingSubstance?.drugName || ''}
                     className="w-full border border-gray-300 rounded-lg p-2"
                     placeholder="e.g., Morphine Sulfate"
                     required
@@ -317,7 +426,12 @@ export function VendorControlledSubstances({ vendorId, vendorData, onBack }: Ven
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Schedule Class *
                   </label>
-                  <select className="w-full border border-gray-300 rounded-lg p-2" required>
+                  <select 
+                    name="scheduleClass"
+                    defaultValue={editingSubstance?.scheduleClass || ''}
+                    className="w-full border border-gray-300 rounded-lg p-2" 
+                    required
+                  >
                     <option value="">Select schedule...</option>
                     <option value="I">Schedule I - No medical use</option>
                     <option value="II">Schedule II - High abuse potential</option>
@@ -327,6 +441,19 @@ export function VendorControlledSubstances({ vendorId, vendorData, onBack }: Ven
                   </select>
                 </div>
 
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Generic Name
+                  </label>
+                  <input
+                    type="text"
+                    name="genericName"
+                    defaultValue={editingSubstance?.genericName || ''}
+                    className="w-full border border-gray-300 rounded-lg p-2"
+                    placeholder="e.g., Morphine"
+                  />
+                </div>
+
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -334,6 +461,8 @@ export function VendorControlledSubstances({ vendorId, vendorData, onBack }: Ven
                     </label>
                     <input
                       type="text"
+                      name="strength"
+                      defaultValue={editingSubstance?.strength || ''}
                       className="w-full border border-gray-300 rounded-lg p-2"
                       placeholder="e.g., 10"
                     />
@@ -342,7 +471,11 @@ export function VendorControlledSubstances({ vendorId, vendorData, onBack }: Ven
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Unit
                     </label>
-                    <select className="w-full border border-gray-300 rounded-lg p-2">
+                    <select 
+                      name="unit"
+                      defaultValue={editingSubstance?.unit || 'mg'}
+                      className="w-full border border-gray-300 rounded-lg p-2"
+                    >
                       <option value="mg">mg</option>
                       <option value="ml">ml</option>
                       <option value="tablets">tablets</option>
@@ -358,6 +491,8 @@ export function VendorControlledSubstances({ vendorId, vendorData, onBack }: Ven
                     </label>
                     <input
                       type="number"
+                      name="currentStock"
+                      defaultValue={editingSubstance?.currentStock || 0}
                       className="w-full border border-gray-300 rounded-lg p-2"
                       placeholder="0"
                     />
@@ -368,6 +503,8 @@ export function VendorControlledSubstances({ vendorId, vendorData, onBack }: Ven
                     </label>
                     <input
                       type="number"
+                      name="minStockLevel"
+                      defaultValue={editingSubstance?.minStockLevel || 10}
                       className="w-full border border-gray-300 rounded-lg p-2"
                       placeholder="10"
                     />
@@ -378,6 +515,8 @@ export function VendorControlledSubstances({ vendorId, vendorData, onBack }: Ven
                     </label>
                     <input
                       type="number"
+                      name="maxStockLevel"
+                      defaultValue={editingSubstance?.maxStockLevel || 100}
                       className="w-full border border-gray-300 rounded-lg p-2"
                       placeholder="100"
                     />
@@ -386,10 +525,51 @@ export function VendorControlledSubstances({ vendorId, vendorData, onBack }: Ven
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Manufacturer
+                  </label>
+                  <input
+                    type="text"
+                    name="manufacturer"
+                    defaultValue={editingSubstance?.manufacturer || ''}
+                    className="w-full border border-gray-300 rounded-lg p-2"
+                    placeholder="e.g., Pharma Corp"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Batch Number
+                  </label>
+                  <input
+                    type="text"
+                    name="batchNumber"
+                    defaultValue={editingSubstance?.batchNumber || ''}
+                    className="w-full border border-gray-300 rounded-lg p-2"
+                    placeholder="e.g., BATCH-2024-001"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Storage Location
+                  </label>
+                  <input
+                    type="text"
+                    name="storageLocation"
+                    defaultValue={editingSubstance?.storageLocation || ''}
+                    className="w-full border border-gray-300 rounded-lg p-2"
+                    placeholder="e.g., Locked Cabinet A"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
                     Expiry Date *
                   </label>
                   <input
                     type="date"
+                    name="expiryDate"
+                    defaultValue={editingSubstance?.expiryDate ? editingSubstance.expiryDate.split('T')[0] : ''}
                     className="w-full border border-gray-300 rounded-lg p-2"
                     required
                   />
@@ -417,13 +597,38 @@ export function VendorControlledSubstances({ vendorId, vendorData, onBack }: Ven
                     type="submit"
                     onClick={(e) => {
                       e.preventDefault();
-                      toast.success('Controlled substance added');
-                      setAddModalOpen(false);
-                      fetchSubstances();
+                      if (editingSubstance) {
+                        // ✅ LIFECYCLE FIX: Update existing substance
+                        // Extract form values (simplified - in production, extract all fields)
+                        const form = e.currentTarget.closest('form');
+                        if (form) {
+                          const formData = new FormData(form);
+                          const updates = {
+                            name: formData.get('drugName') || editingSubstance.drugName,
+                            genericName: formData.get('genericName') || editingSubstance.genericName,
+                            schedule: formData.get('scheduleClass') || editingSubstance.scheduleClass,
+                            strength: formData.get('strength') || editingSubstance.strength,
+                            unit: formData.get('unit') || editingSubstance.unit,
+                            currentStock: parseInt(formData.get('currentStock') as string) || editingSubstance.currentStock,
+                            minimumStock: parseInt(formData.get('minStockLevel') as string) || editingSubstance.minStockLevel,
+                            maximumStock: parseInt(formData.get('maxStockLevel') as string) || editingSubstance.maxStockLevel,
+                            location: formData.get('storageLocation') || editingSubstance.storageLocation,
+                            expiryDate: formData.get('expiryDate') || editingSubstance.expiryDate,
+                            batchNumber: formData.get('batchNumber') || editingSubstance.batchNumber,
+                            supplier: formData.get('manufacturer') || editingSubstance.manufacturer
+                          };
+                          handleUpdateSubstance(editingSubstance.id, updates);
+                        }
+                      } else {
+                        // Add new substance (existing logic - needs backend integration)
+                        toast.success('Controlled substance added');
+                        setAddModalOpen(false);
+                        fetchSubstances();
+                      }
                     }}
                     className="flex-1 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600"
                   >
-                    Add Substance
+                    {editingSubstance ? 'Update Substance' : 'Add Substance'}
                   </button>
                 </div>
               </form>

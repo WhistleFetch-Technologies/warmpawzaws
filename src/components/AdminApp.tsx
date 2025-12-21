@@ -3,7 +3,6 @@ import { AdminDashboard } from './admin/AdminDashboard';
 import { AdminAuth } from './admin/AdminAuth';
 import { AdminVendorManagement } from './admin/AdminVendorManagement';
 import { CatalogServicesManagement } from './admin/CatalogServicesManagement';
-import { PaymentRefundManagement } from './admin/PaymentRefundManagement';
 import { ECommerceManagement } from './admin/ecommerce/ECommerceManagement';
 import { SupportCRM } from './admin/SupportCRM';
 import { RegionManager } from './admin/RegionManager';
@@ -12,6 +11,7 @@ import { FinanceManagement } from './admin/finance/FinanceManagement';
 import { PetInformationDashboard } from './admin/pets/PetInformationDashboard';
 import { RBACDashboard } from './admin/rbac/RBACDashboard';
 import { ReportsDashboard } from './admin/reports/ReportsDashboard';
+import { AdminAnalyticsDashboard } from './admin/analytics/AdminAnalyticsDashboard';
 import { AdminOperationsDashboard } from './admin/operations/AdminOperationsDashboard';
 import { supabase } from '../utils/supabase/client';
 
@@ -44,7 +44,6 @@ export function AdminApp() {
       'vendor-admin': 'vendor-management',
       'ecommerce': 'ecommerce',
       'catalog': 'catalog',
-      'payment-refund': 'payment-refund',
       'seed-panel': 'seed-panel',
       'database-seeding': 'database-seeding',
       'vendor-migration': 'vendor-migration',
@@ -95,9 +94,6 @@ export function AdminApp() {
     return <CatalogServicesManagement onNavigate={handleNavigation} />;
   }
 
-  if (currentView === 'payment-refund') {
-    return <PaymentRefundManagement onNavigate={handleNavigation} />;
-  }
 
   if (currentView === 'ecommerce') {
     return <ECommerceManagement onBack={() => setCurrentView('vendor-management')} />;
@@ -120,7 +116,7 @@ export function AdminApp() {
   }
 
   if (currentView === 'finance') {
-    return <FinanceManagement onBack={() => setCurrentView('vendor-management')} />;
+    return <FinanceManagement onBack={() => setCurrentView('vendor-management')} onNavigate={handleNavigation} />;
   }
 
   // ✅ NEW: Enterprise Admin Capabilities
@@ -132,12 +128,9 @@ export function AdminApp() {
     return <RBACDashboard onBack={() => setCurrentView('vendor-management')} />;
   }
 
-  if (currentView === 'reports') {
-    return <ReportsDashboard onBack={() => setCurrentView('vendor-management')} />;
-  }
-
-  if (currentView === 'analytics') {
-    return <AdminDashboard session={session} onNavigate={handleNavigation} initialView="analytics" />;
+  // Reports merged into Analytics & Insights
+  if (currentView === 'reports' || currentView === 'analytics') {
+    return <AdminAnalyticsDashboard onBack={() => setCurrentView('vendor-management')} />;
   }
 
   if (['events', 'content'].includes(currentView)) {

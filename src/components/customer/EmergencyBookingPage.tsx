@@ -50,9 +50,20 @@ interface EmergencyBooking {
 interface EmergencyBookingPageProps {
   customerPhone: string;
   customerId: string;
+  vendorId?: string; // ✅ ADD: Optional vendorId to fetch vendor emergency protocols
 }
 
-export function EmergencyBookingPage({ customerPhone, customerId }: EmergencyBookingPageProps) {
+interface EmergencyProtocol {
+  id: string;
+  protocolName: string;
+  description?: string;
+  responseTime: number;
+  steps?: string[];
+  requiredEquipment?: string[];
+  isActive: boolean;
+}
+
+export function EmergencyBookingPage({ customerPhone, customerId, vendorId }: EmergencyBookingPageProps) {
   const [step, setStep] = useState<'type' | 'severity' | 'details' | 'confirmation'>('type');
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [selectedSeverity, setSelectedSeverity] = useState<SeverityLevel | null>(null);
@@ -64,6 +75,7 @@ export function EmergencyBookingPage({ customerPhone, customerId }: EmergencyBoo
   const [booking, setBooking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [emergencyBooking, setEmergencyBooking] = useState<EmergencyBooking | null>(null);
+  const [emergencyProtocols, setEmergencyProtocols] = useState<EmergencyProtocol[]>([]); // ✅ ADD: Store vendor protocols
 
   const emergencyTypes: EmergencyType[] = [
     {
@@ -113,7 +125,10 @@ export function EmergencyBookingPage({ customerPhone, customerId }: EmergencyBoo
   useEffect(() => {
     loadPets();
     getCurrentLocation();
-  }, [customerId]);
+    if (vendorId) {
+      loadEmergencyProtocols(vendorId);
+    }
+  }, [customerId, vendorId]);
 
   const loadPets = async () => {
     try {
@@ -132,12 +147,44 @@ export function EmergencyBookingPage({ customerPhone, customerId }: EmergencyBoo
       }
 
       const data = await response.json();
-      setPets(data.pets || []);
-      if (data.pets && data.pets.length > 0) {
-        setSelectedPet(data.pets[0].id);
+      // ✅ FIX: Handle standardized response format
+      const petsList = data.pets || data.data?.pets || [];
+      setPets(petsList);
+      if (petsList.length > 0) {
+        setSelectedPet(petsList[0].id);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error loading pets:', err);
+      const errorMessage = err?.message || 'Failed to load pets';
+      // Don't show error toast - just log
+    }
+  };
+
+  // ✅ ADD: Load emergency protocols from vendor
+  const loadEmergencyProtocols = async (vendorId: string) => {
+    try {
+      const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+      const response = await fetch(`${API_BASE}/customer/clinic/${vendorId}/emergency-protocols`, {
+        headers: {
+          'Authorization': `Bearer ${publicAnonKey}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        // ✅ FIX: Handle standardized response format
+        const protocolsList = data.protocols || data.data?.protocols || [];
+        setEmergencyProtocols(protocolsList);
+        console.log('✅ Loaded emergency protocols:', protocolsList.length);
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('Failed to load emergency protocols:', errorData);
+        // Don't show error toast - just log
+      }
+    } catch (err: any) {
+      console.error('Error loading emergency protocols:', err);
+      // Don't show error toast - just log
     }
   };
 
@@ -399,6 +446,31 @@ export function EmergencyBookingPage({ customerPhone, customerId }: EmergencyBoo
           <h2 className="text-xl font-bold text-gray-900 mb-4">
             What type of emergency?
           </h2>
+
+          {/* ✅ ADD: Display vendor emergency protocols if available */}
+          {emergencyProtocols.length > 0 && (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4">
+              <h3 className="font-semibold text-blue-900 mb-2">Available Emergency Protocols</h3>
+              <div className="space-y-2">
+                {emergencyProtocols.slice(0, 3).map((protocol) => (
+                  <div key={protocol.id} className="bg-white rounded-lg p-3 border border-blue-100">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="font-medium text-gray-900">{protocol.protocolName}</div>
+                        {protocol.description && (
+                          <div className="text-sm text-gray-600 mt-1">{protocol.description}</div>
+                        )}
+                        <div className="flex items-center gap-2 mt-2 text-xs text-gray-500">
+                          <Clock className="w-3 h-3" />
+                          <span>Response time: {protocol.responseTime} mins</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           
           {emergencyTypes.map((type) => (
             <button

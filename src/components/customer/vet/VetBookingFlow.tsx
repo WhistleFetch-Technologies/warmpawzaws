@@ -58,24 +58,36 @@ export function VetBookingFlow({ phone, serviceType, vendorId, onBack, onNavigat
   // Handle payment completion
   const handlePaymentComplete = async (paymentMethod: string, transactionId: string) => {
     try {
-      // Create booking with all collected data
+      // ✅ FIX: Use unified booking endpoint with full lifecycle support
+      const totalAmount = calculateTotalAmount(bookingData.servicePrice);
       const bookingPayload = {
-        phone,
-        petId: bookingData.petId,
+        customerId: phone,
+        customerPhone: phone,
         vendorId: bookingData.vendorId,
+        petId: bookingData.petId,
         serviceId: bookingData.serviceId,
-        serviceType,
-        scheduledDate: bookingData.scheduledDate,
-        scheduledTime: bookingData.scheduledTime,
+        serviceName: bookingData.serviceName,
+        serviceType: serviceType === 'home' ? 'at_home' : serviceType === 'tele' ? 'tele' : 'at_center',
+        bookingDate: bookingData.scheduledDate,
+        bookingTime: bookingData.scheduledTime,
+        duration: bookingData.serviceDuration || 60,
+        price: bookingData.servicePrice,
+        customerName: bookingData.customerName || '',
+        customerAddress: bookingData.address || '',
+        petName: bookingData.petName,
+        petBreed: bookingData.petBreed || bookingData.petType,
+        petAge: bookingData.petAge || '',
         paymentMethod,
         transactionId,
-        amount: calculateTotalAmount(bookingData.servicePrice)
+        // Additional fields for unified lifecycle
+        bookingType: 'appointment',
+        specialInstructions: bookingData.specialInstructions || ''
       };
 
-      console.log('🎯 Creating booking:', bookingPayload);
+      console.log('🎯 Creating booking with unified endpoint:', bookingPayload);
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/bookings/create`,
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/bookings/create`,
         {
           method: 'POST',
           headers: {
@@ -89,17 +101,25 @@ export function VetBookingFlow({ phone, serviceType, vendorId, onBack, onNavigat
       const result = await response.json();
 
       if (response.ok && result.success) {
+        // ✅ FIX: Extract booking data from unified response format
+        const booking = result.booking || result.data?.booking || result;
+        const bookingId = booking.id || booking.bookingId || result.bookingId;
+        
         // Move to success screen with booking details
         setBookingData(prev => ({
           ...prev,
-          bookingId: result.booking.id,
-          otp: result.booking.completionOTP,
+          bookingId,
+          otp: booking.completionOTP || booking.endOTP,
+          startOTP: booking.startOTP,
           transactionId,
-          paymentMethod
+          paymentMethod,
+          totalAmount
         }));
         setCurrentStep('success');
       } else {
-        alert(`❌ Booking failed: ${result.error || 'Unknown error'}`);
+        const errorMsg = result.error || result.message || 'Unknown error';
+        console.error('❌ Booking failed:', errorMsg);
+        alert(`❌ Booking failed: ${errorMsg}`);
       }
     } catch (error) {
       console.error('❌ Booking error:', error);

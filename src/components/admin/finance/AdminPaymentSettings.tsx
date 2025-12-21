@@ -7,12 +7,14 @@ import { Switch } from '../../ui/switch';
 import { Separator } from '../../ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../ui/tabs';
 import { 
-  CreditCard, RefreshCcw, ShieldCheck, AlertCircle, Save, CheckCircle2, Settings, Receipt 
+  CreditCard, RefreshCcw, ShieldCheck, AlertCircle, Save, CheckCircle2, Settings, Receipt, Calendar, Percent
 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
 import { PaymentRulesSection } from './PaymentRulesSection';
 import { RefundPoliciesSection } from './RefundPoliciesSection';
+import { SettlementScheduleSettings } from './SettlementScheduleSettings';
+import { GSTRuleManagement } from './GSTRuleManagement';
 
 interface RefundRule {
   hours: number;
@@ -123,6 +125,14 @@ export function AdminPaymentSettings() {
             <Settings className="w-4 h-4 mr-2" />
             General & Gateway
           </TabsTrigger>
+          <TabsTrigger value="settlement" className="data-[state=active]:bg-[#FF8C42] data-[state=active]:text-white">
+            <Calendar className="w-4 h-4 mr-2" />
+            Settlement Schedule
+          </TabsTrigger>
+          <TabsTrigger value="gst-rules" className="data-[state=active]:bg-[#FF8C42] data-[state=active]:text-white">
+            <Percent className="w-4 h-4 mr-2" />
+            GST Rules
+          </TabsTrigger>
           <TabsTrigger value="payment-rules" className="data-[state=active]:bg-[#FF8C42] data-[state=active]:text-white">
             <Receipt className="w-4 h-4 mr-2" />
             Payment Rules
@@ -228,6 +238,14 @@ export function AdminPaymentSettings() {
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+
+        <TabsContent value="settlement">
+          <SettlementScheduleSettings />
+        </TabsContent>
+
+        <TabsContent value="gst-rules">
+          <GSTRuleManagement />
         </TabsContent>
 
         <TabsContent value="payment-rules">

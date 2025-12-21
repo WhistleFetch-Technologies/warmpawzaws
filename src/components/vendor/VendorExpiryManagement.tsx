@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Bell, Package, AlertTriangle, Calendar, Plus, Trash2, Search, Filter } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { toast } from 'sonner@2.0.3';
 
 interface ProductBatch {
   id: string;
@@ -165,12 +166,19 @@ export function VendorExpiryManagement({ vendorId, vendorData, onBack }: VendorE
         }
       );
       const data = await response.json();
+      // ✅ FIX: Handle standardized response format
+      // Response format: { success: true, disposals: [...], stats: {...}, total: ... }
       if (data.success) {
-        setDisposals(data.disposals);
-        setStats(data.stats);
+        setDisposals(data.disposals || data.data?.disposals || []);
+        setStats(data.stats || data.data?.stats);
+      } else {
+        const errorData = data.error || data.message || 'Unknown error';
+        console.error('Failed to load disposals:', errorData);
+        // Don't show error toast on initial load - just log
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading disposals:', error);
+      // Don't show error toast on initial load - just log
     }
   };
 
@@ -197,6 +205,7 @@ export function VendorExpiryManagement({ vendorId, vendorData, onBack }: VendorE
       );
       const data = await response.json();
       if (data.success) {
+        toast.success('Batch added successfully');
         setShowAddBatch(false);
         setBatchForm({
           productName: '',
@@ -211,10 +220,15 @@ export function VendorExpiryManagement({ vendorId, vendorData, onBack }: VendorE
           alertDays: '30',
           notes: ''
         });
-        loadBatches();
+        await loadBatches(); // ✅ Ensure batches reload
+      } else {
+        const errorData = data.error || data.message || 'Failed to add batch';
+        toast.error(errorData);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error adding batch:', error);
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 
@@ -243,6 +257,7 @@ export function VendorExpiryManagement({ vendorId, vendorData, onBack }: VendorE
       );
       const data = await response.json();
       if (data.success) {
+        toast.success('Disposal recorded successfully');
         setShowDisposal(false);
         setSelectedBatch(null);
         setDisposalForm({
@@ -254,10 +269,16 @@ export function VendorExpiryManagement({ vendorId, vendorData, onBack }: VendorE
           authorizedBy: '',
           notes: ''
         });
-        loadBatches();
+        await loadBatches(); // ✅ Ensure batches reload
+        await loadDisposals(); // ✅ Ensure disposals reload
+      } else {
+        const errorData = data.error || data.message || 'Failed to record disposal';
+        toast.error(errorData);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error recording disposal:', error);
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 
@@ -272,10 +293,16 @@ export function VendorExpiryManagement({ vendorId, vendorData, onBack }: VendorE
       );
       const data = await response.json();
       if (data.success) {
-        loadAlerts();
+        toast.success('Alert acknowledged successfully');
+        await loadAlerts(); // ✅ Ensure alerts reload
+      } else {
+        const errorData = data.error || data.message || 'Failed to acknowledge alert';
+        toast.error(errorData);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error acknowledging alert:', error);
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 

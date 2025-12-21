@@ -123,9 +123,37 @@ export function registerBookingLifecycleEndpoints(app: Hono) {
       booking.status = 'cancelled';
       booking.cancelledAt = new Date().toISOString();
       booking.cancellationReason = reason || 'Vendor rejected request';
+      booking.cancelledBy = 'vendor';
       
-      // Trigger Refund Logic Here (TODO: Integrate with Payment System)
-      booking.refundStatus = 'pending';
+      // ✅ FIX: Process refund automatically
+      try {
+        const refundResponse = await fetch(
+          `${Deno.env.get('SUPABASE_URL')}/functions/v1/make-server-3dd53475/bookings/${bookingId}/process-refund`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${Deno.env.get('SUPABASE_ANON_KEY')}`
+            },
+            body: JSON.stringify({
+              refundMethod: 'wallet', // Default to wallet for vendor rejections
+              reason: reason || 'Vendor rejected request'
+            })
+          }
+        );
+
+        if (refundResponse.ok) {
+          const refundData = await refundResponse.json();
+          booking.refundStatus = 'refunded';
+          booking.refundId = refundData.refund?.id;
+          booking.refundAmount = refundData.refund?.amount;
+        } else {
+          booking.refundStatus = 'pending';
+        }
+      } catch (refundError) {
+        console.error('Error processing refund:', refundError);
+        booking.refundStatus = 'pending'; // Will be retried
+      }
 
       await kv.set(`booking:${bookingId}`, booking);
 

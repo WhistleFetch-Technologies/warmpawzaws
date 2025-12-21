@@ -164,11 +164,15 @@ export function useGPSTracking(options: UseGPSTrackingOptions): UseGPSTrackingRe
       });
 
       if (!response.ok) {
-        throw new Error('Failed to start tracking session');
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to start tracking session';
+        throw new Error(errorMessage);
       }
 
       const data = await response.json();
-      setSession(data.session);
+      // ✅ FIX: Handle standardized response format
+      // Response format: { success: true, session: {...}, ... }
+      setSession(data.session || data.data?.session);
       setIsTracking(true);
       setError(null);
 
@@ -213,11 +217,15 @@ export function useGPSTracking(options: UseGPSTrackingOptions): UseGPSTrackingRe
       });
 
       if (!response.ok) {
-        throw new Error('Failed to stop tracking session');
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to stop tracking session';
+        throw new Error(errorMessage);
       }
 
       const data = await response.json();
-      setSession(data.session);
+      // ✅ FIX: Handle standardized response format
+      // Response format: { success: true, session: {...}, ... }
+      setSession(data.session || data.data?.session);
       setIsTracking(false);
 
       console.log('✅ GPS tracking stopped:', bookingId);

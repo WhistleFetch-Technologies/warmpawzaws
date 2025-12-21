@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { Button } from '../ui/button';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { toast } from 'sonner@2.0.3';
+import { WarmpawzButton } from '../shared/design-system/WarmpawzButton';
 
 interface VendorApprovalSuccessProps {
   vendorId: string;
@@ -113,13 +114,15 @@ export function VendorApprovalSuccessNew({
       </div>
 
       {/* Get Started Button */}
-      <Button
-        onClick={handleGetStarted}
+      <WarmpawzButton
+        variant={loading ? 'disabled' : 'solid'}
         disabled={loading}
-        className="w-full h-14 bg-[#FF8C42] hover:bg-[#FF7A2E] text-white font-semibold rounded-xl shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+        fullWidth
+        onClick={handleGetStarted}
+        style={{ height: '56px', fontSize: '16px', fontWeight: 600 }}
       >
         {loading ? 'Loading Dashboard...' : 'Get Started'}
-      </Button>
+      </WarmpawzButton>
       
       <p className="text-sm text-center text-gray-500 mt-4">
         You can add and modify your services anytime<br/>from your dashboard

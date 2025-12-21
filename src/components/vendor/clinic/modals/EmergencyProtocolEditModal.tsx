@@ -72,16 +72,49 @@ export function EmergencyProtocolEditModal({
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
 
+    // Protocol name validation
     if (!formData.protocolName.trim()) {
       newErrors.protocolName = 'Protocol name is required';
+    } else if (formData.protocolName.trim().length < 3) {
+      newErrors.protocolName = 'Protocol name must be at least 3 characters';
+    } else if (formData.protocolName.trim().length > 100) {
+      newErrors.protocolName = 'Protocol name must be less than 100 characters';
     }
 
+    // Response time validation
     if (formData.responseTime <= 0) {
       newErrors.responseTime = 'Response time must be greater than 0';
+    } else if (formData.responseTime > 480) {
+      newErrors.responseTime = 'Response time cannot exceed 480 minutes (8 hours)';
     }
 
+    // Steps validation
     if (formData.steps.length === 0) {
       newErrors.steps = 'At least one step is required';
+    } else if (formData.steps.length > 20) {
+      newErrors.steps = 'Maximum 20 steps allowed';
+    } else {
+      // Validate each step
+      formData.steps.forEach((step, index) => {
+        if (!step.trim()) {
+          newErrors.steps = `Step ${index + 1} cannot be empty`;
+        } else if (step.trim().length > 200) {
+          newErrors.steps = `Step ${index + 1} must be less than 200 characters`;
+        }
+      });
+    }
+
+    // Equipment validation (optional but if provided, should be reasonable)
+    if (formData.requiredEquipment.length > 20) {
+      newErrors.requiredEquipment = 'Maximum 20 equipment items allowed';
+    } else {
+      formData.requiredEquipment.forEach((equipment, index) => {
+        if (!equipment.trim()) {
+          newErrors.requiredEquipment = `Equipment item ${index + 1} cannot be empty`;
+        } else if (equipment.trim().length > 50) {
+          newErrors.requiredEquipment = `Equipment item ${index + 1} must be less than 50 characters`;
+        }
+      });
     }
 
     setErrors(newErrors);
@@ -143,9 +176,13 @@ export function EmergencyProtocolEditModal({
     setSaving(true);
     try {
       await onSave(formData);
+      toast.success(protocol ? 'Emergency protocol updated successfully' : 'Emergency protocol added successfully');
       onClose();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving emergency protocol:', error);
+      const errorMessage = error?.message || 'Failed to save emergency protocol. Please try again.';
+      toast.error(errorMessage);
+      // Don't close modal on error so user can fix and retry
     } finally {
       setSaving(false);
     }
@@ -247,6 +284,9 @@ export function EmergencyProtocolEditModal({
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Required Equipment <span className="text-gray-400 text-xs">(Optional)</span>
             </label>
+            {errors.requiredEquipment && (
+              <p className="text-xs text-red-500 mb-2">{errors.requiredEquipment}</p>
+            )}
             <div className="flex gap-2 mb-2">
               <Input
                 value={newEquipment}

@@ -58,13 +58,19 @@ export function VendorPortfolioManagement({ vendorId, vendorData, onBack }: Vend
 
       if (response.ok) {
         const data = await response.json();
-        setPortfolio(data.items || []);
+        // ✅ FIX: Handle standardized response format
+        // Response format: { success: true, portfolioItems: [...], total: ... }
+        setPortfolio(data.portfolioItems || data.items || data.data?.items || []);
       } else {
-        // If endpoint doesn't exist yet, use empty array
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('Failed to fetch portfolio:', errorData);
+        toast.error(errorData.error || 'Failed to load portfolio');
         setPortfolio([]);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching portfolio:', error);
+      const errorMessage = error?.message || 'Failed to load portfolio. Please try again.';
+      toast.error(errorMessage);
       setPortfolio([]);
     } finally {
       setLoading(false);
@@ -94,7 +100,8 @@ export function VendorPortfolioManagement({ vendorId, vendorData, onBack }: Vend
       });
 
       if (response.ok) {
-        toast.success(editingItem ? 'Portfolio updated' : 'Portfolio item added');
+        const result = await response.json();
+        toast.success(editingItem ? 'Portfolio item updated successfully' : 'Portfolio item added successfully');
         setModalOpen(false);
         setEditingItem(null);
         setFormData({
@@ -106,18 +113,26 @@ export function VendorPortfolioManagement({ vendorId, vendorData, onBack }: Vend
           tags: [],
           featured: false
         });
-        fetchPortfolio();
+        await fetchPortfolio(); // ✅ Ensure portfolio reloads
       } else {
-        toast.error('Failed to save portfolio item');
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to save portfolio item';
+        toast.error(errorMessage);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving portfolio:', error);
-      toast.error('Failed to save');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 
   const handleDelete = async (itemId: string) => {
-    if (!confirm('Are you sure you want to delete this portfolio item?')) return;
+    const item = portfolio.find(p => p.id === itemId);
+    const itemTitle = item?.title || 'this portfolio item';
+    
+    if (!confirm(`Are you sure you want to delete "${itemTitle}"? This action cannot be undone.`)) {
+      return;
+    }
 
     try {
       const response = await fetch(`${API_BASE}/vendor/portfolio/${vendorId}/${itemId}`, {
@@ -126,14 +141,17 @@ export function VendorPortfolioManagement({ vendorId, vendorData, onBack }: Vend
       });
 
       if (response.ok) {
-        toast.success('Portfolio item deleted');
-        fetchPortfolio();
+        toast.success(`Portfolio item "${itemTitle}" deleted successfully`);
+        await fetchPortfolio(); // ✅ Ensure portfolio reloads
       } else {
-        toast.error('Failed to delete');
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to delete portfolio item';
+        toast.error(errorMessage);
       }
-    } catch (error) {
-      console.error('Error deleting:', error);
-      toast.error('Failed to delete');
+    } catch (error: any) {
+      console.error('Error deleting portfolio item:', error);
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 

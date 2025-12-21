@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { CustomerHome } from './CustomerHomeComplete';
 import { UserAccountSidebar } from './UserAccountSidebar';
 import { CustomerPetDetails } from './CustomerPetDetails';
@@ -29,6 +29,7 @@ import { PetCafeServicesLanding } from './PetCafeServicesLanding';
 import { PharmacyServicesLanding } from './PharmacyServicesLanding';
 import { PharmacyStore } from './PharmacyStore';
 import { PharmacyCheckout } from './PharmacyCheckout';
+import { PrescriptionOrderInvoice } from './PrescriptionOrderInvoice';
 import { PhotographyServicesLanding } from './PhotographyServicesLanding';
 import { BreederServicesLanding } from './BreederServicesLanding';
 import { AmbulanceServicesLanding } from './AmbulanceServicesLanding';
@@ -86,6 +87,15 @@ import { MatingDatingHub } from './MatingDatingHub';
 import { HomeServiceSelectionEnhanced } from './HomeServiceSelectionEnhanced';
 import { IntegratedServicesHub } from '../IntegratedServicesHub';
 
+// ✅ PHASE 3: Customer App Integration Components
+import { EventListView } from './EventListView';
+import { EventDetailView } from './EventDetailView';
+import { MemorialServicesView } from './MemorialServicesView';
+import { MealProductCatalog } from './MealProductCatalog';
+import { DonationCampaignView } from './DonationCampaignView';
+import { CounselingBookingView } from './CounselingBookingView';
+import { DietChartsView } from './DietChartsView';
+
 type ScreenType = 
   | 'home' 
   | 'user-profile' 
@@ -127,6 +137,7 @@ type ScreenType =
   | 'order_tracking'
   | 'pharmacy_store'
   | 'pharmacy_checkout'
+  | 'prescription_orders'
   | 'photography'
   | 'breeder'
   | 'breeder_catalog'
@@ -162,9 +173,16 @@ type ScreenType =
   | 'customer-wallet'
   | 'mating-dating-hub'
   | 'integrated-services'
-  | 'home-service-selection';
+  | 'home-service-selection'
+  | 'events-list'
+  | 'event-detail'
+  | 'memorial-services'
+  | 'meal-products'
+  | 'donation-campaigns'
+  | 'counseling-sessions'
+  | 'diet-charts';
 
-export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phone: string; onNavigate: (screen: string) => void; initialScreen?: ScreenType }) {
+export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phone: string; onNavigate: (screen: string, data?: any) => void; initialScreen?: ScreenType }) {
   console.log('CustomerHomeWrapper: Rendering with phone:', phone);
   const [currentScreen, setCurrentScreen] = useState<ScreenType>(initialScreen || 'home');
   const [selectedPetId, setSelectedPetId] = useState<string | null>(null);
@@ -182,7 +200,44 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
   const [currentOrderId, setCurrentOrderId] = useState<string | null>(null);
   const [selectedVendorId, setSelectedVendorId] = useState<string | undefined>(undefined); // For generic bookings
+  const [selectedEvent, setSelectedEvent] = useState<any>(null); // For event detail view
+  const [selectedVendorName, setSelectedVendorName] = useState<string | undefined>(undefined); // For vendor name display
+  const [customerId, setCustomerId] = useState<string | null>(phone); // ✅ FIX Bug 2: Initialize with phone as default customerId
   const { addToCart } = useCart();
+
+  // ✅ FIX Bug 2: Ensure customerId is always set to phone if null/undefined
+  // Note: Only depend on phone, not customerId, to avoid unnecessary re-renders
+  useEffect(() => {
+    if (!customerId && phone) {
+      setCustomerId(phone);
+    }
+  }, [phone]); // ✅ FIX Bug 2: Remove customerId from dependencies to prevent infinite loop
+
+  // ✅ FIX Bug 3: Fetch vendor name when vendorId is set but vendorName is not
+  // Note: Only depend on selectedVendorId to avoid state-modifying-dependency cycle
+  useEffect(() => {
+    const fetchVendorName = async () => {
+      if (selectedVendorId && !selectedVendorName) {
+        try {
+          const vendorResponse = await fetch(
+            `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${selectedVendorId}`,
+            { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+          );
+          if (vendorResponse.ok) {
+            const vendorData = await vendorResponse.json();
+            const vendor = vendorData.vendor || vendorData.data?.vendor;
+            if (vendor?.businessName || vendor?.vendorName) {
+              setSelectedVendorName(vendor.businessName || vendor.vendorName);
+            }
+          }
+        } catch (error) {
+          console.error('Error fetching vendor name:', error);
+          // Continue without vendor name - components should handle undefined
+        }
+      }
+    };
+    fetchVendorName();
+  }, [selectedVendorId]); // ✅ FIX Bug 3: Remove selectedVendorName from dependencies to avoid cycle
 
   // Notification Service logic... (kept same as original)
   useNotificationService({
@@ -244,7 +299,48 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   const handleAddPet = () => setShowAddPetModal(true);
   const handleAddPetSuccess = () => setRefreshKey(prev => prev + 1);
 
-  const handleNavigateToService = (service: string) => {
+  const handleNavigateToService = async (service: string, data?: any) => {
+    // ✅ FIX Bug 2: Set vendor and customer data when provided, with fallbacks
+    if (data) {
+      if (data.vendorId) {
+        setSelectedVendorId(data.vendorId);
+        
+        // ✅ FIX Bug 2: If vendorName not provided, fetch it from vendorId
+        if (data.vendorName) {
+          setSelectedVendorName(data.vendorName);
+        } else {
+          // Fetch vendor name if not provided
+          try {
+            const vendorResponse = await fetch(
+              `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${data.vendorId}`,
+              { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+            );
+            if (vendorResponse.ok) {
+              const vendorData = await vendorResponse.json();
+              const vendor = vendorData.vendor || vendorData.data?.vendor;
+              if (vendor?.businessName || vendor?.vendorName) {
+                setSelectedVendorName(vendor.businessName || vendor.vendorName);
+              }
+            }
+          } catch (error) {
+            console.error('Error fetching vendor name:', error);
+            // Continue without vendor name - components should handle undefined
+          }
+        }
+      }
+      
+      // ✅ FIX Bug 2: Always ensure customerId is set (use phone as fallback)
+      if (data.customerId) {
+        setCustomerId(data.customerId);
+      } else {
+        // Use phone as customerId if not provided
+        setCustomerId(phone);
+      }
+    } else {
+      // ✅ FIX Bug 2: Ensure customerId is always set even when no data provided
+      setCustomerId(phone);
+    }
+    
     if (service === 'walker') setCurrentScreen('walker');
     else if (service === 'vet' || service === 'veterinarian') setCurrentScreen('vet');
     else if (service === 'grooming') setCurrentScreen('grooming');
@@ -266,6 +362,25 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     else if (service === 'resort') setCurrentScreen('resort');
     else if (service === 'holiday') setCurrentScreen('holiday');
     else if (service === 'mating-dating-hub') setCurrentScreen('mating-dating-hub');
+    // ✅ FIX Bug 2: Handle Phase 3 navigation with data
+    else if (service === 'events' || service === 'events-list') {
+      setCurrentScreen('events-list');
+    }
+    else if (service === 'memorial' || service === 'memorial-services') {
+      setCurrentScreen('memorial-services');
+    }
+    else if (service === 'meals' || service === 'meal-products') {
+      setCurrentScreen('meal-products');
+    }
+    else if (service === 'donations' || service === 'donation-campaigns') {
+      setCurrentScreen('donation-campaigns');
+    }
+    else if (service === 'counseling' || service === 'counseling-sessions') {
+      setCurrentScreen('counseling-sessions');
+    }
+    else if (service === 'diet-charts') {
+      setCurrentScreen('diet-charts');
+    }
     else {
       setSelectedService(service);
       setCurrentScreen('coming-soon');
@@ -438,10 +553,22 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   if (currentScreen === 'wallet') return <WalletPage onNavigate={handleAccountNavigate} />;
   // if (currentScreen === 'order_history') return <OrderHistoryView phone={phone} onBack={handleBack} onOrderClick={(order) => { setSelectedOrder(order); setCurrentScreen('order_detail'); }} />;
   if (currentScreen === 'order_detail' && selectedOrder) return <OrderDetailView order={selectedOrder} onBack={() => setCurrentScreen('order_history')} onTrackOrder={() => setCurrentScreen('order_tracking')} onReorder={() => { toast.success('Items added to cart'); setCurrentScreen('shop'); }} onHelp={() => toast.info('Support coming soon')} />;
-  if (currentScreen === 'order_tracking' && selectedOrder) return <OrderTrackingPage orderId={selectedOrder.id || selectedOrder.orderId} onBack={() => setCurrentScreen('order_detail')} />;
+  if (currentScreen === 'order_tracking' && selectedOrder) return <OrderTrackingView 
+    order={selectedOrder} 
+    onBack={() => setCurrentScreen('order_detail')} 
+    onContactDelivery={() => {
+      const phone = selectedOrder.deliveryPartner?.phone || selectedOrder.deliveryPartner?.contact || '';
+      if (phone) {
+        window.location.href = `tel:${phone}`;
+      } else {
+        toast.error('Delivery partner contact not available');
+      }
+    }} 
+  />;
   
-  if (currentScreen === 'pharmacy_store') return <PharmacyStore onBack={() => setCurrentScreen('shop')} onNavigate={(screen) => { if (screen === 'pharmacy_checkout') setCurrentScreen('pharmacy_checkout'); }} />;
+  if (currentScreen === 'pharmacy_store') return <PharmacyStore onBack={() => setCurrentScreen('shop')} onNavigate={(screen) => { if (screen === 'pharmacy_checkout') setCurrentScreen('pharmacy_checkout'); else if (screen === 'prescription_orders') setCurrentScreen('prescription_orders'); }} />;
   if (currentScreen === 'pharmacy_checkout') return <PharmacyCheckout phone={phone} onBack={() => setCurrentScreen('pharmacy_store')} onSuccess={() => setCurrentScreen('home')} />;
+  if (currentScreen === 'prescription_orders') return <PrescriptionOrderInvoice phone={phone} onBack={handleBack} onPaymentSuccess={(orderId) => { toast.success('Payment successful!'); setCurrentScreen('prescription_orders'); }} onTrackOrder={(orderId) => { setSelectedOrder({ id: orderId }); setCurrentScreen('order_tracking'); }} />;
 
   // Other Screens
   if (currentScreen === 'my-bookings') return <MyBookings phone={phone} onBack={handleBack} initialBookingId={selectedBookingId || undefined} onReorderMedicine={handleReorderMedicine} />;
@@ -462,7 +589,8 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
       setSelectedVendorId(data?.vendorId);
       setCurrentScreen('create-booking');
     } else {
-      handleNavigateToService(screen);
+      // ✅ PHASE 3: Handle Phase 3 screens
+      handleNavigateToService(screen, data);
     }
   }} />;
 
@@ -572,6 +700,90 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     petId={selectedPetId || 'pet_default'}
     onBack={handleBack}
     onBookingComplete={(bookingId) => handleViewBooking(bookingId)}
+  />;
+
+  // ✅ PHASE 3: Customer App Integration - New Components
+  // Events
+  if (currentScreen === 'events-list' && selectedVendorId) return <EventListView
+    vendorId={selectedVendorId}
+    vendorName={selectedVendorName}
+    onBack={handleBack}
+    onNavigate={(screen, data) => {
+      if (screen === 'event-detail') {
+        setSelectedEvent(data?.event);
+        setCurrentScreen('event-detail');
+      }
+    }}
+  />;
+
+  if (currentScreen === 'event-detail' && selectedEvent && selectedVendorId) return <EventDetailView
+    event={selectedEvent}
+    vendorId={selectedVendorId}
+    customerId={customerId || phone}
+    customerPhone={phone}
+    onBack={() => setCurrentScreen('events-list')}
+    onSuccess={() => {
+      toast.success('Event registration successful!');
+      setCurrentScreen('events-list');
+    }}
+  />;
+
+  // Memorial Services
+  if (currentScreen === 'memorial-services' && selectedVendorId) return <MemorialServicesView
+    vendorId={selectedVendorId}
+    vendorName={selectedVendorName}
+    onBack={handleBack}
+    onNavigate={(screen, data) => {
+      // Handle navigation to product detail or other screens
+      toast.info('Product detail view coming soon');
+    }}
+  />;
+
+  // Meal Products
+  if (currentScreen === 'meal-products' && selectedVendorId) return <MealProductCatalog
+    vendorId={selectedVendorId}
+    vendorName={selectedVendorName}
+    onBack={handleBack}
+    onNavigate={(screen, data) => {
+      // Handle navigation to product detail or booking
+      toast.info('Product detail view coming soon');
+    }}
+  />;
+
+  // Donation Campaigns
+  if (currentScreen === 'donation-campaigns' && selectedVendorId) return <DonationCampaignView
+    vendorId={selectedVendorId}
+    vendorName={selectedVendorName}
+    customerId={customerId || phone}
+    customerName={undefined} // Could be fetched from customer profile
+    customerPhone={phone}
+    onBack={handleBack}
+    onSuccess={() => {
+      toast.success('Thank you for your donation!');
+    }}
+  />;
+
+  // Counseling Sessions
+  if (currentScreen === 'counseling-sessions' && selectedVendorId) return <CounselingBookingView
+    vendorId={selectedVendorId}
+    vendorName={selectedVendorName}
+    customerId={customerId || phone}
+    customerName={undefined} // Could be fetched from customer profile
+    customerPhone={phone}
+    onBack={handleBack}
+    onSuccess={() => {
+      toast.success('Counseling session booked successfully!');
+    }}
+  />;
+
+  // Diet Charts
+  if (currentScreen === 'diet-charts') return <DietChartsView
+    customerId={customerId || phone}
+    petId={selectedPetId || undefined}
+    onBack={handleBack}
+    onNavigate={(screen, data) => {
+      // Handle navigation if needed
+    }}
   />;
 
   return <ComingSoon serviceName="pet-marketplace" onBack={handleBack} />;

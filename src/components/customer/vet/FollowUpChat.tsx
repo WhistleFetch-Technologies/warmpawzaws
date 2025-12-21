@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Send, Paperclip, Image as ImageIcon, X } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { ArrowLeft, Send, Paperclip, Image as ImageIcon, X, FileText, Download } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Card } from '../../ui/card';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
@@ -153,7 +153,58 @@ export function FollowUpChat({ bookingId, vendorId, vendorName, customerPhone, o
                       : 'bg-white text-gray-900 shadow-sm'
                   }`}
                 >
-                  <p className="text-sm whitespace-pre-wrap">{msg.message}</p>
+                  {/* Prescription Message */}
+                  {msg.messageType === 'prescription' && msg.prescriptionId ? (
+                    <div className="space-y-2">
+                      <div className="flex items-start gap-2">
+                        <FileText className={`w-4 h-4 mt-0.5 ${msg.senderType === 'customer' ? 'text-white' : 'text-cyan-600'}`} />
+                        <div className="flex-1">
+                          <p className={`text-sm font-medium ${msg.senderType === 'customer' ? 'text-white' : 'text-gray-900'}`}>
+                            Prescription attached
+                          </p>
+                          <button
+                            onClick={async () => {
+                              try {
+                                const response = await fetch(
+                                  `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/prescription/${msg.prescriptionId}/download`,
+                                  {
+                                    headers: { Authorization: `Bearer ${publicAnonKey}` }
+                                  }
+                                );
+                                if (response.ok) {
+                                  const blob = await response.blob();
+                                  const url = window.URL.createObjectURL(blob);
+                                  const a = document.createElement('a');
+                                  a.href = url;
+                                  a.download = `prescription_${bookingId}.pdf`;
+                                  a.click();
+                                  toast.success('Prescription downloaded');
+                                } else {
+                                  toast.error('Failed to download prescription');
+                                }
+                              } catch (err) {
+                                console.error('Download error:', err);
+                                toast.error('Failed to download prescription');
+                              }
+                            }}
+                            className={`text-xs underline mt-1 flex items-center gap-1 ${
+                              msg.senderType === 'customer' ? 'text-white/90 hover:text-white' : 'text-cyan-600 hover:text-cyan-700'
+                            }`}
+                          >
+                            <Download className="w-3 h-3" />
+                            Download PDF
+                          </button>
+                        </div>
+                      </div>
+                      {msg.message && msg.message !== 'Prescription has been added to your consultation' && (
+                        <p className={`text-sm mt-2 ${msg.senderType === 'customer' ? 'text-white/90' : 'text-gray-700'}`}>
+                          {msg.message}
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-sm whitespace-pre-wrap">{msg.message}</p>
+                  )}
                   <p
                     className={`text-xs mt-1 ${
                       msg.senderType === 'customer' ? 'text-white/70' : 'text-gray-500'

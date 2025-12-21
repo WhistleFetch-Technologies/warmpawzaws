@@ -280,13 +280,23 @@ export function vendorDashboardEndpoints(app: Hono, kv: any) {
   });
   
   /**
-   * Get vendor payout information
+   * Get vendor payout information with staff revenue breakup
    * GET /make-server-3dd53475/vendor/payouts/:vendorId
+   * ✅ UPDATED: Includes staff revenue breakup after tier commission deduction
    */
   app.get("/make-server-3dd53475/vendor/payouts/:vendorId", async (c) => {
     try {
       const { vendorId } = c.req.param();
       const status = c.req.query('status'); // pending, processing, completed
+      
+      // Get vendor to check if it's a center-based vendor
+      const vendor = await kv.get(`vendor:${vendorId}`);
+      const isCenterBased = vendor?.vendorType === 'healthcare_provider' || 
+                           vendor?.serviceStyle === 'at_center' ||
+                           vendor?.roleId === 'veterinary_clinic' ||
+                           vendor?.roleId === 'pet_boarding' ||
+                           vendor?.roleId === 'pet_resort' ||
+                           vendor?.roleId === 'pet_cafe';
       
       // Get all payouts for vendor
       const payoutIds = await kv.get(`vendor:${vendorId}:payouts`) || [];
@@ -300,8 +310,58 @@ export function vendorDashboardEndpoints(app: Hono, kv: any) {
         const payout = await kv.get(`payout:${payoutId}`);
         if (!payout) continue;
         
+        // ✅ Get staff revenue breakup for this payout
+        const staffBreakup: any[] = [];
+        
+        if (payout.bookingIds && Array.isArray(payout.bookingIds)) {
+          for (const bookingId of payout.bookingIds) {
+            const booking = await kv.get(`booking:${bookingId}`);
+            if (!booking || !booking.staffId) continue;
+            
+            // Get staff member
+            const staff = await kv.get(`staff:${booking.staffId}`);
+            if (!staff) continue;
+            
+            // Get vendor tier for commission calculation
+            const tierData = await kv.get(`vendor:${vendorId}:tier`) || await kv.get(`vendor_tier_${vendorId}`);
+            const tier = tierData?.currentTier || vendor?.tier || 'tier_1';
+            const tiers = await kv.get('payment:tiers') || [];
+            const tierConfig = tiers.find((t: any) => t.id === tier) || tiers.find((t: any) => t.isDefault) || { commissionRate: 15 };
+            const commissionRate = tierConfig.commissionRate || 15;
+            
+            // Calculate staff revenue (for center-based: just tracking, no actual payout)
+            const bookingAmount = booking.price || 0;
+            const platformCommission = (bookingAmount * commissionRate) / 100;
+            const vendorEarnings = bookingAmount - platformCommission;
+            
+            // For center-based vendors: staff gets full booking amount (tracking only)
+            // For solo vendors: staff gets percentage (actual payout)
+            const staffRevenue = isCenterBased 
+              ? bookingAmount // Full amount for tracking (center pays staff separately)
+              : vendorEarnings * 0.8; // 80% of vendor earnings for solo vendors
+            
+            staffBreakup.push({
+              staffId: staff.id,
+              staffName: staff.fullName,
+              bookingId: booking.id,
+              bookingAmount,
+              platformCommission,
+              vendorEarnings,
+              staffRevenue,
+              isCenterBased,
+              completedAt: booking.completedAt
+            });
+          }
+        }
+        
+        const payoutWithBreakup = {
+          ...payout,
+          staffBreakup, // ✅ Include staff revenue breakup
+          totalStaffRevenue: staffBreakup.reduce((sum, s) => sum + s.staffRevenue, 0)
+        };
+        
         if (!status || payout.status === status) {
-          payouts.push(payout);
+          payouts.push(payoutWithBreakup);
         }
         
         if (payout.status === 'pending') {
@@ -323,7 +383,8 @@ export function vendorDashboardEndpoints(app: Hono, kv: any) {
           totalProcessing,
           totalCompleted,
           count: payouts.length
-        }
+        },
+        isCenterBased // ✅ Indicate if vendor is center-based
       });
     } catch (error) {
       console.error('Error fetching vendor payouts:', error);

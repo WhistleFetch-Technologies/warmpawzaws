@@ -81,20 +81,28 @@ export function FacilityManagement({ vendorId, vendorData, onBack }: FacilityMan
 
         if (response.ok) {
           const data = await response.json();
-          if (data.success && data.facility) {
+          // ✅ FIX: Handle standardized response format
+          const facilityData = data.facility || data.data?.facility;
+          if (data.success && facilityData) {
             setFacility({
-              description: data.facility.description || '',
-              address: data.facility.address || '',
-              operatingHours: data.facility.operatingHours || 'Mon-Fri: 9AM-6PM',
-              amenities: data.facility.amenities || [],
-              customAmenities: data.facility.customAmenities || [],
-              photos: data.facility.photos || [],
-              specializations: data.facility.specializations || []
+              description: facilityData.description || '',
+              address: facilityData.address || '',
+              operatingHours: facilityData.operatingHours || 'Mon-Fri: 9AM-6PM',
+              amenities: facilityData.amenities || [],
+              customAmenities: facilityData.customAmenities || [],
+              photos: facilityData.photos || [],
+              specializations: facilityData.specializations || []
             });
           }
+        } else {
+          const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+          console.error('Failed to load facility data:', errorData);
+          // Don't show error toast on initial load - just log
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error('Error loading facility data:', error);
+        const errorMessage = error?.message || 'Failed to load facility data. Please try again.';
+        // Don't show error toast on initial load - just log
       } finally {
         setLoading(false);
       }
@@ -216,8 +224,9 @@ export function FacilityManagement({ vendorId, vendorData, onBack }: FacilityMan
 
       const data = await response.json();
 
-      if (data.success) {
-        toast.success('Facility photos and description saved successfully!');
+      // ✅ FIX: Handle standardized response format
+      if (data.success || data.data?.success) {
+        toast.success('Facility photos and description saved successfully');
         
         // Clear the new photos and update existing
         setNewPhotos([]);
@@ -226,11 +235,13 @@ export function FacilityManagement({ vendorId, vendorData, onBack }: FacilityMan
           photos: allPhotos
         }));
       } else {
-        toast.error(data.error || 'Failed to save facility information');
+        const errorMessage = data.error || data.message || 'Failed to save facility information';
+        toast.error(errorMessage);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving facility data:', error);
-      toast.error('Failed to save facility information');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     } finally {
       setSaving(false);
     }

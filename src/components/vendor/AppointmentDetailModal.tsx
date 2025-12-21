@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, MapPin, Clock, User, Phone, Calendar, Star, CheckCircle2, XCircle, AlertCircle, Navigation, Loader2 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { toast } from 'sonner';
+import { toast } from 'sonner@2.0.3'; // ✅ FIX: Use consistent toast import
 import { authenticatedFetch } from '../../utils/session-manager'; // ✅ SECURITY FIX
 
 interface AppointmentDetailModalProps {
@@ -134,30 +134,55 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
     setOtpError(null);
 
     try {
+      // ✅ MIGRATION: Use new complete lifecycle endpoint for completion OTP
+      let endpoint: string;
+      let body: any;
+      
+      if (otpAction === 'start') {
+        // Start OTP - use existing endpoint
+        endpoint = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/bookings/${bookingId}/verify-start`;
+        body = { otp, vendorId: vendorData?.id || vendorData?.vendorId };
+      } else {
+        // ✅ NEW: Completion OTP - use complete lifecycle endpoint
+        endpoint = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/booking/${bookingId}/verify-otp-complete`;
+        body = {
+          otp,
+          action: 'end', // 'end' or 'complete'
+          vendorId: vendorData?.id || vendorData?.vendorId
+        };
+      }
+      
       // ✅ SECURITY FIX: Use authenticated fetch for OTP verification
-      const response = await authenticatedFetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/bookings/${bookingId}/otp/verify`,
-        {
-          method: 'POST',
-          body: JSON.stringify({ otp, action: otpAction })
-        }
-      );
+      const response = await authenticatedFetch(endpoint, {
+        method: 'POST',
+        body: JSON.stringify(body)
+      });
 
       if (response.ok) {
         const data = await response.json();
+        
+        // Show enhanced success message for completion with lifecycle info
+        if ((otpAction === 'complete' || otpAction === 'end') && data.success && data.earnings) {
+          const earningsInfo = ` Earnings: ₹${data.earnings.vendorEarnings}`;
+          const settlementInfo = data.settlement ? ` Settlement: ${data.settlement.status}` : '';
+          const payoutInfo = data.payout?.scheduled ? ` Payout: ${new Date(data.payout.scheduledAt).toLocaleDateString()}` : '';
+          toast.success(`✅ Service completed!${earningsInfo}${settlementInfo}${payoutInfo}`);
+        } else {
+          toast.success(data.message || 'Success!');
+        }
+        
         setShowOtpModal(false);
         setOtp('');
         setOtpAction(null);
         loadAppointmentDetails(); // Refresh state
         onRefresh?.();
-        alert(data.message || 'Success!');
       } else {
         const error = await response.json();
-        setOtpError(error.error || 'Invalid OTP');
+        setOtpError(error.error || error.message || 'Invalid OTP');
       }
     } catch (error) {
       console.error('Error verifying OTP:', error);
-      setOtpError('Verification failed');
+      setOtpError('Verification failed. Please try again.');
     } finally {
       setProcessing(false);
     }

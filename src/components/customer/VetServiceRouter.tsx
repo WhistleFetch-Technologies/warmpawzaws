@@ -15,6 +15,7 @@ import { VetBookingRouter } from './vet/VetBookingRouter'; // ✅ NEW: Complete 
 import { VetDoctorDetails } from './vet/VetDoctorDetails'; // ✅ NEW: Doctor details
 import { ProblemGridSelector } from './ProblemGridSelector'; // ✅ NEW: Problem grid
 import { VendorDiscoveryByProblem } from './VendorDiscoveryByProblem'; // ✅ NEW: Vendor discovery
+import { BookingFlowDispatcher, determineServiceStyle } from './BookingFlowDispatcher'; // ✅ MIGRATION: Use unified dispatcher
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 
 type ViewType = 
@@ -34,7 +35,8 @@ type ViewType =
   | 'payment'
   | 'confirmation'
   | 'followup_selection'
-  | 'followup_chat';
+  | 'followup_chat'
+  | 'booking_dispatcher'; // ✅ MIGRATION: New view for unified booking flow
 
 interface VetServiceRouterProps {
   onBack: () => void;
@@ -192,16 +194,18 @@ export function VetServiceRouter({ onBack, phone, onNavigate, onViewBooking, dat
         vendorAddress: data?.doctor?.clinicAddress || data?.address,
         doctor: data?.doctor || data || null  // ✅ Check data?.doctor first, then data itself
       }));
-    } else if (screen === 'vet-booking') {
-      // Direct booking flow from doctor profile with service selected
-      console.log('✅ [VET-ROUTER] Starting booking flow with:', data);
-      setCurrentView('vet_booking');
+    } else if (screen === 'vet-booking' || screen === 'booking-dispatcher') {
+      // ✅ MIGRATION: Use BookingFlowDispatcher for unified booking flow
+      console.log('✅ [VET-ROUTER] Starting unified booking flow with:', data);
+      setCurrentView('booking_dispatcher');
       setBookingFlow(prev => ({
         ...prev,
-        vendorId: data?.doctorId,
-        selectedService: data?.service,
-        serviceType: data?.serviceType || 'clinic',
-        doctorId: data?.doctorId
+        vendorId: data?.vendorId || data?.doctorId || data?.clinicId,
+        vendorName: data?.vendorName || data?.doctor?.name || data?.name,
+        selectedService: data?.service || data?.selectedService,
+        serviceType: data?.serviceType || data?.serviceStyle || 'center',
+        doctorId: data?.doctorId || data?.staffId,
+        doctor: data?.doctor || null
       }));
     } else if (screen === 'clinic-profile' || screen === 'clinic_profile') {
       setCurrentView('center_profile');
@@ -295,7 +299,9 @@ export function VetServiceRouter({ onBack, phone, onNavigate, onViewBooking, dat
   };
 
   const handlePaymentSuccess = async (paymentData: any) => {
-    console.log('✅ [VET-ROUTER] Payment successful:', paymentData);
+    // ✅ MIGRATION: Booking creation now handled by BookingFlowDispatcher
+    // This function is kept for backward compatibility but booking flows should use dispatcher
+    console.log('✅ [VET-ROUTER] Payment successful (legacy flow):', paymentData);
     
     try {
       const bookingPayload = {
@@ -359,6 +365,16 @@ export function VetServiceRouter({ onBack, phone, onNavigate, onViewBooking, dat
       console.error('❌ [VET-ROUTER] Error creating booking:', error);
       alert('An error occurred. Please try again.');
     }
+  };
+
+  const handleBookingComplete = (bookingId: string) => {
+    console.log('✅ [VET-ROUTER] Booking completed:', bookingId);
+    if (onViewBooking) {
+      // Get petId from booking flow if available
+      onViewBooking(bookingId, bookingFlow.pet?.id || '');
+    }
+    // Navigate to confirmation or back to landing
+    setCurrentView('confirmation');
   };
 
   const handleBackToLanding = () => {
@@ -553,8 +569,50 @@ export function VetServiceRouter({ onBack, phone, onNavigate, onViewBooking, dat
     );
   }
 
+  // ✅ MIGRATION: Use BookingFlowDispatcher for unified booking flow
+  if (currentView === 'booking_dispatcher' && bookingFlow.vendorId) {
+    console.log('🎯 [VET-ROUTER] Rendering BookingFlowDispatcher with:', {
+      vendorId: bookingFlow.vendorId,
+      serviceType: 'vet',
+      serviceStyle: bookingFlow.serviceType === 'home' ? 'at_home' : 
+                   bookingFlow.serviceType === 'tele' ? 'tele' : 'at_center',
+      staffId: bookingFlow.doctorId,
+      selectedService: bookingFlow.selectedService
+    });
+    
+    // Determine service style
+    const serviceStyle = bookingFlow.serviceType === 'home' ? 'at_home' : 
+                        bookingFlow.serviceType === 'tele' ? 'tele' : 'at_center';
+    
+    return (
+      <BookingFlowDispatcher
+        serviceType="vet"
+        serviceStyle={serviceStyle}
+        vendorId={bookingFlow.vendorId}
+        vendorName={bookingFlow.vendorName || undefined}
+        staffId={bookingFlow.doctorId || undefined}
+        selectedService={bookingFlow.selectedService || undefined}
+        customerId={customerId}
+        customerPhone={phone}
+        petId={bookingFlow.pet?.id}
+        petName={bookingFlow.pet?.name}
+        onBack={() => {
+          // Go back to previous view (doctor details or center profile)
+          if (bookingFlow.doctorId) {
+            setCurrentView('doctor_details');
+          } else {
+            setCurrentView('center_profile');
+          }
+        }}
+        onNavigate={handleVetNavigate}
+        onBookingComplete={handleBookingComplete}
+      />
+    );
+  }
+
+  // Legacy view - kept for backward compatibility
   if (currentView === 'vet_booking' && bookingFlow.doctorId) {
-    console.log('🎯 [VET-ROUTER] Rendering VetBookingRouter with:', {
+    console.log('🎯 [VET-ROUTER] Rendering VetBookingRouter (legacy) with:', {
       doctorId: bookingFlow.doctorId,
       selectedService: bookingFlow.selectedService,
       serviceType: bookingFlow.serviceType

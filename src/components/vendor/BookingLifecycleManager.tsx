@@ -10,6 +10,7 @@ import { Textarea } from '../ui/textarea';
 import { CheckCircle2, Clock, PlayCircle, XCircle, Key, Copy, Check } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 import { copyTextToClipboard } from '../../utils/shareUtils';
+import { projectId, publicAnonKey } from '../../utils/supabase/info'; // ✅ FIX: Add missing imports
 
 interface Booking {
   id: string;
@@ -159,34 +160,59 @@ export function BookingLifecycleManager() {
     setOtpInput('');
   }
 
+  // ✅ MIGRATION: Use new complete lifecycle endpoint (OTP → Earnings → Settlement → Payout)
   async function verifyCompletionOTP() {
     if (!selectedBooking) return;
     
-    if (otpInput.length !== 6) {
-      toast.error('Please enter a valid 6-digit OTP');
+    // Support both 4-digit and 6-digit OTPs
+    if (otpInput.length !== 4 && otpInput.length !== 6) {
+      toast.error('Please enter a valid 4 or 6-digit OTP');
       return;
     }
 
     try {
       setVerifying(true);
       
-      // Verify OTP - this triggers revenue realization
-      const result = await bookingApi.verifyOTP(selectedBooking.id, otpInput, 'complete');
+      const bookingId = selectedBooking.id;
+      const vendorId = selectedBooking.vendorId;
       
-      if (result.verified) {
-        // Update status to completed
-        await bookingApi.updateStatus(selectedBooking.id, 'completed', 'Service completed and verified');
+      // ✅ NEW: Use complete lifecycle endpoint
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/booking/${bookingId}/verify-otp-complete`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            otp: otpInput,
+            action: 'end', // 'end' or 'complete' for completion OTP
+            vendorId
+          })
+        }
+      );
+      
+      const data = await response.json();
+      
+      if (response.ok && data.success && data.verified) {
+        // Show success message with earnings and settlement info
+        const earningsInfo = data.earnings ? ` Earnings: ₹${data.earnings.vendorEarnings}` : '';
+        const settlementInfo = data.settlement ? ` Settlement: ${data.settlement.status}` : '';
+        const payoutInfo = data.payout?.scheduled ? ` Payout scheduled: ${new Date(data.payout.scheduledAt).toLocaleDateString()}` : '';
         
-        toast.success(`✅ Booking completed! Revenue realized: ₹${result.vendorEarnings || selectedBooking.vendorEarnings}`);
+        toast.success(`✅ Booking completed!${earningsInfo}${settlementInfo}${payoutInfo}`);
         setShowOTPModal(false);
         setOtpInput('');
         loadVendorBookings();
       } else {
-        toast.error('Invalid OTP. Please check and try again.');
+        const errorMessage = data.error || data.message || 'Invalid OTP. Please check and try again.';
+        toast.error(errorMessage);
       }
     } catch (error: any) {
       console.error('Error verifying OTP:', error);
-      toast.error(error.message || 'OTP verification failed');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     } finally {
       setVerifying(false);
     }

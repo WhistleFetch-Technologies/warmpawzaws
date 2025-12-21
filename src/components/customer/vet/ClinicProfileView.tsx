@@ -18,7 +18,7 @@ import {
   CheckCircle2,
   TrendingUp,
   Search,
-  Building2 // ✅ ADDED: Missing import
+  Building2
 } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
 
@@ -63,6 +63,8 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
   const [activeTab, setActiveTab] = useState<'overview' | 'doctors' | 'services' | 'reviews'>('overview');
   const [serviceSearchQuery, setServiceSearchQuery] = useState('');
   const [doctorSearchQuery, setDoctorSearchQuery] = useState('');
+  const [galleryPhotos, setGalleryPhotos] = useState<any[]>([]); // ✅ ADD: Gallery photos
+  const [portfolioItems, setPortfolioItems] = useState<any[]>([]); // ✅ ADD: Portfolio items
 
   const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
 
@@ -170,6 +172,42 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
         console.error('❌ [CLINIC-PROFILE] Failed to fetch doctors:', doctorsResponse.status);
         setDoctors([]);
       }
+
+      // ✅ ADD: Fetch gallery photos
+      const galleryResponse = await fetch(`${API_BASE}/customer/clinic/${clinicId}/gallery`, {
+        headers: {
+          'Authorization': `Bearer ${publicAnonKey}`
+        }
+      });
+
+      if (galleryResponse.ok) {
+        const galleryData = await galleryResponse.json();
+        // ✅ FIX: Handle standardized response format
+        const photosList = galleryData.photos || galleryData.data?.photos || [];
+        setGalleryPhotos(photosList);
+        console.log('✅ [CLINIC-PROFILE] Loaded gallery photos:', photosList.length);
+      } else {
+        console.warn('⚠️ [CLINIC-PROFILE] Failed to fetch gallery');
+        setGalleryPhotos([]);
+      }
+
+      // ✅ ADD: Fetch portfolio items
+      const portfolioResponse = await fetch(`${API_BASE}/customer/clinic/${clinicId}/portfolio`, {
+        headers: {
+          'Authorization': `Bearer ${publicAnonKey}`
+        }
+      });
+
+      if (portfolioResponse.ok) {
+        const portfolioData = await portfolioResponse.json();
+        // ✅ FIX: Handle standardized response format
+        const itemsList = portfolioData.items || portfolioData.data?.items || [];
+        setPortfolioItems(itemsList);
+        console.log('✅ [CLINIC-PROFILE] Loaded portfolio items:', itemsList.length);
+      } else {
+        console.warn('⚠️ [CLINIC-PROFILE] Failed to fetch portfolio');
+        setPortfolioItems([]);
+      }
     } catch (error) {
       console.error('❌ [CLINIC-PROFILE] Error loading clinic data:', error);
     } finally {
@@ -202,7 +240,12 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
   }
 
   const clinicName = clinic.businessName || clinic.fullName;
-  const photos = facility.photos || [];
+  // ✅ FIX: Combine facility photos with gallery photos
+  const facilityPhotos = facility.photos || [];
+  const galleryPhotoUrls = galleryPhotos
+    .map(photo => photo.afterPhoto || photo.beforePhoto)
+    .filter(url => url); // Filter out null/undefined
+  const photos = [...facilityPhotos, ...galleryPhotoUrls];
   const hasPhotos = photos.length > 0;
 
   return (

@@ -35,17 +35,23 @@ export function AmbulanceSOS({ phone, onBack }: AmbulanceSOSProps) {
           });
           if (response.ok) {
             const data = await response.json();
-            setAmbulances(data.services || []);
+            // ✅ FIX: Handle standardized response format
+            // Response format: { success: true, services: [...], total: ... }
+            const servicesList = data.services || data.data?.services || [];
+            setAmbulances(servicesList);
             setStep('contact');
           } else {
-             // Fallback mock
-             setAmbulances([
-                 { vendorName: 'City Pet Ambulance', vendorId: 'amb1', distance: '2.5 km', eta: '10 mins', phone: '9999999999' }
-             ]);
+             const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+             console.error('Failed to load ambulances:', errorData);
+             // Fallback mock only if no services found
+             setAmbulances([]);
              setStep('contact');
           }
-      } catch (e) {
-          console.error(e);
+      } catch (e: any) {
+          console.error('Error finding ambulances:', e);
+          const errorMessage = e?.message || 'Network error. Please check your connection.';
+          // Don't show error toast - just log and continue
+          setAmbulances([]);
           setStep('contact');
       }
   };

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { TrendingUp, Target, Calendar, Award, Star, ChevronRight, Image as ImageIcon } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from 'sonner@2.0.3';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 
 interface TrainingSession {
@@ -58,20 +58,106 @@ export function TrainingProgressDashboard({
     try {
       setLoading(true);
 
+      // ✅ FIX: Use new customer-facing endpoint
+      const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+      
+      // Try to get trackers for this customer
+      const trackersResponse = await fetch(
+        `${API_BASE}/customer/progress/${customerId}/trackers?petId=${packageId}`,
+        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+      );
+
+      if (trackersResponse.ok) {
+        const trackersData = await trackersResponse.json();
+        // ✅ FIX: Handle standardized response format
+        const trackers = trackersData.trackers || trackersData.data?.trackers || [];
+        
+        // Find tracker for this package (try by packageId first, then by petId)
+        let packageTracker = trackers.find((t: any) => t.id === packageId || t.packageId === packageId);
+        if (!packageTracker && trackers.length > 0) {
+          // If no exact match, use the first tracker
+          packageTracker = trackers[0];
+        }
+        
+        if (packageTracker) {
+          // Fetch detailed tracker info
+          const detailResponse = await fetch(
+            `${API_BASE}/customer/progress/${customerId}/trackers/${packageTracker.id}`,
+            { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+          );
+          
+          if (detailResponse.ok) {
+            const detailData = await detailResponse.json();
+            // ✅ FIX: Handle standardized response format
+            const tracker = detailData.tracker || detailData.data?.tracker;
+            
+            if (tracker) {
+              // Transform tracker data to match TrainingPackageProgress format
+              setProgress({
+                packageId: tracker.id,
+                packageName: tracker.programName || 'Training Program',
+                trainerName: tracker.vendorName || 'Trainer',
+                petName: tracker.petName,
+                startDate: tracker.startDate,
+                endDate: tracker.endDate,
+                totalSessions: tracker.totalSessions || 0,
+                completedSessions: tracker.sessionsCompleted || 0,
+                overallProgress: tracker.completionPercentage || 0,
+                currentLevel: tracker.currentPhase || 'Beginner',
+                sessions: tracker.notes?.map((note: any, idx: number) => ({
+                  sessionId: note.id || `session-${idx}`,
+                  sessionNumber: note.sessionNumber || idx + 1,
+                  date: note.date,
+                  duration: 60,
+                  skillsFocused: [],
+                  progressRating: note.rating || 3,
+                  notes: note.observations || '',
+                  achievements: note.improvements || [],
+                  nextSteps: note.nextSteps ? [note.nextSteps] : []
+                })) || [],
+                milestones: tracker.milestones?.map((m: any) => ({
+                  name: m.title,
+                  achieved: m.status === 'completed',
+                  achievedAt: m.completedDate
+                })) || [],
+                beforePhotos: [],
+                afterPhotos: tracker.mediaGallery?.filter((m: any) => m.type === 'photo').map((m: any) => m.url) || []
+              });
+              return;
+            }
+          } else {
+            const errorData = await detailResponse.json().catch(() => ({ error: 'Unknown error' }));
+            console.error('Failed to load tracker details:', errorData);
+          }
+        }
+      } else {
+        const errorData = await trackersResponse.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('Failed to load trackers:', errorData);
+      }
+
+      // Fallback to old endpoint if new endpoint doesn't work
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/training/package/${packageId}/progress`,
+        `${API_BASE}/training/package/${packageId}/progress`,
         { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
       );
 
       if (response.ok) {
         const data = await response.json();
-        setProgress(data.progress || getMockProgress());
-      } else {
-        // Use mock data if endpoint not available
-        setProgress(getMockProgress());
+        // ✅ FIX: Handle standardized response format
+        const progressData = data.progress || data.data?.progress;
+        if (progressData) {
+          setProgress(progressData);
+          return;
+        }
       }
-    } catch (error) {
+      
+      // If all endpoints fail, use mock data
+      console.warn('⚠️ Using mock progress data - no tracker found');
+      setProgress(getMockProgress());
+    } catch (error: any) {
       console.error('Error fetching progress:', error);
+      const errorMessage = error?.message || 'Failed to load progress data';
+      toast.error(errorMessage);
       setProgress(getMockProgress());
     } finally {
       setLoading(false);

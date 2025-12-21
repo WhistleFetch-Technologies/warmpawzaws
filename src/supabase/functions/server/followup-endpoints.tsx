@@ -80,8 +80,9 @@ app.post('/make-server-3dd53475/followup/create', async (c) => {
       }
     }
 
-    // Calculate follow-up discount (free if chat-based, 30% off if at-center)
-    const isChatFollowup = serviceStyle === 'tele';
+    // ✅ ENHANCED: Support chat follow-up for ALL service styles (at_center, at_home, tele)
+    // Chat follow-up is available for all appointment types within 7 days
+    const isChatFollowup = serviceStyle === 'tele' || body.followupType === 'chat';
     const discountPercent = 100; // All follow-ups are FREE within 7 days
     const originalPrice = typeof service.price === 'number' ? service.price : service.price?.basePrice || 0;
     const discountedPrice = 0; // FREE for all follow-ups
@@ -92,7 +93,7 @@ app.post('/make-server-3dd53475/followup/create', async (c) => {
       id: followupBookingId,
       originalBookingId: originalBookingId,
       isFollowup: true,
-      followupType: isChatFollowup ? 'chat' : 'at_center',
+      followupType: isChatFollowup ? 'chat' : serviceStyle, // Preserve original service style for non-chat follow-ups
       
       // Booking details
       customerPhone: customerPhone.replace(/[^0-9]/g, ''),

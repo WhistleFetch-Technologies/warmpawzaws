@@ -105,18 +105,22 @@ export function VendorServiceCatalogView({
       if (servicesRes.ok) {
         const data = await servicesRes.json();
         console.log('📚 [CATALOG] Loaded services:', data);
-        console.log('📚 [CATALOG] Total services:', data.services?.length || 0);
+        // ✅ FIX: Handle standardized response format
+        // Response format: { success: true, services: [...], total: ... }
+        const servicesList = data.services || data.data?.services || [];
+        console.log('📚 [CATALOG] Total services:', servicesList.length);
         
-        if (data.services && data.services.length > 0) {
-          console.log('📚 [CATALOG] Sample service:', data.services[0]);
-          setServices(data.services);
+        if (servicesList.length > 0) {
+          console.log('📚 [CATALOG] Sample service:', servicesList[0]);
+          setServices(servicesList);
         } else {
           console.warn('⚠️ [CATALOG] No services in catalog!');
-          toast.error('No services found in catalog. Please contact admin.');
+          // Don't show error toast on initial load - just log
         }
       } else {
-        console.error('❌ [CATALOG] Failed to load:', servicesRes.status, await servicesRes.text());
-        toast.error('Failed to load service catalog');
+        const errorData = await servicesRes.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('❌ [CATALOG] Failed to load:', errorData);
+        // Don't show error toast on initial load - just log
       }
 
       // Load vendor's enabled services
@@ -131,9 +135,14 @@ export function VendorServiceCatalogView({
         const data = await vendorServicesRes.json();
         console.log('✅ [VENDOR] Loaded vendor services:', data);
         
+        // ✅ FIX: Handle standardized response format
         let vendorServicesList: any[] = [];
         
-        if (data.allServices && Array.isArray(data.allServices)) {
+        // Try standardized format first
+        if (data.data?.allServices && Array.isArray(data.data.allServices)) {
+          vendorServicesList = data.data.allServices;
+        }
+        else if (data.allServices && Array.isArray(data.allServices)) {
           vendorServicesList = data.allServices;
         }
         else if (data.services && typeof data.services === 'object') {
@@ -164,12 +173,18 @@ export function VendorServiceCatalogView({
 
       if (rolesRes.ok) {
         const data = await rolesRes.json();
-        setRoles(data.roles || []);
+        // ✅ FIX: Handle standardized response format
+        setRoles(data.roles || data.data?.roles || []);
+      } else {
+        const errorData = await rolesRes.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('Failed to load roles:', errorData);
+        // Don't show error toast - roles are not critical
       }
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Error loading catalog:', error);
-      toast.error('Failed to load service catalog');
+      const errorMessage = error?.message || 'Failed to load service catalog. Please try again.';
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -382,19 +397,21 @@ export function VendorServiceCatalogView({
         
         setVendorServices(prev => [...prev, {
           ...service,
-          vendorServiceId: result.vendorServiceId || result.id
+          vendorServiceId: result.vendorServiceId || result.id || result.data?.vendorServiceId
         }]);
 
         if (mode === 'browse' && onSelectService) {
           onSelectService(service);
         }
       } else {
-        const error = await response.json();
-        toast.error(error.error || 'Failed to add service');
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to add service';
+        toast.error(errorMessage);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error adding service:', error);
-      toast.error('Failed to add service');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     } finally {
       setAdding(false);
     }
@@ -425,9 +442,10 @@ export function VendorServiceCatalogView({
       setSelectedServices(new Set());
       toast.success(`Added ${servicesToAdd.length} services`);
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error adding services:', error);
-      toast.error('Failed to add some services');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     } finally {
       setAdding(false);
     }

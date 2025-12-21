@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Plus, Edit, Trash2, Save, Clock, Package, AlertCircle } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { toast } from 'sonner';
+import { toast } from 'sonner@2.0.3';
 import { Button } from '../ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
 
@@ -59,7 +59,13 @@ export function NutritionistMealManager({ vendorId, vendorName, onBack }: Nutrit
 
       if (productsRes.ok) {
         const data = await productsRes.json();
-        setProducts(data.products || []);
+        // ✅ FIX: Handle standardized response format
+        // Response format: { success: true, products: [...], total: ... }
+        setProducts(data.products || data.data?.products || []);
+      } else {
+        const errorData = await productsRes.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('Failed to load products:', errorData);
+        // Don't show error toast on initial load - just log
       }
 
       // Load orders
@@ -70,11 +76,19 @@ export function NutritionistMealManager({ vendorId, vendorName, onBack }: Nutrit
 
       if (ordersRes.ok) {
         const data = await ordersRes.json();
-        setOrders(data.orders || []);
+        // ✅ FIX: Handle standardized response format
+        // Response format: { success: true, orders: [...], total: ... }
+        setOrders(data.orders || data.data?.orders || []);
+      } else {
+        const errorData = await ordersRes.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('Failed to load orders:', errorData);
+        // Don't show error toast on initial load - just log
       }
 
-    } catch (error) {
-      toast.error('Failed to load data');
+    } catch (error: any) {
+      console.error('Error loading data:', error);
+      const errorMessage = error?.message || 'Failed to load data. Please try again.';
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -101,22 +115,30 @@ export function NutritionistMealManager({ vendorId, vendorName, onBack }: Nutrit
       });
 
       if (response.ok) {
-        toast.success(editingProduct ? 'Product updated' : 'Product created');
+        toast.success(editingProduct ? 'Product updated successfully' : 'Product created successfully');
         setShowAddProduct(false);
         setEditingProduct(null);
         resetForm();
-        loadData();
+        await loadData(); // ✅ Ensure data reloads
       } else {
-        const error = await response.json();
-        toast.error(error.error || 'Operation failed');
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Operation failed';
+        toast.error(errorMessage);
       }
-    } catch (error) {
-      toast.error('Network error');
+    } catch (error: any) {
+      console.error('Error saving product:', error);
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 
   const handleDeleteProduct = async (productId: string) => {
-    if (!confirm('Delete this product?')) return;
+    const product = products.find(p => p.id === productId);
+    const productName = product?.name || 'this product';
+    
+    if (!confirm(`Are you sure you want to delete "${productName}"? This action cannot be undone.`)) {
+      return;
+    }
 
     try {
       const response = await fetch(
@@ -128,13 +150,17 @@ export function NutritionistMealManager({ vendorId, vendorName, onBack }: Nutrit
       );
 
       if (response.ok) {
-        toast.success('Product deleted');
-        loadData();
+        toast.success(`Product "${productName}" deleted successfully`);
+        await loadData(); // ✅ Ensure data reloads
       } else {
-        toast.error('Failed to delete');
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to delete product';
+        toast.error(errorMessage);
       }
-    } catch (error) {
-      toast.error('Network error');
+    } catch (error: any) {
+      console.error('Error deleting product:', error);
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 
@@ -154,12 +180,16 @@ export function NutritionistMealManager({ vendorId, vendorName, onBack }: Nutrit
 
       if (response.ok) {
         toast.success(`Order marked as ${newStatus}`);
-        loadData();
+        await loadData(); // ✅ Ensure data reloads
       } else {
-        toast.error('Failed to update status');
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to update status';
+        toast.error(errorMessage);
       }
-    } catch (error) {
-      toast.error('Network error');
+    } catch (error: any) {
+      console.error('Error updating order status:', error);
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 

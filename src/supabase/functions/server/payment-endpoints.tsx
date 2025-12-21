@@ -1,28 +1,21 @@
 import { Hono } from "npm:hono";
 import { sendSuccess, sendError } from "./response-utils.ts";
 import { createRazorpayOrder, verifyRazorpaySignature, fetchRazorpayPayment } from "./razorpay-integration.tsx";
+import { createNotificationHelper } from "./notification-system.tsx";
 
 export function paymentEndpoints(app: Hono, kv: any) {
   
-  // Helper: Trigger Notification
+  // ✅ FIX: Use existing notification system (no duplicate code)
+  // Helper: Trigger Notification using existing infrastructure
   async function triggerNotification(notification: any) {
     try {
-      const notificationId = `NOTIF-${Date.now()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
-      const fullNotification = {
-        id: notificationId,
+      // Use existing createNotificationHelper which handles AWS SNS integration
+      await createNotificationHelper(kv, {
         ...notification,
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-        channels: notification.channels || { email: true, sms: true, inApp: true, push: true }
-      };
+        channels: notification.channels || { email: true, sms: true, inApp: true, push: false }
+      });
       
-      await kv.set(`notification:${notificationId}`, fullNotification);
-      
-      const recipientNotifs = await kv.get(`notifications:${notification.recipientType}:${notification.recipientId}`) || [];
-      recipientNotifs.unshift(notificationId);
-      await kv.set(`notifications:${notification.recipientType}:${notification.recipientId}`, recipientNotifs);
-      
-      console.log(`📨 Notification queued: ${notificationId} for ${notification.recipientType}:${notification.recipientId}`);
+      console.log(`📨 Notification sent via existing system for ${notification.recipientType}:${notification.recipientId}`);
     } catch (e) {
       console.error('Failed to trigger notification:', e);
     }
@@ -325,28 +318,38 @@ export function paymentEndpoints(app: Hono, kv: any) {
         await kv.set(`vendor:${payment.vendorId}`, vendor);
       }
 
-      // NOTIFICATIONS
-      // 1. Notify Customer (Payment Success)
-      await triggerNotification({
-        recipientId: payment.customerId,
-        recipientType: 'customer',
-        type: 'booking_confirmed',
-        category: 'bookings',
-        title: 'Payment Successful',
-        message: `Payment of ₹${payment.amount} successful for booking.`,
-        data: { paymentId, bookingId: payment.bookingId },
-        priority: 'medium'
-      });
+      // ✅ NOTIFICATIONS: Payment Success - Use existing notification system
+      try {
+        const customer = await kv.get(`customer:${payment.customerId}`);
+        const vendor = await kv.get(`vendor:${payment.vendorId}`);
 
-      // 2. Notify Vendor (Payment Received)
-      await triggerNotification({
-        recipientId: payment.vendorId,
-        recipientType: 'vendor',
-        type: 'booking_confirmed',
-        category: 'bookings',
-        title: 'Payment Received',
-        message: `Received payment of ₹${payment.vendorAmount} for booking.`,
-        data: { paymentId, bookingId: payment.bookingId },
+        // 1. Notify Customer (Payment Success)
+        await createNotificationHelper(kv, {
+          recipientId: payment.customerId,
+          recipientType: 'customer',
+          type: 'payment_success',
+          category: 'payments',
+          title: 'Payment Successful',
+          message: `Payment of ₹${payment.amount} received successfully! Booking ID: ${payment.bookingId}. Thank you!`,
+          recipientEmail: customer?.email,
+          recipientPhone: customer?.phone,
+          channels: { email: true, sms: true, inApp: true, push: false },
+          data: { paymentId, bookingId: payment.bookingId, amount: payment.amount, transactionId: razorpayPaymentId },
+          priority: 'high'
+        });
+
+        // 2. Notify Vendor (Payment Received)
+        await createNotificationHelper(kv, {
+          recipientId: payment.vendorId,
+          recipientType: 'vendor',
+          type: 'payment_received',
+          category: 'payments',
+          title: 'Payment Received',
+          message: `Received payment of ₹${payment.vendorAmount} for booking ${payment.bookingId}. Platform commission: ₹${payment.platformCommission}`,
+          recipientEmail: vendor?.email,
+          recipientPhone: vendor?.phone,
+          channels: { email: true, sms: false, inApp: true, push: false },
+          data: { paymentId, bookingId: payment.bookingId, vendorAmount: payment.vendorAmount, commission: payment.platformCommission },
         priority: 'medium'
       });
 

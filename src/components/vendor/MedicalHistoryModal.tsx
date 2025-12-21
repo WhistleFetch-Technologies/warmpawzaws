@@ -57,25 +57,33 @@ export function MedicalHistoryModal({ petId, bookingId, petName, vendorId, onClo
 
       if (response.ok) {
         const data = await response.json();
-        if (data.success) {
-          setRecords(data.records || []);
-          setPetInfo(data.petInfo || null); // ✅ ADD: Store pet details
-          setPetInfo({
-            name: data.petName,
-            photo: data.petPhoto,
-            species: data.petSpecies,
-            breed: data.petBreed
-          });
+        // ✅ FIX: Handle standardized response format
+        // Response format: { success: true, records: [...], petInfo: {...}, ... }
+        if (data.success || data.data?.success) {
+          const recordsList = data.records || data.data?.records || [];
+          setRecords(recordsList);
+          
+          // ✅ FIX: Handle pet info from standardized format
+          const petInfoData = data.petInfo || data.data?.petInfo || {
+            name: data.petName || data.data?.petName,
+            photo: data.petPhoto || data.data?.petPhoto,
+            species: data.petSpecies || data.data?.petSpecies,
+            breed: data.petBreed || data.data?.petBreed
+          };
+          setPetInfo(petInfoData);
         } else {
-          setError(data.error || 'Failed to load records');
+          const errorMessage = data.error || data.message || 'Failed to load records';
+          setError(errorMessage);
         }
       } else {
-        const errData = await response.json();
-        setError(errData.error || 'Access to medical records denied');
+        const errData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errData.error || errData.message || 'Access to medical records denied';
+        setError(errorMessage);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error fetching medical history:', err);
-      setError('Network error loading records');
+      const errorMessage = err?.message || 'Network error loading records. Please try again.';
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }

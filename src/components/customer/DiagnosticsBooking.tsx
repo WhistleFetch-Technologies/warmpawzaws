@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
 import { Badge } from '../ui/badge';
@@ -9,22 +9,88 @@ import { projectId, publicAnonKey } from '../../utils/supabase/info';
 interface DiagnosticsBookingProps {
   customerId: string;
   petId: string;
+  vendorId?: string; // ✅ FIX Bug 2: Add vendorId to interface
   onBack: () => void;
   onSuccess: (bookingId: string) => void;
 }
 
-export function DiagnosticsBooking({ customerId, petId, onBack, onSuccess }: DiagnosticsBookingProps) {
+export function DiagnosticsBooking({ customerId, petId, vendorId, onBack, onSuccess }: DiagnosticsBookingProps) {
   const [selectedTests, setSelectedTests] = useState<string[]>([]);
   const [collectionType, setCollectionType] = useState<'home' | 'center'>('home');
   const [loading, setLoading] = useState(false);
 
-  // Mock tests
-  const tests = [
-    { id: 't1', name: 'Complete Blood Count (CBC)', price: 800, tat: '24 hrs' },
-    { id: 't2', name: 'Kidney Function Test (KFT)', price: 1200, tat: '24 hrs' },
-    { id: 't3', name: 'Liver Function Test (LFT)', price: 1100, tat: '24 hrs' },
-    { id: 't4', name: 'Thyroid Profile', price: 1500, tat: '48 hrs' },
-  ];
+  const [tests, setTests] = useState<Array<{ id: string; name: string; price: number; tat: string }>>([]);
+  const [loadingTests, setLoadingTests] = useState(false);
+
+  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+
+  // ✅ FIX: Fetch diagnostic tests from vendor
+  useEffect(() => {
+    if (vendorId) {
+      loadDiagnosticTests(vendorId);
+    } else {
+      // If no vendorId provided, use mock data
+      loadDiagnosticTests();
+    }
+  }, [vendorId]);
+
+  const loadDiagnosticTests = async (vendorId?: string) => {
+    if (!vendorId) {
+      // If no vendorId, use mock data as fallback
+      setTests([
+        { id: 't1', name: 'Complete Blood Count (CBC)', price: 800, tat: '24 hrs' },
+        { id: 't2', name: 'Kidney Function Test (KFT)', price: 1200, tat: '24 hrs' },
+        { id: 't3', name: 'Liver Function Test (LFT)', price: 1100, tat: '24 hrs' },
+        { id: 't4', name: 'Thyroid Profile', price: 1500, tat: '48 hrs' },
+      ]);
+      return;
+    }
+
+    try {
+      setLoadingTests(true);
+      const response = await fetch(`${API_BASE}/customer/clinic/${vendorId}/diagnostic-tests`, {
+        headers: {
+          'Authorization': `Bearer ${publicAnonKey}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        // ✅ FIX: Handle standardized response format
+        const testsList = data.tests || data.data?.tests || [];
+        
+        // Map to component format
+        const mappedTests = testsList.map((test: any) => ({
+          id: test.id || test.testId,
+          name: test.testName || test.name,
+          price: test.price || 0,
+          tat: test.duration ? `${test.duration} mins` : (test.reportDeliveryTime ? `${test.reportDeliveryTime} hrs` : '24 hrs')
+        }));
+
+        setTests(mappedTests);
+      } else {
+        // Fallback to mock data if fetch fails
+        setTests([
+          { id: 't1', name: 'Complete Blood Count (CBC)', price: 800, tat: '24 hrs' },
+          { id: 't2', name: 'Kidney Function Test (KFT)', price: 1200, tat: '24 hrs' },
+          { id: 't3', name: 'Liver Function Test (LFT)', price: 1100, tat: '24 hrs' },
+          { id: 't4', name: 'Thyroid Profile', price: 1500, tat: '48 hrs' },
+        ]);
+      }
+    } catch (error: any) {
+      console.error('Error loading diagnostic tests:', error);
+      // Fallback to mock data on error
+      setTests([
+        { id: 't1', name: 'Complete Blood Count (CBC)', price: 800, tat: '24 hrs' },
+        { id: 't2', name: 'Kidney Function Test (KFT)', price: 1200, tat: '24 hrs' },
+        { id: 't3', name: 'Liver Function Test (LFT)', price: 1100, tat: '24 hrs' },
+        { id: 't4', name: 'Thyroid Profile', price: 1500, tat: '48 hrs' },
+      ]);
+    } finally {
+      setLoadingTests(false);
+    }
+  };
 
   const toggleTest = (id: string) => {
     if (selectedTests.includes(id)) {

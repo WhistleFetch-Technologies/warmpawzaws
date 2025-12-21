@@ -96,13 +96,18 @@ export function CustomerServicesPage({ onBack, onNavigate, initialFilters }: Cus
              throw new Error('Failed to load services');
         }
         
-        const data = await fallbackResponse.json();
-        setServices(data.services || []);
+        const fallbackData = await fallbackResponse.json();
+        // ✅ FIX: Handle standardized response format
+        const servicesList = fallbackData.services || fallbackData.data?.services || [];
+        setServices(servicesList);
         return;
       }
       
       const data = await response.json();
-      setServices(data.services || []);
+      // ✅ FIX: Handle standardized response format
+      // Response format: { success: true, services: [...], total: ... }
+      const servicesList = data.services || data.data?.services || [];
+      setServices(servicesList);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load services');
       console.error('Error fetching services:', err);

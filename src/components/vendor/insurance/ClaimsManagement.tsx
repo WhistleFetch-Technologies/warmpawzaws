@@ -6,6 +6,7 @@ import { Card } from '../../ui/card';
 import { Textarea } from '../../ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../../ui/dialog';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { toast } from 'sonner@2.0.3';
 
 interface Claim {
   id: string;
@@ -67,10 +68,18 @@ export function ClaimsManagement({
 
       if (response.ok) {
         const data = await response.json();
-        setClaim(data.claim);
+        // ✅ FIX: Handle standardized response format
+        // Response format: { success: true, claim: {...}, ... }
+        setClaim(data.claim || data.data?.claim);
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('Failed to load claim:', errorData);
+        toast.error(errorData.error || 'Failed to load claim details');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading claim:', error);
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -78,14 +87,14 @@ export function ClaimsManagement({
 
   const handleAction = async () => {
     if (!selectedAction || !response.trim()) {
-      alert('Please provide a response');
+      toast.error('Please provide a response');
       return;
     }
 
     try {
       setProcessing(true);
 
-      const response = await fetch(
+      const apiResponse = await fetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/insurance/claims/${claimId}/action`,
         {
           method: 'POST',
@@ -100,17 +109,21 @@ export function ClaimsManagement({
         }
       );
 
-      if (response.ok) {
-        alert(`✅ Claim ${selectedAction.replace('_', ' ')} successfully!`);
+      if (apiResponse.ok) {
+        const actionLabel = selectedAction.replace('_', ' ');
+        toast.success(`Claim ${actionLabel} successfully`);
         setActionDialogOpen(false);
-        loadClaimDetails();
+        setResponse(''); // Clear response field
+        await loadClaimDetails(); // ✅ Ensure claim details reload
       } else {
-        const error = await response.json();
-        alert(`Error: ${error.error}`);
+        const errorData = await apiResponse.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to process claim action';
+        toast.error(errorMessage);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error processing claim:', error);
-      alert('Failed to process claim action');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     } finally {
       setProcessing(false);
     }

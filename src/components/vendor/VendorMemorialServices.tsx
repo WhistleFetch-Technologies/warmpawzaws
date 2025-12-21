@@ -126,22 +126,44 @@ export function VendorMemorialServices({ vendorId, vendorData, onBack }: VendorM
   };
 
   const loadTributes = async () => {
-    const response = await fetch(`${API_BASE}/${vendorId}/tributes`, {
-      headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-    });
-    if (response.ok) {
-      const data = await response.json();
-      setTributes(data.tributes || []);
+    try {
+      const response = await fetch(`${API_BASE}/${vendorId}/tributes`, {
+        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        // ✅ FIX: Handle standardized response format
+        // Response format: { success: true, tributes: [...], total: ... }
+        setTributes(data.tributes || data.data?.tributes || []);
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('Failed to load tributes:', errorData);
+        // Don't show error toast on initial load - just log
+      }
+    } catch (error: any) {
+      console.error('Error loading tributes:', error);
+      // Don't show error toast on initial load - just log
     }
   };
 
   const loadProducts = async () => {
-    const response = await fetch(`${API_BASE}/${vendorId}/products`, {
-      headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-    });
-    if (response.ok) {
-      const data = await response.json();
-      setProducts(data.products || []);
+    try {
+      const response = await fetch(`${API_BASE}/${vendorId}/products`, {
+        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        // ✅ FIX: Handle standardized response format
+        // Response format: { success: true, products: [...], total: ... }
+        setProducts(data.products || data.data?.products || []);
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('Failed to load products:', errorData);
+        // Don't show error toast on initial load - just log
+      }
+    } catch (error: any) {
+      console.error('Error loading products:', error);
+      // Don't show error toast on initial load - just log
     }
   };
 
@@ -169,7 +191,12 @@ export function VendorMemorialServices({ vendorId, vendorData, onBack }: VendorM
   };
 
   const handleDeleteProduct = async (productId: string) => {
-    if (!confirm('Are you sure you want to delete this product?')) return;
+    const product = products.find(p => p.id === productId);
+    const productName = product?.name || 'this product';
+    
+    if (!confirm(`Are you sure you want to delete "${productName}"? This action cannot be undone.`)) {
+      return;
+    }
 
     try {
       const response = await fetch(`${API_BASE}/${vendorId}/products/${productId}`, {
@@ -178,14 +205,17 @@ export function VendorMemorialServices({ vendorId, vendorData, onBack }: VendorM
       });
 
       if (response.ok) {
-        toast.success('Product deleted successfully');
-        loadProducts();
+        toast.success(`Product "${productName}" deleted successfully`);
+        await loadProducts(); // ✅ Ensure products reload
       } else {
-        toast.error('Failed to delete product');
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
+        const errorMessage = errorData.error || errorData.message || 'Failed to delete product';
+        toast.error(errorMessage);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error deleting product:', error);
-      toast.error('Failed to delete product');
+      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
+      toast.error(errorMessage);
     }
   };
 

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
-  LayoutDashboard, Store, Package, Tag, Image as ImageIcon,
-  ShoppingCart, Percent, BarChart3, Settings, FileText
+  LayoutDashboard, Store, Package,
+  ShoppingCart, Percent, BarChart3, Settings, FileText, CheckCircle2
 } from 'lucide-react';
 import { ECommerceDashboard } from './ECommerceDashboard';
 import { SellerManagement } from './SellerManagement';
@@ -9,10 +9,9 @@ import { ProductApproval } from './ProductApproval';
 import { CommissionSettings } from './CommissionSettings';
 import { CategoryManagement } from './CategoryManagement';
 import { OrderManagementAdmin } from './OrderManagementAdmin';
-import { PromotionsAdmin } from './PromotionsAdmin';
-import { BannerAdmin } from './BannerAdmin';
 import { ECommerceAnalytics } from './ECommerceAnalytics';
 import { PolicyManagement } from './PolicyManagement';
+import { CustomServiceApproval } from './CustomServiceApproval';
 
 interface ECommerceManagementProps {
   onBack: () => void;
@@ -22,11 +21,10 @@ type TabType =
   | 'dashboard'
   | 'sellers'
   | 'products'
+  | 'service-approval'
   | 'orders'
   | 'commission'
   | 'categories'
-  | 'promotions'
-  | 'banners'
   | 'analytics'
   | 'policies';
 
@@ -37,11 +35,10 @@ export function ECommerceManagement({ onBack }: ECommerceManagementProps) {
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'sellers', label: 'Sellers', icon: Store },
     { id: 'products', label: 'Product Approval', icon: Package },
+    { id: 'service-approval', label: 'Service Approval', icon: CheckCircle2 },
     { id: 'orders', label: 'Orders', icon: ShoppingCart },
     { id: 'commission', label: 'Commission', icon: Percent },
     { id: 'categories', label: 'Categories', icon: FileText },
-    { id: 'promotions', label: 'Promotions', icon: Tag },
-    { id: 'banners', label: 'Banners', icon: ImageIcon },
     { id: 'analytics', label: 'Analytics', icon: BarChart3 },
     { id: 'policies', label: 'Policies', icon: Settings }
   ];
@@ -103,11 +100,10 @@ export function ECommerceManagement({ onBack }: ECommerceManagementProps) {
         {activeTab === 'dashboard' && <ECommerceDashboard />}
         {activeTab === 'sellers' && <SellerManagement />}
         {activeTab === 'products' && <ProductApproval />}
+        {activeTab === 'service-approval' && <CustomServiceApproval />}
         {activeTab === 'orders' && <OrderManagementAdmin />}
         {activeTab === 'commission' && <CommissionSettings />}
         {activeTab === 'categories' && <CategoryManagement />}
-        {activeTab === 'promotions' && <PromotionsAdmin />}
-        {activeTab === 'banners' && <BannerAdmin />}
         {activeTab === 'analytics' && <ECommerceAnalytics />}
         {activeTab === 'policies' && <PolicyManagement />}
       </div>

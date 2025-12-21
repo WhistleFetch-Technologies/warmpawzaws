@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { Button } from '../ui/button';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { toast } from 'sonner@2.0.3';
 import { Check, ArrowRight } from 'lucide-react';
+import { WarmpawzButton } from '../shared/design-system/WarmpawzButton';
 
 interface VendorApprovedSetupProps {
   vendorId: string;
@@ -123,14 +124,17 @@ export function VendorApprovedSetup({ vendorId, roleId, onComplete }: VendorAppr
 
         {/* Action Button */}
         <div className="pt-4 px-2">
-          <Button 
-            onClick={handleGetStarted}
+          <WarmpawzButton
+            variant={isSubmitting ? 'disabled' : 'solid'}
             disabled={isSubmitting}
-            className="w-full bg-[#FF8C42] hover:bg-[#e67a30] text-white h-14 rounded-xl font-bold text-lg shadow-lg transition-all transform hover:scale-[1.02] disabled:opacity-70 disabled:scale-100"
+            fullWidth
+            onClick={handleGetStarted}
+            icon={!isSubmitting ? ArrowRight : undefined}
+            iconPosition="right"
+            style={{ height: '56px', fontSize: '18px', fontWeight: 700 }}
           >
             {isSubmitting ? 'Starting...' : 'Get Started'}
-            {!isSubmitting && <ArrowRight className="w-5 h-5 ml-2" />}
-          </Button>
+          </WarmpawzButton>
         </div>
 
       </div>

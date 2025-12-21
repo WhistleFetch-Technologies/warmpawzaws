@@ -114,6 +114,29 @@ export function SunsetServiceProfileView({ phone, vendorId, onBack, onNavigate }
         </div>
       )}
 
+      {/* ✅ PHASE 3: Memorial Services & Counseling Quick Actions */}
+      <div className="bg-white mt-2 p-4 border-b border-gray-200">
+        <h3 className="font-semibold mb-3">Services</h3>
+        <div className="space-y-2">
+          <Button
+            onClick={() => onNavigate('memorial-services', { vendorId: vendorId, vendorName: vendor.businessName })}
+            variant="outline"
+            className="w-full bg-purple-50 hover:bg-purple-100 border-purple-200 text-purple-700"
+          >
+            <Heart className="w-4 h-4 mr-2" />
+            View Memorial Services & Products
+          </Button>
+          <Button
+            onClick={() => onNavigate('counseling-sessions', { vendorId: vendorId, vendorName: vendor.businessName })}
+            variant="outline"
+            className="w-full bg-purple-50 hover:bg-purple-100 border-purple-200 text-purple-700"
+          >
+            <Users className="w-4 h-4 mr-2" />
+            Book Counseling Session
+          </Button>
+        </div>
+      </div>
+
       {vendor.services && vendor.services.length > 0 && (
         <div className="bg-white mt-2 p-4">
           <h3 className="font-semibold mb-3">Services Offered</h3>

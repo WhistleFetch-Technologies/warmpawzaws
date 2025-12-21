@@ -123,7 +123,7 @@ export function staffServiceEndpoints(app: Hono, kvStore: any) {
             preferences = {
               staffId,
               at_center: { enabled: true, available: true },
-              at_home: { enabled: false, available: false, maxDistance: 10, travelChargePerKm: 0, acceptInstantBooking: true },
+              at_home: { enabled: false, available: false, maxDistance: 10, acceptInstantBooking: true },
               tele: { enabled: false, available: false, videoEnabled: true, chatEnabled: true, maxSessionDuration: 30, acceptInstantBooking: false },
               autoAcceptBookings: false,
               createdAt: new Date().toISOString(),

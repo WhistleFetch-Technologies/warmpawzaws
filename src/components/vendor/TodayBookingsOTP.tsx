@@ -66,27 +66,36 @@ export function TodayBookingsOTP({ vendorId, vendorName }: TodayBookingsOTPProps
     setShowOTPModal(true);
   };
 
+  // ✅ MIGRATION: Use new lifecycle endpoint for end OTP (start OTP uses existing endpoint)
   const handleVerifyOTP = async () => {
-    if (!otpInput || otpInput.length !== 4) {
-      toast.error('Please enter 4-digit OTP');
+    if (!otpInput || (otpInput.length !== 4 && otpInput.length !== 6)) {
+      toast.error('Please enter 4 or 6-digit OTP');
       return;
     }
 
     try {
       setSubmitting(true);
 
-      const endpoint = otpAction === 'start'
-        ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/bookings/${selectedBooking.id}/verify-start`
-        : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/bookings/${selectedBooking.id}/verify-end`;
+      let endpoint: string;
+      let body: any;
 
-      const body: any = {
-        otp: otpInput,
-        vendorId,
-        location: null // Could get from browser geolocation
-      };
-
-      if (otpAction === 'end') {
-        body.completionNotes = notes;
+      if (otpAction === 'start') {
+        // Start OTP - use existing endpoint
+        endpoint = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/bookings/${selectedBooking.id}/verify-start`;
+        body = {
+          otp: otpInput,
+          vendorId,
+          location: null // Could get from browser geolocation
+        };
+      } else {
+        // ✅ MIGRATION: End OTP - use new complete lifecycle endpoint
+        endpoint = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/booking/${selectedBooking.id}/verify-otp-complete`;
+        body = {
+          otp: otpInput,
+          action: 'end', // 'end' or 'complete'
+          vendorId,
+          completionNotes: notes
+        };
       }
 
       const response = await fetch(endpoint, {
@@ -100,7 +109,16 @@ export function TodayBookingsOTP({ vendorId, vendorName }: TodayBookingsOTPProps
 
       if (response.ok) {
         const data = await response.json();
-        toast.success(data.message);
+        
+        // Show enhanced success message for end OTP with lifecycle info
+        if (otpAction === 'end' && data.success && data.earnings) {
+          const earningsInfo = ` Earnings: ₹${data.earnings.vendorEarnings}`;
+          const settlementInfo = data.settlement ? ` Settlement: ${data.settlement.status}` : '';
+          toast.success(`✅ Service completed!${earningsInfo}${settlementInfo}`);
+        } else {
+          toast.success(data.message || 'OTP verified successfully');
+        }
+        
         setShowOTPModal(false);
         setSelectedBooking(null);
         setOtpInput('');
@@ -108,11 +126,11 @@ export function TodayBookingsOTP({ vendorId, vendorName }: TodayBookingsOTPProps
         loadTodayBookings();
       } else {
         const error = await response.json();
-        toast.error(error.error || 'Invalid OTP');
+        toast.error(error.error || error.message || 'Invalid OTP');
       }
     } catch (error) {
       console.error('Error:', error);
-      toast.error('Network error');
+      toast.error('Network error. Please check your connection and try again.');
     } finally {
       setSubmitting(false);
     }

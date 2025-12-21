@@ -57,6 +57,8 @@ export function GroomingCenterProfileView({ phone, centerId, onBack, onNavigate 
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
   const [isFavorite, setIsFavorite] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'services' | 'reviews'>('overview');
+  const [galleryPhotos, setGalleryPhotos] = useState<any[]>([]); // ✅ ADD: Gallery photos
+  const [portfolioItems, setPortfolioItems] = useState<any[]>([]); // ✅ ADD: Portfolio items
 
   const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
 
@@ -134,6 +136,42 @@ export function GroomingCenterProfileView({ phone, centerId, onBack, onNavigate 
           setServices([]);
         }
       }
+
+      // ✅ ADD: Fetch gallery photos
+      const galleryResponse = await fetch(`${API_BASE}/customer/clinic/${centerId}/gallery`, {
+        headers: {
+          'Authorization': `Bearer ${publicAnonKey}`
+        }
+      });
+
+      if (galleryResponse.ok) {
+        const galleryData = await galleryResponse.json();
+        // ✅ FIX: Handle standardized response format
+        const photosList = galleryData.photos || galleryData.data?.photos || [];
+        setGalleryPhotos(photosList);
+        console.log('✅ [GROOMING-PROFILE] Loaded gallery photos:', photosList.length);
+      } else {
+        console.warn('⚠️ [GROOMING-PROFILE] Failed to fetch gallery');
+        setGalleryPhotos([]);
+      }
+
+      // ✅ ADD: Fetch portfolio items
+      const portfolioResponse = await fetch(`${API_BASE}/customer/clinic/${centerId}/portfolio`, {
+        headers: {
+          'Authorization': `Bearer ${publicAnonKey}`
+        }
+      });
+
+      if (portfolioResponse.ok) {
+        const portfolioData = await portfolioResponse.json();
+        // ✅ FIX: Handle standardized response format
+        const itemsList = portfolioData.items || portfolioData.data?.items || [];
+        setPortfolioItems(itemsList);
+        console.log('✅ [GROOMING-PROFILE] Loaded portfolio items:', itemsList.length);
+      } else {
+        console.warn('⚠️ [GROOMING-PROFILE] Failed to fetch portfolio');
+        setPortfolioItems([]);
+      }
     } catch (error) {
       console.error('❌ [GROOMING-PROFILE] Error loading center data:', error);
     } finally {
@@ -180,7 +218,12 @@ export function GroomingCenterProfileView({ phone, centerId, onBack, onNavigate 
   }
 
   const centerName = center.businessName || center.fullName;
-  const photos = facility.photos || [];
+  // ✅ FIX: Combine facility photos with gallery photos
+  const facilityPhotos = facility.photos || [];
+  const galleryPhotoUrls = galleryPhotos
+    .map(photo => photo.afterPhoto || photo.beforePhoto)
+    .filter(url => url); // Filter out null/undefined
+  const photos = [...facilityPhotos, ...galleryPhotoUrls];
   const hasPhotos = photos.length > 0;
 
   return (
