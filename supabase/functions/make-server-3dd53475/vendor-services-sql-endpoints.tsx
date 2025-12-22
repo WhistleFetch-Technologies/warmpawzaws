@@ -41,14 +41,32 @@ export function registerVendorServicesSQLEndpoints(app: Hono) {
         return sendError(c, 'Missing required fields', 400);
       }
 
-      // Get vendor from SQL
-      const { data: vendor, error: vendorError } = await supabase
-        .from('vendors')
-        .select('id, role_id, vendor_id')
-        .eq('vendor_id', vendorId)
-        .single();
+      // Get vendor from SQL - handle both UUID and vendor_id string
+      let vendor;
+      let vendorError;
+      
+      // Try UUID first
+      if (vendorId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+        const result = await supabase
+          .from('vendors')
+          .select('id, role_id, vendor_id')
+          .eq('id', vendorId)
+          .single();
+        vendor = result.data;
+        vendorError = result.error;
+      } else {
+        // Try vendor_id string
+        const result = await supabase
+          .from('vendors')
+          .select('id, role_id, vendor_id')
+          .eq('vendor_id', vendorId)
+          .single();
+        vendor = result.data;
+        vendorError = result.error;
+      }
 
       if (vendorError || !vendor) {
+        console.error('Vendor lookup error:', vendorError);
         return sendError(c, 'Vendor not found', 404);
       }
 
@@ -78,7 +96,7 @@ export function registerVendorServicesSQLEndpoints(app: Hono) {
           publish_status: publishStatus,
           is_live: isLive,
           requires_approval: requiresApproval,
-          center_id: publishLevel === 'centre' && centreId ? centreId : null,
+          // center_id: null, // TODO: Add centers table if needed
           published_at: isLive ? new Date().toISOString() : null,
           metadata: {
             gpsTracking: gpsTracking || false,
@@ -143,12 +161,27 @@ export function registerVendorServicesSQLEndpoints(app: Hono) {
     try {
       const { vendorId } = c.req.param();
 
-      // Get vendor from SQL
-      const { data: vendor, error: vendorError } = await supabase
-        .from('vendors')
-        .select('id')
-        .eq('vendor_id', vendorId)
-        .single();
+      // Get vendor from SQL - handle both UUID and vendor_id string
+      let vendor;
+      let vendorError;
+      
+      if (vendorId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+        const result = await supabase
+          .from('vendors')
+          .select('id')
+          .eq('id', vendorId)
+          .single();
+        vendor = result.data;
+        vendorError = result.error;
+      } else {
+        const result = await supabase
+          .from('vendors')
+          .select('id')
+          .eq('vendor_id', vendorId)
+          .single();
+        vendor = result.data;
+        vendorError = result.error;
+      }
 
       if (vendorError || !vendor) {
         return sendError(c, 'Vendor not found', 404);

@@ -35,11 +35,11 @@ import { registerVideoCallEndpoints } from './video-call-endpoints.tsx';
 import { regionEndpoints } from './region-endpoints.tsx';
 import { registerProblemGridSpecializationSystem } from './problem-grid-specialization-system.tsx';
 import { registerCustomerServices } from './customer-services.tsx';
-import { registerCustomerRoutes } from './customer-routes.tsx';
+import { registerCustomerRoutes } from './customer-routes-refactored.tsx';
 import { registerAuthEndpoints } from './auth-endpoints.tsx';
 import { registerAICRMRoutes } from './ai-crm-routes.tsx';
 import { registerAIChatbotRoutes } from './ai-chatbot-routes.tsx';
-import { paymentEndpoints } from './payment-endpoints.tsx';
+import { paymentEndpoints } from './payment-endpoints-refactored.tsx';
 import { marketplacePaymentEndpoints } from './marketplace-payment-endpoints.tsx';
 import { registerChatEndpoints } from './chat-endpoints.tsx';
 import { registerSubscriptionEndpoints } from './subscription-endpoints.tsx';
@@ -52,7 +52,7 @@ import { registerNutritionistMealManagement } from './nutritionist-meal-manageme
 import { registerServicePackageManagement } from './service-package-management.tsx';
 import { registerCustomerPackageEndpoints } from './customer-package-endpoints.tsx';
 import { registerVendorMetricsEnhancement } from './vendor-metrics-enhancement.tsx';
-import { bookingEndpoints } from './booking-endpoints.tsx';
+import { bookingEndpoints } from './booking-endpoints-refactored.tsx';
 import { registerCafeFeatures } from './cafe-features.tsx';
 import { registerCapabilityEndpoints } from './capability-endpoints.tsx';
 import { registerResortInventory } from './resort-inventory.tsx';
@@ -62,7 +62,7 @@ import { registerUniversalServiceDiscovery } from './universal-service-discovery
 import { registerUniversalOTPSystem } from './universal-otp-system.tsx';
 import { registerHomeServiceBookingFlow } from './home-service-booking-flow.tsx';
 import { registerBookingLifecycleManagement } from './booking-lifecycle-management.tsx';
-import { bookingLifecycleCompleteEndpoints } from './booking-lifecycle-complete.tsx';
+import { bookingLifecycleCompleteEndpoints } from './booking-lifecycle-complete-refactored.tsx';
 import { registerPayoutCronJob } from './payout-cron-job.tsx';
 import { registerSmsOtpService } from './sms-otp-service.tsx';
 import { registerRazorpayRefundProcessor } from './razorpay-refund-processor.tsx';
@@ -83,7 +83,7 @@ import enhancedServicePublishing from './enhanced-service-publishing.tsx';
 import enhancedStaffAvailability from './enhanced-staff-availability-routes.tsx';
 import { pharmacyPrescriptionEndpoints } from './pharmacy-prescription-endpoints.tsx';
 import vetSpecializedServices from './vet-specialized-services.tsx'; // ✅ FIX: Import vet specialized services (ambulance, diagnostics, pharmacy)
-import staffCrudEndpoints from './staff-crud-endpoints.tsx'; // ✅ FIX: Import staff CRUD endpoints (create, read, update, delete staff)
+import staffCrudEndpoints from './staff-crud-endpoints-refactored.tsx'; // ✅ REFACTORED: SQL-only staff CRUD endpoints
 import { homeSampleCollectionEndpoints } from './home-sample-collection-endpoints.tsx';
 import { holidayPackageEndpoints } from './holiday-package-endpoints.tsx';
 import { smsNotificationServiceEnhanced } from './sms-notification-service-enhanced.tsx';
@@ -514,7 +514,7 @@ if (staffCrudEndpoints && typeof staffCrudEndpoints === 'object') {
 
 // 3. Admin Routes
 registerAdminVendorRoutes(app);
-adminVendorEndpoints(app, kv);
+adminVendorEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 registerAdminCatalogEndpoints(app);
 adminIntegrationEndpoints(app);
 registerVendorSettingsRulesEndpoints(app);
