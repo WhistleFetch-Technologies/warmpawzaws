@@ -1,44 +1,19 @@
-/**
- * ============================================================================
- * ONBOARDING CONFIG ENDPOINTS - SQL-ONLY VERSION
- * ============================================================================
- * 
- * REFACTORED: Removed all KV usage, using SQL repositories only
- * 
- * Onboarding configuration management endpoints for dynamic onboarding forms
- * and vendor application management
- * 
- * CHANGES:
- * - Removed `kv` parameter from function signature
- * - Replaced all `kv.get()`, `kv.set()`, `kv.del()`, `kv.getByPrefix()` with repository calls
- * - All roles stored in roles table
- * - All vendor applications stored in vendors table with status='pending'
- * - Application metadata stored in vendors.application_metadata JSONB column
- * 
- * Date: 2024-12-22
- * Migration: Phase 5 - KV to SQL
- * ============================================================================
- */
-
 import { Hono } from 'npm:hono@4';
 import { getStandardFieldsForRole, INDIAN_BANKS } from './common-onboarding-fields.tsx';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { normalizePhone, createVendorId } from './phone-utils.tsx';
 import { determineServiceCategory } from './service-category-mapping.tsx';
-import { getRolesRepository } from '../../lib/repositories/roles.ts';
-import { getVendorsRepository } from '../../lib/repositories/vendors.ts';
-import { getDbClient } from '../../lib/db.ts';
 
-export function onboardingConfigEndpoints(app: Hono) {
+/**
+ * Onboarding Configuration Management Endpoints
+ * Manages dynamic onboarding forms and document requirements per role
+ */
+export function onboardingConfigEndpoints(app: Hono, kv: any) {
   
   // Initialize Supabase client for document upload
   const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
-  
-  const rolesRepo = getRolesRepository();
-  const vendorsRepo = getVendorsRepository();
-  const db = getDbClient();
   
   /**
    * Get onboarding configuration for a role
@@ -50,8 +25,8 @@ export function onboardingConfigEndpoints(app: Hono) {
       
       console.log(`📋 Fetching onboarding config for roleId: ${roleId}`);
       
-      // ✅ SQL: Get role configuration
-      const role = await rolesRepo.findById(roleId);
+      // Get role configuration
+      const role = await kv.get(`role:config:${roleId}`);
       if (!role) {
         console.log(`❌ Role not found: ${roleId}`);
         return c.json({ error: 'Role not found' }, 404);
@@ -59,7 +34,6 @@ export function onboardingConfigEndpoints(app: Hono) {
 
       console.log(`✅ Role found:`, {
         name: role.name,
-        display_name: role.display_name,
         category: role.category,
         vendorType: role.vendorType,
         serviceCategory: role.serviceCategory
@@ -74,14 +48,8 @@ export function onboardingConfigEndpoints(app: Hono) {
         ...standardFields
       ];
 
-      // Get onboarding config from platform_settings or use role's onboarding fields
-      const { data: configData } = await db
-        .from('platform_settings')
-        .select('setting_value')
-        .eq('setting_key', `onboarding:config:${roleId}`)
-        .maybeSingle();
-      
-      const onboardingConfig = configData?.setting_value || role.onboardingFields || {};
+      // Get onboarding config (or return role's onboarding fields)
+      const onboardingConfig = await kv.get(`onboarding:config:${roleId}`);
       
       return c.json({ 
         roleId,
@@ -90,7 +58,7 @@ export function onboardingConfigEndpoints(app: Hono) {
         vendorType: role.vendorType,
         serviceCategory: role.serviceCategory,
         config: {
-          ...onboardingConfig,
+          ...(onboardingConfig || role.onboardingFields || {}),
           custom: allCustomFields,
           banksList: INDIAN_BANKS
         },
@@ -115,27 +83,20 @@ export function onboardingConfigEndpoints(app: Hono) {
       const { roleId } = c.req.param();
       const { fields, documentRequirements } = await c.req.json();
 
-      const role = await rolesRepo.findById(roleId);
+      const role = await kv.get(`role:config:${roleId}`);
       if (!role) {
         return c.json({ error: 'Role not found' }, 404);
       }
 
       // Update role with new onboarding configuration
-      const updatedRole = await rolesRepo.update(roleId, {
+      const updatedRole = {
+        ...role,
         onboardingFields: fields,
         documentRequirements: documentRequirements,
-        updated_at: new Date().toISOString()
-      });
+        updatedAt: new Date().toISOString()
+      };
 
-      // Also store in platform_settings for easy access
-      await db
-        .from('platform_settings')
-        .upsert({
-          setting_key: `onboarding:config:${roleId}`,
-          setting_value: { fields, documentRequirements },
-          setting_type: 'object',
-          updated_at: new Date().toISOString(),
-        });
+      await kv.set(`role:config:${roleId}`, updatedRole);
 
       console.log(`✅ Onboarding config updated for role: ${roleId}`);
       return c.json({ success: true, role: updatedRole });
@@ -187,15 +148,15 @@ export function onboardingConfigEndpoints(app: Hono) {
       const vendorId = createVendorId(cleanPhone); // Returns: vendor_9611377119
       console.log('🆔 [VENDOR-APPLICATION] Generated vendorId:', vendorId, 'from phone:', phone, '(clean:', cleanPhone, ')');
       
-      // ✅ SQL: Get role configuration to extract serviceCategory
-      const role = await rolesRepo.findById(roleId);
+      // Get role configuration to extract serviceCategory
+      const role = await kv.get(`role:config:${roleId}`);
       console.log('📋 [VENDOR-APPLICATION] Role config:', role ? 'FOUND' : 'NOT FOUND');
       
       const serviceCategory = role ? determineServiceCategory(role) : 'services';
       console.log('🏷️ [VENDOR-APPLICATION] Service category:', serviceCategory);
       
       // ✅ CRITICAL FIX: Extract ALL role information for vendor profile
-      const roleName = role?.name || role?.display_name || 'Unknown Role';
+      const roleName = role?.name || 'Unknown Role';
       const vendorTypes = role?.vendorTypes || [];
       console.log('📋 [VENDOR-APPLICATION] Role details:', {
         roleName,
@@ -203,106 +164,156 @@ export function onboardingConfigEndpoints(app: Hono) {
         vendorTypes
       });
       
-      // ✅ SQL: Create vendor with application metadata
       const vendorProfile = {
-        phone: cleanPhone,
+        id: vendorId,
+        phone,
         email: formData.email || email,
-        business_name: formData.businessName || '',
-        owner_name: formData.ownerName || formData.fullName || '',
+        roleId,
+        roleName, // ✅ ADD: Store role name
+        vendorType: roleId, // Role ID is the vendor type
+        vendorTypes, // ✅ ADD: Store vendor types from role
+        serviceCategory, // ✅ ADD: Store service category
+        serviceStyle,
+        
+        // Application metadata
+        applicationId,
+        status: 'pending', // ✅ ADD: Main status field for consistency
+        applicationStatus: 'pending',
+        applicationSubmittedAt: new Date().toISOString(),
+        
+        // Form data
+        fullName: formData.fullName || formData.ownerName || '',
+        businessName: formData.businessName || '',
+        ownerName: formData.ownerName || formData.fullName || '',
         address: formData.address || '',
         city: formData.city || '',
         state: formData.state || '',
         pincode: formData.pincode || '',
+        
+        // Location data
+        location: location || null,
         latitude: location?.lat || null,
         longitude: location?.lng || null,
-        status: 'pending',
-        is_active: false,
-        // Store application metadata in a JSONB column (if we add application_metadata to vendors table)
-        // For now, we'll store it in platform_settings
-        application_metadata: {
-          applicationId,
-          roleId,
-          roleName,
-          vendorType: roleId,
-          vendorTypes,
-          serviceCategory,
-          serviceStyle,
-          formData,
-          documents,
-          location,
-          submittedAt: new Date().toISOString(),
-          history: [{
-            status: 'pending',
-            timestamp: new Date().toISOString(),
-            note: 'Application submitted'
-          }]
-        },
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        
+        // Documents (store references)
+        documents: documents || {},
+        
+        // Additional fields
+        ...formData,
+        
+        // Status flags
+        isActive: false,
+        setupCompleted: false,
+        isVerified: false,
+        
+        // Timestamps
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
       };
 
       console.log('👤 [VENDOR-APPLICATION] Vendor profile created:', {
+        id: vendorProfile.id,
         phone: vendorProfile.phone,
         status: vendorProfile.status,
-        applicationId
+        applicationId: vendorProfile.applicationId
       });
 
-      // ✅ SQL: Create vendor (this will fail if vendor already exists)
+      // ✅ PERMANENT FIX: Use saveVendor utility that ALWAYS creates indexes
+      const { saveVendor } = await import('./vendor-utils.tsx');
+      
+      console.log(`💾 [VENDOR-APPLICATION] Saving vendor with automatic index creation...`);
+      
       try {
-        const vendor = await vendorsRepo.create(vendorProfile);
-        console.log(`✅ [VENDOR-APPLICATION] Vendor created with application metadata!`);
+        await saveVendor(vendorProfile);
+        console.log(`✅ [VENDOR-APPLICATION] Vendor saved with all indexes created!`);
         
-        // Also store application reference in platform_settings for easy lookup
-        await db
-          .from('platform_settings')
-          .upsert({
-            setting_key: `application:${applicationId}`,
-            setting_value: {
-              id: applicationId,
-              vendorId: vendor.id,
-              roleId,
-              phone,
-              email: formData.email || email,
-              status: 'pending',
-              submittedAt: new Date().toISOString(),
-            },
-            setting_type: 'object',
+        // Verify it was saved
+        const verifyVendor = await kv.get(`vendor:${vendorId}`);
+        if (verifyVendor) {
+          console.log(`✅ [VENDOR-APPLICATION] VERIFICATION: Vendor retrieved successfully!`, {
+            id: verifyVendor.id,
+            status: verifyVendor.status
           });
-        
-        console.log(`🎉 [VENDOR-APPLICATION] Application submission COMPLETE!`);
-        console.log(`   📋 Application ID: ${applicationId}`);
-        console.log(`   👤 Vendor ID: ${vendor.id}`);
-        console.log(`   📞 Phone: ${phone} (clean: ${cleanPhone})`);
-        
-        return c.json({ 
-          success: true, 
-          applicationId, 
-          vendorId: vendor.id,
-          status: 'pending'
-        });
-      } catch (vendorError: any) {
-        // Vendor might already exist - update it instead
-        if (vendorError.message?.includes('duplicate') || vendorError.message?.includes('unique')) {
-          console.log(`⚠️ [VENDOR-APPLICATION] Vendor already exists, updating...`);
-          const existingVendor = await vendorsRepo.findByPhone(cleanPhone);
-          if (existingVendor) {
-            await vendorsRepo.update(existingVendor.id, {
-              ...vendorProfile,
-              application_metadata: {
-                ...existingVendor.application_metadata,
-                ...vendorProfile.application_metadata,
-              }
-            });
-            return c.json({ 
-              success: true, 
-              applicationId, 
-              vendorId: existingVendor.id,
-              status: 'pending'
-            });
-          }
+        } else {
+          console.error(`❌ [VENDOR-APPLICATION] VERIFICATION FAILED: Could not retrieve vendor after saving!`);
         }
-        throw vendorError;
+      } catch (vendorSaveError) {
+        console.error(`❌ [VENDOR-APPLICATION] ERROR saving vendor:`, vendorSaveError);
+        throw vendorSaveError;
       }
+      
+      // Save application
+      const application = {
+        id: applicationId,
+        vendorId,
+        roleId,
+        phone,
+        email: formData.email || email,
+        status: 'pending',
+        formData,
+        documents,
+        serviceStyle,
+        location,
+        submittedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        reviewNotes: [],
+        history: [
+          {
+            status: 'pending',
+            timestamp: new Date().toISOString(),
+            note: 'Application submitted'
+          }
+        ]
+      };
+
+      console.log(`💾 [VENDOR-APPLICATION] Saving application with key: "application:${applicationId}"`);
+      
+      try {
+        await kv.set(`application:${applicationId}`, application);
+        console.log(`✅ [VENDOR-APPLICATION] Application saved successfully!`);
+        
+        // Verify it was saved
+        const verifyApp = await kv.get(`application:${applicationId}`);
+        if (verifyApp) {
+          console.log(`✅ [VENDOR-APPLICATION] VERIFICATION: Application retrieved successfully!`, {
+            id: verifyApp.id,
+            status: verifyApp.status,
+            vendorId: verifyApp.vendorId
+          });
+        } else {
+          console.error(`❌ [VENDOR-APPLICATION] VERIFICATION FAILED: Could not retrieve application after saving!`);
+        }
+      } catch (appSaveError) {
+        console.error(`❌ [VENDOR-APPLICATION] ERROR saving application:`, appSaveError);
+        throw appSaveError;
+      }
+      
+      // Add to pending applications list
+      console.log(`💾 [VENDOR-APPLICATION] Adding to pending list: "application:pending:${applicationId}"`);
+      
+      try {
+        await kv.set(`application:pending:${applicationId}`, { 
+          applicationId, 
+          vendorId, 
+          submittedAt: application.submittedAt 
+        });
+        console.log(`✅ [VENDOR-APPLICATION] Added to pending list successfully!`);
+      } catch (pendingError) {
+        console.error(`❌ [VENDOR-APPLICATION] ERROR adding to pending list:`, pendingError);
+        // Don't throw - this is not critical
+      }
+
+      console.log(`🎉 [VENDOR-APPLICATION] Application submission COMPLETE!`);
+      console.log(`   📋 Application ID: ${applicationId}`);
+      console.log(`   👤 Vendor ID: ${vendorId}`);
+      console.log(`   📞 Phone: ${phone} (clean: ${cleanPhone})`);
+      
+      return c.json({ 
+        success: true, 
+        applicationId, 
+        vendorId,
+        status: 'pending'
+      });
     } catch (error) {
       console.error('❌ [VENDOR-APPLICATION] FATAL ERROR submitting application:', error);
       console.error('   Error details:', {
@@ -325,31 +336,24 @@ export function onboardingConfigEndpoints(app: Hono) {
     try {
       const { applicationId } = c.req.param();
       
-      // ✅ SQL: Get application from platform_settings
-      const { data: appData } = await db
-        .from('platform_settings')
-        .select('setting_value')
-        .eq('setting_key', `application:${applicationId}`)
-        .maybeSingle();
+      const application = await kv.get(`application:${applicationId}`);
       
-      if (!appData) {
+      if (!application) {
         return c.json({ error: 'Application not found' }, 404);
       }
-      
-      const application = appData.setting_value;
 
-      // ✅ SQL: Get vendor profile
-      const vendor = await vendorsRepo.findById(application.vendorId);
+      // Get vendor profile
+      const vendor = await kv.get(`vendor:${application.vendorId}`);
       
-      // ✅ SQL: Get role config to show what was required
-      const role = await rolesRepo.findById(application.roleId);
+      // Get role config to show what was required
+      const role = await kv.get(`role:config:${application.roleId}`);
 
       return c.json({ 
         application,
         vendor,
         role: {
           id: role?.id,
-          name: role?.name || role?.display_name,
+          name: role?.name,
           documentRequirements: role?.documentRequirements,
           onboardingFields: role?.onboardingFields
         }
@@ -369,53 +373,29 @@ export function onboardingConfigEndpoints(app: Hono) {
       const status = c.req.query('status');
       const roleId = c.req.query('roleId');
 
-      // ✅ SQL: Get all vendors with pending status (applications)
-      let query = db
-        .from('vendors')
-        .select('*')
-        .eq('status', status || 'pending');
+      // Get all applications
+      const allApplications = await kv.getByPrefix('application:');
       
-      if (roleId) {
-        // Filter by roleId from application_metadata
-        // Note: This requires application_metadata to be a JSONB column
-        // For now, we'll get all pending vendors and filter in code
-      }
-      
-      const { data: vendors } = await query;
-      
-      // Convert vendors to applications format
-      const applications = (vendors || []).map(v => ({
-        id: v.application_metadata?.applicationId || `APP-${v.id}`,
-        vendorId: v.id,
-        roleId: v.application_metadata?.roleId,
-        phone: v.phone,
-        email: v.email,
-        status: v.status,
-        formData: v.application_metadata?.formData,
-        documents: v.application_metadata?.documents,
-        serviceStyle: v.application_metadata?.serviceStyle,
-        location: v.application_metadata?.location,
-        submittedAt: v.application_metadata?.submittedAt || v.created_at,
-        updatedAt: v.updated_at,
-        reviewNotes: v.application_metadata?.reviewNotes || [],
-        history: v.application_metadata?.history || []
-      }));
+      // Filter out the status-specific keys
+      let applications = allApplications.filter((app: any) => 
+        app.id && app.id.startsWith('APP-')
+      );
 
       // Apply filters
-      let filteredApplications = applications;
       if (status) {
-        filteredApplications = filteredApplications.filter((app: any) => app.status === status);
+        applications = applications.filter((app: any) => app.status === status);
       }
+
       if (roleId) {
-        filteredApplications = filteredApplications.filter((app: any) => app.roleId === roleId);
+        applications = applications.filter((app: any) => app.roleId === roleId);
       }
 
       // Sort by submission date (newest first)
-      filteredApplications.sort((a: any, b: any) => 
+      applications.sort((a: any, b: any) => 
         new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime()
       );
 
-      return c.json({ applications: filteredApplications, total: filteredApplications.length });
+      return c.json({ applications, total: applications.length });
     } catch (error) {
       console.error('Error fetching applications:', error);
       return c.json({ error: String(error) }, 500);
@@ -431,61 +411,53 @@ export function onboardingConfigEndpoints(app: Hono) {
       const { applicationId } = c.req.param();
       const { reviewerName, notes } = await c.req.json();
 
-      // ✅ SQL: Get application
-      const { data: appData } = await db
-        .from('platform_settings')
-        .select('setting_value')
-        .eq('setting_key', `application:${applicationId}`)
-        .maybeSingle();
+      const application = await kv.get(`application:${applicationId}`);
       
-      if (!appData) {
+      if (!application) {
         return c.json({ error: 'Application not found' }, 404);
       }
-      
-      const application = appData.setting_value;
 
-      // ✅ SQL: Update application status
-      const updatedApplication = {
-        ...application,
+      // Update application status
+      application.status = 'approved';
+      application.reviewedBy = reviewerName || 'Admin';
+      application.reviewedAt = new Date().toISOString();
+      application.reviewNotes = notes || '';
+      application.updatedAt = new Date().toISOString();
+      application.history.push({
         status: 'approved',
-        reviewedBy: reviewerName || 'Admin',
-        reviewedAt: new Date().toISOString(),
-        reviewNotes: notes || '',
-        updatedAt: new Date().toISOString(),
-        history: [
-          ...(application.history || []),
-          {
-            status: 'approved',
-            timestamp: new Date().toISOString(),
-            note: notes || 'Application approved',
-            reviewedBy: reviewerName || 'Admin'
-          }
-        ]
-      };
-      
-      await db
-        .from('platform_settings')
-        .update({ setting_value: updatedApplication })
-        .eq('setting_key', `application:${applicationId}`);
+        timestamp: new Date().toISOString(),
+        note: notes || 'Application approved',
+        reviewedBy: reviewerName || 'Admin'
+      });
 
-      // ✅ SQL: Update vendor profile
-      const vendor = await vendorsRepo.findById(application.vendorId);
+      await kv.set(`application:${applicationId}`, application);
+
+      // Update vendor profile using proper vendor: prefix
+      const vendor = await kv.get(`vendor:${application.vendorId}`);
       if (vendor) {
-        await vendorsRepo.update(application.vendorId, {
-          status: 'approved',
-          is_active: true,
-          approved_at: new Date().toISOString(),
-          application_metadata: {
-            ...vendor.application_metadata,
-            ...updatedApplication
-          },
-          updated_at: new Date().toISOString(),
-        });
+        vendor.applicationStatus = 'approved';
+        vendor.status = 'approved'; // ✅ Also update status field
+        vendor.isActive = true;
+        vendor.isVerified = true;
+        vendor.approvedAt = new Date().toISOString();
+        vendor.updatedAt = new Date().toISOString();
+        
+        await kv.set(`vendor:${application.vendorId}`, vendor);
       }
+
+      // Remove from pending list
+      await kv.del(`application:pending:${applicationId}`);
+      
+      // Add to approved list
+      await kv.set(`application:approved:${applicationId}`, { 
+        applicationId, 
+        vendorId: application.vendorId, 
+        approvedAt: new Date().toISOString() 
+      });
 
       console.log(`✅ Application approved: ${applicationId}`);
       
-      return c.json({ success: true, application: updatedApplication });
+      return c.json({ success: true, application });
     } catch (error) {
       console.error('Error approving application:', error);
       return c.json({ error: String(error) }, 500);
@@ -501,60 +473,53 @@ export function onboardingConfigEndpoints(app: Hono) {
       const { applicationId } = c.req.param();
       const { reviewerName, reason } = await c.req.json();
 
-      // ✅ SQL: Get application
-      const { data: appData } = await db
-        .from('platform_settings')
-        .select('setting_value')
-        .eq('setting_key', `application:${applicationId}`)
-        .maybeSingle();
+      const application = await kv.get(`application:${applicationId}`);
       
-      if (!appData) {
+      if (!application) {
         return c.json({ error: 'Application not found' }, 404);
       }
-      
-      const application = appData.setting_value;
 
-      // ✅ SQL: Update application status
-      const updatedApplication = {
-        ...application,
+      // Update application status
+      application.status = 'rejected';
+      application.reviewedBy = reviewerName || 'Admin';
+      application.reviewedAt = new Date().toISOString();
+      application.rejectionReason = reason || '';
+      application.updatedAt = new Date().toISOString();
+      application.history.push({
         status: 'rejected',
-        reviewedBy: reviewerName || 'Admin',
-        reviewedAt: new Date().toISOString(),
-        rejectionReason: reason || '',
-        updatedAt: new Date().toISOString(),
-        history: [
-          ...(application.history || []),
-          {
-            status: 'rejected',
-            timestamp: new Date().toISOString(),
-            note: reason || 'Application rejected',
-            reviewedBy: reviewerName || 'Admin'
-          }
-        ]
-      };
-      
-      await db
-        .from('platform_settings')
-        .update({ setting_value: updatedApplication })
-        .eq('setting_key', `application:${applicationId}`);
+        timestamp: new Date().toISOString(),
+        note: reason || 'Application rejected',
+        reviewedBy: reviewerName || 'Admin'
+      });
 
-      // ✅ SQL: Update vendor profile
-      const vendor = await vendorsRepo.findById(application.vendorId);
+      await kv.set(`application:${applicationId}`, application);
+
+      // Update vendor profile
+      const vendor = await kv.get(`vendor:${application.vendorId}`);
       if (vendor) {
-        await vendorsRepo.update(application.vendorId, {
-          status: 'rejected',
-          is_active: false,
-          application_metadata: {
-            ...vendor.application_metadata,
-            ...updatedApplication
-          },
-          updated_at: new Date().toISOString(),
-        });
+        vendor.applicationStatus = 'rejected';
+        vendor.status = 'rejected'; // ✅ Also update status field
+        vendor.isActive = false;
+        vendor.rejectionReason = reason;
+        vendor.rejectedAt = new Date().toISOString();
+        vendor.updatedAt = new Date().toISOString();
+        
+        await kv.set(`vendor:${application.vendorId}`, vendor);
       }
+
+      // Remove from pending list
+      await kv.del(`application:pending:${applicationId}`);
+      
+      // Add to rejected list
+      await kv.set(`application:rejected:${applicationId}`, { 
+        applicationId, 
+        vendorId: application.vendorId, 
+        rejectedAt: new Date().toISOString() 
+      });
 
       console.log(`❌ Application rejected: ${applicationId}`);
       
-      return c.json({ success: true, application: updatedApplication });
+      return c.json({ success: true, application });
     } catch (error) {
       console.error('Error rejecting application:', error);
       return c.json({ error: String(error) }, 500);
@@ -570,61 +535,43 @@ export function onboardingConfigEndpoints(app: Hono) {
       const { applicationId } = c.req.param();
       const { reviewerName, notes, requiredFields } = await c.req.json();
 
-      // ✅ SQL: Get application
-      const { data: appData } = await db
-        .from('platform_settings')
-        .select('setting_value')
-        .eq('setting_key', `application:${applicationId}`)
-        .maybeSingle();
+      const application = await kv.get(`application:${applicationId}`);
       
-      if (!appData) {
+      if (!application) {
         return c.json({ error: 'Application not found' }, 404);
       }
-      
-      const application = appData.setting_value;
 
-      // ✅ SQL: Update application status
-      const updatedApplication = {
-        ...application,
+      // Update application status
+      application.status = 'clarification_requested';
+      application.reviewedBy = reviewerName || 'Admin';
+      application.reviewedAt = new Date().toISOString();
+      application.clarificationNotes = notes || '';
+      application.requiredFields = requiredFields || [];
+      application.updatedAt = new Date().toISOString();
+      application.history.push({
         status: 'clarification_requested',
+        timestamp: new Date().toISOString(),
+        note: notes || 'Clarification requested',
         reviewedBy: reviewerName || 'Admin',
-        reviewedAt: new Date().toISOString(),
-        clarificationNotes: notes || '',
-        requiredFields: requiredFields || [],
-        updatedAt: new Date().toISOString(),
-        history: [
-          ...(application.history || []),
-          {
-            status: 'clarification_requested',
-            timestamp: new Date().toISOString(),
-            note: notes || 'Clarification requested',
-            reviewedBy: reviewerName || 'Admin',
-            requiredFields
-          }
-        ]
-      };
-      
-      await db
-        .from('platform_settings')
-        .update({ setting_value: updatedApplication })
-        .eq('setting_key', `application:${applicationId}`);
+        requiredFields
+      });
 
-      // ✅ SQL: Update vendor profile
-      const vendor = await vendorsRepo.findById(application.vendorId);
+      await kv.set(`application:${applicationId}`, application);
+
+      // Update vendor profile
+      const vendor = await kv.get(`vendor:${application.vendorId}`);
       if (vendor) {
-        await vendorsRepo.update(application.vendorId, {
-          status: 'clarification_requested',
-          application_metadata: {
-            ...vendor.application_metadata,
-            ...updatedApplication
-          },
-          updated_at: new Date().toISOString(),
-        });
+        vendor.applicationStatus = 'clarification_requested';
+        vendor.status = 'clarification_requested'; // ✅ Also update status field
+        vendor.clarificationNotes = notes;
+        vendor.updatedAt = new Date().toISOString();
+        
+        await kv.set(`vendor:${application.vendorId}`, vendor);
       }
 
       console.log(`📝 Clarification requested: ${applicationId}`);
       
-      return c.json({ success: true, application: updatedApplication });
+      return c.json({ success: true, application });
     } catch (error) {
       console.error('Error requesting clarification:', error);
       return c.json({ error: String(error) }, 500);
@@ -725,7 +672,4 @@ export function onboardingConfigEndpoints(app: Hono) {
       return c.json({ error: String(error) }, 500);
     }
   });
-  
-  console.log('✅ Onboarding config endpoints registered (SQL-only)');
 }
-
