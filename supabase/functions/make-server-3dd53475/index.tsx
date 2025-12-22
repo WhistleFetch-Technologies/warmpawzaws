@@ -484,7 +484,7 @@ enhancedSearchEngineEndpoints(app, kv);
 // These must be registered BEFORE customer-routes because customer-routes
 // contains a generic /vendor/:vendorId wildcard that would shadow these.
 vendorOnboardingEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
-soloProviderEndpoints(app, kv); // ✅ FIX: Solo provider onboarding endpoints
+soloProviderEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 vendorApprovalWorkflowEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 vendorDashboardEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 vendorRoleConfigEndpoints(app);
@@ -526,6 +526,13 @@ registerProblemGridSpecializationSystem(app);
 // MUST BE REGISTERED BEFORE STAFF ROUTES to avoid shadowing by staff wildcard router
 registerCustomerServices(app); // Register specific routes BEFORE wildcard
 registerCustomerRoutes(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
+// ✅ REFACTORED: Register SQL-only wallet endpoints
+if (walletEndpoints && typeof walletEndpoints === 'object') {
+  console.log('✅ Registering Wallet Endpoints (SQL-only)...');
+  app.route('/make-server-3dd53475/wallet', walletEndpoints);
+} else {
+  console.warn('⚠️ Wallet Endpoints module undefined, skipping');
+}
 registerAuthEndpoints(app);
 registerAICRMRoutes(app, kv);
 registerAIChatbotRoutes(app);
