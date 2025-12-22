@@ -24,7 +24,8 @@ import { onboardingConfigEndpoints } from './onboarding-config-endpoints.tsx';
 import { registerVendorServiceEndpoints } from './vendor-services-endpoints.tsx';
 import { registerVendorCatalogAPIV2 } from './vendor-catalog-api-v2.tsx';
 import { customServiceEndpoints } from './custom-service-endpoints.tsx';
-import { vendorScheduleV2Endpoints } from './vendor-schedule-v2.tsx';
+import vendorScheduleV2SQL from './vendor-schedule-v2-sql.tsx';
+import { homeServicesEndpointsSQL } from './home-services-endpoints-sql.tsx';
 import { registerAdminVendorRoutes } from './admin-vendor-routes.tsx';
 import { adminVendorEndpoints } from './admin-vendor-endpoints.tsx';
 import { registerAdminCatalogEndpoints } from './admin-catalog-endpoints.tsx';
@@ -39,6 +40,7 @@ import { registerAuthEndpoints } from './auth-endpoints.tsx';
 import { registerAICRMRoutes } from './ai-crm-routes.tsx';
 import { registerAIChatbotRoutes } from './ai-chatbot-routes.tsx';
 import { paymentEndpoints } from './payment-endpoints.tsx';
+import { paymentEndpointsSQL } from './payment-endpoints-sql.tsx';
 import { marketplacePaymentEndpoints } from './marketplace-payment-endpoints.tsx';
 import { registerChatEndpoints } from './chat-endpoints.tsx';
 import { registerSubscriptionEndpoints } from './subscription-endpoints.tsx';
@@ -162,6 +164,12 @@ import { multiServiceSchedulingEndpoints } from './multi-service-scheduling.tsx'
 import { timeWindowSubscriptionEndpoints } from './time-window-subscription.tsx';
 import { independentVendorSystemEndpoints } from './independent-vendor-system.tsx';
 import { unifiedServiceDiscoveryEndpoints } from './unified-service-discovery.tsx';
+import { registerDiscoverySQLEndpoints } from './discovery-sql-endpoints.tsx';
+import { registerRegulatedFlowsSQLEndpoints } from './regulated-flows-sql-endpoints.tsx';
+import { packageEndpointsSQL } from './package-endpoints-sql.tsx';
+import { staffDiscoveryEndpointsSQL } from './staff-discovery-endpoints-sql.tsx';
+import { followupEndpointsSQL } from './followup-endpoints-sql.tsx';
+import { staffAvailabilityRoutesSQL } from './staff-availability-routes-sql.tsx';
 import { logisticsPartnerIntegrationEndpoints } from './logistics-partner-integration.tsx';
 import { automatedBankVerificationEndpoints } from './automated-bank-verification.tsx';
 import { marketplaceSettlementAutomationEndpoints } from './marketplace-settlement-automation.tsx';
@@ -492,7 +500,13 @@ onboardingConfigEndpoints(app, kv); // ✅ NEW: Register onboarding config endpo
 registerVendorServiceEndpoints(app);
 registerVendorCatalogAPIV2(app);
 customServiceEndpoints(app, kv); // ✅ FIX: Register custom service endpoints
-app.route('/make-server-3dd53475', vendorScheduleV2Endpoints);
+// ✅ SQL-based Vendor Schedule V2 (NO KV STORE)
+app.route('/make-server-3dd53475', vendorScheduleV2SQL);
+console.log('✅ Registered SQL-based Vendor Schedule V2 Endpoints (NO KV STORE)');
+
+// ✅ SQL-based Home Services Endpoints (NO KV STORE)
+homeServicesEndpointsSQL(app);
+console.log('✅ Registered SQL-based Home Services Endpoints (NO KV STORE)');
 
 // ✅ FIX: Register Vet Specialized Services (ambulance, diagnostics, pharmacy, emergency protocols)
 if (vetSpecializedServices && typeof vetSpecializedServices === 'object') {
@@ -1205,6 +1219,73 @@ if (unifiedServiceDiscoveryEndpoints && typeof unifiedServiceDiscoveryEndpoints 
   unifiedServiceDiscoveryEndpoints(app, kv);
 } else {
   console.warn('⚠️ Unified Service Discovery Endpoints module undefined, skipping');
+}
+
+// ✅ NEW: SQL-Based Discovery Endpoints (NO KV STORE)
+console.log('✅ Registering SQL-Based Discovery Endpoints...');
+registerDiscoverySQLEndpoints(app);
+
+// ✅ NEW: Regulated Flows SQL Endpoints (NO KV STORE)
+console.log('✅ Registering Regulated Flows SQL Endpoints...');
+registerRegulatedFlowsSQLEndpoints(app);
+
+// ✅ NEW: SQL-based Payment Endpoints (NO KV STORE)
+console.log('✅ Registering SQL-based Payment Endpoints...');
+if (paymentEndpointsSQL && typeof paymentEndpointsSQL === 'function') {
+  paymentEndpointsSQL(app);
+  console.log('✅ Registered SQL-based Payment Endpoints (NO KV STORE)');
+}
+
+// ✅ NEW: SQL-based Payout Cron Job (NO KV STORE)
+import { registerPayoutCronJobSQL } from './payout-cron-job-sql.tsx';
+console.log('✅ Registering SQL-based Payout Cron Job...');
+registerPayoutCronJobSQL(app);
+console.log('✅ Registered SQL-based Payout Cron Job (NO KV STORE)');
+
+// ✅ NEW: SQL-based Booking Endpoints (NO KV STORE)
+import { bookingEndpointsSQL } from './booking-endpoints-sql.tsx';
+console.log('✅ Registering SQL-based Booking Endpoints...');
+bookingEndpointsSQL(app);
+console.log('✅ Registered SQL-based Booking Endpoints (NO KV STORE)');
+
+// ✅ NEW: SQL-based Customer Services (NO KV STORE)
+import { registerCustomerServicesSQL } from './customer-services-sql.tsx';
+console.log('✅ Registering SQL-based Customer Services...');
+registerCustomerServicesSQL(app);
+console.log('✅ Registered SQL-based Customer Services (NO KV STORE)');
+
+// ✅ NEW: SQL-based RBAC Endpoints (NO KV STORE)
+import { rbacEndpointsSQL } from './rbac-endpoints-sql.tsx';
+console.log('✅ Registering SQL-based RBAC Endpoints...');
+rbacEndpointsSQL(app);
+console.log('✅ Registered SQL-based RBAC Endpoints (NO KV STORE)');
+
+// ✅ NEW: SQL-based Settlement Automation (NO KV STORE)
+import { registerSettlementAutomationSQL } from './settlement-automation-sql.tsx';
+console.log('✅ Registering SQL-based Settlement Automation...');
+registerSettlementAutomationSQL(app);
+console.log('✅ Registered SQL-based Settlement Automation (NO KV STORE)');
+
+// ✅ NEW: SQL-based Scheduling Endpoints (NO KV STORE)
+console.log('✅ Registering SQL-based Scheduling Endpoints...');
+if (packageEndpointsSQL && typeof packageEndpointsSQL === 'function') {
+  packageEndpointsSQL(app);
+  console.log('✅ Registered SQL-based Package Endpoints (NO KV STORE)');
+}
+
+if (staffDiscoveryEndpointsSQL && typeof staffDiscoveryEndpointsSQL === 'function') {
+  staffDiscoveryEndpointsSQL(app);
+  console.log('✅ Registered SQL-based Staff Discovery Endpoints (NO KV STORE)');
+}
+
+if (followupEndpointsSQL && typeof followupEndpointsSQL === 'function') {
+  followupEndpointsSQL(app);
+  console.log('✅ Registered SQL-based Followup Endpoints (NO KV STORE)');
+}
+
+if (staffAvailabilityRoutesSQL && typeof staffAvailabilityRoutesSQL === 'function') {
+  staffAvailabilityRoutesSQL(app);
+  console.log('✅ Registered SQL-based Staff Availability Routes (NO KV STORE)');
 }
 
 // ✅ NEW: Logistics Partner Integration Endpoints

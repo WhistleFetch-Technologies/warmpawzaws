@@ -20,6 +20,13 @@ interface Tier {
   payoutPeriodDays: number;
   monthlyCost: number;
   yearlyCost: number;
+  sixMonthCost?: number;
+  sixMonthDiscountPercentage?: number;
+  twelveMonthCost?: number;
+  twelveMonthDiscountPercentage?: number;
+  allowSplitPayment?: boolean;
+  splitPaymentInstallments?: number;
+  splitPaymentIntervalDays?: number;
   features: string[];
   roles: string[];
   isDefault: boolean;
@@ -163,6 +170,13 @@ export function TierManagement() {
         payoutPeriodDays: 7,
         monthlyCost: 0,
         yearlyCost: 0,
+        sixMonthCost: undefined,
+        sixMonthDiscountPercentage: 0,
+        twelveMonthCost: undefined,
+        twelveMonthDiscountPercentage: 0,
+        allowSplitPayment: false,
+        splitPaymentInstallments: 3,
+        splitPaymentIntervalDays: 30,
         features: [],
         roles: [],
         isDefault: false,
@@ -379,6 +393,90 @@ export function TierManagement() {
                       onChange={e => setCurrentTier({...currentTier, yearlyCost: parseFloat(e.target.value)})} 
                     />
                   </div>
+                </div>
+
+                {/* ✅ NEW: 6 Month Pricing */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>6 Month Cost (₹)</Label>
+                    <Input 
+                      type="number" 
+                      value={currentTier.sixMonthCost || ''} 
+                      onChange={e => setCurrentTier({...currentTier, sixMonthCost: parseFloat(e.target.value) || undefined})} 
+                      placeholder="Auto: Monthly × 6"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>6 Month Discount (%)</Label>
+                    <Input 
+                      type="number" 
+                      value={currentTier.sixMonthDiscountPercentage || 0} 
+                      onChange={e => setCurrentTier({...currentTier, sixMonthDiscountPercentage: parseFloat(e.target.value) || 0})} 
+                    />
+                  </div>
+                </div>
+
+                {/* ✅ NEW: 12 Month Pricing */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>12 Month Cost (₹)</Label>
+                    <Input 
+                      type="number" 
+                      value={currentTier.twelveMonthCost || ''} 
+                      onChange={e => setCurrentTier({...currentTier, twelveMonthCost: parseFloat(e.target.value) || undefined})} 
+                      placeholder="Auto: Yearly cost"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>12 Month Discount (%)</Label>
+                    <Input 
+                      type="number" 
+                      value={currentTier.twelveMonthDiscountPercentage || 0} 
+                      onChange={e => setCurrentTier({...currentTier, twelveMonthDiscountPercentage: parseFloat(e.target.value) || 0})} 
+                    />
+                  </div>
+                </div>
+
+                {/* ✅ NEW: Split Payment Options */}
+                <div className="space-y-4 border rounded-lg p-4 bg-slate-50">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label>Allow Split Payment</Label>
+                      <p className="text-xs text-slate-500">Enable monthly installments</p>
+                    </div>
+                    <Switch 
+                      checked={currentTier.allowSplitPayment || false} 
+                      onCheckedChange={c => setCurrentTier({...currentTier, allowSplitPayment: c})} 
+                    />
+                  </div>
+                  
+                  {currentTier.allowSplitPayment && (
+                    <div className="grid grid-cols-2 gap-4 pt-2">
+                      <div className="space-y-2">
+                        <Label>Installments (2-4)</Label>
+                        <Input 
+                          type="number" 
+                          min="2" 
+                          max="4"
+                          value={currentTier.splitPaymentInstallments || 3} 
+                          onChange={e => {
+                            const val = parseInt(e.target.value);
+                            if (val >= 2 && val <= 4) {
+                              setCurrentTier({...currentTier, splitPaymentInstallments: val});
+                            }
+                          }} 
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Interval (Days)</Label>
+                        <Input 
+                          type="number" 
+                          value={currentTier.splitPaymentIntervalDays || 30} 
+                          onChange={e => setCurrentTier({...currentTier, splitPaymentIntervalDays: parseInt(e.target.value) || 30})} 
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-2">

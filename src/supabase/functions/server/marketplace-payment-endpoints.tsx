@@ -21,43 +21,99 @@ export function marketplacePaymentEndpoints(app: Hono, kv: any) {
   });
 
   /**
-   * Create tier
+   * Create tier (SQL)
    * POST /make-server-3dd53475/admin/payments/tiers
    */
   app.post("/make-server-3dd53475/admin/payments/tiers", async (c) => {
     try {
       const body = await c.req.json();
-      const tierId = `tier_${Date.now()}`;
-      const newTier = { id: tierId, ...body, createdAt: new Date().toISOString() };
-      
-      const tiers = await kv.get('payment:tiers') || [];
-      tiers.push(newTier);
-      await kv.set('payment:tiers', tiers);
-      
-      return sendSuccess(c, { tier: newTier });
+
+      const { data: tier, error } = await client
+        .from('vendor_tiers')
+        .insert({
+          tier_name: body.name || body.tier_name,
+          tier_level: body.tier_level || body.tierLevel || 1,
+          display_name: body.displayName || body.display_name || body.name,
+          description: body.description || null,
+          commission_rate: body.commissionRate || body.commission_rate || 15,
+          payout_period_days: body.payoutPeriodDays || body.payout_period_days || 7,
+          monthly_cost: body.monthlyCost || body.monthly_cost || 0,
+          yearly_cost: body.yearlyCost || body.yearly_cost || 0,
+          six_month_cost: body.sixMonthCost || body.six_month_cost || null,
+          six_month_discount_percentage: body.sixMonthDiscountPercentage || body.six_month_discount_percentage || 0,
+          twelve_month_cost: body.twelveMonthCost || body.twelve_month_cost || null,
+          twelve_month_discount_percentage: body.twelveMonthDiscountPercentage || body.twelve_month_discount_percentage || 0,
+          allow_split_payment: body.allowSplitPayment || body.allow_split_payment || false,
+          split_payment_installments: body.splitPaymentInstallments || body.split_payment_installments || 3,
+          split_payment_interval_days: body.splitPaymentIntervalDays || body.split_payment_interval_days || 30,
+          features: body.features || [],
+          applicable_roles: body.roles || body.applicable_roles || [],
+          is_default: body.isDefault || body.is_default || false,
+          is_active: body.isActive !== false && body.is_active !== false,
+          is_free_tier: body.isFreeTier || body.is_free_tier || false
+        })
+        .select()
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      return sendSuccess(c, { tier });
     } catch (error) {
       return sendError(c, error, 500);
     }
   });
 
   /**
-   * Update tier
+   * Update tier (SQL)
    * PUT /make-server-3dd53475/admin/payments/tiers/:tierId
    */
   app.put("/make-server-3dd53475/admin/payments/tiers/:tierId", async (c) => {
     try {
       const { tierId } = c.req.param();
       const updates = await c.req.json();
-      
-      const tiers = await kv.get('payment:tiers') || [];
-      const index = tiers.findIndex((t: any) => t.id === tierId);
-      
-      if (index === -1) return sendError(c, 'Tier not found', 404);
-      
-      tiers[index] = { ...tiers[index], ...updates, updatedAt: new Date().toISOString() };
-      await kv.set('payment:tiers', tiers);
-      
-      return sendSuccess(c, { tier: tiers[index] });
+
+      const updateData: any = {
+        updated_at: new Date().toISOString()
+      };
+
+      // Map updates to SQL columns
+      if (updates.name !== undefined) updateData.tier_name = updates.name;
+      if (updates.displayName !== undefined) updateData.display_name = updates.displayName;
+      if (updates.description !== undefined) updateData.description = updates.description;
+      if (updates.commissionRate !== undefined) updateData.commission_rate = updates.commissionRate;
+      if (updates.payoutPeriodDays !== undefined) updateData.payout_period_days = updates.payoutPeriodDays;
+      if (updates.monthlyCost !== undefined) updateData.monthly_cost = updates.monthlyCost;
+      if (updates.yearlyCost !== undefined) updateData.yearly_cost = updates.yearlyCost;
+      if (updates.sixMonthCost !== undefined) updateData.six_month_cost = updates.sixMonthCost;
+      if (updates.sixMonthDiscountPercentage !== undefined) updateData.six_month_discount_percentage = updates.sixMonthDiscountPercentage;
+      if (updates.twelveMonthCost !== undefined) updateData.twelve_month_cost = updates.twelveMonthCost;
+      if (updates.twelveMonthDiscountPercentage !== undefined) updateData.twelve_month_discount_percentage = updates.twelveMonthDiscountPercentage;
+      if (updates.allowSplitPayment !== undefined) updateData.allow_split_payment = updates.allowSplitPayment;
+      if (updates.splitPaymentInstallments !== undefined) updateData.split_payment_installments = updates.splitPaymentInstallments;
+      if (updates.splitPaymentIntervalDays !== undefined) updateData.split_payment_interval_days = updates.splitPaymentIntervalDays;
+      if (updates.features !== undefined) updateData.features = updates.features;
+      if (updates.roles !== undefined) updateData.applicable_roles = updates.roles;
+      if (updates.isDefault !== undefined) updateData.is_default = updates.isDefault;
+      if (updates.isActive !== undefined) updateData.is_active = updates.isActive;
+      if (updates.isFreeTier !== undefined) updateData.is_free_tier = updates.isFreeTier;
+
+      const { data: tier, error } = await client
+        .from('vendor_tiers')
+        .update(updateData)
+        .eq('id', tierId)
+        .select()
+        .single();
+
+      if (error) {
+        if (error.code === 'PGRST116') {
+          return sendError(c, 'Tier not found', 404);
+        }
+        throw error;
+      }
+
+      return sendSuccess(c, { tier });
     } catch (error) {
       return sendError(c, error, 500);
     }
@@ -84,11 +140,91 @@ export function marketplacePaymentEndpoints(app: Hono, kv: any) {
    * Seed default tiers
    * POST /make-server-3dd53475/admin/payments/tiers/seed-defaults
    */
+  /**
+   * Seed default tiers (SQL)
+   * POST /make-server-3dd53475/admin/payments/tiers/seed-defaults
+   */
   app.post("/make-server-3dd53475/admin/payments/tiers/seed-defaults", async (c) => {
     try {
       const defaultTiers = [
         {
-          id: 'tier_1',
+          tier_name: 'bronze',
+          tier_level: 1,
+          display_name: 'Bronze Tier',
+          description: 'Free tier with standard commission',
+          commission_rate: 15.00,
+          payout_period_days: 7,
+          monthly_cost: 0,
+          yearly_cost: 0,
+          is_default: true,
+          is_active: true,
+          is_free_tier: true,
+          features: ['Standard Support', '7-day Payout'],
+          applicable_roles: []
+        },
+        {
+          tier_name: 'silver',
+          tier_level: 2,
+          display_name: 'Silver Tier',
+          description: 'Lower commission and faster payouts',
+          commission_rate: 12.00,
+          payout_period_days: 3,
+          monthly_cost: 999,
+          yearly_cost: 9990,
+          six_month_cost: 5994,
+          six_month_discount_percentage: 0,
+          twelve_month_cost: 9990,
+          twelve_month_discount_percentage: 16.67,
+          allow_split_payment: true,
+          split_payment_installments: 3,
+          split_payment_interval_days: 30,
+          is_default: false,
+          is_active: true,
+          is_free_tier: false,
+          features: ['Priority Support', '3-day Payout', 'Analytics Dashboard'],
+          applicable_roles: []
+        },
+        {
+          tier_name: 'gold',
+          tier_level: 3,
+          display_name: 'Gold Tier',
+          description: 'Lowest commission and instant payouts',
+          commission_rate: 8.00,
+          payout_period_days: 1,
+          monthly_cost: 1999,
+          yearly_cost: 19990,
+          six_month_cost: 11994,
+          six_month_discount_percentage: 0,
+          twelve_month_cost: 19990,
+          twelve_month_discount_percentage: 16.67,
+          allow_split_payment: true,
+          split_payment_installments: 4,
+          split_payment_interval_days: 30,
+          is_default: false,
+          is_active: true,
+          is_free_tier: false,
+          features: ['Dedicated Manager', 'Instant Payout', 'API Access', 'White Labeling'],
+          applicable_roles: []
+        }
+      ];
+
+      const { data: tiers, error } = await client
+        .from('vendor_tiers')
+        .upsert(defaultTiers, {
+          onConflict: 'tier_name',
+          ignoreDuplicates: false
+        })
+        .select();
+
+      if (error) {
+        throw error;
+      }
+
+      return sendSuccess(c, { tiers: tiers || defaultTiers });
+    } catch (error) {
+      return sendError(c, error, 500);
+    }
+  });
           name: 'Tier 1',
           displayName: 'Basic Tier',
           description: 'Standard commission for new vendors',
@@ -179,43 +315,8 @@ export function marketplacePaymentEndpoints(app: Hono, kv: any) {
     }
   });
 
-  /**
-   * Get vendor payment tier
-   * GET /make-server-3dd53475/vendor/:vendorId/payment-tier
-   */
-  app.get("/make-server-3dd53475/vendor/:vendorId/payment-tier", async (c) => {
-    try {
-      const { vendorId } = c.req.param();
-      const vendorTierId = await kv.get(`vendor:${vendorId}:tier_id`);
-      const tiers = await kv.get('payment:tiers') || [];
-      
-      const currentTier = tiers.find((t: any) => t.id === vendorTierId) || tiers.find((t: any) => t.isDefault);
-      
-      return sendSuccess(c, { tier: currentTier });
-    } catch (error) {
-      return sendError(c, error, 500);
-    }
-  });
-
-  /**
-   * Upgrade vendor payment tier
-   * POST /make-server-3dd53475/vendor/:vendorId/payment-tier/upgrade-payment
-   */
-  app.post("/make-server-3dd53475/vendor/:vendorId/payment-tier/upgrade-payment", async (c) => {
-    try {
-      const { vendorId } = c.req.param();
-      const { targetTierId, billingCycle } = await c.req.json();
-      
-      // Simulate payment processing
-      const paymentId = `pay_tier_${Date.now()}`;
-      
-      await kv.set(`vendor:${vendorId}:tier_id`, targetTierId);
-      
-      return sendSuccess(c, { success: true, paymentId, message: 'Tier upgraded successfully' });
-    } catch (error) {
-      return sendError(c, error, 500);
-    }
-  });
+  // Tier upgrade endpoints are now in tier-upgrade-endpoints.tsx
+  // These endpoints delegate to that module
 
   // ============================================
   // SETTLEMENTS (ADMIN)

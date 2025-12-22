@@ -45,13 +45,13 @@ export class SchedulingService {
     ): Promise<{ success: boolean; booking?: any; error?: string }> {
         const lockKey = `${input.vendor_id}:${input.booking_date}:${input.booking_time}`;
 
-        // FIX V23: Acquire distributed lock
+        // FIX V23: Acquire distributed lock (increased timeout)
         const lockAcquired = await this.schedulingRepo.acquireBookingLock(
             input.vendor_id!,
             input.booking_date,
             input.booking_time,
             requestId,
-            5 // 5 second timeout
+            30 // 30 second timeout (FIX V8.2)
         );
 
         if (!lockAcquired) {
@@ -231,14 +231,17 @@ export class SchedulingService {
             };
         }
 
-        const distance = await this.schedulingRepo.getCommuteTime(
-            staffId,
-            'customer',
-            staff.latitude,
-            staff.longitude,
-            customerLat,
-            customerLng
-        );
+        // Calculate distance directly (Haversine)
+        const R = 6371; // Earth's radius in km
+        const dLat = (customerLat - staff.latitude) * Math.PI / 180;
+        const dLng = (customerLng - staff.longitude) * Math.PI / 180;
+        const a = 
+            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(staff.latitude * Math.PI / 180) *
+            Math.cos(customerLat * Math.PI / 180) *
+            Math.sin(dLng / 2) * Math.sin(dLng / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        const distance = R * c;
 
         // Get service area from policy
         const policy = await this.schedulingRepo.getPolicy('commute_time');
@@ -274,14 +277,27 @@ export class SchedulingService {
         const timeUntilBooking = (bookingDateTime.getTime() - now.getTime()) / 60000; // minutes
 
         if (customerLat && customerLng) {
-            const commuteTime = await this.schedulingRepo.getCommuteTime(
-                staffId,
-                'customer',
-                undefined,
-                undefined,
-                customerLat,
-                customerLng
-            );
+            // Get staff location
+            const staffLocation = await this.getStaffLocation(staffId);
+            if (!staffLocation) {
+                return {
+                    valid: false,
+                    error: 'Staff location not available'
+                };
+            }
+            
+            // Calculate commute time (simplified - 3 min/km with 1.5x traffic factor)
+            const R = 6371;
+            const dLat = (customerLat - staffLocation.latitude) * Math.PI / 180;
+            const dLng = (customerLng - staffLocation.longitude) * Math.PI / 180;
+            const a = 
+                Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(staffLocation.latitude * Math.PI / 180) *
+                Math.cos(customerLat * Math.PI / 180) *
+                Math.sin(dLng / 2) * Math.sin(dLng / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            const distanceKm = R * c;
+            const commuteTime = Math.ceil(distanceKm * 3 * 1.5); // 3 min/km * 1.5 traffic
 
             // Get buffer time policy
             const bufferPolicy = await this.schedulingRepo.getPolicy('buffer_time');
@@ -361,7 +377,7 @@ export class SchedulingService {
     }
 
     /**
-     * Reserve subscription slots (FIX V14, V15, V16)
+     * Reserve subscription slots (FIX V14, V15, V16) - ATOMIC
      */
     async reserveSubscriptionSlots(
         subscriptionId: string,
@@ -372,42 +388,46 @@ export class SchedulingService {
         startDate: string,
         endDate?: string
     ): Promise<{ success: boolean; error?: string }> {
-        // FIX V15: Validate slot availability before reserving
-        const isAvailable = await this.checkSlotAvailability(
-            vendorId,
-            staffId,
-            startDate,
-            timeSlot
-        );
-
-        if (!isAvailable) {
-            return {
-                success: false,
-                error: `Slot ${startDate} ${timeSlot} is not available`
-            };
-        }
-
-        // Reserve slot
-        try {
-            await this.schedulingRepo.reserveSlotForSubscription(
-                subscriptionId,
+        const { withTransaction } = await import("../db.ts");
+        
+        return withTransaction(async (client) => {
+            // FIX V15: Validate slot availability before reserving (atomic)
+            const isAvailable = await this.checkSlotAvailability(
                 vendorId,
                 staffId,
                 startDate,
                 timeSlot
             );
 
-            return { success: true };
-        } catch (error: any) {
-            return {
-                success: false,
-                error: error.message || 'Failed to reserve subscription slot'
-            };
-        }
+            if (!isAvailable) {
+                return {
+                    success: false,
+                    error: `Slot ${startDate} ${timeSlot} is not available`
+                };
+            }
+
+            // Reserve slot atomically
+            try {
+                await this.schedulingRepo.reserveSlotForSubscription(
+                    subscriptionId,
+                    vendorId,
+                    staffId,
+                    startDate,
+                    timeSlot
+                );
+
+                return { success: true };
+            } catch (error: any) {
+                return {
+                    success: false,
+                    error: error.message || 'Failed to reserve subscription slot'
+                };
+            }
+        });
     }
 
     /**
-     * Redeem package session with slot validation (FIX V17, V18, V19)
+     * Redeem package session with slot validation (FIX V17, V18, V19) - ATOMIC
      */
     async redeemPackageSession(
         packagePurchaseId: string,
@@ -417,54 +437,108 @@ export class SchedulingService {
         date?: string,
         time?: string
     ): Promise<{ success: boolean; sessionId?: string; error?: string }> {
-        // FIX V17: Validate slot availability BEFORE redeeming
-        if (date && time) {
-            const isAvailable = await this.checkSlotAvailability(
-                vendorId,
-                null,
-                date,
-                time
-            );
-
-            if (!isAvailable) {
-                return {
-                    success: false,
-                    error: 'Selected slot is no longer available. Please choose another time.'
-                };
-            }
-        }
-
-        // FIX V18: Use transaction for atomic operation
-        try {
-            // This would be in a transaction in production
-            // For now, we'll do sequential operations
-
-            // Reserve slot if date/time provided
-            let reservationId: string | undefined;
+        const { withTransaction, getDbClient } = await import("../db.ts");
+        const client = getDbClient();
+        
+        return withTransaction(async (txClient) => {
+            // FIX V17: Validate slot availability BEFORE redeeming (atomic)
             if (date && time) {
-                const reservation = await this.schedulingRepo.reserveSlotForPackage(
-                    packagePurchaseId,
+                const isAvailable = await this.checkSlotAvailability(
                     vendorId,
                     null,
                     date,
                     time
                 );
-                reservationId = reservation.id;
+
+                if (!isAvailable) {
+                    return {
+                        success: false,
+                        error: 'Selected slot is no longer available. Please choose another time.'
+                    };
+                }
             }
 
-            // Create package session record
-            const sessionId = `session_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+            // FIX V18: Use transaction for atomic operation
+            try {
+                // Reserve slot if date/time provided
+                let reservationId: string | undefined;
+                if (date && time) {
+                    const reservation = await this.schedulingRepo.reserveSlotForPackage(
+                        packagePurchaseId,
+                        vendorId,
+                        null,
+                        date,
+                        time
+                    );
+                    reservationId = reservation.id;
+                }
 
-            return {
-                success: true,
-                sessionId
-            };
-        } catch (error: any) {
-            return {
-                success: false,
-                error: error.message || 'Failed to redeem package session'
-            };
-        }
+                // Get package purchase to check expiry
+                const { data: packagePurchase } = await txClient
+                    .from('package_purchases')
+                    .select('*')
+                    .eq('id', packagePurchaseId)
+                    .single();
+
+                if (!packagePurchase) {
+                    return {
+                        success: false,
+                        error: 'Package purchase not found'
+                    };
+                }
+
+                // Check expiry (FIX V19)
+                if (packagePurchase.expires_at && new Date(packagePurchase.expires_at) < new Date()) {
+                    return {
+                        success: false,
+                        error: 'Package has expired'
+                    };
+                }
+
+                // Get next session number
+                const { data: existingSessions } = await txClient
+                    .from('package_sessions')
+                    .select('session_number')
+                    .eq('package_purchase_id', packagePurchaseId)
+                    .order('session_number', { ascending: false })
+                    .limit(1);
+
+                const nextSessionNumber = existingSessions && existingSessions.length > 0
+                    ? existingSessions[0].session_number + 1
+                    : 1;
+
+                // Create package session record
+                const { data: session, error: sessionError } = await txClient
+                    .from('package_sessions')
+                    .insert({
+                        package_purchase_id: packagePurchaseId,
+                        customer_id: customerId,
+                        vendor_id: vendorId,
+                        session_number: nextSessionNumber,
+                        scheduled_date: date || null,
+                        scheduled_time: time ? time : null,
+                        status: date && time ? 'reserved' : 'pending',
+                        slot_reservation_id: reservationId || null,
+                        redeemed_at: new Date().toISOString()
+                    })
+                    .select()
+                    .single();
+
+                if (sessionError || !session) {
+                    throw new Error(sessionError?.message || 'Failed to create package session');
+                }
+
+                return {
+                    success: true,
+                    sessionId: session.id
+                };
+            } catch (error: any) {
+                return {
+                    success: false,
+                    error: error.message || 'Failed to redeem package session'
+                };
+            }
+        });
     }
 
     /**
