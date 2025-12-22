@@ -22,6 +22,7 @@ import { vendorRoleConfigEndpoints } from './vendor-role-config.tsx';
 import { registerDynamicOnboarding } from './dynamic-onboarding-management.tsx';
 import { onboardingConfigEndpoints } from './onboarding-config-endpoints.tsx';
 import { registerVendorServiceEndpoints } from './vendor-services-endpoints.tsx';
+import { registerVendorServicesSQLEndpoints } from './vendor-services-sql-endpoints.tsx';
 import { registerVendorCatalogAPIV2 } from './vendor-catalog-api-v2.tsx';
 import { customServiceEndpoints } from './custom-service-endpoints.tsx';
 import { vendorScheduleV2Endpoints } from './vendor-schedule-v2.tsx';
@@ -471,8 +472,8 @@ registerUniversalDiscovery(app);
 registerUniversalCustomerSearch(app);
 registerCustomerBookingHistory(app);
 registerCustomerSearchEndpoints(app);
-notificationEndpoints(app, kv);
-reviewEndpoints(app, kv);
+notificationEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
+reviewEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 analyticsEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 
 // ✅ NEW: Advanced Search Engine with Fuse.js
@@ -490,6 +491,7 @@ vendorRoleConfigEndpoints(app);
 registerDynamicOnboarding(app);
 onboardingConfigEndpoints(app, kv); // ✅ NEW: Register onboarding config endpoints for multi-staff applications
 registerVendorServiceEndpoints(app);
+registerVendorServicesSQLEndpoints(app); // ✅ NEW: SQL-based service management
 registerVendorCatalogAPIV2(app);
 customServiceEndpoints(app, kv); // ✅ FIX: Register custom service endpoints
 app.route('/make-server-3dd53475', vendorScheduleV2Endpoints);
