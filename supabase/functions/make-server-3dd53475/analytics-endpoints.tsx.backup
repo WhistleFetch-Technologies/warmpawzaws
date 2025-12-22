@@ -1,38 +1,7 @@
-/**
- * ============================================================================
- * ANALYTICS ENDPOINTS - SQL-ONLY VERSION
- * ============================================================================
- * 
- * REFACTORED: Removed all KV usage, using SQL repositories only
- * 
- * Analytics & reporting endpoints:
- * - Vendor dashboard statistics
- * - Customer dashboard statistics
- * - Admin platform statistics
- * - Revenue reports
- * - Booking trends
- * - Service popularity
- * 
- * CHANGES:
- * - Removed `kv` parameter from function signature
- * - Replaced all `kv.get()`, `kv.getByPrefix()` with repository calls
- * - All data now comes from SQL tables
- * 
- * Date: 2024-12-22
- * Migration: Phase 5 - KV to SQL
- * ============================================================================
- */
-
 import { Hono } from "npm:hono";
 import { sendSuccess, sendError } from "./response-utils.ts";
-import { getVendorsRepository } from "../../lib/repositories/vendors.ts";
-import { getCustomersRepository } from "../../lib/repositories/customers.ts";
-import { getBookingsRepository } from "../../lib/repositories/bookings.ts";
-import { getReviewsRepository } from "../../lib/repositories/reviews.ts";
-import { getCommissionsRepository } from "../../lib/repositories/commissions.ts";
-import { getDbClient } from "../../lib/db.ts";
 
-export function analyticsEndpoints(app: Hono) {
+export function analyticsEndpoints(app: Hono, kv: any) {
   
   // ============================================
   // ANALYTICS & REPORTS ENDPOINTS
@@ -41,23 +10,20 @@ export function analyticsEndpoints(app: Hono) {
   /**
    * Get vendor dashboard statistics
    * GET /make-server-3dd53475/analytics/vendor/:vendorId/dashboard
-   * 
-   * REFACTORED: Uses SQL repositories instead of KV
    */
   app.get("/make-server-3dd53475/analytics/vendor/:vendorId/dashboard", async (c) => {
     try {
       const { vendorId } = c.req.param();
       
-      // ✅ SQL: Get vendor
-      const vendor = await getVendorsRepository().findById(vendorId);
+      const vendor = await kv.get(`vendor:${vendorId}`);
       if (!vendor) {
         return sendError(c, 'Vendor not found', 404);
       }
 
-      // ✅ SQL: Get all bookings for vendor
-      const bookings = await getBookingsRepository().findByVendor(vendorId);
+      // Get bookings
+      const bookingIds = await kv.get(`vendor:${vendorId}:bookings`) || [];
       
-      let totalBookings = bookings.length;
+      let totalBookings = 0;
       let pendingBookings = 0;
       let confirmedBookings = 0;
       let completedBookings = 0;
@@ -69,28 +35,33 @@ export function analyticsEndpoints(app: Hono) {
       const today = new Date().toISOString().split('T')[0];
       const thisMonth = new Date().toISOString().substring(0, 7);
       
-      for (const booking of bookings) {
-        switch (booking.status) {
-          case 'pending': pendingBookings++; break;
-          case 'confirmed': confirmedBookings++; break;
-          case 'completed': 
-            completedBookings++;
-            totalRevenue += booking.total_amount || 0;
-            if (booking.booking_date?.startsWith(thisMonth)) {
-              thisMonthRevenue += booking.total_amount || 0;
-            }
-            break;
-          case 'cancelled': cancelledBookings++; break;
-        }
-        
-        if (booking.booking_date === today) {
-          todayBookings++;
+      for (const bookingId of bookingIds) {
+        const booking = await kv.get(`booking:${bookingId}`);
+        if (booking) {
+          totalBookings++;
+          
+          switch (booking.status) {
+            case 'pending': pendingBookings++; break;
+            case 'confirmed': confirmedBookings++; break;
+            case 'completed': 
+              completedBookings++;
+              totalRevenue += booking.price || 0;
+              if (booking.bookingDate?.startsWith(thisMonth)) {
+                thisMonthRevenue += booking.price || 0;
+              }
+              break;
+            case 'cancelled': cancelledBookings++; break;
+          }
+          
+          if (booking.bookingDate === today) {
+            todayBookings++;
+          }
         }
       }
 
-      // ✅ SQL: Get reviews for vendor
-      const reviews = await getReviewsRepository().findByVendor(vendorId);
-      const totalReviews = reviews.length;
+      // Get reviews
+      const reviewIds = await kv.get(`vendor:${vendorId}:reviews`) || [];
+      const totalReviews = reviewIds.length;
 
       // Response rate (confirmed / total requests)
       const responseRate = totalBookings > 0 
@@ -130,51 +101,55 @@ export function analyticsEndpoints(app: Hono) {
   /**
    * Get customer dashboard statistics
    * GET /make-server-3dd53475/analytics/customer/:customerId/dashboard
-   * 
-   * REFACTORED: Uses SQL repositories instead of KV
    */
   app.get("/make-server-3dd53475/analytics/customer/:customerId/dashboard", async (c) => {
     try {
       const { customerId } = c.req.param();
       
-      // ✅ SQL: Get customer
-      const customer = await getCustomersRepository().findById(customerId);
+      const customer = await kv.get(`customer:${customerId}`);
       if (!customer) {
         return sendError(c, 'Customer not found', 404);
       }
 
-      // ✅ SQL: Get pets for customer
-      const { getPetsRepository } = await import('../../lib/repositories/pets.ts');
-      const pets = await getPetsRepository().findByCustomer(customerId);
-      const totalPets = pets.length;
+      // Get pets
+      const petIds = await kv.get(`customer:${customerId}:pets`) || [];
+      const totalPets = petIds.length;
 
-      // ✅ SQL: Get bookings for customer
-      const bookings = await getBookingsRepository().findByCustomer(customerId);
+      // Get bookings
+      const bookingIds = await kv.get(`customer:${customerId}:bookings`) || [];
       
-      let totalBookings = bookings.length;
+      let totalBookings = 0;
       let upcomingBookings = 0;
       let completedBookings = 0;
       let totalSpent = 0;
       
       const now = new Date();
       
-      for (const booking of bookings) {
-        if (booking.status === 'completed') {
-          completedBookings++;
-          totalSpent += booking.total_amount || 0;
-        }
-        
-        if (booking.status === 'confirmed' || booking.status === 'pending') {
-          const bookingDate = new Date(booking.booking_date);
-          if (bookingDate >= now) {
-            upcomingBookings++;
+      for (const bookingId of bookingIds) {
+        const booking = await kv.get(`booking:${bookingId}`);
+        if (booking) {
+          totalBookings++;
+          
+          if (booking.status === 'completed') {
+            completedBookings++;
+            totalSpent += booking.price || 0;
+          }
+          
+          if (booking.status === 'confirmed' || booking.status === 'pending') {
+            const bookingDate = new Date(booking.bookingDate);
+            if (bookingDate >= now) {
+              upcomingBookings++;
+            }
           }
         }
       }
 
-      // ✅ SQL: Get reviews for customer
-      const reviews = await getReviewsRepository().findByCustomer(customerId);
-      const totalReviews = reviews.length;
+      // Get reviews
+      const reviewIds = await kv.get(`customer:${customerId}:reviews`) || [];
+      const totalReviews = reviewIds.length;
+
+      // Get favorite vendors
+      const favoriteVendors = customer.favoriteVendors || [];
 
       const stats = {
         overview: {
@@ -183,7 +158,7 @@ export function analyticsEndpoints(app: Hono) {
           upcomingBookings,
           completedBookings,
           totalReviews,
-          favoriteVendors: 0 // TODO: Add favorite vendors feature
+          favoriteVendors: favoriteVendors.length
         },
         spending: {
           total: totalSpent,
@@ -201,64 +176,46 @@ export function analyticsEndpoints(app: Hono) {
   /**
    * Get admin platform statistics
    * GET /make-server-3dd53475/analytics/admin/platform
-   * 
-   * REFACTORED: Uses SQL repositories instead of KV
    */
   app.get("/make-server-3dd53475/analytics/admin/platform", async (c) => {
     try {
-      const client = getDbClient();
-      
-      // ✅ SQL: Get all vendors
-      const { data: vendors } = await client
-        .from('vendors')
-        .select('id, status, is_active');
-      const totalVendors = vendors?.length || 0;
-      const activeVendors = vendors?.filter(v => v.status === 'approved' && v.is_active).length || 0;
-      const pendingVendors = vendors?.filter(v => v.status === 'pending_approval').length || 0;
+      // Get all vendors
+      const allVendors = await kv.getByPrefix('vendor:vendor_');
+      const totalVendors = allVendors.length;
+      const activeVendors = allVendors.filter((v: any) => v.status === 'approved' && v.isActive).length;
+      const pendingVendors = allVendors.filter((v: any) => v.status === 'pending_approval').length;
 
-      // ✅ SQL: Get all customers
-      const { data: customers } = await client
-        .from('customers')
-        .select('id');
-      const totalCustomers = customers?.length || 0;
+      // Get all customers
+      const allCustomers = await kv.getByPrefix('customer:customer_');
+      const totalCustomers = allCustomers.length;
 
-      // ✅ SQL: Get all bookings
-      const { data: bookings } = await client
-        .from('bookings')
-        .select('id, status, total_amount');
-      const totalBookings = bookings?.length || 0;
-      const completedBookings = bookings?.filter(b => b.status === 'completed').length || 0;
-      const pendingBookings = bookings?.filter(b => b.status === 'pending').length || 0;
+      // Get all bookings
+      const allBookings = await kv.getByPrefix('booking:booking_');
+      const totalBookings = allBookings.length;
+      const completedBookings = allBookings.filter((b: any) => b.status === 'completed').length;
+      const pendingBookings = allBookings.filter((b: any) => b.status === 'pending').length;
 
       // Calculate revenue
       let totalRevenue = 0;
       let platformCommission = 0;
       
-      for (const booking of bookings || []) {
-        if (booking.status === 'completed' && booking.total_amount) {
-          totalRevenue += booking.total_amount;
-          // Get commission from commissions table
-          const commissions = await getCommissionsRepository().findByBooking(booking.id);
-          if (commissions.length > 0) {
-            platformCommission += commissions[0].commission_amount || 0;
-          } else {
-            // Fallback: assume 10% commission
-            platformCommission += booking.total_amount * 0.10;
-          }
+      for (const booking of allBookings) {
+        if (booking.status === 'completed' && booking.price) {
+          totalRevenue += booking.price;
+          // Assuming 10% platform commission
+          platformCommission += booking.price * 0.10;
         }
       }
 
-      // ✅ SQL: Get all reviews
-      const { data: reviews } = await client
-        .from('reviews')
-        .select('id, rating');
-      const totalReviews = reviews?.length || 0;
+      // Get all reviews
+      const allReviews = await kv.getByPrefix('review:review_');
+      const totalReviews = allReviews.length;
 
       // Calculate average platform rating
       let totalRating = 0;
       let ratingCount = 0;
-      for (const review of reviews || []) {
-        if (review.rating) {
+      for (const review of allReviews) {
+        if (review.status === 'published' && review.rating) {
           totalRating += review.rating;
           ratingCount++;
         }
@@ -299,24 +256,21 @@ export function analyticsEndpoints(app: Hono) {
   /**
    * Get vendor revenue report
    * GET /make-server-3dd53475/analytics/vendor/:vendorId/revenue
-   * 
-   * REFACTORED: Uses SQL repositories instead of KV
    */
   app.get("/make-server-3dd53475/analytics/vendor/:vendorId/revenue", async (c) => {
     try {
       const { vendorId } = c.req.param();
       const period = c.req.query('period') || 'month'; // day, week, month, year
 
-      // ✅ SQL: Get commissions for vendor (completed bookings)
-      const commissions = await getCommissionsRepository().findByVendor(vendorId);
+      const bookingIds = await kv.get(`vendor:${vendorId}:bookings`) || [];
       
       const revenueByPeriod: { [key: string]: number } = {};
       let totalRevenue = 0;
       
-      for (const commission of commissions) {
-        const booking = await getBookingsRepository().findById(commission.booking_id || '');
-        if (booking && booking.status === 'completed' && booking.completed_at) {
-          const date = new Date(booking.completed_at);
+      for (const bookingId of bookingIds) {
+        const booking = await kv.get(`booking:${bookingId}`);
+        if (booking && booking.status === 'completed' && booking.completedAt) {
+          const date = new Date(booking.completedAt);
           let periodKey = '';
           
           switch (period) {
@@ -335,8 +289,8 @@ export function analyticsEndpoints(app: Hono) {
               break;
           }
           
-          revenueByPeriod[periodKey] = (revenueByPeriod[periodKey] || 0) + (commission.vendor_amount || 0);
-          totalRevenue += commission.vendor_amount || 0;
+          revenueByPeriod[periodKey] = (revenueByPeriod[periodKey] || 0) + (booking.price || 0);
+          totalRevenue += booking.price || 0;
         }
       }
 
@@ -357,24 +311,17 @@ export function analyticsEndpoints(app: Hono) {
   /**
    * Get booking trends
    * GET /make-server-3dd53475/analytics/admin/trends/bookings
-   * 
-   * REFACTORED: Uses SQL repositories instead of KV
    */
   app.get("/make-server-3dd53475/analytics/admin/trends/bookings", async (c) => {
     try {
       const period = c.req.query('period') || 'month';
-      const client = getDbClient();
-      
-      // ✅ SQL: Get all bookings
-      const { data: bookings } = await client
-        .from('bookings')
-        .select('id, created_at');
+      const allBookings = await kv.getByPrefix('booking:booking_');
       
       const bookingsByPeriod: { [key: string]: number } = {};
       
-      for (const booking of bookings || []) {
-        if (booking.created_at) {
-          const date = new Date(booking.created_at);
+      for (const booking of allBookings) {
+        if (booking.createdAt) {
+          const date = new Date(booking.createdAt);
           let periodKey = '';
           
           switch (period) {
@@ -399,7 +346,7 @@ export function analyticsEndpoints(app: Hono) {
 
       const trends = {
         period,
-        totalBookings: bookings?.length || 0,
+        totalBookings: allBookings.length,
         breakdown: bookingsByPeriod,
         periods: Object.keys(bookingsByPeriod).sort()
       };
@@ -414,28 +361,21 @@ export function analyticsEndpoints(app: Hono) {
   /**
    * Get service popularity report
    * GET /make-server-3dd53475/analytics/admin/service-popularity
-   * 
-   * REFACTORED: Uses SQL repositories instead of KV
    */
   app.get("/make-server-3dd53475/analytics/admin/service-popularity", async (c) => {
     try {
-      const client = getDbClient();
-      
-      // ✅ SQL: Get all bookings with service info
-      const { data: bookings } = await client
-        .from('bookings')
-        .select('id, service_type, total_amount, status');
+      const allBookings = await kv.getByPrefix('booking:booking_');
       
       const serviceCount: { [key: string]: number } = {};
       const serviceRevenue: { [key: string]: number } = {};
       
-      for (const booking of bookings || []) {
-        if (booking.service_type) {
-          const service = booking.service_type;
+      for (const booking of allBookings) {
+        if (booking.serviceType || booking.serviceName) {
+          const service = booking.serviceType || booking.serviceName;
           serviceCount[service] = (serviceCount[service] || 0) + 1;
           
-          if (booking.status === 'completed' && booking.total_amount) {
-            serviceRevenue[service] = (serviceRevenue[service] || 0) + booking.total_amount;
+          if (booking.status === 'completed' && booking.price) {
+            serviceRevenue[service] = (serviceRevenue[service] || 0) + booking.price;
           }
         }
       }
@@ -456,7 +396,7 @@ export function analyticsEndpoints(app: Hono) {
     }
   });
 
-  console.log('✅ Analytics endpoints registered (SQL-only)');
+  console.log('✅ Analytics endpoints registered');
 }
 
 /**
@@ -469,4 +409,3 @@ function getWeekNumber(date: Date): number {
   const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
   return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
 }
-

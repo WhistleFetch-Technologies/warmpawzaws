@@ -473,7 +473,7 @@ registerCustomerBookingHistory(app);
 registerCustomerSearchEndpoints(app);
 notificationEndpoints(app, kv);
 reviewEndpoints(app, kv);
-analyticsEndpoints(app, kv);
+analyticsEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 
 // ✅ NEW: Advanced Search Engine with Fuse.js
 console.log('🔍 Registering Advanced Search Engine...');
