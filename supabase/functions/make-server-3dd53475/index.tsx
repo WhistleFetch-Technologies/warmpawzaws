@@ -489,7 +489,7 @@ vendorApprovalWorkflowEndpoints(app); // ✅ REFACTORED: Removed kv parameter - 
 vendorDashboardEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 vendorRoleConfigEndpoints(app);
 registerDynamicOnboarding(app);
-onboardingConfigEndpoints(app, kv); // ✅ NEW: Register onboarding config endpoints for multi-staff applications
+onboardingConfigEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 registerVendorServiceEndpoints(app);
 registerVendorServicesSQLEndpoints(app); // ✅ NEW: SQL-based service management
 registerVendorCatalogAPIV2(app);
