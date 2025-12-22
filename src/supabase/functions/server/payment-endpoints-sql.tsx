@@ -36,9 +36,8 @@ export function paymentEndpointsSQL(app: Hono) {
   async function triggerNotification(notification: any) {
     try {
       // Note: notification-system still uses KV for now, will migrate later
-      // This is a temporary bridge
-      const kv = await import("./kv_store.tsx");
-      await createNotificationHelper(kv, {
+      // ✅ MIGRATED TO SQL: No longer needs kv
+      await createNotificationHelper({
         ...notification,
         channels: notification.channels || { email: true, sms: true, inApp: true, push: false }
       });

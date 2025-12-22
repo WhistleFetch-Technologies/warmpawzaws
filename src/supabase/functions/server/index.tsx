@@ -1266,6 +1266,18 @@ console.log('✅ Registering SQL-based Settlement Automation...');
 registerSettlementAutomationSQL(app);
 console.log('✅ Registered SQL-based Settlement Automation (NO KV STORE)');
 
+// ✅ NEW: SQL-based Wallet Endpoints (NO KV STORE)
+import { walletEndpointsSQL } from './wallet-endpoints-sql.tsx';
+console.log('✅ Registering SQL-based Wallet Endpoints...');
+walletEndpointsSQL(app);
+console.log('✅ Registered SQL-based Wallet Endpoints (NO KV STORE)');
+
+// ✅ NEW: SQL-based Order Endpoints (NO KV STORE)
+import { orderEndpointsSQL } from './order-endpoints-sql.tsx';
+console.log('✅ Registering SQL-based Order Endpoints...');
+orderEndpointsSQL(app);
+console.log('✅ Registered SQL-based Order Endpoints (NO KV STORE)');
+
 // ✅ NEW: SQL-based Scheduling Endpoints (NO KV STORE)
 console.log('✅ Registering SQL-based Scheduling Endpoints...');
 if (packageEndpointsSQL && typeof packageEndpointsSQL === 'function') {

@@ -76,7 +76,7 @@ export function bookingLifecycleCompleteEndpoints(app: Hono, kv: any) {
           const vendor = await kv.get(`vendor:${booking.vendorId}`);
           const endOTP = booking.otp?.end || booking.completionOTP;
 
-          await createNotificationHelper(kv, {
+          await createNotificationHelper({
             recipientId: booking.customerId,
             recipientType: 'customer',
             type: 'service_started',
@@ -220,7 +220,7 @@ export function bookingLifecycleCompleteEndpoints(app: Hono, kv: any) {
           const vendor = await kv.get(`vendor:${booking.vendorId}`);
 
           // Notify Customer
-          await createNotificationHelper(kv, {
+          await createNotificationHelper({
             recipientId: booking.customerId,
             recipientType: 'customer',
             type: 'booking_completed',
@@ -235,7 +235,7 @@ export function bookingLifecycleCompleteEndpoints(app: Hono, kv: any) {
           });
 
           // Notify Vendor
-          await createNotificationHelper(kv, {
+          await createNotificationHelper({
             recipientId: booking.vendorId,
             recipientType: 'vendor',
             type: 'booking_completed',

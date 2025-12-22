@@ -14,12 +14,14 @@ import { Hono } from "npm:hono";
 import { sendSuccess, sendError } from "./response-utils.ts";
 import { getOrdersRepository } from "../../lib/repositories/orders.ts";
 import { getProductsRepository } from "../../lib/repositories/products.ts";
+import { getDbClient } from "../../lib/db.ts";
 import { getCustomersRepository } from "../../lib/repositories/customers.ts";
 import { getVendorsRepository } from "../../lib/repositories/vendors.ts";
 import { getPaymentsRepository } from "../../lib/repositories/payments.ts";
 import { getSettlementsRepository } from "../../lib/repositories/settlements.ts";
 import { calculateGST } from "../../lib/services/gst-calculator.ts";
-import { selectQuery, withTransaction } from "../../lib/db.ts";
+import { selectQuery } from "../../lib/db.ts";
+import { withTransaction } from "../../lib/utils/transaction-helper.ts";
 
 const BASE_PATH = "/make-server-3dd53475";
 
@@ -48,6 +50,7 @@ export function ecommerceEndpointsSQL(app: Hono) {
       // Validate inventory and calculate totals
       const vendorsRepo = getVendorsRepository();
       const productsRepo = getProductsRepository();
+      const client = getDbClient();
       
       let subtotal = 0;
       let totalGST = 0;
@@ -103,9 +106,9 @@ export function ecommerceEndpointsSQL(app: Hono) {
       // Create order atomically with inventory update
       const ordersRepo = getOrdersRepository();
       
-      const order = await withTransaction(async (client) => {
+      const order = await withTransaction(async (txClient) => {
         // Create order
-        const orderResult = await client
+        const orderResult = await txClient
           .from('orders')
           .insert({
             customer_id: orderData.customer_id,
@@ -126,15 +129,22 @@ export function ecommerceEndpointsSQL(app: Hono) {
           .select()
           .single();
         
+        if (!orderResult.data) {
+          throw new Error('Failed to create order');
+        }
+        
         // Create order items and update inventory
         for (const item of orderData.items) {
           const product = await productsRepo.findById(item.product_id);
+          if (!product) {
+            throw new Error(`Product not found: ${item.product_id}`);
+          }
           
           // Create order item
-          await client
+          await txClient
             .from('order_items')
             .insert({
-              order_id: orderResult.id,
+              order_id: orderResult.data.id,
               product_id: item.product_id,
               quantity: item.quantity,
               price: product.price,
@@ -142,13 +152,10 @@ export function ecommerceEndpointsSQL(app: Hono) {
             });
           
           // Update inventory
-          await client
-            .from('products')
-            .update({ stock: product.stock - item.quantity })
-            .eq('id', item.product_id);
+          await productsRepo.updateStock(item.product_id, item.quantity, 'subtract');
         }
         
-        return orderResult;
+        return orderResult.data;
       });
       
       // Log audit

@@ -3,14 +3,14 @@ import { sendSuccess, sendError } from "./response-utils.ts";
 import { createRazorpayOrder, verifyRazorpaySignature, fetchRazorpayPayment } from "./razorpay-integration.tsx";
 import { createNotificationHelper } from "./notification-system.tsx";
 
-export function paymentEndpoints(app: Hono, kv: any) {
+export function paymentEndpoints(app: Hono) {
   
-  // ✅ FIX: Use existing notification system (no duplicate code)
+  // ✅ FIX: Use existing notification system (no duplicate code) - MIGRATED TO SQL
   // Helper: Trigger Notification using existing infrastructure
   async function triggerNotification(notification: any) {
     try {
       // Use existing createNotificationHelper which handles AWS SNS integration
-      await createNotificationHelper(kv, {
+      await createNotificationHelper({
         ...notification,
         channels: notification.channels || { email: true, sms: true, inApp: true, push: false }
       });
@@ -346,7 +346,7 @@ export function paymentEndpoints(app: Hono, kv: any) {
         const vendor = await kv.get(`vendor:${payment.vendorId}`);
 
         // 1. Notify Customer (Payment Success)
-        await createNotificationHelper(kv, {
+        await createNotificationHelper({
           recipientId: payment.customerId,
           recipientType: 'customer',
           type: 'payment_success',
@@ -361,7 +361,7 @@ export function paymentEndpoints(app: Hono, kv: any) {
         });
 
         // 2. Notify Vendor (Payment Received)
-        await createNotificationHelper(kv, {
+        await createNotificationHelper({
           recipientId: payment.vendorId,
           recipientType: 'vendor',
           type: 'payment_received',

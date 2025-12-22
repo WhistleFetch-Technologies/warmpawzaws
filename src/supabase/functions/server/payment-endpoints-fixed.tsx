@@ -25,13 +25,13 @@ import { calculateGST, validateGSTAmount } from "../../lib/services/gst-calculat
 import { debitWallet, creditWallet, validateWalletBalance } from "../../lib/services/wallet-service.ts";
 import { v4 as uuidv4 } from "npm:uuid@10";
 
-export function paymentEndpoints(app: Hono, kv: any) {
+export function paymentEndpoints(app: Hono) {
   const client = getDbClient();
   
-  // Helper: Trigger Notification
+  // Helper: Trigger Notification - ✅ MIGRATED TO SQL
   async function triggerNotification(notification: any) {
     try {
-      await createNotificationHelper(kv, {
+      await createNotificationHelper({
         ...notification,
         channels: notification.channels || { email: true, sms: true, inApp: true, push: false }
       });

@@ -376,12 +376,11 @@ app.post('/make-server-3dd53475/admin/regions/init-india', async (c) => {
   try {
     console.log('🌍 POST /admin/regions/init-india called');
     
+    const regionsRepo = getRegionsRepository();
+    
     // Check if region already exists
     console.log('🔍 Checking if India region already exists...');
-    const existing = await kv.get('region_india').catch(err => {
-      console.error('⚠️ KV GET error during check:', err.message);
-      return null;
-    });
+    const existing = await regionsRepo.findByCode('IN');
     
     if (existing) {
       console.log('✅ India region already exists, returning existing');
@@ -390,74 +389,54 @@ app.post('/make-server-3dd53475/admin/regions/init-india', async (c) => {
     
     console.log('🔨 Creating India region...');
     
-    // Create India region
-    const indiaRegion = {
-      regionId: 'india',
-      regionName: 'India',
-      regionCode: 'IN',
-      isActive: true,
-      currency: {
-        code: 'INR',
-        symbol: '₹',
-        name: 'Indian Rupee',
-      },
-      phoneConfig: {
-        countryCode: '+91',
-        format: '+91 XXXXX XXXXX',
-        length: 10,
-        validation: '/^[6-9]\\\\d{9}$/',
-      },
-      serviceCatalog: {
-        veterinary: true,
-        grooming: true,
-        training: true,
-        daycare: true,
-        boarding: true,
-        walking: true,
-        sitting: true,
-        adoption: true,
-        ecommerce: true,
-        telemedicine: true,
-        emergency: true,
-        nutrition: true,
-        breeding: true,
-        photography: true,
-        insurance: true,
-        cremation: true,
-        spa: true,
-        cafe: true,
-        'mating-dating': true,
-      },
-      popularBreeds: {
-        dogs: ['Labrador Retriever', 'German Shepherd', 'Golden Retriever', 'Beagle', 'Pug', 'Indian Pariah Dog'],
-        cats: ['Persian', 'Siamese', 'Maine Coon', 'Indian Street Cat', 'British Shorthair'],
-      },
-      timezone: 'Asia/Kolkata',
-      dateFormat: 'DD/MM/YYYY',
-      timeFormat: '12h',
-      launchDate: new Date().toISOString(),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    
-    console.log('💾 Attempting to save region to KV store with key: region_india');
-    
-    try {
-      await kv.set('region_india', indiaRegion);
-      console.log('✅ KV SET successful');
-      
-      // Verify it was saved
-      const verification = await kv.get('region_india').catch(() => null);
-      if (verification) {
-        console.log('✅ Verification successful - region is persisted');
-      } else {
-        console.warn('⚠️ Verification failed - region may not be persisted');
+    // Create India region using SQL repository
+    const indiaRegion = await regionsRepo.create({
+      name: 'India',
+      code: 'IN',
+      country: 'India',
+      is_active: true,
+      region_config: {
+        currency: {
+          code: 'INR',
+          symbol: '₹',
+          name: 'Indian Rupee',
+        },
+        phoneConfig: {
+          countryCode: '+91',
+          format: '+91 XXXXX XXXXX',
+          length: 10,
+          validation: '/^[6-9]\\d{9}$/',
+        },
+        serviceCatalog: {
+          veterinary: true,
+          grooming: true,
+          training: true,
+          daycare: true,
+          boarding: true,
+          walking: true,
+          sitting: true,
+          adoption: true,
+          ecommerce: true,
+          telemedicine: true,
+          emergency: true,
+          nutrition: true,
+          breeding: true,
+          photography: true,
+          insurance: true,
+          cremation: true,
+          spa: true,
+          cafe: true,
+          'mating-dating': true,
+        },
+        popularBreeds: {
+          dogs: ['Labrador Retriever', 'German Shepherd', 'Golden Retriever', 'Beagle', 'Pug', 'Indian Pariah Dog'],
+          cats: ['Persian', 'Siamese', 'Maine Coon', 'Indian Street Cat', 'British Shorthair'],
+        },
+        timezone: 'Asia/Kolkata',
+        dateFormat: 'DD/MM/YYYY',
+        timeFormat: '12h',
       }
-    } catch (kvError) {
-      console.error('❌ KV SET error:', kvError.message);
-      console.error('❌ Full error:', kvError);
-      throw new Error(`Failed to save region to KV store: ${kvError.message}`);
-    }
+    });
     
     console.log('✅ India region initialized successfully');
     
@@ -556,7 +535,7 @@ if (walletEndpoints && typeof walletEndpoints === 'object') {
 registerAuthEndpoints(app);
 registerAICRMRoutes(app, kv);
 registerAIChatbotRoutes(app);
-paymentEndpoints(app, kv); // ✅ FIXED: SQL-only with all financial fixes
+paymentEndpoints(app); // ✅ FIXED: SQL-only with all financial fixes, removed kv parameter
 // ✅ NEW: SQL-only payment endpoints (alternative)
 import { paymentEndpointsSQL } from './payment-endpoints-sql.tsx';
 paymentEndpointsSQL(app);

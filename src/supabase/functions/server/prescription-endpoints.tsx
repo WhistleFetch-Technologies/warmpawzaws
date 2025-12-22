@@ -139,7 +139,7 @@ app.post('/make-server-3dd53475/prescription/create', async (c) => {
     try {
       const customer = await kv.get(`customer:${booking.customerId}`);
       
-      await createNotificationHelper(kv, {
+      await createNotificationHelper({
         recipientId: booking.customerId,
         recipientType: 'customer',
         type: 'prescription_uploaded',

@@ -38,8 +38,7 @@ export function registerPayoutCronJobSQL(app: Hono) {
   // Helper: Trigger Notification (temporary bridge to KV-based notification system)
   async function triggerNotification(notification: any) {
     try {
-      const kv = await import("./kv_store.tsx");
-      await createNotificationHelper(kv, {
+      await createNotificationHelper({
         ...notification,
         channels: notification.channels || { email: true, sms: false, inApp: true, push: false }
       });

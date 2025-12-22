@@ -16,11 +16,12 @@ import { getBookingsRepository } from "../../lib/repositories/bookings.ts";
 import { getCustomersRepository } from "../../lib/repositories/customers.ts";
 import { getVendorsRepository } from "../../lib/repositories/vendors.ts";
 import { getWalletsRepository } from "../../lib/repositories/wallets.ts";
+import { getRefundsRepository } from "../../lib/repositories/refunds.ts";
 import { calculateGST } from "../../lib/services/gst-calculator.ts";
-import { processRefundAtomically } from "../../lib/utils/transaction-helper.ts";
-import { validatePaymentTransition } from "../../lib/services/state-machine-validator.ts";
+import { withTransaction } from "../../lib/utils/transaction-helper.ts";
+import { validateTransition } from "../../lib/services/state-machine-validator.ts";
 import { selectQuery } from "../../lib/db.ts";
-import { createRazorpayOrder, verifyRazorpayPayment } from "./razorpay-payment-integration.tsx";
+import { createRazorpayOrder, verifyRazorpayPayment } from "./razorpay-helpers.tsx";
 
 const BASE_PATH = "/make-server-3dd53475";
 
@@ -90,13 +91,20 @@ export function paymentEndpointsSQL(app: Hono) {
         loyalty_points_used: paymentData.loyalty_points_used || 0
       });
       
-      // If using wallet, deduct from wallet
+      // If using wallet, deduct from wallet atomically
       if (paymentData.wallet_amount_used > 0) {
-        const walletsRepo = getWalletsRepository();
-        await walletsRepo.debit(paymentData.customer_id, paymentData.wallet_amount_used, {
-          reference_type: 'payment',
-          reference_id: payment.id,
-          description: 'Payment for booking/order'
+        await withTransaction(async (txClient) => {
+          const walletsRepo = getWalletsRepository();
+          const wallet = await walletsRepo.findOrCreate(paymentData.customer_id);
+          await walletsRepo.addTransaction({
+            wallet_id: wallet.id,
+            customer_id: paymentData.customer_id,
+            transaction_type: 'debit',
+            amount: paymentData.wallet_amount_used,
+            purpose: 'payment',
+            description: 'Payment for booking/order',
+            reference_id: payment.id
+          });
         });
       }
       
@@ -228,22 +236,41 @@ export function paymentEndpointsSQL(app: Hono) {
       const refundAmount = amount || payment.amount;
       
       // Process refund atomically
-      const { payment: updatedPayment, refund } = await processRefundAtomically(
-        paymentId,
-        {
-          amount: refundAmount,
-          reason: reason || 'Customer request',
-          refund_method: refund_method || 'wallet'
-        }
-      );
+      const refundsRepo = getRefundsRepository();
+      const { payment: updatedPayment, refund } = await withTransaction(async (txClient) => {
+        // Create refund record
+        const refund = await refundsRepo.create({
+          payment_id: paymentId,
+          booking_id: payment.booking_id,
+          customer_id: payment.customer_id,
+          vendor_id: payment.vendor_id,
+          refund_amount: refundAmount,
+          refund_reason: reason || 'Customer request',
+          refund_status: 'pending'
+        });
+        
+        // Update payment status
+        const updatedPayment = await paymentsRepo.update(paymentId, {
+          payment_status: payment.payment_status === 'completed' ? 'partially_refunded' : 'refunded'
+        });
+        
+        return { payment: updatedPayment, refund };
+      });
       
-      // If refund to wallet, credit wallet
+      // If refund to wallet, credit wallet atomically
       if (refund_method === 'wallet') {
-        const walletsRepo = getWalletsRepository();
-        await walletsRepo.credit(payment.customer_id, refundAmount, {
-          reference_type: 'refund',
-          reference_id: refund.id,
-          description: `Refund for payment ${paymentId}`
+        await withTransaction(async (txClient) => {
+          const walletsRepo = getWalletsRepository();
+          const wallet = await walletsRepo.findOrCreate(payment.customer_id);
+          await walletsRepo.addTransaction({
+            wallet_id: wallet.id,
+            customer_id: payment.customer_id,
+            transaction_type: 'credit',
+            amount: refundAmount,
+            source: 'refund',
+            description: `Refund for payment ${paymentId}`,
+            reference_id: refund.id
+          });
         });
       }
       
