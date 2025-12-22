@@ -18,15 +18,22 @@ export * from "./customers.ts";
 export * from "./vendors.ts";
 export * from "./bookings.ts";
 export * from "./payments.ts";
+export * from "./services.ts";
+export * from "./staff.ts";
+export * from "./orders.ts";
+export * from "./refunds.ts";
+export * from "./payouts.ts";
+export * from "./notifications.ts";
 
 // Re-export repository instances for convenience
-export {
-  getCustomersRepository,
-  getVendorsRepository,
-  getBookingsRepository,
-  getPaymentsRepository,
-} from "./customers.ts";
+export { getCustomersRepository } from "./customers.ts";
 export { getVendorsRepository } from "./vendors.ts";
 export { getBookingsRepository } from "./bookings.ts";
 export { getPaymentsRepository } from "./payments.ts";
+export { getServicesRepository } from "./services.ts";
+export { getStaffRepository } from "./staff.ts";
+export { getOrdersRepository } from "./orders.ts";
+export { getRefundsRepository } from "./refunds.ts";
+export { getPayoutsRepository } from "./payouts.ts";
+export { getNotificationsRepository } from "./notifications.ts";
 
