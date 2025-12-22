@@ -48,4 +48,6 @@ export * from "./pets.ts";
 export { getPetsRepository } from "./pets.ts";
 export * from "./sessions.ts";
 export { getSessionsRepository } from "./sessions.ts";
+export * from "./wallets.ts";
+export { getWalletsRepository } from "./wallets.ts";
 
