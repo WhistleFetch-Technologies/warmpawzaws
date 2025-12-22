@@ -135,13 +135,17 @@ export class OtpRepository {
   }
 
   async incrementAttempts(otpId: string): Promise<void> {
-    await updateQuery<OtpToken>(
-      "otp_tokens",
-      { id: otpId },
-      {
-        attempts: getDbClient().rpc('increment', { column: 'attempts', table: 'otp_tokens', id: otpId }),
-      }
-    );
+    // Get current attempts and increment using direct SQL
+    const current = await selectQuery<OtpToken>("otp_tokens", { id: otpId }, { limit: 1 });
+    if (current[0]) {
+      await updateQuery<OtpToken>(
+        "otp_tokens",
+        { id: otpId },
+        {
+          attempts: (current[0].attempts || 0) + 1,
+        }
+      );
+    }
   }
 
   async markAsUsed(otpId: string): Promise<void> {

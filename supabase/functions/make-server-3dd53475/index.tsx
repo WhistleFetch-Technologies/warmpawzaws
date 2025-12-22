@@ -11,23 +11,24 @@ import { registerUniversalDiscovery } from './universal-problem-discovery.tsx';
 import { registerUniversalCustomerSearch } from './universal-customer-search.tsx';
 import { registerCustomerBookingHistory } from './customer-booking-history.tsx';
 import { registerCustomerSearchEndpoints } from './customer-search-endpoints.tsx';
-import { notificationEndpoints } from './notification-system.tsx';
-import { reviewEndpoints } from './review-endpoints.tsx';
+import { notificationEndpoints } from './notification-system-refactored.tsx';
+import { reviewEndpoints } from './review-endpoints-refactored.tsx';
 import { analyticsEndpoints } from './analytics-endpoints-refactored.tsx';
 import { enhancedSearchEngineEndpoints } from './enhanced-search-engine.tsx';
 import { vendorOnboardingEndpoints } from './vendor-onboarding-refactored.tsx';
-import { vendorApprovalWorkflowEndpoints } from './vendor-approval-workflow.tsx';
+import { vendorApprovalWorkflowEndpoints } from './vendor-approval-workflow-refactored.tsx';
 import { vendorDashboardEndpoints } from './vendor-dashboard-endpoints-refactored.tsx';
 import { vendorRoleConfigEndpoints } from './vendor-role-config.tsx';
 import { registerDynamicOnboarding } from './dynamic-onboarding-management.tsx';
 import { onboardingConfigEndpoints } from './onboarding-config-endpoints.tsx';
 import { registerVendorServiceEndpoints } from './vendor-services-endpoints.tsx';
+import { registerVendorServiceManagementRoutes } from './vendor-service-management-refactored.tsx'; // ✅ REFACTORED: SQL-only vendor service management
 import { registerVendorServicesSQLEndpoints } from './vendor-services-sql-endpoints.tsx';
 import { registerVendorCatalogAPIV2 } from './vendor-catalog-api-v2.tsx';
-import { customServiceEndpoints } from './custom-service-endpoints.tsx';
+import { customServiceEndpoints } from './custom-service-endpoints-refactored.tsx';
 import { vendorScheduleV2Endpoints } from './vendor-schedule-v2.tsx';
 import { registerAdminVendorRoutes } from './admin-vendor-routes.tsx';
-import { adminVendorEndpoints } from './admin-vendor-endpoints.tsx';
+import { adminVendorEndpoints } from './admin-vendor-endpoints-refactored.tsx';
 import { registerAdminCatalogEndpoints } from './admin-catalog-endpoints.tsx';
 import { adminIntegrationEndpoints } from './admin-integration-endpoints.tsx';
 import { registerVendorSettingsRulesEndpoints } from './vendor-settings-rules-endpoints.tsx';
@@ -188,8 +189,9 @@ import { razorpayMarketplaceSettlement } from './razorpay-marketplace-settlement
 import appointmentDetailEndpoints from './appointment-detail-endpoints.tsx'; // ✅ FIX: Prescription upload endpoints
 import { registerStorageEndpoints } from './storage-handler.tsx'; // ✅ FIX: Storage upload endpoints
 import { staffServiceEndpoints } from './staff-service-endpoints.tsx'; // ✅ FIX: Staff service management endpoints
-import { soloProviderEndpoints } from './solo-provider-endpoints.tsx'; // ✅ FIX: Solo provider onboarding endpoints
+import { soloProviderEndpoints } from './solo-provider-endpoints-refactored.tsx'; // ✅ REFACTORED: SQL-only solo provider endpoints
 import { registerMedicalAISummaryEndpoints } from './medical-ai-summary-endpoints.tsx'; // ✅ NEW: Medical AI summary endpoints
+import walletEndpoints from './wallet-endpoints-refactored.tsx'; // ✅ REFACTORED: SQL-only wallet endpoints
 
 const app = new Hono();
 
@@ -484,13 +486,14 @@ enhancedSearchEngineEndpoints(app, kv);
 // These must be registered BEFORE customer-routes because customer-routes
 // contains a generic /vendor/:vendorId wildcard that would shadow these.
 vendorOnboardingEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
-soloProviderEndpoints(app, kv); // ✅ FIX: Solo provider onboarding endpoints
+soloProviderEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 vendorApprovalWorkflowEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 vendorDashboardEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 vendorRoleConfigEndpoints(app);
 registerDynamicOnboarding(app);
 onboardingConfigEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 registerVendorServiceEndpoints(app);
+registerVendorServiceManagementRoutes(app); // ✅ REFACTORED: SQL-only vendor service management
 registerVendorServicesSQLEndpoints(app); // ✅ NEW: SQL-based service management
 registerVendorCatalogAPIV2(app);
 customServiceEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
