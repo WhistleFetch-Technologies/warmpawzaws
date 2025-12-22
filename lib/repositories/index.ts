@@ -42,4 +42,6 @@ export { getOtpRepository } from "./otp.ts";
 export { getSettlementsRepository } from "./settlements.ts";
 export * from "./commissions.ts";
 export { getCommissionsRepository } from "./commissions.ts";
+export * from "./reviews.ts";
+export { getReviewsRepository } from "./reviews.ts";
 

@@ -485,7 +485,7 @@ enhancedSearchEngineEndpoints(app, kv);
 vendorOnboardingEndpoints(app, kv);
 soloProviderEndpoints(app, kv); // ✅ FIX: Solo provider onboarding endpoints
 vendorApprovalWorkflowEndpoints(app, kv);
-vendorDashboardEndpoints(app, kv);
+vendorDashboardEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 vendorRoleConfigEndpoints(app);
 registerDynamicOnboarding(app);
 onboardingConfigEndpoints(app, kv); // ✅ NEW: Register onboarding config endpoints for multi-staff applications
