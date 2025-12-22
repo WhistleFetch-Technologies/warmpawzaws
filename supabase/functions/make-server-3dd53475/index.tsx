@@ -11,6 +11,9 @@ import { criticalActionGuard } from './critical-action-guard.tsx';
 import { registerUniversalDiscovery } from './universal-problem-discovery.tsx';
 import { registerUniversalCustomerSearch } from './universal-customer-search.tsx';
 import { registerCustomerBookingHistory } from './customer-booking-history.tsx';
+// ✅ NEW: SQL-based discovery endpoints
+import { registerDiscoverySQLEndpoints } from '../../src/supabase/functions/server/discovery-sql-endpoints.tsx';
+import { registerProblemGridMigrationEndpoints } from '../../src/supabase/functions/server/admin-problem-grid-migration.tsx';
 import { registerCustomerSearchEndpoints } from './customer-search-endpoints.tsx';
 import { notificationEndpoints } from './notification-system-refactored.tsx';
 import { reviewEndpoints } from './review-endpoints-refactored.tsx';
@@ -41,12 +44,14 @@ import { registerCustomerRoutes } from './customer-routes-refactored.tsx';
 import { registerAuthEndpoints } from './auth-endpoints.tsx';
 import { registerAICRMRoutes } from './ai-crm-routes.tsx';
 import { registerAIChatbotRoutes } from './ai-chatbot-routes.tsx';
-import { paymentEndpoints } from './payment-endpoints-refactored.tsx';
+import { paymentEndpoints } from '../server/payment-endpoints-fixed.tsx';
 import { marketplacePaymentEndpoints } from './marketplace-payment-endpoints.tsx';
+import { tierUpgradeEndpoints } from '../server/tier-upgrade-endpoints.tsx'; // ✅ NEW: SQL-only tier upgrade
 import { registerChatEndpoints } from './chat-endpoints.tsx';
 import { registerSubscriptionEndpoints } from './subscription-endpoints.tsx';
 import { registerVideoConsultationEndpoints } from './video-consultation-endpoints.tsx';
 import { registerMedicalHistoryEndpoints } from './medical-history-endpoints.tsx';
+import { healthcareComplianceEndpoints } from './healthcare-compliance-endpoints.tsx';
 import { registerUniversalStaffSchedule } from './universal-staff-schedule.tsx';
 import automationEndpoints from './automation-endpoints.tsx';
 import lifecycleValidationEndpoints from './lifecycle-validation-endpoint.tsx';
@@ -71,7 +76,7 @@ import { registerPayoutCronJob } from './payout-cron-job.tsx';
 import { registerSmsOtpService } from './sms-otp-service.tsx';
 import { registerRazorpayRefundProcessor } from './razorpay-refund-processor.tsx';
 import { registerGooglePlacesService } from './google-places-service.tsx';
-import { registerSettlementAutomation } from './settlement-automation.tsx';
+import { registerSettlementAutomation } from './settlement-automation-sql.tsx';
 import { registerS3AutoUploader } from './s3-auto-uploader.tsx';
 import { registerSmsEventNotifications } from './sms-event-notifications.tsx';
 import { registerShiprocketIntegration } from './shiprocket-integration.tsx';
@@ -143,7 +148,7 @@ import { deliveryIntegrationEndpoints } from './delivery-integration-endpoints.t
 import { resortPreCheckEndpoints } from './resort-precheck-endpoints.tsx';
 import { notificationTemplateSystem } from './notification-template-system.tsx';
 import { bankVerificationEndpoints } from './bank-verification-endpoints.tsx';
-import { tierUpgradeEndpoints } from './tier-upgrade-endpoints.tsx';
+// Tier upgrade endpoints imported from server directory
 import { settlementScheduleEndpoints } from './settlement-schedule-endpoints.tsx';
 import { gstRuleEngineEndpoints } from './gst-rule-engine.tsx';
 import { gstConfigurationEndpoints } from './gst-configuration-endpoints.tsx';
@@ -475,9 +480,16 @@ app.use('/make-server-3dd53475/admin/onboarding-fields/sync', criticalActionGuar
 // ------------------------------------------------------------------
 
 // 1. Universal Problem Discovery (Specific /customer/ path)
-registerUniversalDiscovery(app);
+registerUniversalDiscovery(app); // ✅ MIGRATED TO SQL
 registerUniversalCustomerSearch(app);
 registerCustomerBookingHistory(app);
+// ✅ NEW: SQL-based discovery endpoints
+if (registerDiscoverySQLEndpoints) {
+  registerDiscoverySQLEndpoints(app);
+}
+if (registerProblemGridMigrationEndpoints) {
+  registerProblemGridMigrationEndpoints(app); // ✅ Admin endpoint to populate problem grid mappings
+}
 registerCustomerSearchEndpoints(app);
 notificationEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 reviewEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
@@ -544,12 +556,25 @@ if (walletEndpoints && typeof walletEndpoints === 'object') {
 registerAuthEndpoints(app);
 registerAICRMRoutes(app, kv);
 registerAIChatbotRoutes(app);
-paymentEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
+paymentEndpoints(app, kv); // ✅ FIXED: SQL-only with all financial fixes
+// ✅ NEW: SQL-only payment endpoints (alternative)
+import { paymentEndpointsSQL } from './payment-endpoints-sql.tsx';
+paymentEndpointsSQL(app);
+tierUpgradeEndpoints(app); // ✅ NEW: Tier upgrade with payment options
 marketplacePaymentEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 registerChatEndpoints(app);
 registerSubscriptionEndpoints(app);
 registerVideoConsultationEndpoints(app);
 registerMedicalHistoryEndpoints(app);
+
+// ✅ NEW: Problem Discovery Validation Endpoints
+console.log('✅ Registering Problem Discovery Validation Endpoints...');
+import { problemDiscoveryValidationEndpoints } from './problem-discovery-validation-endpoint.tsx';
+problemDiscoveryValidationEndpoints(app);
+
+// ✅ NEW: Healthcare Compliance Endpoints (Medical Records, Prescriptions, Medicine Orders, Diagnostics)
+console.log('✅ Registering Healthcare Compliance Endpoints...');
+healthcareComplianceEndpoints(app);
 registerUniversalStaffSchedule(app);
 registerCenterAvailabilityEndpoints(app);
 registerBoardingRoomManagement(app);
@@ -558,6 +583,9 @@ registerServicePackageManagement(app);
 registerCustomerPackageEndpoints(app); // ✅ GAP #3 FIX
 registerVendorMetricsEnhancement(app); // ✅ GAP #8 FIX
 bookingEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
+// ✅ NEW: SQL-only booking endpoints (alternative with full validation)
+import { bookingEndpointsSQL } from './booking-endpoints-sql.tsx';
+bookingEndpointsSQL(app);
 registerCafeFeatures(app);
 registerCapabilityEndpoints(app);
 registerResortInventory(app);
@@ -571,6 +599,9 @@ if (marketingRoutesV2 && typeof marketingRoutesV2 === 'object') {
 }
 
 registerMarketplaceProducts(app);
+// ✅ NEW: SQL-only e-commerce endpoints (with GST and inventory fixes)
+import { ecommerceEndpointsSQL } from './ecommerce-endpoints-sql.tsx';
+ecommerceEndpointsSQL(app);
 registerUniversalServiceDiscovery(app);
 registerUniversalOTPSystem(app);
 registerHomeServiceBookingFlow(app);
@@ -730,12 +761,7 @@ if (bankVerificationEndpoints && typeof bankVerificationEndpoints === 'function'
   console.warn('⚠️ Bank Verification Endpoints module undefined, skipping');
 }
 
-if (tierUpgradeEndpoints && typeof tierUpgradeEndpoints === 'function') {
-  console.log('✅ Registering Tier Upgrade Endpoints...');
-  tierUpgradeEndpoints(app, kv);
-} else {
-  console.warn('⚠️ Tier Upgrade Endpoints module undefined, skipping');
-}
+// Tier upgrade endpoints registered above with payment endpoints
 
 if (settlementScheduleEndpoints && typeof settlementScheduleEndpoints === 'function') {
   console.log('✅ Registering Settlement Schedule Endpoints...');
@@ -1424,6 +1450,30 @@ app.route('/', lifecycleValidationEndpoints);
 console.log('✅ Registering Lifecycle Completeness Endpoints...');
 import lifecycleCompletenessEndpoints from './lifecycle-completeness-endpoints.tsx';
 app.route('/', lifecycleCompletenessEndpoints);
+
+// ✅ NEW: Healthcare Compliance Validation Endpoint
+console.log('✅ Registering Healthcare Compliance Validation Endpoint...');
+import { getHealthcareComplianceValidator } from '../../lib/services/healthcare-compliance-validator.ts';
+app.get('/make-server-3dd53475/healthcare/compliance/validate', async (c) => {
+  try {
+    const validator = getHealthcareComplianceValidator();
+    const report = await validator.validateAll();
+    return sendSuccess(c, report, 'Compliance validation completed');
+  } catch (error) {
+    console.error('❌ [HEALTHCARE] Error validating compliance:', error);
+    return sendError(c, error, 500);
+  }
+});
+
+// ✅ NEW: Service Lifecycle Validation Endpoints
+console.log('✅ Registering Service Lifecycle Validation Endpoints...');
+import { serviceLifecycleValidationEndpoints } from './service-lifecycle-validation-endpoint.tsx';
+serviceLifecycleValidationEndpoints(app);
+
+// ✅ NEW: Compliance Test Endpoints
+console.log('✅ Registering Compliance Test Endpoints...');
+import { complianceTestEndpoints } from './compliance-test-endpoint.tsx';
+complianceTestEndpoints(app);
 
 // ------------------------------------------------------------------
 // GLOBAL ERROR HANDLERS

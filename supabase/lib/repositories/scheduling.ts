@@ -451,31 +451,34 @@ export class SchedulingRepository {
 
     /**
      * Get or calculate commute time (FIX V10, V11)
+     * Supports both location IDs and coordinates
      */
     async getCommuteTime(
-        fromLocationId: string,
-        toLocationId: string,
+        fromLocationIdOrStaffId: string,
+        toLocationIdOrType: string,
         fromLat?: number,
         fromLng?: number,
         toLat?: number,
         toLng?: number
     ): Promise<number> {
-        // Check cache first
-        const cached = await selectQuery<{ commute_time_minutes: number }>(
-            'commute_time_cache',
-            {
-                from_location_id: fromLocationId,
-                to_location_id: toLocationId
-            },
-            {
-                limit: 1,
-                orderBy: 'calculated_at',
-                orderDirection: 'desc'
-            }
-        );
+        // Check cache first (if location IDs provided)
+        if (fromLocationIdOrStaffId && toLocationIdOrType && !fromLat && !toLat) {
+            const cached = await selectQuery<{ commute_time_minutes: number; expires_at: string }>(
+                'commute_time_cache',
+                {
+                    from_location_id: fromLocationIdOrStaffId,
+                    to_location_id: toLocationIdOrType
+                },
+                {
+                    limit: 1,
+                    orderBy: 'calculated_at',
+                    orderDirection: 'desc'
+                }
+            );
 
-        if (cached[0] && new Date(cached[0].commute_time_minutes) > new Date()) {
-            return cached[0].commute_time_minutes;
+            if (cached[0] && new Date(cached[0].expires_at) > new Date()) {
+                return cached[0].commute_time_minutes;
+            }
         }
 
         // Calculate commute time (simplified - would use Google Maps API in production)
@@ -485,23 +488,25 @@ export class SchedulingRepository {
             const trafficFactor = 1.5; // FIX V13: Traffic factor
             const commuteTime = Math.ceil(baseCommuteTime * trafficFactor);
 
-            // Cache result
-            const expiresAt = new Date();
-            expiresAt.setHours(expiresAt.getHours() + 1);
+            // Cache result (if location IDs provided)
+            if (fromLocationIdOrStaffId && toLocationIdOrType) {
+                const expiresAt = new Date();
+                expiresAt.setHours(expiresAt.getHours() + 1);
 
-            await insertQuery('commute_time_cache', {
-                from_location_id: fromLocationId,
-                to_location_id: toLocationId,
-                from_latitude: fromLat,
-                from_longitude: fromLng,
-                to_latitude: toLat,
-                to_longitude: toLng,
-                distance_km: distance,
-                commute_time_minutes: commuteTime,
-                traffic_factor: trafficFactor,
-                calculated_at: new Date().toISOString(),
-                expires_at: expiresAt.toISOString()
-            });
+                await insertQuery('commute_time_cache', {
+                    from_location_id: fromLocationIdOrStaffId,
+                    to_location_id: toLocationIdOrType,
+                    from_latitude: fromLat,
+                    from_longitude: fromLng,
+                    to_latitude: toLat,
+                    to_longitude: toLng,
+                    distance_km: distance,
+                    commute_time_minutes: commuteTime,
+                    traffic_factor: trafficFactor,
+                    calculated_at: new Date().toISOString(),
+                    expires_at: expiresAt.toISOString()
+                });
+            }
 
             return commuteTime;
         }
