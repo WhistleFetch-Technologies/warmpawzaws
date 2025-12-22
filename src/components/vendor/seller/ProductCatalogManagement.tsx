@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Plus, Search, Filter, Edit2, Trash2, Eye, Package,
   Grid, List, ChevronDown, X, Upload, DollarSign, Tag
@@ -6,6 +6,7 @@ import {
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
 import { authenticatedPost, authenticatedPut, authenticatedDelete } from '../../../utils/authenticatedFetch'; // ✅ FIX: Add authenticated fetch
 import { toast } from 'sonner@2.0.3';
+import { WARM_ORANGE } from '../../../assets/design-tokens';
 import {
   Table,
   TableBody,
@@ -129,7 +130,14 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
             setEditingProduct(null);
             setShowAddModal(true);
           }}
-          className="bg-[#FF8C42] hover:bg-[#E67A32] gap-2"
+          className="gap-2"
+          style={{ backgroundColor: WARM_ORANGE }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = '#E67A32';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = WARM_ORANGE;
+          }}
         >
           <Plus className="w-5 h-5" />
           Add Product
@@ -182,7 +190,10 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
           <div className="flex gap-1 bg-gray-100 p-1 rounded-lg border">
             <button
               onClick={() => setViewMode('grid')}
-              className={`p-2 rounded ${viewMode === 'grid' ? 'bg-white shadow text-[#FF8C42]' : 'text-gray-500 hover:text-gray-900'}`}
+              className={`p-2 rounded ${viewMode === 'grid' ? 'bg-white shadow' : 'text-gray-500 hover:text-gray-900'}`}
+              style={{
+                color: viewMode === 'grid' ? WARM_ORANGE : undefined
+              }}
             >
               <Grid className="w-4 h-4" />
             </button>

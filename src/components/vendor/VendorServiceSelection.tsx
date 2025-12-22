@@ -220,9 +220,10 @@ export function VendorServiceSelection({ onNext }: { onNext: (data: any) => void
                     isDisabled
                       ? 'opacity-40 cursor-not-allowed border-gray-200'
                       : selectedStyle === style.id
-                      ? 'border-[#FF8C42] shadow-md bg-orange-50'
+                      ? 'shadow-md bg-orange-50'
                       : 'border-gray-200 hover:border-gray-300'
                   }`}
+                  style={!isDisabled && selectedStyle === style.id ? { borderColor: WARM_ORANGE, borderWidth: '2px' } : {}}
                 >
                   {/* Disabled Overlay */}
                   {isDisabled && (
@@ -235,7 +236,7 @@ export function VendorServiceSelection({ onNext }: { onNext: (data: any) => void
 
                   {/* Selection Checkmark */}
                   {selectedStyle === style.id && !isDisabled && (
-                    <div className="absolute top-2 right-2 w-6 h-6 bg-[#FF8C42] rounded-full flex items-center justify-center">
+                    <div className="absolute top-2 right-2 w-6 h-6 rounded-full flex items-center justify-center" style={{ backgroundColor: WARM_ORANGE }}>
                       <Check className="w-4 h-4 text-white" />
                     </div>
                   )}
@@ -266,9 +267,10 @@ export function VendorServiceSelection({ onNext }: { onNext: (data: any) => void
                   isDisabled
                     ? 'opacity-40 cursor-not-allowed border-gray-200'
                     : selectedStyle === 'both'
-                    ? 'border-[#FF8C42] shadow-md bg-orange-50'
+                    ? 'shadow-md bg-orange-50'
                     : 'border-gray-200 hover:border-gray-300'
                 }`}
+                style={!isDisabled && selectedStyle === 'both' ? { borderColor: WARM_ORANGE, borderWidth: '2px' } : {}}
               >
                 {/* Disabled Overlay */}
                 {isDisabled && (

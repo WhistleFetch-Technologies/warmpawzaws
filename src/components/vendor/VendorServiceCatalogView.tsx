@@ -6,13 +6,17 @@ import {
   Search, 
   X, 
   CheckSquare, 
-  Square 
+  Square,
+  AlertCircle,
+  Lock
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
+import { Badge } from '../ui/badge';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { toast } from 'sonner@2.0.3';
 import { authenticatedFetch } from '../../utils/session-manager';
+import { useVendorCapabilities } from './hooks/useVendorCapabilities';
 
 interface VendorServiceCatalogViewProps {
   vendorId: string;
@@ -33,6 +37,7 @@ interface ServiceCatalogItem {
   serviceName: string;
   serviceStyle: 'at_home' | 'at_center' | 'tele';
   applicableRoles: string[];
+  requiredCapabilities?: string[]; // ✅ NEW: Capability requirements
   basePrice: number;
   isPackage: boolean;
   packageDetails?: {
@@ -79,6 +84,10 @@ export function VendorServiceCatalogView({
   const [roles, setRoles] = useState<any[]>([]);
   const [selectedServices, setSelectedServices] = useState<Set<string>>(new Set());
   const [adding, setAdding] = useState(false);
+  const [showUnavailable, setShowUnavailable] = useState(false); // ✅ NEW: Show unavailable services
+  
+  // ✅ NEW: Load vendor capabilities
+  const { capabilities, loading: capsLoading } = useVendorCapabilities(vendorData?.roleId);
 
   useEffect(() => {
     loadCatalogData();
@@ -277,6 +286,16 @@ export function VendorServiceCatalogView({
     // ✅ CRITICAL FIX: Be MORE LENIENT with role filtering
     // If no roles specified, service is available to everyone
     if (!service.applicableRoles || service.applicableRoles.length === 0) {
+      // ✅ NEW: Still check capabilities even if no role restriction
+      if (service.requiredCapabilities && service.requiredCapabilities.length > 0) {
+        const hasAllCapabilities = service.requiredCapabilities.every(
+          cap => capabilities[cap as keyof typeof capabilities] === true
+        );
+        if (!hasAllCapabilities) {
+          console.log('❌ Service requires capabilities:', service.serviceName, '| Needs:', service.requiredCapabilities);
+          return false;
+        }
+      }
       return true;
     }
     
@@ -285,6 +304,13 @@ export function VendorServiceCatalogView({
     // ✅ FIX: If vendor has no role, SHOW ALL SERVICES (don't hide them!)
     if (!vendorRoleId) {
       console.warn('⚠️ Vendor has no roleId, showing service:', service.serviceName);
+      // ✅ NEW: Still check capabilities
+      if (service.requiredCapabilities && service.requiredCapabilities.length > 0) {
+        const hasAllCapabilities = service.requiredCapabilities.every(
+          cap => capabilities[cap as keyof typeof capabilities] === true
+        );
+        return hasAllCapabilities;
+      }
       return true; // CHANGED FROM false TO true
     }
 
@@ -299,13 +325,61 @@ export function VendorServiceCatalogView({
       }
     }
 
-    const isApplicable = applicableRoles.includes(vendorRoleId);
+    const isRoleApplicable = applicableRoles.includes(vendorRoleId);
     
-    if (!isApplicable) {
-      console.log('❌ Service not applicable:', service.serviceName, '| Needs:', applicableRoles, '| Vendor has:', vendorRoleId);
+    if (!isRoleApplicable) {
+      console.log('❌ Service not applicable (role):', service.serviceName, '| Needs:', applicableRoles, '| Vendor has:', vendorRoleId);
+      return false;
     }
     
-    return isApplicable;
+    // ✅ NEW: Check required capabilities
+    if (service.requiredCapabilities && service.requiredCapabilities.length > 0) {
+      const hasAllCapabilities = service.requiredCapabilities.every(
+        cap => capabilities[cap as keyof typeof capabilities] === true
+      );
+      if (!hasAllCapabilities) {
+        const missingCaps = service.requiredCapabilities.filter(
+          cap => !capabilities[cap as keyof typeof capabilities]
+        );
+        console.log('❌ Service requires capabilities:', service.serviceName, '| Missing:', missingCaps);
+        return false;
+      }
+    }
+    
+    return true;
+  };
+  
+  // ✅ NEW: Get unavailable services (for display)
+  const getUnavailableServices = (): ServiceCatalogItem[] => {
+    return services.filter(service => {
+      // Check role first
+      if (service.applicableRoles && service.applicableRoles.length > 0) {
+        const vendorRoleId = vendorData?.roleId;
+        if (vendorRoleId) {
+          let applicableRoles = service.applicableRoles;
+          if (typeof applicableRoles === 'string') {
+            try {
+              applicableRoles = JSON.parse(applicableRoles);
+            } catch {
+              applicableRoles = [applicableRoles];
+            }
+          }
+          if (!applicableRoles.includes(vendorRoleId)) {
+            return false; // Role mismatch, not capability issue
+          }
+        }
+      }
+      
+      // Check capabilities
+      if (service.requiredCapabilities && service.requiredCapabilities.length > 0) {
+        const hasAllCapabilities = service.requiredCapabilities.every(
+          cap => capabilities[cap as keyof typeof capabilities] === true
+        );
+        return !hasAllCapabilities; // Return true if missing capabilities
+      }
+      
+      return false;
+    });
   };
 
   const isServiceAdded = (service: ServiceCatalogItem): boolean => {
@@ -362,6 +436,17 @@ export function VendorServiceCatalogView({
   };
 
   const handleAddService = async (service: ServiceCatalogItem) => {
+    // ✅ NEW: Validate capabilities before adding
+    if (service.requiredCapabilities && service.requiredCapabilities.length > 0) {
+      const missingCaps = service.requiredCapabilities.filter(
+        cap => !capabilities[cap as keyof typeof capabilities]
+      );
+      if (missingCaps.length > 0) {
+        toast.error(`This service requires capabilities: ${missingCaps.join(', ')}. Please contact admin to enable these features.`);
+        return;
+      }
+    }
+    
     try {
       setAdding(true);
 
@@ -540,6 +625,58 @@ export function VendorServiceCatalogView({
         </div>
       </div>
 
+      {/* ✅ NEW: Unavailable Services Section */}
+      {showUnavailable && getUnavailableServices().length > 0 && (
+        <div className="p-4 bg-amber-50 border-b border-amber-200">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-5 h-5 text-amber-600" />
+              <h3 className="font-semibold text-amber-900">Unavailable Services</h3>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowUnavailable(false)}
+              className="text-amber-700 hover:text-amber-900"
+            >
+              Hide
+            </Button>
+          </div>
+          <p className="text-sm text-amber-700 mb-3">
+            These services require additional capabilities. Contact admin to enable them.
+          </p>
+          <div className="space-y-2">
+            {getUnavailableServices().slice(0, 5).map((service, idx) => {
+              const missingCaps = service.requiredCapabilities?.filter(
+                cap => !capabilities[cap as keyof typeof capabilities]
+              ) || [];
+              return (
+                <div key={idx} className="p-3 bg-white rounded-lg border border-amber-200">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <p className="font-medium text-gray-900 text-sm">{service.serviceName}</p>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {missingCaps.map(cap => (
+                          <Badge key={cap} variant="outline" className="text-xs bg-amber-100 text-amber-800 border-amber-300">
+                            <Lock className="w-3 h-3 mr-1" />
+                            {cap.replace(/_/g, ' ')}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {getUnavailableServices().length > 5 && (
+            <p className="text-xs text-amber-600 mt-2">
+              +{getUnavailableServices().length - 5} more unavailable services
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Services List */}
       <div className="p-4 space-y-3">
         {groupedServices.length === 0 ? (
@@ -548,6 +685,16 @@ export function VendorServiceCatalogView({
             <p className="text-xs text-gray-400">
               {searchQuery ? 'Try a different search term' : 'No services available for your role'}
             </p>
+            {!showUnavailable && getUnavailableServices().length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowUnavailable(true)}
+                className="mt-4"
+              >
+                Show {getUnavailableServices().length} unavailable services
+              </Button>
+            )}
           </div>
         ) : (
           groupedServices.map(category => (
@@ -643,6 +790,14 @@ export function VendorServiceCatalogView({
                                         </span>
                                       )}
 
+                                      {/* ✅ NEW: Show capability requirements */}
+                                      {service.requiredCapabilities && service.requiredCapabilities.length > 0 && (
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                          Requires: {service.requiredCapabilities.slice(0, 2).join(', ')}
+                                          {service.requiredCapabilities.length > 2 && '...'}
+                                        </span>
+                                      )}
+
                                       {added && (
                                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                                           <Check className="w-3 h-3 mr-1" />
@@ -655,9 +810,18 @@ export function VendorServiceCatalogView({
                                   {mode === 'browse' && (
                                     <Button
                                       onClick={() => added ? null : handleAddService(service)}
-                                      disabled={added || adding}
+                                      disabled={added || adding || capsLoading}
                                       size="sm"
                                       className={added ? 'bg-gray-300 cursor-not-allowed' : 'bg-orange-500 hover:bg-orange-600'}
+                                      title={
+                                        added 
+                                          ? 'Already added' 
+                                          : service.requiredCapabilities && service.requiredCapabilities.some(
+                                              cap => !capabilities[cap as keyof typeof capabilities]
+                                            )
+                                          ? 'Missing required capabilities'
+                                          : 'Add service'
+                                      }
                                     >
                                       <Plus className="w-4 h-4" />
                                     </Button>

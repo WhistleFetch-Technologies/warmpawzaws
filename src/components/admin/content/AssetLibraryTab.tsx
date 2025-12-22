@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import { Search, SortAsc, Filter, ChevronDown, Eye, Edit, MoreVertical, Download, Trash2, FileImage, FileVideo, FileText } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
-import { EditAssetModal } from './EditAssetModal';
-import { BulkActionsModal } from './BulkActionsModal';
+import { BulkActionsModal } from '../catalog/BulkActionsModal';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../../ui/dialog';
 
 interface Asset {
   id: string;
@@ -321,5 +321,108 @@ function AssetCard({
         </div>
       </div>
     </div>
+  );
+}
+
+// Edit Asset Modal Component
+function EditAssetModal({ 
+  isOpen, 
+  onClose, 
+  asset, 
+  onSuccess 
+}: { 
+  isOpen: boolean; 
+  onClose: () => void; 
+  asset: Asset; 
+  onSuccess: () => void;
+}) {
+  const [name, setName] = useState(asset.name);
+  const [tags, setTags] = useState(asset.tags.join(', '));
+  const [category, setCategory] = useState(asset.category);
+
+  useEffect(() => {
+    if (asset) {
+      setName(asset.name);
+      setTags(asset.tags.join(', '));
+      setCategory(asset.category);
+    }
+  }, [asset]);
+
+  const handleSave = async () => {
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/content/assets/${asset.id}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            name,
+            tags: tags.split(',').map(t => t.trim()).filter(Boolean),
+            category
+          })
+        }
+      );
+
+      if (response.ok) {
+        onSuccess();
+      }
+    } catch (error) {
+      console.error('Error updating asset:', error);
+      alert('Failed to update asset. Please try again.');
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Edit Asset</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <label className="text-sm font-medium mb-1 block">Name</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg"
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium mb-1 block">Tags (comma-separated)</label>
+            <input
+              type="text"
+              value={tags}
+              onChange={(e) => setTags(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg"
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium mb-1 block">Category</label>
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg"
+            >
+              <option value="pet-care">Pet Care</option>
+              <option value="grooming">Grooming</option>
+              <option value="health">Health</option>
+              <option value="nutrition">Nutrition</option>
+              <option value="training">Training</option>
+              <option value="lifestyle">Lifestyle</option>
+            </select>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={onClose}>Cancel</Button>
+            <Button onClick={handleSave}>Save Changes</Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

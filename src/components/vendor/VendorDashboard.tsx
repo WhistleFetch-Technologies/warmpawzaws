@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { CapabilityDebugOverlay } from './CapabilityDebugOverlay';
 import { ModuleDisabledMessage, ModuleMessages } from './ModuleDisabledMessage';
 import { SoloProviderDashboard } from './dashboard/SoloProviderDashboard'; // ✅ INTEGRATION: Solo provider dashboard
@@ -48,6 +48,8 @@ import { AppointmentDetailModal } from './AppointmentDetailModal';
 import { VendorAnalytics } from './VendorAnalytics';
 import { VendorPaymentSettings } from './VendorPaymentSettings';
 import { AIChatBot } from '../customer/AIChatBot';
+import { BottomNavBar } from '../shared/design-system/BottomNavBar';
+import { WARM_ORANGE } from '../../assets/design-tokens';
 
 interface VendorDashboardProps {
   vendorId: string;
@@ -87,6 +89,20 @@ interface VendorDashboardProps {
   onNavigateToDistancePricing?: () => void;
   onNavigateToMultiDoctorManagement?: () => void;
   onNavigateToPolicyManagement?: () => void;
+  // ✅ NEW: Additional navigation handlers (Phase 3)
+  onNavigateToMedicalRecords?: () => void;
+  onNavigateToEmergency?: () => void;
+  onNavigateToEmergencyProtocols?: () => void;
+  onNavigateToVetSummary?: () => void;
+  onNavigateToRoomManagement?: () => void;
+  onNavigateToClaimsManagement?: () => void;
+  onNavigateToDiagnosticLab?: () => void;
+  onNavigateToAmbulanceServices?: () => void;
+  // ✅ NEW: Additional navigation handlers (Phase 4)
+  onNavigateToTableManagement?: () => void;
+  onNavigateToPaxManagement?: () => void;
+  onNavigateToOccupancyTracking?: () => void;
+  onNavigateToNightlyPricing?: () => void;
 }
 
 interface DashboardStats {
@@ -645,7 +661,11 @@ export function VendorDashboard({
         {(capabilities.gallery || capabilities.portfolio || capabilities.cctv_access || capabilities.controlled_substances || 
           capabilities.prescription || capabilities.progress_tracking || capabilities.package_management || capabilities.custom_services ||
           capabilities.prescription_verification || capabilities.delivery || capabilities.diet_charts || 
-          capabilities.counseling || capabilities.policy_management || capabilities.distance_pricing) && (
+          capabilities.counseling || capabilities.policy_management || capabilities.distance_pricing ||
+          capabilities.medical_records || capabilities.emergency || capabilities.emergency_protocols || capabilities.vet_summary ||
+          capabilities.room_management || capabilities.claims_management || capabilities.diagnostic_lab || capabilities.ambulance_services ||
+          capabilities.multi_doctor_management || capabilities.table_management || capabilities.pax_management ||
+          capabilities.occupancy_tracking || capabilities.nightly_pricing) && (
           <div className="p-4 border-b border-gray-100">
             <h2 className="font-semibold text-gray-900 mb-3">Additional Features</h2>
             <div className="grid grid-cols-3 gap-2">
@@ -889,6 +909,157 @@ export function VendorDashboard({
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
                   </svg>
                   <span className="text-xs font-medium text-gray-900">Menu</span>
+                </button>
+              )}
+
+              {/* ✅ NEW: Medical Records */}
+              {onNavigateToMedicalRecords && capabilities.medical_records && (
+                <button
+                  onClick={onNavigateToMedicalRecords}
+                  className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-blue-100 transition-colors"
+                >
+                  <FileText className="w-6 h-6 text-blue-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Records</span>
+                </button>
+              )}
+
+              {/* ✅ NEW: Emergency */}
+              {onNavigateToEmergency && capabilities.emergency && (
+                <button
+                  onClick={onNavigateToEmergency}
+                  className="bg-red-50 border border-red-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-red-100 transition-colors"
+                >
+                  <AlertCircle className="w-6 h-6 text-red-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Emergency</span>
+                </button>
+              )}
+
+              {/* ✅ NEW: Emergency Protocols */}
+              {onNavigateToEmergencyProtocols && capabilities.emergency_protocols && (
+                <button
+                  onClick={onNavigateToEmergencyProtocols}
+                  className="bg-red-50 border border-red-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-red-100 transition-colors"
+                >
+                  <AlertCircle className="w-6 h-6 text-red-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Protocols</span>
+                </button>
+              )}
+
+              {/* ✅ NEW: Vet Summary */}
+              {onNavigateToVetSummary && capabilities.vet_summary && (
+                <button
+                  onClick={onNavigateToVetSummary}
+                  className="bg-purple-50 border border-purple-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-purple-100 transition-colors"
+                >
+                  <Stethoscope className="w-6 h-6 text-purple-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Summary</span>
+                </button>
+              )}
+
+              {/* ✅ NEW: Room Management */}
+              {onNavigateToRoomManagement && capabilities.room_management && (
+                <button
+                  onClick={onNavigateToRoomManagement}
+                  className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-indigo-100 transition-colors"
+                >
+                  <Home className="w-6 h-6 text-indigo-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Rooms</span>
+                </button>
+              )}
+
+              {/* ✅ NEW: Claims Management */}
+              {onNavigateToClaimsManagement && capabilities.claims_management && (
+                <button
+                  onClick={onNavigateToClaimsManagement}
+                  className="bg-teal-50 border border-teal-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-teal-100 transition-colors"
+                >
+                  <Shield className="w-6 h-6 text-teal-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Claims</span>
+                </button>
+              )}
+
+              {/* ✅ NEW: Diagnostic Lab (Standalone) */}
+              {onNavigateToDiagnosticLab && capabilities.diagnostic_lab && (
+                <button
+                  onClick={onNavigateToDiagnosticLab}
+                  className="bg-cyan-50 border border-cyan-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-cyan-100 transition-colors"
+                >
+                  <Activity className="w-6 h-6 text-cyan-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Lab</span>
+                </button>
+              )}
+
+              {/* ✅ NEW: Ambulance Services (Standalone) */}
+              {onNavigateToAmbulanceServices && capabilities.ambulance_services && (
+                <button
+                  onClick={onNavigateToAmbulanceServices}
+                  className="bg-red-50 border border-red-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-red-100 transition-colors"
+                >
+                  <svg className="w-6 h-6 text-red-600 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  <span className="text-xs font-medium text-gray-900">Ambulance</span>
+                </button>
+              )}
+
+              {/* ✅ NEW: Multi-Doctor Management */}
+              {onNavigateToMultiDoctorManagement && capabilities.multi_doctor_management && (
+                <button
+                  onClick={onNavigateToMultiDoctorManagement}
+                  className="bg-teal-50 border border-teal-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-teal-100 transition-colors"
+                >
+                  <Users className="w-6 h-6 text-teal-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Doctors</span>
+                </button>
+              )}
+
+              {/* ✅ NEW: Table Management (Cafe) */}
+              {onNavigateToTableManagement && capabilities.table_management && (
+                <button
+                  onClick={onNavigateToTableManagement}
+                  className="bg-orange-50 border border-orange-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-orange-100 transition-colors"
+                >
+                  <svg className="w-6 h-6 text-orange-600 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                  <span className="text-xs font-medium text-gray-900">Tables</span>
+                </button>
+              )}
+
+              {/* ✅ NEW: Pax Management (Cafe) */}
+              {onNavigateToPaxManagement && capabilities.pax_management && (
+                <button
+                  onClick={onNavigateToPaxManagement}
+                  className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-yellow-100 transition-colors"
+                >
+                  <Users className="w-6 h-6 text-yellow-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Pax</span>
+                </button>
+              )}
+
+              {/* ✅ NEW: Occupancy Tracking (Boarding/Resort) */}
+              {onNavigateToOccupancyTracking && capabilities.occupancy_tracking && (
+                <button
+                  onClick={onNavigateToOccupancyTracking}
+                  className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-blue-100 transition-colors"
+                >
+                  <svg className="w-6 h-6 text-blue-600 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                  </svg>
+                  <span className="text-xs font-medium text-gray-900">Occupancy</span>
+                </button>
+              )}
+
+              {/* ✅ NEW: Nightly Pricing (Boarding/Resort) */}
+              {onNavigateToNightlyPricing && capabilities.nightly_pricing && (
+                <button
+                  onClick={onNavigateToNightlyPricing}
+                  className="bg-green-50 border border-green-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-green-100 transition-colors"
+                >
+                  <svg className="w-6 h-6 text-green-600 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="text-xs font-medium text-gray-900">Pricing</span>
                 </button>
               )}
             </div>
@@ -1178,56 +1349,22 @@ export function VendorDashboard({
         <div className="pb-24"></div>
 
         {/* Bottom Navigation */}
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-10">
-          <div className="max-w-[430px] mx-auto flex items-center justify-around py-3">
-            <button 
-              onClick={() => setActiveBottomTab('home')}
-              className={`flex flex-col items-center gap-1 ${
-                activeBottomTab === 'home' ? 'text-[#FF8C42]' : 'text-gray-400'
-              }`}
-            >
-              <div className="w-6 h-6">🏠</div>
-              <span className="text-xs">Home</span>
-            </button>
-            
-            {capabilities.booking && (
-              <button 
-                onClick={() => {
-                  onNavigateToBookingManagement?.();
-                  setActiveBottomTab('bookings');
-                }}
-                className={`flex flex-col items-center gap-1 ${
-                  activeBottomTab === 'bookings' ? 'text-[#FF8C42]' : 'text-gray-400'
-                }`}
-              >
-                <Calendar className="w-6 h-6" />
-                <span className="text-xs">Bookings</span>
-              </button>
-            )}
-
-            <button 
-              onClick={() => setActiveBottomTab('reporting')}
-              className={`flex flex-col items-center gap-1 ${
-                activeBottomTab === 'reporting' ? 'text-[#FF8C42]' : 'text-gray-400'
-              }`}
-            >
-              <BarChart3 className="w-6 h-6" />
-              <span className="text-xs">Reporting</span>
-            </button>
-            
-            <button 
-              onClick={() => {
-                setActiveBottomTab('settings');
-                // onNavigateToFacilityManagement?.(); // Using internal settings now
-              }}
-              className={`flex flex-col items-center gap-1 ${
-                activeBottomTab === 'settings' ? 'text-[#FF8C42]' : 'text-gray-400'
-              }`}
-            >
-              <Settings className="w-6 h-6" />
-              <span className="text-xs">Settings</span>
-            </button>
-          </div>
+        <div className="fixed bottom-0 left-0 right-0 max-w-[430px] mx-auto pb-safe z-10">
+          <BottomNavBar
+            items={[
+              { id: 'home', label: 'Home', icon: Home },
+              ...(capabilities.booking ? [{ id: 'bookings', label: 'Bookings', icon: Calendar }] : []),
+              { id: 'reporting', label: 'Reporting', icon: BarChart3 },
+              { id: 'settings', label: 'Settings', icon: Settings },
+            ]}
+            activeId={activeBottomTab}
+            onItemClick={(id) => {
+              setActiveBottomTab(id as any);
+              if (id === 'bookings' && onNavigateToBookingManagement) {
+                onNavigateToBookingManagement();
+              }
+            }}
+          />
         </div>
 
       </div>

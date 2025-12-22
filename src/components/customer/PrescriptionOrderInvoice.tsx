@@ -19,7 +19,7 @@ import { Separator } from '../ui/separator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { toast } from 'sonner@2.0.3';
-import { RazorpayPayment } from './RazorpayPayment';
+import { RazorpayPayment } from '../payment/RazorpayPayment';
 
 interface PrescriptionOrder {
   id: string;

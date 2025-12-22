@@ -16,6 +16,7 @@ import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { toast } from 'sonner@2.0.3';
+import { WARM_ORANGE } from '../../assets/design-tokens';
 
 declare global {
   interface Window {
@@ -169,6 +170,8 @@ export function OrderTrackingView({ order, onBack, onContactDelivery }: OrderTra
       try {
         setLoading(true);
         
+        let locationFetched = false;
+        
         // Try to fetch real-time tracking if order has tracking number
         if (order.trackingNumber || order.id) {
           const trackingResponse = await fetch(
@@ -183,12 +186,13 @@ export function OrderTrackingView({ order, onBack, onContactDelivery }: OrderTra
                 lat: trackingData.tracking.currentLocation.lat || trackingData.tracking.currentLocation.latitude,
                 lng: trackingData.tracking.currentLocation.lng || trackingData.tracking.currentLocation.longitude
               });
+              locationFetched = true;
             }
           }
         }
 
         // Set default delivery location if not available
-        if (!currentLocation) {
+        if (!locationFetched) {
           // Use warehouse location as default (can be enhanced with actual warehouse location)
           setCurrentLocation({ lat: 12.9352, lng: 77.6245 }); // Bangalore warehouse area
         }
@@ -467,7 +471,7 @@ export function OrderTrackingView({ order, onBack, onContactDelivery }: OrderTra
           ) : loading || !mapLoaded ? (
             <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
               <div className="text-center">
-                <Loader2 className="w-8 h-8 text-[#FF8C42] animate-spin mx-auto mb-2" />
+                <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" style={{ color: WARM_ORANGE }} />
                 <p className="text-gray-600 text-sm">Loading map...</p>
               </div>
             </div>
@@ -484,7 +488,7 @@ export function OrderTrackingView({ order, onBack, onContactDelivery }: OrderTra
                     <p className="font-semibold text-gray-900">{estimatedTime}</p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 bg-[#FF8C42] rounded-full animate-pulse" />
+                    <div className="w-3 h-3 rounded-full animate-pulse" style={{ backgroundColor: WARM_ORANGE }} />
                     <span className="text-xs text-gray-600">In Transit</span>
                   </div>
                 </div>

@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { Button } from '../ui/button';
 import { ArrowRight } from 'lucide-react';
+import { WARM_ORANGE } from '../../assets/design-tokens';
+import { WarmpawzButton } from '../shared/design-system/WarmpawzButton';
 
 interface CustomerOnboardingProps {
   onComplete: (stage: string) => void;
@@ -10,7 +12,7 @@ export function CustomerOnboarding({ onComplete }: CustomerOnboardingProps) {
   const [selectedStage, setSelectedStage] = useState<string | null>(null);
 
   return (
-    <div className="min-h-screen bg-[#FF8C42] flex flex-col w-full max-w-[430px] mx-auto">
+    <div className="min-h-screen flex flex-col w-full max-w-[430px] mx-auto" style={{ backgroundColor: WARM_ORANGE }}>
       {/* Status Bar */}
       <div className="px-6 pt-3 pb-2 flex justify-between items-center">
         <span className="text-black">09:41</span>
@@ -40,7 +42,7 @@ export function CustomerOnboarding({ onComplete }: CustomerOnboardingProps) {
             {/* Main paw pad */}
             <ellipse cx="60" cy="75" rx="22" ry="26" fill="black"/>
             {/* Heart in center */}
-            <path d="M60 70C58 68 54 68 52 70C50 72 50 75 52 77L60 85L68 77C70 75 70 72 68 70C66 68 62 68 60 70Z" fill="#FF8C42"/>
+            <path d="M60 70C58 68 54 68 52 70C50 72 50 75 52 77L60 85L68 77C70 75 70 72 68 70C66 68 62 68 60 70Z" fill={WARM_ORANGE}/>
             {/* Top left toe */}
             <ellipse cx="40" cy="45" rx="10" ry="14" transform="rotate(-15 40 45)" fill="black"/>
             {/* Top center-left toe */}
@@ -184,13 +186,15 @@ export function CustomerOnboarding({ onComplete }: CustomerOnboardingProps) {
         </div>
 
         {/* Continue Button */}
-        <Button
-          onClick={() => selectedStage && onComplete(selectedStage)}
+        <WarmpawzButton
+          variant={!selectedStage ? 'disabled' : 'solid'}
           disabled={!selectedStage}
-          className="w-full h-14 bg-[#FF8C42] hover:bg-[#FF7A2E] rounded-2xl text-black disabled:opacity-50 disabled:cursor-not-allowed mb-6"
+          fullWidth
+          onClick={() => selectedStage && onComplete(selectedStage)}
+          style={{ height: '56px', fontSize: '16px', color: '#000000' }}
         >
           Continue
-        </Button>
+        </WarmpawzButton>
 
         {/* Footer Text */}
         <p className="text-center text-xs text-gray-500 leading-relaxed">

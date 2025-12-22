@@ -1,7 +1,8 @@
+import React from 'react';
 import { CheckCircle2, Clock, FileText, Home } from 'lucide-react';
 import { Button } from '../ui/button';
-// Logo placeholder - using base64 encoded SVG (Warmpawz logo)
-const logoImage = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8cmVjdCB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHJ4PSI4IiBmaWxsPSIjRkY4QzQyIi8+CiAgPHBhdGggZD0iTTIwIDEyQzE2LjY4NjMgMTIgMTQgMTQuNjg2MyAxNCAxOEMxNCAxOS41OTEzIDE0LjYzMjEgMjEuMDI2MSAxNS42NTY5IDIyLjA1MTRDMTY4MjE3IDIzLjA3NjcgMTguMTE2NSAyMy43MDg4IDE5LjcwNzcgMjMuNzA4OEMyMS4yOTg5IDIzLjcwODggMjIuNzMzNyAyMy4wNzY3IDIzLjc1ODUgMjIuMDUxNEMyNC43ODMzIDIxLjAyNjEgMjUuNDE1NCAxOS41OTEzIDI1LjQxNTQgMThDMjUuNDE1NCAxNC42ODYzIDIyLjcyOTEgMTIgMTkuNDE1NCAxMkgyMFpNMjAgMTRDMjEuNjU2OSAxNCAyMyAxNS4zNDMxIDIzIDE3QzIzIDE4LjY1NjkgMjEuNjU2OSAyMCAyMCAyMEMxOC4zNDMxIDIwIDE3IDE4LjY1NjkgMTcgMTdDMTcgMTUuMzQzMSAxOC4zNDMxIDE0IDIwIDE0WiIgZmlsbD0id2hpdGUiLz4KICA8cGF0aCBkPSJNMTIgMjRDMTIgMjQuNTUyMyAxMi40NDc3IDI1IDEzIDI1SDI3QzI3LjU1MjMgMjUgMjggMjQuNTUyMyAyOCAyNEMyOCAyMi4zNDMxIDI2LjY1NjkgMjEgMjUgMjFIMTVDMTMuMzQzMSAyMSAxMiAyMi4zNDMxIDEyIDI0WiIgZmlsbD0id2hpdGUiLz4KPC9zdmc+';
+import { LOGO_CIRCULAR_ORANGE, WARM_ORANGE } from '../../assets/design-tokens';
+const logoImage = LOGO_CIRCULAR_ORANGE;
 
 export function VendorRegistrationSuccess({ vendorId }: { vendorId: string }) {
   return (
@@ -25,7 +26,7 @@ export function VendorRegistrationSuccess({ vendorId }: { vendorId: string }) {
       <div className="px-6 mb-6">
         <div className="bg-white rounded-2xl p-6 shadow-lg border border-gray-200">
           <p className="text-xs text-gray-600 mb-2 text-center">Your Reference ID</p>
-          <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] rounded-xl p-4 mb-3">
+          <div className="rounded-xl p-4 mb-3" style={{ background: `linear-gradient(to right, ${WARM_ORANGE}, #FF6B35)` }}>
             <p className="text-center text-white font-mono text-lg tracking-wider">
               {vendorId}
             </p>
@@ -60,7 +61,7 @@ export function VendorRegistrationSuccess({ vendorId }: { vendorId: string }) {
           <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
             <div className="flex items-start gap-4">
               <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center flex-shrink-0">
-                <Clock className="w-6 h-6 text-[#FF8C42]" />
+                <Clock className="w-6 h-6" style={{ color: WARM_ORANGE }} />
               </div>
               <div className="flex-1">
                 <h4 className="font-semibold text-gray-800 mb-1">Review Process</h4>

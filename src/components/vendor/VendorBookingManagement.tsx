@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '../ui/button';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
+import { WARM_ORANGE } from '../../assets/design-tokens';
 import { VendorChatModal } from './VendorChatModal';
 import { VendorTeleConsultationFlow } from './VendorTeleConsultationFlow';
 import { AppointmentDetailModal } from './AppointmentDetailModal';
@@ -590,30 +591,33 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
             <button
               onClick={() => setActiveTab('bookings')}
               className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                activeTab === 'bookings'
-                  ? 'bg-[#FF8C42] text-white'
-                  : 'bg-gray-100 text-gray-600'
+                activeTab === 'bookings' ? 'text-white' : 'bg-gray-100 text-gray-600'
               }`}
+              style={{
+                backgroundColor: activeTab === 'bookings' ? WARM_ORANGE : '#F3F4F6'
+              }}
             >
               Bookings
             </button>
             <button
               onClick={() => setActiveTab('earnings')}
               className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                activeTab === 'earnings'
-                  ? 'bg-[#FF8C42] text-white'
-                  : 'bg-gray-100 text-gray-600'
+                activeTab === 'earnings' ? 'text-white' : 'bg-gray-100 text-gray-600'
               }`}
+              style={{
+                backgroundColor: activeTab === 'earnings' ? WARM_ORANGE : '#F3F4F6'
+              }}
             >
               Earnings
             </button>
             <button
               onClick={() => setActiveTab('payouts')}
               className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                activeTab === 'payouts'
-                  ? 'bg-[#FF8C42] text-white'
-                  : 'bg-gray-100 text-gray-600'
+                activeTab === 'payouts' ? 'text-white' : 'bg-gray-100 text-gray-600'
               }`}
+              style={{
+                backgroundColor: activeTab === 'payouts' ? WARM_ORANGE : '#F3F4F6'
+              }}
             >
               Payouts
             </button>
@@ -640,30 +644,33 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
             <button
               onClick={() => setActiveFilter('today')}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                activeFilter === 'today'
-                  ? 'bg-[#FF8C42] text-white'
-                  : 'bg-gray-100 text-gray-600'
+                activeFilter === 'today' ? 'text-white' : 'bg-gray-100 text-gray-600'
               }`}
+              style={{
+                backgroundColor: activeFilter === 'today' ? WARM_ORANGE : '#F3F4F6'
+              }}
             >
               Today
             </button>
             <button
               onClick={() => setActiveFilter('week')}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                activeFilter === 'week'
-                  ? 'bg-[#FF8C42] text-white'
-                  : 'bg-gray-100 text-gray-600'
+                activeFilter === 'week' ? 'text-white' : 'bg-gray-100 text-gray-600'
               }`}
+              style={{
+                backgroundColor: activeFilter === 'week' ? WARM_ORANGE : '#F3F4F6'
+              }}
             >
               Week
             </button>
             <button
               onClick={() => setActiveFilter('month')}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                activeFilter === 'month'
-                  ? 'bg-[#FF8C42] text-white'
-                  : 'bg-gray-100 text-gray-600'
+                activeFilter === 'month' ? 'text-white' : 'bg-gray-100 text-gray-600'
               }`}
+              style={{
+                backgroundColor: activeFilter === 'month' ? WARM_ORANGE : '#F3F4F6'
+              }}
             >
               Month
             </button>
@@ -1261,9 +1268,16 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
       {/* VIDEO CALL MODAL */}
       {showVideoCall && videoBooking && (
         <VendorTeleConsultationFlow
-          vendorId={vendorId}
           vendorData={vendorData}
-          bookingData={videoBooking}
+          appointmentData={{
+            id: videoBooking.id,
+            customerName: videoBooking.customerName || '',
+            petName: videoBooking.petName || '',
+            petType: (videoBooking as any).petBreed || (videoBooking as any).petType || '',
+            appointmentTime: (videoBooking as any).scheduledTime || (videoBooking as any).bookingTime || '',
+            appointmentId: videoBooking.id,
+            reason: (videoBooking as any).specialInstructions || 'Consultation'
+          }}
           onBack={() => {
             setShowVideoCall(false);
             setVideoBooking(null);

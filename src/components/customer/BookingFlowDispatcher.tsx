@@ -24,6 +24,7 @@ interface BookingFlowDispatcherProps {
   vendorId: string;
   vendorName?: string;
   vendorType?: 'solo' | 'center';
+  vendorRoleId?: string; // ✅ NEW: Explicit role ID for role-based routing
   staffId?: string;
   selectedService?: any;
   customerId: string;
@@ -36,12 +37,43 @@ interface BookingFlowDispatcherProps {
   onBookingComplete?: (bookingId: string) => void;
 }
 
+/**
+ * Role-to-Service-Type Mapping
+ * Maps all 20+ vendor roles to appropriate service types and flows
+ */
+const ROLE_SERVICE_MAPPING: Record<string, { serviceType: string; defaultStyle: string }> = {
+  'veterinarian': { serviceType: 'vet', defaultStyle: 'at_center' },
+  'veterinary_clinic': { serviceType: 'vet', defaultStyle: 'at_center' },
+  'pet_clinic': { serviceType: 'vet', defaultStyle: 'at_center' },
+  'pet_groomer': { serviceType: 'grooming', defaultStyle: 'at_center' },
+  'pet_trainer': { serviceType: 'training', defaultStyle: 'at_home' },
+  'pet_behaviorist': { serviceType: 'training', defaultStyle: 'at_home' },
+  'pet_walker': { serviceType: 'walker', defaultStyle: 'at_home' },
+  'pet_boarding': { serviceType: 'boarding', defaultStyle: 'at_center' },
+  'pet_resort': { serviceType: 'resort', defaultStyle: 'at_center' },
+  'pet_cafe': { serviceType: 'cafe', defaultStyle: 'at_center' },
+  'pet_pharmacy': { serviceType: 'pharmacy', defaultStyle: 'delivery' },
+  'nutritionist': { serviceType: 'nutrition', defaultStyle: 'delivery' },
+  'pet_products_store': { serviceType: 'products', defaultStyle: 'delivery' },
+  'pet_insurance': { serviceType: 'insurance', defaultStyle: 'tele' },
+  'insurance': { serviceType: 'insurance', defaultStyle: 'tele' },
+  'pet_ambulance': { serviceType: 'ambulance', defaultStyle: 'at_home' },
+  'pet_sitter': { serviceType: 'sitting', defaultStyle: 'at_home' },
+  'pet_taxi': { serviceType: 'transport', defaultStyle: 'at_home' },
+  'pet_photographer': { serviceType: 'photography', defaultStyle: 'at_home' },
+  'pet_shelter': { serviceType: 'adoption', defaultStyle: 'at_center' },
+  'pet_breeder': { serviceType: 'breeding', defaultStyle: 'at_center' },
+  'pet_sunset_services': { serviceType: 'memorial', defaultStyle: 'at_center' },
+  'pet_holiday_planner': { serviceType: 'holiday', defaultStyle: 'package' }
+};
+
 export function BookingFlowDispatcher({
   serviceType,
   serviceStyle,
   vendorId,
   vendorName,
   vendorType = 'center',
+  vendorRoleId,
   staffId,
   selectedService,
   customerId,
@@ -54,6 +86,21 @@ export function BookingFlowDispatcher({
   onBookingComplete,
 }: BookingFlowDispatcherProps) {
   
+  // ✅ ENHANCEMENT: Role-based service type and style determination
+  let effectiveServiceType = serviceType;
+  let effectiveServiceStyle = serviceStyle;
+
+  // If role ID is provided, use it to determine service type and style
+  if (vendorRoleId && ROLE_SERVICE_MAPPING[vendorRoleId]) {
+    const roleMapping = ROLE_SERVICE_MAPPING[vendorRoleId];
+    if (!serviceType || serviceType === 'unknown') {
+      effectiveServiceType = roleMapping.serviceType;
+    }
+    if (!serviceStyle) {
+      effectiveServiceStyle = roleMapping.defaultStyle as any;
+    }
+  }
+
   // Default onBack handler
   const handleBack = () => {
     if (onBack) {
@@ -79,11 +126,119 @@ export function BookingFlowDispatcher({
     }
   };
 
+  // ✅ ENHANCEMENT: Role-specific flow routing
+  // Handle role-specific flows that need special handling
+  if (vendorRoleId) {
+    switch (vendorRoleId) {
+      case 'pet_cafe':
+        // Cafe bookings need table/pax selection
+        if (effectiveServiceStyle === 'at_center') {
+          // Use center booking flow but with cafe-specific features
+          return (
+            <CenterBookingFlowEnhanced
+              vendorId={vendorId}
+              vendorName={vendorName || 'Pet Cafe'}
+              customerId={customerId}
+              customerPhone={customerPhone}
+              customerName={customerName}
+              petId={petId}
+              petName={petName}
+              onBack={handleBack}
+              onSuccess={handleBookingComplete}
+              vendorRoleId={vendorRoleId}
+            />
+          );
+        }
+        break;
+
+      case 'pet_boarding':
+      case 'pet_resort':
+        // Boarding/Resort need check-in/check-out dates
+        if (effectiveServiceStyle === 'at_center') {
+          return (
+            <CenterBookingFlowEnhanced
+              vendorId={vendorId}
+              vendorName={vendorName || 'Pet Boarding'}
+              customerId={customerId}
+              customerPhone={customerPhone}
+              customerName={customerName}
+              petId={petId}
+              petName={petName}
+              onBack={handleBack}
+              onSuccess={handleBookingComplete}
+              vendorRoleId={vendorRoleId}
+            />
+          );
+        }
+        break;
+
+      case 'pet_pharmacy':
+        // Pharmacy needs prescription upload
+        if (effectiveServiceStyle === 'delivery') {
+          return (
+            <DeliveryBookingFlow
+              serviceType="pharmacy"
+              vendorId={vendorId}
+              vendorName={vendorName}
+              customerId={customerId}
+              customerPhone={customerPhone}
+              petId={petId}
+              petName={petName}
+              onBack={handleBack}
+              onNavigate={handleNavigate}
+              onBookingComplete={handleBookingComplete}
+              vendorRoleId={vendorRoleId}
+            />
+          );
+        }
+        break;
+
+      case 'nutritionist':
+        // Nutritionist needs meal plan selection
+        if (effectiveServiceStyle === 'delivery') {
+          return (
+            <DeliveryBookingFlow
+              serviceType="meals"
+              vendorId={vendorId}
+              vendorName={vendorName}
+              customerId={customerId}
+              customerPhone={customerPhone}
+              petId={petId}
+              petName={petName}
+              onBack={handleBack}
+              onNavigate={handleNavigate}
+              onBookingComplete={handleBookingComplete}
+              vendorRoleId={vendorRoleId}
+            />
+          );
+        }
+        break;
+
+      case 'pet_insurance':
+      case 'insurance':
+        // Insurance needs policy selection
+        if (effectiveServiceStyle === 'tele' || effectiveServiceStyle === 'at_center') {
+          return (
+            <VetBookingRouter
+              phone={customerPhone}
+              doctorId={staffId}
+              selectedService={selectedService}
+              serviceType="tele"
+              onBack={handleBack}
+              onNavigate={handleNavigate}
+              vendorRoleId={vendorRoleId}
+            />
+          );
+        }
+        break;
+    }
+  }
+
   // ✅ ENHANCEMENT: Render appropriate booking flow component based on service style and type
-  switch (serviceStyle) {
+  switch (effectiveServiceStyle) {
     case 'at_center':
       // Center booking flow (Clinic / Grooming / Diagnostics)
-      if (serviceType === 'vet') {
+      if (effectiveServiceType === 'vet' || vendorRoleId === 'veterinarian' || vendorRoleId === 'veterinary_clinic' || vendorRoleId === 'pet_clinic') {
         // Use VetBookingRouter for enhanced vet center bookings (with doctor selection)
         return (
           <VetBookingRouter
@@ -128,7 +283,7 @@ export function BookingFlowDispatcher({
 
     case 'at_home':
       // Home services flow (Grooming / Walker / Training / Vet Home)
-      if (serviceType === 'vet') {
+      if (effectiveServiceType === 'vet' || vendorRoleId === 'veterinarian') {
         return (
           <VetBookingFlow
             phone={customerPhone}
@@ -153,7 +308,7 @@ export function BookingFlowDispatcher({
 
     case 'tele':
       // Tele consultation flow
-      if (serviceType === 'vet') {
+      if (effectiveServiceType === 'vet' || vendorRoleId === 'veterinarian' || vendorRoleId === 'pet_behaviorist' || vendorRoleId === 'nutritionist') {
         return (
           <VetBookingRouter
             phone={customerPhone}
@@ -183,10 +338,15 @@ export function BookingFlowDispatcher({
 
     case 'delivery':
       // Delivery flow (Medicine / Nutrition / Products)
-      // ✅ NEW: DeliveryBookingFlow component
-      const deliveryServiceType = serviceType === 'pharmacy' ? 'pharmacy' : 
-                                   serviceType === 'nutritionist' ? 'meals' : 
-                                   'products';
+      // ✅ ENHANCED: Role-based delivery service type
+      let deliveryServiceType = 'products';
+      if (effectiveServiceType === 'pharmacy' || vendorRoleId === 'pet_pharmacy') {
+        deliveryServiceType = 'pharmacy';
+      } else if (effectiveServiceType === 'nutrition' || vendorRoleId === 'nutritionist') {
+        deliveryServiceType = 'meals';
+      } else if (effectiveServiceType === 'products' || vendorRoleId === 'pet_products_store') {
+        deliveryServiceType = 'products';
+      }
       
       return (
         <DeliveryBookingFlow

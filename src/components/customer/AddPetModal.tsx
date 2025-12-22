@@ -1,9 +1,11 @@
-import { useState, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import { Button } from '../ui/button';
 import { X, Camera, Upload } from 'lucide-react';
-// Logo placeholder - using base64 encoded SVG (Warmpawz logo)
-const logoImage = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8cmVjdCB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHJ4PSI4IiBmaWxsPSIjRkY4QzQyIi8+CiAgPHBhdGggZD0iTTIwIDEyQzE2LjY4NjMgMTIgMTQgMTQuNjg2MyAxNCAxOEMxNCAxOS41OTEzIDE0LjYzMjEgMjEuMDI2MSAxNS42NTY5IDIyLjA1MTRDMTY4MjE3IDIzLjA3NjcgMTguMTE2NSAyMy43MDg4IDE5LjcwNzcgMjMuNzA4OEMyMS4yOTg5IDIzLjcwODggMjIuNzMzNyAyMy4wNzY3IDIzLjc1ODUgMjIuMDUxNEMyNC43ODMzIDIxLjAyNjEgMjUuNDE1NCAxOS41OTEzIDI1LjQxNTQgMThDMjUuNDE1NCAxNC42ODYzIDIyLjcyOTEgMTIgMTkuNDE1NCAxMkgyMFpNMjAgMTRDMjEuNjU2OSAxNCAyMyAxNS4zNDMxIDIzIDE3QzIzIDE4LjY1NjkgMjEuNjU2OSAyMCAyMCAyMEMxOC4zNDMxIDIwIDE3IDE4LjY1NjkgMTcgMTdDMTcgMTUuMzQzMSAxOC4zNDMxIDE0IDIwIDE0WiIgZmlsbD0id2hpdGUiLz4KICA8cGF0aCBkPSJNMTIgMjRDMTIgMjQuNTUyMyAxMi40NDc3IDI1IDEzIDI1SDI3QzI3LjU1MjMgMjUgMjggMjQuNTUyMyAyOCAyNEMyOCAyMi4zNDMxIDI2LjY1NjkgMjEgMjUgMjFIMTVDMTMuMzQzMSAyMSAxMiAyMi4zNDMxIDEyIDI0WiIgZmlsbD0id2hpdGUiLz4KPC9zdmc+';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { LOGO_CIRCULAR_ORANGE, WARM_ORANGE } from '../../assets/design-tokens';
+import { WarmpawzButton } from '../shared/design-system/WarmpawzButton';
+
+const logoImage = LOGO_CIRCULAR_ORANGE;
 
 interface Pet {
   id: string;
@@ -190,7 +192,7 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
               </div>
             </>
           ) : (
-            <div className="flex flex-col items-center text-[#FF8C42]">
+            <div className="flex flex-col items-center" style={{ color: WARM_ORANGE }}>
               <Upload className="w-8 h-8 mb-1" />
               <span className="text-[10px] font-medium">Upload Photo</span>
             </div>
@@ -218,7 +220,15 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
           value={petData.name}
           onChange={(e) => setPetData({ ...petData, name: e.target.value })}
           placeholder="e.g., Oreo, Max, Bella"
-          className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none text-sm"
+          className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:outline-none text-sm"
+          onFocus={(e) => {
+            e.currentTarget.style.borderColor = WARM_ORANGE;
+            e.currentTarget.style.boxShadow = `0 0 0 3px ${WARM_ORANGE}33`;
+          }}
+          onBlur={(e) => {
+            e.currentTarget.style.borderColor = '#E5E7EB';
+            e.currentTarget.style.boxShadow = 'none';
+          }}
         />
       </div>
 
@@ -235,7 +245,12 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
               onClick={() => setPetData({ ...petData, type })}
               className={`py-2.5 px-3 border-2 rounded-xl transition-all font-medium text-xs ${
                 petData.type === type
-                  ? 'border-[#FF8C42] bg-orange-50 text-[#FF8C42]'
+                  ? 'bg-orange-50'
+                  }
+                  style={{
+                    borderColor: petData.type === type ? WARM_ORANGE : '#E5E7EB',
+                    color: petData.type === type ? WARM_ORANGE : '#374151',
+                    borderWidth: '2px'
                   : 'border-gray-200 text-gray-700 hover:border-gray-300'
               }`}
             >
@@ -255,7 +270,15 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
           value={petData.breed}
           onChange={(e) => setPetData({ ...petData, breed: e.target.value })}
           placeholder="e.g., Golden Retriever, Persian"
-          className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none text-sm"
+          className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:outline-none text-sm"
+          onFocus={(e) => {
+            e.currentTarget.style.borderColor = WARM_ORANGE;
+            e.currentTarget.style.boxShadow = `0 0 0 3px ${WARM_ORANGE}33`;
+          }}
+          onBlur={(e) => {
+            e.currentTarget.style.borderColor = '#E5E7EB';
+            e.currentTarget.style.boxShadow = 'none';
+          }}
         />
       </div>
 
@@ -270,7 +293,15 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
             value={petData.age}
             onChange={(e) => setPetData({ ...petData, age: e.target.value })}
             placeholder="e.g., 3"
-            className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none text-sm"
+            className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:outline-none text-sm"
+          onFocus={(e) => {
+            e.currentTarget.style.borderColor = WARM_ORANGE;
+            e.currentTarget.style.boxShadow = `0 0 0 3px ${WARM_ORANGE}33`;
+          }}
+          onBlur={(e) => {
+            e.currentTarget.style.borderColor = '#E5E7EB';
+            e.currentTarget.style.boxShadow = 'none';
+          }}
           />
         </div>
         <div>
@@ -280,7 +311,15 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
           <select
             value={petData.gender}
             onChange={(e) => setPetData({ ...petData, gender: e.target.value })}
-            className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none text-sm"
+            className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:outline-none text-sm"
+          onFocus={(e) => {
+            e.currentTarget.style.borderColor = WARM_ORANGE;
+            e.currentTarget.style.boxShadow = `0 0 0 3px ${WARM_ORANGE}33`;
+          }}
+          onBlur={(e) => {
+            e.currentTarget.style.borderColor = '#E5E7EB';
+            e.currentTarget.style.boxShadow = 'none';
+          }}
           >
             <option value="">Select</option>
             <option value="Male">Male</option>
@@ -301,7 +340,15 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
             value={petData.weight}
             onChange={(e) => setPetData({ ...petData, weight: e.target.value })}
             placeholder="e.g., 12.5"
-            className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none text-sm"
+            className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:outline-none text-sm"
+          onFocus={(e) => {
+            e.currentTarget.style.borderColor = WARM_ORANGE;
+            e.currentTarget.style.boxShadow = `0 0 0 3px ${WARM_ORANGE}33`;
+          }}
+          onBlur={(e) => {
+            e.currentTarget.style.borderColor = '#E5E7EB';
+            e.currentTarget.style.boxShadow = 'none';
+          }}
           />
         </div>
         <div>
@@ -313,7 +360,15 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
             value={petData.color}
             onChange={(e) => setPetData({ ...petData, color: e.target.value })}
             placeholder="e.g., Golden"
-            className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none text-sm"
+            className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:outline-none text-sm"
+          onFocus={(e) => {
+            e.currentTarget.style.borderColor = WARM_ORANGE;
+            e.currentTarget.style.boxShadow = `0 0 0 3px ${WARM_ORANGE}33`;
+          }}
+          onBlur={(e) => {
+            e.currentTarget.style.borderColor = '#E5E7EB';
+            e.currentTarget.style.boxShadow = 'none';
+          }}
           />
         </div>
       </div>
@@ -328,7 +383,15 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
           value={petData.microchipId}
           onChange={(e) => setPetData({ ...petData, microchipId: e.target.value })}
           placeholder="e.g., 123456789012345"
-          className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none text-sm"
+          className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:outline-none text-sm"
+          onFocus={(e) => {
+            e.currentTarget.style.borderColor = WARM_ORANGE;
+            e.currentTarget.style.boxShadow = `0 0 0 3px ${WARM_ORANGE}33`;
+          }}
+          onBlur={(e) => {
+            e.currentTarget.style.borderColor = '#E5E7EB';
+            e.currentTarget.style.boxShadow = 'none';
+          }}
         />
       </div>
 
@@ -358,7 +421,14 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
         </Button>
         <Button
           onClick={() => setCurrentStep('health')}
-          className="flex-1 h-11 bg-[#FF8C42] hover:bg-[#FF7A2E] rounded-xl text-white text-sm"
+          className="flex-1 h-11 rounded-xl text-white text-sm"
+          style={{ backgroundColor: WARM_ORANGE }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = '#FF7A2E';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = WARM_ORANGE;
+          }}
           disabled={loading}
         >
           Next: Health
@@ -394,7 +464,15 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
             ...petData,
             healthRecords: { ...petData.healthRecords, lastCheckup: e.target.value }
           })}
-          className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none text-sm"
+          className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:outline-none text-sm"
+          onFocus={(e) => {
+            e.currentTarget.style.borderColor = WARM_ORANGE;
+            e.currentTarget.style.boxShadow = `0 0 0 3px ${WARM_ORANGE}33`;
+          }}
+          onBlur={(e) => {
+            e.currentTarget.style.borderColor = '#E5E7EB';
+            e.currentTarget.style.boxShadow = 'none';
+          }}
         />
       </div>
 
@@ -461,7 +539,14 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
         </Button>
         <Button
           onClick={() => setCurrentStep('vaccination')}
-          className="flex-1 h-11 bg-[#FF8C42] hover:bg-[#FF7A2E] rounded-xl text-white text-sm"
+          className="flex-1 h-11 rounded-xl text-white text-sm"
+          style={{ backgroundColor: WARM_ORANGE }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = '#FF7A2E';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = WARM_ORANGE;
+          }}
           disabled={loading}
         >
           Next: Vaccines
@@ -497,7 +582,15 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
             ...petData,
             vaccinations: { ...petData.vaccinations, rabies: e.target.value }
           })}
-          className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none text-sm"
+          className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:outline-none text-sm"
+          onFocus={(e) => {
+            e.currentTarget.style.borderColor = WARM_ORANGE;
+            e.currentTarget.style.boxShadow = `0 0 0 3px ${WARM_ORANGE}33`;
+          }}
+          onBlur={(e) => {
+            e.currentTarget.style.borderColor = '#E5E7EB';
+            e.currentTarget.style.boxShadow = 'none';
+          }}
         />
       </div>
 
@@ -513,7 +606,15 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
             ...petData,
             vaccinations: { ...petData.vaccinations, distemper: e.target.value }
           })}
-          className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none text-sm"
+          className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:outline-none text-sm"
+          onFocus={(e) => {
+            e.currentTarget.style.borderColor = WARM_ORANGE;
+            e.currentTarget.style.boxShadow = `0 0 0 3px ${WARM_ORANGE}33`;
+          }}
+          onBlur={(e) => {
+            e.currentTarget.style.borderColor = '#E5E7EB';
+            e.currentTarget.style.boxShadow = 'none';
+          }}
         />
       </div>
 
@@ -529,7 +630,15 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
             ...petData,
             vaccinations: { ...petData.vaccinations, parvovirus: e.target.value }
           })}
-          className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none text-sm"
+          className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:outline-none text-sm"
+          onFocus={(e) => {
+            e.currentTarget.style.borderColor = WARM_ORANGE;
+            e.currentTarget.style.boxShadow = `0 0 0 3px ${WARM_ORANGE}33`;
+          }}
+          onBlur={(e) => {
+            e.currentTarget.style.borderColor = '#E5E7EB';
+            e.currentTarget.style.boxShadow = 'none';
+          }}
         />
       </div>
 
@@ -570,7 +679,14 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
         <Button
           onClick={handleSavePet}
           disabled={loading}
-          className="flex-1 h-11 bg-[#FF8C42] hover:bg-[#FF7A2E] rounded-xl text-white text-sm"
+          className="flex-1 h-11 rounded-xl text-white text-sm"
+          style={{ backgroundColor: WARM_ORANGE }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = '#FF7A2E';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = WARM_ORANGE;
+          }}
         >
           {loading ? 'Saving...' : 'Save Pet'}
         </Button>
@@ -616,7 +732,10 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
               <div key={step} className="flex items-center flex-1">
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold transition-all shadow-sm ${
                   currentStep === step
-                    ? 'bg-[#FF8C42] text-white scale-110'
+                    ? 'text-white scale-110'
+                  }
+                  style={{
+                    backgroundColor: currentStep === step ? WARM_ORANGE : undefined
                     : step === 'basic' || (step === 'health' && (currentStep === 'health' || currentStep === 'vaccination')) || currentStep === 'vaccination'
                     ? 'bg-green-500 text-white'
                     : 'bg-gray-200 text-gray-500'

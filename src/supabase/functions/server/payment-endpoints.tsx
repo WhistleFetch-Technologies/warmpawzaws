@@ -31,7 +31,21 @@ export function paymentEndpoints(app: Hono, kv: any) {
    */
   app.post("/make-server-3dd53475/ecommerce/payments/initiate", async (c) => {
     try {
-      const { bookingId, orderId, customerId, vendorId, amount, paymentMethod } = await c.req.json();
+      const { 
+        bookingId, 
+        orderId, 
+        customerId, 
+        vendorId, 
+        amount, 
+        paymentMethod,
+        discounts,
+        couponCode,
+        promotionId,
+        loyaltyPointsUsed,
+        tierName,
+        originalAmount,
+        walletUsed
+      } = await c.req.json();
 
       if ((!bookingId && !orderId) || !amount) {
         return sendError(c, 'Missing required fields: bookingId or orderId, and amount', 400);
@@ -184,7 +198,15 @@ export function paymentEndpoints(app: Hono, kv: any) {
         razorpayAmount: razorpayOrder.amount,
         currency: razorpayOrder.currency,
         // ✅ NEW: Price validation audit trail
-        priceValidation: validationDetails
+        priceValidation: validationDetails,
+        // ✅ ENHANCED: Discount breakdown for analytics
+        discounts: discounts || {},
+        couponCode: couponCode || null,
+        promotionId: promotionId || null,
+        loyaltyPointsUsed: loyaltyPointsUsed || 0,
+        tierName: tierName || null,
+        originalAmount: originalAmount || validatedAmount,
+        walletUsed: walletUsed || 0
       };
 
       await kv.set(`payment:${paymentId}`, payment);

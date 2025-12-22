@@ -51,6 +51,11 @@ import { VendorDietCharts } from './VendorDietCharts'; // ✅ NEW: Diet charts
 import { VendorCounseling } from './VendorCounseling'; // ✅ NEW: Counseling services
 import { VendorPolicyManagement } from './VendorPolicyManagement'; // ✅ NEW: Policy management
 import { VendorDistancePricing } from './VendorDistancePricing'; // ✅ NEW: Distance pricing
+import { VendorMultiDoctorManagement } from './VendorMultiDoctorManagement'; // ✅ NEW: Multi-doctor management
+import { VendorTableManagement } from './VendorTableManagement'; // ✅ NEW: Table management
+import { VendorPaxManagement } from './VendorPaxManagement'; // ✅ NEW: Pax management
+import { VendorOccupancyTracking } from './VendorOccupancyTracking'; // ✅ NEW: Occupancy tracking
+import { VendorNightlyPricing } from './VendorNightlyPricing'; // ✅ NEW: Nightly pricing
 
 interface VendorLandingPageProps {
   vendorId: string;
@@ -153,6 +158,11 @@ export function VendorLandingPage({
   const [showCounseling, setShowCounseling] = useState(false); // ✅ NEW: Counseling services
   const [showPolicyManagement, setShowPolicyManagement] = useState(false); // ✅ NEW: Policy management
   const [showDistancePricing, setShowDistancePricing] = useState(false); // ✅ NEW: Distance pricing
+  const [showMultiDoctorManagement, setShowMultiDoctorManagement] = useState(false); // ✅ NEW: Multi-doctor management
+  const [showTableManagement, setShowTableManagement] = useState(false); // ✅ NEW: Table management
+  const [showPaxManagement, setShowPaxManagement] = useState(false); // ✅ NEW: Pax management
+  const [showOccupancyTracking, setShowOccupancyTracking] = useState(false); // ✅ NEW: Occupancy tracking
+  const [showNightlyPricing, setShowNightlyPricing] = useState(false); // ✅ NEW: Nightly pricing
   
   // ✅ NEW: Track navigation context for better UX flow
   const [returnToStaffManagement, setReturnToStaffManagement] = useState(false);
@@ -1258,6 +1268,11 @@ export function VendorLandingPage({
           onNavigateToCounseling={() => setShowCounseling(true)} // ✅ NEW: Counseling services navigation
           onNavigateToPolicyManagement={() => setShowPolicyManagement(true)} // ✅ NEW: Policy management navigation
           onNavigateToDistancePricing={() => setShowDistancePricing(true)} // ✅ NEW: Distance pricing navigation
+          onNavigateToMultiDoctorManagement={() => setShowMultiDoctorManagement(true)} // ✅ NEW: Multi-doctor management navigation
+          onNavigateToTableManagement={() => setShowTableManagement(true)} // ✅ NEW: Table management navigation
+          onNavigateToPaxManagement={() => setShowPaxManagement(true)} // ✅ NEW: Pax management navigation
+          onNavigateToOccupancyTracking={() => setShowOccupancyTracking(true)} // ✅ NEW: Occupancy tracking navigation
+          onNavigateToNightlyPricing={() => setShowNightlyPricing(true)} // ✅ NEW: Nightly pricing navigation
         />
       );
 

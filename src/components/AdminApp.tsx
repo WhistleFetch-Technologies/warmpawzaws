@@ -112,7 +112,7 @@ export function AdminApp() {
   }
   
   if (currentView === 'support') {
-    return <SupportCRM />;
+    return <SupportCRM onNavigate={handleNavigation} />;
   }
 
   if (currentView === 'finance') {

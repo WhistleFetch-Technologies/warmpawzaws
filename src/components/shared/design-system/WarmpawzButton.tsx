@@ -10,7 +10,7 @@ import { LucideIcon } from 'lucide-react';
 interface WarmpawzButtonProps {
   variant?: 'solid' | 'outlined' | 'icon' | 'disabled';
   children: React.ReactNode;
-  onClick?: () => void;
+  onClick?: (e: React.MouseEvent<HTMLButtonElement>) => void;
   disabled?: boolean;
   icon?: LucideIcon;
   iconPosition?: 'left' | 'right';
@@ -50,7 +50,7 @@ export function WarmpawzButton({
 
   return (
     <button
-      onClick={disabled ? undefined : onClick}
+      onClick={disabled ? undefined : (e) => onClick?.(e)}
       disabled={disabled}
       className={className}
       style={{ ...baseStyles, ...style }}

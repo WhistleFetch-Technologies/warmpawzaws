@@ -1,7 +1,7 @@
 // Comprehensive Region Manager Component
 // Allows admin to view, create, edit, and manage regions
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
 import { Input } from '../ui/input';
@@ -31,7 +31,8 @@ import {
   Package
 } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-const logoImage = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8cmVjdCB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHJ4PSI4IiBmaWxsPSIjRkY4QzQyIi8+CiAgPHBhdGggZD0iTTIwIDEyQzE2LjY4NjMgMTIgMTQgMTQuNjg2MyAxNCAxOEMxNCAxOS41OTEzIDE0LjYzMjEgMjEuMDI2MSAxNS42NTY5IDIyLjA1MTRDMTY4MjE3IDIzLjA3NjcgMTguMTE2NSAyMy43MDg4IDE5LjcwNzcgMjMuNzA4OEMyMS4yOTg5IDIzLjcwODggMjIuNzMzNyAyMy4wNzY3IDIzLjc1ODUgMjIuMDUxNEMyNC43ODMzIDIxLjAyNjEgMjUuNDE1NCAxOS41OTEzIDI1LjQxNTQgMThDMjUuNDE1NCAxNC42ODYzIDIyLjcyOTEgMTIgMTkuNDE1NCAxMkgyMFpNMjAgMTRDMjEuNjU2OSAxNCAyMyAxNS4zNDMxIDIzIDE3QzIzIDE4LjY1NjkgMjEuNjU2OSAyMCAyMCAyMEMxOC4zNDMxIDIwIDE3IDE4LjY1NjkgMTcgMTdDMTcgMTUuMzQzMSAxOC4zNDMxIDE0IDIwIDE0WiIgZmlsbD0id2hpdGUiLz4KICA8cGF0aCBkPSJNMTIgMjRDMTIgMjQuNTUyMyAxMi40NDc3IDI1IDEzIDI1SDI3QzI3LjU1MjMgMjUgMjggMjQuNTUyMyAyOCAyNEMyOCAyMi4zNDMxIDI2LjY1NjkgMjEgMjUgMjFIMTVDMTMuMzQzMSAyMSAxMiAyMi4zNDMxIDEyIDI0WiIgZmlsbD0id2hpdGUiLz4KPC9zdmc+';
+import { LOGO_CIRCULAR_ORANGE, WARM_ORANGE } from '../../assets/design-tokens';
+const logoImage = LOGO_CIRCULAR_ORANGE;
 import { toast } from 'sonner';
 import { RegionActivePackagesTab } from './catalog/RegionActivePackagesTab';
 
@@ -470,7 +471,7 @@ export function RegionManager({ onBack }: RegionManagerProps = {}) {
               <div className="flex items-center gap-3">
                 <img src={logoImage} alt="WarmPawz" className="w-10 h-10" />
                 <div>
-                  <h1 className="text-xl text-[#FF8C42] flex items-center gap-2">
+                  <h1 className="text-xl flex items-center gap-2" style={{ color: WARM_ORANGE }}>
                     <Globe className="w-6 h-6" />
                     Region Manager
                   </h1>
@@ -483,7 +484,15 @@ export function RegionManager({ onBack }: RegionManagerProps = {}) {
                 <Button
                   variant="outline"
                   onClick={handleSeedAllRegions}
-                  className="gap-2 border-dashed border-gray-300 hover:border-[#FF8C42] hover:text-[#FF8C42]"
+                  className="gap-2 border-dashed border-gray-300"
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = WARM_ORANGE;
+                    e.currentTarget.style.color = WARM_ORANGE;
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = '#D1D5DB';
+                    e.currentTarget.style.color = '';
+                  }}
                 >
                   <Sparkles className="w-4 h-4" />
                   Seed Defaults

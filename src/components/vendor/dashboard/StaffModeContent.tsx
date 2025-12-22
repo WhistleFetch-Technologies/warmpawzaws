@@ -4,10 +4,7 @@ import { Card } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Badge } from '../../ui/badge';
 import { GPSTrackingWidget } from './GPSTrackingWidget';
-import { ActiveBookingsList } from './ActiveBookingsList';
-import { AvailabilityToggle } from './AvailabilityToggle';
-import { TodaySchedule } from './TodaySchedule';
-import { StaffProfileEditor } from './StaffProfileEditor';
+import { ActiveBookingsList, AvailabilityToggle, TodaySchedule, StaffProfileEditor } from './SoloProviderHelpers';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
 
 interface StaffModeContentProps {

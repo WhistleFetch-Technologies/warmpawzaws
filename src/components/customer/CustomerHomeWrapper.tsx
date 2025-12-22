@@ -25,6 +25,7 @@ import { CustomerProfile } from './CustomerProfile';
 import { PetProfile } from './PetProfile';
 import { PetProfileDashboard } from './PetProfileDashboard';
 import { InsuranceServicesLanding } from './InsuranceServicesLanding';
+import { InsurancePolicyPurchase } from './InsurancePolicyPurchase';
 import { PetCafeServicesLanding } from './PetCafeServicesLanding';
 import { PharmacyServicesLanding } from './PharmacyServicesLanding';
 import { PharmacyStore } from './PharmacyStore';
@@ -512,11 +513,65 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   if (currentScreen === 'vet-clinic-profile') return <ClinicProfileView phone={phone} clinicId={vetServiceData?.id || ''} onBack={() => setCurrentScreen('vet-clinic-list')} onNavigate={(screen, data) => { if (screen === 'appointment') { setVetServiceData({ vendorId: data?.clinicId, serviceType: 'clinic' }); setCurrentScreen('vet-booking'); } }} />;
   if (currentScreen === 'vet-clinic-booking') return <VetBookingFlow phone={phone} serviceType={vetServiceData?.serviceType || 'tele'} vendorId={vetServiceData?.vendorId} onBack={() => setCurrentScreen('vet')} onNavigate={handleVetNavigate} />;
   if (currentScreen === 'grooming') return <GroomingServiceRouter phone={phone} onBack={handleBack} onViewBooking={handleViewBooking} onViewAppointment={(appointmentId) => { setSelectedAppointmentId(appointmentId); setCurrentScreen('appointment-details'); }} />;
-  if (currentScreen === 'training') return <TrainingServiceRouter phone={phone} onBack={handleBack} onViewBooking={handleViewBooking} onNavigate={(screen, data) => setCurrentScreen('coming-soon')} />;
-  if (currentScreen === 'boarding') return <BoardingServiceRouter phone={phone} onBack={handleBack} onViewBooking={handleViewBooking} onNavigate={(screen, data) => setCurrentScreen('coming-soon')} />;
+  if (currentScreen === 'training') return <TrainingServiceRouter phone={phone} onBack={handleBack} onViewBooking={handleViewBooking} onNavigate={(screen, data) => { 
+    if (screen === 'training_center' || screen === 'training_home') {
+      // Handled internally by TrainingServiceRouter
+      return;
+    } else {
+      setCurrentScreen('coming-soon');
+    }
+  }} />;
+  if (currentScreen === 'boarding') return <BoardingServiceRouter phone={phone} onBack={handleBack} onViewBooking={handleViewBooking} onNavigate={(screen, data) => { 
+    if (screen === 'boarding_facility' || screen === 'center_list' || screen === 'boarding_center') {
+      // Handled internally by BoardingServiceRouter
+      return;
+    } else {
+      setCurrentScreen('coming-soon');
+    }
+  }} />;
   if (currentScreen === 'adoption') return <AdoptionServiceRouter phone={phone} onBack={handleBack} onNavigate={(screen, data) => { if (screen === 'adoption_questionnaire') setCurrentScreen('adoption_questionnaire'); else setCurrentScreen('coming-soon'); }} />;
   if (currentScreen === 'sunset') return <SunsetServiceRouter phone={phone} onBack={handleBack} onViewBooking={handleViewBooking} onNavigate={(screen, data) => setCurrentScreen('coming-soon')} />;
-  if (currentScreen === 'insurance') return <InsuranceServicesLanding phone={phone} onBack={handleBack} onNavigate={(screen, data) => setCurrentScreen('coming-soon')} />;
+  if (currentScreen === 'insurance') return <InsuranceServicesLanding phone={phone} customerId={customerId || phone} onBack={handleBack} onNavigate={(screen, data) => { 
+    if (screen === 'insurance_provider') { 
+      setSelectedVendorId(data?.vendorId || data?.planId); 
+      setCurrentScreen('insurance_provider'); 
+    } else {
+      setCurrentScreen('coming-soon');
+    }
+  }} />;
+  if (currentScreen === 'insurance_provider') {
+    // Insurance provider detail - show plans for selected vendor or allow plan selection
+    // For now, route back to insurance landing with vendor selection, or show plan purchase if planId provided
+    if (selectedVendorId && selectedPetId) {
+      // Get pet data for insurance purchase
+      return <InsurancePolicyPurchase 
+        customerId={customerId || phone} 
+        petId={selectedPetId} 
+        petName={selectedPetData?.name || 'Pet'} 
+        petAge={selectedPetData?.age || 1} 
+        petBreed={selectedPetData?.breed || 'Unknown'} 
+      />;
+    } else {
+      // Show insurance landing with vendor filter
+      return <InsuranceServicesLanding 
+        phone={phone} 
+        customerId={customerId || phone} 
+        onBack={handleBack} 
+        onNavigate={(screen, data) => { 
+          if (screen === 'insurance_provider') { 
+            if (data?.planId && selectedPetId) {
+              setSelectedVendorId(data.vendorId);
+              setCurrentScreen('insurance_provider');
+            } else {
+              setCurrentScreen('insurance');
+            }
+          } else {
+            setCurrentScreen('coming-soon');
+          }
+        }} 
+      />;
+    }
+  }
   
   // ✅ UPDATED LANDING PAGES & FLOWS
   if (currentScreen === 'resort') return <ResortServicesLanding phone={phone} onBack={handleBack} onNavigate={(screen, data) => { if (screen === 'resort_booking') { setSelectedVendorId(data?.vendorId); setCurrentScreen('resort_booking'); } }} />;
@@ -541,6 +596,24 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   // Nutritionist & Holiday fallbacks
   if (currentScreen === 'nutritionist') return <NutritionistServicesLanding phone={phone} onBack={handleBack} onNavigate={() => setCurrentScreen('coming-soon')} />;
   if (currentScreen === 'holiday') return <PetHolidayServicesLanding phone={phone} onBack={handleBack} onNavigate={() => setCurrentScreen('coming-soon')} />;
+  
+  // Food category - route to shop with food filter or nutritionist meal products
+  if (currentScreen === 'food') {
+    // Route to shop with food category or nutritionist meal products
+    if (selectedVendorId) {
+      return <MealProductCatalog vendorId={selectedVendorId} vendorName={selectedVendorName} onBack={handleBack} onNavigate={(screen, data) => toast.info('Product detail view coming soon')} />;
+    } else {
+      // Route to shop with food category - use handleNavigateToService to set food category
+      handleNavigateToService('shop', { category: 'food' });
+      return <ShopDashboard phone={phone} onBack={handleBack} onNavigate={(screen, data) => { 
+        if (screen === 'pharmacy_store') setCurrentScreen('pharmacy_store'); 
+        else if (screen === 'pharmacy_checkout') setCurrentScreen('pharmacy_checkout'); 
+        else if (screen === 'product_detail') { setSelectedProduct(data?.product); setCurrentScreen('product_detail'); } 
+        else if (screen === 'cart') setCurrentScreen('cart'); 
+        else handleNavigateToService(screen); 
+      }} />;
+    }
+  }
 
   // Shop & Orders
   if (currentScreen === 'shop') return <ShopDashboard phone={phone} onBack={handleBack} onNavigate={(screen, data) => { if (screen === 'pharmacy_store') setCurrentScreen('pharmacy_store'); else if (screen === 'pharmacy_checkout') setCurrentScreen('pharmacy_checkout'); else if (screen === 'product_detail') { setSelectedProduct(data?.product); setCurrentScreen('product_detail'); } else if (screen === 'cart') setCurrentScreen('cart'); else handleNavigateToService(screen); }} />;

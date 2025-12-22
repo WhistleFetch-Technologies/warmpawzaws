@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Search, Bell, MessageSquare, User, Plus, Download, 
   Filter, SortAsc, Grid3x3, Megaphone, HeadphonesIcon, 
@@ -8,7 +8,8 @@ import {
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-const logoImage = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8cmVjdCB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHJ4PSI4IiBmaWxsPSIjRkY4QzQyIi8+CiAgPHBhdGggZD0iTTIwIDEyQzE2LjY4NjMgMTIgMTQgMTQuNjg2MyAxNCAxOEMxNCAxOS41OTEzIDE0LjYzMjEgMjEuMDI2MSAxNS42NTY5IDIyLjA1MTRDMTY4MjE3IDIzLjA3NjcgMTguMTE2NSAyMy43MDg4IDE5LjcwNzcgMjMuNzA4OEMyMS4yOTg5IDIzLjcwODggMjIuNzMzNyAyMy4wNzY3IDIzLjc1ODUgMjIuMDUxNEMyNC43ODMzIDIxLjAyNjEgMjUuNDE1NCAxOS41OTEzIDI1LjQxNTQgMThDMjUuNDE1NCAxNC42ODYzIDIyLjcyOTEgMTIgMTkuNDE1NCAxMkgyMFpNMjAgMTRDMjEuNjU2OSAxNCAyMyAxNS4zNDMxIDIzIDE3QzIzIDE4LjY1NjkgMjEuNjU2OSAyMCAyMCAyMEMxOC4zNDMxIDIwIDE3IDE4LjY1NjkgMTcgMTdDMTcgMTUuMzQzMSAxOC4zNDMxIDE0IDIwIDE0WiIgZmlsbD0id2hpdGUiLz4KICA8cGF0aCBkPSJNMTIgMjRDMTIgMjQuNTUyMyAxMi40NDc3IDI1IDEzIDI1SDI3QzI3LjU1MjMgMjUgMjggMjQuNTUyMyAyOCAyNEMyOCAyMi4zNDMxIDI2LjY1NjkgMjEgMjUgMjFIMTVDMTMuMzQzMSAyMSAxMiAyMi4zNDMxIDEyIDI0WiIgZmlsbD0id2hpdGUiLz4KPC9zdmc+';
+import { LOGO_CIRCULAR_ORANGE, WARM_ORANGE } from '../../assets/design-tokens';
+const logoImage = LOGO_CIRCULAR_ORANGE;
 import { AssetLibraryTab } from './content/AssetLibraryTab';
 import { AllPostsTab } from './content/AllPostsTab';
 import { UGCReviewTab } from './content/UGCReviewTab';
@@ -66,7 +67,7 @@ export function ContentManagement() {
         <div className="p-4 border-b border-gray-200 flex items-center gap-3">
           <img src={logoImage} alt="WarmPawz" className="w-10 h-10" />
           <div>
-            <h2 className="text-[#FF8C42]">Warmpawz</h2>
+            <h2 style={{ color: WARM_ORANGE }}>Warmpawz</h2>
             <span className="text-xs text-gray-500">Admin Portal</span>
           </div>
         </div>
@@ -200,7 +201,14 @@ export function ContentManagement() {
               </div>
 
               <Button 
-                className="bg-[#FF8C42] hover:bg-[#FF7A2E] gap-2"
+                className="gap-2"
+                style={{ backgroundColor: WARM_ORANGE }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#FF7A2E';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = WARM_ORANGE;
+                }}
                 onClick={() => setShowCreateContent(true)}
               >
                 <Plus className="w-4 h-4" />
@@ -239,10 +247,11 @@ function NavItem({ icon, label, active = false }: { icon: React.ReactNode; label
   return (
     <button
       className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
-        active
-          ? 'bg-[#FF8C42] text-white'
-          : 'text-gray-700 hover:bg-gray-100'
+        active ? 'text-white' : 'text-gray-700 hover:bg-gray-100'
       }`}
+      style={{
+        backgroundColor: active ? WARM_ORANGE : 'transparent'
+      }}
     >
       {icon}
       <span className="text-left">{label}</span>
