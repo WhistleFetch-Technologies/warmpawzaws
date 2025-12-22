@@ -523,7 +523,7 @@ registerProblemGridSpecializationSystem(app);
 // 4. Core Customer & Auth Routes
 // MUST BE REGISTERED BEFORE STAFF ROUTES to avoid shadowing by staff wildcard router
 registerCustomerServices(app); // Register specific routes BEFORE wildcard
-registerCustomerRoutes(app);
+registerCustomerRoutes(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 registerAuthEndpoints(app);
 registerAICRMRoutes(app, kv);
 registerAIChatbotRoutes(app);
