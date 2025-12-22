@@ -50,4 +50,10 @@ export * from "./sessions.ts";
 export { getSessionsRepository } from "./sessions.ts";
 export * from "./wallets.ts";
 export { getWalletsRepository } from "./wallets.ts";
+export * from "./regions.ts";
+export { getRegionsRepository } from "./regions.ts";
+export * from "./roles.ts";
+export { getRolesRepository } from "./roles.ts";
+export * from "./payment-tiers.ts";
+export { getPaymentTiersRepository } from "./payment-tiers.ts";
 
