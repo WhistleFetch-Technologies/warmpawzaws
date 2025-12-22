@@ -290,7 +290,7 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4 flex-1">
               <div className="flex items-center gap-2">
-                <div className="w-6 h-6 bg-gray-200 rounded"></div>
+                <img src="/warmpawz-logo-1.svg" alt="Warmpawz" className="w-10 h-10" />
                 <div>
                   <h1 className="text-[#FF8C42]">Vendor Administration</h1>
                   <p className="text-xs text-gray-500">Complete vendor lifecycle management and administration</p>

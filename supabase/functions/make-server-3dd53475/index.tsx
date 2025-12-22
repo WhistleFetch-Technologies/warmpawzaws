@@ -519,7 +519,7 @@ registerAdminCatalogEndpoints(app);
 adminIntegrationEndpoints(app);
 registerVendorSettingsRulesEndpoints(app);
 registerVideoCallEndpoints(app);
-regionEndpoints(app, kv);
+regionEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 registerProblemGridSpecializationSystem(app);
 
 // 4. Core Customer & Auth Routes
