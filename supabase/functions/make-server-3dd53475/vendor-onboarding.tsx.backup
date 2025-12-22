@@ -1,41 +1,31 @@
-/**
- * ============================================================================
- * VENDOR ONBOARDING ENDPOINTS - SQL-ONLY VERSION
- * ============================================================================
- * 
- * REFACTORED: Removed all KV usage, using SQL repositories only
- * 
- * Vendor onboarding & application management:
- * - Submit vendor application
- * - Check phone number availability
- * - Update vendor profile
- * - Get vendor application data
- * 
- * CHANGES:
- * - Removed `kv` parameter from function signature
- * - Replaced all `kv.get()`, `kv.set()`, `kv.getByPrefix()` with repository calls
- * - All data now comes from SQL tables
- * 
- * Date: 2024-12-22
- * Migration: Phase 5 - KV to SQL
- * ============================================================================
- */
-
 import { Hono } from "npm:hono";
 import { determineServiceCategory, getServiceCategoryFromVendorTypes } from "./service-category-mapping.tsx";
 import { normalizePhone, createVendorId, phonesMatch } from "./phone-utils.tsx";
 import { sendSuccess, sendError } from "./response-utils.ts";
-import { getVendorsRepository } from "../../lib/repositories/vendors.ts";
-import { getDbClient } from "../../lib/db.ts";
 
-export function vendorOnboardingEndpoints(app: Hono) {
-  console.log('✅ Registering Vendor Onboarding Endpoints (SQL-only)...');
+/**
+ * Vendor Onboarding & Application Management Endpoints
+ * Handles vendor application submission, approval, rejection, and service setup
+ * 
+ * ✅ CRITICAL FIXES:
+ * 1. Duplicate phone number validation
+ * 2. Proper service category mapping
+ * 3. Business name priority in display
+ * 4. Document handling
+ */
+export function vendorOnboardingEndpoints(app: Hono, kv: any) {
+
+  /**
+   * NOTE: /config/roles endpoint has been moved to vendor-role-config.tsx
+   * to centralize role management and prevent shadowing issues.
+   * DO NOT re-add this endpoint here.
+   */
 
   /**
    * POST /make-server-3dd53475/vendor/apply
    * Submit vendor application
    * 
-   * REFACTORED: Uses SQL repositories instead of KV
+   * ✅ FIX: Added duplicate phone validation
    */
   app.post("/make-server-3dd53475/vendor/apply", async (c) => {
     try {
@@ -55,19 +45,23 @@ export function vendorOnboardingEndpoints(app: Hono) {
       const cleanPhone = normalizePhone(phone);
       console.log(`🔍 Checking for duplicate phone: ${cleanPhone}`);
       
-      // ✅ SQL: Check for existing vendor with this phone
-      const existingVendor = await getVendorsRepository().findByPhone(cleanPhone);
+      const allVendors = await kv.getByPrefix('vendor:vendor_');
+      const existingVendor = allVendors.find((v: any) => {
+        if (!v || !v.phone) return false;
+        const vendorCleanPhone = normalizePhone(v.phone);
+        return phonesMatch(vendorCleanPhone, cleanPhone);
+      });
       
       if (existingVendor) {
         console.log(`⚠️ EXISTING VENDOR FOUND WITH THIS PHONE`);
         console.log(`   Existing Vendor: ${existingVendor.id}`);
-        console.log(`   Name: ${existingVendor.business_name || existingVendor.owner_name}`);
+        console.log(`   Name: ${existingVendor.fullName || existingVendor.businessName}`);
         console.log(`   Status: ${existingVendor.status}`);
         
         // ✅ FIX GAP #3: Allow rejected vendors to reapply
         if (existingVendor.status === 'rejected') {
           console.log(`✅ Vendor was REJECTED - allowing reapplication`);
-          console.log(`   Previous rejection reason: ${existingVendor.rejection_reason || 'N/A'}`);
+          console.log(`   Previous rejection reason: ${existingVendor.rejectionReason || 'N/A'}`);
           // We'll update the existing vendor record below instead of creating a new one
         } else {
           // Block duplicate for non-rejected vendors
@@ -78,11 +72,11 @@ export function vendorOnboardingEndpoints(app: Hono) {
             message: `An application with this phone number already exists.`,
             existingApplication: {
               id: existingVendor.id,
-              applicationId: existingVendor.application_id,
-              name: existingVendor.business_name || existingVendor.owner_name,
+              applicationId: existingVendor.applicationId,
+              name: existingVendor.businessName || existingVendor.fullName,
               status: existingVendor.status,
-              submittedAt: existingVendor.submitted_at || existingVendor.created_at,
-              role: existingVendor.role_id
+              submittedAt: existingVendor.submittedAt || existingVendor.createdAt,
+              role: existingVendor.roleName
             }
           }, 409); // 409 Conflict status code
         }
@@ -91,7 +85,7 @@ export function vendorOnboardingEndpoints(app: Hono) {
       console.log(`✅ No blocking issues found, proceeding with application...`);
       
       // Generate IDs
-      const vendorId = existingVendor?.id || createVendorId(cleanPhone);
+      const vendorId = createVendorId(cleanPhone);
       const applicationId = `APP${Date.now()}${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
       
       // ✅ FIX GAP #3: Check if this is a reapplication from rejected vendor
@@ -100,18 +94,12 @@ export function vendorOnboardingEndpoints(app: Hono) {
       if (isReapplication) {
         console.log(`🔄 This is a REAPPLICATION from a rejected vendor`);
         console.log(`   Keeping existing vendorId: ${existingVendor.id}`);
-        console.log(`   Previous applicationId: ${existingVendor.application_id}`);
+        console.log(`   Previous applicationId: ${existingVendor.applicationId}`);
         console.log(`   New applicationId: ${applicationId}`);
       }
       
-      // ✅ SQL: Get role configuration from platform_settings or roles table
-      const client = getDbClient();
-      const { data: role } = await client
-        .from('platform_settings')
-        .select('*')
-        .eq('setting_key', `role:config:${roleId}`)
-        .maybeSingle();
-      
+      // Get role configuration
+      const role = await kv.get(`role:config:${roleId}`);
       if (!role) {
         console.error(`❌ ROLE NOT FOUND: ${roleId}`);
         return c.json({ 
@@ -120,13 +108,12 @@ export function vendorOnboardingEndpoints(app: Hono) {
         }, 400);
       }
       
-      const roleConfig = role.setting_value || {};
-      const roleName = roleConfig?.name || 'Vendor';
-      const vendorType = roleConfig?.vendorTypes?.[0] || 'service_provider';
+      const roleName = role?.name || 'Vendor';
+      const vendorType = role?.vendorTypes?.[0] || 'service_provider';
       
       // ✅ CRITICAL FIX #2: Proper service category determination
-      const serviceCategory = roleConfig.serviceCategory || 
-                            determineServiceCategory(roleConfig) || 
+      const serviceCategory = role.serviceCategory || 
+                            determineServiceCategory(role) || 
                             'general_services';
       
       console.log(`🔍 Resolved Role Configuration:`);
@@ -176,87 +163,121 @@ export function vendorOnboardingEndpoints(app: Hono) {
       }
       console.log(`📎 Processed ${documentsArray.length} documents`);
 
-      // ✅ CRITICAL FIX #4: Create/Update Vendor Record with proper field priority
+      // ✅ CRITICAL FIX #4: Create Vendor Record with proper field priority
+      const vendorKey = `vendor:${vendorId}`;
+      
       // Determine display name (Business Name takes priority)
       const displayName = formData.businessName || formData.fullName || 'Unnamed Vendor';
       
       // ✅ FIX GAP #3: For reapplications, preserve history and original creation date
-      const baseVendorData: any = {
-        application_id: applicationId,
-        role_id: roleId,
-        category: serviceCategory,
-        business_name: formData.businessName || null,
-        owner_name: formData.fullName || null,
+      const baseVendor = isReapplication ? {
+        // Keep original creation date and history
+        createdAt: existingVendor.createdAt,
+        originalApplicationId: existingVendor.applicationId,
+        rejectionHistory: [
+          ...(existingVendor.rejectionHistory || []),
+          {
+            applicationId: existingVendor.applicationId,
+            rejectedAt: existingVendor.reviewedAt,
+            rejectionReason: existingVendor.rejectionReason,
+            reviewedBy: existingVendor.reviewedBy
+          }
+        ]
+      } : {
+        createdAt: new Date().toISOString()
+      };
+      
+      const vendor = {
+        id: vendorId,
+        applicationId,
+        roleId,
+        roleName,
+        serviceCategory, // ✅ FIX: Always set service category
+        vendorType,
+        serviceStyle: serviceStyle || role.defaultServiceStyle || null,
+        
+        // ✅ NEW: Specializations for center/vendor
+        specializations: specializations || [],
+        
+        // ✅ FIX: Names with proper priority
+        businessName: formData.businessName || null,
+        fullName: formData.fullName || null,
+        displayName: displayName, // For UI display purposes
+        
+        // Contact
         email: email || formData.email || null,
-        phone: cleanPhone,
+        phone: phone || formData.phone,
+        
+        // Address
         address: formData.address || null,
         city: formData.city || null,
         state: formData.state || null,
         pincode: formData.pincode || null,
-        latitude: location?.lat || formData.coordinates?.lat || null,
-        longitude: location?.lng || formData.coordinates?.lng || null,
-        gst_number: formData.gstNumber || null,
-        years_of_experience: formData.yearsOfExperience || 0,
-        status: 'pending_approval',
-        is_active: false,
-        submitted_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        location: location || formData.location || null,
+        
+        // Business Details
+        gstNumber: formData.gstNumber || null,
+        yearsOfExperience: formData.yearsOfExperience || 0,
+        
+        // Bank Details
+        bankDetails: {
+          accountHolderName: formData.accountHolderName || null,
+          accountNumber: formData.accountNumber || null,
+          ifscCode: formData.ifscCode || null,
+          bankName: formData.bankName || null,
+          branchName: formData.branchName || null
+        },
+        
+        // Documents
+        documents: documentsArray,
+        documentsRaw: documents, // Keep raw for reference
+        
+        // All form data for reference
+        customFields: formData,
+        
+        // Status & Timestamps
+        // ✅ FIX #3: Standardized status terminology
+        status: 'pending_approval', // Will be 'pending_approval', 'approved', 'rejected', 'more_info_required'
+        setupCompleted: false,
+        isActive: false,
+        submittedAt: new Date().toISOString(),
+        ...baseVendor, // ✅ Merge history for reapplications
+        updatedAt: new Date().toISOString(),
+        
+        // Progress tracking
+        onboardingProgress: 100, // Application is complete
+        applicationComplete: true,
+        
+        // ✅ FIX GAP #3: Mark as reapplication if applicable
+        isReapplication: isReapplication || false,
+        reapplicationCount: isReapplication ? (existingVendor.reapplicationCount || 0) + 1 : 0
       };
       
-      // Store documents and specializations in JSONB fields
-      if (documentsArray.length > 0) {
-        baseVendorData.documents = documentsArray;
-      }
-      if (specializations && specializations.length > 0) {
-        baseVendorData.specializations = specializations;
-      }
+      await kv.set(vendorKey, vendor);
       
-      // ✅ SQL: Create or update vendor
-      let vendor;
-      if (isReapplication && existingVendor) {
-        // Update existing vendor for reapplication
-        vendor = await getVendorsRepository().update(existingVendor.id, {
-          ...baseVendorData,
-          status: 'pending_approval', // Reset to pending
-          reapplication_count: (existingVendor.reapplication_count || 0) + 1,
-        });
-      } else {
-        // Create new vendor
-        vendor = await getVendorsRepository().create(baseVendorData);
+      // ✅ FIX #6: REMOVED DUPLICATE APPLICATION RECORD STORAGE
+      // The vendor record itself contains all application data (applicationId, status, documents, etc.)
+      // No need to store a separate application record - reduces data redundancy
+      
+      // Add vendorId (not applicationId) to pending list
+      const pendingVendors = await kv.get('vendor:pending_approvals') || [];
+      if (!pendingVendors.includes(vendorId)) {
+        pendingVendors.push(vendorId);
+        await kv.set('vendor:pending_approvals', pendingVendors);
       }
       
-      // ✅ SQL: Add to pending approvals (using platform_settings or separate table)
-      // TODO: Create vendor_approval_queue table or use platform_settings
-      const { data: pendingList } = await client
-        .from('platform_settings')
-        .select('*')
-        .eq('setting_key', 'vendor:pending_approvals')
-        .maybeSingle();
-      
-      const pendingVendors = pendingList?.setting_value || [];
-      if (!pendingVendors.includes(vendor.id)) {
-        pendingVendors.push(vendor.id);
-        await client
-          .from('platform_settings')
-          .upsert({
-            setting_key: 'vendor:pending_approvals',
-            setting_value: pendingVendors,
-            updated_at: new Date().toISOString(),
-          });
-      }
-      
-      console.log(`✅ Added to pending approvals list: ${vendor.id}`);
+      console.log(`✅ Added to pending approvals list: ${vendorId}`);
       
       console.log(`🎉 Application created successfully!`);
       console.log(`   Application ID: ${applicationId}`);
-      console.log(`   Vendor ID: ${vendor.id}`);
+      console.log(`   Vendor ID: ${vendorId}`);
       console.log(`   Display Name: ${displayName}`);
       console.log(`   Service Category: ${serviceCategory}`);
       console.log(`   Documents: ${documentsArray.length}`);
       
       return sendSuccess(c, {
         applicationId,
-        vendorId: vendor.id,
+        vendorId,
         message: 'Application submitted successfully. You will be notified once reviewed.'
       });
       
@@ -270,7 +291,7 @@ export function vendorOnboardingEndpoints(app: Hono) {
    * GET /make-server-3dd53475/vendor/check-phone/:phone
    * Check if phone number already has an application
    * 
-   * REFACTORED: Uses SQL repositories instead of KV
+   * ✅ NEW ENDPOINT: For frontend validation
    */
   app.get("/make-server-3dd53475/vendor/check-phone/:phone", async (c) => {
     try {
@@ -283,8 +304,12 @@ export function vendorOnboardingEndpoints(app: Hono) {
       const cleanPhone = normalizePhone(phone);
       console.log(`🔍 Checking if phone exists: ${cleanPhone}`);
       
-      // ✅ SQL: Check for existing vendor
-      const existingVendor = await getVendorsRepository().findByPhone(cleanPhone);
+      const allVendors = await kv.getByPrefix('vendor:vendor_');
+      const existingVendor = allVendors.find((v: any) => {
+        if (!v || !v.phone) return false;
+        const vendorCleanPhone = normalizePhone(v.phone);
+        return phonesMatch(vendorCleanPhone, cleanPhone);
+      });
       
       if (existingVendor) {
         console.log(`✅ Phone found: ${existingVendor.id} - ${existingVendor.status}`);
@@ -292,11 +317,11 @@ export function vendorOnboardingEndpoints(app: Hono) {
           exists: true,
           application: {
             id: existingVendor.id,
-            applicationId: existingVendor.application_id,
-            name: existingVendor.business_name || existingVendor.owner_name,
+            applicationId: existingVendor.applicationId,
+            name: existingVendor.businessName || existingVendor.fullName,
             status: existingVendor.status,
-            submittedAt: existingVendor.submitted_at || existingVendor.created_at,
-            role: existingVendor.role_id
+            submittedAt: existingVendor.submittedAt || existingVendor.createdAt,
+            role: existingVendor.roleName
           }
         });
       }
@@ -317,7 +342,7 @@ export function vendorOnboardingEndpoints(app: Hono) {
    * PUT /make-server-3dd53475/vendor/profile/:vendorId
    * Update vendor/center profile (for edit mode)
    * 
-   * REFACTORED: Uses SQL repositories instead of KV
+   * ✅ NEW ENDPOINT: Save/update center profile with specializations
    */
   app.put("/make-server-3dd53475/vendor/profile/:vendorId", async (c) => {
     try {
@@ -329,28 +354,33 @@ export function vendorOnboardingEndpoints(app: Hono) {
       console.log(`   Specializations:`, specializations);
       console.log(`   Location:`, location);
 
-      // ✅ SQL: Get existing vendor
-      const existingVendor = await getVendorsRepository().findById(vendorId);
+      // Get existing vendor
+      const vendorKey = `vendor:${vendorId}`;
+      const existingVendor = await kv.get(vendorKey);
 
       if (!existingVendor) {
         console.error(`❌ Vendor not found: ${vendorId}`);
         return c.json({ error: 'Vendor not found' }, 404);
       }
 
-      // ✅ SQL: Update vendor
-      const updatedVendor = await getVendorsRepository().update(vendorId, {
-        business_name: formData?.businessName || existingVendor.business_name,
-        owner_name: formData?.fullName || existingVendor.owner_name,
-        email: formData?.email || existingVendor.email,
-        address: formData?.address || existingVendor.address,
-        city: formData?.city || existingVendor.city,
-        state: formData?.state || existingVendor.state,
-        pincode: formData?.pincode || existingVendor.pincode,
-        latitude: location?.lat || formData?.coordinates?.lat || existingVendor.latitude,
-        longitude: location?.lng || formData?.coordinates?.lng || existingVendor.longitude,
+      // Update vendor with new data
+      const updatedVendor = {
+        ...existingVendor,
+        // Update form data
+        ...formData,
+        // Update specializations
         specializations: specializations || existingVendor.specializations || [],
+        // Update location
+        location: location || formData?.location || existingVendor.location,
+        coordinates: location || formData?.coordinates || existingVendor.coordinates,
+        // Update documents if provided
         documents: documents ? [...(existingVendor.documents || []), ...documents] : existingVendor.documents,
-      });
+        // Track update
+        updatedAt: new Date().toISOString(),
+        lastProfileUpdate: new Date().toISOString()
+      };
+
+      await kv.set(vendorKey, updatedVendor);
 
       console.log(`✅ Vendor profile updated successfully: ${vendorId}`);
 
@@ -369,7 +399,7 @@ export function vendorOnboardingEndpoints(app: Hono) {
   /**
    * Get vendor/center profile for editing
    * 
-   * REFACTORED: Uses SQL repositories instead of KV
+   * ✅ NEW ENDPOINT: Load center profile data for edit mode
    */
   app.get("/make-server-3dd53475/vendor/profile/:vendorId", async (c) => {
     try {
@@ -377,8 +407,8 @@ export function vendorOnboardingEndpoints(app: Hono) {
 
       console.log(`📖 Loading vendor profile: ${vendorId}`);
 
-      // ✅ SQL: Get vendor
-      const vendor = await getVendorsRepository().findById(vendorId);
+      const vendorKey = `vendor:${vendorId}`;
+      const vendor = await kv.get(vendorKey);
 
       if (!vendor) {
         console.error(`❌ Vendor not found: ${vendorId}`);
@@ -390,12 +420,9 @@ export function vendorOnboardingEndpoints(app: Hono) {
       return sendSuccess(c, {
         vendor: {
           ...vendor,
-          formData: vendor.custom_fields || {},
+          formData: vendor.customFields || vendor.formData || {},
           specializations: vendor.specializations || [],
-          location: vendor.latitude && vendor.longitude ? {
-            lat: vendor.latitude,
-            lng: vendor.longitude
-          } : null
+          location: vendor.location || vendor.coordinates || null
         }
       });
 
@@ -408,7 +435,7 @@ export function vendorOnboardingEndpoints(app: Hono) {
   /**
    * Get vendor application data (for re-editing/correction/clarification)
    * 
-   * REFACTORED: Uses SQL repositories instead of KV
+   * ✅ NEW ENDPOINT: Load vendor application data for correction mode
    */
   app.get("/make-server-3dd53475/vendor/:vendorId/application", async (c) => {
     try {
@@ -416,8 +443,8 @@ export function vendorOnboardingEndpoints(app: Hono) {
 
       console.log(`📖 Loading vendor application: ${vendorId}`);
 
-      // ✅ SQL: Get vendor
-      const vendor = await getVendorsRepository().findById(vendorId);
+      const vendorKey = `vendor:${vendorId}`;
+      const vendor = await kv.get(vendorKey);
 
       if (!vendor) {
         console.error(`❌ Vendor not found: ${vendorId}`);
@@ -429,12 +456,9 @@ export function vendorOnboardingEndpoints(app: Hono) {
       return sendSuccess(c, {
         application: {
           ...vendor,
-          formData: vendor.custom_fields || {},
+          formData: vendor.customFields || vendor.formData || {},
           specializations: vendor.specializations || [],
-          location: vendor.latitude && vendor.longitude ? {
-            lat: vendor.latitude,
-            lng: vendor.longitude
-          } : null
+          location: vendor.location || vendor.coordinates || null
         }
       });
 
@@ -444,6 +468,4 @@ export function vendorOnboardingEndpoints(app: Hono) {
     }
   });
 
-  console.log('✅ Vendor onboarding endpoints registered (SQL-only)');
 }
-

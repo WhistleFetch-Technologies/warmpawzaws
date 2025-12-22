@@ -482,7 +482,7 @@ enhancedSearchEngineEndpoints(app, kv);
 // 2. Vendor Specific Routes (Dashboard, Onboarding, Config, Services)
 // These must be registered BEFORE customer-routes because customer-routes
 // contains a generic /vendor/:vendorId wildcard that would shadow these.
-vendorOnboardingEndpoints(app, kv);
+vendorOnboardingEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 soloProviderEndpoints(app, kv); // ✅ FIX: Solo provider onboarding endpoints
 vendorApprovalWorkflowEndpoints(app, kv);
 vendorDashboardEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
