@@ -19,14 +19,12 @@ export async function getRazorpayCredentials(): Promise<{
   enabled: boolean;
 }> {
   try {
-    // 1. Try to get from platform settings (admin portal) - PRIMARY SOURCE
-    // Check multiple possible KV keys for compatibility
+    // 1. PRIMARY: Admin Portal settings (KV store) - Auto-synced from UI
     const paymentGatewaySettings = await kv.get('platform:settings:payment_gateway') ||
                                    await kv.get('admin:settings:payment_gateway') ||
                                    await kv.get('admin:settings:payment');
     
     if (paymentGatewaySettings?.razorpay) {
-      // Support multiple field name variations
       const keyId = paymentGatewaySettings.razorpay.key_id || 
                    paymentGatewaySettings.razorpay.keyId || 
                    paymentGatewaySettings.razorpay.apiKey;
@@ -35,7 +33,7 @@ export async function getRazorpayCredentials(): Promise<{
                        paymentGatewaySettings.razorpay.apiSecret;
       
       if (keyId && keySecret) {
-        console.log('✅ [RAZORPAY-CREDS] Using credentials from platform settings');
+        console.log('✅ [RAZORPAY-CREDS] Using credentials from Admin Portal (auto-synced)');
         return {
           keyId,
           keySecret,
@@ -44,7 +42,7 @@ export async function getRazorpayCredentials(): Promise<{
       }
     }
     
-    // 2. Fallback to environment variables
+    // 2. FALLBACK: Environment variables (for deployment/CI)
     const envKeyId = Deno.env.get('RAZORPAY_KEY_ID') || '';
     const envKeySecret = Deno.env.get('RAZORPAY_KEY_SECRET') || '';
     
@@ -58,7 +56,7 @@ export async function getRazorpayCredentials(): Promise<{
     }
     
     // 3. No credentials found
-    console.error('❌ [RAZORPAY-CREDS] No Razorpay credentials found in platform settings or environment');
+    console.error('❌ [RAZORPAY-CREDS] No Razorpay credentials found in Admin Portal or environment');
     return {
       keyId: '',
       keySecret: '',
