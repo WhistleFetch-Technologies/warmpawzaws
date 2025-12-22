@@ -537,7 +537,7 @@ registerAuthEndpoints(app);
 registerAICRMRoutes(app, kv);
 registerAIChatbotRoutes(app);
 paymentEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
-marketplacePaymentEndpoints(app, kv);
+marketplacePaymentEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 registerChatEndpoints(app);
 registerSubscriptionEndpoints(app);
 registerVideoConsultationEndpoints(app);
