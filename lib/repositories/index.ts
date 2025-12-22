@@ -44,4 +44,8 @@ export * from "./commissions.ts";
 export { getCommissionsRepository } from "./commissions.ts";
 export * from "./reviews.ts";
 export { getReviewsRepository } from "./reviews.ts";
+export * from "./pets.ts";
+export { getPetsRepository } from "./pets.ts";
+export * from "./sessions.ts";
+export { getSessionsRepository } from "./sessions.ts";
 
