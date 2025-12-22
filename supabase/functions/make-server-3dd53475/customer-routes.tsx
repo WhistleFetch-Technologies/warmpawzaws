@@ -72,9 +72,8 @@ export function registerCustomerRoutes(app: Hono) {
       
       console.log(`🔑 [OTP-GENERATE] Generating OTP for: ${phone}`);
       
-      // ⚠️ UAT MODE: Fixed OTP for ALL users for testing
-      const UAT_MODE = true; // Set to false in production
-      const finalOTP = UAT_MODE ? '123456' : Math.floor(100000 + Math.random() * 900000).toString();
+      // ✅ PRODUCTION: Generate random OTP
+      const finalOTP = Math.floor(100000 + Math.random() * 900000).toString();
       
       // ✅ SQL: Create OTP token using repository
       await getOtpRepository().create({
@@ -85,14 +84,11 @@ export function registerCustomerRoutes(app: Hono) {
         max_attempts: 3,
       });
       
-      console.log(`✅ [OTP-GENERATE] OTP generated successfully for ${phone}: ${finalOTP} ${UAT_MODE ? '(UAT MODE - Fixed OTP)' : ''}`);
+      console.log(`✅ [OTP-GENERATE] OTP generated successfully for ${phone}`);
       
       // TODO: Send SMS via provider (Twilio, MSG91, etc.)
       
-      return sendSuccess(c, {
-        // In UAT mode, return OTP in response for testing
-        ...(UAT_MODE ? { otp: finalOTP, uatMode: true } : {})
-      }, 'OTP sent successfully');
+      return sendSuccess(c, {}, 'OTP sent successfully');
     } catch (error) {
       console.error('❌ [OTP-GENERATE] Error:', error);
       return sendError(c, `OTP generation failed: ${String(error)}`, 500);

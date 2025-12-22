@@ -25,13 +25,21 @@ app.get("/grooming/services", async (c) => {
 
     console.log(`Found ${groomers.length} active groomers`);
 
-    // Categorize by service style
+    // Categorize by service style (standardized: at_center, at_home, tele)
     const groomingCenters = groomers.filter((v: any) => 
-      v.serviceStyles && v.serviceStyles.includes('clinic')
+      v.serviceStyles && (
+        v.serviceStyles.includes('at_center') || 
+        v.serviceStyles.includes('clinic') || 
+        v.serviceStyles.includes('both')
+      )
     );
     
     const homeGroomers = groomers.filter((v: any) => 
-      v.serviceStyles && v.serviceStyles.includes('home')
+      v.serviceStyles && (
+        v.serviceStyles.includes('at_home') || 
+        v.serviceStyles.includes('home') || 
+        v.serviceStyles.includes('both')
+      )
     );
 
     // Get popular services from catalog
@@ -93,10 +101,14 @@ app.get("/grooming/:serviceType/providers", async (c) => {
         v.isAvailable
       );
 
-    // Filter by service type
-    const serviceStyle = serviceType === 'grooming_center' ? 'clinic' : 'home';
+    // Filter by service type (standardized: at_center, at_home)
+    const serviceStyle = serviceType === 'grooming_center' ? 'at_center' : 'at_home';
+    const legacyStyles = serviceType === 'grooming_center' ? ['clinic', 'both'] : ['home', 'both'];
     groomers = groomers.filter((v: any) => 
-      v.serviceStyles && v.serviceStyles.includes(serviceStyle)
+      v.serviceStyles && (
+        v.serviceStyles.includes(serviceStyle) ||
+        legacyStyles.some(legacy => v.serviceStyles.includes(legacy))
+      )
     );
 
     // Calculate distances if coordinates provided
@@ -150,11 +162,8 @@ app.post("/booking/:bookingId/complete", async (c) => {
       return c.json({ error: 'Booking not found' }, 404);
     }
 
-    // UAT Mode: Accept fixed OTP
-    const UAT_MODE = true;
-    const validOTP = UAT_MODE ? '123456' : booking.completionOTP;
-
-    if (otp !== validOTP) {
+    // ✅ PRODUCTION: Verify OTP from booking
+    if (!booking.completionOTP || otp !== booking.completionOTP) {
       return c.json({ error: 'Invalid OTP' }, 400);
     }
 

@@ -1,17 +1,18 @@
 /**
  * CENTRALIZED RAZORPAY CREDENTIALS HELPER
  * 
- * Fetches Razorpay credentials from platform settings (admin portal)
+ * Fetches Razorpay credentials from platform settings (SQL database)
  * Falls back to environment variables if not found in settings
  * 
  * This ensures single source of truth for payment gateway configuration
+ * ✅ MIGRATED: Now uses SQL instead of KV store
  */
 
-import * as kv from "./kv_store.tsx";
+import { getPlatformSettingsRepository } from "../../lib/repositories/platform-settings.ts";
 
 /**
  * Get Razorpay credentials from platform settings
- * Priority: Platform Settings → Environment Variables
+ * Priority: Platform Settings (SQL) → Environment Variables
  */
 export async function getRazorpayCredentials(): Promise<{
   keyId: string;
@@ -19,27 +20,17 @@ export async function getRazorpayCredentials(): Promise<{
   enabled: boolean;
 }> {
   try {
-    // 1. PRIMARY: Admin Portal settings (KV store) - Auto-synced from UI
-    const paymentGatewaySettings = await kv.get('platform:settings:payment_gateway') ||
-                                   await kv.get('admin:settings:payment_gateway') ||
-                                   await kv.get('admin:settings:payment');
+    // 1. PRIMARY: Admin Portal settings (SQL database) - Auto-synced from UI
+    const settingsRepo = getPlatformSettingsRepository();
+    const paymentGatewaySettings = await settingsRepo.getPaymentGatewaySettings('razorpay');
     
-    if (paymentGatewaySettings?.razorpay) {
-      const keyId = paymentGatewaySettings.razorpay.key_id || 
-                   paymentGatewaySettings.razorpay.keyId || 
-                   paymentGatewaySettings.razorpay.apiKey;
-      const keySecret = paymentGatewaySettings.razorpay.key_secret || 
-                       paymentGatewaySettings.razorpay.keySecret || 
-                       paymentGatewaySettings.razorpay.apiSecret;
-      
-      if (keyId && keySecret) {
-        console.log('✅ [RAZORPAY-CREDS] Using credentials from Admin Portal (auto-synced)');
-        return {
-          keyId,
-          keySecret,
-          enabled: paymentGatewaySettings.razorpay.enabled !== false
-        };
-      }
+    if (paymentGatewaySettings && paymentGatewaySettings.key_id && paymentGatewaySettings.key_secret) {
+      console.log('✅ [RAZORPAY-CREDS] Using credentials from Admin Portal (SQL)');
+      return {
+        keyId: paymentGatewaySettings.key_id,
+        keySecret: paymentGatewaySettings.key_secret,
+        enabled: paymentGatewaySettings.enabled !== false
+      };
     }
     
     // 2. FALLBACK: Environment variables (for deployment/CI)

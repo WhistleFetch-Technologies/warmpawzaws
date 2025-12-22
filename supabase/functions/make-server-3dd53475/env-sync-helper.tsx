@@ -1,60 +1,58 @@
 /**
  * Environment Sync Helper
- * Dynamically reads from Admin Portal KV store and syncs to environment variables
+ * Dynamically reads from Admin Portal SQL database and syncs to environment variables
  * This ensures .env files stay in sync with UI endpoint changes
+ * ✅ MIGRATED: Now uses SQL instead of KV store
  */
 
-import * as kv from "./kv_store.tsx";
+import { getPlatformSettingsRepository } from "../../lib/repositories/platform-settings.ts";
 
 /**
- * Get environment variable from KV store (Admin Portal) or fallback to Deno.env
+ * Get environment variable from SQL database (Admin Portal) or fallback to Deno.env
  */
 export async function getEnvVar(key: string, fallback?: string): Promise<string> {
-  // Map environment variable keys to KV store keys
-  const kvKeyMap: Record<string, string> = {
-    'VITE_GOOGLE_MAPS_API_KEY': 'platform:settings:google_maps',
-    'AWS_ACCESS_KEY_ID': 'platform:settings:aws',
-    'AWS_SECRET_ACCESS_KEY': 'platform:settings:aws',
-    'AWS_REGION': 'platform:settings:aws',
-    'RAZORPAY_KEY_ID': 'platform:settings:payment_gateway',
-    'RAZORPAY_KEY_SECRET': 'platform:settings:payment_gateway',
-    'RAZORPAY_WEBHOOK_SECRET': 'platform:settings:payment_gateway',
-  };
-
-  const kvKey = kvKeyMap[key];
-  
-  if (kvKey) {
-    try {
-      const settings = await kv.get(kvKey);
-      
-      if (settings) {
-        // Extract value based on key
-        switch (key) {
-          case 'VITE_GOOGLE_MAPS_API_KEY':
-            return settings.apiKey || fallback || '';
-          
-          case 'AWS_ACCESS_KEY_ID':
-            return settings.credentials?.accessKeyId || fallback || '';
-          
-          case 'AWS_SECRET_ACCESS_KEY':
-            return settings.credentials?.secretAccessKey || fallback || '';
-          
-          case 'AWS_REGION':
-            return settings.credentials?.region || settings.region || fallback || 'ap-south-1';
-          
-          case 'RAZORPAY_KEY_ID':
-            return settings.razorpay?.key_id || settings.razorpay?.keyId || fallback || '';
-          
-          case 'RAZORPAY_KEY_SECRET':
-            return settings.razorpay?.key_secret || settings.razorpay?.keySecret || fallback || '';
-          
-          case 'RAZORPAY_WEBHOOK_SECRET':
-            return settings.razorpay?.webhook_secret || settings.razorpay?.webhookSecret || fallback || '';
-        }
+  try {
+    const settingsRepo = getPlatformSettingsRepository();
+    
+    // Extract value based on key
+    switch (key) {
+      case 'VITE_GOOGLE_MAPS_API_KEY': {
+        const googleMaps = await settingsRepo.getGoogleMapsSettings();
+        return googleMaps?.api_key || fallback || '';
       }
-    } catch (error) {
-      console.error(`[ENV-SYNC] Error reading ${kvKey}:`, error);
+      
+      case 'AWS_ACCESS_KEY_ID': {
+        const aws = await settingsRepo.getAWSSettings();
+        return aws?.credentials?.accessKeyId || fallback || '';
+      }
+      
+      case 'AWS_SECRET_ACCESS_KEY': {
+        const aws = await settingsRepo.getAWSSettings();
+        return aws?.credentials?.secretAccessKey || fallback || '';
+      }
+      
+      case 'AWS_REGION': {
+        const aws = await settingsRepo.getAWSSettings();
+        return aws?.credentials?.region || fallback || 'ap-south-1';
+      }
+      
+      case 'RAZORPAY_KEY_ID': {
+        const payment = await settingsRepo.getPaymentGatewaySettings('razorpay');
+        return payment?.key_id || fallback || '';
+      }
+      
+      case 'RAZORPAY_KEY_SECRET': {
+        const payment = await settingsRepo.getPaymentGatewaySettings('razorpay');
+        return payment?.key_secret || fallback || '';
+      }
+      
+      case 'RAZORPAY_WEBHOOK_SECRET': {
+        const payment = await settingsRepo.getPaymentGatewaySettings('razorpay');
+        return payment?.webhook_secret || fallback || '';
+      }
     }
+  } catch (error) {
+    console.error(`[ENV-SYNC] Error reading ${key}:`, error);
   }
   
   // Fallback to Deno.env
