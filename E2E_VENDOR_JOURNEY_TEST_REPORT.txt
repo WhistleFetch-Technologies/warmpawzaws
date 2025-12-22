@@ -8,258 +8,258 @@ Vendor Onboarding
 --------------------------------------------------------------------------------
 Total Tests: 40
 Passed: 13 | Failed: 1 | Skipped: 26
-Duration: 52.96s
+Duration: 101.57s
 
 ❌ Register veterinarian vendor
    role_not_found
-   Duration: 2990ms
+   Duration: 5459ms
 
 ✅ Register pet_clinic vendor
    Vendor registered successfully
    Details: {}
-   Duration: 1580ms
+   Duration: 1749ms
 
 ✅ Register pet_groomer vendor
    Vendor registered successfully
    Details: {}
-   Duration: 1799ms
+   Duration: 1852ms
 
 ✅ Register pet_trainer vendor
    Vendor registered successfully
    Details: {}
-   Duration: 1445ms
+   Duration: 1972ms
 
 ✅ Register pet_walker vendor
    Vendor registered successfully
    Details: {}
-   Duration: 910ms
+   Duration: 1728ms
 
 ✅ Register pet_cafe vendor
    Vendor registered successfully
    Details: {}
-   Duration: 696ms
+   Duration: 2141ms
 
 ✅ Register pet_resort vendor
    Vendor registered successfully
    Details: {}
-   Duration: 647ms
+   Duration: 3002ms
 
 ✅ Register pet_boarder vendor
    Vendor registered successfully
    Details: {}
-   Duration: 1525ms
+   Duration: 952ms
 
 ✅ Register pet_nutritionist vendor
    Vendor registered successfully
    Details: {}
-   Duration: 688ms
+   Duration: 1070ms
 
 ✅ Register pet_pharmacy vendor
    Vendor registered successfully
    Details: {}
-   Duration: 1564ms
+   Duration: 1860ms
 
 ✅ Register pet_ambulance vendor
    Vendor registered successfully
    Details: {}
-   Duration: 514ms
+   Duration: 1836ms
 
 ✅ Register pet_insurance vendor
    Vendor registered successfully
    Details: {}
-   Duration: 1841ms
+   Duration: 2235ms
 
 ✅ Register pet_behaviorist vendor
    Vendor registered successfully
    Details: {}
-   Duration: 921ms
+   Duration: 1847ms
 
 ✅ Register pet_photographer vendor
    Vendor registered successfully
    Details: {}
-   Duration: 1571ms
+   Duration: 852ms
 
 ⏭️ Submit application for pet_clinic
    Application endpoint may use different path
-   Duration: 1810ms
+   Duration: 1788ms
 
 ⏭️ Submit application for pet_groomer
    Application endpoint may use different path
-   Duration: 2046ms
+   Duration: 3970ms
 
 ⏭️ Submit application for pet_trainer
    Application endpoint may use different path
-   Duration: 1816ms
+   Duration: 3928ms
 
 ⏭️ Submit application for pet_walker
    Application endpoint may use different path
-   Duration: 1172ms
+   Duration: 2976ms
 
 ⏭️ Submit application for pet_cafe
    Application endpoint may use different path
-   Duration: 1290ms
+   Duration: 3273ms
 
 ⏭️ Submit application for pet_resort
    Application endpoint may use different path
-   Duration: 1272ms
+   Duration: 4485ms
 
 ⏭️ Submit application for pet_boarder
    Application endpoint may use different path
-   Duration: 1208ms
+   Duration: 4399ms
 
 ⏭️ Submit application for pet_nutritionist
    Application endpoint may use different path
-   Duration: 2663ms
+   Duration: 3182ms
 
 ⏭️ Submit application for pet_pharmacy
    Application endpoint may use different path
-   Duration: 1843ms
+   Duration: 8063ms
 
 ⏭️ Submit application for pet_ambulance
    Application endpoint may use different path
-   Duration: 1331ms
+   Duration: 10858ms
 
 ⏭️ Submit application for pet_insurance
    Application endpoint may use different path
-   Duration: 1574ms
+   Duration: 3132ms
 
 ⏭️ Submit application for pet_behaviorist
    Application endpoint may use different path
-   Duration: 2953ms
+   Duration: 3684ms
 
 ⏭️ Submit application for pet_photographer
    Application endpoint may use different path
-   Duration: 1933ms
+   Duration: 1613ms
 
 ⏭️ Approve pet_clinic vendor
    Admin endpoint may require auth
-   Duration: 1220ms
+   Duration: 591ms
 
 ⏭️ Approve pet_groomer vendor
    Admin endpoint may require auth
-   Duration: 150ms
+   Duration: 1131ms
 
 ⏭️ Approve pet_trainer vendor
    Admin endpoint may require auth
-   Duration: 566ms
+   Duration: 1760ms
 
 ⏭️ Approve pet_walker vendor
    Admin endpoint may require auth
-   Duration: 1227ms
+   Duration: 1699ms
 
 ⏭️ Approve pet_cafe vendor
    Admin endpoint may require auth
-   Duration: 1233ms
+   Duration: 130ms
 
 ⏭️ Approve pet_resort vendor
    Admin endpoint may require auth
-   Duration: 535ms
+   Duration: 1809ms
 
 ⏭️ Approve pet_boarder vendor
    Admin endpoint may require auth
-   Duration: 1265ms
+   Duration: 1659ms
 
 ⏭️ Approve pet_nutritionist vendor
    Admin endpoint may require auth
-   Duration: 1359ms
+   Duration: 1599ms
 
 ⏭️ Approve pet_pharmacy vendor
    Admin endpoint may require auth
-   Duration: 629ms
+   Duration: 1967ms
 
 ⏭️ Approve pet_ambulance vendor
    Admin endpoint may require auth
-   Duration: 614ms
+   Duration: 683ms
 
 ⏭️ Approve pet_insurance vendor
    Admin endpoint may require auth
-   Duration: 533ms
+   Duration: 1557ms
 
 ⏭️ Approve pet_behaviorist vendor
    Admin endpoint may require auth
-   Duration: 593ms
+   Duration: 2259ms
 
 ⏭️ Approve pet_photographer vendor
    Admin endpoint may require auth
-   Duration: 1434ms
+   Duration: 792ms
 
 
 Service Catalog Creation
 --------------------------------------------------------------------------------
 Total Tests: 15
 Passed: 1 | Failed: 8 | Skipped: 6
-Duration: 190.16s
+Duration: 39.63s
 
 ✅ Get master service catalog
    Found 145 services in catalog
-   Duration: 1434ms
+   Duration: 1694ms
 
 ❌ Add services to pet_clinic catalog
    Not Found
-   Duration: 735ms
+   Duration: 3474ms
 
 ❌ Add services to pet_groomer catalog
    Not Found
-   Duration: 1974ms
+   Duration: 3646ms
 
 ❌ Add services to pet_trainer catalog
    Not Found
-   Duration: 1895ms
+   Duration: 3771ms
 
 ❌ Add services to pet_walker catalog
    Not Found
-   Duration: 1395ms
+   Duration: 1330ms
 
 ❌ Add services to pet_cafe catalog
    Not Found
-   Duration: 2805ms
+   Duration: 3255ms
 
 ⏭️ Add services to pet_resort catalog
    No applicable services found
-   Duration: 1330ms
+   Duration: 1724ms
 
 ❌ Add services to pet_boarder catalog
    Not Found
-   Duration: 2662ms
+   Duration: 3649ms
 
 ⏭️ Add services to pet_nutritionist catalog
    No applicable services found
-   Duration: 6828ms
+   Duration: 1638ms
 
 ⏭️ Add services to pet_pharmacy catalog
    No applicable services found
-   Duration: 1364ms
+   Duration: 2461ms
 
 ⏭️ Add services to pet_ambulance catalog
    No applicable services found
-   Duration: 612ms
+   Duration: 1674ms
 
 ❌ Add services to pet_insurance catalog
-   Failed to add service
-   Duration: 161381ms
+   Not Found
+   Duration: 3526ms
 
 ⏭️ Add services to pet_behaviorist catalog
    No applicable services found
-   Duration: 1744ms
+   Duration: 745ms
 
 ❌ Add services to pet_photographer catalog
    Not Found
-   Duration: 2764ms
+   Duration: 5585ms
 
 ⏭️ Create custom service for pet_clinic
    Custom service creation may require capability
-   Duration: 1229ms
+   Duration: 1413ms
 
 
 Booking Flow
 --------------------------------------------------------------------------------
 Total Tests: 14
 Passed: 0 | Failed: 0 | Skipped: 14
-Duration: 1.33s
+Duration: 0.64s
 
 ⏭️ Create test customer
    Customer creation requires OTP flow
-   Duration: 1330ms
+   Duration: 615ms
 
 ⏭️ Create booking for pet_clinic
    No customer available
@@ -318,74 +318,74 @@ Payment & Earnings
 --------------------------------------------------------------------------------
 Total Tests: 13
 Passed: 0 | Failed: 0 | Skipped: 13
-Duration: 14.34s
+Duration: 20.02s
 
 ⏭️ Check earnings for pet_clinic
    Earnings endpoint may require completed bookings
-   Duration: 1433ms
+   Duration: 1474ms
 
 ⏭️ Check earnings for pet_groomer
    Earnings endpoint may require completed bookings
-   Duration: 608ms
+   Duration: 732ms
 
 ⏭️ Check earnings for pet_trainer
    Earnings endpoint may require completed bookings
-   Duration: 723ms
+   Duration: 710ms
 
 ⏭️ Check earnings for pet_walker
    Earnings endpoint may require completed bookings
-   Duration: 1224ms
+   Duration: 164ms
 
 ⏭️ Check earnings for pet_cafe
    Earnings endpoint may require completed bookings
-   Duration: 618ms
+   Duration: 2495ms
 
 ⏭️ Check earnings for pet_resort
    Earnings endpoint may require completed bookings
-   Duration: 1273ms
+   Duration: 679ms
 
 ⏭️ Check earnings for pet_boarder
    Earnings endpoint may require completed bookings
-   Duration: 1287ms
+   Duration: 878ms
 
 ⏭️ Check earnings for pet_nutritionist
    Earnings endpoint may require completed bookings
-   Duration: 1229ms
+   Duration: 748ms
 
 ⏭️ Check earnings for pet_pharmacy
    Earnings endpoint may require completed bookings
-   Duration: 1535ms
+   Duration: 684ms
 
 ⏭️ Check earnings for pet_ambulance
    Earnings endpoint may require completed bookings
-   Duration: 1315ms
+   Duration: 1543ms
 
 ⏭️ Check earnings for pet_insurance
    Earnings endpoint may require completed bookings
-   Duration: 1207ms
+   Duration: 826ms
 
 ⏭️ Check earnings for pet_behaviorist
    Earnings endpoint may require completed bookings
-   Duration: 1157ms
+   Duration: 7420ms
 
 ⏭️ Check earnings for pet_photographer
    Earnings endpoint may require completed bookings
-   Duration: 724ms
+   Duration: 1667ms
 
 
 Coupons & Promotions
 --------------------------------------------------------------------------------
 Total Tests: 2
-Passed: 0 | Failed: 1 | Skipped: 1
-Duration: 1.23s
+Passed: 1 | Failed: 0 | Skipped: 1
+Duration: 0.63s
 
 ⏭️ Create promotion
    Promotion creation requires admin authentication
    Duration: 0ms
 
-❌ Get active promotions
-   Failed to fetch promotions
-   Duration: 1226ms
+✅ Get active promotions
+   Found 0 active promotions
+   Duration: 628ms
 
 
 Policy Enforcement
@@ -403,7 +403,7 @@ Duration: 0.00s
 
 ⏭️ Booking with past date (should fail)
    No vendor/customer available
-   Duration: 1ms
+   Duration: 0ms
 
 ⏭️ Booking with zero price (should fail)
    No vendor/customer available
@@ -413,72 +413,72 @@ Duration: 0.00s
 Payout Flow
 --------------------------------------------------------------------------------
 Total Tests: 14
-Passed: 13 | Failed: 0 | Skipped: 1
-Duration: 15.25s
+Passed: 14 | Failed: 0 | Skipped: 0
+Duration: 26.03s
 
 ✅ Check payout status for pet_clinic
    Payouts: 0 found
-   Duration: 147ms
+   Duration: 682ms
 
 ✅ Check payout status for pet_groomer
    Payouts: 0 found
-   Duration: 670ms
+   Duration: 1540ms
 
 ✅ Check payout status for pet_trainer
    Payouts: 0 found
-   Duration: 718ms
+   Duration: 8947ms
 
 ✅ Check payout status for pet_walker
    Payouts: 0 found
-   Duration: 1433ms
+   Duration: 662ms
 
 ✅ Check payout status for pet_cafe
    Payouts: 0 found
-   Duration: 1476ms
+   Duration: 1528ms
 
 ✅ Check payout status for pet_resort
    Payouts: 0 found
-   Duration: 1215ms
+   Duration: 720ms
 
 ✅ Check payout status for pet_boarder
    Payouts: 0 found
-   Duration: 1381ms
+   Duration: 1563ms
 
 ✅ Check payout status for pet_nutritionist
    Payouts: 0 found
-   Duration: 638ms
+   Duration: 793ms
 
 ✅ Check payout status for pet_pharmacy
    Payouts: 0 found
-   Duration: 616ms
+   Duration: 752ms
 
 ✅ Check payout status for pet_ambulance
    Payouts: 0 found
-   Duration: 1535ms
+   Duration: 670ms
 
 ✅ Check payout status for pet_insurance
    Payouts: 0 found
-   Duration: 1399ms
+   Duration: 1639ms
 
 ✅ Check payout status for pet_behaviorist
    Payouts: 0 found
-   Duration: 1367ms
+   Duration: 2122ms
 
 ✅ Check payout status for pet_photographer
    Payouts: 0 found
-   Duration: 1432ms
+   Duration: 1938ms
 
-⏭️ Trigger settlement calculation
-   Settlement may require admin auth
-   Duration: 1220ms
+✅ Trigger settlement calculation
+   Settlement calculated
+   Duration: 2473ms
 
 
 ================================================================================
 SUMMARY
 ================================================================================
 Total Tests: 100
-Passed: 27 (27.0%)
-Failed: 10 (10.0%)
-Skipped: 63 (63.0%)
-Total Duration: 275.26s
+Passed: 29 (29.0%)
+Failed: 9 (9.0%)
+Skipped: 62 (62.0%)
+Total Duration: 188.52s
 ================================================================================
