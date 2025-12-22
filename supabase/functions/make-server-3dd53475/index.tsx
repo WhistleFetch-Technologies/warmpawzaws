@@ -13,9 +13,9 @@ import { registerCustomerBookingHistory } from './customer-booking-history.tsx';
 import { registerCustomerSearchEndpoints } from './customer-search-endpoints.tsx';
 import { notificationEndpoints } from './notification-system.tsx';
 import { reviewEndpoints } from './review-endpoints.tsx';
-import { analyticsEndpoints } from './analytics-endpoints.tsx';
+import { analyticsEndpoints } from './analytics-endpoints-refactored.tsx';
 import { enhancedSearchEngineEndpoints } from './enhanced-search-engine.tsx';
-import { vendorOnboardingEndpoints } from './vendor-onboarding.tsx';
+import { vendorOnboardingEndpoints } from './vendor-onboarding-refactored.tsx';
 import { vendorApprovalWorkflowEndpoints } from './vendor-approval-workflow.tsx';
 import { vendorDashboardEndpoints } from './vendor-dashboard-endpoints.tsx';
 import { vendorRoleConfigEndpoints } from './vendor-role-config.tsx';
@@ -485,7 +485,7 @@ enhancedSearchEngineEndpoints(app, kv);
 // contains a generic /vendor/:vendorId wildcard that would shadow these.
 vendorOnboardingEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 soloProviderEndpoints(app, kv); // ✅ FIX: Solo provider onboarding endpoints
-vendorApprovalWorkflowEndpoints(app, kv);
+vendorApprovalWorkflowEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 vendorDashboardEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 vendorRoleConfigEndpoints(app);
 registerDynamicOnboarding(app);
