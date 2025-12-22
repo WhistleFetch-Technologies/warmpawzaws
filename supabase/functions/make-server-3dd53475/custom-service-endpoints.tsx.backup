@@ -1,37 +1,11 @@
-/**
- * ============================================================================
- * CUSTOM SERVICE ENDPOINTS - SQL-ONLY VERSION
- * ============================================================================
- * 
- * REFACTORED: Removed all KV usage, using SQL repositories only
- * 
- * Custom service endpoints for center-based vendors:
- * - Get custom services for vendor
- * - Create custom service
- * - Publish custom service (submit for approval)
- * - Delete custom service
- * - Admin: Get pending custom services
- * - Admin: Approve/reject custom services
- * - Get published custom services (customer view)
- * 
- * RESTRICTION: Only available for serviceStyle = 'at_center' or 'both'
- * 
- * CHANGES:
- * - Removed `kv` parameter from function signature
- * - Replaced all `kv.get()`, `kv.set()`, `kv.del()`, `kv.getByPrefix()` with repository calls
- * - All custom services stored in vendor_services table with is_custom_service flag
- * 
- * Date: 2024-12-22
- * Migration: Phase 5 - KV to SQL
- * ============================================================================
- */
-
 import { Hono } from "npm:hono";
-import { sendSuccess, sendError } from "./response-utils.ts";
-import { getVendorsRepository } from "../../lib/repositories/vendors.ts";
-import { getDbClient } from "../../lib/db.ts";
 
-export function customServiceEndpoints(app: Hono) {
+/**
+ * Custom Service Endpoints
+ * Handles vendor-created custom services for center-based vendors
+ * RESTRICTION: Only available for serviceStyle = 'at_center' or 'both'
+ */
+export function customServiceEndpoints(app: Hono, kv: any) {
 
   // ============================================
   // GET CUSTOM SERVICES FOR VENDOR
@@ -40,8 +14,6 @@ export function customServiceEndpoints(app: Hono) {
   /**
    * GET /vendor/:vendorId/custom-services
    * Load all custom services created by a vendor
-   * 
-   * REFACTORED: Uses SQL repositories instead of KV
    */
   app.get("/make-server-3dd53475/vendor/:vendorId/custom-services", async (c) => {
     try {
@@ -49,8 +21,8 @@ export function customServiceEndpoints(app: Hono) {
       
       console.log(`📋 Loading custom services for vendor: ${vendorId}`);
       
-      // ✅ SQL: Load vendor to verify service style
-      const vendor = await getVendorsRepository().findById(vendorId);
+      // Load vendor to verify service style
+      const vendor = await kv.get(`vendor:${vendorId}`);
       
       if (!vendor) {
         console.log(`❌ Vendor not found: ${vendorId}`);
@@ -58,42 +30,47 @@ export function customServiceEndpoints(app: Hono) {
       }
       
       // ✅ CRITICAL: Check service style restriction
-      if (vendor.service_style !== 'at_center' && vendor.service_style !== 'both') {
-        console.log(`❌ Custom services NOT allowed for service style: ${vendor.service_style}`);
+      // ❌ EXPLICITLY BLOCKED: at_home and tele service styles
+      if (vendor.serviceStyle !== 'at_center' && vendor.serviceStyle !== 'both') {
+        console.log(`❌ Custom services NOT allowed for service style: ${vendor.serviceStyle}`);
+        console.log(`   ✅ ALLOWED: at_center, both`);
+        console.log(`   ❌ BLOCKED: at_home, tele`);
         
+        // Provide specific error message based on service style
         let errorMessage = 'Custom services are only available for center-based vendors';
-        if (vendor.service_style === 'at_home') {
+        if (vendor.serviceStyle === 'at_home') {
           errorMessage = 'Custom services are only available for center-based vendors, not home service providers';
-        } else if (vendor.service_style === 'tele') {
+        } else if (vendor.serviceStyle === 'tele') {
           errorMessage = 'Custom services are only available for physical locations, not tele consultation services';
         }
         
         return c.json({ 
           error: errorMessage,
-          serviceStyle: vendor.service_style,
+          serviceStyle: vendor.serviceStyle,
           allowed: false,
           allowedStyles: ['at_center', 'both'],
           blockedStyles: ['at_home', 'tele']
         }, 403);
       }
       
-      console.log(`✅ Vendor ${vendorId} is eligible for custom services (serviceStyle: ${vendor.service_style})`);
+      console.log(`✅ Vendor ${vendorId} is eligible for custom services (serviceStyle: ${vendor.serviceStyle})`);
       
-      // ✅ SQL: Load all custom services for this vendor
-      const client = getDbClient();
-      const { data: customServices } = await client
-        .from('vendor_services')
-        .select('*')
-        .eq('vendor_id', vendorId)
-        .eq('is_custom_service', true)
-        .order('created_at', { ascending: false });
+      // Load all custom services for this vendor
+      const allCustomServices = await kv.getByPrefix(`custom-service:${vendorId}:`);
       
-      console.log(`📦 Found ${customServices?.length || 0} custom services`);
+      console.log(`📦 Found ${allCustomServices.length} custom services`);
+      
+      // Sort by creation date (newest first)
+      const sortedServices = allCustomServices.sort((a, b) => {
+        const dateA = new Date(a.createdAt || 0).getTime();
+        const dateB = new Date(b.createdAt || 0).getTime();
+        return dateB - dateA;
+      });
       
       return c.json({
         success: true,
-        services: customServices || [],
-        vendorServiceStyle: vendor.service_style
+        services: sortedServices,
+        vendorServiceStyle: vendor.serviceStyle
       });
       
     } catch (error) {
@@ -109,8 +86,6 @@ export function customServiceEndpoints(app: Hono) {
   /**
    * POST /vendor/:vendorId/custom-services
    * Create a new custom service (vendors with at_center or both only)
-   * 
-   * REFACTORED: Uses SQL repositories instead of KV
    */
   app.post("/make-server-3dd53475/vendor/:vendorId/custom-services", async (c) => {
     try {
@@ -120,8 +95,8 @@ export function customServiceEndpoints(app: Hono) {
       console.log(`💾 Creating custom service for vendor: ${vendorId}`);
       console.log(`   Service Name: ${serviceData.serviceName}`);
       
-      // ✅ SQL: Load vendor to verify eligibility
-      const vendor = await getVendorsRepository().findById(vendorId);
+      // Load vendor to verify eligibility
+      const vendor = await kv.get(`vendor:${vendorId}`);
       
       if (!vendor) {
         console.log(`❌ Vendor not found: ${vendorId}`);
@@ -129,26 +104,30 @@ export function customServiceEndpoints(app: Hono) {
       }
       
       // ✅ CRITICAL: Enforce service style restriction
-      if (vendor.service_style !== 'at_center' && vendor.service_style !== 'both') {
-        console.log(`❌ REJECTED: Custom services NOT allowed for serviceStyle: ${vendor.service_style}`);
+      // ❌ EXPLICITLY BLOCKED: at_home and tele service styles  
+      if (vendor.serviceStyle !== 'at_center' && vendor.serviceStyle !== 'both') {
+        console.log(`❌ REJECTED: Custom services NOT allowed for serviceStyle: ${vendor.serviceStyle}`);
+        console.log(`   ✅ ALLOWED: at_center, both`);
+        console.log(`   ❌ BLOCKED: at_home, tele`);
         
+        // Provide specific error message based on service style
         let errorMessage = 'Custom services are only available for center-based vendors';
-        if (vendor.service_style === 'at_home') {
+        if (vendor.serviceStyle === 'at_home') {
           errorMessage = 'Custom services are only available for center-based vendors, not home service providers';
-        } else if (vendor.service_style === 'tele') {
+        } else if (vendor.serviceStyle === 'tele') {
           errorMessage = 'Custom services are only available for physical locations, not tele consultation services';
         }
         
         return c.json({ 
           error: errorMessage,
-          serviceStyle: vendor.service_style,
+          serviceStyle: vendor.serviceStyle,
           allowed: false,
           allowedStyles: ['at_center', 'both'],
           blockedStyles: ['at_home', 'tele']
         }, 403);
       }
       
-      console.log(`✅ Service style check passed: ${vendor.service_style}`);
+      console.log(`✅ Service style check passed: ${vendor.serviceStyle}`);
       
       // Validate required fields
       if (!serviceData.serviceName || !serviceData.description || !serviceData.categoryName) {
@@ -178,32 +157,57 @@ export function customServiceEndpoints(app: Hono) {
       // Generate unique service ID
       const serviceId = `CS${Date.now()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
       
-      // ✅ SQL: Create custom service in vendor_services table
-      const client = getDbClient();
-      const { data: customService } = await client
-        .from('vendor_services')
-        .insert({
-          vendor_id: vendorId,
-          service_style: 'at_center',
-          service_id: serviceId,
-          service_name: serviceData.serviceName.trim(),
-          description: serviceData.description.trim(),
-          duration: serviceData.duration,
-          price: serviceData.price || 0,
-          category_name: serviceData.categoryName.trim(),
-          sub_category_name: serviceData.subCategoryName?.trim() || null,
-          is_custom_service: true,
-          is_package: serviceData.isPackage || false,
-          package_details: serviceData.isPackage ? serviceData.packageDetails : null,
-          publish_status: 'draft',
-          is_enabled: true,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .select()
-        .single();
+      // Create custom service object
+      const customService = {
+        id: serviceId,
+        vendorId,
+        vendorName: vendor.fullName || vendor.businessName,
+        roleName: vendor.roleName,
+        roleId: vendor.roleId,
+        serviceStyle: 'at_center', // Always at_center for custom services
+        
+        // Service details
+        serviceName: serviceData.serviceName.trim(),
+        description: serviceData.description.trim(),
+        duration: serviceData.duration,
+        price: serviceData.price || 0,
+        categoryName: serviceData.categoryName.trim(),
+        subCategoryName: serviceData.subCategoryName?.trim() || null,
+        
+        // Package details (if applicable)
+        isPackage: serviceData.isPackage || false,
+        packageDetails: serviceData.isPackage ? serviceData.packageDetails : null,
+        
+        // Additional details
+        whatIncluded: serviceData.whatIncluded || [],
+        whatNotIncluded: serviceData.whatNotIncluded || [],
+        petTypes: serviceData.petTypes || ['dog', 'cat'],
+        
+        // Status and metadata
+        publishStatus: 'draft', // Always start as draft
+        isCustomService: true,
+        isPlatformManaged: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        createdBy: vendorId,
+        
+        // Approval tracking
+        submittedForApprovalAt: null,
+        approvedAt: null,
+        approvedBy: null,
+        rejectionReason: null,
+        rejectedAt: null,
+        rejectedBy: null
+      };
+      
+      // Save custom service
+      await kv.set(`custom-service:${vendorId}:${serviceId}`, customService);
       
       console.log(`✅ Custom service created: ${serviceId}`);
+      console.log(`   Vendor: ${vendor.fullName || vendor.businessName}`);
+      console.log(`   Service: ${customService.serviceName}`);
+      console.log(`   Category: ${customService.categoryName}`);
+      console.log(`   Status: draft`);
       
       return c.json({
         success: true,
@@ -224,8 +228,6 @@ export function customServiceEndpoints(app: Hono) {
   /**
    * POST /vendor/:vendorId/custom-services/:serviceId/publish
    * Submit custom service for admin approval
-   * 
-   * REFACTORED: Uses SQL repositories instead of KV
    */
   app.post("/make-server-3dd53475/vendor/:vendorId/custom-services/:serviceId/publish", async (c) => {
     try {
@@ -233,15 +235,8 @@ export function customServiceEndpoints(app: Hono) {
       
       console.log(`📤 Publishing custom service: ${serviceId} for vendor: ${vendorId}`);
       
-      // ✅ SQL: Load custom service
-      const client = getDbClient();
-      const { data: service } = await client
-        .from('vendor_services')
-        .select('*')
-        .eq('vendor_id', vendorId)
-        .eq('service_id', serviceId)
-        .eq('is_custom_service', true)
-        .maybeSingle();
+      // Load custom service
+      const service = await kv.get(`custom-service:${vendorId}:${serviceId}`);
       
       if (!service) {
         console.log(`❌ Custom service not found: ${serviceId}`);
@@ -249,28 +244,36 @@ export function customServiceEndpoints(app: Hono) {
       }
       
       // Check if already published or pending
-      if (service.publish_status === 'published') {
+      if (service.publishStatus === 'published') {
         return c.json({ error: 'Service is already published' }, 400);
       }
       
-      if (service.publish_status === 'pending_approval') {
+      if (service.publishStatus === 'pending_approval') {
         return c.json({ error: 'Service is already pending approval' }, 400);
       }
       
-      // ✅ SQL: Update status to pending approval
-      await client
-        .from('vendor_services')
-        .update({
-          publish_status: 'pending_approval',
-          submitted_for_approval_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', service.id);
+      // Update status to pending approval
+      service.publishStatus = 'pending_approval';
+      service.submittedForApprovalAt = new Date().toISOString();
+      service.updatedAt = new Date().toISOString();
+      
+      await kv.set(`custom-service:${vendorId}:${serviceId}`, service);
+      
+      // Add to pending approval queue
+      const pendingQueue = await kv.get('custom-services:pending-approval') || [];
+      if (!pendingQueue.includes(serviceId)) {
+        pendingQueue.push(serviceId);
+        await kv.set('custom-services:pending-approval', pendingQueue);
+      }
       
       console.log(`✅ Custom service submitted for approval: ${serviceId}`);
+      console.log(`   Service: ${service.serviceName}`);
+      console.log(`   Vendor: ${service.vendorName}`);
+      console.log(`   Status: pending_approval`);
       
       return c.json({
         success: true,
+        service,
         message: 'Service submitted for admin approval'
       });
       
@@ -287,8 +290,6 @@ export function customServiceEndpoints(app: Hono) {
   /**
    * DELETE /vendor/:vendorId/custom-services/:serviceId
    * Delete a custom service (only if draft or rejected)
-   * 
-   * REFACTORED: Uses SQL repositories instead of KV
    */
   app.delete("/make-server-3dd53475/vendor/:vendorId/custom-services/:serviceId", async (c) => {
     try {
@@ -296,15 +297,8 @@ export function customServiceEndpoints(app: Hono) {
       
       console.log(`🗑️ Deleting custom service: ${serviceId} for vendor: ${vendorId}`);
       
-      // ✅ SQL: Load custom service
-      const client = getDbClient();
-      const { data: service } = await client
-        .from('vendor_services')
-        .select('*')
-        .eq('vendor_id', vendorId)
-        .eq('service_id', serviceId)
-        .eq('is_custom_service', true)
-        .maybeSingle();
+      // Load custom service
+      const service = await kv.get(`custom-service:${vendorId}:${serviceId}`);
       
       if (!service) {
         console.log(`❌ Custom service not found: ${serviceId}`);
@@ -312,23 +306,20 @@ export function customServiceEndpoints(app: Hono) {
       }
       
       // Only allow deletion of draft or rejected services
-      if (service.publish_status === 'published') {
+      if (service.publishStatus === 'published') {
         return c.json({ 
           error: 'Cannot delete published services. Please contact admin.' 
         }, 400);
       }
       
-      if (service.publish_status === 'pending_approval') {
+      if (service.publishStatus === 'pending_approval') {
         return c.json({ 
           error: 'Cannot delete services pending approval. Wait for admin review or contact support.' 
         }, 400);
       }
       
-      // ✅ SQL: Delete the service
-      await client
-        .from('vendor_services')
-        .delete()
-        .eq('id', service.id);
+      // Delete the service
+      await kv.del(`custom-service:${vendorId}:${serviceId}`);
       
       console.log(`✅ Custom service deleted: ${serviceId}`);
       
@@ -350,28 +341,31 @@ export function customServiceEndpoints(app: Hono) {
   /**
    * GET /admin/custom-services/pending
    * Get all custom services pending approval
-   * 
-   * REFACTORED: Uses SQL repositories instead of KV
    */
   app.get("/make-server-3dd53475/admin/custom-services/pending", async (c) => {
     try {
       console.log('📋 Admin: Loading pending custom services...');
       
-      // ✅ SQL: Get all custom services with pending status
-      const client = getDbClient();
-      const { data: pendingServices } = await client
-        .from('vendor_services')
-        .select('*')
-        .eq('is_custom_service', true)
-        .eq('publish_status', 'pending_approval')
-        .order('submitted_for_approval_at', { ascending: true });
+      // Get all custom services with pending status
+      const allCustomServices = await kv.getByPrefix('custom-service:');
       
-      console.log(`📦 Found ${pendingServices?.length || 0} custom services pending approval`);
+      const pendingServices = allCustomServices.filter(
+        service => service.publishStatus === 'pending_approval'
+      );
+      
+      console.log(`📦 Found ${pendingServices.length} custom services pending approval`);
+      
+      // Sort by submission date (oldest first for FIFO processing)
+      const sortedServices = pendingServices.sort((a, b) => {
+        const dateA = new Date(a.submittedForApprovalAt || a.createdAt).getTime();
+        const dateB = new Date(b.submittedForApprovalAt || b.createdAt).getTime();
+        return dateA - dateB;
+      });
       
       return c.json({
         success: true,
-        services: pendingServices || [],
-        count: pendingServices?.length || 0
+        services: sortedServices,
+        count: sortedServices.length
       });
       
     } catch (error) {
@@ -387,8 +381,6 @@ export function customServiceEndpoints(app: Hono) {
   /**
    * POST /admin/custom-services/:serviceId/approve
    * Approve a custom service for publishing
-   * 
-   * REFACTORED: Uses SQL repositories instead of KV
    */
   app.post("/make-server-3dd53475/admin/custom-services/:serviceId/approve", async (c) => {
     try {
@@ -398,41 +390,47 @@ export function customServiceEndpoints(app: Hono) {
       console.log(`✅ Admin approving custom service: ${serviceId}`);
       console.log(`   Admin: ${adminName} (${adminId})`);
       
-      // ✅ SQL: Find the service
-      const client = getDbClient();
-      const { data: service } = await client
-        .from('vendor_services')
-        .select('*')
-        .eq('service_id', serviceId)
-        .eq('is_custom_service', true)
-        .maybeSingle();
+      // Find the service across all vendors
+      const allServices = await kv.getByPrefix('custom-service:');
+      const service = allServices.find(s => s.id === serviceId);
       
       if (!service) {
         console.log(`❌ Custom service not found: ${serviceId}`);
         return c.json({ error: 'Custom service not found' }, 404);
       }
       
-      if (service.publish_status !== 'pending_approval') {
+      if (service.publishStatus !== 'pending_approval') {
         return c.json({ 
-          error: `Cannot approve service with status: ${service.publish_status}` 
+          error: `Cannot approve service with status: ${service.publishStatus}` 
         }, 400);
       }
       
-      // ✅ SQL: Update service status
-      await client
-        .from('vendor_services')
-        .update({
-          publish_status: 'published',
-          approved_at: new Date().toISOString(),
-          approved_by: adminId,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', service.id);
+      // Update service status
+      service.publishStatus = 'published';
+      service.approvedAt = new Date().toISOString();
+      service.approvedBy = adminId;
+      service.approvedByName = adminName;
+      service.updatedAt = new Date().toISOString();
+      service.rejectionReason = null; // Clear any previous rejection
+      
+      // Save updated service
+      await kv.set(`custom-service:${service.vendorId}:${serviceId}`, service);
+      
+      // Remove from pending queue
+      const pendingQueue = await kv.get('custom-services:pending-approval') || [];
+      const updatedQueue = pendingQueue.filter((id: string) => id !== serviceId);
+      await kv.set('custom-services:pending-approval', updatedQueue);
       
       console.log(`✅ Custom service approved and published: ${serviceId}`);
+      console.log(`   Service: ${service.serviceName}`);
+      console.log(`   Vendor: ${service.vendorName}`);
+      console.log(`   Approved by: ${adminName}`);
+      
+      // TODO: Send notification to vendor (Phase 2)
       
       return c.json({
         success: true,
+        service,
         message: 'Custom service approved and published successfully'
       });
       
@@ -449,8 +447,6 @@ export function customServiceEndpoints(app: Hono) {
   /**
    * POST /admin/custom-services/:serviceId/reject
    * Reject a custom service with reason
-   * 
-   * REFACTORED: Uses SQL repositories instead of KV
    */
   app.post("/make-server-3dd53475/admin/custom-services/:serviceId/reject", async (c) => {
     try {
@@ -465,42 +461,47 @@ export function customServiceEndpoints(app: Hono) {
         return c.json({ error: 'Rejection reason is required' }, 400);
       }
       
-      // ✅ SQL: Find the service
-      const client = getDbClient();
-      const { data: service } = await client
-        .from('vendor_services')
-        .select('*')
-        .eq('service_id', serviceId)
-        .eq('is_custom_service', true)
-        .maybeSingle();
+      // Find the service across all vendors
+      const allServices = await kv.getByPrefix('custom-service:');
+      const service = allServices.find(s => s.id === serviceId);
       
       if (!service) {
         console.log(`❌ Custom service not found: ${serviceId}`);
         return c.json({ error: 'Custom service not found' }, 404);
       }
       
-      if (service.publish_status !== 'pending_approval') {
+      if (service.publishStatus !== 'pending_approval') {
         return c.json({ 
-          error: `Cannot reject service with status: ${service.publish_status}` 
+          error: `Cannot reject service with status: ${service.publishStatus}` 
         }, 400);
       }
       
-      // ✅ SQL: Update service status
-      await client
-        .from('vendor_services')
-        .update({
-          publish_status: 'rejected',
-          rejected_at: new Date().toISOString(),
-          rejected_by: adminId,
-          rejection_reason: rejectionReason.trim(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', service.id);
+      // Update service status
+      service.publishStatus = 'rejected';
+      service.rejectedAt = new Date().toISOString();
+      service.rejectedBy = adminId;
+      service.rejectedByName = adminName;
+      service.rejectionReason = rejectionReason.trim();
+      service.updatedAt = new Date().toISOString();
+      
+      // Save updated service
+      await kv.set(`custom-service:${service.vendorId}:${serviceId}`, service);
+      
+      // Remove from pending queue
+      const pendingQueue = await kv.get('custom-services:pending-approval') || [];
+      const updatedQueue = pendingQueue.filter((id: string) => id !== serviceId);
+      await kv.set('custom-services:pending-approval', updatedQueue);
       
       console.log(`✅ Custom service rejected: ${serviceId}`);
+      console.log(`   Service: ${service.serviceName}`);
+      console.log(`   Vendor: ${service.vendorName}`);
+      console.log(`   Rejected by: ${adminName}`);
+      
+      // TODO: Send notification to vendor (Phase 2)
       
       return c.json({
         success: true,
+        service,
         message: 'Custom service rejected'
       });
       
@@ -517,53 +518,67 @@ export function customServiceEndpoints(app: Hono) {
   /**
    * GET /custom-services/published
    * Get all published custom services for customer browsing
-   * 
-   * REFACTORED: Uses SQL repositories instead of KV
+   * Can filter by category, vendor, location, etc.
    */
   app.get("/make-server-3dd53475/custom-services/published", async (c) => {
     try {
       const { categoryName, vendorId, petType, city } = c.req.query();
       
       console.log(`🔍 Loading published custom services...`);
+      if (categoryName) console.log(`   Filter: category=${categoryName}`);
+      if (vendorId) console.log(`   Filter: vendorId=${vendorId}`);
+      if (petType) console.log(`   Filter: petType=${petType}`);
+      if (city) console.log(`   Filter: city=${city}`);
       
-      // ✅ SQL: Get all published custom services
-      const client = getDbClient();
-      let query = client
-        .from('vendor_services')
-        .select('*, vendors!inner(*)')
-        .eq('is_custom_service', true)
-        .eq('publish_status', 'published');
+      // Get all custom services
+      const allCustomServices = await kv.getByPrefix('custom-service:');
+      
+      // Filter published services
+      let publishedServices = allCustomServices.filter(
+        service => service.publishStatus === 'published'
+      );
       
       // Apply filters
       if (categoryName) {
-        query = query.eq('category_name', categoryName);
+        publishedServices = publishedServices.filter(
+          s => s.categoryName.toLowerCase() === categoryName.toLowerCase()
+        );
       }
       
       if (vendorId) {
-        query = query.eq('vendor_id', vendorId);
+        publishedServices = publishedServices.filter(
+          s => s.vendorId === vendorId
+        );
+      }
+      
+      if (petType) {
+        publishedServices = publishedServices.filter(
+          s => s.petTypes && s.petTypes.includes(petType.toLowerCase())
+        );
       }
       
       if (city) {
-        query = query.eq('vendors.city', city);
+        // Load vendor data to check city
+        const servicesWithCity = [];
+        for (const service of publishedServices) {
+          const vendor = await kv.get(`vendor:${service.vendorId}`);
+          if (vendor && vendor.city && vendor.city.toLowerCase() === city.toLowerCase()) {
+            servicesWithCity.push({
+              ...service,
+              vendorCity: vendor.city,
+              vendorAddress: vendor.address
+            });
+          }
+        }
+        publishedServices = servicesWithCity;
       }
       
-      const { data: services } = await query;
-      
-      // Filter by petType if provided (stored in package_details or service metadata)
-      let filteredServices = services || [];
-      if (petType) {
-        filteredServices = filteredServices.filter((s: any) => {
-          const petTypes = s.package_details?.petTypes || [];
-          return petTypes.includes(petType.toLowerCase());
-        });
-      }
-      
-      console.log(`📦 Found ${filteredServices.length} published custom services`);
+      console.log(`📦 Found ${publishedServices.length} published custom services`);
       
       return c.json({
         success: true,
-        services: filteredServices,
-        count: filteredServices.length
+        services: publishedServices,
+        count: publishedServices.length
       });
       
     } catch (error) {
@@ -571,7 +586,4 @@ export function customServiceEndpoints(app: Hono) {
       return c.json({ error: String(error) }, 500);
     }
   });
-
-  console.log('✅ Custom service endpoints registered (SQL-only)');
 }
-
