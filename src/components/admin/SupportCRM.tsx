@@ -551,6 +551,12 @@ export function SupportCRM({ onNavigate }: SupportCRMProps) {
                            Mark Resolved
                        </Button>
                    )}
+                   {selectedTicket.status === 'resolved' && (
+                       <Button variant="outline" className="text-blue-600 border-blue-200 hover:bg-blue-50" onClick={() => handleAction('reopen', undefined, 'Ticket reopened by admin')}>
+                           <RefreshCw className="w-4 h-4 mr-2" />
+                           Reopen
+                       </Button>
+                   )}
                    {!selectedTicket.assignedAgent && (
                      <>
                        <Button variant="outline" className="text-blue-600 border-blue-200 hover:bg-blue-50" onClick={() => setShowAssignModal(true)}>
@@ -568,6 +574,12 @@ export function SupportCRM({ onNavigate }: SupportCRMProps) {
                          <UserPlus className="w-4 h-4 mr-2" />
                          Reassign
                      </Button>
+                   )}
+                   {selectedTicket.status !== 'escalated' && (
+                       <Button variant="outline" className="text-red-600 border-red-200 hover:bg-red-50" onClick={() => handleAction('escalate', undefined, 'Escalated by admin')}>
+                           <AlertTriangle className="w-4 h-4 mr-2" />
+                           Escalate
+                       </Button>
                    )}
                    <Button variant="destructive" onClick={() => setShowRefundModal(true)}>
                        <AlertTriangle className="w-4 h-4 mr-2" />

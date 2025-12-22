@@ -284,6 +284,7 @@ export function ServicePublishForm({
           : undefined
       };
 
+      // Use SQL-based publish endpoint
       const res = await fetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/services/publish`,
         {
@@ -292,17 +293,29 @@ export function ServicePublishForm({
             'Authorization': `Bearer ${publicAnonKey}`,
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify(payload)
+          body: JSON.stringify({
+            ...payload,
+            isCustomService: payload.category === 'custom' || payload.subcategory === 'custom',
+            isPackage: payload.category === 'package' || payload.subcategory === 'package'
+          })
         }
       );
 
       if (res.ok) {
         const data = await res.json();
-        toast.success(
-          formData.publishLevel === 'centre' 
-            ? `Service published at ${centres.find(c => c.id === formData.selectedCentreId)?.name}` 
-            : 'Service published successfully'
-        );
+        if (data.isLive) {
+          toast.success(
+            formData.publishLevel === 'centre' 
+              ? `Service published and live at ${centres.find(c => c.id === formData.selectedCentreId)?.name}!` 
+              : 'Service published and is now live!'
+          );
+        } else {
+          toast.success(
+            formData.publishLevel === 'centre' 
+              ? `Service submitted for approval at ${centres.find(c => c.id === formData.selectedCentreId)?.name}` 
+              : 'Service submitted for approval'
+          );
+        }
         onSuccess();
       } else {
         const error = await res.json();
