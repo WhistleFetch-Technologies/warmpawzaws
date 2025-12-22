@@ -558,7 +558,7 @@ registerUniversalServiceDiscovery(app);
 registerUniversalOTPSystem(app);
 registerHomeServiceBookingFlow(app);
 registerBookingLifecycleManagement(app);
-bookingLifecycleCompleteEndpoints(app, kv);
+bookingLifecycleCompleteEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 registerPayoutCronJob(app);
 registerSmsOtpService(app);
 registerRazorpayRefundProcessor(app);
