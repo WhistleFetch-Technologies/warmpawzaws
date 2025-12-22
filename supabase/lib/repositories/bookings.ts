@@ -48,7 +48,7 @@ export interface Booking {
   is_package: boolean;
   package_id?: string | null;
   package_details?: any;
-  payment_status: string;
+  payment_status: string; // 'pending', 'paid', 'pending_post_service', 'refunded', 'partially_refunded', 'failed'
   payment_id?: string | null;
   otp_code?: string | null;
   otp_verified: boolean;
@@ -267,6 +267,27 @@ export class BookingsRepository {
       throw new Error("Failed to create booking");
     }
     
+    // ✅ AUTO-ROUTE: Route to appropriate lifecycle handlers
+    try {
+      const { routeBookingCreation } = await import("../services/booking-service-router.ts");
+      await routeBookingCreation(results[0].id, input.service_type, {
+        is_subscription: (input as any).is_subscription,
+        requires_insurance: (input as any).requires_insurance,
+        requires_adoption: (input as any).requires_adoption,
+        is_package: input.is_package,
+        is_emergency: (input as any).is_emergency,
+        subscription_type: (input as any).subscription_type,
+        auto_renew: (input as any).auto_renew,
+        total_milestones: (input as any).total_milestones,
+        milestone_type: (input as any).milestone_type,
+        pet_id: (input as any).pet_id,
+        application_data: (input as any).application_data,
+      });
+    } catch (error) {
+      console.error(`[BookingRepository] Error routing booking creation:`, error);
+      // Don't fail booking creation if routing fails
+    }
+    
     return results[0];
   }
 
@@ -302,12 +323,24 @@ export class BookingsRepository {
 
   /**
    * Complete booking
+   * ✅ ENHANCED: Automatically triggers settlement
    */
   async complete(bookingId: string): Promise<Booking> {
-    return this.update(bookingId, {
+    const result = await this.update(bookingId, {
       status: "completed",
       completed_at: new Date().toISOString(),
     });
+    
+    // ✅ AUTO-SETTLEMENT: Trigger settlement for completed booking
+    try {
+      const { routeBookingCompletion } = await import("../services/booking-service-router.ts");
+      await routeBookingCompletion(bookingId);
+    } catch (error) {
+      console.error(`[BookingRepository] Error routing booking completion:`, error);
+      // Don't fail completion if settlement routing fails
+    }
+    
+    return result;
   }
 
   /**

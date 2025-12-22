@@ -1,7 +1,8 @@
 import { Hono } from 'npm:hono';
 import { cors } from 'npm:hono/cors';
 import { logger } from 'npm:hono/logger';
-import * as kv from './kv_store.tsx';
+// ✅ MIGRATED: No KV store imports - using SQL repositories
+import { getRegionsRepository } from '../../lib/repositories/regions.ts';
 import { sendSuccess, sendError } from './response-utils.ts';
 import { safeGetByPrefix } from './kv-safe.tsx';
 import { criticalActionGuard } from './critical-action-guard.tsx';
@@ -47,6 +48,8 @@ import { registerSubscriptionEndpoints } from './subscription-endpoints.tsx';
 import { registerVideoConsultationEndpoints } from './video-consultation-endpoints.tsx';
 import { registerMedicalHistoryEndpoints } from './medical-history-endpoints.tsx';
 import { registerUniversalStaffSchedule } from './universal-staff-schedule.tsx';
+import automationEndpoints from './automation-endpoints.tsx';
+import lifecycleValidationEndpoints from './lifecycle-validation-endpoint.tsx';
 import { registerCenterAvailabilityEndpoints } from './center-availability-endpoints.tsx';
 import { registerBoardingRoomManagement } from './boarding-room-management.tsx';
 import { registerNutritionistMealManagement } from './nutritionist-meal-management.tsx';
@@ -254,10 +257,12 @@ app.get('/make-server-3dd53475/regions/active', async (c) => {
 });
 
 // Get specific region by ID - MUST BE AFTER /active route
+// ✅ MIGRATED: Now uses SQL instead of KV store
 app.get('/make-server-3dd53475/regions/:regionId', async (c) => {
   try {
     const regionId = c.req.param('regionId');
-    const region = await kv.get(`region_${regionId}`);
+    const regionsRepo = getRegionsRepository();
+    const region = await regionsRepo.findById(regionId);
     
     if (!region) {
       return sendError(c, 'Region not found', 404);
@@ -270,9 +275,11 @@ app.get('/make-server-3dd53475/regions/:regionId', async (c) => {
   }
 });
 
+// ✅ MIGRATED: Now uses SQL instead of KV store
 app.get('/make-server-3dd53475/admin/regions', async (c) => {
   try {
-    const regions = await kv.getByPrefix('region_');
+    const regionsRepo = getRegionsRepository();
+    const regions = await regionsRepo.findAll();
     return sendSuccess(c, {
       regions: regions || [],
       count: regions?.length || 0,
@@ -284,6 +291,7 @@ app.get('/make-server-3dd53475/admin/regions', async (c) => {
 });
 
 // Create region endpoint
+// ✅ MIGRATED: Now uses SQL instead of KV store
 app.post('/make-server-3dd53475/admin/regions', async (c) => {
   try {
     const body = await c.req.json();
@@ -293,15 +301,16 @@ app.post('/make-server-3dd53475/admin/regions', async (c) => {
       return sendError(c, 'regionId is required', 400);
     }
     
-    // Store the region
-    await kv.set(`region_${regionId}`, {
-      ...regionData,
-      regionId,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+    const regionsRepo = getRegionsRepository();
+    const region = await regionsRepo.create({
+      code: regionId,
+      name: regionData.name || regionId,
+      country: regionData.country || 'India',
+      region_config: regionData.region_config || {},
+      is_active: regionData.is_active !== false,
     });
     
-    return sendSuccess(c, {}, 'Region created successfully');
+    return sendSuccess(c, { region }, 'Region created successfully');
   } catch (error) {
     console.error('Error creating region:', error);
     return sendError(c, error, 500);
@@ -309,24 +318,24 @@ app.post('/make-server-3dd53475/admin/regions', async (c) => {
 });
 
 // Update region endpoint
+// ✅ MIGRATED: Now uses SQL instead of KV store
 app.put('/make-server-3dd53475/admin/regions/:regionId', async (c) => {
   try {
     const regionId = c.req.param('regionId');
     const updates = await c.req.json();
     
-    const existing = await kv.get(`region_${regionId}`);
+    const regionsRepo = getRegionsRepository();
+    const existing = await regionsRepo.findById(regionId);
     if (!existing) {
       return sendError(c, 'Region not found', 404);
     }
     
-    const updated = {
-      ...existing,
-      ...updates,
-      regionId,
-      updatedAt: new Date().toISOString(),
-    };
-    
-    await kv.set(`region_${regionId}`, updated);
+    const updated = await regionsRepo.update(regionId, {
+      name: updates.name,
+      country: updates.country,
+      region_config: updates.region_config,
+      is_active: updates.is_active,
+    });
     
     return sendSuccess(c, { region: updated }, 'Region updated successfully');
   } catch (error) {
@@ -336,25 +345,21 @@ app.put('/make-server-3dd53475/admin/regions/:regionId', async (c) => {
 });
 
 // Toggle region status endpoint
+// ✅ MIGRATED: Now uses SQL instead of KV store
 app.patch('/make-server-3dd53475/admin/regions/:regionId/status', async (c) => {
   try {
     const regionId = c.req.param('regionId');
     const { isActive } = await c.req.json();
     
-    const existing = await kv.get(`region_${regionId}`);
+    const regionsRepo = getRegionsRepository();
+    const existing = await regionsRepo.findById(regionId);
     if (!existing) {
       return sendError(c, 'Region not found', 404);
     }
     
-    const updated = {
-      ...existing,
-      isActive,
-      updatedAt: new Date().toISOString(),
-    };
+    const updated = await regionsRepo.setActive(regionId, isActive);
     
-    await kv.set(`region_${regionId}`, updated);
-    
-    return sendSuccess(c, {}, 'Region status updated successfully');
+    return sendSuccess(c, { region: updated }, 'Region status updated successfully');
   } catch (error) {
     console.error('Error updating region status:', error);
     return sendError(c, error, 500);
@@ -1406,6 +1411,19 @@ staffServiceEndpoints(app, kv);
 // ✅ NEW: Medical AI Summary Endpoints (AI-powered consultation summaries)
 console.log('✅ Registering Medical AI Summary Endpoints...');
 registerMedicalAISummaryEndpoints(app);
+
+// ✅ NEW: Automation Endpoints (Booking, Payment, Payout, Delivery automation)
+console.log('✅ Registering Automation Endpoints...');
+app.route('/', automationEndpoints);
+
+// ✅ NEW: Lifecycle Validation Endpoints
+console.log('✅ Registering Lifecycle Validation Endpoints...');
+app.route('/', lifecycleValidationEndpoints);
+
+// ✅ NEW: Lifecycle Completeness Endpoints (Insurance, Subscription, Adoption, etc.)
+console.log('✅ Registering Lifecycle Completeness Endpoints...');
+import lifecycleCompletenessEndpoints from './lifecycle-completeness-endpoints.tsx';
+app.route('/', lifecycleCompletenessEndpoints);
 
 // ------------------------------------------------------------------
 // GLOBAL ERROR HANDLERS
