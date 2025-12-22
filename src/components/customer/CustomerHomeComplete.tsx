@@ -1180,8 +1180,10 @@ export function CustomerHome({
       <button
         onClick={() => setShowAIChat(true)}
         className="fixed bottom-24 right-6 w-16 h-16 rounded-full shadow-2xl flex items-center justify-center hover:scale-110 transition-transform z-40 max-w-[430px] mx-auto animate-pulse"
-        style={{ background: `linear-gradient(to right, ${WARM_ORANGE}, #FF6B35)` }}
-        style={{ right: 'max(1.5rem, calc((100vw - 430px) / 2 + 1.5rem))' }}
+        style={{ 
+          background: `linear-gradient(to right, ${WARM_ORANGE}, #FF6B35)`,
+          right: 'max(1.5rem, calc((100vw - 430px) / 2 + 1.5rem))'
+        }}
       >
         <Bot className="w-8 h-8 text-white" />
         <div className="absolute -top-1 -right-1 w-5 h-5 bg-green-500 rounded-full border-2 border-white flex items-center justify-center">
