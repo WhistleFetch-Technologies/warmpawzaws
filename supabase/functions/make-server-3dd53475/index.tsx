@@ -17,7 +17,7 @@ import { analyticsEndpoints } from './analytics-endpoints-refactored.tsx';
 import { enhancedSearchEngineEndpoints } from './enhanced-search-engine.tsx';
 import { vendorOnboardingEndpoints } from './vendor-onboarding-refactored.tsx';
 import { vendorApprovalWorkflowEndpoints } from './vendor-approval-workflow.tsx';
-import { vendorDashboardEndpoints } from './vendor-dashboard-endpoints.tsx';
+import { vendorDashboardEndpoints } from './vendor-dashboard-endpoints-refactored.tsx';
 import { vendorRoleConfigEndpoints } from './vendor-role-config.tsx';
 import { registerDynamicOnboarding } from './dynamic-onboarding-management.tsx';
 import { onboardingConfigEndpoints } from './onboarding-config-endpoints.tsx';
@@ -484,7 +484,7 @@ enhancedSearchEngineEndpoints(app, kv);
 // These must be registered BEFORE customer-routes because customer-routes
 // contains a generic /vendor/:vendorId wildcard that would shadow these.
 vendorOnboardingEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
-soloProviderEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
+soloProviderEndpoints(app, kv); // ✅ FIX: Solo provider onboarding endpoints
 vendorApprovalWorkflowEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 vendorDashboardEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 vendorRoleConfigEndpoints(app);
@@ -493,7 +493,7 @@ onboardingConfigEndpoints(app, kv); // ✅ NEW: Register onboarding config endpo
 registerVendorServiceEndpoints(app);
 registerVendorServicesSQLEndpoints(app); // ✅ NEW: SQL-based service management
 registerVendorCatalogAPIV2(app);
-customServiceEndpoints(app, kv); // ✅ FIX: Register custom service endpoints
+customServiceEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 app.route('/make-server-3dd53475', vendorScheduleV2Endpoints);
 
 // ✅ FIX: Register Vet Specialized Services (ambulance, diagnostics, pharmacy, emergency protocols)
