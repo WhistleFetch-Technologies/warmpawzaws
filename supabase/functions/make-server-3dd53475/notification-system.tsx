@@ -23,10 +23,14 @@
 
 import { Hono } from "npm:hono";
 import { sendSuccess, sendError } from "./response-utils.ts";
-import { getNotificationsRepository } from "../../lib/repositories/notifications.ts";
-import { getVendorsRepository } from "../../lib/repositories/vendors.ts";
-import { getCustomersRepository } from "../../lib/repositories/customers.ts";
-import { getDbClient } from "../../lib/db.ts";
+// ✅ FIX: Use relative path from function directory
+// import { getNotificationsRepository } from "../../lib/repositories/notifications.ts";
+// import { getVendorsRepository } from "../../lib/repositories/vendors.ts";
+// import { getCustomersRepository } from "../../lib/repositories/customers.ts";
+// import { getDbClient } from "../../lib/db.ts";
+
+// Temporary: Use KV store until lib folder structure is fixed
+import * as kv from './kv_store.tsx';
 
 export interface Notification {
   id: string;
