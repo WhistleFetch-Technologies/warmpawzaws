@@ -527,7 +527,7 @@ registerCustomerRoutes(app);
 registerAuthEndpoints(app);
 registerAICRMRoutes(app, kv);
 registerAIChatbotRoutes(app);
-paymentEndpoints(app, kv);
+paymentEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 marketplacePaymentEndpoints(app, kv);
 registerChatEndpoints(app);
 registerSubscriptionEndpoints(app);
@@ -540,7 +540,7 @@ registerNutritionistMealManagement(app);
 registerServicePackageManagement(app);
 registerCustomerPackageEndpoints(app); // ✅ GAP #3 FIX
 registerVendorMetricsEnhancement(app); // ✅ GAP #8 FIX
-bookingEndpoints(app, kv);
+bookingEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 registerCafeFeatures(app);
 registerCapabilityEndpoints(app);
 registerResortInventory(app);
