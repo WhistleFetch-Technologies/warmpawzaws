@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '../ui/button';
 import { 
   ChevronLeft, Camera, Edit2, Save, X, User, Calendar, 
@@ -7,9 +7,11 @@ import {
   Copy, Check, Navigation, Route, Timer, TrendingUp, ShoppingCart,
   Home, FileText, Shield, AlertCircle
 } from 'lucide-react';
-// Logo placeholder - using base64 encoded SVG (Warmpawz logo)
-const logoImage = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8cmVjdCB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHJ4PSI4IiBmaWxsPSIjRkY4QzQyIi8+CiAgPHBhdGggZD0iTTIwIDEyQzE2LjY4NjMgMTIgMTQgMTQuNjg2MyAxNCAxOEMxNCAxOS41OTEzIDE0LjYzMjEgMjEuMDI2MSAxNS42NTY5IDIyLjA1MTRDMTY4MjE3IDIzLjA3NjcgMTguMTE2NSAyMy43MDg4IDE5LjcwNzcgMjMuNzA4OEMyMS4yOTg5IDIzLjcwODggMjIuNzMzNyAyMy4wNzY3IDIzLjc1ODUgMjIuMDUxNEMyNC43ODMzIDIxLjAyNjEgMjUuNDE1NCAxOS41OTEzIDI1LjQxNTQgMThDMjUuNDE1NCAxNC42ODYzIDIyLjcyOTEgMTIgMTkuNDE1NCAxMkgyMFpNMjAgMTRDMjEuNjU2OSAxNCAyMyAxNS4zNDMxIDIzIDE3QzIzIDE4LjY1NjkgMjEuNjU2OSAyMCAyMCAyMEMxOC4zNDMxIDIwIDE3IDE4LjY1NjkgMTcgMTdDMTcgMTUuMzQzMSAxOC4zNDMxIDE0IDIwIDE0WiIgZmlsbD0id2hpdGUiLz4KICA8cGF0aCBkPSJNMTIgMjRDMTIgMjQuNTUyMyAxMi40NDc3IDI1IDEzIDI1SDI3QzI3LjU1MjMgMjUgMjggMjQuNTUyMyAyOCAyNEMyOCAyMi4zNDMxIDI2LjY1NjkgMjEgMjUgMjFIMTVDMTMuMzQzMSAyMSAxMiAyMi4zNDMxIDEyIDI0WiIgZmlsbD0id2hpdGUiLz4KPC9zdmc+';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { LOGO_CIRCULAR_ORANGE, WARM_ORANGE } from '../../assets/design-tokens';
+import { WarmpawzButton } from '../shared/design-system/WarmpawzButton';
+
+const logoImage = LOGO_CIRCULAR_ORANGE;
 import { BookingDetailModal } from './BookingDetailModal';
 
 interface UserProfile {
@@ -258,7 +260,7 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
   return (
     <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto pb-20">
       {/* Header */}
-      <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] px-6 pt-12 pb-8 sticky top-0 z-20">
+      <div className="px-6 pt-12 pb-8 sticky top-0 z-20" style={{ background: `linear-gradient(to right, ${WARM_ORANGE}, #FF6B35)` }}>
         <div className="flex items-center gap-4 mb-4">
           <button onClick={onBack} className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm">
             <ChevronLeft className="w-5 h-5 text-white" />
@@ -274,10 +276,11 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
           <button
             onClick={() => setActiveTab('bookings')}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium whitespace-nowrap transition-all ${
-              activeTab === 'bookings'
-                ? 'bg-white text-[#FF8C42]'
-                : 'bg-white/20 text-white'
+              activeTab === 'bookings' ? 'bg-white' : 'bg-white/20 text-white'
             }`}
+            style={{
+              color: activeTab === 'bookings' ? WARM_ORANGE : 'white'
+            }}
           >
             <Calendar className="w-4 h-4" />
             My Bookings
@@ -285,10 +288,11 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
           <button
             onClick={() => setActiveTab('profile')}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium whitespace-nowrap transition-all ${
-              activeTab === 'profile'
-                ? 'bg-white text-[#FF8C42]'
-                : 'bg-white/20 text-white'
+              activeTab === 'profile' ? 'bg-white' : 'bg-white/20 text-white'
             }`}
+            style={{
+              color: activeTab === 'profile' ? WARM_ORANGE : 'white'
+            }}
           >
             <User className="w-4 h-4" />
             Profile
@@ -296,10 +300,11 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
           <button
             onClick={() => setActiveTab('complaints')}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium whitespace-nowrap transition-all ${
-              activeTab === 'complaints'
-                ? 'bg-white text-[#FF8C42]'
-                : 'bg-white/20 text-white'
+              activeTab === 'complaints' ? 'bg-white' : 'bg-white/20 text-white'
             }`}
+            style={{
+              color: activeTab === 'complaints' ? WARM_ORANGE : 'white'
+            }}
           >
             <MessageSquare className="w-4 h-4" />
             Complaints
@@ -307,10 +312,11 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
           <button
             onClick={() => setActiveTab('saved')}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium whitespace-nowrap transition-all ${
-              activeTab === 'saved'
-                ? 'bg-white text-[#FF8C42]'
-                : 'bg-white/20 text-white'
+              activeTab === 'saved' ? 'bg-white' : 'bg-white/20 text-white'
             }`}
+            style={{
+              color: activeTab === 'saved' ? WARM_ORANGE : 'white'
+            }}
           >
             <Heart className="w-4 h-4" />
             Saved
@@ -318,10 +324,11 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
           <button
             onClick={() => setActiveTab('settings')}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium whitespace-nowrap transition-all ${
-              activeTab === 'settings'
-                ? 'bg-white text-[#FF8C42]'
-                : 'bg-white/20 text-white'
+              activeTab === 'settings' ? 'bg-white' : 'bg-white/20 text-white'
             }`}
+            style={{
+              color: activeTab === 'settings' ? WARM_ORANGE : 'white'
+            }}
           >
             <Settings className="w-4 h-4" />
             Settings
@@ -337,7 +344,7 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
             {/* Stats */}
             <div className="grid grid-cols-3 gap-3">
               <div className="bg-white rounded-xl p-4 text-center shadow-sm">
-                <p className="text-2xl font-bold text-[#FF8C42]">{bookings.length}</p>
+                <p className="text-2xl font-bold" style={{ color: WARM_ORANGE }}>{bookings.length}</p>
                 <p className="text-xs text-gray-600 mt-1">Total</p>
               </div>
               <div className="bg-white rounded-xl p-4 text-center shadow-sm">
@@ -353,7 +360,7 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
             {/* Bookings List */}
             {loadingBookings ? (
               <div className="text-center py-12">
-                <div className="w-12 h-12 border-4 border-[#FF8C42] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                <div className="w-12 h-12 border-4 border-t-transparent rounded-full animate-spin mx-auto mb-4" style={{ borderColor: `${WARM_ORANGE} ${WARM_ORANGE} ${WARM_ORANGE} transparent` }}></div>
                 <p className="text-gray-600">Loading bookings...</p>
               </div>
             ) : bookings.length === 0 ? (
@@ -438,7 +445,7 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
                             {new Date(booking.startDate).toLocaleDateString()}
                           </span>
                           <span>•</span>
-                          <span className="font-semibold text-[#FF8C42]">₹{booking.price}</span>
+                          <span className="font-semibold" style={{ color: WARM_ORANGE }}>₹{booking.price}</span>
                         </div>
 
                         {booking.status === 'active' && booking.upcomingSessions > 0 && (
@@ -481,7 +488,8 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
                       <Button
                         onClick={handleSave}
                         disabled={saving}
-                        className="bg-[#FF8C42] text-white gap-2"
+                        className="gap-2"
+                        style={{ backgroundColor: WARM_ORANGE, color: 'white' }}
                       >
                         {saving ? (
                           <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
@@ -519,7 +527,8 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
                       <>
                         <button
                           onClick={() => fileInputRef.current?.click()}
-                          className="absolute bottom-0 right-0 w-8 h-8 bg-[#FF8C42] rounded-full flex items-center justify-center"
+                          className="absolute bottom-0 right-0 w-8 h-8 rounded-full flex items-center justify-center"
+                          style={{ backgroundColor: WARM_ORANGE }}
                         >
                           <Camera className="w-4 h-4 text-white" />
                         </button>
@@ -545,7 +554,15 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
                           type="text"
                           value={profile.firstName}
                           onChange={(e) => setProfile({ ...profile, firstName: e.target.value })}
-                          className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
+                          className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none"
+                          onFocus={(e) => {
+                            e.currentTarget.style.borderColor = WARM_ORANGE;
+                            e.currentTarget.style.boxShadow = `0 0 0 3px ${WARM_ORANGE}33`;
+                          }}
+                          onBlur={(e) => {
+                            e.currentTarget.style.borderColor = '#E5E7EB';
+                            e.currentTarget.style.boxShadow = 'none';
+                          }}
                         />
                       ) : (
                         <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">{profile.firstName}</p>
@@ -558,7 +575,15 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
                           type="text"
                           value={profile.lastName}
                           onChange={(e) => setProfile({ ...profile, lastName: e.target.value })}
-                          className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
+                          className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none"
+                          onFocus={(e) => {
+                            e.currentTarget.style.borderColor = WARM_ORANGE;
+                            e.currentTarget.style.boxShadow = `0 0 0 3px ${WARM_ORANGE}33`;
+                          }}
+                          onBlur={(e) => {
+                            e.currentTarget.style.borderColor = '#E5E7EB';
+                            e.currentTarget.style.boxShadow = 'none';
+                          }}
                         />
                       ) : (
                         <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">{profile.lastName}</p>
@@ -626,9 +651,9 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
               <MessageSquare className="w-16 h-16 text-gray-300 mx-auto mb-4" />
               <h3 className="font-semibold text-gray-800 mb-2">No Complaints</h3>
               <p className="text-sm text-gray-600 mb-4">You haven't raised any complaints yet</p>
-              <Button className="bg-[#FF8C42] text-white">
+              <WarmpawzButton variant="solid">
                 Raise a Complaint
-              </Button>
+              </WarmpawzButton>
             </div>
           </div>
         )}

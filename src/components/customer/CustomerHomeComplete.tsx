@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Heart, Calendar, Plus, ChevronRight, Star, MapPin, Clock, 
   Scissors, Stethoscope, Home as HomeIcon, ShoppingBag, Users, 
@@ -7,9 +7,11 @@ import {
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { useCart } from '../../context/CartContext';
-// Logo placeholder - using base64 encoded SVG (Warmpawz logo)
-const logoImage = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8cmVjdCB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHJ4PSI4IiBmaWxsPSIjRkY4QzQyIi8+CiAgPHBhdGggZD0iTTIwIDEyQzE2LjY4NjMgMTIgMTQgMTQuNjg2MyAxNCAxOEMxNCAxOS41OTEzIDE0LjYzMjEgMjEuMDI2MSAxNS42NTY5IDIyLjA1MTRDMTY4MjE3IDIzLjA3NjcgMTguMTE2NSAyMy43MDg4IDE5LjcwNzcgMjMuNzA4OEMyMS4yOTg5IDIzLjcwODggMjIuNzMzNyAyMy4wNzY3IDIzLjc1ODUgMjIuMDUxNEMyNC43ODMzIDIxLjAyNjEgMjUuNDE1NCAxOS41OTEzIDI1LjQxNTQgMThDMjUuNDE1NCAxNC42ODYzIDIyLjcyOTEgMTIgMTkuNDE1NCAxMkgyMFpNMjAgMTRDMjEuNjU2OSAxNCAyMyAxNS4zNDMxIDIzIDE3QzIzIDE4LjY1NjkgMjEuNjU2OSAyMCAyMCAyMEMxOC4zNDMxIDIwIDE3IDE4LjY1NjkgMTcgMTdDMTcgMTUuMzQzMSAxOC4zNDMxIDE0IDIwIDE0WiIgZmlsbD0id2hpdGUiLz4KICA8cGF0aCBkPSJNMTIgMjRDMTIgMjQuNTUyMyAxMi40NDc3IDI1IDEzIDI1SDI3QzI3LjU1MjMgMjUgMjggMjQuNTUyMyAyOCAyNEMyOCAyMi4zNDMxIDI2LjY1NjkgMjEgMjUgMjFIMTVDMTMuMzQzMSAyMSAxMiAyMi4zNDMxIDEyIDI0WiIgZmlsbD0id2hpdGUiLz4KPC9zdmc+';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { LOGO_CIRCULAR_ORANGE, WARM_ORANGE } from '../../assets/design-tokens';
+import { BottomNavBar } from '../shared/design-system/BottomNavBar';
+
+const logoImage = LOGO_CIRCULAR_ORANGE;
 import { AIAssistantChat } from './AIAssistantChat';
 import { CustomerSidebar } from './CustomerSidebar';
 import { EnhancedSearchBar } from './EnhancedSearchBar';
@@ -70,19 +72,94 @@ export function CustomerHome({
   const [selectedPetId, setSelectedPetId] = useState<string | null>(null);
   const [userProfilePhoto, setUserProfilePhoto] = useState<string>('');
   const [currentBanner, setCurrentBanner] = useState(0);
+  const [banners, setBanners] = useState<any[]>([]);
   const [showAIChat, setShowAIChat] = useState(false);
+  const [activeNavItem, setActiveNavItem] = useState('home');
   const { itemCount } = useCart();
 
   useEffect(() => {
     loadUserData();
+    loadBanners();
   }, [phone, refreshKey]); // Add refreshKey to dependencies
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentBanner((prev) => (prev + 1) % 3);
-    }, 3000);
-    return () => clearInterval(interval);
-  }, []);
+    if (banners.length > 0) {
+      const interval = setInterval(() => {
+        setCurrentBanner((prev) => (prev + 1) % banners.length);
+      }, 3000);
+      return () => clearInterval(interval);
+    }
+  }, [banners.length]);
+
+  const loadBanners = async () => {
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/content/banners?type=main`,
+        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+      );
+      if (response.ok) {
+        const data = await response.json();
+        if (data.banners && data.banners.length > 0) {
+          // Transform API banners to component format
+          const transformedBanners = data.banners.map((banner: any) => ({
+            title: banner.title,
+            subtitle: banner.subtitle,
+            bg: banner.metadata?.bg || `linear-gradient(135deg, #FF8C42 0%, #FF6B35 100%)`,
+            emoji: banner.metadata?.emoji || '🐾',
+            imageUrl: banner.imageUrl,
+            ctaText: banner.ctaText,
+            ctaLink: banner.ctaLink
+          }));
+          setBanners(transformedBanners);
+        } else {
+          // Fallback to default banners
+          setBanners([
+            {
+              title: "Get 50% OFF",
+              subtitle: "First Grooming Session",
+              bg: "linear-gradient(135deg, #FF8C42 0%, #FF6B35 100%)",
+              emoji: "✂️"
+            },
+            {
+              title: "Free Health Checkup",
+              subtitle: "Book Vet Appointment Today",
+              bg: "linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%)",
+              emoji: "🏥"
+            },
+            {
+              title: "Premium Pet Food",
+              subtitle: "20% OFF on First Order",
+              bg: "linear-gradient(135deg, #FF6B9D 0%, #C44569 100%)",
+              emoji: "🍖"
+            }
+          ]);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading banners:', error);
+      // Fallback to default banners
+      setBanners([
+        {
+          title: "Get 50% OFF",
+          subtitle: "First Grooming Session",
+          bg: "linear-gradient(135deg, #FF8C42 0%, #FF6B35 100%)",
+          emoji: "✂️"
+        },
+        {
+          title: "Free Health Checkup",
+          subtitle: "Book Vet Appointment Today",
+          bg: "linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%)",
+          emoji: "🏥"
+        },
+        {
+          title: "Premium Pet Food",
+          subtitle: "20% OFF on First Order",
+          bg: "linear-gradient(135deg, #FF6B9D 0%, #C44569 100%)",
+          emoji: "🍖"
+        }
+      ]);
+    }
+  };
 
   const loadUserData = async () => {
     try {
@@ -153,26 +230,7 @@ export function CustomerHome({
     );
   }
 
-  const banners = [
-    {
-      title: "Get 50% OFF",
-      subtitle: "First Grooming Session",
-      bg: "linear-gradient(135deg, #FF8C42 0%, #FF6B35 100%)",
-      emoji: "✂️"
-    },
-    {
-      title: "Free Health Checkup",
-      subtitle: "Book Vet Appointment Today",
-      bg: "linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%)",
-      emoji: "🏥"
-    },
-    {
-      title: "Premium Pet Food",
-      subtitle: "20% OFF on First Order",
-      bg: "linear-gradient(135deg, #FF6B9D 0%, #C44569 100%)",
-      emoji: "🍖"
-    }
-  ];
+  // Banners are now loaded from API in loadBanners()
 
   const quickServices = [
     // PRIMARY SERVICES
@@ -1077,43 +1135,43 @@ export function CustomerHome({
       </div>
 
       {/* Fixed Bottom Navigation */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-3 max-w-[430px] mx-auto">
-        <div className="flex items-center justify-around">
-          <button className="flex flex-col items-center gap-1">
-            <HomeIcon className="w-6 h-6 text-[#FF8C42]" />
-            <span className="text-xs font-medium text-[#FF8C42]">Home</span>
-          </button>
-          <button 
-            onClick={() => onNavigate && onNavigate('cart')}
-            className="flex flex-col items-center gap-1 relative"
+      <div className="fixed bottom-0 left-0 right-0 max-w-[430px] mx-auto pb-safe">
+        <BottomNavBar
+          items={[
+            { id: 'home', label: 'Home', icon: HomeIcon },
+            { 
+              id: 'cart', 
+              label: 'Cart', 
+              icon: ShoppingCart,
+            },
+            { id: 'bookings', label: 'Bookings', icon: Calendar },
+            { id: 'profile', label: 'Profile', icon: User },
+          ]}
+          activeId={activeNavItem}
+          onItemClick={(id) => {
+            setActiveNavItem(id);
+            if (id === 'cart' && onNavigate) {
+              onNavigate('cart');
+            } else if (id === 'bookings' && onOpenMenu) {
+              onOpenMenu();
+            } else if (id === 'profile' && onProfileClick) {
+              onProfileClick();
+            } else if (id === 'home') {
+              setCurrentView('home');
+            }
+          }}
+        />
+        {/* Cart Badge */}
+        {itemCount > 0 && activeNavItem !== 'cart' && (
+          <div 
+            className="absolute bottom-16 left-1/2 transform -translate-x-1/2 translate-x-12 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center z-50"
+            style={{ left: 'calc(50% + 48px)' }}
           >
-            <div className="relative">
-              <ShoppingCart className="w-6 h-6 text-gray-400" />
-              {itemCount > 0 && (
-                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
-                  {itemCount}
-                </span>
-              )}
-            </div>
-            <span className="text-xs text-gray-400">Cart</span>
-          </button>
-          <button 
-            onClick={() => onOpenMenu && onOpenMenu()}
-            className="flex flex-col items-center gap-1"
-          >
-            <Calendar className="w-6 h-6 text-gray-400" />
-            <span className="text-xs text-gray-400">Bookings</span>
-          </button>
-          <button 
-            onClick={() => onProfileClick && onProfileClick()}
-            className="flex flex-col items-center gap-1"
-          >
-            <User className="w-6 h-6 text-gray-400" />
-            <span className="text-xs text-gray-400">Profile</span>
-          </button>
-        </div>
+            {itemCount}
+          </div>
+        )}
         {/* Home Indicator */}
-        <div className="flex justify-center mt-2">
+        <div className="flex justify-center mt-2 bg-white">
           <div className="w-32 h-1 bg-black rounded-full"></div>
         </div>
       </div>
@@ -1121,7 +1179,8 @@ export function CustomerHome({
       {/* AI Assistant Floating Action Button */}
       <button
         onClick={() => setShowAIChat(true)}
-        className="fixed bottom-24 right-6 w-16 h-16 bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] rounded-full shadow-2xl flex items-center justify-center hover:scale-110 transition-transform z-40 max-w-[430px] mx-auto animate-pulse"
+        className="fixed bottom-24 right-6 w-16 h-16 rounded-full shadow-2xl flex items-center justify-center hover:scale-110 transition-transform z-40 max-w-[430px] mx-auto animate-pulse"
+        style={{ background: `linear-gradient(to right, ${WARM_ORANGE}, #FF6B35)` }}
         style={{ right: 'max(1.5rem, calc((100vw - 430px) / 2 + 1.5rem))' }}
       >
         <Bot className="w-8 h-8 text-white" />

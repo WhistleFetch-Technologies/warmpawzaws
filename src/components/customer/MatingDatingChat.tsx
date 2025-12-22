@@ -102,18 +102,23 @@ export function MatingDatingChat({ phone, matchId, onBack }: MatingDatingChatPro
 
   const loadMessages = async () => {
     try {
-      // In production, this would use AWS Chime SDK
-      // For now, we'll use KV storage with a simple message structure
-      const messagesKey = `dating_match:${matchId}:messages`;
-      
-      // Mock implementation - in production, integrate with AWS Chime
-      // const response = await fetch(
-      //   `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/chime/messages/${matchId}`,
-      //   { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
-      // );
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/dating/chat/${matchId}/messages`,
+        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+      );
 
-      // For now, use local state
-      // setMessages(result.messages || []);
+      if (response.ok) {
+        const result = await response.json();
+        const loadedMessages = (result.messages || []).map((msg: any) => ({
+          id: msg.id,
+          senderId: msg.senderId,
+          text: msg.message,
+          timestamp: msg.timestamp,
+          type: msg.messageType || 'text',
+          attachmentUrl: msg.attachmentUrl
+        }));
+        setMessages(loadedMessages);
+      }
     } catch (error) {
       console.error('Error loading messages:', error);
     }
@@ -125,39 +130,62 @@ export function MatingDatingChat({ phone, matchId, onBack }: MatingDatingChatPro
     try {
       setSending(true);
 
-      const newMessage: Message = {
-        id: `msg_${Date.now()}`,
+      // Optimistically add to local state
+      const tempMessage: Message = {
+        id: `temp_${Date.now()}`,
         senderId: phone,
         text: messageText.trim(),
         timestamp: new Date().toISOString(),
         type: 'text'
       };
-
-      // Add to local state immediately
-      setMessages(prev => [...prev, newMessage]);
+      setMessages(prev => [...prev, tempMessage]);
+      const messageToSend = messageText.trim();
       setMessageText('');
 
-      // In production, send via AWS Chime
-      // const response = await fetch(
-      //   `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/chime/send-message`,
-      //   {
-      //     method: 'POST',
-      //     headers: {
-      //       'Authorization': `Bearer ${publicAnonKey}`,
-      //       'Content-Type': 'application/json'
-      //     },
-      //     body: JSON.stringify({
-      //       channelArn: match.chatChannelArn,
-      //       message: messageText.trim(),
-      //       senderId: phone
-      //     })
-      //   }
-      // );
+      // Send via API
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/dating/chat/${matchId}/message`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            senderId: phone,
+            message: messageToSend,
+            messageType: 'text'
+          })
+        }
+      );
 
-      toast.success('Message sent');
+      if (response.ok) {
+        const result = await response.json();
+        // Replace temp message with real one
+        setMessages(prev => prev.map(msg => 
+          msg.id === tempMessage.id 
+            ? {
+                id: result.message.id,
+                senderId: result.message.senderId,
+                text: result.message.message,
+                timestamp: result.message.timestamp,
+                type: result.message.messageType || 'text'
+              }
+            : msg
+        ));
+        toast.success('Message sent');
+      } else {
+        // Remove temp message on error
+        setMessages(prev => prev.filter(msg => msg.id !== tempMessage.id));
+        setMessageText(messageToSend); // Restore message text
+        const error = await response.json();
+        toast.error(error.error || 'Failed to send message');
+      }
     } catch (error) {
       console.error('Error sending message:', error);
       toast.error('Failed to send message');
+      // Restore message text
+      setMessageText(messageText);
     } finally {
       setSending(false);
     }

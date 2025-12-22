@@ -4,6 +4,7 @@ import { Button } from '../../ui/button';
 import { Card } from '../../ui/card';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
 import { toast } from 'sonner@2.0.3';
+import { WARM_ORANGE } from '../../../assets/design-tokens';
 
 interface FollowUpChatProps {
   bookingId: string;
@@ -106,7 +107,7 @@ export function FollowUpChat({ bookingId, vendorId, vendorName, customerPhone, o
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-white max-w-[430px] mx-auto">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42]"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2" style={{ borderColor: `${WARM_ORANGE} transparent ${WARM_ORANGE} ${WARM_ORANGE}` }}></div>
       </div>
     );
   }

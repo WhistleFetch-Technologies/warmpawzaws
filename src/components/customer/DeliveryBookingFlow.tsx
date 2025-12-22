@@ -54,6 +54,7 @@ interface DeliveryBookingFlowProps {
   serviceType: 'pharmacy' | 'products' | 'meals';
   vendorId: string;
   vendorName?: string;
+  vendorRoleId?: string; // ✅ NEW: Role ID for role-specific features
   customerId: string;
   customerPhone: string;
   petId?: string;

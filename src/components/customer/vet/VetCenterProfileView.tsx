@@ -433,7 +433,15 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
         {/* Fixed Bottom CTA */}
         <div className="fixed bottom-0 left-0 right-0 max-w-[430px] mx-auto bg-white border-t border-gray-200 p-4">
           <Button
-            onClick={() => onNavigate('select_service')}
+            onClick={() => {
+              // ✅ MIGRATION: Navigate directly to booking_dispatcher instead of select_service
+              onNavigate('booking-dispatcher', {
+                vendorId: centerId,
+                vendorName: centerName,
+                clinicId: centerId,
+                serviceType: 'at_center'
+              });
+            }}
             className="w-full bg-[#FF8C42] hover:bg-[#FF7029] h-12"
             disabled={services.length === 0}
           >

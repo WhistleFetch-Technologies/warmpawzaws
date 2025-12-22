@@ -35,15 +35,30 @@ export function MatingDatingSwipe({ phone, mode, onBack, onMatch }: MatingDating
 
   const loadMyProfile = async () => {
     try {
-      // Get user's profile to find profileId
-      const userProfilesKey = `user:${phone}:dating_profiles:${mode}`;
-      
-      // For simplicity, construct the expected profile ID
+      // Try to get existing profile from API
       const profileId = mode === 'owner' 
         ? `owner_dating_${phone}` 
-        : `pet_dating_${phone}_1`; // You may need to adjust this based on pet selection
+        : `pet_dating_${phone}_1`; // Default to first pet, can be enhanced later
       
-      setMyProfileId(profileId);
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/dating/${mode}-profile/${profileId}`,
+        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+      );
+
+      if (response.ok) {
+        const result = await response.json();
+        if (result.profile) {
+          setMyProfileId(result.profile.id);
+        } else {
+          // Profile doesn't exist yet, user needs to create it
+          toast.error('Please create your profile first');
+          onBack();
+        }
+      } else {
+        // Profile doesn't exist, user needs to create it
+        toast.error('Please create your profile first');
+        onBack();
+      }
     } catch (error) {
       console.error('Error loading my profile:', error);
       toast.error('Please create your profile first');

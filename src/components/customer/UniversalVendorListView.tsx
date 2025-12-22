@@ -16,7 +16,7 @@ import {
   UserCircle2,
   Building2
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { toast } from 'sonner@2.0.3';
 
 interface UniversalVendorListViewProps {

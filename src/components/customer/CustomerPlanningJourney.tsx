@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { Button } from '../ui/button';
 import { ChevronLeft } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-// Logo placeholder - using base64 encoded SVG (Warmpawz logo)
-const logoImage = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8cmVjdCB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHJ4PSI4IiBmaWxsPSIjRkY4QzQyIi8+CiAgPHBhdGggZD0iTTIwIDEyQzE2LjY4NjMgMTIgMTQgMTQuNjg2MyAxNCAxOEMxNCAxOS41OTEzIDE0LjYzMjEgMjEuMDI2MSAxNS42NTY5IDIyLjA1MTRDMTY4MjE3IDIzLjA3NjcgMTguMTE2NSAyMy43MDg4IDE5LjcwNzcgMjMuNzA4OEMyMS4yOTg5IDIzLjcwODggMjIuNzMzNyAyMy4wNzY3IDIzLjc1ODUgMjIuMDUxNEMyNC43ODMzIDIxLjAyNjEgMjUuNDE1NCAxOS41OTEzIDI1LjQxNTQgMThDMjUuNDE1NCAxNC42ODYzIDIyLjcyOTEgMTIgMTkuNDE1NCAxMkgyMFpNMjAgMTRDMjEuNjU2OSAxNCAyMyAxNS4zNDMxIDIzIDE3QzIzIDE4LjY1NjkgMjEuNjU2OSAyMCAyMCAyMEMxOC4zNDMxIDIwIDE3IDE4LjY1NjkgMTcgMTdDMTcgMTUuMzQzMSAxOC4zNDMxIDE0IDIwIDE0WiIgZmlsbD0id2hpdGUiLz4KICA8cGF0aCBkPSJNMTIgMjRDMTIgMjQuNTUyMyAxMi40NDc3IDI1IDEzIDI1SDI3QzI3LjU1MjMgMjUgMjggMjQuNTUyMyAyOCAyNEMyOCAyMi4zNDMxIDI2LjY1NjkgMjEgMjUgMjFIMTVDMTMuMzQzMSAyMSAxMiAyMi4zNDMxIDEyIDI0WiIgZmlsbD0id2hpdGUiLz4KPC9zdmc+';
+import { LOGO_CIRCULAR_ORANGE, WARM_ORANGE } from '../../assets/design-tokens';
+import { WarmpawzButton } from '../shared/design-system/WarmpawzButton';
+
+const logoImage = LOGO_CIRCULAR_ORANGE;
 
 interface CustomerPlanningJourneyProps {
   session: any;
@@ -77,7 +79,8 @@ export function CustomerPlanningJourney({ session, onComplete }: CustomerPlannin
       console.log('Saving questionnaire with phone:', session.phone);
       console.log('Questionnaire data:', questionnaireData);
       
-      const response = await fetch(
+      // Save questionnaire
+      const saveResponse = await fetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/onboarding`,
         {
           method: 'POST',
@@ -93,15 +96,41 @@ export function CustomerPlanningJourney({ session, onComplete }: CustomerPlannin
         }
       );
 
-      const responseData = await response.json();
-      console.log('Response status:', response.status);
-      console.log('Response data:', responseData);
+      const saveResponseData = await saveResponse.json();
+      console.log('Save response status:', saveResponse.status);
+      console.log('Save response data:', saveResponseData);
 
-      if (!response.ok) {
-        throw new Error(`Failed to save questionnaire: ${responseData.error || response.statusText}`);
+      if (!saveResponse.ok) {
+        throw new Error(`Failed to save questionnaire: ${saveResponseData.error || saveResponse.statusText}`);
       }
 
       console.log('Questionnaire saved successfully');
+
+      // Get pet suggestions based on questionnaire
+      const suggestionsResponse = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/pet-suggestions`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${publicAnonKey}`,
+          },
+          body: JSON.stringify({
+            phone: session.phone,
+            questionnaireData,
+          }),
+        }
+      );
+
+      if (suggestionsResponse.ok) {
+        const suggestionsData = await suggestionsResponse.json();
+        console.log('Pet suggestions received:', suggestionsData);
+        // Store suggestions for display in next step
+        if (suggestionsData.suggestions && suggestionsData.suggestions.length > 0) {
+          // Navigate to pet selection with suggestions
+          // This will be handled by the parent component
+        }
+      }
     } catch (error) {
       console.error('Error saving questionnaire:', error);
       alert(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -159,7 +188,11 @@ export function CustomerPlanningJourney({ session, onComplete }: CustomerPlannin
                 <button
                   onClick={() => setData({ ...data, timeCommitment: '1-2-hours' })}
                   className={`w-full border-2 rounded-xl p-4 text-left transition-all ${
-                    data.timeCommitment === '1-2-hours' ? 'border-[#FF8C42] bg-orange-50' : 'border-gray-200'
+                    data.timeCommitment === '1-2-hours' ? 'bg-orange-50' : 'border-gray-200'
+                  }
+                  style={{
+                    borderColor: data.timeCommitment === '1-2-hours' ? WARM_ORANGE : '#E5E7EB',
+                    borderWidth: '2px'
                   }`}
                 >
                   <p className="text-black font-medium">1-2 hours per day</p>

@@ -213,7 +213,8 @@ export function VetDoctorDetails({ phone, doctor: propsDoctor, doctorId, preSele
       };
       
       console.log('✅ [VET-DOCTOR-DETAILS] Navigating to booking with data:', navigationData);
-      onNavigate('vet-booking', navigationData);
+      // ✅ MIGRATION: Navigate to booking-dispatcher instead of vet-booking
+      onNavigate('booking-dispatcher', navigationData);
     } else {
       console.error('❌ [VET-DOCTOR-DETAILS] No navigation callback provided!');
     }

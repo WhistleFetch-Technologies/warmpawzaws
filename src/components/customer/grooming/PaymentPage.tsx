@@ -41,11 +41,19 @@ export function PaymentPage({ bookingData, phone, onBack, onPaymentSuccess }: Pa
   const [couponCode, setCouponCode] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState<any>(null);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('upi');
+  const [loyaltyPoints, setLoyaltyPoints] = useState(0);
+  const [useLoyaltyPoints, setUseLoyaltyPoints] = useState(false);
+  const [loyaltyTier, setLoyaltyTier] = useState<any>(null);
+  const [tierDiscount, setTierDiscount] = useState(0);
+  const [activePromotions, setActivePromotions] = useState<any[]>([]);
+  const [appliedPromotion, setAppliedPromotion] = useState<any>(null);
 
   const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
 
   useEffect(() => {
     loadWalletBalance();
+    loadLoyaltyProfile();
+    loadActivePromotions();
   }, []);
 
   // ✅ Calculate GST using rule engine
@@ -54,6 +62,16 @@ export function PaymentPage({ bookingData, phone, onBack, onPaymentSuccess }: Pa
       calculateGST();
     }
   }, [bookingData]);
+
+  // ✅ Recalculate tier discount when subtotal changes
+  useEffect(() => {
+    if (loyaltyTier && loyaltyTier.benefits?.discountPercentage) {
+      const discount = (subtotal * loyaltyTier.benefits.discountPercentage) / 100;
+      setTierDiscount(discount);
+    } else {
+      setTierDiscount(0);
+    }
+  }, [subtotal, loyaltyTier]);
 
   const loadWalletBalance = async () => {
     try {
@@ -73,6 +91,43 @@ export function PaymentPage({ bookingData, phone, onBack, onPaymentSuccess }: Pa
     } catch (error) {
       console.error('❌ [PAYMENT] Error loading wallet:', error);
       setWalletBalance(0);
+    }
+  };
+
+  const loadLoyaltyProfile = async () => {
+    try {
+      const response = await fetch(
+        `${API_BASE}/loyalty/profile/${phone}?type=customer`,
+        { headers: { Authorization: `Bearer ${publicAnonKey}` } }
+      );
+      
+      if (response.ok) {
+        const data = await response.json();
+        setLoyaltyPoints(data.profile?.pointsBalance || 0);
+        setLoyaltyTier(data.tier || null);
+        
+        // Tier discount will be calculated in useEffect when subtotal changes
+        console.log('✅ [PAYMENT] Loaded loyalty profile:', data.profile, 'Tier:', data.tier);
+      }
+    } catch (error) {
+      console.error('❌ [PAYMENT] Error loading loyalty profile:', error);
+    }
+  };
+
+  const loadActivePromotions = async () => {
+    try {
+      const response = await fetch(
+        `${API_BASE}/promotions/active?serviceType=${bookingData.vendorRoleId || 'all'}`,
+        { headers: { Authorization: `Bearer ${publicAnonKey}` } }
+      );
+      
+      if (response.ok) {
+        const data = await response.json();
+        setActivePromotions(data.promotions || []);
+        console.log('✅ [PAYMENT] Loaded active promotions:', data.promotions?.length || 0);
+      }
+    } catch (error) {
+      console.error('❌ [PAYMENT] Error loading promotions:', error);
     }
   };
 
@@ -136,9 +191,16 @@ export function PaymentPage({ bookingData, phone, onBack, onPaymentSuccess }: Pa
   };
   
   const gst = gstCalculation?.gstAmount || subtotal * 0.18; // Fallback to 18% if not calculated
-  const discount = appliedCoupon ? (subtotal * appliedCoupon.discount / 100) : 0;
-  const walletDeduction = useWallet ? Math.min(walletBalance, subtotal - discount) : 0;
-  const finalAmount = (gstCalculation?.total || (subtotal + gst)) - discount - walletDeduction;
+  const couponDiscount = appliedCoupon ? (subtotal * appliedCoupon.discount / 100) : 0;
+  const promotionDiscount = appliedPromotion ? (subtotal * (appliedPromotion.discountPercentage || 0) / 100) : 0;
+  const totalDiscount = couponDiscount + promotionDiscount + tierDiscount;
+  const walletDeduction = useWallet ? Math.min(walletBalance, subtotal - totalDiscount) : 0;
+  
+  // Loyalty points redemption (1 point = ₹1)
+  const pointsRedemption = useLoyaltyPoints ? Math.min(loyaltyPoints, Math.max(0, subtotal - totalDiscount - walletDeduction)) : 0;
+  const pointsDiscount = pointsRedemption; // 1 point = ₹1
+  
+  const finalAmount = Math.max(0, (gstCalculation?.total || (subtotal + gst)) - totalDiscount - walletDeduction - pointsDiscount);
 
   const handleApplyCoupon = async () => {
     if (!couponCode) return;
@@ -191,18 +253,34 @@ export function PaymentPage({ bookingData, phone, onBack, onPaymentSuccess }: Pa
       console.log('Amount:', finalAmount);
 
       // 1. Initiate Payment (Create Intent)
-      const initiateRes = await fetch(`${API_BASE}/payments/initiate`, {
+      // ✅ ENHANCED: Include all discount information for proper tracking
+      const initiateRes = await fetch(`${API_BASE}/ecommerce/payments/initiate`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${publicAnonKey}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          bookingId: bookingData.bookingId || `temp_${Date.now()}`, // Fallback if not yet created (though should be)
-          customerId: bookingData.customerId || 'cust_guest',
+          bookingId: bookingData.bookingId || `temp_${Date.now()}`,
+          customerId: bookingData.customerId || phone,
           vendorId: bookingData.vendorId || 'vend_guest',
           amount: finalAmount,
-          paymentMethod: selectedPaymentMethod
+          paymentMethod: selectedPaymentMethod,
+          // ✅ NEW: Discount breakdown for analytics and tracking
+          discounts: {
+            coupon: couponDiscount,
+            promotion: promotionDiscount,
+            tier: tierDiscount,
+            wallet: walletDeduction,
+            points: pointsDiscount,
+            total: totalDiscount + walletDeduction + pointsDiscount
+          },
+          couponCode: appliedCoupon?.code || null,
+          promotionId: appliedPromotion?.id || null,
+          loyaltyPointsUsed: pointsRedemption,
+          tierName: loyaltyTier?.name || null,
+          originalAmount: subtotal + gst,
+          walletUsed: walletDeduction
         })
       });
 
@@ -219,7 +297,7 @@ export function PaymentPage({ bookingData, phone, onBack, onPaymentSuccess }: Pa
       await new Promise(resolve => setTimeout(resolve, 1500)); 
 
       // 3. Verify Payment (Server-Side Completion)
-      const verifyRes = await fetch(`${API_BASE}/payments/verify`, {
+      const verifyRes = await fetch(`${API_BASE}/ecommerce/payments/verify`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${publicAnonKey}`,
@@ -240,12 +318,37 @@ export function PaymentPage({ bookingData, phone, onBack, onPaymentSuccess }: Pa
       const verifyData = await verifyRes.json();
       console.log('✅ [PAYMENT] Verified:', verifyData);
 
+      // Deduct loyalty points if used
+      if (pointsRedemption > 0) {
+        try {
+          await fetch(`${API_BASE}/loyalty/redeem`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${publicAnonKey}`
+            },
+            body: JSON.stringify({
+              userId: phone,
+              pointsToRedeem: pointsRedemption,
+              userType: 'customer'
+            })
+          });
+          console.log(`✅ [PAYMENT] Redeemed ${pointsRedemption} loyalty points`);
+        } catch (error) {
+          console.error('❌ [PAYMENT] Error redeeming points:', error);
+          // Don't fail payment if points redemption fails
+        }
+      }
+
       const paymentData = {
         paymentId,
         amount: finalAmount,
         method: selectedPaymentMethod,
         walletUsed: walletDeduction,
         couponApplied: appliedCoupon?.code,
+        promotionApplied: appliedPromotion?.id,
+        loyaltyPointsUsed: pointsRedemption,
+        tierDiscount: tierDiscount,
         status: 'success',
         timestamp: new Date().toISOString()
       };
@@ -329,16 +432,34 @@ export function PaymentPage({ bookingData, phone, onBack, onPaymentSuccess }: Pa
               <span className="text-gray-600">GST (18%)</span>
               <span>₹{gst.toFixed(2)}</span>
             </div>
-            {discount > 0 && (
+            {tierDiscount > 0 && (
+              <div className="flex justify-between text-blue-600">
+                <span>Loyalty Tier Discount {loyaltyTier?.name ? `(${loyaltyTier.name})` : ''}</span>
+                <span>- ₹{tierDiscount.toFixed(2)}</span>
+              </div>
+            )}
+            {couponDiscount > 0 && (
               <div className="flex justify-between text-green-600">
                 <span>Coupon Discount</span>
-                <span>- ₹{discount.toFixed(2)}</span>
+                <span>- ₹{couponDiscount.toFixed(2)}</span>
+              </div>
+            )}
+            {promotionDiscount > 0 && (
+              <div className="flex justify-between text-purple-600">
+                <span>Promotion Discount</span>
+                <span>- ₹{promotionDiscount.toFixed(2)}</span>
               </div>
             )}
             {walletDeduction > 0 && (
               <div className="flex justify-between text-green-600">
                 <span>Wallet Deduction</span>
                 <span>- ₹{walletDeduction.toFixed(2)}</span>
+              </div>
+            )}
+            {pointsDiscount > 0 && (
+              <div className="flex justify-between text-orange-600">
+                <span>Reward Points ({pointsRedemption} pts)</span>
+                <span>- ₹{pointsDiscount.toFixed(2)}</span>
               </div>
             )}
             <div className="flex justify-between pt-2 border-t border-gray-200">
@@ -372,6 +493,86 @@ export function PaymentPage({ bookingData, phone, onBack, onPaymentSuccess }: Pa
             </label>
           </div>
         </Card>
+
+        {/* Loyalty Points & Tier */}
+        {(loyaltyPoints > 0 || loyaltyTier) && (
+          <Card className="p-4 bg-white border border-gray-100 shadow-sm">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-10 h-10 bg-gradient-to-br from-orange-400 to-orange-600 rounded-lg flex items-center justify-center">
+                <span className="text-white font-bold text-sm">⭐</span>
+              </div>
+              <div className="flex-1">
+                <p className="font-semibold">Reward Points</p>
+                <p className="text-sm text-gray-500">
+                  {loyaltyPoints} points available
+                  {loyaltyTier && ` • ${loyaltyTier.name} Tier`}
+                </p>
+              </div>
+            </div>
+            {loyaltyPoints > 0 && (
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={useLoyaltyPoints}
+                  onChange={(e) => setUseLoyaltyPoints(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-orange-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#FF8C42]"></div>
+                <span className="ml-3 text-sm text-gray-700">Use reward points (1 point = ₹1)</span>
+              </label>
+            )}
+            {tierDiscount > 0 && (
+              <div className="mt-2 p-2 bg-blue-50 rounded-lg border border-blue-200">
+                <p className="text-sm text-blue-700">
+                  🎉 {loyaltyTier?.name} tier discount: ₹{tierDiscount.toFixed(2)} applied automatically
+                </p>
+              </div>
+            )}
+          </Card>
+        )}
+
+        {/* Active Promotions */}
+        {activePromotions.length > 0 && (
+          <Card className="p-4 bg-white border border-gray-100 shadow-sm">
+            <div className="flex items-center gap-2 mb-3">
+              <Tag className="w-5 h-5 text-purple-600" />
+              <h3 className="font-semibold">Active Promotions</h3>
+            </div>
+            <div className="space-y-2">
+              {activePromotions.map((promo) => (
+                <button
+                  key={promo.id}
+                  onClick={() => {
+                    if (appliedPromotion?.id === promo.id) {
+                      setAppliedPromotion(null);
+                    } else {
+                      setAppliedPromotion(promo);
+                      toast.success(`Promotion "${promo.title}" applied!`);
+                    }
+                  }}
+                  className={`w-full text-left p-3 rounded-lg border transition-all ${
+                    appliedPromotion?.id === promo.id
+                      ? 'border-purple-500 bg-purple-50'
+                      : 'border-gray-200 hover:border-purple-300'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-semibold text-sm">{promo.title}</p>
+                      <p className="text-xs text-gray-600">{promo.description}</p>
+                      <p className="text-xs text-purple-600 mt-1">
+                        {promo.discountPercentage}% off
+                      </p>
+                    </div>
+                    {appliedPromotion?.id === promo.id && (
+                      <Check className="w-5 h-5 text-purple-600" />
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </Card>
+        )}
 
         {/* Coupon Code */}
         <Card className="p-4 bg-white border border-gray-100 shadow-sm">

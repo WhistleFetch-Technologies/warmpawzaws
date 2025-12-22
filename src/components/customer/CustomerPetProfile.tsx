@@ -1,10 +1,12 @@
-import { useState, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import { Button } from '../ui/button';
 import { ChevronLeft, Plus, Camera, X } from 'lucide-react';
 import { ImageWithFallback } from '../figma/ImageWithFallback';
-// Logo placeholder - using base64 encoded SVG (Warmpawz logo)
-const logoImage = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8cmVjdCB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHJ4PSI4IiBmaWxsPSIjRkY4QzQyIi8+CiAgPHBhdGggZD0iTTIwIDEyQzE2LjY4NjMgMTIgMTQgMTQuNjg2MyAxNCAxOEMxNCAxOS41OTEzIDE0LjYzMjEgMjEuMDI2MSAxNS42NTY5IDIyLjA1MTRDMTY4MjE3IDIzLjA3NjcgMTguMTE2NSAyMy43MDg4IDE5LjcwNzcgMjMuNzA4OEMyMS4yOTg5IDIzLjcwODggMjIuNzMzNyAyMy4wNzY3IDIzLjc1ODUgMjIuMDUxNEMyNC43ODMzIDIxLjAyNjEgMjUuNDE1NCAxOS41OTEzIDI1LjQxNTQgMThDMjUuNDE1NCAxNC42ODYzIDIyLjcyOTEgMTIgMTkuNDE1NCAxMkgyMFpNMjAgMTRDMjEuNjU2OSAxNCAyMyAxNS4zNDMxIDIzIDE3QzIzIDE4LjY1NjkgMjEuNjU2OSAyMCAyMCAyMEMxOC4zNDMxIDIwIDE3IDE4LjY1NjkgMTcgMTdDMTcgMTUuMzQzMSAxOC4zNDMxIDE0IDIwIDE0WiIgZmlsbD0id2hpdGUiLz4KICA8cGF0aCBkPSJNMTIgMjRDMTIgMjQuNTUyMyAxMi40NDc3IDI1IDEzIDI1SDI3QzI3LjU1MjMgMjUgMjggMjQuNTUyMyAyOCAyNEMyOCAyMi4zNDMxIDI2LjY1NjkgMjEgMjUgMjFIMTVDMTMuMzQzMSAyMSAxMiAyMi4zNDMxIDEyIDI0WiIgZmlsbD0id2hpdGUiLz4KPC9zdmc+';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { LOGO_CIRCULAR_ORANGE, WARM_ORANGE } from '../../assets/design-tokens';
+import { WarmpawzButton } from '../shared/design-system/WarmpawzButton';
+
+const logoImage = LOGO_CIRCULAR_ORANGE;
 
 interface Pet {
   id: string;
@@ -204,7 +206,7 @@ export function CustomerPetProfile({ session, prefillData, onComplete, onBack }:
         <div className="w-24 h-24 bg-[#FF8C42] rounded-full flex items-center justify-center mb-4">
           <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
             <ellipse cx="24" cy="30" rx="11" ry="13" fill="white"/>
-            <path d="M24 28C22.5 26.5 20 26.5 18.5 28C17 29.5 17 32 18.5 33.5L24 39L29.5 33.5C31 32 31 29.5 29.5 28C28 26.5 25.5 26.5 24 28Z" fill="#FF8C42"/>
+            <path d="M24 28C22.5 26.5 20 26.5 18.5 28C17 29.5 17 32 18.5 33.5L24 39L29.5 33.5C31 32 31 29.5 29.5 28C28 26.5 25.5 26.5 24 28Z" fill={WARM_ORANGE}/>
             <ellipse cx="16" cy="16" rx="5" ry="7" transform="rotate(-15 16 16)" fill="white"/>
             <ellipse cx="22" cy="12" rx="5" ry="7" transform="rotate(-5 22 12)" fill="white"/>
             <ellipse cx="26" cy="12" rx="5" ry="7" transform="rotate(5 26 12)" fill="white"/>
@@ -276,7 +278,8 @@ export function CustomerPetProfile({ session, prefillData, onComplete, onBack }:
         {/* Add Pet Button */}
         <button
           onClick={handleAddPet}
-          className="w-full border-2 border-dashed border-[#FF8C42] bg-orange-50 rounded-2xl p-4 flex items-center justify-center gap-2 text-[#FF8C42] hover:bg-orange-100 transition-all mb-6"
+          className="w-full border-2 border-dashed bg-orange-50 rounded-2xl p-4 flex items-center justify-center gap-2 hover:bg-orange-100 transition-all mb-6"
+          style={{ borderColor: WARM_ORANGE, color: WARM_ORANGE }}
         >
           <Plus className="w-5 h-5" />
           <span className="font-medium">Add Pet</span>

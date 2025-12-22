@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { ArrowLeft, Plus, Save, Check, AlertCircle, Clock, DollarSign, Info, Package, ChevronDown, ChevronUp, X, Edit, Trash2, Search, Stethoscope, Scissors, Heart, Activity, Sparkles, GraduationCap, Home, Phone, Syringe, Pill, FileText, Camera, MapPin, Dog, Cat } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ArrowLeft, Plus, Save, Check, AlertCircle, Clock, DollarSign, Info, Package, ChevronDown, ChevronUp, X, Edit, Trash2, Search, Stethoscope, Scissors, Heart, Activity, Sparkles, GraduationCap, Home, Phone, Syringe, Pill, FileText, Camera, MapPin, Dog, Cat, Lock } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Switch } from '../ui/switch';
 import { Input } from '../ui/input';
@@ -8,6 +8,8 @@ import { Label } from '../ui/label';
 import { Badge } from '../ui/badge';
 import { toast } from 'sonner@2.0.3';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { WARM_ORANGE } from '../../assets/design-tokens';
+import { useVendorCapabilities } from './hooks/useVendorCapabilities'; // ✅ NEW: Capability validation
 import {
   Dialog,
   DialogContent,
@@ -70,12 +72,16 @@ export function VendorServiceConfigurationScreen({
   const [editingService, setEditingService] = useState<Service | null>(null); // ✅ NEW: Service being edited
   const [showDeleteDialog, setShowDeleteDialog] = useState<Service | null>(null); // ✅ NEW: Delete confirmation
   
+  // ✅ NEW: Load vendor capabilities
+  const { capabilities, loading: capsLoading } = useVendorCapabilities(vendorData?.roleId);
+  
   // Custom service form
   const [customServiceForm, setCustomServiceForm] = useState({
     serviceName: '',
     description: '',
     duration: 30,
-    price: 0
+    price: 0,
+    requiresPrescription: false // ✅ NEW: Track if service requires prescription capability
   });
   
   const isPlatformManaged = serviceStyle === 'at_home' || serviceStyle === 'tele';
@@ -375,6 +381,27 @@ export function VendorServiceConfigurationScreen({
     try {
       console.log('➕ Adding custom service/package...', packageData);
       
+      // ✅ NEW: Validate capabilities before creating service
+      if (packageData.isPackage) {
+        // Validate package_management capability
+        if (!capabilities.package_management) {
+          toast.error('Package management is not available for your role. Please contact admin to enable this capability.');
+          return;
+        }
+      } else {
+        // Validate custom_services capability
+        if (!capabilities.custom_services) {
+          toast.error('Custom services are not available for your role. Please contact admin to enable this capability.');
+          return;
+        }
+      }
+      
+      // ✅ NEW: Validate service requirements against capabilities
+      if (packageData.requiresPrescription && !capabilities.prescription) {
+        toast.error('This service requires prescription capability. Please contact admin to enable this feature.');
+        return;
+      }
+      
       // ✅ Check if this is a package (not a single custom service)
       if (packageData.isPackage) {
         // Route to package creation endpoint
@@ -530,7 +557,7 @@ export function VendorServiceConfigurationScreen({
     // Veterinary Services - Medical Icons
     if (category.includes('veterinary') || category.includes('medical') || category.includes('health')) {
       if (name.includes('consultation') || name.includes('checkup') || name.includes('exam')) {
-        return <Stethoscope className="w-6 h-6 text-[#FF8C42]" />;
+        return <Stethoscope className="w-6 h-6" style={{ color: WARM_ORANGE }} />;
       }
       if (name.includes('vaccination') || name.includes('vaccine') || name.includes('shot')) {
         return <Syringe className="w-6 h-6 text-blue-600" />;
@@ -784,7 +811,14 @@ export function VendorServiceConfigurationScreen({
               <Button
                 onClick={() => setShowAddCustomDialog(true)}
                 variant="outline"
-                className="w-full border-2 border-dashed border-[#FF8C42] text-[#FF8C42] hover:bg-orange-50"
+                className="w-full border-2 border-dashed hover:bg-orange-50"
+                style={{ borderColor: WARM_ORANGE, color: WARM_ORANGE }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#FFF5F0';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                }}
                 disabled={false} // Always enabled for single services
               >
                 <Plus className="w-4 h-4 mr-2" />

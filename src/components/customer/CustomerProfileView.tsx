@@ -1,9 +1,11 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '../ui/button';
 import { ChevronLeft, Camera, Edit2, Save, X } from 'lucide-react';
-// Logo placeholder - using base64 encoded SVG (Warmpawz logo)
-const logoImage = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8cmVjdCB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHJ4PSI4IiBmaWxsPSIjRkY4QzQyIi8+CiAgPHBhdGggZD0iTTIwIDEyQzE2LjY4NjMgMTIgMTQgMTQuNjg2MyAxNCAxOEMxNCAxOS41OTEzIDE0LjYzMjEgMjEuMDI2MSAxNS42NTY5IDIyLjA1MTRDMTY4MjE3IDIzLjA3NjcgMTguMTE2NSAyMy43MDg4IDE5LjcwNzcgMjMuNzA4OEMyMS4yOTg5IDIzLjcwODggMjIuNzMzNyAyMy4wNzY3IDIzLjc1ODUgMjIuMDUxNEMyNC43ODMzIDIxLjAyNjEgMjUuNDE1NCAxOS41OTEzIDI1LjQxNTQgMThDMjUuNDE1NCAxNC42ODYzIDIyLjcyOTEgMTIgMTkuNDE1NCAxMkgyMFpNMjAgMTRDMjEuNjU2OSAxNCAyMyAxNS4zNDMxIDIzIDE3QzIzIDE4LjY1NjkgMjEuNjU2OSAyMCAyMCAyMEMxOC4zNDMxIDIwIDE3IDE4LjY1NjkgMTcgMTdDMTcgMTUuMzQzMSAxOC4zNDMxIDE0IDIwIDE0WiIgZmlsbD0id2hpdGUiLz4KICA8cGF0aCBkPSJNMTIgMjRDMTIgMjQuNTUyMyAxMi40NDc3IDI1IDEzIDI1SDI3QzI3LjU1MjMgMjUgMjggMjQuNTUyMyAyOCAyNEMyOCAyMi4zNDMxIDI2LjY1NjkgMjEgMjUgMjFIMTVDMTMuMzQzMSAyMSAxMiAyMi4zNDMxIDEyIDI0WiIgZmlsbD0id2hpdGUiLz4KPC9zdmc+';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { LOGO_CIRCULAR_ORANGE, WARM_ORANGE } from '../../assets/design-tokens';
+import { WarmpawzButton } from '../shared/design-system/WarmpawzButton';
+
+const logoImage = LOGO_CIRCULAR_ORANGE;
 
 interface UserProfile {
   firstName: string;
@@ -121,7 +123,7 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
     return (
       <div className="min-h-screen bg-white flex items-center justify-center w-full max-w-[430px] mx-auto">
         <div className="text-center">
-          <div className="w-16 h-16 border-4 border-[#FF8C42] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <div className="w-16 h-16 border-4 border-t-transparent rounded-full animate-spin mx-auto mb-4" style={{ borderColor: `${WARM_ORANGE} ${WARM_ORANGE} ${WARM_ORANGE} transparent` }}></div>
           <p className="text-gray-600">Loading profile...</p>
         </div>
       </div>
@@ -133,9 +135,9 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
       <div className="min-h-screen bg-white flex items-center justify-center w-full max-w-[430px] mx-auto">
         <div className="text-center px-6">
           <p className="text-gray-600 mb-4">Profile not found</p>
-          <Button onClick={onBack} className="bg-[#FF8C42] hover:bg-[#FF7A2E]">
+          <WarmpawzButton variant="solid" onClick={onBack}>
             Go Back
-          </Button>
+          </WarmpawzButton>
         </div>
       </div>
     );
@@ -177,7 +179,7 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
           {editMode ? (
             <X className="w-6 h-6 text-gray-700" />
           ) : (
-            <Edit2 className="w-5 h-5 text-[#FF8C42]" />
+            <Edit2 className="w-5 h-5" style={{ color: WARM_ORANGE }} />
           )}
         </button>
       </div>
@@ -235,7 +237,15 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
                     type="text"
                     value={profile.firstName}
                     onChange={(e) => setProfile({ ...profile, firstName: e.target.value })}
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none"
+                    onFocus={(e) => {
+                      e.currentTarget.style.borderColor = WARM_ORANGE;
+                      e.currentTarget.style.boxShadow = `0 0 0 3px ${WARM_ORANGE}33`;
+                    }}
+                    onBlur={(e) => {
+                      e.currentTarget.style.borderColor = '#E5E7EB';
+                      e.currentTarget.style.boxShadow = 'none';
+                    }}
                   />
                 ) : (
                   <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">
@@ -252,7 +262,15 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
                     type="text"
                     value={profile.lastName}
                     onChange={(e) => setProfile({ ...profile, lastName: e.target.value })}
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none"
+                    onFocus={(e) => {
+                      e.currentTarget.style.borderColor = WARM_ORANGE;
+                      e.currentTarget.style.boxShadow = `0 0 0 3px ${WARM_ORANGE}33`;
+                    }}
+                    onBlur={(e) => {
+                      e.currentTarget.style.borderColor = '#E5E7EB';
+                      e.currentTarget.style.boxShadow = 'none';
+                    }}
                   />
                 ) : (
                   <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">
@@ -341,7 +359,7 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
               <div className="flex justify-between items-center py-2">
                 <span className="text-sm text-gray-600">Member Since</span>
                 <span className="text-sm font-medium text-black">
-                  {new Date(profile.created_at || Date.now()).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
+                  {new Date((profile as any).created_at || Date.now()).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
                 </span>
               </div>
               <div className="flex justify-between items-center py-2">
@@ -359,7 +377,14 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
           <Button
             onClick={handleSave}
             disabled={saving}
-            className="w-full h-12 bg-[#FF8C42] hover:bg-[#FF7A2E] rounded-xl text-white disabled:opacity-50"
+            className="w-full h-12 rounded-xl text-white disabled:opacity-50"
+            style={{ backgroundColor: WARM_ORANGE }}
+            onMouseEnter={(e) => {
+              if (!saving) e.currentTarget.style.backgroundColor = '#FF7A2E';
+            }}
+            onMouseLeave={(e) => {
+              if (!saving) e.currentTarget.style.backgroundColor = WARM_ORANGE;
+            }}
           >
             {saving ? 'Saving...' : 'Save Changes'}
           </Button>

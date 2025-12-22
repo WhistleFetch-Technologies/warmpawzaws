@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Search, Bell, MessageSquare, User, Plus, RefreshCw, TrendingUp, 
   AlertTriangle, Shield, BarChart3, Calendar, DollarSign, FileText, 
@@ -8,6 +8,7 @@ import {
 import { Button } from '../ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { WARM_ORANGE } from '../../assets/design-tokens';
 const logoImage = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8cmVjdCB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHJ4PSI4IiBmaWxsPSIjRkY4QzQyIi8+CiAgPHBhdGggZD0iTTIwIDEyQzE2LjY4NjMgMTIgMTQgMTQuNjg2MyAxNCAxOEMxNCAxOS41OTEzIDE0LjYzMjEgMjEuMDI2MSAxNS42NTY5IDIyLjA1MTRDMTY4MjE3IDIzLjA3NjcgMTguMTE2NSAyMy43MDg4IDE5LjcwNzcgMjMuNzA4OEMyMS4yOTg5IDIzLjcwODggMjIuNzMzNyAyMy4wNzY3IDIzLjc1ODUgMjIuMDUxNEMyNC43ODMzIDIxLjAyNjEgMjUuNDE1NCAxOS41OTEzIDI1LjQxNTQgMThDMjUuNDE1NCAxNC42ODYzIDIyLjcyOTEgMTIgMTkuNDE1NCAxMkgyMFpNMjAgMTRDMjEuNjU2OSAxNCAyMyAxNS4zNDMxIDIzIDE3QzIzIDE4LjY1NjkgMjEuNjU2OSAyMCAyMCAyMEMxOC4zNDMxIDIwIDE3IDE4LjY1NjkgMTcgMTdDMTcgMTUuMzQzMSAxOC4zNDMxIDE0IDIwIDE0WiIgZmlsbD0id2hpdGUiLz4KICA8cGF0aCBkPSJNMTIgMjRDMTIgMjQuNTUyMyAxMi40NDc3IDI1IDEzIDI1SDI3QzI3LjU1MjMgMjUgMjggMjQuNTUyMyAyOCAyNEMyOCAyMi4zNDMxIDI2LjY1NjkgMjEgMjUgMjFIMTVDMTMuMzQzMSAyMSAxMiAyMi4zNDMxIDEyIDI0WiIgZmlsbD0id2hpdGUiLz4KPC9zdmc+';
 import { CustomDropdown } from './CustomDropdown';
 import { DeactivationRequestsTab } from './DeactivationRequestsTab';
@@ -836,7 +837,13 @@ export function AdminVendorManagement({ onNavigate }: AdminVendorManagementProps
                 setError(null);
                 loadData();
               }}
-              className="bg-[#FF8C42] hover:bg-[#ff7a2e]"
+              style={{ backgroundColor: WARM_ORANGE }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = '#FF7A2E';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = WARM_ORANGE;
+              }}
             >
               <RefreshCw className="w-4 h-4 mr-2" />
               Retry
@@ -867,7 +874,7 @@ export function AdminVendorManagement({ onNavigate }: AdminVendorManagementProps
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-[#FF8C42] mx-auto mb-6"></div>
+          <div className="animate-spin rounded-full h-16 w-16 border-b-4 mx-auto mb-6" style={{ borderColor: `${WARM_ORANGE} transparent ${WARM_ORANGE} ${WARM_ORANGE}` }}></div>
           <h2 className="text-xl font-semibold text-gray-900 mb-2">Loading Vendor Data...</h2>
           <p className="text-gray-600">Please wait while we fetch the latest information</p>
         </div>

@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { X, MapPin, Clock, User, Phone, Calendar, Star, CheckCircle2, XCircle, AlertCircle, Navigation, Loader2 } from 'lucide-react';
+import { X, MapPin, Clock, User, Phone, Calendar, Star, CheckCircle2, XCircle, AlertCircle, Navigation, Loader2, MessageSquare, Video, FileText, Pill, Stethoscope, RefreshCw, History, Activity } from 'lucide-react';
 import { Button } from '../ui/button';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { toast } from 'sonner@2.0.3'; // ✅ FIX: Use consistent toast import
 import { authenticatedFetch } from '../../utils/session-manager'; // ✅ SECURITY FIX
+import { useVendorCapabilities } from './hooks/useVendorCapabilities'; // ✅ NEW: Capability-based actions
 
 interface AppointmentDetailModalProps {
   bookingId: string;
@@ -81,12 +82,16 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'details' | 'history' | 'prescriptions'>('details');
   
+  // ✅ NEW: Load vendor capabilities
+  const { capabilities, loading: capsLoading } = useVendorCapabilities(vendorData?.roleId);
+  
   // Modal states
   const [communicationMode, setCommunicationMode] = useState<'video' | 'chat' | null>(null);
   const [showPrescriptionModal, setShowPrescriptionModal] = useState(false);
   const [showMedicalHistory, setShowMedicalHistory] = useState(false);
   const [showVetSummaryModal, setShowVetSummaryModal] = useState(false);
   const [showTracking, setShowTracking] = useState(false);
+  const [showEmergencyProtocol, setShowEmergencyProtocol] = useState(false); // ✅ NEW: Emergency protocol
   
   // OTP States
   const [otp, setOtp] = useState('');
@@ -518,8 +523,8 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                   <div className="text-center py-8 text-gray-500">
                     <Pill className="w-12 h-12 mx-auto mb-2 text-gray-300" />
                     <p className="mb-4">No prescriptions yet</p>
-                    {/* ✅ CANONICAL: Only show for pet_clinic role */}
-                    {vendorData?.roleId === 'pet_clinic' && (
+                    {/* ✅ NEW: Show based on capability, not hardcoded role */}
+                    {capabilities.prescription && (
                       <button
                         onClick={() => setShowPrescriptionModal(true)}
                         className="px-4 py-2 bg-[#FF8C42] text-white rounded-lg font-medium"
@@ -576,7 +581,8 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                       </div>
                     ))}
                     
-                    {vendorData?.roleId === 'veterinarian' && (
+                    {/* ✅ NEW: Show based on capability */}
+                    {capabilities.prescription && (
                       <button
                         onClick={() => setShowPrescriptionModal(true)}
                         className="w-full px-4 py-2 bg-green-50 text-green-700 rounded-lg font-medium hover:bg-green-100 transition-colors"
@@ -671,32 +677,427 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
               )}
             </div>
             
-            {/* Prescription Action (Vet Only) */}
-            {(vendorData?.roleId === 'veterinarian' || vendorData?.roleId === 'pet_clinic') && booking.status !== 'cancelled' && (
+            {/* ✅ NEW: Capability-based Actions */}
+            {booking.status !== 'cancelled' && (
               <div className="space-y-2">
-                <div className="flex gap-2">
+                {/* Medical Records Capability */}
+                {capabilities.medical_records && booking.petId && (
                   <button
                     onClick={() => setShowMedicalHistory(true)}
-                    className="flex-1 py-3 bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 rounded-xl font-medium flex items-center justify-center gap-2"
+                    className="w-full py-3 bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 rounded-xl font-medium flex items-center justify-center gap-2"
                   >
                     <FileText className="w-4 h-4" />
-                    Medical History
+                    Medical Records
                   </button>
+                )}
+                
+                {/* Prescription Capability */}
+                {capabilities.prescription && (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setShowPrescriptionModal(true)}
+                      className="flex-1 py-3 bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 rounded-xl font-medium flex items-center justify-center gap-2"
+                    >
+                      <Pill className="w-4 h-4" />
+                      {prescriptions.length > 0 ? 'Update Rx' : 'Write Rx'}
+                    </button>
+                    
+                    {/* Prescription Verification Capability */}
+                    {capabilities.prescription_verification && (
+                      <button
+                        onClick={() => {
+                          toast.info('Prescription verification feature coming soon');
+                        }}
+                        className="flex-1 py-3 bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 rounded-xl font-medium flex items-center justify-center gap-2"
+                      >
+                        <Pill className="w-4 h-4" />
+                        Verify Rx
+                      </button>
+                    )}
+                  </div>
+                )}
+                
+                {/* Emergency Protocol Capability */}
+                {capabilities.emergency && booking.status !== 'completed' && (
                   <button
-                    onClick={() => setShowPrescriptionModal(true)}
-                    className="flex-1 py-3 bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 rounded-xl font-medium flex items-center justify-center gap-2"
+                    onClick={() => setShowEmergencyProtocol(true)}
+                    className="w-full py-3 bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 rounded-xl font-medium flex items-center justify-center gap-2"
+                  >
+                    <AlertCircle className="w-4 h-4" />
+                    Emergency Protocol
+                  </button>
+                )}
+                
+                {/* Vet Summary Capability */}
+                {capabilities.vet_summary && (
+                  <button
+                    onClick={() => setShowVetSummaryModal(true)}
+                    className="w-full py-3 bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 rounded-xl font-medium flex items-center justify-center gap-2"
+                  >
+                    <Stethoscope className="w-4 h-4" />
+                    Add Consultation Summary
+                  </button>
+                )}
+                
+                {/* Patient Monitoring Capability */}
+                {capabilities.patient_monitoring && booking.status === 'in_progress' && (
+                  <button
+                    onClick={() => {
+                      toast.info('Patient monitoring feature coming soon');
+                    }}
+                    className="w-full py-3 bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 rounded-xl font-medium flex items-center justify-center gap-2"
+                  >
+                    <Activity className="w-4 h-4" />
+                    Monitor Patient
+                  </button>
+                )}
+
+                {/* ✅ NEW: Multi Doctor Management */}
+                {capabilities.multi_doctor_management && (
+                  <button
+                    onClick={() => {
+                      toast.info('Multi-doctor management feature coming soon');
+                    }}
+                    className="w-full py-3 bg-teal-50 text-teal-700 border border-teal-200 hover:bg-teal-100 rounded-xl font-medium flex items-center justify-center gap-2"
+                  >
+                    <User className="w-4 h-4" />
+                    Assign Doctor
+                  </button>
+                )}
+
+                {/* ✅ NEW: Table Management (Cafe) */}
+                {capabilities.table_management && booking.serviceType === 'cafe' && (
+                  <button
+                    onClick={() => {
+                      toast.info('Table management feature coming soon');
+                    }}
+                    className="w-full py-3 bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100 rounded-xl font-medium flex items-center justify-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                    Manage Table
+                  </button>
+                )}
+
+                {/* ✅ NEW: Pax Management (Cafe) */}
+                {capabilities.pax_management && booking.serviceType === 'cafe' && (
+                  <button
+                    onClick={() => {
+                      toast.info('Pax management feature coming soon');
+                    }}
+                    className="w-full py-3 bg-yellow-50 text-yellow-700 border border-yellow-200 hover:bg-yellow-100 rounded-xl font-medium flex items-center justify-center gap-2"
+                  >
+                    <Users className="w-4 h-4" />
+                    Manage Guests
+                  </button>
+                )}
+
+                {/* ✅ NEW: Occupancy Tracking (Boarding/Resort) */}
+                {capabilities.occupancy_tracking && (booking.serviceType === 'boarding' || booking.serviceType === 'resort') && (
+                  <button
+                    onClick={() => {
+                      toast.info('Occupancy tracking feature coming soon');
+                    }}
+                    className="w-full py-3 bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 rounded-xl font-medium flex items-center justify-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                    </svg>
+                    Check Occupancy
+                  </button>
+                )}
+
+                {/* ✅ NEW: Nightly Pricing (Boarding/Resort) */}
+                {capabilities.nightly_pricing && (booking.serviceType === 'boarding' || booking.serviceType === 'resort') && (
+                  <button
+                    onClick={() => {
+                      toast.info('Nightly pricing feature coming soon');
+                    }}
+                    className="w-full py-3 bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 rounded-xl font-medium flex items-center justify-center gap-2"
+                  >
+                    <DollarSign className="w-4 h-4" />
+                    View Pricing
+                  </button>
+                )}
+
+                {/* ✅ NEW: Room Management (Boarding/Resort) */}
+                {capabilities.room_management && (booking.serviceType === 'boarding' || booking.serviceType === 'resort') && (
+                  <button
+                    onClick={() => {
+                      toast.info('Room management feature coming soon');
+                    }}
+                    className="w-full py-3 bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 rounded-xl font-medium flex items-center justify-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                    </svg>
+                    Manage Room
+                  </button>
+                )}
+
+                {/* ✅ NEW: Inventory Management */}
+                {capabilities.inventory && (
+                  <button
+                    onClick={() => {
+                      toast.info('Inventory management feature coming soon');
+                    }}
+                    className="w-full py-3 bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100 rounded-xl font-medium flex items-center justify-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                    </svg>
+                    Check Inventory
+                  </button>
+                )}
+
+                {/* ✅ NEW: Order Management */}
+                {capabilities.order_management && (
+                  <button
+                    onClick={() => {
+                      toast.info('Order management feature coming soon');
+                    }}
+                    className="w-full py-3 bg-cyan-50 text-cyan-700 border border-cyan-200 hover:bg-cyan-100 rounded-xl font-medium flex items-center justify-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+                    </svg>
+                    Manage Orders
+                  </button>
+                )}
+
+                {/* ✅ NEW: Photo Upload */}
+                {capabilities.photo_upload && (
+                  <button
+                    onClick={() => {
+                      toast.info('Photo upload feature coming soon');
+                    }}
+                    className="w-full py-3 bg-pink-50 text-pink-700 border border-pink-200 hover:bg-pink-100 rounded-xl font-medium flex items-center justify-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    Upload Photos
+                  </button>
+                )}
+
+                {/* ✅ NEW: Expiry Management */}
+                {capabilities.expiry_management && (
+                  <button
+                    onClick={() => {
+                      toast.info('Expiry management feature coming soon');
+                    }}
+                    className="w-full py-3 bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 rounded-xl font-medium flex items-center justify-center gap-2"
+                  >
+                    <Calendar className="w-4 h-4" />
+                    Check Expiry
+                  </button>
+                )}
+
+                {/* ✅ NEW: Donation Management */}
+                {capabilities.donation && (
+                  <button
+                    onClick={() => {
+                      toast.info('Donation management feature coming soon');
+                    }}
+                    className="w-full py-3 bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 rounded-xl font-medium flex items-center justify-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                    </svg>
+                    Donation
+                  </button>
+                )}
+
+                {/* ✅ NEW: Event Management */}
+                {capabilities.event_management && (
+                  <button
+                    onClick={() => {
+                      toast.info('Event management feature coming soon');
+                    }}
+                    className="w-full py-3 bg-violet-50 text-violet-700 border border-violet-200 hover:bg-violet-100 rounded-xl font-medium flex items-center justify-center gap-2"
+                  >
+                    <Calendar className="w-4 h-4" />
+                    Manage Event
+                  </button>
+                )}
+
+                {/* ✅ NEW: Claims Management (Insurance) */}
+                {capabilities.claims_management && booking.serviceType === 'insurance' && (
+                  <button
+                    onClick={() => {
+                      toast.info('Claims management feature coming soon');
+                    }}
+                    className="w-full py-3 bg-teal-50 text-teal-700 border border-teal-200 hover:bg-teal-100 rounded-xl font-medium flex items-center justify-center gap-2"
+                  >
+                    <FileText className="w-4 h-4" />
+                    Process Claim
+                  </button>
+                )}
+
+                {/* ✅ NEW: Diagnostic Lab */}
+                {capabilities.diagnostic_lab && (
+                  <button
+                    onClick={() => {
+                      toast.info('Diagnostic lab feature coming soon');
+                    }}
+                    className="w-full py-3 bg-cyan-50 text-cyan-700 border border-cyan-200 hover:bg-cyan-100 rounded-xl font-medium flex items-center justify-center gap-2"
+                  >
+                    <Activity className="w-4 h-4" />
+                    Lab Reports
+                  </button>
+                )}
+
+                {/* ✅ NEW: Ambulance Services */}
+                {capabilities.ambulance_services && (
+                  <button
+                    onClick={() => {
+                      toast.info('Ambulance services feature coming soon');
+                    }}
+                    className="w-full py-3 bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 rounded-xl font-medium flex items-center justify-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                    Ambulance
+                  </button>
+                )}
+
+                {/* ✅ NEW: Counseling */}
+                {capabilities.counseling && (
+                  <button
+                    onClick={() => {
+                      toast.info('Counseling feature coming soon');
+                    }}
+                    className="w-full py-3 bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 rounded-xl font-medium flex items-center justify-center gap-2"
+                  >
+                    <MessageSquare className="w-4 h-4" />
+                    Start Counseling
+                  </button>
+                )}
+
+                {/* ✅ NEW: Diet Charts */}
+                {capabilities.diet_charts && (
+                  <button
+                    onClick={() => {
+                      toast.info('Diet charts feature coming soon');
+                    }}
+                    className="w-full py-3 bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 rounded-xl font-medium flex items-center justify-center gap-2"
+                  >
+                    <FileText className="w-4 h-4" />
+                    Diet Chart
+                  </button>
+                )}
+
+                {/* ✅ NEW: Delivery Management */}
+                {capabilities.delivery && (
+                  <button
+                    onClick={() => {
+                      toast.info('Delivery management feature coming soon');
+                    }}
+                    className="w-full py-3 bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 rounded-xl font-medium flex items-center justify-center gap-2"
+                  >
+                    <Navigation className="w-4 h-4" />
+                    Track Delivery
+                  </button>
+                )}
+
+                {/* ✅ NEW: Progress Tracking */}
+                {capabilities.progress_tracking && (
+                  <button
+                    onClick={() => {
+                      toast.info('Progress tracking feature coming soon');
+                    }}
+                    className="w-full py-3 bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 rounded-xl font-medium flex items-center justify-center gap-2"
+                  >
+                    <TrendingUp className="w-4 h-4" />
+                    View Progress
+                  </button>
+                )}
+
+                {/* ✅ NEW: Gallery */}
+                {capabilities.gallery && (
+                  <button
+                    onClick={() => {
+                      toast.info('Gallery feature coming soon');
+                    }}
+                    className="w-full py-3 bg-pink-50 text-pink-700 border border-pink-200 hover:bg-pink-100 rounded-xl font-medium flex items-center justify-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    View Gallery
+                  </button>
+                )}
+
+                {/* ✅ NEW: Portfolio */}
+                {capabilities.portfolio && (
+                  <button
+                    onClick={() => {
+                      toast.info('Portfolio feature coming soon');
+                    }}
+                    className="w-full py-3 bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 rounded-xl font-medium flex items-center justify-center gap-2"
+                  >
+                    <Briefcase className="w-4 h-4" />
+                    Portfolio
+                  </button>
+                )}
+
+                {/* ✅ NEW: CCTV Access */}
+                {capabilities.cctv_access && (
+                  <button
+                    onClick={() => {
+                      toast.info('CCTV access feature coming soon');
+                    }}
+                    className="w-full py-3 bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100 rounded-xl font-medium flex items-center justify-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                    CCTV View
+                  </button>
+                )}
+
+                {/* ✅ NEW: Controlled Substances */}
+                {capabilities.controlled_substances && (
+                  <button
+                    onClick={() => {
+                      toast.info('Controlled substances feature coming soon');
+                    }}
+                    className="w-full py-3 bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 rounded-xl font-medium flex items-center justify-center gap-2"
                   >
                     <Pill className="w-4 h-4" />
-                    {prescriptions.length > 0 ? 'Update Rx' : 'Write Rx'}
+                    Controlled Substances
                   </button>
-                </div>
-                <button
-                  onClick={() => setShowVetSummaryModal(true)}
-                  className="w-full py-3 bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 rounded-xl font-medium flex items-center justify-center gap-2"
-                >
-                  <Stethoscope className="w-4 h-4" />
-                  Add Consultation Summary
-                </button>
+                )}
+
+                {/* ✅ NEW: Adoption */}
+                {capabilities.adoption && (
+                  <button
+                    onClick={() => {
+                      toast.info('Adoption feature coming soon');
+                    }}
+                    className="w-full py-3 bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 rounded-xl font-medium flex items-center justify-center gap-2"
+                  >
+                    <Heart className="w-4 h-4" />
+                    Adoption
+                  </button>
+                )}
+
+                {/* ✅ NEW: Memorial */}
+                {capabilities.memorial && (
+                  <button
+                    onClick={() => {
+                      toast.info('Memorial services feature coming soon');
+                    }}
+                    className="w-full py-3 bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100 rounded-xl font-medium flex items-center justify-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Memorial
+                  </button>
+                )}
               </div>
             )}
           </div>

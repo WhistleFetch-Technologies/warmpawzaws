@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { RoleManagement } from './RoleManagement';
 import { EnhancedOnboardingFormBuilder } from './EnhancedOnboardingFormBuilder';
 import { ServiceCatalogTab } from './catalog/ServiceCatalogTab';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { Button } from '../ui/button';
+import { WARM_ORANGE } from '../../assets/design-tokens';
 import { 
   Grid3x3, 
   Package, 
@@ -244,14 +245,28 @@ export function CatalogServicesManagement({ onNavigate }: CatalogServicesManagem
                   Export
                 </Button>
                 <Button 
-                  className="bg-[#FF8C42] hover:bg-[#FF7A2E] gap-2"
+                  className="gap-2"
+                  style={{ backgroundColor: WARM_ORANGE }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = '#FF7A2E';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = WARM_ORANGE;
+                  }}
                   onClick={() => setShowCreateCategory(true)}
                 >
                   <Plus className="w-4 h-4" />
                   Add Category
                 </Button>
                 <Button 
-                  className="bg-[#FF8C42] hover:bg-[#FF7A2E] gap-2"
+                  className="gap-2"
+                  style={{ backgroundColor: WARM_ORANGE }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = '#FF7A2E';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = WARM_ORANGE;
+                  }}
                   onClick={() => setShowCreateProduct(true)}
                 >
                   <Plus className="w-4 h-4" />

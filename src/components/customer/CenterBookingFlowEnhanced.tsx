@@ -47,6 +47,7 @@ interface CenterBookingFlowEnhancedProps {
   customerName: string;
   petId: string;
   petName: string;
+  vendorRoleId?: string; // ✅ NEW: Role ID for role-specific features
   onBack: () => void;
   onSuccess: (bookingId: string) => void;
 }

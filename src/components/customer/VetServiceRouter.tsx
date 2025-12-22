@@ -174,16 +174,30 @@ export function VetServiceRouter({ onBack, phone, onNavigate, onViewBooking, dat
       setBookingFlow(prev => ({ ...prev, followUpBooking: data?.booking || null }));
       setCurrentView('followup_chat');
     } else if (screen === 'select_service') {
-      setCurrentView('select_service');
+      // ✅ MIGRATION: Route to booking_dispatcher if vendor is selected, otherwise show service selector
+      if (data?.vendorId) {
+        setBookingFlow(prev => ({
+          ...prev,
+          vendorId: data?.vendorId,
+          vendorName: data?.vendorName,
+          selectedService: data?.service,
+          serviceType: data?.serviceType || 'center'
+        }));
+        setCurrentView('booking_dispatcher');
+      } else {
+        setCurrentView('select_service');
+      }
     } else if (screen === 'home_service_book') {
+      // ✅ MIGRATION: Use BookingFlowDispatcher instead of legacy multi-step flow
       setBookingFlow(prev => ({
         ...prev,
         vendorId: data?.vendorId,
         vendorName: data?.vendorName,
-        services: data?.service,
-        serviceType: 'home'
+        selectedService: data?.service,
+        serviceType: 'home',
+        pet: data?.pet || null
       }));
-      setCurrentView('select_pet');
+      setCurrentView('booking_dispatcher');
     } else if (screen === 'doctor_details' || screen === 'doctor-details') {
       console.log('✅ [VET-ROUTER] Navigating to doctor details with data:', data);
       setCurrentView('doctor_details');
@@ -418,7 +432,10 @@ export function VetServiceRouter({ onBack, phone, onNavigate, onViewBooking, dat
     );
   }
 
+  // ✅ MIGRATION: Legacy payment view - now handled by BookingFlowDispatcher
+  // Keeping for backward compatibility but should not be reached in normal flow
   if (currentView === 'payment' && bookingFlow.services.length > 0 && bookingFlow.pet && bookingFlow.date && bookingFlow.time) {
+    console.warn('⚠️ [VET-ROUTER] Legacy payment view reached - should use BookingFlowDispatcher');
     return (
       <PaymentPage
         bookingData={{
@@ -442,45 +459,78 @@ export function VetServiceRouter({ onBack, phone, onNavigate, onViewBooking, dat
     );
   }
 
+  // ✅ MIGRATION: Legacy select_address view - now handled by BookingFlowDispatcher
+  // Keeping for backward compatibility but should not be reached in normal flow
   if (currentView === 'select_address' && bookingFlow.serviceType === 'home') {
     return (
       <AddressSelector
         phone={phone}
         onBack={() => setCurrentView('select_time')}
-        onSelect={handleAddressSelected}
+        onSelect={(address) => {
+          // Update booking flow - address selection is now handled by dispatcher
+          setBookingFlow(prev => ({ ...prev, address }));
+          // Note: Address selection is handled within BookingFlowDispatcher
+          // This view should rarely be reached
+          console.warn('⚠️ [VET-ROUTER] Legacy select_address view reached - should use BookingFlowDispatcher');
+        }}
       />
     );
   }
 
+  // ✅ MIGRATION: Legacy select_time view - now handled by BookingFlowDispatcher
+  // Keeping for backward compatibility but should not be reached in normal flow
   if (currentView === 'select_time' && bookingFlow.vendorId && bookingFlow.services.length > 0) {
     return (
       <TimeSlotSelector
         vendorId={bookingFlow.vendorId}
         serviceDuration={bookingFlow.services[0].duration || 60}
         onBack={() => setCurrentView('select_pet')}
-        onSelect={handleTimeSelected}
+        onSelect={(date, time) => {
+          // Update booking flow - time selection is now handled by dispatcher
+          setBookingFlow(prev => ({ ...prev, date, time }));
+          // Note: Time selection is handled within BookingFlowDispatcher
+          // This view should rarely be reached
+          console.warn('⚠️ [VET-ROUTER] Legacy select_time view reached - should use BookingFlowDispatcher');
+        }}
       />
     );
   }
 
+  // ✅ MIGRATION: Legacy select_pet view - now handled by BookingFlowDispatcher
+  // Keeping for backward compatibility but should not be reached in normal flow
   if (currentView === 'select_pet' && bookingFlow.services.length > 0) {
     return (
       <PetSelector
         phone={phone}
         onBack={() => setCurrentView('select_service')}
-        onSelect={handlePetSelected}
+        onSelect={(pet) => {
+          // Update booking flow and route to dispatcher
+          setBookingFlow(prev => ({ ...prev, pet }));
+          setCurrentView('booking_dispatcher');
+        }}
       />
     );
   }
 
   if (currentView === 'select_service' && bookingFlow.vendorId) {
+    // ✅ MIGRATION: Service selection now routes to BookingFlowDispatcher after selection
     return (
       <ServicePackageSelector
         vendorId={bookingFlow.vendorId}
         vendorName={bookingFlow.vendorName || 'Vet Clinic'}
         serviceType={bookingFlow.serviceType || 'center'}
         onBack={() => setCurrentView('center_profile')}
-        onSelect={handleServiceSelected}
+        onSelect={(services, addOns) => {
+          // Update booking flow with selected services
+          setBookingFlow(prev => ({
+            ...prev,
+            services,
+            addOns,
+            selectedService: services[0] || null
+          }));
+          // Route to BookingFlowDispatcher instead of legacy multi-step flow
+          setCurrentView('booking_dispatcher');
+        }}
       />
     );
   }
@@ -610,23 +660,34 @@ export function VetServiceRouter({ onBack, phone, onNavigate, onViewBooking, dat
     );
   }
 
-  // Legacy view - kept for backward compatibility
-  if (currentView === 'vet_booking' && bookingFlow.doctorId) {
-    console.log('🎯 [VET-ROUTER] Rendering VetBookingRouter (legacy) with:', {
-      doctorId: bookingFlow.doctorId,
-      selectedService: bookingFlow.selectedService,
-      serviceType: bookingFlow.serviceType
-    });
+  // ✅ MIGRATION: Legacy vet_booking view now uses BookingFlowDispatcher
+  if (currentView === 'vet_booking' && bookingFlow.vendorId) {
+    console.log('🎯 [VET-ROUTER] Migrating legacy vet_booking to BookingFlowDispatcher');
+    // Redirect to booking_dispatcher
+    const serviceStyle = bookingFlow.serviceType === 'home' ? 'at_home' : 
+                         bookingFlow.serviceType === 'tele' ? 'tele' : 'at_center';
     
     return (
-      <VetBookingRouter
-        phone={phone}
-        doctorId={bookingFlow.doctorId}
-        selectedService={bookingFlow.selectedService}
-        serviceType={bookingFlow.serviceType as 'tele' | 'clinic' | 'home' | undefined}
-        onBack={() => setCurrentView('vet_center')}
+      <BookingFlowDispatcher
+        serviceType="vet"
+        serviceStyle={serviceStyle}
+        vendorId={bookingFlow.vendorId}
+        vendorName={bookingFlow.vendorName || undefined}
+        staffId={bookingFlow.doctorId || undefined}
+        selectedService={bookingFlow.selectedService || undefined}
+        customerId={customerId}
+        customerPhone={phone}
+        petId={bookingFlow.pet?.id}
+        petName={bookingFlow.pet?.name}
+        onBack={() => {
+          if (bookingFlow.doctorId) {
+            setCurrentView('doctor_details');
+          } else {
+            setCurrentView('vet_center');
+          }
+        }}
         onNavigate={handleVetNavigate}
-        onViewBooking={onViewBooking}
+        onBookingComplete={handleBookingComplete}
       />
     );
   }

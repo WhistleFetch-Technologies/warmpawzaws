@@ -73,12 +73,16 @@ export function MatingDatingProfile({ phone, mode, onBack, onComplete }: MatingD
 
   const loadExistingProfile = async () => {
     try {
-      const profileKey = mode === 'pet' && selectedPetId 
+      const profileId = mode === 'pet' && selectedPetId 
         ? `pet_dating_${selectedPetId}` 
         : `owner_dating_${phone}`;
       
+      const endpoint = mode === 'pet'
+        ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/dating/pet-profile/${profileId}`
+        : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/dating/owner-profile/${profileId}`;
+      
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/dating/${mode}-profile/${profileKey}`,
+        endpoint,
         { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
       );
 
@@ -137,27 +141,50 @@ export function MatingDatingProfile({ phone, mode, onBack, onComplete }: MatingD
     }
   };
 
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
 
-    // In production, upload to S3/Supabase Storage
-    // For now, convert to base64 or use placeholder URLs
-    const photoPromises = Array.from(files).map(file => {
-      return new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.readAsDataURL(file);
-      });
-    });
+    try {
+      // Upload each file to S3
+      const uploadPromises = Array.from(files).map(async (file) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('folder', mode === 'pet' ? 'pet-profiles' : 'owner-profiles');
+        formData.append('userId', phone);
 
-    Promise.all(photoPromises).then(photoUrls => {
+        const response = await fetch(
+          `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/media/upload`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${publicAnonKey}`
+            },
+            body: formData
+          }
+        );
+
+        if (response.ok) {
+          const result = await response.json();
+          return result.url;
+        } else {
+          throw new Error('Upload failed');
+        }
+      });
+
+      const photoUrls = await Promise.all(uploadPromises);
+
       if (mode === 'pet') {
         setPetForm(prev => ({ ...prev, photos: [...prev.photos, ...photoUrls].slice(0, 6) }));
       } else {
         setOwnerForm(prev => ({ ...prev, photos: [...prev.photos, ...photoUrls].slice(0, 6) }));
       }
-    });
+
+      toast.success(`${photoUrls.length} photo(s) uploaded successfully`);
+    } catch (error) {
+      console.error('Error uploading photos:', error);
+      toast.error('Failed to upload photos. Please try again.');
+    }
   };
 
   const removePhoto = (index: number) => {
