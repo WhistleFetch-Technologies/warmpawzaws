@@ -24,6 +24,8 @@ export * from "./orders.ts";
 export * from "./refunds.ts";
 export * from "./payouts.ts";
 export * from "./notifications.ts";
+export * from "./otp.ts";
+export * from "./settlements.ts";
 
 // Re-export repository instances for convenience
 export { getCustomersRepository } from "./customers.ts";
@@ -36,4 +38,8 @@ export { getOrdersRepository } from "./orders.ts";
 export { getRefundsRepository } from "./refunds.ts";
 export { getPayoutsRepository } from "./payouts.ts";
 export { getNotificationsRepository } from "./notifications.ts";
+export { getOtpRepository } from "./otp.ts";
+export { getSettlementsRepository } from "./settlements.ts";
+export * from "./commissions.ts";
+export { getCommissionsRepository } from "./commissions.ts";
 
