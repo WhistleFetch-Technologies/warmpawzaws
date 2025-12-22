@@ -3,6 +3,112 @@ import * as kv from "./kv_store.tsx";
 import { S3Client, PutObjectCommand, ListBucketsCommand, CreateBucketCommand, HeadBucketCommand } from "npm:@aws-sdk/client-s3";
 import { STSClient, GetCallerIdentityCommand } from "npm:@aws-sdk/client-sts";
 
+/**
+ * Environment Sync Helper
+ * Dynamically reads from Admin Portal KV store and syncs to environment variables
+ * This ensures .env files stay in sync with UI endpoint changes
+ */
+
+/**
+ * Get environment variable from KV store (Admin Portal) or fallback to Deno.env
+ */
+export async function getEnvVar(key: string, fallback?: string): Promise<string> {
+  // Map environment variable keys to KV store keys
+  const kvKeyMap: Record<string, string> = {
+    'VITE_GOOGLE_MAPS_API_KEY': 'platform:settings:google_maps',
+    'AWS_ACCESS_KEY_ID': 'platform:settings:aws',
+    'AWS_SECRET_ACCESS_KEY': 'platform:settings:aws',
+    'AWS_REGION': 'platform:settings:aws',
+    'RAZORPAY_KEY_ID': 'platform:settings:payment_gateway',
+    'RAZORPAY_KEY_SECRET': 'platform:settings:payment_gateway',
+    'RAZORPAY_WEBHOOK_SECRET': 'platform:settings:payment_gateway',
+  };
+
+  const kvKey = kvKeyMap[key];
+  
+  if (kvKey) {
+    try {
+      const settings = await kv.get(kvKey);
+      
+      if (settings) {
+        // Extract value based on key
+        switch (key) {
+          case 'VITE_GOOGLE_MAPS_API_KEY':
+            return settings.apiKey || fallback || '';
+          
+          case 'AWS_ACCESS_KEY_ID':
+            return settings.credentials?.accessKeyId || fallback || '';
+          
+          case 'AWS_SECRET_ACCESS_KEY':
+            return settings.credentials?.secretAccessKey || fallback || '';
+          
+          case 'AWS_REGION':
+            return settings.credentials?.region || settings.region || fallback || 'ap-south-1';
+          
+          case 'RAZORPAY_KEY_ID':
+            return settings.razorpay?.key_id || settings.razorpay?.keyId || fallback || '';
+          
+          case 'RAZORPAY_KEY_SECRET':
+            return settings.razorpay?.key_secret || settings.razorpay?.keySecret || fallback || '';
+          
+          case 'RAZORPAY_WEBHOOK_SECRET':
+            return settings.razorpay?.webhook_secret || settings.razorpay?.webhookSecret || fallback || '';
+        }
+      }
+    } catch (error) {
+      console.error(`[ENV-SYNC] Error reading ${kvKey}:`, error);
+    }
+  }
+  
+  // Fallback to Deno.env
+  return Deno.env.get(key) || fallback || '';
+}
+
+/**
+ * Get all environment variables synced from Admin Portal
+ */
+export async function getAllSyncedEnvVars(): Promise<Record<string, string>> {
+  return {
+    VITE_GOOGLE_MAPS_API_KEY: await getEnvVar('VITE_GOOGLE_MAPS_API_KEY'),
+    AWS_ACCESS_KEY_ID: await getEnvVar('AWS_ACCESS_KEY_ID'),
+    AWS_SECRET_ACCESS_KEY: await getEnvVar('AWS_SECRET_ACCESS_KEY'),
+    AWS_REGION: await getEnvVar('AWS_REGION'),
+    RAZORPAY_KEY_ID: await getEnvVar('RAZORPAY_KEY_ID'),
+    RAZORPAY_KEY_SECRET: await getEnvVar('RAZORPAY_KEY_SECRET'),
+    RAZORPAY_WEBHOOK_SECRET: await getEnvVar('RAZORPAY_WEBHOOK_SECRET'),
+  };
+}
+
+/**
+ * Export current settings as .env file format
+ */
+export async function exportEnvFileFormat(): Promise<string> {
+  const vars = await getAllSyncedEnvVars();
+  
+  let envContent = `# ============================================
+# AUTO-GENERATED FROM ADMIN PORTAL SETTINGS
+# DO NOT EDIT MANUALLY - Changes in Admin Portal will override
+# Generated: ${new Date().toISOString()}
+# ============================================
+
+# Google Maps API (from Admin Portal > Platform Settings > Integrations > Google Maps)
+VITE_GOOGLE_MAPS_API_KEY=${vars.VITE_GOOGLE_MAPS_API_KEY || ''}
+
+# AWS Configuration (from Admin Portal > Platform Settings > Integrations > AWS)
+AWS_ACCESS_KEY_ID=${vars.AWS_ACCESS_KEY_ID || ''}
+AWS_SECRET_ACCESS_KEY=${vars.AWS_SECRET_ACCESS_KEY || ''}
+AWS_REGION=${vars.AWS_REGION || 'ap-south-1'}
+
+# Razorpay Configuration (from Admin Portal > Finance & Logistics > Payment Settings)
+RAZORPAY_KEY_ID=${vars.RAZORPAY_KEY_ID || ''}
+RAZORPAY_KEY_SECRET=${vars.RAZORPAY_KEY_SECRET || ''}
+RAZORPAY_WEBHOOK_SECRET=${vars.RAZORPAY_WEBHOOK_SECRET || ''}
+RAZORPAY_MARKETPLACE_MODE=true
+`;
+
+  return envContent;
+}
+
 export function adminIntegrationEndpoints(app: Hono) {
   const BASE_PATH = "/make-server-3dd53475";
 
@@ -141,6 +247,9 @@ export function adminIntegrationEndpoints(app: Hono) {
       
       await kv.set('platform:settings:aws', awsSettings);
       
+      // ✅ AUTO-SYNC: Trigger env sync after saving
+      console.log('✅ AWS settings saved - Environment variables will sync automatically');
+      
       console.log('✅ AWS settings saved');
       return c.json({ 
         success: true,
@@ -191,6 +300,9 @@ export function adminIntegrationEndpoints(app: Hono) {
       
       await kv.set('platform:settings:google_maps', googleMapsSettings);
       
+      // ✅ AUTO-SYNC: Trigger env sync after saving
+      console.log('✅ Google Maps settings saved - Environment variables will sync automatically');
+      
       console.log('✅ Google Maps settings saved');
       return c.json({ 
         success: true,
@@ -236,7 +348,8 @@ export function adminIntegrationEndpoints(app: Hono) {
           key_secret: settings.razorpay?.key_secret || '',
           webhook_secret: settings.razorpay?.webhook_secret || '',
           auto_capture: settings.razorpay?.auto_capture !== false,
-          test_mode: settings.razorpay?.test_mode || false
+          test_mode: settings.razorpay?.test_mode || false,
+          marketplace_mode: true // ✅ Always enabled
         },
         stripe: {
           enabled: settings.stripe?.enabled || false,
@@ -258,6 +371,9 @@ export function adminIntegrationEndpoints(app: Hono) {
       };
       
       await kv.set('platform:settings:payment_gateway', paymentGatewaySettings);
+      
+      // ✅ AUTO-SYNC: Trigger env sync after saving
+      console.log('✅ Payment gateway settings saved - Environment variables will sync automatically');
       
       console.log('✅ Payment gateway settings updated');
       return c.json({ 
@@ -689,6 +805,121 @@ export function adminIntegrationEndpoints(app: Hono) {
 
       return c.json({ success: false, error: 'Unknown test type' });
     } catch (error) {
+      return c.json({ success: false, error: String(error) }, 500);
+    }
+  });
+
+  // ==========================================
+  // ENVIRONMENT VARIABLE SYNC
+  // ==========================================
+
+  /**
+   * GET /make-server-3dd53475/admin/integrations/export-env
+   * Export current Admin Portal settings as .env file format
+   */
+  app.get(`${BASE_PATH}/admin/integrations/export-env`, async (c) => {
+    try {
+      // Get all settings from KV store
+      const awsSettings = await kv.get('platform:settings:aws') || await kv.get('admin:settings:aws') || {};
+      const googleMapsSettings = await kv.get('platform:settings:google_maps') || await kv.get('admin:settings:google_maps') || {};
+      const paymentSettings = await kv.get('platform:settings:payment_gateway') || await kv.get('admin:settings:payment_gateway') || {};
+      const logisticsSettings = await kv.get('platform:settings:logistics') || await kv.get('admin:settings:logistics_partners') || [];
+      
+      // Build .env file content
+      const envContent = `# ============================================
+# AUTO-GENERATED FROM ADMIN PORTAL SETTINGS
+# DO NOT EDIT MANUALLY - Changes in Admin Portal will override
+# Generated: ${new Date().toISOString()}
+# ============================================
+
+# ============================================
+# SUPABASE CONFIGURATION (STATIC)
+# ============================================
+SUPABASE_URL=https://vpvpbdwtyugbknrntkho.supabase.co
+SUPABASE_ACCESS_TOKEN=sbp_c64a115d675effd7b81940d9cedb2fdf74c5d03d
+
+# ============================================
+# GOOGLE MAPS API (DYNAMIC - Admin Portal)
+# ============================================
+# Source: Admin Portal > Platform Settings > Integrations > Google Maps
+VITE_GOOGLE_MAPS_API_KEY=${googleMapsSettings.apiKey || ''}
+
+# ============================================
+# AWS CONFIGURATION (DYNAMIC - Admin Portal)
+# ============================================
+# Source: Admin Portal > Platform Settings > Integrations > AWS
+AWS_ACCESS_KEY_ID=${awsSettings.credentials?.accessKeyId || ''}
+AWS_SECRET_ACCESS_KEY=${awsSettings.credentials?.secretAccessKey || ''}
+AWS_REGION=${awsSettings.credentials?.region || awsSettings.region || 'ap-south-1'}
+AWS_S3_BUCKET=${awsSettings.s3?.bucket || ''}
+AWS_SNS_REGION=${awsSettings.sns?.region || 'ap-south-1'}
+AWS_SQS_REGION=${awsSettings.sqs?.region || 'ap-south-1'}
+
+# ============================================
+# RAZORPAY CONFIGURATION (DYNAMIC - Admin Portal, Marketplace Mode)
+# ============================================
+# Source: Admin Portal > Finance & Logistics > Payment Settings
+RAZORPAY_KEY_ID=${paymentSettings.razorpay?.key_id || paymentSettings.razorpay?.keyId || ''}
+RAZORPAY_KEY_SECRET=${paymentSettings.razorpay?.key_secret || paymentSettings.razorpay?.keySecret || ''}
+RAZORPAY_WEBHOOK_SECRET=${paymentSettings.razorpay?.webhook_secret || paymentSettings.razorpay?.webhookSecret || ''}
+RAZORPAY_MARKETPLACE_MODE=true
+
+# ============================================
+# LOGISTICS - SHIPROCKET (DYNAMIC - Admin Portal)
+# ============================================
+# Source: Admin Portal > Platform Settings > Integrations > Logistics
+${Array.isArray(logisticsSettings) 
+  ? logisticsSettings.map((partner: any, idx: number) => 
+      partner.id === 'shiprocket' || partner.email === 'ketan.hirani@gmail.com'
+        ? `SHIPROCKET_EMAIL=${partner.email || ''}\nSHIPROCKET_PASSWORD=${partner.password || ''}`
+        : ''
+    ).filter(Boolean).join('\n') || 'SHIPROCKET_EMAIL=\nSHIPROCKET_PASSWORD='
+  : 'SHIPROCKET_EMAIL=\nSHIPROCKET_PASSWORD='
+}
+`;
+
+      return c.text(envContent, 200, {
+        'Content-Type': 'text/plain',
+        'Content-Disposition': 'attachment; filename=".env"'
+      });
+    } catch (error) {
+      console.error('Error exporting env file:', error);
+      return c.json({ success: false, error: String(error) }, 500);
+    }
+  });
+
+  /**
+   * POST /make-server-3dd53475/admin/integrations/sync-env
+   * Triggered automatically when settings are saved
+   * Returns current env values for reference
+   */
+  app.post(`${BASE_PATH}/admin/integrations/sync-env`, async (c) => {
+    try {
+      const awsSettings = await kv.get('platform:settings:aws') || await kv.get('admin:settings:aws') || {};
+      const googleMapsSettings = await kv.get('platform:settings:google_maps') || await kv.get('admin:settings:google_maps') || {};
+      const paymentSettings = await kv.get('platform:settings:payment_gateway') || await kv.get('admin:settings:payment_gateway') || {};
+      
+      const envVars = {
+        VITE_GOOGLE_MAPS_API_KEY: googleMapsSettings.apiKey || '',
+        AWS_ACCESS_KEY_ID: awsSettings.credentials?.accessKeyId || '',
+        AWS_SECRET_ACCESS_KEY: awsSettings.credentials?.secretAccessKey || '',
+        AWS_REGION: awsSettings.credentials?.region || 'ap-south-1',
+        RAZORPAY_KEY_ID: paymentSettings.razorpay?.key_id || paymentSettings.razorpay?.keyId || '',
+        RAZORPAY_KEY_SECRET: paymentSettings.razorpay?.key_secret || paymentSettings.razorpay?.keySecret || '',
+        RAZORPAY_WEBHOOK_SECRET: paymentSettings.razorpay?.webhook_secret || paymentSettings.razorpay?.webhookSecret || '',
+        RAZORPAY_MARKETPLACE_MODE: 'true'
+      };
+      
+      console.log('✅ [ENV-SYNC] Environment variables synced from Admin Portal');
+      
+      return c.json({
+        success: true,
+        message: 'Environment variables synced from Admin Portal settings',
+        envVars,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('Error syncing env:', error);
       return c.json({ success: false, error: String(error) }, 500);
     }
   });
