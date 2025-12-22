@@ -10,7 +10,7 @@
  * ❌ NO KV imports allowed
  * ✅ All operations use SQL only
  * 
- * Date: 2024-12-22
+ * Date: 2025-01-27
  * ============================================================================
  */
 
@@ -20,27 +20,36 @@ import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 export interface Refund {
   id: string;
   payment_id: string;
+  booking_id: string | null;
+  customer_id: string;
+  vendor_id: string | null;
+  refund_amount: number;
+  refund_reason: string;
+  refund_status: string;
+  razorpay_refund_id: string | null;
+  requested_at: string;
+  processed_at: string | null;
+  completed_at: string | null;
+  rejection_reason: string | null;
+}
+
+export interface CreateRefundInput {
+  payment_id: string;
   booking_id?: string | null;
   customer_id: string;
   vendor_id?: string | null;
   refund_amount: number;
   refund_reason: string;
-  refund_status: string;
+  refund_status?: string;
   razorpay_refund_id?: string | null;
-  requested_at: string;
+}
+
+export interface UpdateRefundInput {
+  refund_status?: string;
+  razorpay_refund_id?: string | null;
   processed_at?: string | null;
   completed_at?: string | null;
   rejection_reason?: string | null;
-}
-
-export interface CreateRefundInput {
-  payment_id: string;
-  booking_id?: string;
-  customer_id: string;
-  vendor_id?: string;
-  refund_amount: number;
-  refund_reason: string;
-  razorpay_refund_id?: string;
 }
 
 export class RefundsRepository {
@@ -55,26 +64,32 @@ export class RefundsRepository {
     return results[0] || null;
   }
 
-  async findByPayment(paymentId: string): Promise<Refund[]> {
+  async findByPaymentId(paymentId: string): Promise<Refund[]> {
     return selectQuery<Refund>("refunds", { payment_id: paymentId }, {
       orderBy: "requested_at",
-      orderDirection: "desc",
+      orderDirection: "desc"
     });
   }
 
-  async findByCustomer(customerId: string, options?: { limit?: number; offset?: number }): Promise<Refund[]> {
+  async findByCustomerId(customerId: string, options?: { limit?: number; offset?: number }): Promise<Refund[]> {
     return selectQuery<Refund>("refunds", { customer_id: customerId }, {
-      limit: options?.limit,
+      limit: options?.limit || 50,
       offset: options?.offset,
       orderBy: "requested_at",
-      orderDirection: "desc",
+      orderDirection: "desc"
     });
   }
 
   async create(input: CreateRefundInput): Promise<Refund> {
     const results = await insertQuery<Refund>("refunds", {
-      ...input,
-      refund_status: "pending",
+      payment_id: input.payment_id,
+      booking_id: input.booking_id || null,
+      customer_id: input.customer_id,
+      vendor_id: input.vendor_id || null,
+      refund_amount: input.refund_amount,
+      refund_reason: input.refund_reason,
+      refund_status: input.refund_status || 'pending',
+      razorpay_refund_id: input.razorpay_refund_id || null,
     });
     
     if (!results[0]) {
@@ -84,48 +99,22 @@ export class RefundsRepository {
     return results[0];
   }
 
-  async update(refundId: string, input: Partial<CreateRefundInput & { refund_status?: string; processed_at?: string; completed_at?: string; rejection_reason?: string }>): Promise<Refund> {
-    const updateData: any = { ...input };
+  async update(refundId: string, input: UpdateRefundInput): Promise<Refund> {
+    const updateData: any = {};
     
-    if (input.refund_status === "completed" && !input.completed_at) {
-      updateData.completed_at = new Date().toISOString();
-    }
-    if (input.refund_status && !input.processed_at) {
-      updateData.processed_at = new Date().toISOString();
-    }
+    if (input.refund_status !== undefined) updateData.refund_status = input.refund_status;
+    if (input.razorpay_refund_id !== undefined) updateData.razorpay_refund_id = input.razorpay_refund_id;
+    if (input.processed_at !== undefined) updateData.processed_at = input.processed_at;
+    if (input.completed_at !== undefined) updateData.completed_at = input.completed_at;
+    if (input.rejection_reason !== undefined) updateData.rejection_reason = input.rejection_reason;
     
-    const results = await updateQuery<Refund>(
-      "refunds",
-      { id: refundId },
-      updateData
-    );
+    const results = await updateQuery<Refund>("refunds", { id: refundId }, updateData);
     
     if (!results[0]) {
       throw new Error(`Refund not found: ${refundId}`);
     }
     
     return results[0];
-  }
-
-  async approve(refundId: string): Promise<Refund> {
-    return this.update(refundId, {
-      refund_status: "approved",
-    });
-  }
-
-  async complete(refundId: string, razorpayRefundId?: string): Promise<Refund> {
-    return this.update(refundId, {
-      refund_status: "completed",
-      razorpay_refund_id: razorpayRefundId,
-      completed_at: new Date().toISOString(),
-    });
-  }
-
-  async reject(refundId: string, reason: string): Promise<Refund> {
-    return this.update(refundId, {
-      refund_status: "rejected",
-      rejection_reason: reason,
-    });
   }
 }
 
@@ -137,4 +126,3 @@ export function getRefundsRepository(): RefundsRepository {
   }
   return repositoryInstance;
 }
-

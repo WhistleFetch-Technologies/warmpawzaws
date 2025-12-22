@@ -1,14 +1,14 @@
 import { Hono } from "npm:hono";
 import { createNotificationHelper } from "./notification-system.tsx";
 
-export function bookingEndpoints(app: Hono, kv: any) {
+export function bookingEndpoints(app: Hono) {
   
-  // ✅ FIX: Use existing notification system (no duplicate code)
+  // ✅ FIX: Use existing notification system (no duplicate code) - MIGRATED TO SQL
   // Helper: Trigger Notification using existing infrastructure
   async function triggerNotification(notification: any) {
     try {
       // Use existing createNotificationHelper which handles AWS SNS integration
-      await createNotificationHelper(kv, {
+      await createNotificationHelper({
         ...notification,
         channels: notification.channels || { email: true, sms: true, inApp: true, push: false }
       });
@@ -622,7 +622,7 @@ export function bookingEndpoints(app: Hono, kv: any) {
         const vendor = await kv.get(`vendor:${vendorId}`);
         const startOTP = booking.otp?.start || booking.completionOTP;
 
-        await createNotificationHelper(kv, {
+        await createNotificationHelper({
           recipientId: booking.customerId,
           recipientType: 'customer',
           type: 'booking_confirmed',

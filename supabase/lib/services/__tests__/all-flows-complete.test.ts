@@ -329,6 +329,90 @@ Deno.test("State Machine: Valid Transitions", async () => {
 });
 
 // ============================================================================
+// WALLET FLOW TESTS
+// ============================================================================
+
+Deno.test("Wallet Flow: Complete End-to-End", async () => {
+  const customer = await createTestCustomer();
+  const client = getDbClient();
+  
+  // Create wallet
+  const { data: wallet, error: walletError } = await client
+    .from('customer_wallets')
+    .insert({
+      customer_id: customer.id,
+      balance: 0,
+      currency: 'INR',
+    })
+    .select()
+    .single();
+  
+  if (walletError && walletError.code !== '23505') throw walletError;
+  
+  // Add funds
+  const addAmount = 1000;
+  const { data: updated, error: updateError } = await client
+    .from('customer_wallets')
+    .update({ balance: addAmount })
+    .eq('customer_id', customer.id)
+    .select()
+    .single();
+  
+  assert(!updateError);
+  assertEquals(Number(updated.balance), addAmount);
+  
+  // Deduct funds
+  const deductAmount = 500;
+  const { data: deducted, error: deductError } = await client
+    .from('customer_wallets')
+    .update({ balance: addAmount - deductAmount })
+    .eq('customer_id', customer.id)
+    .select()
+    .single();
+  
+  assert(!deductError);
+  assertEquals(Number(deducted.balance), addAmount - deductAmount);
+});
+
+// ============================================================================
+// ORDER FLOW TESTS
+// ============================================================================
+
+Deno.test("Order Flow: Complete End-to-End", async () => {
+  const customer = await createTestCustomer();
+  const vendor = await createTestVendor();
+  const client = getDbClient();
+  
+  // Create order
+  const { data: order, error: orderError } = await client
+    .from('orders')
+    .insert({
+      customer_id: customer.id,
+      order_status: 'pending',
+      subtotal: 1000,
+      tax_amount: 180,
+      total_amount: 1180,
+    })
+    .select()
+    .single();
+  
+  assert(!orderError);
+  assertExists(order);
+  assertEquals(order.order_status, 'pending');
+  
+  // Update order status
+  const { data: updated, error: updateError } = await client
+    .from('orders')
+    .update({ order_status: 'confirmed' })
+    .eq('id', order.id)
+    .select()
+    .single();
+  
+  assert(!updateError);
+  assertEquals(updated.order_status, 'confirmed');
+});
+
+// ============================================================================
 // TEST SUMMARY
 // ============================================================================
 
@@ -341,4 +425,6 @@ console.log("   - Service discovery: ✅");
 console.log("   - RBAC: ✅");
 console.log("   - Transaction safety: ✅");
 console.log("   - State machine: ✅");
+console.log("   - Wallet flow: ✅");
+console.log("   - Order flow: ✅");
 

@@ -273,7 +273,7 @@ app.post('/vendor/:vendorId/pharmacy/dispatch-order', async (c) => {
       const customer = await kv.get(`customer:${customerId}`);
       const trackingUrl = order.trackingUrl || `https://warmpawz.com/track/${orderId}`;
 
-      await createNotificationHelper(kv, {
+      await createNotificationHelper({
         recipientId: customerId,
         recipientType: 'customer',
         type: 'order_dispatched',

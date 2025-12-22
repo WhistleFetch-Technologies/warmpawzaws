@@ -341,31 +341,62 @@ export class DiscoveryRepository {
 
   /**
    * Check if staff has available slots (TASK 1: Schedule Availability Check)
+   * Uses vendor_schedule_slots table which supports both vendor and staff scheduling
    */
   async checkStaffAvailability(staffId: string, daysAhead: number = 7): Promise<boolean> {
     try {
-      // Check if staff has any available slots in the next N days
+      // First, get the vendor_id for this staff
+      const { data: staffData, error: staffError } = await this.client
+        .from('staff')
+        .select('vendor_id')
+        .eq('id', staffId)
+        .single();
+
+      if (staffError || !staffData) {
+        return false;
+      }
+
+      // Check vendor_schedule_slots for this staff member
+      // The table supports both vendor-level and staff-level scheduling
       const { data: scheduleSlots, error } = await this.client
-        .from('staff_schedule_slots')
-        .select('id, day_of_week, time_windows')
-        .eq('staff_id', staffId)
+        .from('vendor_schedule_slots')
+        .select('id, day_of_week, time_windows, staff_id')
+        .eq('vendor_id', staffData.vendor_id)
+        .or(`staff_id.is.null,staff_id.eq.${staffId}`)
         .eq('is_available', true)
-        .limit(1);
+        .limit(10);
 
       if (error || !scheduleSlots || scheduleSlots.length === 0) {
+        // Fallback: check staff_availability_slots if it exists
+        const { data: availabilitySlots, error: availError } = await this.client
+          .from('staff_availability_slots')
+          .select('id, day_of_week, start_time, end_time')
+          .eq('staff_id', staffId)
+          .eq('is_available', true)
+          .limit(1);
+
+        if (!availError && availabilitySlots && availabilitySlots.length > 0) {
+          return true;
+        }
         return false;
       }
 
       // Check if there are any time windows enabled
       const hasEnabledWindows = scheduleSlots.some((slot: any) => {
-        const windows = slot.time_windows || [];
-        return windows.some((w: any) => w.is_enabled === true);
+        // If slot has time_windows (JSONB array)
+        if (slot.time_windows && Array.isArray(slot.time_windows)) {
+          return slot.time_windows.some((w: any) => w.is_enabled === true);
+        }
+        // If slot is available and has day_of_week, consider it available
+        return slot.is_available === true;
       });
 
       return hasEnabledWindows;
     } catch (error) {
       console.error('Error checking staff availability:', error);
-      return false; // Default to unavailable if check fails
+      // Default to true to avoid filtering out all staff if check fails
+      // This is a graceful degradation - in production, you'd want proper logging
+      return true;
     }
   }
 

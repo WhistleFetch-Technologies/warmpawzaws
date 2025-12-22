@@ -153,7 +153,7 @@ export function registerPayoutCronJob(app: Hono) {
               // ✅ NOTIFICATION: Notify vendor
               try {
                 const vendor = await kv.get(`vendor:${vendorId}`);
-                await createNotificationHelper(kv, {
+                await createNotificationHelper({
                   recipientId: vendorId,
                   recipientType: 'vendor',
                   type: 'payout_completed',

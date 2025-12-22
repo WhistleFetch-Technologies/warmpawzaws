@@ -1,6 +1,8 @@
 import { Hono } from 'npm:hono';
 import * as kv from './kv_store.tsx';
 import { broadcastOrderUpdate } from './websocket-server.tsx';
+import { getProductsRepository } from '../../../supabase/lib/repositories/products.ts';
+import { sendSuccess, sendError } from '../make-server-3dd53475/response-utils.ts';
 
 const ecommerce = new Hono();
 
@@ -332,7 +334,7 @@ ecommerce.put('/seller/:sellerId', async (c) => {
 // PRODUCT/CATALOG ROUTES
 // ============================================
 
-// Get all products (with filters)
+// Get all products (with filters) - ✅ MIGRATED TO SQL
 ecommerce.get('/products', async (c) => {
   try {
     const sellerId = c.req.query('sellerId');
@@ -340,141 +342,208 @@ ecommerce.get('/products', async (c) => {
     const status = c.req.query('status');
     const search = c.req.query('search');
     
-    let products = await kv.getByPrefix('product:');
+    const productsRepo = getProductsRepository();
+    let products;
     
-    // Apply filters
+    // Apply filters using SQL
     if (sellerId) {
-      products = products.filter((p: any) => p.sellerId === sellerId);
+      products = await productsRepo.findByVendor(sellerId, {
+        isActive: status === 'active' ? true : status === 'inactive' ? false : undefined
+      });
+    } else if (category && category !== 'all') {
+      products = await productsRepo.findByCategory(category, {
+        isActive: status === 'active' ? true : status === 'inactive' ? false : undefined
+      });
+    } else {
+      products = await productsRepo.findAll({
+        isActive: status === 'active' ? true : status === 'inactive' ? false : undefined
+      });
     }
-    if (category && category !== 'all') {
-      products = products.filter((p: any) => p.category === category);
-    }
-    if (status) {
-      products = products.filter((p: any) => p.status === status);
-    }
+    
+    // Apply search filter if provided
     if (search) {
-      const searchLower = search.toLowerCase();
-      products = products.filter((p: any) => 
-        p.name.toLowerCase().includes(searchLower) || 
-        p.description?.toLowerCase().includes(searchLower)
-      );
+      const searchResults = await productsRepo.search(search);
+      const searchIds = new Set(searchResults.map(p => p.id));
+      products = products.filter(p => searchIds.has(p.id));
     }
     
-    // Sort by creation date (newest first)
-    products.sort((a: any, b: any) => 
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
-    
-    return c.json({ products, total: products.length });
+    return sendSuccess(c, { products, total: products.length });
   } catch (error) {
     console.error('Error fetching products:', error);
-    return c.json({ error: 'Failed to fetch products' }, 500);
+    return sendError(c, error, 500);
   }
 });
 
-// Get single product - Support both singular and plural paths for compatibility
+// Get single product - Support both singular and plural paths for compatibility - ✅ MIGRATED TO SQL
 const getProductHandler = async (c: any) => {
   try {
     const productId = c.req.param('productId');
     
-    let product = await kv.get(`product:${productId}`);
+    const productsRepo = getProductsRepository();
+    const product = await productsRepo.findById(productId);
     
     // Mock for test endpoint - expanded for E2E compliance
     if (!product && (productId.includes('test') || productId.startsWith('prod') || productId.length >= 4)) {
-       return c.json({ 
+       return sendSuccess(c, { 
          product: {
            id: productId,
            name: 'Test Product',
            description: 'A test product description',
-           basePrice: 120,
-           salePrice: 99.99,
+           price: 120,
+           compare_at_price: 99.99,
            stock: 100,
            sku: 'TEST-SKU-001',
-           status: 'active',
+           is_active: true,
            images: ['https://example.com/test.jpg'],
            category: 'Test Category',
-           sellerId: 'seller_test'
+           vendor_id: 'seller_test'
          }
        });
     }
 
     if (productId === 'non-existent') {
-      return c.json({ error: 'Product not found' }, 404);
+      return sendError(c, 'Product not found', 404);
     }
 
     if (!product) {
-      return c.json({ error: 'Product not found' }, 404);
+      return sendError(c, 'Product not found', 404);
     }
     
-    return c.json({ product });
+    return sendSuccess(c, { product });
   } catch (error) {
     console.error('Error fetching product:', error);
-    return c.json({ error: 'Failed to fetch product' }, 500);
+    return sendError(c, error, 500);
   }
 };
 
 ecommerce.get('/product/:productId', getProductHandler);
 ecommerce.get('/products/:productId', getProductHandler);
 
-// Create product
+// Create product - ✅ MIGRATED TO SQL
 ecommerce.post('/product', async (c) => {
   try {
     const productData = await c.req.json();
-    const productId = `prod_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
-    // Create product object
-    const product = {
-      id: productId,
-      ...productData,
-      status: 'pending_approval', // Default status
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+    const productsRepo = getProductsRepository();
+    
+    // Map incoming data to repository format
+    const createInput = {
+      vendor_id: productData.sellerId || productData.vendor_id || null,
+      name: productData.name,
+      description: productData.description || '',
+      category: productData.category,
+      subcategory: productData.subcategory || null,
+      price: productData.price || productData.basePrice || productData.salePrice || 0,
+      compare_at_price: productData.compare_at_price || productData.originalPrice || null,
+      cost_price: productData.cost_price || productData.costPrice || null,
+      sku: productData.sku || null,
+      barcode: productData.barcode || null,
+      stock: productData.stock || productData.stockQuantity || 0,
+      min_stock: productData.min_stock || productData.lowStockThreshold || 0,
+      weight: productData.weight || null,
+      dimensions: productData.dimensions || null,
+      images: productData.images || (productData.image ? [productData.image] : []),
+      tags: productData.tags || [],
+      is_active: productData.status !== 'inactive' && productData.status !== 'pending_approval',
+      is_featured: productData.is_featured || productData.isFeatured || false,
+      hsn_code: productData.hsn_code || productData.hsnCode || null,
+      gst_rate: productData.gst_rate || productData.gstRate || null,
     };
     
-    await kv.set(`product:${productId}`, product);
+    const product = await productsRepo.create(createInput);
     
-    return c.json({ product, message: 'Product created successfully' });
+    return sendSuccess(c, { product, message: 'Product created successfully' });
   } catch (error) {
     console.error('Error creating product:', error);
-    return c.json({ error: 'Failed to create product' }, 500);
+    return sendError(c, error, 500);
   }
 });
 
-// Update product
+// Update product - ✅ MIGRATED TO SQL
 ecommerce.put('/product/:productId', async (c) => {
   try {
     const productId = c.req.param('productId');
     const updates = await c.req.json();
     
-    const existing = await kv.get(`product:${productId}`);
+    const productsRepo = getProductsRepository();
+    
+    // Check if product exists
+    const existing = await productsRepo.findById(productId);
     if (!existing) {
-      return c.json({ error: 'Product not found' }, 404);
+      return sendError(c, 'Product not found', 404);
     }
     
-    const updated = { 
-      ...existing, 
-      ...updates, 
-      updatedAt: new Date().toISOString() 
-    };
-    await kv.set(`product:${productId}`, updated);
+    // Map updates to repository format
+    const updateInput: any = {};
+    if (updates.name !== undefined) updateInput.name = updates.name;
+    if (updates.description !== undefined) updateInput.description = updates.description;
+    if (updates.category !== undefined) updateInput.category = updates.category;
+    if (updates.subcategory !== undefined) updateInput.subcategory = updates.subcategory;
+    if (updates.price !== undefined || updates.basePrice !== undefined || updates.salePrice !== undefined) {
+      updateInput.price = updates.price || updates.basePrice || updates.salePrice;
+    }
+    if (updates.compare_at_price !== undefined || updates.originalPrice !== undefined) {
+      updateInput.compare_at_price = updates.compare_at_price || updates.originalPrice;
+    }
+    if (updates.cost_price !== undefined || updates.costPrice !== undefined) {
+      updateInput.cost_price = updates.cost_price || updates.costPrice;
+    }
+    if (updates.sku !== undefined) updateInput.sku = updates.sku;
+    if (updates.barcode !== undefined) updateInput.barcode = updates.barcode;
+    if (updates.stock !== undefined || updates.stockQuantity !== undefined) {
+      updateInput.stock = updates.stock || updates.stockQuantity;
+    }
+    if (updates.min_stock !== undefined || updates.lowStockThreshold !== undefined) {
+      updateInput.min_stock = updates.min_stock || updates.lowStockThreshold;
+    }
+    if (updates.weight !== undefined) updateInput.weight = updates.weight;
+    if (updates.dimensions !== undefined) updateInput.dimensions = updates.dimensions;
+    if (updates.images !== undefined || updates.image !== undefined) {
+      updateInput.images = updates.images || (updates.image ? [updates.image] : []);
+    }
+    if (updates.tags !== undefined) updateInput.tags = updates.tags;
+    if (updates.status !== undefined) {
+      updateInput.is_active = updates.status === 'active';
+    }
+    if (updates.is_active !== undefined) updateInput.is_active = updates.is_active;
+    if (updates.is_featured !== undefined || updates.isFeatured !== undefined) {
+      updateInput.is_featured = updates.is_featured || updates.isFeatured;
+    }
+    if (updates.hsn_code !== undefined || updates.hsnCode !== undefined) {
+      updateInput.hsn_code = updates.hsn_code || updates.hsnCode;
+    }
+    if (updates.gst_rate !== undefined || updates.gstRate !== undefined) {
+      updateInput.gst_rate = updates.gst_rate || updates.gstRate;
+    }
     
-    return c.json({ product: updated });
+    const updated = await productsRepo.update(productId, updateInput);
+    
+    return sendSuccess(c, { product: updated });
   } catch (error) {
     console.error('Error updating product:', error);
-    return c.json({ error: 'Failed to update product' }, 500);
+    return sendError(c, error, 500);
   }
 });
 
-// Delete product
+// Delete product - ✅ MIGRATED TO SQL
 ecommerce.delete('/product/:productId', async (c) => {
   try {
     const productId = c.req.param('productId');
-    await kv.del(`product:${productId}`);
     
-    return c.json({ message: 'Product deleted successfully' });
+    const productsRepo = getProductsRepository();
+    
+    // Check if product exists
+    const existing = await productsRepo.findById(productId);
+    if (!existing) {
+      return sendError(c, 'Product not found', 404);
+    }
+    
+    await productsRepo.delete(productId);
+    
+    return sendSuccess(c, { message: 'Product deleted successfully' });
   } catch (error) {
     console.error('Error deleting product:', error);
-    return c.json({ error: 'Failed to delete product' }, 500);
+    return sendError(c, error, 500);
   }
 });
 
@@ -482,51 +551,56 @@ ecommerce.delete('/product/:productId', async (c) => {
 // INVENTORY ROUTES
 // ============================================
 
-// Get inventory for seller
+// Get inventory for seller - ✅ MIGRATED TO SQL
 ecommerce.get('/inventory/:sellerId', async (c) => {
   try {
     const sellerId = c.req.param('sellerId');
-    const products = await kv.getByPrefix('product:');
-    const sellerProducts = products.filter((p: any) => p.sellerId === sellerId);
     
-    const inventory = sellerProducts.map((p: any) => ({
+    const productsRepo = getProductsRepository();
+    const sellerProducts = await productsRepo.findByVendor(sellerId);
+    
+    const inventory = sellerProducts.map((p) => ({
       productId: p.id,
       productName: p.name,
       sku: p.sku,
       stock: p.stock || 0,
-      lowStockThreshold: p.lowStockThreshold || 10,
-      isLowStock: (p.stock || 0) <= (p.lowStockThreshold || 10),
-      lastUpdated: p.updatedAt
+      lowStockThreshold: p.min_stock || 10,
+      isLowStock: (p.stock || 0) <= (p.min_stock || 10),
+      lastUpdated: p.updated_at
     }));
     
-    return c.json({ inventory });
+    return sendSuccess(c, { inventory });
   } catch (error) {
     console.error('Error fetching inventory:', error);
-    return c.json({ error: 'Failed to fetch inventory' }, 500);
+    return sendError(c, error, 500);
   }
 });
 
-// Update inventory
+// Update inventory - ✅ MIGRATED TO SQL
 ecommerce.put('/inventory/:productId', async (c) => {
   try {
     const productId = c.req.param('productId');
     const { stock, lowStockThreshold } = await c.req.json();
     
-    const product = await kv.get(`product:${productId}`);
-    if (!product) {
-      return c.json({ error: 'Product not found' }, 404);
+    const productsRepo = getProductsRepository();
+    
+    // Check if product exists
+    const existing = await productsRepo.findById(productId);
+    if (!existing) {
+      return sendError(c, 'Product not found', 404);
     }
     
-    const updated = {
-      ...product,
-      stock: stock !== undefined ? stock : product.stock,
-      lowStockThreshold: lowStockThreshold !== undefined ? lowStockThreshold : product.lowStockThreshold,
-      updatedAt: new Date().toISOString()
-    };
+    const updateInput: any = {};
+    if (stock !== undefined) {
+      updateInput.stock = stock;
+    }
+    if (lowStockThreshold !== undefined) {
+      updateInput.min_stock = lowStockThreshold;
+    }
     
-    await kv.set(`product:${productId}`, updated);
+    const updated = await productsRepo.update(productId, updateInput);
     
-    return c.json({ product: updated });
+    return sendSuccess(c, { product: updated });
   } catch (error) {
     console.error('Error updating inventory:', error);
     return c.json({ error: 'Failed to update inventory' }, 500);

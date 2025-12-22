@@ -35,6 +35,8 @@ export { getPaymentsRepository } from "./payments.ts";
 export { getServicesRepository } from "./services.ts";
 export { getStaffRepository } from "./staff.ts";
 export { getOrdersRepository } from "./orders.ts";
+export { getProductsRepository } from "./products.ts";
+export { getRefundsRepository } from "./refunds.ts";
 export { getRefundsRepository } from "./refunds.ts";
 export { getPayoutsRepository } from "./payouts.ts";
 export { getNotificationsRepository } from "./notifications.ts";

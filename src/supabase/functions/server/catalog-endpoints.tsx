@@ -1,191 +1,186 @@
 // This file contains catalog endpoint handlers
 // Import into main index.tsx
+// ✅ MIGRATED TO SQL: All KV usage removed
+
+import { getProductsRepository } from '../../../supabase/lib/repositories/products.ts';
+import { sendSuccess, sendError } from '../make-server-3dd53475/response-utils.ts';
 
 export const catalogEndpoints = (app: any, kv: any) => {
   
-  // Get all products/services
+  // Get all products/services - ✅ MIGRATED TO SQL
   app.get("/make-server-3dd53475/admin/catalog/products", async (c: any) => {
     try {
-      let products = await kv.get('catalog:products');
-      if (!products) {
-        products = [
-          {
-            id: 'prod_001',
-            name: 'Basic Veterinary Consultation',
-            sku: 'VET-BASIC-001',
-            category: 'Healthcare Service Providers',
-            price: 1500,
-            stock: '∞',
-            status: 'active',
-            rating: 4.8
-          },
-          {
-            id: 'prod_002',
-            name: 'Premium Pet Grooming Package',
-            sku: 'GRM-PREM-002',
-            category: 'Grooming & Day-care Services',
-            price: 2500,
-            stock: '∞',
-            status: 'active',
-            rating: 4.7
-          },
-          {
-            id: 'prod_003',
-            name: 'Emergency Vet Visit',
-            sku: 'EMR-VET-003',
-            category: 'Healthcare Service Providers',
-            price: 2500,
-            stock: '∞',
-            status: 'active',
-            rating: 4.7
-          },
-          {
-            id: 'prod_004',
-            name: 'Daily Dog Walk (30 mins)',
-            sku: 'WALK-DAILY-004',
-            category: 'Walking & Sitters',
-            price: 2500,
-            stock: '∞',
-            status: 'active',
-            rating: 4.7
-          },
-          {
-            id: 'prod_005',
-            name: 'Premium Dog Food - 10kg',
-            sku: 'FOOD-PREM-005',
-            category: 'Product',
-            price: 3500,
-            stock: 0,
-            status: 'out-of-stock',
-            rating: 4.7
-          }
-        ];
-        await kv.set('catalog:products', products);
-      }
-      return c.json({ success: true, products });
+      const productsRepo = getProductsRepository();
+      const products = await productsRepo.findAll({ isActive: true });
+      
+      // Transform to match expected format
+      const formattedProducts = products.map(p => ({
+        id: p.id,
+        name: p.name,
+        sku: p.sku,
+        category: p.category,
+        price: p.price,
+        stock: p.stock,
+        status: p.is_active ? 'active' : 'inactive',
+        rating: 4.5 // Default rating, can be calculated from reviews if needed
+      }));
+      
+      return sendSuccess(c, { products: formattedProducts });
     } catch (error) {
       console.log('Error getting products:', error);
-      return c.json({ error: String(error) }, 500);
+      return sendError(c, error, 500);
     }
   });
 
-  // Create product
+  // Create product - ✅ MIGRATED TO SQL
   app.post("/make-server-3dd53475/admin/catalog/products/create", async (c: any) => {
     try {
       const data = await c.req.json();
-      const productId = `prod_${Date.now()}`;
-      const newProduct = {
-        id: productId,
-        ...data,
-        createdAt: new Date().toISOString()
+      
+      const productsRepo = getProductsRepository();
+      
+      const createInput = {
+        vendor_id: data.vendor_id || null,
+        name: data.name,
+        description: data.description || '',
+        category: data.category,
+        subcategory: data.subcategory || null,
+        price: data.price || 0,
+        compare_at_price: data.compare_at_price || null,
+        cost_price: data.cost_price || null,
+        sku: data.sku || null,
+        barcode: data.barcode || null,
+        stock: data.stock || 0,
+        min_stock: data.min_stock || 0,
+        weight: data.weight || null,
+        dimensions: data.dimensions || null,
+        images: data.images || [],
+        tags: data.tags || [],
+        is_active: data.status !== 'inactive',
+        is_featured: data.is_featured || false,
+        hsn_code: data.hsn_code || null,
+        gst_rate: data.gst_rate || null,
       };
-      const products = await kv.get('catalog:products') || [];
-      products.unshift(newProduct);
-      await kv.set('catalog:products', products);
       
-      const stats = await kv.get('admin:catalog_stats') || {};
-      stats.activeProducts = { count: products.length, change: 1 };
-      await kv.set('admin:catalog_stats', stats);
+      const newProduct = await productsRepo.create(createInput);
       
-      return c.json({ success: true, product: newProduct });
+      return sendSuccess(c, { product: newProduct });
     } catch (error) {
       console.log('Error creating product:', error);
-      return c.json({ error: String(error) }, 500);
+      return sendError(c, error, 500);
     }
   });
 
-  // Update product
+  // Update product - ✅ MIGRATED TO SQL
   app.put("/make-server-3dd53475/admin/catalog/products/:productId", async (c: any) => {
     try {
       const productId = c.req.param('productId');
       const data = await c.req.json();
-      const products = await kv.get('catalog:products') || [];
-      const updated = products.map((p: any) => 
-        p.id === productId ? { ...p, ...data, updatedAt: new Date().toISOString() } : p
-      );
-      await kv.set('catalog:products', updated);
-      return c.json({ success: true });
+      
+      const productsRepo = getProductsRepository();
+      
+      // Check if product exists
+      const existing = await productsRepo.findById(productId);
+      if (!existing) {
+        return sendError(c, 'Product not found', 404);
+      }
+      
+      const updateInput: any = {};
+      if (data.name !== undefined) updateInput.name = data.name;
+      if (data.description !== undefined) updateInput.description = data.description;
+      if (data.category !== undefined) updateInput.category = data.category;
+      if (data.subcategory !== undefined) updateInput.subcategory = data.subcategory;
+      if (data.price !== undefined) updateInput.price = data.price;
+      if (data.compare_at_price !== undefined) updateInput.compare_at_price = data.compare_at_price;
+      if (data.cost_price !== undefined) updateInput.cost_price = data.cost_price;
+      if (data.sku !== undefined) updateInput.sku = data.sku;
+      if (data.barcode !== undefined) updateInput.barcode = data.barcode;
+      if (data.stock !== undefined) updateInput.stock = data.stock;
+      if (data.min_stock !== undefined) updateInput.min_stock = data.min_stock;
+      if (data.weight !== undefined) updateInput.weight = data.weight;
+      if (data.dimensions !== undefined) updateInput.dimensions = data.dimensions;
+      if (data.images !== undefined) updateInput.images = data.images;
+      if (data.tags !== undefined) updateInput.tags = data.tags;
+      if (data.status !== undefined) updateInput.is_active = data.status === 'active';
+      if (data.is_active !== undefined) updateInput.is_active = data.is_active;
+      if (data.is_featured !== undefined) updateInput.is_featured = data.is_featured;
+      if (data.hsn_code !== undefined) updateInput.hsn_code = data.hsn_code;
+      if (data.gst_rate !== undefined) updateInput.gst_rate = data.gst_rate;
+      
+      await productsRepo.update(productId, updateInput);
+      
+      return sendSuccess(c, { success: true });
     } catch (error) {
       console.log('Error updating product:', error);
-      return c.json({ error: String(error) }, 500);
+      return sendError(c, error, 500);
     }
   });
 
-  // Delete product
+  // Delete product - ✅ MIGRATED TO SQL
   app.delete("/make-server-3dd53475/admin/catalog/products/:productId", async (c: any) => {
     try {
       const productId = c.req.param('productId');
-      const products = await kv.get('catalog:products') || [];
-      const updated = products.filter((p: any) => p.id !== productId);
-      await kv.set('catalog:products', updated);
-      return c.json({ success: true });
+      
+      const productsRepo = getProductsRepository();
+      
+      // Check if product exists
+      const existing = await productsRepo.findById(productId);
+      if (!existing) {
+        return sendError(c, 'Product not found', 404);
+      }
+      
+      await productsRepo.delete(productId);
+      
+      return sendSuccess(c, { success: true });
     } catch (error) {
       console.log('Error deleting product:', error);
-      return c.json({ error: String(error) }, 500);
+      return sendError(c, error, 500);
     }
   });
 
-  // Get pricing data
+  // Get pricing data - ✅ MIGRATED TO SQL
   app.get("/make-server-3dd53475/admin/catalog/pricing", async (c: any) => {
     try {
-      let items = await kv.get('catalog:pricing');
-      if (!items) {
-        items = [
-          {
-            id: 'price_001',
-            name: 'Basic Veterinary Consultation',
-            category: 'Veterinary Services',
-            currentPrice: 1500,
-            originalPrice: 2000,
-            margin: '25% off',
-            stockLevel: '∞',
-            lastUpdated: '2025-08-22'
-          },
-          {
-            id: 'price_002',
-            name: 'Premium Pet Grooming Package',
-            category: 'Basic Grooming',
-            currentPrice: 2500,
-            originalPrice: null,
-            margin: '',
-            stockLevel: '∞',
-            lastUpdated: '2025-08-22'
-          },
-          {
-            id: 'price_003',
-            name: 'Emergency Vet Services',
-            category: 'Veterinary Services',
-            currentPrice: 3500,
-            originalPrice: 4500,
-            margin: '15% off',
-            stockLevel: '∞',
-            lastUpdated: '2025-08-22'
-          },
-          {
-            id: 'price_004',
-            name: 'Royal canin Dog Food',
-            category: 'Pet Food',
-            currentPrice: 3500,
-            originalPrice: 4000,
-            margin: '13% off',
-            stockLevel: 0,
-            lastUpdated: '2025-08-22'
-          }
-        ];
-        await kv.set('catalog:pricing', items);
-      }
+      const productsRepo = getProductsRepository();
+      const products = await productsRepo.findAll({ isActive: true });
+      
+      // Transform products to pricing format
+      const items = products.map(p => {
+        const margin = p.compare_at_price && p.price < p.compare_at_price
+          ? `${Math.round(((p.compare_at_price - p.price) / p.compare_at_price) * 100)}% off`
+          : '';
+        
+        return {
+          id: p.id,
+          name: p.name,
+          category: p.category,
+          currentPrice: p.price,
+          originalPrice: p.compare_at_price,
+          margin,
+          stockLevel: p.stock,
+          lastUpdated: p.updated_at?.split('T')[0] || new Date().toISOString().split('T')[0]
+        };
+      });
+      
+      // Calculate stats
+      const totalValue = products.reduce((sum, p) => sum + (p.price * p.stock), 0);
+      const avgPrice = products.length > 0 
+        ? products.reduce((sum, p) => sum + p.price, 0) / products.length 
+        : 0;
+      const lowStock = products.filter(p => p.stock <= p.min_stock && p.stock > 0).length;
+      const outOfStock = products.filter(p => p.stock === 0).length;
       
       const stats = {
-        avgPrice: 2450,
-        lowStock: 0,
-        outOfStock: 1,
-        totalValue: 6703000
+        avgPrice: Math.round(avgPrice),
+        lowStock,
+        outOfStock,
+        totalValue: Math.round(totalValue)
       };
       
-      return c.json({ success: true, items, stats });
+      return sendSuccess(c, { items, stats });
     } catch (error) {
       console.log('Error getting pricing data:', error);
-      return c.json({ error: String(error) }, 500);
+      return sendError(c, error, 500);
     }
   });
 

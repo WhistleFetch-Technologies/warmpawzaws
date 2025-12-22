@@ -13,6 +13,16 @@ import { Context, Next } from "npm:hono";
 import { getDbClient } from "../db.ts";
 import { getVendorsRepository } from "../repositories/vendors.ts";
 
+// Fix import for audit_logs
+interface AuditLog {
+  entity_type: string;
+  entity_id: string;
+  action: string;
+  actor_id?: string;
+  actor_role?: string;
+  details?: any;
+}
+
 export interface CapabilityCheck {
   resource: string;
   action: string;
@@ -79,19 +89,18 @@ export function requireCapability(capability: CapabilityCheck) {
       const hasCapability = await checkVendorCapability(vendorId, capability);
       
       if (!hasCapability) {
-        // Log violation
-        const client = getDbClient();
-        await client.from('audit_logs').insert({
-          action: 'capability_violation',
-          entity_type: 'vendor',
-          entity_id: vendorId,
-          actor_id: vendorId,
-          actor_role: 'vendor',
-          details: { 
-            capability: `${capability.resource}:${capability.action}`,
-            endpoint: c.req.path 
-          }
-        }).catch(() => {}); // Don't fail if audit log fails
+         // Log violation
+         const auditClient = getDbClient();
+         await auditClient.from('audit_logs').insert({
+           entity_type: 'vendor',
+           entity_id: vendorId,
+           action: 'capability_violation',
+           actor_id: vendorId,
+           changes: { 
+             capability: `${capability.resource}:${capability.action}`,
+             endpoint: c.req.path 
+           }
+         } as any).catch(() => {}); // Don't fail if audit log fails
         
         return c.json({ 
           error: `Vendor does not have required capability: ${capability.resource}:${capability.action}` 
