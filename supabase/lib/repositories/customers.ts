@@ -203,6 +203,7 @@ export class CustomersRepository {
   /**
    * Upsert customer (create or update)
    * Useful for phone-based upserts and avoiding race conditions
+   * Note: Uses Supabase upsert without explicit conflict column if unique constraint fails
    */
   async upsert(input: CreateCustomerInput & { id?: string }): Promise<Customer> {
     // Clean input - remove fields that shouldn't be in the upsert
@@ -231,17 +232,38 @@ export class CustomersRepository {
     delete cleanInput.last_login_at;
     // Don't set is_active here - let it use default
     
-    const results = await upsertQuery<Customer>(
-      "customers",
-      cleanInput,
-      "phone"
-    );
-    
-    if (!results[0]) {
-      throw new Error("Failed to upsert customer");
+    try {
+      // Try upsert with phone conflict column first
+      const results = await upsertQuery<Customer>(
+        "customers",
+        cleanInput,
+        "phone"
+      );
+      
+      if (!results[0]) {
+        throw new Error("Failed to upsert customer");
+      }
+      
+      return results[0];
+    } catch (error: any) {
+      // If conflict specification fails (42P10), try without it
+      // Supabase will use the unique constraint automatically
+      if (error?.code === '42P10' || error?.message?.includes('ON CONFLICT')) {
+        console.log('[CustomersRepository] Retrying upsert without conflict specification...');
+        const results = await upsertQuery<Customer>(
+          "customers",
+          cleanInput
+          // No conflict column - let Supabase handle it
+        );
+        
+        if (!results[0]) {
+          throw new Error("Failed to upsert customer");
+        }
+        
+        return results[0];
+      }
+      throw error;
     }
-    
-    return results[0];
   }
 
   /**
