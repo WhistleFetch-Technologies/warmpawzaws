@@ -383,7 +383,14 @@ export async function updateQuery<T>(
   data: Partial<T>
 ): Promise<T[]> {
   try {
-    let query = getDbClient().from(table).update(data as any);
+    // Clean data to remove fields that don't exist in the table
+    const cleanData = cleanUpdateData(data, table);
+    
+    console.log(`[updateQuery] Updating ${table} with filters:`, JSON.stringify(filters, null, 2));
+    console.log(`[updateQuery] Update data:`, JSON.stringify(cleanData, null, 2));
+    console.log(`[updateQuery] Update data keys:`, Object.keys(cleanData));
+    
+    let query = getDbClient().from(table).update(cleanData as any);
     
     Object.entries(filters).forEach(([key, value]) => {
       query = query.eq(key, value);
@@ -391,11 +398,74 @@ export async function updateQuery<T>(
     
     const { data: result, error } = await query.select();
     
-    if (error) throw error;
+    if (error) {
+      console.error(`[updateQuery] Database error for ${table}:`, error);
+      console.error(`[updateQuery] Error code:`, error.code);
+      console.error(`[updateQuery] Error message:`, error.message);
+      console.error(`[updateQuery] Error details:`, error.details);
+      console.error(`[updateQuery] Update data attempted:`, JSON.stringify(cleanData, null, 2));
+      throw error;
+    }
+    
     return (result || []) as T[];
   } catch (error) {
     handleDbError(error);
   }
+}
+
+/**
+ * Clean update data by removing fields that don't exist in the table
+ */
+function cleanUpdateData(data: any, tableName?: string): any {
+  if (!data || typeof data !== 'object') return data;
+  
+  // Create a clean copy
+  const cleaned: Record<string, any> = {};
+  
+  // For customers table, only allow fields that exist in actual schema
+  if (tableName === 'customers') {
+    const allowedFields = [
+      'email',
+      'full_name',
+      'address', // JSONB
+      'journey_stage',
+      'preferences', // JSONB
+      'loyalty_points',
+      'total_bookings',
+      'total_spent',
+      'is_active',
+      'user_id',
+      'updated_at',
+    ];
+    
+    allowedFields.forEach(field => {
+      if (data[field] !== undefined && data[field] !== null) {
+        cleaned[field] = data[field];
+      }
+    });
+    
+    // Remove forbidden fields
+    delete cleaned.id;
+    delete cleaned.customer_id;
+    delete cleaned.phone; // Phone should not be updated via this method
+    delete cleaned.created_at;
+    delete cleaned.profile_photo_url; // Doesn't exist - should be in preferences
+    
+    console.log(`[cleanUpdateData] Cleaned data for customers table:`, JSON.stringify(cleaned, null, 2));
+  } else {
+    // For other tables, preserve all fields except auto-generated ones
+    Object.keys(data).forEach(key => {
+      if (data[key] !== undefined) {
+        cleaned[key] = data[key];
+      }
+    });
+    
+    // Remove auto-generated fields
+    delete cleaned.id;
+    delete cleaned.created_at;
+  }
+  
+  return cleaned;
 }
 
 /**

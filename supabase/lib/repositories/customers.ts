@@ -176,13 +176,45 @@ export class CustomersRepository {
    * Replaces: kv.set(`customer:${customerId}`, updatedData)
    */
   async update(customerId: string, input: UpdateCustomerInput): Promise<Customer> {
+    // Get existing customer to preserve preferences
+    const existing = await this.findById(customerId);
+    if (!existing) {
+      throw new Error(`Customer not found: ${customerId}`);
+    }
+    
+    // Build update data - only include fields that exist in actual schema
+    const updateData: Record<string, any> = {
+      updated_at: new Date().toISOString(),
+    };
+    
+    // Add allowed fields that exist in actual schema
+    if (input.email !== undefined) updateData.email = input.email;
+    if (input.full_name !== undefined) updateData.full_name = input.full_name;
+    if (input.address !== undefined) updateData.address = input.address; // JSONB field
+    if (input.is_active !== undefined) updateData.is_active = input.is_active;
+    if (input.user_id !== undefined) updateData.user_id = input.user_id;
+    if (input.journey_stage !== undefined) updateData.journey_stage = input.journey_stage;
+    
+    // Handle profile_photo_url - store in preferences JSONB (column doesn't exist)
+    if (input.profile_photo_url !== undefined) {
+      const currentPreferences = (existing.preferences as any) || {};
+      updateData.preferences = {
+        ...currentPreferences,
+        profile_photo_url: input.profile_photo_url,
+      };
+    } else if (input.preferences !== undefined) {
+      // If preferences are provided directly, merge with existing
+      const currentPreferences = (existing.preferences as any) || {};
+      updateData.preferences = {
+        ...currentPreferences,
+        ...input.preferences,
+      };
+    }
+    
     const results = await updateQuery<Customer>(
       "customers",
       { id: customerId },
-      {
-        ...input,
-        updated_at: new Date().toISOString(),
-      }
+      updateData
     );
     
     if (!results[0]) {
