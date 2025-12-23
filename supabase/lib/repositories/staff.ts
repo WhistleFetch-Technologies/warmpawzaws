@@ -119,10 +119,11 @@ export class StaffRepository {
           customPrice: s.custom_price,
           customDuration: s.custom_duration
         })),
-        totalAppointments: 0, // Would need to query bookings table
-        completedAppointments: 0,
-        totalEarnings: 0,
-        reviewCount: 0,
+        availability: data.working_hours || {},
+        totalAppointments: data.total_appointments || 0,
+        completedAppointments: 0, // Would need to query bookings table
+        totalEarnings: 0, // Would need to query bookings/payments table
+        reviewCount: 0, // Would need to query reviews table
         createdAt: data.created_at,
         updatedAt: data.updated_at
       };
@@ -157,7 +158,7 @@ export class StaffRepository {
         `)
         .or(`id.eq.${staffId},staff_id.eq.${staffId}`)
         .eq('is_active', true)
-        .single();
+        .maybeSingle();
 
       if (error || !data) {
         return null;
@@ -168,7 +169,7 @@ export class StaffRepository {
         .from('vendors')
         .select('id, business_name, role_id')
         .eq('id', data.vendor_id)
-        .single();
+        .maybeSingle();
 
       // Get staff services
       const { data: staffServices } = await this.client
@@ -204,7 +205,8 @@ export class StaffRepository {
           customPrice: s.custom_price,
           customDuration: s.custom_duration
         })),
-        totalAppointments: 0,
+        availability: data.working_hours || {},
+        totalAppointments: data.total_appointments || 0,
         completedAppointments: 0,
         totalEarnings: 0,
         reviewCount: 0,
@@ -286,7 +288,8 @@ export class StaffRepository {
         rating: s.rating || 0,
         experience: s.experience_years || 0,
         services: [],
-        totalAppointments: 0,
+        availability: s.working_hours || {},
+        totalAppointments: s.total_appointments || 0,
         completedAppointments: 0,
         totalEarnings: 0,
         reviewCount: 0,
