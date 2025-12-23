@@ -106,20 +106,8 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
       console.log('Phone:', phone);
       console.log('Pet Data:', petData);
       
-      // ✅ SQL: First get customer ID from phone
-      const customerResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/profile?phone=${encodeURIComponent(phone)}`,
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
-      
-      if (!customerResponse.ok) {
-        throw new Error('Customer not found. Please ensure you are logged in.');
-      }
-      
-      const customerData = await customerResponse.json();
-      const customerId = customerData.profile?.phone || phone; // Use phone as customerId identifier
+      // ✅ SQL: Use phone directly as customerId (endpoint resolves phone to customer ID)
+      const customerId = phone;
       
       // ✅ SQL: Create pet using single pet endpoint
       const petPayload = {
