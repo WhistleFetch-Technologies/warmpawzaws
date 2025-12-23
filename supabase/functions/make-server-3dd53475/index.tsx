@@ -93,6 +93,7 @@ import enhancedStaffAvailability from './enhanced-staff-availability-routes.tsx'
 import { pharmacyPrescriptionEndpoints } from './pharmacy-prescription-endpoints.tsx';
 import vetSpecializedServices from './vet-specialized-services.tsx'; // ✅ FIX: Import vet specialized services (ambulance, diagnostics, pharmacy)
 import staffCrudEndpoints from './staff-crud-endpoints-refactored.tsx'; // ✅ REFACTORED: SQL-only staff CRUD endpoints
+import staffAuthEndpoints from './staff-auth-endpoints.tsx'; // ✅ FIX: Staff authentication endpoints
 import { homeSampleCollectionEndpoints } from './home-sample-collection-endpoints.tsx';
 import { holidayPackageEndpoints } from './holiday-package-endpoints.tsx';
 import { smsNotificationServiceEnhanced } from './sms-notification-service-enhanced.tsx';
@@ -521,8 +522,15 @@ registerVideoCallEndpoints(app);
 regionEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 registerProblemGridSpecializationSystem(app);
 
-// 4. Core Customer & Auth Routes
-// MUST BE REGISTERED BEFORE STAFF ROUTES to avoid shadowing by staff wildcard router
+// 4. Staff Auth Routes (MUST BE BEFORE CUSTOMER ROUTES to avoid shadowing)
+// ✅ FIX: Register staff auth endpoints before customer routes
+if (staffAuthEndpoints && typeof staffAuthEndpoints === 'object') {
+  console.log('✅ Registering Staff Auth Endpoints (before customer routes)...');
+  app.route('/make-server-3dd53475', staffAuthEndpoints);
+}
+
+// 5. Core Customer & Auth Routes
+// MUST BE REGISTERED AFTER STAFF ROUTES to avoid shadowing staff routes
 registerCustomerServices(app); // Register specific routes BEFORE wildcard
 registerCustomerRoutes(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 // ✅ REFACTORED: Register SQL-only wallet endpoints
@@ -1019,7 +1027,6 @@ registerP0Features(app);
 
 // 5. Staff Routes
 // ✅ FIX: Register staff auth endpoints
-import staffAuthEndpoints from './staff-auth-endpoints.tsx';
 if (staffAuthEndpoints && typeof staffAuthEndpoints === 'object') {
   console.log('✅ Registering Staff Auth Endpoints...');
   app.route('/make-server-3dd53475', staffAuthEndpoints); // Register Auth FIRST to avoid shadowing by /staff wildcard
