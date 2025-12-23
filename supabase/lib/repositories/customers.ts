@@ -56,15 +56,13 @@ export interface CreateCustomerInput {
 export interface UpdateCustomerInput {
   email?: string;
   full_name?: string;
-  date_of_birth?: string;
-  gender?: string;
-  address?: string;
-  city?: string;
-  state?: string;
-  pincode?: string;
+  address?: any; // JSONB field - can be object with street, city, state, pincode, etc.
   profile_photo_url?: string;
   is_active?: boolean;
   last_login_at?: string;
+  user_id?: string; // For linking to users table
+  journey_stage?: string; // Customer journey stage
+  preferences?: any; // JSONB field for preferences
 }
 
 // ============================================================================
