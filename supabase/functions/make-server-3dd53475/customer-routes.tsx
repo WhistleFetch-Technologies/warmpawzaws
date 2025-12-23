@@ -534,23 +534,38 @@ export function registerCustomerRoutes(app: Hono) {
       }
       
       // ✅ SQL: Update customer
-      const customer = await getCustomersRepository().update(customerId, {
+      // CRITICAL: The actual database schema uses JSONB for address, not separate fields
+      // Build address object from separate fields if provided
+      let addressJsonb: any = null;
+      if (address || pincode) {
+        addressJsonb = {
+          street: address || null,
+          pincode: pincode || null,
+        };
+      }
+      
+      const updateData: any = {
         full_name: `${firstName} ${lastName}`.trim(),
-        email,
-        address,
-        pincode,
-        profile_photo_url: photo,
-      });
+      };
+      
+      if (email !== undefined) updateData.email = email;
+      if (addressJsonb !== null) updateData.address = addressJsonb;
+      if (photo !== undefined) updateData.profile_photo_url = photo;
+      
+      const customer = await getCustomersRepository().update(customerId, updateData);
+      
+      // Extract address fields from JSONB for response
+      const addressData = customer.address as any || {};
       
       return sendSuccess(c, { 
         profile: {
           firstName, 
           lastName, 
-          email, 
+          email: customer.email, 
           phone, 
-          address, 
-          pincode, 
-          photo: customer.profile_photo_url
+          address: addressData.street || address,
+          pincode: addressData.pincode || pincode, 
+          photo: customer.profile_photo_url || photo
         }
       });
     } catch (error) {
