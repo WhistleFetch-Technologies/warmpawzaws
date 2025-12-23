@@ -160,9 +160,10 @@ export function registerCustomerRoutes(app: Hono) {
           console.log(`📝 [OTP-VERIFY] Creating new customer for phone: ${phone}`);
           
           // Try to create customer first (most common case)
+          // Note: customer_id is REQUIRED in the actual database schema
           customer = await getCustomersRepository().create({
             phone: phone.trim(),
-            full_name: 'Customer', // Required field - will be updated by user later
+            full_name: 'Customer', // Optional field - will be updated by user later
           });
           
           console.log(`✅ [OTP-VERIFY] New customer created: ${customer.id}`);
