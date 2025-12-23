@@ -232,16 +232,46 @@ export async function insertQuery<T>(
   data: Partial<T> | Partial<T>[]
 ): Promise<T[]> {
   try {
+    // Clean data to remove any fields that shouldn't be inserted
+    const cleanData = Array.isArray(data) 
+      ? data.map(item => cleanInsertData(item))
+      : cleanInsertData(data);
+    
+    console.log(`[insertQuery] Inserting into ${table}:`, JSON.stringify(cleanData, null, 2));
+    
     const { data: result, error } = await getDbClient()
       .from(table)
-      .insert(data as any)
+      .insert(cleanData as any)
       .select();
     
-    if (error) throw error;
+    if (error) {
+      console.error(`[insertQuery] Database error for ${table}:`, error);
+      console.error(`[insertQuery] Data attempted:`, JSON.stringify(cleanData, null, 2));
+      throw error;
+    }
+    
     return (result || []) as T[];
   } catch (error) {
     handleDbError(error);
   }
+}
+
+/**
+ * Clean insert data by removing fields that shouldn't be in INSERT statements
+ */
+function cleanInsertData(data: any): any {
+  if (!data || typeof data !== 'object') return data;
+  
+  const cleaned = { ...data };
+  
+  // Remove fields that are auto-generated or shouldn't be in INSERT
+  // Note: customer_id should never be in the customers table (it uses 'id')
+  delete cleaned.customer_id;
+  delete cleaned.id; // Will be auto-generated
+  delete cleaned.created_at; // Auto-generated
+  delete cleaned.updated_at; // Auto-generated
+  
+  return cleaned;
 }
 
 /**

@@ -134,29 +134,39 @@ export class CustomersRepository {
       throw new Error("Phone and full_name are required to create a customer");
     }
     
-    // Only pass fields that exist in the table, excluding is_active (it has a default)
-    const insertData: any = {
-      phone: input.phone,
-      full_name: input.full_name,
+    // CRITICAL: Only pass fields that exist in the customers table
+    // Explicitly exclude id, customer_id, created_at, updated_at, last_login_at, is_active (they have defaults/auto)
+    const insertData: Record<string, any> = {
+      phone: input.phone.trim(),
+      full_name: input.full_name.trim(),
     };
     
-    // Add optional fields only if they're provided
-    if (input.email) insertData.email = input.email;
+    // Add optional fields only if they're provided and not null/undefined
+    if (input.email && input.email.trim()) insertData.email = input.email.trim();
     if (input.date_of_birth) insertData.date_of_birth = input.date_of_birth;
     if (input.gender) insertData.gender = input.gender;
-    if (input.address) insertData.address = input.address;
-    if (input.city) insertData.city = input.city;
-    if (input.state) insertData.state = input.state;
-    if (input.pincode) insertData.pincode = input.pincode;
-    if (input.profile_photo_url) insertData.profile_photo_url = input.profile_photo_url;
+    if (input.address && input.address.trim()) insertData.address = input.address.trim();
+    if (input.city && input.city.trim()) insertData.city = input.city.trim();
+    if (input.state && input.state.trim()) insertData.state = input.state.trim();
+    if (input.pincode && input.pincode.trim()) insertData.pincode = input.pincode.trim();
+    if (input.profile_photo_url && input.profile_photo_url.trim()) {
+      insertData.profile_photo_url = input.profile_photo_url.trim();
+    }
     
-    // is_active has a default value of true, so we don't need to set it explicitly
-    // But we can set it if it's explicitly provided as false
+    // Explicitly remove any fields that shouldn't be in the insert
+    delete (insertData as any).id;
+    delete (insertData as any).customer_id;
+    delete (insertData as any).created_at;
+    delete (insertData as any).updated_at;
+    delete (insertData as any).last_login_at;
+    delete (insertData as any).is_active; // Has default value
+    
+    console.log('[CustomersRepository] Creating customer with data:', JSON.stringify(insertData));
     
     const results = await insertQuery<Customer>("customers", insertData);
     
     if (!results[0]) {
-      throw new Error("Failed to create customer");
+      throw new Error("Failed to create customer: No result returned");
     }
     
     return results[0];
