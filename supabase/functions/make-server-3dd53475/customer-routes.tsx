@@ -153,78 +153,56 @@ export function registerCustomerRoutes(app: Hono) {
       let isNewUser = false;
       
       if (!customer) {
-        // ✅ SQL: Create new customer - ensure all required fields are present
+        // ✅ SQL: Use UPSERT to handle race conditions automatically
+        // This is safer than create + retry logic because it atomically handles conflicts
         isNewUser = true;
         
-        // Retry logic for race conditions
-        let retries = 3;
-        let lastError: any = null;
-        
-        while (retries > 0) {
-          try {
-            // CRITICAL: Only pass valid fields, no customer_id, id, or auto-generated fields
-            customer = await getCustomersRepository().create({
-              phone: phone.trim(),
-              full_name: 'Customer', // Required field - will be updated by user later
-            });
-            
-            console.log(`✅ [OTP-VERIFY] New customer created: ${customer.id}`);
-            break; // Success, exit retry loop
-            
-          } catch (createError: any) {
-            lastError = createError;
-            const errorMessage = String(createError?.message || '');
-            const errorCode = String(createError?.code || '');
-            const errorDetails = createError?.details || '';
-            
-            console.error(`❌ [OTP-VERIFY] Error creating customer (${4 - retries}/3):`, errorMessage);
-            console.error(`❌ [OTP-VERIFY] Error code:`, errorCode);
-            console.error(`❌ [OTP-VERIFY] Error details:`, errorDetails);
-            
-            // Check if it's a unique constraint violation (customer already exists)
-            if (
-              errorMessage.includes('unique') || 
-              errorMessage.includes('duplicate') ||
-              errorCode === '23505' ||
-              errorMessage.includes('already exists') ||
-              errorMessage.includes('violates unique constraint')
-            ) {
-              console.log('⚠️ [OTP-VERIFY] Customer already exists (race condition), fetching...');
-              
-              // Wait a bit and try to fetch
-              await new Promise(resolve => setTimeout(resolve, 100));
-              
-              customer = await getCustomersRepository().findByPhone(phone);
-              if (customer) {
-                isNewUser = false;
-                console.log(`✅ [OTP-VERIFY] Retrieved existing customer: ${customer.id}`);
-                break; // Found existing customer, exit retry loop
-              }
-              
-              // If still not found, retry once more
-              retries--;
-              if (retries > 0) {
-                console.log(`⚠️ [OTP-VERIFY] Retrying customer creation... (${retries} retries left)`);
-                await new Promise(resolve => setTimeout(resolve, 200));
-                continue;
-              }
-            }
-            
-            // For other errors, reduce retries
-            retries--;
-            if (retries > 0) {
-              console.log(`⚠️ [OTP-VERIFY] Retrying after error... (${retries} retries left)`);
-              await new Promise(resolve => setTimeout(resolve, 200));
-            }
+        try {
+          console.log(`📝 [OTP-VERIFY] Creating new customer for phone: ${phone}`);
+          
+          // Use upsert which handles race conditions automatically via unique constraint on phone
+          customer = await getCustomersRepository().upsert({
+            phone: phone.trim(),
+            full_name: 'Customer', // Required field - will be updated by user later
+          });
+          
+          // Check if this is truly a new customer by checking created_at timestamp
+          // If created within last 2 seconds, likely a new user
+          const createdAt = new Date(customer.created_at);
+          const now = new Date();
+          const secondsSinceCreation = (now.getTime() - createdAt.getTime()) / 1000;
+          
+          if (secondsSinceCreation > 5) {
+            // Customer was created more than 5 seconds ago, so it's an existing user
+            isNewUser = false;
+            console.log(`✅ [OTP-VERIFY] Existing customer retrieved via upsert: ${customer.id}`);
+          } else {
+            console.log(`✅ [OTP-VERIFY] New customer created via upsert: ${customer.id}`);
           }
-        }
-        
-        // If we still don't have a customer after retries, throw error
-        if (!customer) {
-          const finalError = lastError?.message || 'Unknown error';
-          const finalCode = lastError?.code || '';
-          console.error(`❌ [OTP-VERIFY] Failed to create customer after all retries:`, finalError);
-          throw new Error(`Failed to create customer: ${finalError} (code: ${finalCode})`);
+          
+        } catch (upsertError: any) {
+          console.error('❌ [OTP-VERIFY] Error upserting customer:', upsertError);
+          console.error('❌ [OTP-VERIFY] Error message:', upsertError?.message);
+          console.error('❌ [OTP-VERIFY] Error code:', upsertError?.code);
+          console.error('❌ [OTP-VERIFY] Error details:', upsertError?.details);
+          console.error('❌ [OTP-VERIFY] Full error:', JSON.stringify(upsertError, null, 2));
+          
+          // Try to fetch customer one more time in case it was created
+          customer = await getCustomersRepository().findByPhone(phone);
+          
+          if (customer) {
+            isNewUser = false;
+            console.log(`✅ [OTP-VERIFY] Customer found after upsert error: ${customer.id}`);
+          } else {
+            // If still not found, throw with detailed error
+            const errorMsg = upsertError?.message || 'Unknown error';
+            const errorCode = upsertError?.code || 'UNKNOWN';
+            const errorHint = upsertError?.hint || '';
+            
+            throw new Error(
+              `Failed to create/retrieve customer: ${errorMsg} (code: ${errorCode})${errorHint ? ` - ${errorHint}` : ''}`
+            );
+          }
         }
       } else {
         console.log(`✅ [OTP-VERIFY] Existing customer found: ${customer.id}`);

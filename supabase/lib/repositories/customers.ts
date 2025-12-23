@@ -202,15 +202,38 @@ export class CustomersRepository {
 
   /**
    * Upsert customer (create or update)
-   * Useful for phone-based upserts
+   * Useful for phone-based upserts and avoiding race conditions
    */
   async upsert(input: CreateCustomerInput & { id?: string }): Promise<Customer> {
+    // Clean input - remove fields that shouldn't be in the upsert
+    const cleanInput: Record<string, any> = {
+      phone: input.phone.trim(),
+      full_name: input.full_name.trim(),
+    };
+    
+    // Add optional fields only if provided
+    if (input.email && input.email.trim()) cleanInput.email = input.email.trim();
+    if (input.date_of_birth) cleanInput.date_of_birth = input.date_of_birth;
+    if (input.gender) cleanInput.gender = input.gender;
+    if (input.address && input.address.trim()) cleanInput.address = input.address.trim();
+    if (input.city && input.city.trim()) cleanInput.city = input.city.trim();
+    if (input.state && input.state.trim()) cleanInput.state = input.state.trim();
+    if (input.pincode && input.pincode.trim()) cleanInput.pincode = input.pincode.trim();
+    if (input.profile_photo_url && input.profile_photo_url.trim()) {
+      cleanInput.profile_photo_url = input.profile_photo_url.trim();
+    }
+    
+    // Explicitly remove forbidden fields
+    delete cleanInput.id;
+    delete cleanInput.customer_id;
+    delete cleanInput.created_at;
+    delete cleanInput.updated_at;
+    delete cleanInput.last_login_at;
+    // Don't set is_active here - let it use default
+    
     const results = await upsertQuery<Customer>(
       "customers",
-      {
-        ...input,
-        is_active: true,
-      },
+      cleanInput,
       "phone"
     );
     
