@@ -44,8 +44,10 @@ export function orderEndpointsSQL(app: Hono) {
           subtotal += (item.price || 0) * (item.quantity || 1);
         }
 
-        // Calculate tax (18% GST)
-        taxAmount = subtotal * 0.18;
+        // Calculate GST using centralized service
+        const { calculateGST } = await import("../../lib/services/gst-service.ts");
+        const gstCalculation = await calculateGST(subtotal);
+        taxAmount = gstCalculation.gstAmount;
         const totalAmount = subtotal + taxAmount - discountAmount;
 
         // Create order
@@ -70,10 +72,10 @@ export function orderEndpointsSQL(app: Hono) {
         const orderItems = items.map((item: any) => ({
           order_id: order.id,
           product_id: item.productId,
-          vendor_id: item.vendorId,
+          name: item.name || item.productName || 'Product',
           quantity: item.quantity || 1,
-          price: item.price,
-          subtotal: (item.price || 0) * (item.quantity || 1),
+          unit_price: item.price,
+          total_price: (item.price || 0) * (item.quantity || 1),
         }));
 
         const { error: itemsError } = await txClient

@@ -1278,6 +1278,12 @@ console.log('✅ Registering SQL-based Order Endpoints...');
 orderEndpointsSQL(app);
 console.log('✅ Registered SQL-based Order Endpoints (NO KV STORE)');
 
+// ✅ NEW: SQL-based Coupon Endpoints (NO KV STORE)
+import { couponEndpointsSQL } from './coupon-endpoints-sql.tsx';
+console.log('✅ Registering SQL-based Coupon Endpoints...');
+couponEndpointsSQL(app);
+console.log('✅ Registered SQL-based Coupon Endpoints (NO KV STORE)');
+
 // ✅ NEW: SQL-based Scheduling Endpoints (NO KV STORE)
 console.log('✅ Registering SQL-based Scheduling Endpoints...');
 if (packageEndpointsSQL && typeof packageEndpointsSQL === 'function') {

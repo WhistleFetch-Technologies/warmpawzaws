@@ -42,37 +42,45 @@ export function couponEndpointsSQL(app: Hono) {
         return sendError(c, 'Invalid or expired coupon', 404);
       }
 
-      // Check expiry
-      if (coupon.expires_at && new Date(coupon.expires_at) < new Date()) {
+      // Check expiry (use end_date from schema)
+      const endDate = coupon.end_date || coupon.expires_at;
+      if (endDate && new Date(endDate) < new Date()) {
         return sendError(c, 'Coupon has expired', 400);
       }
 
-      // Check minimum amount
-      if (amount && coupon.minimum_amount && amount < coupon.minimum_amount) {
-        return sendError(c, `Minimum order amount is ₹${coupon.minimum_amount}`, 400);
+      // Check start date
+      const startDate = coupon.start_date;
+      if (startDate && new Date(startDate) > new Date()) {
+        return sendError(c, 'Coupon is not yet active', 400);
+      }
+
+      // Check minimum amount (use min_order_amount from schema)
+      const minAmount = coupon.min_order_amount || coupon.minimum_amount;
+      if (amount && minAmount && amount < minAmount) {
+        return sendError(c, `Minimum order amount is ₹${minAmount}`, 400);
       }
 
       // Check usage limit
       if (coupon.max_uses) {
-        const { count } = await client
+        const { data: usages, error: usageError } = await client
           .from('coupon_usages')
-          .select('*', { count: 'exact', head: true })
+          .select('id')
           .eq('coupon_id', coupon.id);
 
-        if (count && count >= coupon.max_uses) {
+        if (!usageError && usages && usages.length >= coupon.max_uses) {
           return sendError(c, 'Coupon usage limit reached', 400);
         }
       }
 
       // Check customer usage limit
       if (customerId && coupon.max_uses_per_customer) {
-        const { count } = await client
+        const { data: customerUsages, error: customerUsageError } = await client
           .from('coupon_usages')
-          .select('*', { count: 'exact', head: true })
+          .select('id')
           .eq('coupon_id', coupon.id)
           .eq('customer_id', customerId);
 
-        if (count && count >= coupon.max_uses_per_customer) {
+        if (!customerUsageError && customerUsages && customerUsages.length >= coupon.max_uses_per_customer) {
           return sendError(c, 'You have already used this coupon', 400);
         }
       }
@@ -80,12 +88,13 @@ export function couponEndpointsSQL(app: Hono) {
       // Calculate discount
       let discountAmount = 0;
       if (coupon.discount_type === 'percentage') {
-        discountAmount = (amount * coupon.discount_value) / 100;
+        discountAmount = (amount * Number(coupon.discount_value)) / 100;
+        // Note: max_discount may not exist in schema, check if it does
         if (coupon.max_discount) {
-          discountAmount = Math.min(discountAmount, coupon.max_discount);
+          discountAmount = Math.min(discountAmount, Number(coupon.max_discount));
         }
       } else {
-        discountAmount = coupon.discount_value;
+        discountAmount = Number(coupon.discount_value);
       }
 
       return sendSuccess(c, {
