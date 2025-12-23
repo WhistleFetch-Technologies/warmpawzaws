@@ -225,13 +225,102 @@ export function registerCustomerRoutes(app: Hono) {
       }
       
       // ✅ SQL: Create session
+      // CRITICAL: sessions table requires user_id to reference users table
+      // We need to ensure a user record exists before creating a session
       const sessionToken = `token_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+      
+      // Get or create user record
+      let userId = customer.user_id;
+      
+      if (!userId) {
+        console.log(`📝 [OTP-VERIFY] Creating user record for customer ${customer.id}`);
+        
+        // Try to find existing user by phone first
+        const { data: existingUser, error: findError } = await getDbClient()
+          .from('users')
+          .select('id')
+          .eq('phone', phone.trim())
+          .maybeSingle();
+        
+        if (existingUser) {
+          userId = existingUser.id;
+          console.log(`✅ [OTP-VERIFY] Found existing user: ${userId}`);
+        } else {
+          // Create new user record in users table
+          const { data: userData, error: userError } = await getDbClient()
+            .from('users')
+            .insert({
+              phone: phone.trim(),
+              user_type: 'customer',
+              full_name: customer.full_name || 'Customer',
+              is_active: true,
+            })
+            .select('id')
+            .single();
+          
+          if (userError) {
+            console.error('❌ [OTP-VERIFY] Error creating user:', userError);
+            // If it's a unique constraint violation, try to find the user again
+            if (userError.code === '23505' || userError.message?.includes('unique')) {
+              const { data: retryUser } = await getDbClient()
+                .from('users')
+                .select('id')
+                .eq('phone', phone.trim())
+                .maybeSingle();
+              
+              if (retryUser) {
+                userId = retryUser.id;
+                console.log(`✅ [OTP-VERIFY] Found user on retry: ${userId}`);
+              } else {
+                throw new Error(`Failed to create or find user: ${userError.message}`);
+              }
+            } else {
+              throw new Error(`Failed to create user: ${userError.message}`);
+            }
+          } else {
+            userId = userData.id;
+            console.log(`✅ [OTP-VERIFY] Created new user: ${userId}`);
+          }
+        }
+        
+        // Update customer with user_id
+        if (userId) {
+          try {
+            await getCustomersRepository().update(customer.id, { user_id: userId } as any);
+            console.log(`✅ [OTP-VERIFY] Updated customer with user_id: ${userId}`);
+          } catch (updateError) {
+            console.warn('⚠️ [OTP-VERIFY] Could not update customer user_id:', updateError);
+            // Continue even if update fails
+          }
+        }
+      } else {
+        console.log(`✅ [OTP-VERIFY] Customer already has user_id: ${userId}`);
+      }
+      
+      // Verify user exists before creating session
+      if (!userId) {
+        throw new Error('Cannot create session: user_id is required but not found');
+      }
+      
+      // Verify the user actually exists in the database
+      const { data: verifyUser, error: verifyError } = await getDbClient()
+        .from('users')
+        .select('id')
+        .eq('id', userId)
+        .maybeSingle();
+      
+      if (!verifyUser || verifyError) {
+        throw new Error(`Cannot create session: user ${userId} does not exist in users table`);
+      }
+      
+      console.log(`📝 [OTP-VERIFY] Creating session for user: ${userId}`);
       await getSessionsRepository().create({
-        user_id: customer.id,
+        user_id: userId,
         user_type: 'customer',
         token: sessionToken,
         expires_in_days: 30,
       });
+      console.log(`✅ [OTP-VERIFY] Session created successfully`);
       
       console.log(`✅ [OTP-VERIFY] Login successful for ${phone}, isNewUser: ${isNewUser}`);
       
