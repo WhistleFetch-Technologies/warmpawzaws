@@ -5,9 +5,17 @@
  */
 
 import { Hono } from "npm:hono";
+import { cors } from "npm:hono/cors";
 import * as kv from "./kv_store.tsx";
 
 const app = new Hono();
+
+// Enable CORS for all routes
+app.use('*', cors({
+  origin: '*',
+  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowHeaders: ['Content-Type', 'Authorization'],
+}));
 
 // Add logging middleware for debugging
 app.use('*', async (c, next) => {
