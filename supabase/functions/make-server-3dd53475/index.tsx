@@ -58,8 +58,10 @@ import lifecycleValidationEndpoints from './lifecycle-validation-endpoint.tsx';
 import { registerCenterAvailabilityEndpoints } from './center-availability-endpoints.tsx';
 import { registerBoardingRoomManagement } from './boarding-room-management.tsx';
 import { registerNutritionistMealManagement } from './nutritionist-meal-management.tsx';
-import { registerServicePackageManagement } from './service-package-management.tsx';
+import { registerServicePackageManagement } from './service-package-management-sql.tsx'; // ✅ MIGRATED TO SQL
 import { registerCustomerPackageEndpoints } from './customer-package-endpoints.tsx';
+import { registerSupportTicketsEndpoints } from './support-tickets-endpoints.tsx'; // ✅ NEW: Support tickets (SQL-only)
+import { registerVendorPoliciesEndpoints } from './vendor-policies-endpoints.tsx'; // ✅ NEW: Vendor policies (SQL-only)
 import { registerVendorMetricsEnhancement } from './vendor-metrics-enhancement.tsx';
 import { bookingEndpoints } from './booking-endpoints-refactored.tsx';
 import { registerCafeFeatures } from './cafe-features.tsx';
