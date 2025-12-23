@@ -1,12 +1,13 @@
 /**
  * Staff Authentication & Management Endpoints
+ * ✅ MIGRATED TO SQL: Now uses SQL-based staff repository (NO KV STORE)
  * Handles separate login for doctors/staff with unique mobile numbers
  * Supports multi-vendor-type staff (vets, groomers, trainers, clinic doctors)
  */
 
 import { Hono } from "npm:hono";
 import { cors } from "npm:hono/cors";
-import * as kv from "./kv_store.tsx";
+import { getStaffRepository } from "../../lib/repositories/staff.ts";
 
 const app = new Hono();
 
@@ -29,6 +30,7 @@ app.use('*', async (c, next) => {
 
 /**
  * POST /staff/auth/check-phone
+ * ✅ MIGRATED TO SQL: Now uses SQL-based staff repository
  * Check if staff phone exists and return their profile
  */
 app.post("/staff/auth/check-phone", async (c) => {
@@ -39,41 +41,52 @@ app.post("/staff/auth/check-phone", async (c) => {
       return c.json({ error: "Phone number is required" }, 400);
     }
     
-    console.log(`🔍 [STAFF CHECK] Checking staff phone: ${phone}`);
+    console.log(`🔍 [STAFF CHECK] Checking staff phone: ${phone} (SQL)`);
     
-    // Search for staff by phone across all vendors
-    const allStaffKeys = await kv.getByPrefix("staff:");
-    console.log(`📋 [STAFF CHECK] Total staff records found: ${allStaffKeys.length}`);
-    
-    // Log first few staff records for debugging
-    if (allStaffKeys.length > 0) {
-      console.log(`📋 [STAFF CHECK] Sample staff records (first 3):`);
-      allStaffKeys.slice(0, 3).forEach((item: any, idx: number) => {
-        console.log(`   ${idx + 1}. Phone: ${item?.phone || 'N/A'}, Name: ${item?.fullName || 'N/A'}, Status: ${item?.status || 'N/A'}`);
-      });
-    }
-    
-    // The KV store returns objects directly, not wrapped in .value
-    const staffProfile = allStaffKeys.find((item: any) => {
-      const staffPhone = item?.phone;
-      const staffStatus = item?.status;
-      const staffIsActive = item?.isActive;
-      console.log(`   Comparing: ${staffPhone} === ${phone}, status: ${staffStatus}, isActive: ${staffIsActive}`);
-      // ✅ CRITICAL FIX: Check BOTH status==='active' (old staff) AND isActive===true (new staff)
-      const isActiveStaff = staffStatus === 'active' || staffIsActive === true;
-      return staffPhone === phone && isActiveStaff;
-    });
+    // ✅ USE SQL-BASED STAFF REPOSITORY (NO KV STORE)
+    const staffRepo = getStaffRepository();
+    const staffProfile = await staffRepo.findByPhone(phone);
     
     if (staffProfile) {
       console.log(`✅ [STAFF CHECK] Staff found:`, {
         id: staffProfile.id,
+        staffId: staffProfile.staffId,
         name: staffProfile.fullName,
         phone: staffProfile.phone,
-        role: staffProfile.role
+        role: staffProfile.role,
+        roleType: staffProfile.roleType
       });
+      
+      // Format response to match expected format
       return c.json({
         exists: true,
-        staff: staffProfile
+        staff: {
+          id: staffProfile.id,
+          staffId: staffProfile.staffId,
+          vendorId: staffProfile.vendorId,
+          fullName: staffProfile.fullName,
+          name: staffProfile.fullName,
+          phone: staffProfile.phone,
+          email: staffProfile.email,
+          role: staffProfile.role,
+          roleType: staffProfile.roleType,
+          specialization: staffProfile.specialization,
+          specializations: staffProfile.specializations || [],
+          photo: staffProfile.photo,
+          degree: staffProfile.degree,
+          experience: staffProfile.experience,
+          bio: staffProfile.bio,
+          consultationFee: staffProfile.consultationFee,
+          services: staffProfile.services || [],
+          availability: staffProfile.availability,
+          isActive: staffProfile.isActive,
+          status: staffProfile.isActive ? 'active' : 'inactive',
+          totalAppointments: staffProfile.totalAppointments || 0,
+          completedAppointments: staffProfile.completedAppointments || 0,
+          totalEarnings: staffProfile.totalEarnings || 0,
+          rating: staffProfile.rating || 0,
+          reviewCount: staffProfile.reviewCount || 0
+        }
       });
     }
     
@@ -88,6 +101,7 @@ app.post("/staff/auth/check-phone", async (c) => {
 
 /**
  * POST /staff/auth/login
+ * ✅ MIGRATED TO SQL: Now uses SQL-based staff repository
  * Staff login with phone number
  */
 app.post("/staff/auth/login", async (c) => {
@@ -98,70 +112,61 @@ app.post("/staff/auth/login", async (c) => {
       return c.json({ error: "Phone number is required" }, 400);
     }
     
-    console.log(`🔐 [STAFF LOGIN] Login attempt: ${phone}`);
+    console.log(`🔐 [STAFF LOGIN] Login attempt: ${phone} (SQL)`);
     
-    // ✅ FIX: Use phone index instead of scanning all staff
-    const normalizedPhone = phone.replace(/[^0-9]/g, '');
-    const staffId = await kv.get(`staff:phone:${normalizedPhone}`);
+    // ✅ USE SQL-BASED STAFF REPOSITORY (NO KV STORE)
+    const staffRepo = getStaffRepository();
+    const staffProfile = await staffRepo.findByPhone(phone);
     
-    if (!staffId) {
-      console.log(`❌ [STAFF LOGIN] No staff phone index found for: ${normalizedPhone}`);
+    if (!staffProfile) {
+      console.log(`❌ [STAFF LOGIN] Staff not found for phone: ${phone}`);
       return c.json({ error: "Staff not found or inactive" }, 404);
     }
     
-    console.log(`📋 [STAFF LOGIN] Found staff ID from phone index: ${staffId}`);
-    
-    // Get staff profile
-    const staffProfile = await kv.get(`staff:${staffId}`);
-    
-    if (!staffProfile) {
-      console.log(`❌ [STAFF LOGIN] Staff profile not found for ID: ${staffId}`);
-      return c.json({ error: "Staff profile not found" }, 404);
-    }
-    
     // Check if staff is active
-    const isActiveStaff = staffProfile.status === 'active' || staffProfile.isActive === true;
-    if (!isActiveStaff) {
-      console.log(`❌ [STAFF LOGIN] Staff is inactive: ${staffId}`);
+    if (!staffProfile.isActive) {
+      console.log(`❌ [STAFF LOGIN] Staff is inactive: ${staffProfile.id}`);
       return c.json({ error: "Staff account is inactive" }, 403);
     }
     
-    const staff = staffProfile;
-    
     // Update last login
-    staff.lastLogin = new Date().toISOString();
-    await kv.set(`staff:${staff.id}`, staff);
+    await staffRepo.updateLastLogin(staffProfile.id);
     
     console.log(`✅ [STAFF LOGIN] Login successful:`, {
-      id: staff.id,
-      name: staff.fullName,
-      role: staff.role,
-      vendorId: staff.vendorId
+      id: staffProfile.id,
+      staffId: staffProfile.staffId,
+      name: staffProfile.fullName,
+      role: staffProfile.role,
+      roleType: staffProfile.roleType,
+      vendorId: staffProfile.vendorId
     });
     
     return c.json({
       success: true,
       staff: {
-        id: staff.id,
-        vendorId: staff.vendorId,
-        fullName: staff.fullName,
-        phone: staff.phone,
-        role: staff.role,
-        roleType: staff.roleType, // 'vet', 'groomer', 'trainer', 'clinic_doctor'
-        specializations: staff.specializations,
-        photo: staff.photo,
-        degree: staff.degree,
-        experience: staff.experience,
-        bio: staff.bio,
-        consultationFee: staff.consultationFee,
-        services: staff.services,
-        availability: staff.availability,
-        isActive: staff.isActive,
-        totalAppointments: staff.totalAppointments,
-        completedAppointments: staff.completedAppointments,
-        totalEarnings: staff.totalEarnings,
-        rating: staff.rating,
-        reviewCount: staff.reviewCount
+        id: staffProfile.id,
+        staffId: staffProfile.staffId,
+        vendorId: staffProfile.vendorId,
+        fullName: staffProfile.fullName,
+        name: staffProfile.fullName,
+        phone: staffProfile.phone,
+        email: staffProfile.email,
+        role: staffProfile.role,
+        roleType: staffProfile.roleType, // 'vet', 'groomer', 'trainer', 'clinic_doctor'
+        specializations: staffProfile.specializations || [],
+        photo: staffProfile.photo,
+        degree: staffProfile.degree,
+        experience: staffProfile.experience,
+        bio: staffProfile.bio,
+        consultationFee: staffProfile.consultationFee,
+        services: staffProfile.services || [],
+        availability: staffProfile.availability,
+        isActive: staffProfile.isActive,
+        totalAppointments: staffProfile.totalAppointments || 0,
+        completedAppointments: staffProfile.completedAppointments || 0,
+        totalEarnings: staffProfile.totalEarnings || 0,
+        rating: staffProfile.rating || 0,
+        reviewCount: staffProfile.reviewCount || 0
       }
     });
     
@@ -298,28 +303,18 @@ app.get("/staff/:staffId", async (c) => {
 
 /**
  * GET /staff/vendor/:vendorId
+ * ✅ MIGRATED TO SQL: Now uses SQL-based staff repository
  * Get all staff for a vendor
  */
 app.get("/staff/vendor/:vendorId", async (c) => {
   try {
     const vendorId = c.req.param("vendorId");
     
-    // Get staff IDs
-    const vendorStaffKey = `vendor:${vendorId}:staff`;
-    const staffIds = await kv.get(vendorStaffKey) || [];
+    // ✅ USE SQL-BASED STAFF REPOSITORY (NO KV STORE)
+    const staffRepo = getStaffRepository();
+    const staff = await staffRepo.findByVendorId(vendorId);
     
-    // Get staff details
-    const staff = await Promise.all(
-      staffIds.map(async (id: string) => {
-        const staffData = await kv.get(`staff:${id}`);
-        return staffData;
-      })
-    );
-    
-    // Filter out null values
-    const activeStaff = staff.filter(s => s !== null);
-    
-    return c.json({ staff: activeStaff });
+    return c.json({ staff });
     
   } catch (error) {
     console.error("Error fetching vendor staff:", error);
