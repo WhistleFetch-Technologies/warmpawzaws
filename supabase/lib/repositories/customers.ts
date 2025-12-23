@@ -129,10 +129,31 @@ export class CustomersRepository {
    * Replaces: kv.set(`customer:${customerId}`, customerData)
    */
   async create(input: CreateCustomerInput): Promise<Customer> {
-    const results = await insertQuery<Customer>("customers", {
-      ...input,
-      is_active: true,
-    });
+    // Ensure required fields are present
+    if (!input.phone || !input.full_name) {
+      throw new Error("Phone and full_name are required to create a customer");
+    }
+    
+    // Only pass fields that exist in the table, excluding is_active (it has a default)
+    const insertData: any = {
+      phone: input.phone,
+      full_name: input.full_name,
+    };
+    
+    // Add optional fields only if they're provided
+    if (input.email) insertData.email = input.email;
+    if (input.date_of_birth) insertData.date_of_birth = input.date_of_birth;
+    if (input.gender) insertData.gender = input.gender;
+    if (input.address) insertData.address = input.address;
+    if (input.city) insertData.city = input.city;
+    if (input.state) insertData.state = input.state;
+    if (input.pincode) insertData.pincode = input.pincode;
+    if (input.profile_photo_url) insertData.profile_photo_url = input.profile_photo_url;
+    
+    // is_active has a default value of true, so we don't need to set it explicitly
+    // But we can set it if it's explicitly provided as false
+    
+    const results = await insertQuery<Customer>("customers", insertData);
     
     if (!results[0]) {
       throw new Error("Failed to create customer");

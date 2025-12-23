@@ -72,8 +72,9 @@ export function registerCustomerRoutes(app: Hono) {
       
       console.log(`🔑 [OTP-GENERATE] Generating OTP for: ${phone}`);
       
-      // ✅ PRODUCTION: Generate random OTP
-      const finalOTP = Math.floor(100000 + Math.random() * 900000).toString();
+      // ⚠️ UAT MODE: Fixed OTP for ALL users for testing
+      const UAT_MODE = true; // Set to false in production
+      const finalOTP = UAT_MODE ? '123456' : Math.floor(100000 + Math.random() * 900000).toString();
       
       // ✅ SQL: Create OTP token using repository
       await getOtpRepository().create({
@@ -84,7 +85,7 @@ export function registerCustomerRoutes(app: Hono) {
         max_attempts: 3,
       });
       
-      console.log(`✅ [OTP-GENERATE] OTP generated successfully for ${phone}`);
+      console.log(`✅ [OTP-GENERATE] OTP generated successfully for ${phone}: ${finalOTP} ${UAT_MODE ? '(UAT MODE - Fixed OTP)' : ''}`);
       
       // TODO: Send SMS via provider (Twilio, MSG91, etc.)
       
@@ -115,12 +116,34 @@ export function registerCustomerRoutes(app: Hono) {
       
       console.log(`🔍 [OTP-VERIFY] Looking up OTP for: ${phone}`);
       
-      // ✅ SQL: Verify OTP using repository
-      const isValid = await getOtpRepository().verify(phone, otp, true);
+      // ⚠️ UAT MODE: Accept fixed OTP 123456 even if not in database
+      const UAT_MODE = true; // Set to false in production
       
-      if (!isValid) {
-        console.error('❌ [OTP-VERIFY] Invalid or expired OTP');
-        return sendError(c, 'Invalid or expired OTP', 400);
+      // ✅ SQL: Verify OTP using repository
+      let isValid = false;
+      
+      if (UAT_MODE && otp === '123456') {
+        // In UAT mode, accept 123456 without checking database
+        console.log(`✅ [OTP-VERIFY] UAT MODE: Accepting fixed OTP 123456`);
+        isValid = true;
+        
+        // Try to mark any existing OTP as used to clean up
+        try {
+          const existingToken = await getOtpRepository().findByPhone(phone, 'login');
+          if (existingToken && !existingToken.is_used) {
+            await getOtpRepository().markAsUsed(existingToken.id);
+          }
+        } catch (e) {
+          console.warn('⚠️ [OTP-VERIFY] Could not mark existing OTP as used:', e);
+        }
+      } else {
+        // Normal verification
+        isValid = await getOtpRepository().verify(phone, otp, true);
+        
+        if (!isValid) {
+          console.error('❌ [OTP-VERIFY] Invalid or expired OTP');
+          return sendError(c, 'Invalid or expired OTP', 400);
+        }
       }
       
       console.log(`✅ [OTP-VERIFY] OTP verified successfully`);
@@ -130,19 +153,52 @@ export function registerCustomerRoutes(app: Hono) {
       let isNewUser = false;
       
       if (!customer) {
-        // ✅ SQL: Create new customer
+        // ✅ SQL: Create new customer - ensure all required fields are present
         isNewUser = true;
-        customer = await getCustomersRepository().create({
-          phone,
-          full_name: 'Customer',
-          is_active: true,
-        });
-        
-        // ✅ SQL: Update last login
-        await getCustomersRepository().updateLastLogin(customer.id);
+        try {
+          // Don't pass is_active - it has a default value
+          customer = await getCustomersRepository().create({
+            phone,
+            full_name: 'Customer', // Required field
+          });
+          
+          console.log(`✅ [OTP-VERIFY] New customer created: ${customer.id}`);
+        } catch (createError: any) {
+          console.error('❌ [OTP-VERIFY] Error creating customer:', createError);
+          console.error('❌ [OTP-VERIFY] Error details:', JSON.stringify(createError, null, 2));
+          
+          // If customer already exists (race condition or unique constraint), try to fetch again
+          const errorMessage = createError?.message || '';
+          const errorCode = createError?.code || '';
+          
+          if (
+            errorMessage.includes('unique') || 
+            errorMessage.includes('duplicate') ||
+            errorCode === '23505' ||
+            errorMessage.includes('already exists')
+          ) {
+            console.log('⚠️ [OTP-VERIFY] Customer already exists (race condition), fetching...');
+            customer = await getCustomersRepository().findByPhone(phone);
+            if (!customer) {
+              throw new Error('Failed to create or retrieve customer after race condition');
+            }
+            isNewUser = false;
+            console.log(`✅ [OTP-VERIFY] Retrieved existing customer: ${customer.id}`);
+          } else {
+            // Re-throw the error with more context
+            throw new Error(`Failed to create customer: ${errorMessage || 'Unknown error'}`);
+          }
+        }
       } else {
-        // ✅ SQL: Update last login
+        console.log(`✅ [OTP-VERIFY] Existing customer found: ${customer.id}`);
+      }
+      
+      // ✅ SQL: Update last login for both new and existing customers
+      try {
         await getCustomersRepository().updateLastLogin(customer.id);
+      } catch (updateError) {
+        console.warn('⚠️ [OTP-VERIFY] Could not update last login:', updateError);
+        // Continue even if update fails
       }
       
       // ✅ SQL: Create session
