@@ -130,44 +130,45 @@ export class CustomersRepository {
    */
   async create(input: CreateCustomerInput): Promise<Customer> {
     // Ensure required fields are present
-    if (!input.phone || !input.full_name) {
-      throw new Error("Phone and full_name are required to create a customer");
+    if (!input.phone) {
+      throw new Error("Phone is required to create a customer");
     }
     
-    // CRITICAL: Only pass fields that exist in the customers table
-    // Explicitly exclude id, customer_id, created_at, updated_at, last_login_at, is_active (they have defaults/auto)
+    // CRITICAL: The actual database has a customer_id VARCHAR NOT NULL column
+    // Generate a unique customer_id based on phone number
+    const customerId = `customer_${input.phone.trim().replace(/\D/g, '')}_${Date.now()}`;
+    
+    // Build insert data matching the ACTUAL database schema
     const insertData: Record<string, any> = {
-      phone: input.phone.trim(),
-      full_name: input.full_name.trim(),
+      customer_id: customerId, // REQUIRED: VARCHAR NOT NULL
+      phone: input.phone.trim(), // REQUIRED: VARCHAR NOT NULL
     };
     
-    // Add optional fields only if they're provided and not null/undefined
-    if (input.email && input.email.trim()) insertData.email = input.email.trim();
-    if (input.date_of_birth) insertData.date_of_birth = input.date_of_birth;
-    if (input.gender) insertData.gender = input.gender;
-    if (input.address && input.address.trim()) insertData.address = input.address.trim();
-    if (input.city && input.city.trim()) insertData.city = input.city.trim();
-    if (input.state && input.state.trim()) insertData.state = input.state.trim();
-    if (input.pincode && input.pincode.trim()) insertData.pincode = input.pincode.trim();
-    if (input.profile_photo_url && input.profile_photo_url.trim()) {
-      insertData.profile_photo_url = input.profile_photo_url.trim();
+    // Add optional fields based on actual schema
+    if (input.full_name && input.full_name.trim()) {
+      insertData.full_name = input.full_name.trim();
     }
+    if (input.email && input.email.trim()) {
+      insertData.email = input.email.trim();
+    }
+    // Note: The actual schema uses JSONB for address, not separate fields
+    // If address is provided as string, we might need to convert it
     
-    // Explicitly remove any fields that shouldn't be in the insert
-    delete (insertData as any).id;
-    delete (insertData as any).customer_id;
-    delete (insertData as any).created_at;
-    delete (insertData as any).updated_at;
-    delete (insertData as any).last_login_at;
-    delete (insertData as any).is_active; // Has default value
+    // Explicitly exclude auto-generated fields
+    delete (insertData as any).id; // UUID primary key, auto-generated
+    delete (insertData as any).created_at; // Auto-generated
+    delete (insertData as any).updated_at; // Auto-generated
     
     console.log('[CustomersRepository] Creating customer with data:', JSON.stringify(insertData));
+    console.log('[CustomersRepository] Data keys:', Object.keys(insertData));
     
     const results = await insertQuery<Customer>("customers", insertData);
     
     if (!results[0]) {
       throw new Error("Failed to create customer: No result returned");
     }
+    
+    console.log('[CustomersRepository] Customer created successfully:', results[0].id);
     
     return results[0];
   }
