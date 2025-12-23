@@ -153,55 +153,62 @@ export function registerCustomerRoutes(app: Hono) {
       let isNewUser = false;
       
       if (!customer) {
-        // ✅ SQL: Use UPSERT to handle race conditions automatically
-        // This is safer than create + retry logic because it atomically handles conflicts
+        // ✅ SQL: Create new customer with fallback to fetch if exists
         isNewUser = true;
         
         try {
           console.log(`📝 [OTP-VERIFY] Creating new customer for phone: ${phone}`);
           
-          // Use upsert which handles race conditions automatically via unique constraint on phone
-          customer = await getCustomersRepository().upsert({
+          // Try to create customer first (most common case)
+          customer = await getCustomersRepository().create({
             phone: phone.trim(),
             full_name: 'Customer', // Required field - will be updated by user later
           });
           
-          // Check if this is truly a new customer by checking created_at timestamp
-          // If created within last 2 seconds, likely a new user
-          const createdAt = new Date(customer.created_at);
-          const now = new Date();
-          const secondsSinceCreation = (now.getTime() - createdAt.getTime()) / 1000;
+          console.log(`✅ [OTP-VERIFY] New customer created: ${customer.id}`);
           
-          if (secondsSinceCreation > 5) {
-            // Customer was created more than 5 seconds ago, so it's an existing user
-            isNewUser = false;
-            console.log(`✅ [OTP-VERIFY] Existing customer retrieved via upsert: ${customer.id}`);
-          } else {
-            console.log(`✅ [OTP-VERIFY] New customer created via upsert: ${customer.id}`);
-          }
+        } catch (createError: any) {
+          console.error('❌ [OTP-VERIFY] Error creating customer:', createError);
+          const errorMessage = String(createError?.message || '');
+          const errorCode = String(createError?.code || '');
           
-        } catch (upsertError: any) {
-          console.error('❌ [OTP-VERIFY] Error upserting customer:', upsertError);
-          console.error('❌ [OTP-VERIFY] Error message:', upsertError?.message);
-          console.error('❌ [OTP-VERIFY] Error code:', upsertError?.code);
-          console.error('❌ [OTP-VERIFY] Error details:', upsertError?.details);
-          console.error('❌ [OTP-VERIFY] Full error:', JSON.stringify(upsertError, null, 2));
-          
-          // Try to fetch customer one more time in case it was created
-          customer = await getCustomersRepository().findByPhone(phone);
-          
-          if (customer) {
-            isNewUser = false;
-            console.log(`✅ [OTP-VERIFY] Customer found after upsert error: ${customer.id}`);
-          } else {
-            // If still not found, throw with detailed error
-            const errorMsg = upsertError?.message || 'Unknown error';
-            const errorCode = upsertError?.code || 'UNKNOWN';
-            const errorHint = upsertError?.hint || '';
+          // Check if it's a unique constraint violation (customer already exists)
+          if (
+            errorCode === '23505' || // Unique violation
+            errorMessage.includes('unique') || 
+            errorMessage.includes('duplicate') ||
+            errorMessage.includes('already exists') ||
+            errorMessage.includes('violates unique constraint')
+          ) {
+            console.log('⚠️ [OTP-VERIFY] Customer already exists (race condition), fetching...');
             
-            throw new Error(
-              `Failed to create/retrieve customer: ${errorMsg} (code: ${errorCode})${errorHint ? ` - ${errorHint}` : ''}`
-            );
+            // Wait a moment for the other transaction to complete
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
+            // Try to fetch the existing customer
+            customer = await getCustomersRepository().findByPhone(phone);
+            
+            if (customer) {
+              isNewUser = false;
+              console.log(`✅ [OTP-VERIFY] Existing customer retrieved: ${customer.id}`);
+            } else {
+              // Still not found, retry once more
+              await new Promise(resolve => setTimeout(resolve, 200));
+              customer = await getCustomersRepository().findByPhone(phone);
+              
+              if (customer) {
+                isNewUser = false;
+                console.log(`✅ [OTP-VERIFY] Existing customer retrieved on retry: ${customer.id}`);
+              } else {
+                // If still not found after retries, it's a real error
+                throw new Error(
+                  `Customer creation failed with unique constraint violation but customer not found: ${errorMessage}`
+                );
+              }
+            }
+          } else {
+            // Some other error occurred
+            throw new Error(`Failed to create customer: ${errorMessage} (code: ${errorCode})`);
           }
         }
       } else {

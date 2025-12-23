@@ -345,15 +345,18 @@ export async function upsertQuery<T>(
     console.log(`[upsertQuery] Upserting into ${table} on conflict: ${conflictColumn || 'none'}`);
     console.log(`[upsertQuery] Data:`, JSON.stringify(cleanData, null, 2));
     
-    const options: any = {};
+    let query = getDbClient().from(table);
+    
     if (conflictColumn) {
-      options.onConflict = conflictColumn;
+      // Supabase requires the column name directly, not in options object
+      // For customers table with phone unique constraint, use 'phone' directly
+      query = query.upsert(cleanData as any, { onConflict: conflictColumn });
+    } else {
+      // No conflict specification - will use primary key or unique constraints
+      query = query.upsert(cleanData as any);
     }
     
-    const { data: result, error } = await getDbClient()
-      .from(table)
-      .upsert(cleanData as any, options)
-      .select();
+    const { data: result, error } = await query.select();
     
     if (error) {
       console.error(`[upsertQuery] Database error for ${table}:`, error);
@@ -362,6 +365,21 @@ export async function upsertQuery<T>(
       console.error(`[upsertQuery] Error details:`, error.details);
       console.error(`[upsertQuery] Error hint:`, error.hint);
       console.error(`[upsertQuery] Data attempted:`, JSON.stringify(cleanData, null, 2));
+      
+      // If conflict specification fails, try without it (will use primary key)
+      if (error.code === '42P10' && conflictColumn) {
+        console.log(`[upsertQuery] Retrying without conflict column specification...`);
+        const { data: retryResult, error: retryError } = await getDbClient()
+          .from(table)
+          .upsert(cleanData as any)
+          .select();
+        
+        if (retryError) {
+          throw retryError;
+        }
+        return (retryResult || []) as T[];
+      }
+      
       throw error;
     }
     
