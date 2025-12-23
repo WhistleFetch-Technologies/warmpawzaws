@@ -242,13 +242,25 @@ export async function insertQuery<T>(
     
     // Double-check: ensure no forbidden fields for customers table
     if (table === 'customers') {
-      const forbiddenFields = ['id', 'customer_id', 'created_at', 'updated_at', 'last_login_at'];
+      // CRITICAL: customer_id is REQUIRED for customers table, NOT forbidden!
+      // Only remove auto-generated fields
+      const forbiddenFields = ['id', 'created_at', 'updated_at', 'last_login_at'];
       forbiddenFields.forEach(field => {
         if (cleanData.hasOwnProperty(field)) {
           console.warn(`[insertQuery] WARNING: Removing forbidden field '${field}' from customers insert`);
           delete cleanData[field];
         }
       });
+      
+      // Validate that required fields are present
+      if (!cleanData.customer_id) {
+        console.error(`[insertQuery] ERROR: customer_id is missing from cleaned data!`);
+        console.error(`[insertQuery] Original data:`, JSON.stringify(data, null, 2));
+        throw new Error(`customer_id is required for customers table but was not provided`);
+      }
+      if (!cleanData.phone) {
+        throw new Error(`phone is required for customers table but was not provided`);
+      }
     }
     
     const { data: result, error } = await getDbClient()
