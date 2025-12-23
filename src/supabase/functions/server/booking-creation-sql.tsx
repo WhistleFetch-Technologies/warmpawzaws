@@ -129,10 +129,22 @@ export async function createProductionBookingSQL(bookingData: any): Promise<any>
 
   // ✅ SQL-BASED: Create booking in transaction
   return await withTransaction(async (txClient) => {
-    // Calculate pricing
+    // Calculate pricing with GST
+    const { calculateGST } = await import("../../lib/services/gst-service.ts");
     const basePrice = Number(service.price) || Number(amount) || 0;
     const discountAmount = 0; // TODO: Calculate from coupons
-    const taxAmount = 0; // TODO: Calculate GST
+    
+    // Calculate GST
+    const vendor = await vendorsRepo.findById(vendorId);
+    const customer = await customersRepo.findByPhone(cleanPhone);
+    const gstCalculation = await calculateGST(
+      basePrice - discountAmount,
+      service.category,
+      vendor?.state,
+      customer?.state
+    );
+    
+    const taxAmount = gstCalculation.gstAmount;
     const totalAmount = basePrice - discountAmount + taxAmount;
 
     // Create booking

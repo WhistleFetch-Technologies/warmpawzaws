@@ -40,7 +40,7 @@ export function walletEndpointsSQL(app: Hono) {
 
       return sendSuccess(c, { 
         customerId,
-        balance,
+        balance: Number(balance),
         currency: 'INR'
       });
     } catch (error: any) {
@@ -62,30 +62,29 @@ export function walletEndpointsSQL(app: Hono) {
       }
 
       return await withTransaction(async (txClient) => {
-        // Get or create wallet
-        let { data: wallet, error: walletError } = await txClient
+      // Get or create wallet
+      let { data: wallet, error: walletError } = await txClient
+        .from('customer_wallets')
+        .select('*')
+        .eq('customer_id', customerId)
+        .maybeSingle();
+
+      if (!wallet) {
+        // Create wallet if doesn't exist
+        const { data: newWallet, error: createError } = await txClient
           .from('customer_wallets')
-          .select('*')
-          .eq('customer_id', customerId)
+          .insert({
+            customer_id: customerId,
+            balance: 0,
+          })
+          .select()
           .single();
 
-        if (walletError && walletError.code === 'PGRST116') {
-          // Create wallet if doesn't exist
-          const { data: newWallet, error: createError } = await txClient
-            .from('customer_wallets')
-            .insert({
-              customer_id: customerId,
-              balance: 0,
-              currency: 'INR',
-            })
-            .select()
-            .single();
-
-          if (createError) throw createError;
-          wallet = newWallet;
-        } else if (walletError) {
-          throw walletError;
-        }
+        if (createError) throw createError;
+        wallet = newWallet;
+      } else if (walletError) {
+        throw walletError;
+      }
 
         // Add funds
         const newBalance = (wallet.balance || 0) + Number(amount);
@@ -101,11 +100,12 @@ export function walletEndpointsSQL(app: Hono) {
 
         // Create transaction record
         await txClient.from('wallet_transactions').insert({
-          customer_id: customerId,
+          wallet_id: updated.id,
           transaction_type: 'credit',
           amount: Number(amount),
           balance_after: newBalance,
-          payment_id: paymentId,
+          reference_type: 'payment',
+          reference_id: paymentId,
           description: description || 'Wallet top-up',
         });
 
@@ -165,12 +165,12 @@ export function walletEndpointsSQL(app: Hono) {
 
         // Create transaction record
         await txClient.from('wallet_transactions').insert({
-          customer_id: customerId,
+          wallet_id: updated.id,
           transaction_type: 'debit',
           amount: Number(amount),
           balance_after: newBalance,
-          booking_id: bookingId,
-          order_id: orderId,
+          reference_type: bookingId ? 'booking' : 'order',
+          reference_id: bookingId || orderId,
           description: description || 'Wallet payment',
         });
 
@@ -195,10 +195,21 @@ export function walletEndpointsSQL(app: Hono) {
       const limit = parseInt(c.req.query('limit') || '50');
       const offset = parseInt(c.req.query('offset') || '0');
 
+      // Get wallet first
+      const { data: wallet } = await client
+        .from('customer_wallets')
+        .select('id')
+        .eq('customer_id', customerId)
+        .single();
+
+      if (!wallet) {
+        return sendSuccess(c, { transactions: [], count: 0 });
+      }
+
       const { data: transactions, error } = await client
         .from('wallet_transactions')
         .select('*')
-        .eq('customer_id', customerId)
+        .eq('wallet_id', wallet.id)
         .order('created_at', { ascending: false })
         .range(offset, offset + limit - 1);
 
