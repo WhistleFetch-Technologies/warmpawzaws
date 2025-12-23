@@ -1,341 +1,201 @@
-# Deployment Guide - Financial Fixes
+# Deployment Guide
 
-## Step-by-Step Deployment Instructions
+**Date**: 2025-01-22  
+**Status**: ✅ Ready for Deployment
 
----
+## 🚀 Quick Deploy
 
-## Step 1: Apply Database Migrations
-
-### Option A: Via Supabase Dashboard (Recommended)
-
-1. **Open Supabase Dashboard**
-   - Go to: https://supabase.com/dashboard
-   - Select your project
-
-2. **Navigate to SQL Editor**
-   - Click "SQL Editor" in the left sidebar
-   - Click "New query"
-
-3. **Apply Migration 008**
-   - Open file: `db/migrations/008_financial_flows_complete.sql`
-   - Copy ALL contents (463 lines)
-   - Paste into SQL Editor
-   - Click "Run" or press `Ctrl+Enter` (Windows) / `Cmd+Enter` (Mac)
-   - Wait for "Success" message
-
-4. **Apply Migration 009**
-   - Open file: `db/migrations/009_financial_rpc_functions.sql`
-   - Copy ALL contents (181 lines)
-   - Paste into SQL Editor
-   - Click "Run"
-   - Wait for "Success" message
-
-5. **Verify Migrations**
-   - Run this query in SQL Editor:
-   ```sql
-   SELECT table_name FROM information_schema.tables 
-   WHERE table_schema = 'public' 
-   AND table_name IN (
-     'gst_rules',
-     'vendor_tiers',
-     'vendor_tier_subscriptions',
-     'tier_upgrade_payments',
-     'settlement_booking_mappings',
-     'coupon_usage',
-     'platform_revenue_monthly'
-   );
-   ```
-   - **Expected Result:** 7 rows
-
-### Option B: Using Combined File
-
-A combined migration file has been created at:
-```
-/tmp/financial_migrations_combined.sql
-```
-
-You can copy this entire file and paste it into Supabase SQL Editor to apply both migrations at once.
-
----
-
-## Step 2: Deploy Edge Functions
-
-### Option A: Using Supabase CLI (Recommended)
-
+### Deploy Both (Backend + Frontend)
 ```bash
-# 1. Install Supabase CLI (if not installed)
-npm install -g supabase
-# or
-brew install supabase/tap/supabase
-
-# 2. Login to Supabase
-supabase login
-
-# 3. Link to your project (if not already linked)
-supabase link --project-ref YOUR_PROJECT_REF
-
-# 4. Deploy the function
-supabase functions deploy make-server-3dd53475
-
-# 5. Verify deployment
-supabase functions list
+./DEPLOY_ALL.sh
 ```
 
-### Option B: Using Deployment Script
-
+### Deploy Backend Only
 ```bash
-# Run the deployment script
-./scripts/deploy-financial-functions.sh
+./DEPLOY_BACKEND.sh
 ```
 
-### Option C: Manual Deployment via Dashboard
-
-1. **Go to Supabase Dashboard**
-   - Navigate to: Edge Functions
-   - Click on `make-server-3dd53475` function
-
-2. **Deploy via Dashboard**
-   - Click "Deploy" or "Update"
-   - Wait for deployment to complete
-
----
-
-## Step 3: Verify Setup
-
-### Run Validation Script
-
+### Deploy Frontend Only
 ```bash
-./scripts/validate-financial-setup.sh
+./DEPLOY_FRONTEND.sh
 ```
 
-### Manual Verification
+---
 
-#### 3.1 Verify Database Tables
+## 📦 Backend Deployment (Supabase)
 
-Run in SQL Editor:
-```sql
--- Check all new tables exist
-SELECT 
-    table_name,
-    (SELECT COUNT(*) FROM information_schema.columns 
-     WHERE table_name = t.table_name) as column_count
-FROM information_schema.tables t
-WHERE table_schema = 'public' 
-AND table_name IN (
-    'gst_rules',
-    'vendor_tiers',
-    'vendor_tier_subscriptions',
-    'tier_upgrade_payments',
-    'settlement_booking_mappings',
-    'coupon_usage',
-    'platform_revenue_monthly'
-)
-ORDER BY table_name;
-```
+### Prerequisites
+1. **Supabase CLI**: Will be installed automatically via npx
+2. **Authentication**: Login required
 
-**Expected:** 7 tables with columns
+### Step-by-Step
 
-#### 3.2 Verify Database Functions
-
-Run in SQL Editor:
-```sql
--- Check all RPC functions exist
-SELECT routine_name, routine_type
-FROM information_schema.routines
-WHERE routine_schema = 'public'
-AND routine_name IN (
-    'update_vendor_earnings',
-    'reverse_vendor_earnings',
-    'reverse_platform_commission',
-    'check_coupon_usage',
-    'get_vendor_commission_rate',
-    'create_settlement'
-)
-ORDER BY routine_name;
-```
-
-**Expected:** 6 functions
-
-#### 3.3 Verify Default Data
-
-Run in SQL Editor:
-```sql
--- Check default tier exists
-SELECT * FROM vendor_tiers WHERE tier_name = 'bronze';
-
--- Check default GST rule exists
-SELECT * FROM gst_rules WHERE rule_name LIKE '%Default%';
-```
-
-**Expected:** 1 tier (Bronze) and 1 GST rule
-
-#### 3.4 Test API Endpoints
-
+#### 1. Login to Supabase
 ```bash
-# Test tiers endpoint
-curl https://<your-project>.supabase.co/functions/v1/make-server-3dd53475/payments/tiers
-
-# Expected: JSON response with tiers array
+npx supabase login
 ```
+This will open your browser for authentication.
 
----
-
-## Step 4: Environment Variables
-
-Ensure these are set in Supabase Dashboard:
-
-1. **Go to:** Settings → Edge Functions → Secrets
-2. **Add/Verify:**
-   - `RAZORPAY_KEY_ID` - Your Razorpay key ID
-   - `RAZORPAY_KEY_SECRET` - Your Razorpay key secret
-   - `SUPABASE_URL` - Your Supabase URL
-   - `SUPABASE_SERVICE_ROLE_KEY` - Your service role key
-
----
-
-## Step 5: Test Financial Flows
-
-### 5.1 Test Payment Flow
-
+#### 2. Deploy Function
 ```bash
-# Initiate a test payment
-curl -X POST https://<your-project>.supabase.co/functions/v1/make-server-3dd53475/ecommerce/payments/initiate \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <anon-key>" \
-  -d '{
-    "bookingId": "test-booking-id",
-    "customerId": "test-customer-id",
-    "vendorId": "test-vendor-id",
-    "amount": 1000,
-    "paymentMethod": "razorpay",
-    "roleId": "veterinarian",
-    "serviceStyle": "at_center"
-  }'
+./DEPLOY_BACKEND.sh
 ```
 
-### 5.2 Test GST Calculation
-
+Or manually:
 ```bash
-curl -X POST https://<your-project>.supabase.co/functions/v1/make-server-3dd53475/calculate-gst \
-  -H "Content-Type: application/json" \
-  -d '{
-    "amount": 1000,
-    "roleId": "veterinarian",
-    "serviceStyle": "at_center",
-    "customerState": "Maharashtra",
-    "vendorState": "Maharashtra"
-  }'
+npx supabase functions deploy make-server-3dd53475 \
+  --project-ref vpvpbdwtyugbknrntkho \
+  --no-verify-jwt
 ```
 
-### 5.3 Test Tier Endpoints
+### Function Details
+- **Function**: `make-server-3dd53475`
+- **Project**: `vpvpbdwtyugbknrntkho`
+- **URL**: `https://vpvpbdwtyugbknrntkho.supabase.co/functions/v1/make-server-3dd53475`
 
+### Verify Deployment
 ```bash
-# Get tiers
-curl https://<your-project>.supabase.co/functions/v1/make-server-3dd53475/payments/tiers
-
-# Get vendor tier
-curl https://<your-project>.supabase.co/functions/v1/make-server-3dd53475/vendor/<vendor-id>/payment-tier
+curl https://vpvpbdwtyugbknrntkho.supabase.co/functions/v1/make-server-3dd53475/health \
+  -H "Authorization: Bearer YOUR_ANON_KEY"
 ```
 
 ---
 
-## Troubleshooting
+## 🖥️ Frontend Deployment
 
-### Migration Errors
+### Prerequisites
+1. **Build completed**: ✅ Already built in `build/` directory
+2. **Deployment CLI**: Vercel or Netlify
 
-**Error: "relation already exists"**
-- Some tables may already exist
-- Migration uses `CREATE TABLE IF NOT EXISTS` - safe to rerun
-- Check which tables exist: `\dt` in psql
+### Option 1: Vercel (Recommended)
 
-**Error: "function already exists"**
-- Functions use `CREATE OR REPLACE` - safe to rerun
-- This is expected if rerunning migrations
+#### Install Vercel CLI
+```bash
+npm install -g vercel
+```
 
-**Error: "permission denied"**
-- Ensure you're using service role key or have proper permissions
-- Check database user permissions
+#### Login
+```bash
+vercel login
+```
 
-### Deployment Errors
+#### Deploy
+```bash
+vercel --prod
+```
 
-**Error: "Function not found"**
-- Verify function directory exists: `supabase/functions/make-server-3dd53475`
-- Check `index.tsx` exists in function directory
+### Option 2: Netlify
 
-**Error: "Import not found"**
-- Verify all imported files exist
-- Check import paths in `index.tsx`
+#### Install Netlify CLI
+```bash
+npm install -g netlify-cli
+```
 
-**Error: "Type errors"**
-- Run: `deno check supabase/functions/make-server-3dd53475/index.tsx`
-- Fix any TypeScript errors
+#### Login
+```bash
+netlify login
+```
 
-### Runtime Errors
+#### Deploy
+```bash
+netlify deploy --prod --dir=build
+```
 
-**Error: "Table does not exist"**
-- Verify migrations were applied
-- Check table names match exactly
+### Option 3: Manual Upload
 
-**Error: "Function does not exist"**
-- Verify RPC functions were created
-- Check function names match exactly
+Upload all files from `build/` directory to:
+- AWS S3 + CloudFront
+- Google Cloud Storage
+- Azure Static Web Apps
+- Any static hosting provider
 
-**Error: "Commission calculation failed"**
-- Verify vendor has a tier assigned
-- Check `vendor_tiers` table has data
-
----
-
-## Verification Checklist
-
-- [ ] Migration 008 applied successfully
-- [ ] Migration 009 applied successfully
-- [ ] All 7 tables created
-- [ ] All 6 RPC functions created
-- [ ] Default tier (Bronze) exists
-- [ ] Default GST rule exists
-- [ ] Edge function deployed
-- [ ] Environment variables set
-- [ ] API endpoints responding
-- [ ] Payment flow working
-- [ ] GST calculation working
-- [ ] Tier endpoints working
+### Frontend Build Details
+- **Framework**: React 19 with Vite
+- **Build Location**: `build/` directory
+- **Size**: ~4.9 MB (gzipped: ~1 MB)
+- **API Endpoint**: Configured to use deployed backend
 
 ---
 
-## Next Steps After Deployment
+## 🔧 Troubleshooting
 
-1. **Monitor Logs**
-   ```bash
-   supabase functions logs make-server-3dd53475 --follow
-   ```
+### Backend Issues
 
-2. **Test Real Scenarios**
-   - Create a real payment
-   - Process a refund
-   - Run settlement calculation
-   - Upgrade a vendor tier
+**Error: Access token not provided**
+```bash
+# Solution: Login first
+npx supabase login
+```
 
-3. **Update Frontend**
-   - Ensure payment components use new endpoints
-   - Update tier management UI
-   - Update GST configuration UI
+**Error: Function directory not found**
+```bash
+# Solution: The script will create it automatically
+# Or manually:
+mkdir -p supabase/functions/make-server-3dd53475
+cp -r src/supabase/functions/server/* supabase/functions/make-server-3dd53475/
+```
 
-4. **Monitor Performance**
-   - Check database query performance
-   - Monitor function execution time
-   - Check error rates
+### Frontend Issues
+
+**Error: No CLI found**
+```bash
+# Install Vercel CLI
+npm install -g vercel
+
+# OR Install Netlify CLI
+npm install -g netlify-cli
+```
+
+**Error: Build directory not found**
+```bash
+# Build the frontend first
+npm run build
+```
 
 ---
 
-## Support
+## 📊 Deployment Status
 
-If you encounter issues:
-1. Check logs: `supabase functions logs make-server-3dd53475`
-2. Check database: Run verification queries above
-3. Review implementation: See `IMPLEMENTATION_COMPLETE_SUMMARY.md`
-4. Check troubleshooting section above
+### Backend ✅
+- [x] SQL-based endpoints ready
+- [x] Deployment script ready
+- [x] Function structure prepared
+- [ ] Deployed (requires login)
+
+### Frontend ✅
+- [x] Production build complete
+- [x] Build optimized
+- [x] Ready for deployment
+- [ ] Deployed (requires CLI installation)
 
 ---
 
-**Status:** Ready for deployment! 🚀
+## 🔗 Important URLs
+
+- **Backend Dashboard**: https://supabase.com/dashboard/project/vpvpbdwtyugbknrntkho/functions
+- **Backend URL**: https://vpvpbdwtyugbknrntkho.supabase.co/functions/v1/make-server-3dd53475
+- **Project Dashboard**: https://supabase.com/dashboard/project/vpvpbdwtyugbknrntkho
+
+---
+
+## ✅ Post-Deployment Checklist
+
+- [ ] Verify backend health endpoint
+- [ ] Test API endpoints
+- [ ] Verify frontend loads
+- [ ] Test critical user flows
+- [ ] Check browser console for errors
+- [ ] Verify API connectivity
+- [ ] Monitor logs
+
+---
+
+## 📝 Notes
+
+1. **Backend**: Requires Supabase authentication (interactive login)
+2. **Frontend**: Build is ready, just needs hosting deployment
+3. **Both**: Can be deployed independently or together
+
+---
+
+**Ready to deploy?** Run `./DEPLOY_ALL.sh` or follow the individual steps above!
