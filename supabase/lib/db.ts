@@ -315,15 +315,28 @@ function cleanInsertData(data: any, tableName?: string): any {
     ];
     
     allowedFields.forEach(field => {
-      if (data[field] !== undefined && data[field] !== null) {
+      if (data[field] !== undefined && data[field] !== null && data[field] !== '') {
         // Trim string values (except JSONB fields)
         if (typeof data[field] === 'string' && field !== 'address' && field !== 'preferences') {
-          cleaned[field] = data[field].trim();
+          const trimmed = data[field].trim();
+          if (trimmed !== '') {
+            cleaned[field] = trimmed;
+          }
         } else {
           cleaned[field] = data[field];
         }
       }
     });
+    
+    // CRITICAL: For customers table, customer_id is REQUIRED
+    // If it was in the original data but not in cleaned, that's a problem
+    if (tableName === 'customers' && data.customer_id && !cleaned.customer_id) {
+      console.error(`[cleanInsertData] ERROR: customer_id was in original data but removed!`);
+      console.error(`[cleanInsertData] Original customer_id:`, data.customer_id);
+      console.error(`[cleanInsertData] Type:`, typeof data.customer_id);
+      // Force include it if it exists in original data
+      cleaned.customer_id = String(data.customer_id).trim();
+    }
     
     // Remove auto-generated fields
     delete cleaned.id; // UUID primary key, auto-generated
