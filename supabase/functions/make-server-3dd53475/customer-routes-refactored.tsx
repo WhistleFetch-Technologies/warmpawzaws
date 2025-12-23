@@ -1336,8 +1336,6 @@ export function registerCustomerRoutes(app: Hono) {
     }
   };
 
-  app.get("/make-server-3dd53475/customer/notifications/:userId", handleGetNotifications);
-
   // Calculate distance between two coordinates (Haversine formula)
   function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
     const R = 6371; // Earth's radius in km
