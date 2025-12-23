@@ -38,6 +38,7 @@ import { getVendorsRepository } from "../../lib/repositories/vendors.ts";
 import { getServicesRepository } from "../../lib/repositories/services.ts";
 import { getReviewsRepository } from "../../lib/repositories/reviews.ts";
 import { getNotificationsRepository } from "../../lib/repositories/notifications.ts";
+import { getSearchHistoryRepository } from "../../lib/repositories/search-history.ts";
 import { getDbClient } from "../../lib/db.ts";
 
 export function registerCustomerRoutes(app: Hono) {
@@ -509,6 +510,50 @@ export function registerCustomerRoutes(app: Hono) {
     } catch (error) {
       console.log('Get profile query error:', error);
       return sendError(c, error, 500);
+    }
+  });
+
+  // Get customer profile (Path param style) - for frontend compatibility
+  app.get("/make-server-3dd53475/customer/profile/:identifier", async (c) => {
+    try {
+      const { identifier } = c.req.param();
+      
+      // Resolve identifier (phone or customer ID)
+      const customerId = await resolveCustomerId(identifier);
+      if (!customerId) {
+        return sendError(c, 'Customer not found', 404);
+      }
+      
+      // ✅ SQL: Get customer
+      const customer = await getCustomersRepository().findById(customerId);
+      if (!customer) return sendError(c, 'Customer not found', 404);
+      
+      // Map backend fields to UI fields
+      const nameParts = (customer.full_name || '').split(' ');
+      const firstName = nameParts[0] || '';
+      const lastName = nameParts.slice(1).join(' ') || '';
+      
+      // Extract photo from preferences JSONB (profile_photo_url doesn't exist as a column)
+      const preferences = (customer.preferences as any) || {};
+      const photoUrl = preferences.profile_photo_url || null;
+      
+      // Extract address fields from JSONB
+      const addressData = (customer.address as any) || {};
+      
+      const profile = {
+        firstName,
+        lastName,
+        email: customer.email || '',
+        phone: customer.phone || identifier,
+        address: addressData.street || '',
+        pincode: addressData.pincode || '',
+        photo: photoUrl || ''
+      };
+      
+      return sendSuccess(c, { profile });
+    } catch (error) {
+      console.error('Get profile path param error:', error);
+      return sendError(c, `Failed to get profile: ${String(error)}`, 500);
     }
   });
 
@@ -1198,20 +1243,48 @@ export function registerCustomerRoutes(app: Hono) {
       const { userId } = c.req.param();
       const { limit = 20, unreadOnly } = c.req.query();
       
-      // ✅ SQL: Get notifications for user
+      console.log(`📬 [NOTIFICATIONS] Fetching for userId: ${userId}, limit: ${limit}, unreadOnly: ${unreadOnly}`);
+      
+      // ✅ SQL: Resolve userId (phone or UUID) to customer ID
+      let customerId = userId;
+      if (/^\d{10,15}$/.test(userId)) {
+        // It's a phone number, resolve to customer ID
+        const customer = await getCustomersRepository().findByPhone(userId);
+        if (customer) {
+          customerId = customer.id;
+          console.log(`📬 [NOTIFICATIONS] Resolved phone ${userId} to customer ID: ${customerId}`);
+        } else {
+          console.warn(`📬 [NOTIFICATIONS] Customer not found for phone: ${userId}`);
+          return sendSuccess(c, { notifications: [], unreadCount: 0 });
+        }
+      }
+      
+      // ✅ SQL: Get notifications for customer
       const notifications = await getNotificationsRepository().findByRecipient(
-        'customer', // TODO: Determine user type from userId
-        userId,
+        'customer',
+        customerId,
         {
           limit: parseInt(limit as string),
           unreadOnly: unreadOnly === 'true',
         }
       );
       
-      return sendSuccess(c, { notifications });
+      console.log(`✅ [NOTIFICATIONS] Found ${notifications.length} notifications`);
+      
+      return sendSuccess(c, { 
+        notifications: notifications.map(n => ({
+          id: n.id,
+          type: n.notification_type,
+          title: n.title,
+          message: n.message,
+          isRead: n.is_read,
+          createdAt: n.created_at
+        })),
+        unreadCount: notifications.filter(n => !n.is_read).length
+      });
     } catch (error) {
-      console.log('Get notifications error:', error);
-      return sendError(c, error, 500);
+      console.error('❌ [NOTIFICATIONS] Error:', error);
+      return sendError(c, `Failed to get notifications: ${String(error)}`, 500);
     }
   };
 
@@ -1297,6 +1370,164 @@ export function registerCustomerRoutes(app: Hono) {
   app.put("/make-server-3dd53475/notification/:notificationId/read", handleReadNotification);
   app.put("/make-server-3dd53475/customer/notification/:notificationId/read", handleReadNotification);
   app.put("/make-server-3dd53475/vendor/notification/:notificationId/read", handleReadNotification);
+
+  // ============================================
+  // SEARCH HISTORY & SUGGESTIONS
+  // ============================================
+
+  // Get search history for customer
+  app.get("/make-server-3dd53475/customer/:customerId/search-history", async (c) => {
+    try {
+      const { customerId: rawId } = c.req.param();
+      const { limit = 20 } = c.req.query();
+      
+      // Resolve customer ID from phone or UUID
+      const customerId = await resolveCustomerId(rawId);
+      if (!customerId) {
+        return sendError(c, 'Customer not found', 404);
+      }
+      
+      // ✅ SQL: Get search history
+      const history = await getSearchHistoryRepository().findByCustomer(customerId, {
+        limit: parseInt(limit as string),
+      });
+      
+      return sendSuccess(c, { 
+        history: history.map(h => ({
+          id: h.id,
+          query: h.search_query,
+          resultsCount: h.results_count,
+          clickedResultId: h.clicked_result_id,
+          createdAt: h.created_at
+        }))
+      });
+    } catch (error) {
+      console.error('Get search history error:', error);
+      return sendError(c, `Failed to get search history: ${String(error)}`, 500);
+    }
+  });
+
+  // Save search history
+  app.post("/make-server-3dd53475/customer/search-history", async (c) => {
+    try {
+      const body = await c.req.json();
+      const { customerId: rawId, query, resultsCount, clickedResultId } = body;
+      
+      if (!rawId || !query) {
+        return sendError(c, 'Customer ID and query are required', 400);
+      }
+      
+      // Resolve customer ID from phone or UUID
+      const customerId = await resolveCustomerId(rawId);
+      if (!customerId) {
+        return sendError(c, 'Customer not found', 404);
+      }
+      
+      // ✅ SQL: Save search history
+      const history = await getSearchHistoryRepository().create({
+        customer_id: customerId,
+        search_query: query,
+        results_count: resultsCount || 0,
+        clicked_result_id: clickedResultId || null,
+      });
+      
+      return sendSuccess(c, { history });
+    } catch (error) {
+      console.error('Save search history error:', error);
+      return sendError(c, `Failed to save search history: ${String(error)}`, 500);
+    }
+  });
+
+  // Get search suggestions (SQL version)
+  app.get("/make-server-3dd53475/customer/search-suggestions", async (c) => {
+    try {
+      const customerId = c.req.query('customerId');
+      const roleId = c.req.query('roleId');
+      const query = c.req.query('query') || '';
+      const limit = parseInt(c.req.query('limit') || '10');
+
+      console.log(`🔍 [SEARCH-SUGGESTIONS] Customer: ${customerId}, Role: ${roleId}, Query: "${query}"`);
+
+      const suggestions: any[] = [];
+
+      // 1. Get recent searches from SQL (if customer provided)
+      if (customerId) {
+        try {
+          const resolvedCustomerId = await resolveCustomerId(customerId);
+          if (resolvedCustomerId) {
+            const recentSearches = await getSearchHistoryRepository().findByCustomer(resolvedCustomerId, { limit: 3 });
+            
+            for (const search of recentSearches) {
+              suggestions.push({
+                type: 'recent',
+                id: search.id,
+                title: search.search_query,
+                subtitle: 'Recent search',
+                relevanceScore: 100
+              });
+            }
+          }
+        } catch (error) {
+          console.warn('⚠️ Could not load recent searches:', error);
+        }
+      }
+
+      // 2. Get problems from catalog
+      try {
+        const { getAllProblemGrids, getProblemGridByRole } = await import('../server/problem-grid-catalog.tsx');
+        
+        let problemsToSearch: any[] = [];
+        
+        if (roleId) {
+          problemsToSearch = getProblemGridByRole(roleId);
+        } else {
+          const allGrids = getAllProblemGrids();
+          problemsToSearch = Object.values(allGrids).flat();
+        }
+
+        // 3. Filter problems by query (if provided)
+        const filteredProblems = query
+          ? problemsToSearch.filter(p => 
+              p.displayName?.toLowerCase().includes(query.toLowerCase()) ||
+              p.description?.toLowerCase().includes(query.toLowerCase())
+            )
+          : problemsToSearch;
+
+        // 4. Add problems to suggestions
+        for (const problem of filteredProblems.slice(0, limit - suggestions.length)) {
+          suggestions.push({
+            type: 'problem',
+            id: problem.id,
+            title: problem.displayName,
+            subtitle: problem.description,
+            icon: problem.icon,
+            category: problem.category,
+            relevanceScore: problem.order || 0
+          });
+        }
+      } catch (error) {
+        console.warn('⚠️ Could not load problem grid:', error);
+      }
+
+      // 5. Sort by relevance score
+      suggestions.sort((a, b) => b.relevanceScore - a.relevanceScore);
+
+      // 6. Limit results
+      const limitedSuggestions = suggestions.slice(0, limit);
+
+      console.log(`✅ Generated ${limitedSuggestions.length} search suggestions`);
+
+      return sendSuccess(c, {
+        suggestions: limitedSuggestions,
+        total: limitedSuggestions.length,
+        query: query || null
+      });
+
+    } catch (error) {
+      console.error('❌ Error generating search suggestions:', error);
+      return sendError(c, `Failed to get search suggestions: ${String(error)}`, 500);
+    }
+  });
 
   // ============================================
   // HELPER FUNCTIONS

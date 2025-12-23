@@ -23,21 +23,21 @@ import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 // ============================================================================
 
 export interface Customer {
-  id: string;
+  id: string; // UUID primary key
+  user_id?: string | null; // UUID reference to users table
+  customer_id: string; // VARCHAR legacy identifier (NOT NULL in actual schema)
   phone: string;
   email?: string | null;
-  full_name: string;
-  date_of_birth?: string | null;
-  gender?: string | null;
-  address?: string | null;
-  city?: string | null;
-  state?: string | null;
-  pincode?: string | null;
-  profile_photo_url?: string | null;
-  is_active: boolean;
+  full_name?: string | null; // Can be null in actual schema
+  address?: any | null; // JSONB field in actual schema
+  journey_stage?: string | null;
+  preferences?: any | null; // JSONB field - profile_photo_url stored here
+  loyalty_points?: number | null;
+  total_bookings?: number | null;
+  total_spent?: number | null;
+  is_active?: boolean | null;
   created_at: string;
   updated_at: string;
-  last_login_at?: string | null;
 }
 
 export interface CreateCustomerInput {
@@ -57,12 +57,11 @@ export interface UpdateCustomerInput {
   email?: string;
   full_name?: string;
   address?: any; // JSONB field - can be object with street, city, state, pincode, etc.
-  profile_photo_url?: string;
+  profile_photo_url?: string; // Will be stored in preferences JSONB
   is_active?: boolean;
-  last_login_at?: string;
   user_id?: string; // For linking to users table
   journey_stage?: string; // Customer journey stage
-  preferences?: any; // JSONB field for preferences
+  preferences?: any; // JSONB field for preferences (profile_photo_url stored here)
 }
 
 // ============================================================================
