@@ -155,39 +155,76 @@ export function registerCustomerRoutes(app: Hono) {
       if (!customer) {
         // ✅ SQL: Create new customer - ensure all required fields are present
         isNewUser = true;
-        try {
-          // Don't pass is_active - it has a default value
-          customer = await getCustomersRepository().create({
-            phone,
-            full_name: 'Customer', // Required field
-          });
-          
-          console.log(`✅ [OTP-VERIFY] New customer created: ${customer.id}`);
-        } catch (createError: any) {
-          console.error('❌ [OTP-VERIFY] Error creating customer:', createError);
-          console.error('❌ [OTP-VERIFY] Error details:', JSON.stringify(createError, null, 2));
-          
-          // If customer already exists (race condition or unique constraint), try to fetch again
-          const errorMessage = createError?.message || '';
-          const errorCode = createError?.code || '';
-          
-          if (
-            errorMessage.includes('unique') || 
-            errorMessage.includes('duplicate') ||
-            errorCode === '23505' ||
-            errorMessage.includes('already exists')
-          ) {
-            console.log('⚠️ [OTP-VERIFY] Customer already exists (race condition), fetching...');
-            customer = await getCustomersRepository().findByPhone(phone);
-            if (!customer) {
-              throw new Error('Failed to create or retrieve customer after race condition');
+        
+        // Retry logic for race conditions
+        let retries = 3;
+        let lastError: any = null;
+        
+        while (retries > 0) {
+          try {
+            // CRITICAL: Only pass valid fields, no customer_id, id, or auto-generated fields
+            customer = await getCustomersRepository().create({
+              phone: phone.trim(),
+              full_name: 'Customer', // Required field - will be updated by user later
+            });
+            
+            console.log(`✅ [OTP-VERIFY] New customer created: ${customer.id}`);
+            break; // Success, exit retry loop
+            
+          } catch (createError: any) {
+            lastError = createError;
+            const errorMessage = String(createError?.message || '');
+            const errorCode = String(createError?.code || '');
+            const errorDetails = createError?.details || '';
+            
+            console.error(`❌ [OTP-VERIFY] Error creating customer (${4 - retries}/3):`, errorMessage);
+            console.error(`❌ [OTP-VERIFY] Error code:`, errorCode);
+            console.error(`❌ [OTP-VERIFY] Error details:`, errorDetails);
+            
+            // Check if it's a unique constraint violation (customer already exists)
+            if (
+              errorMessage.includes('unique') || 
+              errorMessage.includes('duplicate') ||
+              errorCode === '23505' ||
+              errorMessage.includes('already exists') ||
+              errorMessage.includes('violates unique constraint')
+            ) {
+              console.log('⚠️ [OTP-VERIFY] Customer already exists (race condition), fetching...');
+              
+              // Wait a bit and try to fetch
+              await new Promise(resolve => setTimeout(resolve, 100));
+              
+              customer = await getCustomersRepository().findByPhone(phone);
+              if (customer) {
+                isNewUser = false;
+                console.log(`✅ [OTP-VERIFY] Retrieved existing customer: ${customer.id}`);
+                break; // Found existing customer, exit retry loop
+              }
+              
+              // If still not found, retry once more
+              retries--;
+              if (retries > 0) {
+                console.log(`⚠️ [OTP-VERIFY] Retrying customer creation... (${retries} retries left)`);
+                await new Promise(resolve => setTimeout(resolve, 200));
+                continue;
+              }
             }
-            isNewUser = false;
-            console.log(`✅ [OTP-VERIFY] Retrieved existing customer: ${customer.id}`);
-          } else {
-            // Re-throw the error with more context
-            throw new Error(`Failed to create customer: ${errorMessage || 'Unknown error'}`);
+            
+            // For other errors, reduce retries
+            retries--;
+            if (retries > 0) {
+              console.log(`⚠️ [OTP-VERIFY] Retrying after error... (${retries} retries left)`);
+              await new Promise(resolve => setTimeout(resolve, 200));
+            }
           }
+        }
+        
+        // If we still don't have a customer after retries, throw error
+        if (!customer) {
+          const finalError = lastError?.message || 'Unknown error';
+          const finalCode = lastError?.code || '';
+          console.error(`❌ [OTP-VERIFY] Failed to create customer after all retries:`, finalError);
+          throw new Error(`Failed to create customer: ${finalError} (code: ${finalCode})`);
         }
       } else {
         console.log(`✅ [OTP-VERIFY] Existing customer found: ${customer.id}`);

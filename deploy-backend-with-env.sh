@@ -77,18 +77,10 @@ echo "📦 Deploying function: make-server-3dd53475..."
 echo ""
 
 # Deploy the function
-if [ ! -z "$SUPABASE_ACCESS_TOKEN" ]; then
-  echo "✅ Using access token from environment"
-  $SUPABASE_CMD functions deploy make-server-3dd53475 \
-    --project-ref "$PROJECT_REF" \
-    --no-verify-jwt \
-    --no-verify-secrets
-else
-  echo "✅ Using interactive authentication"
-  $SUPABASE_CMD functions deploy make-server-3dd53475 \
-    --project-ref "$PROJECT_REF" \
-    --no-verify-jwt
-fi
+echo "✅ Deploying function with project reference..."
+$SUPABASE_CMD functions deploy make-server-3dd53475 \
+  --project-ref "$PROJECT_REF" \
+  --no-verify-jwt
 
 if [ $? -eq 0 ]; then
   echo ""
