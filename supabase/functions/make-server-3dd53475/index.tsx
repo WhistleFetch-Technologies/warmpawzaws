@@ -1017,12 +1017,15 @@ if (appointmentDetailEndpoints && typeof appointmentDetailEndpoints === 'object'
 // ✅ P0 Features
 registerP0Features(app);
 
-// 5. Staff Routes - COMMENTED OUT: These modules are not imported/defined
-// if (staffAuthRoutes && typeof staffAuthRoutes === 'object') {
-//   app.route('/make-server-3dd53475', staffAuthRoutes); // Register Auth FIRST to avoid shadowing by /staff wildcard
-// } else {
-//   console.warn('⚠️ Staff Auth Routes module undefined, skipping');
-// }
+// 5. Staff Routes
+// ✅ FIX: Register staff auth endpoints
+import staffAuthEndpoints from './staff-auth-endpoints.tsx';
+if (staffAuthEndpoints && typeof staffAuthEndpoints === 'object') {
+  console.log('✅ Registering Staff Auth Endpoints...');
+  app.route('/make-server-3dd53475', staffAuthEndpoints); // Register Auth FIRST to avoid shadowing by /staff wildcard
+} else {
+  console.warn('⚠️ Staff Auth Routes module undefined, skipping');
+}
 
 // if (staffAvailabilityRoutes && typeof staffAvailabilityRoutes === 'object') {
 //   app.route('/make-server-3dd53475/staff', staffAvailabilityRoutes);
