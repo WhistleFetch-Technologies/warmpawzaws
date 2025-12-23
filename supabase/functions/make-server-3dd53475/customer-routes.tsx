@@ -550,12 +550,16 @@ export function registerCustomerRoutes(app: Hono) {
       
       if (email !== undefined) updateData.email = email;
       if (addressJsonb !== null) updateData.address = addressJsonb;
+      // Note: profile_photo_url doesn't exist in actual schema, store in preferences
       if (photo !== undefined) updateData.profile_photo_url = photo;
       
       const customer = await getCustomersRepository().update(customerId, updateData);
       
       // Extract address fields from JSONB for response
       const addressData = customer.address as any || {};
+      // Extract photo from preferences JSONB
+      const preferences = customer.preferences as any || {};
+      const photoUrl = preferences.profile_photo_url || null;
       
       return sendSuccess(c, { 
         profile: {
@@ -565,7 +569,7 @@ export function registerCustomerRoutes(app: Hono) {
           phone, 
           address: addressData.street || address,
           pincode: addressData.pincode || pincode, 
-          photo: customer.profile_photo_url || photo
+          photo: photoUrl || photo
         }
       });
     } catch (error) {
@@ -1204,9 +1208,50 @@ export function registerCustomerRoutes(app: Hono) {
     }
   };
 
+  // ✅ FIX: Separate handler for vendor notifications
+  const handleGetVendorNotifications = async (c: any) => {
+    try {
+      const { vendorId } = c.req.param();
+      const { limit = 20, unreadOnly } = c.req.query();
+      
+      console.log(`📬 [VENDOR-NOTIFICATIONS] Fetching notifications for vendor: ${vendorId}`);
+      
+      // ✅ SQL: Get notifications for vendor
+      const notifications = await getNotificationsRepository().findByRecipient(
+        'vendor',
+        vendorId,
+        {
+          limit: parseInt(limit as string),
+          unreadOnly: unreadOnly === 'true',
+        }
+      );
+      
+      // Sort by date (newest first)
+      notifications.sort((a, b) => 
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+      
+      return sendSuccess(c, { 
+        notifications: notifications.map(n => ({
+          id: n.id,
+          type: n.notification_type,
+          title: n.title,
+          message: n.message,
+          metadata: (n as any).data || {}, // data field may not be in type but exists in DB
+          isRead: n.is_read,
+          createdAt: n.created_at
+        })),
+        unreadCount: notifications.filter(n => !n.is_read).length
+      });
+    } catch (error) {
+      console.error('❌ [VENDOR-NOTIFICATIONS] Error fetching notifications:', error);
+      return sendError(c, error, 500);
+    }
+  };
+
   app.get("/make-server-3dd53475/notifications/:userId", handleGetNotifications);
   app.get("/make-server-3dd53475/customer/notifications/:userId", handleGetNotifications);
-  app.get("/make-server-3dd53475/vendor/notifications/:userId", handleGetNotifications);
+  app.get("/make-server-3dd53475/vendor/notifications/:vendorId", handleGetVendorNotifications);
 
   const handleReadNotification = async (c: any) => {
     try {
