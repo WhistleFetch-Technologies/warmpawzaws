@@ -88,9 +88,27 @@ export class CustomersRepository {
   /**
    * Get customer by phone
    * Common lookup pattern
+   * CRITICAL: Phone must be normalized before calling this method
    */
   async findByPhone(phone: string): Promise<Customer | null> {
-    const results = await selectQuery<Customer>("customers", { phone }, { limit: 1 });
+    // Normalize phone to ensure consistent lookup
+    const normalizedPhone = phone.trim().replace(/[^0-9]/g, '');
+    // Remove country code if present (91 + 10 digits = 12 digits)
+    const cleanPhone = normalizedPhone.startsWith('91') && normalizedPhone.length === 12 
+      ? normalizedPhone.substring(2) 
+      : normalizedPhone.startsWith('0') && normalizedPhone.length === 11
+      ? normalizedPhone.substring(1)
+      : normalizedPhone;
+    
+    console.log(`[CustomersRepository.findByPhone] Searching for phone: "${cleanPhone}" (original: "${phone}")`);
+    
+    const results = await selectQuery<Customer>("customers", { phone: cleanPhone }, { limit: 1 });
+    
+    console.log(`[CustomersRepository.findByPhone] Found ${results.length} customer(s) for phone: "${cleanPhone}"`);
+    if (results.length > 0) {
+      console.log(`[CustomersRepository.findByPhone] Customer found: ${results[0].id}, phone: "${results[0].phone}"`);
+    }
+    
     return results[0] || null;
   }
 
