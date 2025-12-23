@@ -49,10 +49,19 @@ export function vendorDashboardEndpoints(app: Hono) {
       const { vendorId } = c.req.param();
       const timeframe = c.req.query('timeframe') || 'today';
       
+      console.log(`📊 [DASHBOARD] Fetching dashboard for vendor: ${vendorId}, timeframe: ${timeframe}`);
+      
       // ✅ SQL: Get vendor profile
-      const vendor = await getVendorsRepository().findById(vendorId);
+      let vendor;
+      try {
+        vendor = await getVendorsRepository().findById(vendorId);
+      } catch (vendorError) {
+        console.error(`❌ [DASHBOARD] Error fetching vendor ${vendorId}:`, vendorError);
+        vendor = null;
+      }
+      
       if (!vendor) {
-        console.log(`⚠️ Vendor not found: ${vendorId}, returning default dashboard`);
+        console.log(`⚠️ [DASHBOARD] Vendor not found: ${vendorId}, returning default dashboard`);
         return sendSuccess(c, { 
           vendor: {
             vendorId,
@@ -77,7 +86,13 @@ export function vendorDashboardEndpoints(app: Hono) {
       }
       
       // ✅ SQL: Get all vendor bookings
-      const bookings = await getBookingsRepository().findByVendor(vendorId);
+      let bookings = [];
+      try {
+        bookings = await getBookingsRepository().findByVendor(vendorId);
+      } catch (bookingsError) {
+        console.error(`❌ [DASHBOARD] Error fetching bookings for vendor ${vendorId}:`, bookingsError);
+        bookings = [];
+      }
       
       // Initialize stats
       const stats = {
@@ -105,28 +120,48 @@ export function vendorDashboardEndpoints(app: Hono) {
       
       // Process bookings
       for (const booking of bookings) {
-        const bookingDate = new Date(booking.booking_date);
-        
-        // Filter by timeframe
-        if (bookingDate >= startDate) {
-          if (booking.status === 'confirmed' || booking.status === 'pending') {
-            stats.appointments++;
+        try {
+          // Handle different date formats
+          let bookingDate: Date;
+          if (booking.booking_date instanceof Date) {
+            bookingDate = booking.booking_date;
+          } else if (typeof booking.booking_date === 'string') {
+            bookingDate = new Date(booking.booking_date);
+          } else {
+            continue; // Skip invalid dates
           }
           
-          if (booking.status === 'completed') {
-            stats.completedServices++;
-            stats.consultations++;
-            stats.earnings += booking.total_amount || 0;
+          // Filter by timeframe
+          if (bookingDate >= startDate) {
+            if (booking.status === 'confirmed' || booking.status === 'pending') {
+              stats.appointments++;
+            }
+            
+            if (booking.status === 'completed') {
+              stats.completedServices++;
+              stats.consultations++;
+              stats.earnings += booking.total_amount || 0;
+            }
+            
+            if (booking.status === 'in_progress' || booking.status === 'confirmed') {
+              stats.pendingEarnings += booking.total_amount || 0;
+            }
           }
-          
-          if (booking.status === 'in_progress' || booking.status === 'confirmed') {
-            stats.pendingEarnings += booking.total_amount || 0;
-          }
+        } catch (bookingError) {
+          console.warn(`⚠️ [DASHBOARD] Error processing booking ${booking.id}:`, bookingError);
+          // Continue with other bookings
         }
       }
       
       // ✅ SQL: Get vendor rating from reviews
-      const reviews = await getReviewsRepository().findByVendor(vendorId);
+      let reviews = [];
+      try {
+        reviews = await getReviewsRepository().findByVendor(vendorId);
+      } catch (reviewsError) {
+        console.error(`❌ [DASHBOARD] Error fetching reviews for vendor ${vendorId}:`, reviewsError);
+        reviews = [];
+      }
+      
       if (reviews.length > 0) {
         const totalRating = reviews.reduce((sum, review) => sum + (review.rating || 0), 0);
         stats.rating = Number((totalRating / reviews.length).toFixed(1));
@@ -139,21 +174,21 @@ export function vendorDashboardEndpoints(app: Hono) {
       return sendSuccess(c, { 
         vendor: {
           vendorId: vendor.id,
-          fullName: vendor.owner_name,
-          businessName: vendor.business_name,
-          vendorType: vendor.category || 'service_provider',
-          serviceStyle: 'both', // TODO: Add to vendor schema
-          address: vendor.address,
-          phone: vendor.phone,
-          email: vendor.email,
-          isActive: vendor.is_active
+          fullName: vendor.owner_name || vendor.full_name || 'Vendor',
+          businessName: vendor.business_name || vendor.businessName,
+          vendorType: vendor.category || vendor.vendor_type || 'service_provider',
+          serviceStyle: vendor.service_style || 'both',
+          address: vendor.address || '',
+          phone: vendor.phone || '',
+          email: vendor.email || '',
+          isActive: vendor.is_active !== false
         },
         stats,
         timeframe 
       });
     } catch (error) {
-      console.error('Error fetching vendor dashboard:', error);
-      return sendError(c, error, 500);
+      console.error('❌ [DASHBOARD] Error fetching vendor dashboard:', error);
+      return sendError(c, `Failed to fetch dashboard: ${String(error)}`, 500);
     }
   });
   
@@ -166,7 +201,21 @@ export function vendorDashboardEndpoints(app: Hono) {
   app.get("/make-server-3dd53475/vendor/schedule/:vendorId", async (c) => {
     try {
       const { vendorId } = c.req.param();
-      const date = c.req.query('date') || new Date().toISOString().split('T')[0];
+      const dateParam = c.req.query('date');
+      
+      // Normalize date format (YYYY-MM-DD)
+      let date: string;
+      if (dateParam) {
+        // If date is provided, normalize it
+        const dateObj = new Date(dateParam);
+        if (isNaN(dateObj.getTime())) {
+          date = new Date().toISOString().split('T')[0];
+        } else {
+          date = dateObj.toISOString().split('T')[0];
+        }
+      } else {
+        date = new Date().toISOString().split('T')[0];
+      }
       
       console.log(`📅 [SCHEDULE] Vendor: ${vendorId}, Date: ${date}`);
       
@@ -178,43 +227,62 @@ export function vendorDashboardEndpoints(app: Hono) {
       const schedule = [];
       
       for (const booking of bookings) {
-        // Filter by date and active statuses
-        if (booking.booking_date === date && 
-            (booking.status === 'pending' || booking.status === 'confirmed' || booking.status === 'in_progress')) {
+        try {
+          // Normalize booking date for comparison
+          const bookingDate = booking.booking_date instanceof Date 
+            ? booking.booking_date.toISOString().split('T')[0]
+            : booking.booking_date?.split('T')[0] || booking.booking_date;
           
-          // ✅ SQL: Get customer details
-          const customer = await getCustomersRepository().findById(booking.customer_id);
-          
-          schedule.push({
-            id: booking.id,
-            bookingId: booking.id,
-            time: booking.booking_time,
-            duration: 60, // TODO: Add duration to booking schema
-            petName: null, // TODO: Add pet info to booking schema
-            petBreed: null,
-            customerName: customer?.full_name || 'Customer',
-            customerPhone: customer?.phone,
-            serviceName: booking.service_type,
-            serviceType: booking.service_type,
-            status: booking.status,
-            price: booking.total_amount,
-            address: booking.address,
-            specialInstructions: booking.notes
-          });
+          // Filter by date and active statuses
+          if (bookingDate === date && 
+              (booking.status === 'pending' || booking.status === 'confirmed' || booking.status === 'in_progress')) {
+            
+            // ✅ SQL: Get customer details
+            let customer = null;
+            try {
+              customer = await getCustomersRepository().findById(booking.customer_id);
+            } catch (customerError) {
+              console.warn(`⚠️ [SCHEDULE] Could not fetch customer ${booking.customer_id}:`, customerError);
+            }
+            
+            schedule.push({
+              id: booking.id,
+              bookingId: booking.id,
+              time: booking.booking_time || '00:00',
+              duration: 60, // TODO: Add duration to booking schema
+              petName: null, // TODO: Add pet info to booking schema
+              petBreed: null,
+              customerName: customer?.full_name || 'Customer',
+              customerPhone: customer?.phone,
+              serviceName: booking.service_type || 'Service',
+              serviceType: booking.service_type || 'service',
+              status: booking.status,
+              price: booking.total_amount || 0,
+              address: booking.address || '',
+              specialInstructions: booking.notes || ''
+            });
+          }
+        } catch (bookingError) {
+          console.warn(`⚠️ [SCHEDULE] Error processing booking ${booking.id}:`, bookingError);
+          // Continue with other bookings
         }
       }
       
       // Sort by time
       schedule.sort((a, b) => {
-        const timeA = a.time.split(':').map(Number);
-        const timeB = b.time.split(':').map(Number);
-        return timeA[0] * 60 + timeA[1] - (timeB[0] * 60 + timeB[1]);
+        try {
+          const timeA = (a.time || '00:00').split(':').map(Number);
+          const timeB = (b.time || '00:00').split(':').map(Number);
+          return timeA[0] * 60 + timeA[1] - (timeB[0] * 60 + timeB[1]);
+        } catch {
+          return 0;
+        }
       });
       
       return sendSuccess(c, { schedule, date, total: schedule.length });
     } catch (error) {
-      console.error('Error fetching vendor schedule:', error);
-      return sendError(c, error, 500);
+      console.error('❌ [SCHEDULE] Error fetching vendor schedule:', error);
+      return sendError(c, `Failed to fetch schedule: ${String(error)}`, 500);
     }
   });
   
@@ -314,6 +382,30 @@ export function vendorDashboardEndpoints(app: Hono) {
       return sendSuccess(c, { payouts, total: payouts.length });
     } catch (error) {
       console.error('Error fetching vendor payouts:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  /**
+   * Get vendor watchlist
+   * GET /make-server-3dd53475/vendor/watchlist/:vendorId
+   * 
+   * Returns list of customers/pets the vendor is watching/tracking
+   */
+  app.get("/make-server-3dd53475/vendor/watchlist/:vendorId", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      
+      console.log(`👀 [WATCHLIST] Fetching watchlist for vendor: ${vendorId}`);
+      
+      // TODO: Implement watchlist feature in database
+      // For now, return empty array to prevent 404 errors
+      return sendSuccess(c, { 
+        watchlist: [],
+        total: 0
+      });
+    } catch (error) {
+      console.error('Error fetching vendor watchlist:', error);
       return sendError(c, error, 500);
     }
   });
