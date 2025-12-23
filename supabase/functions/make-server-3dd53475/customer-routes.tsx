@@ -488,14 +488,21 @@ export function registerCustomerRoutes(app: Hono) {
       const firstName = nameParts[0] || '';
       const lastName = nameParts.slice(1).join(' ') || '';
       
+      // Extract photo from preferences JSONB (profile_photo_url doesn't exist as a column)
+      const preferences = (customer.preferences as any) || {};
+      const photoUrl = preferences.profile_photo_url || null;
+      
+      // Extract address fields from JSONB
+      const addressData = (customer.address as any) || {};
+      
       const profile = {
         firstName,
         lastName,
         email: customer.email || '',
         phone: customer.phone || phone,
-        address: customer.address || '',
-        pincode: customer.pincode || '',
-        photo: customer.profile_photo_url || ''
+        address: addressData.street || '',
+        pincode: addressData.pincode || '',
+        photo: photoUrl || ''
       };
       
       return sendSuccess(c, { profile });

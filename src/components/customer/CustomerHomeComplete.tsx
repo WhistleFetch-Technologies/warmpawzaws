@@ -15,9 +15,6 @@ const logoImage = LOGO_CIRCULAR_ORANGE;
 import { AIAssistantChat } from './AIAssistantChat';
 import { CustomerSidebar } from './CustomerSidebar';
 import { EnhancedSearchBar } from './EnhancedSearchBar';
-import { ProblemGridNavigation } from './ProblemGridNavigation';
-import { ServicesByProblem } from './ServicesByProblem';
-import { TrendingProblems } from './TrendingProblems';
 
 interface Pet {
   id: string;
@@ -577,31 +574,7 @@ export function CustomerHome({
           />
         </div>
 
-        {/* ✅ NEW: Trending Problems Section */}
-        <div className="px-6 mb-6">
-          <TrendingProblems
-            onProblemSelect={(problemId, title) => {
-              console.log('Trending problem selected:', problemId, title);
-              // TODO: Navigate to services by problem
-            }}
-            limit={5}
-          />
-        </div>
-
-        {/* ✅ NEW: Problem Grid Navigation */}
-        <div className="px-6 mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-gray-900">What's Your Pet's Need?</h2>
-            <span className="text-xs text-gray-500">Problem-based search</span>
-          </div>
-          <ProblemGridNavigation
-            onProblemSelect={(problemId, problem) => {
-              console.log('Problem selected:', problemId, problem);
-              // TODO: Navigate to services by problem
-            }}
-            showTrending={true}
-          />
-        </div>
+        {/* Problem listing sections removed - using universal search instead */}
 
         {/* Hero Banner Carousel */}
         <div className="px-6 mb-6">
