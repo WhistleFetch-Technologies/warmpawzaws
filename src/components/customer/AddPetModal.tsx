@@ -102,50 +102,51 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
     setLoading(true);
     
     try {
-      console.log('=== SAVING PET ===');
+      console.log('=== SAVING PET (SQL) ===');
       console.log('Phone:', phone);
       console.log('Pet Data:', petData);
       
-      // First, get existing pets
-      const getPetsResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/pets/${phone}`,
+      // ✅ SQL: First get customer ID from phone
+      const customerResponse = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/profile?phone=${encodeURIComponent(phone)}`,
         {
           headers: { 'Authorization': `Bearer ${publicAnonKey}` }
         }
       );
       
-      const getPetsData = await getPetsResponse.json();
-      
-      // ✅ Robust response parsing (handles { pets: [...] } and { pets: { pets: [...] } })
-      let existingPets = [];
-      if (Array.isArray(getPetsData)) {
-        existingPets = getPetsData;
-      } else if (Array.isArray(getPetsData.pets)) {
-        existingPets = getPetsData.pets;
-      } else if (getPetsData.pets?.pets && Array.isArray(getPetsData.pets.pets)) {
-        existingPets = getPetsData.pets.pets;
+      if (!customerResponse.ok) {
+        throw new Error('Customer not found. Please ensure you are logged in.');
       }
       
-      console.log('Existing pets:', existingPets);
+      const customerData = await customerResponse.json();
+      const customerId = customerData.profile?.phone || phone; // Use phone as customerId identifier
       
-      // Add new pet to the list
-      const updatedPets = [...existingPets, petData];
+      // ✅ SQL: Create pet using single pet endpoint
+      const petPayload = {
+        name: petData.name,
+        type: petData.type,
+        breed: petData.breed,
+        age: String(petData.age),
+        gender: petData.gender || '',
+        weight: petData.weight || '',
+        color: petData.color || '',
+        photo: petData.photo || '',
+        medicalConditions: petData.healthRecords?.conditions || '',
+        allergies: petData.healthRecords?.allergies || '',
+        vaccinations: petData.vaccinations || {}
+      };
       
-      console.log('Updated pets list (total:', updatedPets.length, '):', updatedPets);
+      console.log('Creating pet with payload:', petPayload);
       
-      // Save updated pets list
       const saveResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/pets`,
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/${customerId}/pets`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${publicAnonKey}`
           },
-          body: JSON.stringify({
-            phone: phone,
-            pets: updatedPets
-          })
+          body: JSON.stringify(petPayload)
         }
       );
       
@@ -153,10 +154,10 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
       
       if (!saveResponse.ok) {
         console.error('Save failed:', saveData);
-        throw new Error(saveData.error || 'Failed to save pet');
+        throw new Error(saveData.error || saveData.message || 'Failed to save pet');
       }
       
-      console.log('Pet saved successfully:', saveData);
+      console.log('✅ Pet saved successfully:', saveData);
       console.log('=== SAVE COMPLETE ===');
       
       // Show success message
@@ -167,7 +168,7 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
       onClose();
       
     } catch (error) {
-      console.error('Error saving pet:', error);
+      console.error('❌ Error saving pet:', error);
       alert(`Error: ${error instanceof Error ? error.message : 'Failed to save pet. Please try again.'}`);
     } finally {
       setLoading(false);
