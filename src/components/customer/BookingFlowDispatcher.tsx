@@ -429,12 +429,18 @@ export function getBookingFlowComponent(serviceStyle: string, serviceType: strin
       grooming: 'GroomingBookingFlow',
       training: 'TrainingBookingFlow',
       boarding: 'BoardingBookingFlow',
+      photography: 'CenterBookingFlow', // ✅ Photography at center/studio
+      breeding: 'CenterBookingFlow', // ✅ Breeder visits
+      memorial: 'CenterBookingFlow', // ✅ Sunset services
       default: 'CenterBookingFlow',
     },
     at_home: {
       grooming: 'HomeGroomingBookingFlow',
       training: 'HomeTrainingBookingFlow',
       walker: 'WalkerBookingFlow',
+      sitting: 'HomeServiceBookingFlow', // ✅ Pet sitter
+      transport: 'HomeServiceBookingFlow', // ✅ Pet taxi
+      photography: 'HomeServiceBookingFlow', // ✅ Photography at home/outdoor
       default: 'HomeServiceBookingFlow',
     },
     tele: {
@@ -448,6 +454,7 @@ export function getBookingFlowComponent(serviceStyle: string, serviceType: strin
       default: 'DeliveryBookingFlow',
     },
     package: {
+      holiday: 'PackageBookingFlow', // ✅ Holiday packages
       default: 'PackageBookingFlow',
     },
   };

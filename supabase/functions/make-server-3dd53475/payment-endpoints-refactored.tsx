@@ -287,6 +287,21 @@ export function paymentEndpoints(app: Hono) {
         }
       }
 
+      // ✅ SQL: Update order status if order exists (ecommerce orders)
+      if (payment.order_id) {
+        const { getOrdersRepository } = await import("../../lib/repositories/orders.ts");
+        const ordersRepo = getOrdersRepository();
+        const order = await ordersRepo.findById(payment.order_id);
+        if (order && order.order_status === 'pending') {
+          await ordersRepo.update(payment.order_id, {
+            payment_status: 'paid',
+            payment_id: paymentId,
+            order_status: 'confirmed',
+          });
+          console.log(`✅ [PAYMENT] Order ${payment.order_id} automatically confirmed after payment`);
+        }
+      }
+
       // ✅ SQL: Get customer and vendor for notifications
       const customer = await getCustomersRepository().findById(payment.customer_id);
       const vendor = payment.vendor_id 
@@ -311,24 +326,34 @@ export function paymentEndpoints(app: Hono) {
         });
       }
 
-      if (vendor) {
+      if (vendor && payment.booking_id) {
+        // ✅ FIX: Get booking details for complete notification
+        const booking = await getBookingsRepository().findById(payment.booking_id);
         const vendorAmount = payment.amount * 0.9; // 10% commission
         const commission = payment.amount * 0.1;
         
+        // ✅ FIX: Include booking details in notification
         await triggerNotification({
           recipientId: payment.vendor_id!,
           recipientType: 'vendor',
-          type: 'payment_received',
-          title: 'Payment Received',
-          message: `Received payment of ₹${vendorAmount} for booking ${payment.booking_id || 'N/A'}. Platform commission: ₹${commission}`,
+          type: 'booking_confirmed', // Changed to booking_confirmed so vendor knows to check dashboard
+          title: 'New Booking Received',
+          message: `New booking received! Booking ID: ${payment.booking_id}. Payment: ₹${payment.amount}. Please check your dashboard.`,
           channels: { email: true, sms: false, inApp: true, push: false },
           data: { 
             paymentId, 
-            bookingId: payment.booking_id, 
+            bookingId: payment.booking_id,
+            bookingDate: booking?.booking_date,
+            bookingTime: booking?.booking_time,
+            serviceType: booking?.service_type,
+            customerId: booking?.customer_id,
+            amount: payment.amount,
             vendorAmount, 
             commission 
           },
         });
+        
+        console.log(`📱 [NOTIFICATION] Booking confirmed notification sent to vendor ${payment.vendor_id} for booking ${payment.booking_id}`);
       }
 
       console.log(`✅ Razorpay Payment Verified: ${paymentId} | ${razorpayPaymentId}`);
@@ -361,8 +386,50 @@ export function paymentEndpoints(app: Hono) {
         return sendError(c, 'Missing required fields', 400);
       }
 
-      // Calculate commission (default 10%)
-      const commissionRate = commission || 10;
+      // ✅ SQL: Calculate commission from vendor tier or payout rules
+      let commissionRate = commission;
+      
+      if (!commissionRate) {
+        // Get vendor to find tier
+        const vendorsRepo = getVendorsRepository();
+        const vendor = await vendorsRepo.findById(vendorId);
+        
+        if (vendor && (vendor as any).tier_id) {
+          // Get tier commission rate
+          const { getDbClient } = await import("../../lib/db.ts");
+          const client = getDbClient();
+          const { data: tier } = await client
+            .from('subscription_tiers')
+            .select('commission_rate')
+            .eq('id', (vendor as any).tier_id)
+            .single();
+          
+          if (tier && tier.commission_rate) {
+            commissionRate = parseFloat(tier.commission_rate);
+          }
+        }
+        
+        // Fallback to payout_rules if tier not found
+        if (!commissionRate) {
+          const { getDbClient } = await import("../../lib/db.ts");
+          const client = getDbClient();
+          const { data: payoutRule } = await client
+            .from('payout_rules')
+            .select('commission_percentage')
+            .eq('is_active', true)
+            .order('priority', { ascending: false })
+            .limit(1)
+            .single();
+          
+          if (payoutRule && payoutRule.commission_percentage) {
+            commissionRate = parseFloat(payoutRule.commission_percentage);
+          }
+        }
+        
+        // Final fallback to 10%
+        commissionRate = commissionRate || 10;
+      }
+      
       const platformCommission = (amount * commissionRate) / 100;
       const vendorAmount = amount - platformCommission;
 

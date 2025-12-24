@@ -65,8 +65,14 @@ export function LiveGPSTracking({
   });
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [mapLoaded, setMapLoaded] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const mapRef = useRef<HTMLDivElement>(null);
   const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const mapInstanceRef = useRef<any>(null);
+  const vendorMarkerRef = useRef<any>(null);
+  const customerMarkerRef = useRef<any>(null);
+  const routePolylineRef = useRef<any>(null);
 
   // Fetch tracking data
   const fetchTrackingData = async () => {
@@ -150,8 +156,186 @@ export function LiveGPSTracking({
     };
   }, [bookingId]);
 
-  // Render map (simplified - in production use Google Maps API)
+  // Load Google Maps API
+  useEffect(() => {
+    let isMounted = true;
+    
+    async function loadGoogleMaps() {
+      try {
+        // Check env var first
+        const envApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+        if (envApiKey) {
+          if (window.google && window.google.maps) {
+            if (isMounted) setMapLoaded(true);
+            return;
+          }
+          const script = document.createElement('script');
+          script.src = `https://maps.googleapis.com/maps/api/js?key=${envApiKey}&libraries=geometry,directions`;
+          script.async = true;
+          script.defer = true;
+          script.onload = () => { if (isMounted) setMapLoaded(true); };
+          script.onerror = () => { if (isMounted) { setError('Failed to load map'); } };
+          document.head.appendChild(script);
+          return;
+        }
+        
+        // Fetch from backend
+        const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/integrations/settings`, {
+          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          const apiKey = data.settings?.googleMaps?.apiKey;
+          
+          if (!apiKey) {
+            if (isMounted) {
+              console.warn('Google Maps API key not configured');
+            }
+            return;
+          }
+
+          if (window.google && window.google.maps) {
+            if (isMounted) setMapLoaded(true);
+            return;
+          }
+
+          const script = document.createElement('script');
+          script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=geometry,directions`;
+          script.async = true;
+          script.defer = true;
+          script.onload = () => { if (isMounted) setMapLoaded(true); };
+          script.onerror = () => { if (isMounted) { console.error('Failed to load map'); } };
+          document.head.appendChild(script);
+        }
+      } catch (err) {
+        console.error('Error loading Google Maps:', err);
+      }
+    }
+    
+    loadGoogleMaps();
+    return () => { isMounted = false; };
+  }, []);
+
+  // Initialize map when loaded
+  useEffect(() => {
+    if (!mapLoaded || !trackingData.currentLocation || !mapRef.current) return;
+    
+    if (!mapInstanceRef.current) {
+      const vendorLatLng = new window.google.maps.LatLng(
+        trackingData.currentLocation.latitude,
+        trackingData.currentLocation.longitude
+      );
+      
+      const customerLatLng = new window.google.maps.LatLng(
+        customerLocation.latitude,
+        customerLocation.longitude
+      );
+
+      const bounds = new window.google.maps.LatLngBounds();
+      bounds.extend(vendorLatLng);
+      bounds.extend(customerLatLng);
+
+      const map = new window.google.maps.Map(mapRef.current, {
+        zoom: 14,
+        center: vendorLatLng,
+        mapTypeControl: false,
+        streetViewControl: false,
+        fullscreenControl: true,
+      });
+
+      mapInstanceRef.current = map;
+      map.fitBounds(bounds);
+
+      // Vendor marker
+      vendorMarkerRef.current = new window.google.maps.Marker({
+        position: vendorLatLng,
+        map: map,
+        icon: {
+          url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
+            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+              <circle cx="24" cy="24" r="20" fill="#10B981" stroke="white" stroke-width="3"/>
+              <path d="M24 14 L30 30 L24 26 L18 30 Z" fill="white"/>
+            </svg>
+          `),
+          scaledSize: new window.google.maps.Size(48, 48),
+          anchor: new window.google.maps.Point(24, 24)
+        },
+        title: vendorName,
+        animation: window.google.maps.Animation.DROP
+      });
+
+      // Customer marker
+      customerMarkerRef.current = new window.google.maps.Marker({
+        position: customerLatLng,
+        map: map,
+        icon: {
+          url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(`
+            <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">
+              <path d="M20 5 C15 5 10 9 10 15 C10 23 20 35 20 35 S30 23 30 15 C30 9 25 5 20 5 Z" fill="#EF4444" stroke="white" stroke-width="2"/>
+            </svg>
+          `),
+          scaledSize: new window.google.maps.Size(40, 40),
+          anchor: new window.google.maps.Point(20, 40)
+        },
+        title: 'Your Location'
+      });
+
+      // Draw route if available
+      if (trackingData.route && trackingData.route.length > 0) {
+        const routePath = trackingData.route.map((point: any) => 
+          new window.google.maps.LatLng(point.lat, point.lng)
+        );
+        
+        routePolylineRef.current = new window.google.maps.Polyline({
+          path: routePath,
+          geodesic: true,
+          strokeColor: '#3B82F6',
+          strokeOpacity: 0.8,
+          strokeWeight: 4
+        });
+        routePolylineRef.current.setMap(map);
+      } else {
+        // Use Directions Service to get route
+        const directionsService = new window.google.maps.DirectionsService();
+        const directionsRenderer = new window.google.maps.DirectionsRenderer();
+        directionsRenderer.setMap(map);
+
+        directionsService.route({
+          origin: vendorLatLng,
+          destination: customerLatLng,
+          travelMode: window.google.maps.TravelMode.DRIVING
+        }, (result, status) => {
+          if (status === 'OK' && result) {
+            directionsRenderer.setDirections(result);
+          }
+        });
+      }
+    } else {
+      // Update vendor marker position
+      if (vendorMarkerRef.current && trackingData.currentLocation) {
+        const newPosition = new window.google.maps.LatLng(
+          trackingData.currentLocation.latitude,
+          trackingData.currentLocation.longitude
+        );
+        vendorMarkerRef.current.setPosition(newPosition);
+      }
+    }
+  }, [mapLoaded, trackingData, customerLocation]);
+
+  // Render map
   const renderMap = () => {
+    if (!mapLoaded) {
+      return (
+        <div className="h-full flex items-center justify-center bg-gray-100 rounded-lg">
+          <div className="text-center">
+            <RefreshCw className="w-8 h-8 animate-spin text-gray-400 mx-auto mb-2" />
+            <p className="text-sm text-gray-500">Loading map...</p>
+          </div>
+        </div>
+      );
+    }
+
     if (!trackingData.currentLocation) {
       return (
         <div className="h-full flex items-center justify-center bg-gray-100 rounded-lg">
@@ -163,60 +347,8 @@ export function LiveGPSTracking({
       );
     }
 
-    // Simple map representation
     return (
-      <div className="h-full relative bg-gradient-to-br from-blue-50 to-green-50 rounded-lg overflow-hidden">
-        {/* Map placeholder */}
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="text-center">
-            <MapPin className="w-16 h-16 text-blue-600 mx-auto mb-4" />
-            <p className="text-2xl font-bold text-gray-800">
-              {trackingData.distanceKm.toFixed(1)} km away
-            </p>
-            <p className="text-sm text-gray-600 mt-2">
-              Estimated arrival: {trackingData.etaMinutes} min
-            </p>
-          </div>
-        </div>
-
-        {/* Vendor marker */}
-        <div className="absolute top-1/4 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
-          <div className="relative">
-            <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center animate-pulse shadow-lg">
-              <Navigation className="w-6 h-6 text-white" />
-            </div>
-            <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-white px-3 py-1 rounded-full shadow-md whitespace-nowrap">
-              <p className="text-xs font-semibold text-gray-800">{vendorName}</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Customer marker */}
-        <div className="absolute bottom-1/4 left-1/2 transform -translate-x-1/2 translate-y-1/2">
-          <div className="relative">
-            <div className="w-12 h-12 bg-red-500 rounded-full flex items-center justify-center shadow-lg">
-              <MapPin className="w-6 h-6 text-white" />
-            </div>
-            <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-white px-3 py-1 rounded-full shadow-md whitespace-nowrap">
-              <p className="text-xs font-semibold text-gray-800">Your Location</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Route line (dashed) */}
-        <svg className="absolute inset-0 w-full h-full pointer-events-none">
-          <line
-            x1="50%"
-            y1="25%"
-            x2="50%"
-            y2="75%"
-            stroke="#3B82F6"
-            strokeWidth="2"
-            strokeDasharray="5,5"
-            opacity="0.6"
-          />
-        </svg>
-      </div>
+      <div ref={mapRef} className="h-full w-full rounded-lg" />
     );
   };
 

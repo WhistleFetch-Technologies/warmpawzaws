@@ -100,8 +100,8 @@ const HARDCODED_VET_CAPABILITIES: VendorCapabilities = {
   
   // Media/Content
   photo_updates: true,
-  gallery: true,
-  portfolio: true,
+  gallery: false,  // ✅ FIX: Should come from role config, not hardcoded
+  portfolio: false,  // ✅ FIX: Should come from role config, not hardcoded
   progress_tracking: true,
   cctv_access: false,
   
@@ -170,8 +170,8 @@ const DEFAULT_CAPABILITIES: VendorCapabilities = {
   
   // Media/Content
   photo_updates: false,
-  gallery: true,
-  portfolio: true,
+  gallery: false,  // ✅ FIX: Should come from role config, not hardcoded
+  portfolio: false,  // ✅ FIX: Should come from role config, not hardcoded
   progress_tracking: false,
   cctv_access: false,
   
@@ -315,7 +315,12 @@ export function useVendorCapabilities(roleId?: string) {
                 console.log('   ✅ Enabled: staff_management (from staffManagement.enabled)');
               }
             } else {
-              console.warn('⚠️ [CAPABILITIES] No capabilities array in role config, using defaults');
+              console.warn('⚠️ [CAPABILITIES] No capabilities array in role config');
+              // ✅ FIX: Don't use defaults - set all capabilities to false explicitly
+              Object.keys(newCapabilities).forEach(key => {
+                (newCapabilities as any)[key] = false;
+              });
+              console.warn('⚠️ [CAPABILITIES] All capabilities set to false. Add capabilities array to role config to enable features.');
             }
             
             setCapabilities(newCapabilities);

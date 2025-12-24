@@ -1,7 +1,13 @@
 import { Hono } from "npm:hono";
-import * as kv from "./kv_store.tsx";
+import { createClient } from "npm:@supabase/supabase-js@2.39.3";
 import { BedrockRuntimeClient, InvokeModelCommand } from "npm:@aws-sdk/client-bedrock-runtime";
 import { NodeHttpHandler } from "npm:@smithy/node-http-handler";
+import { getPlatformSettingsRepository } from "../../lib/repositories/platform-settings.ts";
+import { getCustomersRepository } from "../../lib/repositories/customers.ts";
+
+const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
+const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 export function registerAIChatbotRoutes(app: Hono) {
 
@@ -18,23 +24,40 @@ export function registerAIChatbotRoutes(app: Hono) {
       // Generate or use conversation ID
       const currentConversationId = conversationId || `conv_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
 
-      // Fetch AWS Settings
-      const awsSettings = await kv.get('admin:settings:aws');
+      // ✅ SQL: Fetch AWS Settings
+      const platformRepo = getPlatformSettingsRepository();
+      const awsSettings = await platformRepo.getAWSSettings();
       
-      // Fetch Store Context (Products/Services)
-      // This helps the AI recommend products
+      // ✅ SQL: Fetch Store Context (Products/Services)
       let storeContext = "";
       try {
-        // Fetch top 5 products to have some context
-        const allProducts = await kv.getByPrefix('product:') || [];
-        const products = allProducts
-            .slice(0, 5)
-            .map((p: any) => `- ${p.name} (₹${p.salePrice || p.basePrice})`)
-            .join('\n');
+        // Fetch top 5 products from SQL
+        const { data: products } = await supabase
+          .from('products')
+          .select('name, sale_price, base_price')
+          .eq('status', 'active')
+          .limit(5);
         
-        storeContext = products ? `Featured Products:\n${products}` : "";
+        if (products && products.length > 0) {
+          const productList = products
+            .map((p: any) => `- ${p.name} (₹${p.sale_price || p.base_price})`)
+            .join('\n');
+          storeContext = `Featured Products:\n${productList}`;
+        }
       } catch (e) {
         console.warn("Failed to fetch product context", e);
+      }
+      
+      // ✅ SQL: Resolve customer ID if phone provided
+      let customerId: string | null = null;
+      let userId: string | null = null;
+      if (customerPhone) {
+        const customersRepo = getCustomersRepository();
+        const customer = await customersRepo.findByPhone(customerPhone);
+        if (customer) {
+          customerId = customer.id;
+          userId = customer.user_id || null;
+        }
       }
 
       let responseText = "";
@@ -183,21 +206,35 @@ export function registerAIChatbotRoutes(app: Hono) {
         }
       }
 
-      // Save conversation history (optional, simplified)
-      const historyKey = `ai_chat:${currentConversationId}`;
-      const history = await kv.get(historyKey) || [];
-      history.push({ role: 'user', content: message, timestamp: new Date().toISOString() });
-      history.push({ role: 'assistant', content: responseText, intent, timestamp: new Date().toISOString() });
-      await kv.set(historyKey, history);
-
-      // Update Customer's conversation list
-      if (customerPhone) {
-        const userConvsKey = `ai_chat_list:${customerPhone}`;
-        const userConvs = await kv.get(userConvsKey) || [];
-        if (!userConvs.includes(currentConversationId)) {
-            userConvs.push(currentConversationId);
-            await kv.set(userConvsKey, userConvs);
-        }
+      // ✅ SQL: Save conversation history
+      try {
+        // Save user message
+        await supabase.from('ai_chat_history').insert({
+          conversation_id: currentConversationId,
+          customer_id: customerId,
+          user_id: userId,
+          message_type: 'user',
+          message_content: message,
+          context: context || {}
+        });
+        
+        // Save assistant response
+        await supabase.from('ai_chat_history').insert({
+          conversation_id: currentConversationId,
+          customer_id: customerId,
+          user_id: userId,
+          message_type: 'assistant',
+          message_content: responseText,
+          intent,
+          confidence,
+          includes_disclaimer: responseText.toLowerCase().includes('disclaimer') || 
+                                responseText.toLowerCase().includes('not a substitute') ||
+                                responseText.toLowerCase().includes('consult a veterinarian'),
+          context: context || {},
+          metadata: { source: usedBedrock ? 'bedrock' : 'simulation' }
+        });
+      } catch (e) {
+        console.warn("Failed to save chat history:", e);
       }
 
       return c.json({
@@ -217,10 +254,37 @@ export function registerAIChatbotRoutes(app: Hono) {
 
   /**
    * GET /make-server-3dd53475/ai-chatbot/conversation/:conversationId
+   * ✅ SQL-ONLY: Uses ai_chat_history table
    */
   app.get("/make-server-3dd53475/ai-chatbot/conversation/:conversationId", async (c) => {
-    const conversationId = c.req.param('conversationId');
-    const history = await kv.get(`ai_chat:${conversationId}`) || [];
-    return c.json({ success: true, history });
+    try {
+      const conversationId = c.req.param('conversationId');
+      
+      // ✅ SQL: Get conversation history
+      const { data: history, error } = await supabase
+        .from('ai_chat_history')
+        .select('*')
+        .eq('conversation_id', conversationId)
+        .order('created_at', { ascending: true });
+      
+      if (error) {
+        console.error('Error fetching conversation history:', error);
+        return c.json({ error: 'Failed to fetch conversation history' }, 500);
+      }
+      
+      return c.json({ 
+        success: true, 
+        history: (history || []).map((msg: any) => ({
+          role: msg.message_type === 'user' ? 'user' : 'assistant',
+          content: msg.message_content,
+          intent: msg.intent,
+          confidence: msg.confidence,
+          timestamp: msg.created_at
+        }))
+      });
+    } catch (error) {
+      console.error('Error:', error);
+      return c.json({ error: String(error) }, 500);
+    }
   });
 }

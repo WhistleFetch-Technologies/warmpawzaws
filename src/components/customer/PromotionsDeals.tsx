@@ -15,17 +15,22 @@ import { projectId, publicAnonKey } from '../../utils/supabase/info';
 
 interface Promotion {
   id: string;
-  title: string;
-  description: string;
+  title?: string;
+  name?: string; // Backend uses 'name'
+  description?: string;
   bannerImage?: string;
-  discountType: 'percentage' | 'fixed' | 'freebie';
-  discountValue: number;
+  discountType?: 'percentage' | 'fixed' | 'freebie';
+  discountValue?: number;
+  discountPercentage?: number; // New format from backend
+  discountAmount?: number; // New format from backend
   maxDiscountAmount?: number;
   minOrderAmount?: number;
-  validFrom: string;
-  validUntil: string;
+  validFrom?: string;
+  startDate?: string; // Backend uses 'startDate'
+  validUntil?: string;
+  endDate?: string; // Backend uses 'endDate'
   targetIds?: string[];
-  applicableTo: 'services' | 'products' | 'all';
+  applicableTo?: 'services' | 'products' | 'all';
   isActive: boolean;
   priority?: number;
   termsAndConditions?: string;
@@ -85,7 +90,8 @@ export function PromotionsDeals({
     }
   };
 
-  const calculateTimeLeft = (validUntil: string) => {
+  const calculateTimeLeft = (validUntil?: string) => {
+    if (!validUntil) return null;
     const now = new Date();
     const end = new Date(validUntil);
     const diff = end.getTime() - now.getTime();
@@ -177,7 +183,7 @@ export function PromotionsDeals({
               <div className="h-40 bg-gradient-to-r from-orange-400 to-pink-500 relative">
                 <img 
                   src={promo.bannerImage} 
-                  alt={promo.title}
+                  alt={promo.title || promo.name || 'Promotion'}
                   className="w-full h-full object-cover"
                 />
                 <div className="absolute top-3 right-3 bg-white px-3 py-1 rounded-full text-sm shadow-md">
@@ -189,9 +195,9 @@ export function PromotionsDeals({
             <div className="p-4">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1">
-                  <h3 className="text-lg mb-1">{promo.title}</h3>
+                  <h3 className="text-lg mb-1">{promo.title || promo.name || 'Special Offer'}</h3>
                   <p className="text-sm text-gray-600 line-clamp-2 mb-3">
-                    {promo.description}
+                    {promo.description || ''}
                   </p>
 
                   {/* Conditions */}
@@ -201,7 +207,7 @@ export function PromotionsDeals({
                         Min ₹{promo.minOrderAmount}
                       </span>
                     )}
-                    {promo.maxDiscountAmount && promo.discountType === 'percentage' && (
+                    {promo.maxDiscountAmount && (promo.discountType === 'percentage' || promo.discountPercentage) && (
                       <span className="bg-gray-100 px-2 py-1 rounded">
                         Max ₹{promo.maxDiscountAmount}
                       </span>
@@ -217,10 +223,10 @@ export function PromotionsDeals({
               </div>
 
               {/* Time Left */}
-              {calculateTimeLeft(promo.validUntil) && (
+              {calculateTimeLeft(promo.endDate || promo.validUntil) && (
                 <div className="mt-3 flex items-center gap-2 text-xs text-orange-600">
                   <Calendar className="h-3 w-3" />
-                  <span>{calculateTimeLeft(promo.validUntil)}</span>
+                  <span>{calculateTimeLeft(promo.endDate || promo.validUntil)}</span>
                 </div>
               )}
             </div>

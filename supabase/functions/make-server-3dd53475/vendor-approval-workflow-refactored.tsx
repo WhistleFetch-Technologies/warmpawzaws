@@ -415,6 +415,57 @@ export function vendorApprovalWorkflowEndpoints(app: Hono) {
   });
 
   /**
+   * Get vendor application status by vendor ID
+   * GET /make-server-3dd53475/vendor/application/status/:vendorId
+   * 
+   * ✅ NEW: Endpoint for frontend to check application status using vendorId
+   */
+  app.get("/make-server-3dd53475/vendor/application/status/:vendorId", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      console.log(`🔍 Checking application status for vendor: ${vendorId}`);
+
+      // ✅ FIX: Use standardized vendor ID resolver
+      const { resolveVendor } = await import('../../lib/utils/vendor-id-resolver.ts');
+      const vendor = await resolveVendor(vendorId);
+
+      if (!vendor) {
+        return c.json({ 
+          application: {
+            status: 'not_found',
+            hasApplication: false,
+            message: 'Vendor not found'
+          }
+        });
+      }
+
+      console.log(`✅ Found vendor: ${vendor.id}, status: ${vendor.status}`);
+
+      // Return application status
+      return c.json({
+        application: {
+          status: vendor.status,
+          hasApplication: true,
+          vendorId: vendor.id,
+          applicationId: vendor.application_id,
+          fullName: vendor.owner_name || vendor.business_name,
+          roleName: vendor.role_id,
+          roleId: vendor.role_id,
+          isActive: vendor.is_active || false,
+          setupCompleted: false, // TODO: Add setup tracking
+          servicesConfigured: false, // TODO: Add service configuration tracking
+          availabilityConfigured: false, // TODO: Add availability tracking
+          serviceCategory: vendor.category,
+          vendorType: vendor.category
+        }
+      });
+    } catch (error) {
+      console.error('❌ ERROR in application status endpoint:', error);
+      return c.json({ error: String(error) }, 500);
+    }
+  });
+
+  /**
    * Get vendor application for editing (when more info required)
    * GET /make-server-3dd53475/vendor/application/:vendorId
    * 

@@ -6,13 +6,17 @@ import { toast } from 'sonner@2.0.3';
 
 interface Promotion {
   id: string;
-  name: string;
-  description: string;
-  type: 'percentage' | 'fixed' | 'free_shipping' | 'buy_x_get_y';
-  value: number;
+  name?: string;
+  title?: string; // Frontend expects 'title'
+  description?: string;
+  type?: 'percentage' | 'fixed' | 'free_shipping' | 'buy_x_get_y';
+  value?: number;
+  discountPercentage?: number; // New format from backend
+  discountAmount?: number; // New format from backend
   minOrderAmount?: number;
   maxDiscountAmount?: number;
   validUntil?: string;
+  endDate?: string; // Backend uses 'endDate'
   bannerImage?: string;
   termsAndConditions?: string;
   priority?: number;
@@ -106,7 +110,13 @@ export function PromotionsList({ category, applicableTo, onSelectPromotion }: Pr
       
       <div className="grid grid-cols-1 gap-4">
         {promotions.map((promo) => {
-          const Icon = getTypeIcon(promo.type);
+          // Support both old and new formats
+          const promoType = promo.type || (promo.discountPercentage ? 'percentage' : 'fixed');
+          const promoValue = promo.value || promo.discountPercentage || promo.discountAmount || 0;
+          const promoTitle = promo.title || promo.name || 'Special Offer';
+          const promoEndDate = promo.endDate || promo.validUntil;
+          
+          const Icon = getTypeIcon(promoType);
           
           return (
             <div 
@@ -116,12 +126,12 @@ export function PromotionsList({ category, applicableTo, onSelectPromotion }: Pr
             >
               <div className="flex">
                 {/* Left Side - Value */}
-                <div className={`w-24 flex flex-col items-center justify-center p-2 ${getTypeColor(promo.type)} border-r border-gray-100 border-dashed`}>
+                <div className={`w-24 flex flex-col items-center justify-center p-2 ${getTypeColor(promoType)} border-r border-gray-100 border-dashed`}>
                   <div className="text-2xl font-bold">
-                    {promo.type === 'percentage' ? `${promo.value}%` : `₹${promo.value}`}
+                    {promoType === 'percentage' ? `${promoValue}%` : `₹${promoValue}`}
                   </div>
                   <div className="text-xs font-medium uppercase tracking-wider mt-1 text-center opacity-80">
-                    {promo.type === 'free_shipping' ? 'Free Ship' : 'OFF'}
+                    {promoType === 'free_shipping' ? 'Free Ship' : 'OFF'}
                   </div>
                 </div>
                 
@@ -129,8 +139,8 @@ export function PromotionsList({ category, applicableTo, onSelectPromotion }: Pr
                 <div className="flex-1 p-4">
                   <div className="flex justify-between items-start">
                     <div>
-                      <h4 className="font-bold text-gray-900 line-clamp-1">{promo.name}</h4>
-                      <p className="text-sm text-gray-500 mt-1 line-clamp-2">{promo.description}</p>
+                      <h4 className="font-bold text-gray-900 line-clamp-1">{promoTitle}</h4>
+                      <p className="text-sm text-gray-500 mt-1 line-clamp-2">{promo.description || ''}</p>
                     </div>
                     {promo.code && (
                       <div className="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs font-mono border border-gray-200 border-dashed">
@@ -140,10 +150,10 @@ export function PromotionsList({ category, applicableTo, onSelectPromotion }: Pr
                   </div>
                   
                   <div className="mt-3 flex items-center justify-between text-xs text-gray-400">
-                    {promo.validUntil && (
+                    {promoEndDate && (
                       <div className="flex items-center gap-1">
                         <Clock className="w-3 h-3" />
-                        <span>Expires {new Date(promo.validUntil).toLocaleDateString()}</span>
+                        <span>Expires {new Date(promoEndDate).toLocaleDateString()}</span>
                       </div>
                     )}
                     <div className="flex items-center gap-1 text-[#FF8C42] font-medium group-hover:translate-x-1 transition-transform">

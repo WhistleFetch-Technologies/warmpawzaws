@@ -1,63 +1,114 @@
 import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
+import { getDbClient } from '../../lib/db.ts';
+import { sendSuccess, sendError } from './response-utils.ts';
 
 export function rbacEndpoints(app: Hono) {
+  const client = getDbClient();
   
   /**
-   * GET /admin/rbac/roles
+   * GET /admin/rbac/roles (✅ SQL-only)
    * Get all roles with hierarchy
    */
   app.get("/make-server-3dd53475/admin/rbac/roles", async (c) => {
     try {
-      const roles = await kv.getByPrefix('role:');
-      const validRoles = roles.filter((r: any) => r.id && !r.id.includes(':roles'));
+      // ✅ SQL: Get all roles from database
+      const { data: roles, error } = await client
+        .from('roles')
+        .select('*')
+        .eq('is_active', true)
+        .order('created_at', { ascending: false });
       
-      return c.json({ success: true, roles: validRoles });
+      if (error) {
+        console.error('Get Roles Error:', error);
+        return sendError(c, error, 500);
+      }
+      
+      // Transform SQL rows to expected format
+      const formattedRoles = (roles || []).map((r: any) => ({
+        id: r.id,
+        name: r.name,
+        displayName: r.display_name,
+        description: r.description,
+        isActive: r.is_active,
+        isSystem: r.is_system_role,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at
+      }));
+      
+      return sendSuccess(c, { roles: formattedRoles });
     } catch (error) {
       console.error('Get Roles Error:', error);
-      return c.json({ error: String(error) }, 500);
+      return sendError(c, error, 500);
     }
   });
   
   /**
-   * POST /admin/rbac/roles
+   * POST /admin/rbac/roles (✅ SQL-only)
    * Create a new role
    */
   app.post("/make-server-3dd53475/admin/rbac/roles", async (c) => {
     try {
-      const { name, description, permissions, parentRole, level } = await c.req.json();
+      const { name, description, permissions } = await c.req.json();
       
       if (!name) {
-        return c.json({ error: 'Role name is required' }, 400);
+        return sendError(c, 'Role name is required', 400);
       }
       
-      const roleId = `role_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+      // ✅ SQL: Create role
+      const { data: role, error: roleError } = await client
+        .from('roles')
+        .insert({
+          name,
+          display_name: name,
+          description: description || '',
+          is_active: true,
+          is_system_role: false
+        })
+        .select()
+        .single();
       
-      const role = {
-        id: roleId,
-        name,
-        description: description || '',
+      if (roleError || !role) {
+        console.error('Create Role Error:', roleError);
+        return sendError(c, roleError || 'Failed to create role', 500);
+      }
+      
+      // ✅ SQL: Add permissions if provided
+      if (permissions && Array.isArray(permissions) && permissions.length > 0) {
+        const permissionRecords = permissions.map((perm: string) => ({
+          role_id: role.id,
+          permission_name: perm,
+          resource: perm.split(':')[0] || 'all',
+          action: perm.split(':')[1] || 'all'
+        }));
+        
+        await client
+          .from('role_permissions')
+          .insert(permissionRecords);
+      }
+      
+      // Transform to expected format
+      const formattedRole = {
+        id: role.id,
+        name: role.name,
+        displayName: role.display_name,
+        description: role.description,
         permissions: permissions || [],
-        parentRole: parentRole || null,
-        level: level || 1,
-        isActive: true,
-        isSystem: false,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        isActive: role.is_active,
+        isSystem: role.is_system_role,
+        createdAt: role.created_at,
+        updatedAt: role.updated_at
       };
       
-      await kv.set(`role:${roleId}`, role);
-      
-      console.log(`✅ Role created: ${roleId} - ${name}`);
-      return c.json({ success: true, role });
+      console.log(`✅ Role created: ${role.id} - ${name}`);
+      return sendSuccess(c, { role: formattedRole });
     } catch (error) {
       console.error('Create Role Error:', error);
-      return c.json({ error: String(error) }, 500);
+      return sendError(c, error, 500);
     }
   });
 
   /**
-   * PUT /admin/rbac/roles/:roleId
+   * PUT /admin/rbac/roles/:roleId (✅ SQL-only)
    * Update a role
    */
   app.put("/make-server-3dd53475/admin/rbac/roles/:roleId", async (c) => {
@@ -65,242 +116,417 @@ export function rbacEndpoints(app: Hono) {
       const { roleId } = c.req.param();
       const updates = await c.req.json();
       
-      const role = await kv.get(`role:${roleId}`);
-      if (!role) {
-        return c.json({ error: 'Role not found' }, 404);
+      // ✅ SQL: Get role
+      const { data: role, error: fetchError } = await client
+        .from('roles')
+        .select('*')
+        .eq('id', roleId)
+        .single();
+      
+      if (fetchError || !role) {
+        return sendError(c, 'Role not found', 404);
       }
       
-      if (role.isSystem) {
-        return c.json({ error: 'Cannot modify system role' }, 403);
+      if (role.is_system_role) {
+        return sendError(c, 'Cannot modify system role', 403);
       }
       
-      const updatedRole = {
-        ...role,
-        ...updates,
-        id: roleId,
-        isSystem: role.isSystem,
-        updatedAt: new Date().toISOString()
+      // ✅ SQL: Update role
+      const updateData: any = {
+        updated_at: new Date().toISOString()
       };
       
-      await kv.set(`role:${roleId}`, updatedRole);
+      if (updates.name) updateData.name = updates.name;
+      if (updates.display_name) updateData.display_name = updates.display_name;
+      if (updates.description !== undefined) updateData.description = updates.description;
+      if (updates.isActive !== undefined) updateData.is_active = updates.isActive;
+      
+      const { data: updatedRole, error: updateError } = await client
+        .from('roles')
+        .update(updateData)
+        .eq('id', roleId)
+        .select()
+        .single();
+      
+      if (updateError || !updatedRole) {
+        console.error('Update Role Error:', updateError);
+        return sendError(c, updateError || 'Failed to update role', 500);
+      }
+      
+      // Transform to expected format
+      const formattedRole = {
+        id: updatedRole.id,
+        name: updatedRole.name,
+        displayName: updatedRole.display_name,
+        description: updatedRole.description,
+        isActive: updatedRole.is_active,
+        isSystem: updatedRole.is_system_role,
+        createdAt: updatedRole.created_at,
+        updatedAt: updatedRole.updated_at
+      };
       
       console.log(`✅ Role updated: ${roleId}`);
-      return c.json({ success: true, role: updatedRole });
+      return sendSuccess(c, { role: formattedRole });
     } catch (error) {
       console.error('Update Role Error:', error);
-      return c.json({ error: String(error) }, 500);
+      return sendError(c, error, 500);
     }
   });
 
   /**
-   * DELETE /admin/rbac/roles/:roleId
+   * DELETE /admin/rbac/roles/:roleId (✅ SQL-only)
    * Delete a role
    */
   app.delete("/make-server-3dd53475/admin/rbac/roles/:roleId", async (c) => {
     try {
       const { roleId } = c.req.param();
       
-      const role = await kv.get(`role:${roleId}`);
-      if (!role) {
-        return c.json({ error: 'Role not found' }, 404);
+      // ✅ SQL: Get role
+      const { data: role, error: fetchError } = await client
+        .from('roles')
+        .select('*')
+        .eq('id', roleId)
+        .single();
+      
+      if (fetchError || !role) {
+        return sendError(c, 'Role not found', 404);
       }
       
-      if (role.isSystem) {
-        return c.json({ error: 'Cannot delete system role' }, 403);
+      if (role.is_system_role) {
+        return sendError(c, 'Cannot delete system role', 403);
       }
       
-      // Check if role is assigned to any users
-      const allUsers = await kv.getByPrefix('user:');
-      const hasAssignments = allUsers.some((u: any) => {
-        const userRoles = u.roles || [];
-        return userRoles.includes(roleId);
-      });
+      // ✅ SQL: Check if role is assigned to any users
+      const { data: userRoles, error: checkError } = await client
+        .from('user_roles')
+        .select('id')
+        .eq('role_id', roleId)
+        .eq('is_active', true)
+        .limit(1);
       
-      if (hasAssignments) {
-        return c.json({ error: 'Cannot delete role that is assigned to users' }, 400);
+      if (checkError) {
+        console.error('Check assignments error:', checkError);
+        return sendError(c, checkError, 500);
       }
       
-      await kv.del(`role:${roleId}`);
+      if (userRoles && userRoles.length > 0) {
+        return sendError(c, 'Cannot delete role that is assigned to users', 400);
+      }
+      
+      // ✅ SQL: Delete role (cascade will delete role_permissions)
+      const { error: deleteError } = await client
+        .from('roles')
+        .delete()
+        .eq('id', roleId);
+      
+      if (deleteError) {
+        console.error('Delete Role Error:', deleteError);
+        return sendError(c, deleteError, 500);
+      }
       
       console.log(`✅ Role deleted: ${roleId}`);
-      return c.json({ success: true });
+      return sendSuccess(c, { message: 'Role deleted successfully' });
     } catch (error) {
       console.error('Delete Role Error:', error);
-      return c.json({ error: String(error) }, 500);
+      return sendError(c, error, 500);
     }
   });
   
   /**
-   * GET /admin/rbac/permissions
+   * GET /admin/rbac/permissions (✅ SQL-only)
    * Get all available permissions
    */
   app.get("/make-server-3dd53475/admin/rbac/permissions", async (c) => {
     try {
-      const permissions = await kv.get('rbac:permissions:list');
+      // ✅ SQL: Get permissions from catalog
+      const { data: permissions, error } = await client
+        .from('rbac_permissions_catalog')
+        .select('*')
+        .order('category', { ascending: true });
       
-      if (!permissions) {
-        // Initialize default permissions
+      if (error) {
+        console.error('Get Permissions Error:', error);
+        // If table doesn't exist, return default permissions
         const defaultPermissions = getDefaultPermissions();
-        await kv.set('rbac:permissions:list', defaultPermissions);
-        return c.json({ success: true, permissions: defaultPermissions });
+        return sendSuccess(c, { permissions: defaultPermissions });
       }
       
-      return c.json({ success: true, permissions });
+      if (!permissions || permissions.length === 0) {
+        // Initialize default permissions
+        const defaultPermissions = getDefaultPermissions();
+        
+        // Insert default permissions
+        const permissionRecords = defaultPermissions.map((perm: any) => ({
+          permission_key: perm.key,
+          permission_name: perm.name,
+          description: perm.description,
+          category: perm.category,
+          resource: perm.key.split(':')[0] || 'all',
+          action: perm.key.split(':')[1] || 'all'
+        }));
+        
+        await client
+          .from('rbac_permissions_catalog')
+          .insert(permissionRecords);
+        
+        return sendSuccess(c, { permissions: defaultPermissions });
+      }
+      
+      // Transform SQL rows to expected format
+      const formattedPermissions = permissions.map((p: any) => ({
+        key: p.permission_key,
+        name: p.permission_name,
+        description: p.description,
+        category: p.category
+      }));
+      
+      return sendSuccess(c, { permissions: formattedPermissions });
     } catch (error) {
       console.error('Get Permissions Error:', error);
-      return c.json({ error: String(error) }, 500);
+      return sendError(c, error, 500);
     }
   });
 
   /**
-   * GET /admin/rbac/users
-   * Get all admin users
+   * GET /admin/rbac/users (✅ SQL-only)
+   * Get all admin users with their roles
    */
   app.get("/make-server-3dd53475/admin/rbac/users", async (c) => {
     try {
-      const adminUsers = await kv.getByPrefix('admin:');
+      // ✅ SQL: Get all users with role assignments
+      const { data: userRoles, error } = await client
+        .from('user_roles')
+        .select(`
+          *,
+          roles:role_id (
+            id,
+            name,
+            display_name
+          ),
+          users:user_id (
+            id,
+            email,
+            phone
+          )
+        `)
+        .eq('is_active', true);
       
-      // Format users for display
-      const formattedUsers = adminUsers
-        .filter((u: any) => u.email) // Only return valid user objects
-        .map((u: any) => ({
-          id: u.id || u.userId,
-          name: u.name || u.email?.split('@')[0],
-          email: u.email,
-          role: u.role || 'admin',
-          roles: u.roles || [],
-          status: u.status || 'active',
-          lastLogin: u.lastLogin || u.createdAt,
-          createdAt: u.createdAt
-        }));
+      if (error) {
+        console.error('Get Admin Users Error:', error);
+        return sendError(c, error, 500);
+      }
       
-      return c.json({ success: true, users: formattedUsers });
+      // Group by user
+      const userMap = new Map();
+      
+      (userRoles || []).forEach((ur: any) => {
+        const userId = ur.user_id;
+        if (!userMap.has(userId)) {
+          userMap.set(userId, {
+            id: userId,
+            email: ur.users?.email || '',
+            phone: ur.users?.phone || '',
+            roles: []
+          });
+        }
+        userMap.get(userId).roles.push({
+          id: ur.roles?.id,
+          name: ur.roles?.name,
+          displayName: ur.roles?.display_name
+        });
+      });
+      
+      const formattedUsers = Array.from(userMap.values()).map((u: any) => ({
+        id: u.id,
+        name: u.email?.split('@')[0] || 'User',
+        email: u.email,
+        roles: u.roles.map((r: any) => r.id),
+        roleNames: u.roles.map((r: any) => r.name),
+        status: 'active'
+      }));
+      
+      return sendSuccess(c, { users: formattedUsers });
     } catch (error) {
       console.error('Get Admin Users Error:', error);
-      return c.json({ error: String(error) }, 500);
+      return sendError(c, error, 500);
     }
   });
   
   /**
-   * GET /admin/rbac/users/:userId/permissions
+   * GET /admin/rbac/users/:userId/permissions (✅ SQL-only)
    * Get effective permissions for a user (with role inheritance)
    */
   app.get("/make-server-3dd53475/admin/rbac/users/:userId/permissions", async (c) => {
     try {
       const { userId } = c.req.param();
       
-      const user = await kv.get(`user:${userId}`) || await kv.get(`admin:${userId}`);
-      if (!user) {
-        return c.json({ error: 'User not found' }, 404);
+      // ✅ SQL: Get user's roles
+      const { data: userRoles, error: rolesError } = await client
+        .from('user_roles')
+        .select('role_id')
+        .eq('user_id', userId)
+        .eq('is_active', true);
+      
+      if (rolesError) {
+        console.error('Get User Roles Error:', rolesError);
+        return sendError(c, rolesError, 500);
       }
       
-      const userRoles = user.roles || [];
+      if (!userRoles || userRoles.length === 0) {
+        return sendSuccess(c, { 
+          permissions: [],
+          roles: []
+        });
+      }
+      
+      const roleIds = userRoles.map((ur: any) => ur.role_id);
+      
+      // ✅ SQL: Get permissions for all roles
+      const { data: rolePermissions, error: permsError } = await client
+        .from('role_permissions')
+        .select('permission_name')
+        .in('role_id', roleIds);
+      
+      if (permsError) {
+        console.error('Get Role Permissions Error:', permsError);
+        return sendError(c, permsError, 500);
+      }
+      
       const allPermissions = new Set<string>();
+      (rolePermissions || []).forEach((rp: any) => {
+        allPermissions.add(rp.permission_name);
+      });
       
-      // Collect permissions from all assigned roles (including inheritance)
-      for (const roleId of userRoles) {
-        await collectRolePermissions(roleId, allPermissions);
-      }
-      
-      return c.json({ 
-        success: true, 
+      return sendSuccess(c, { 
         permissions: Array.from(allPermissions),
-        roles: userRoles
+        roles: roleIds
       });
     } catch (error) {
       console.error('Get User Permissions Error:', error);
-      return c.json({ error: String(error) }, 500);
+      return sendError(c, error, 500);
     }
   });
   
   /**
-   * POST /admin/rbac/users/:userId/roles
+   * POST /admin/rbac/users/:userId/roles (✅ SQL-only)
    * Assign roles to a user
    */
   app.post("/make-server-3dd53475/admin/rbac/users/:userId/roles", async (c) => {
     try {
       const { userId } = c.req.param();
-      const { roles } = await c.req.json();
+      const { roles, assignedBy } = await c.req.json();
       
       if (!Array.isArray(roles)) {
-        return c.json({ error: 'Roles must be an array' }, 400);
+        return sendError(c, 'Roles must be an array', 400);
       }
       
-      // Validate all roles exist
-      for (const roleId of roles) {
-        const role = await kv.get(`role:${roleId}`);
-        if (!role) {
-          return c.json({ error: `Role not found: ${roleId}` }, 404);
-        }
+      // ✅ SQL: Validate all roles exist
+      const { data: existingRoles, error: validateError } = await client
+        .from('roles')
+        .select('id')
+        .in('id', roles)
+        .eq('is_active', true);
+      
+      if (validateError) {
+        console.error('Validate roles error:', validateError);
+        return sendError(c, validateError, 500);
       }
       
-      // Get user
-      let user = await kv.get(`user:${userId}`);
-      let userKey = `user:${userId}`;
-      
-      if (!user) {
-        user = await kv.get(`admin:${userId}`);
-        userKey = `admin:${userId}`;
+      if (!existingRoles || existingRoles.length !== roles.length) {
+        return sendError(c, 'One or more roles not found', 404);
       }
       
-      if (!user) {
-        return c.json({ error: 'User not found' }, 404);
+      // ✅ SQL: Remove existing role assignments
+      await client
+        .from('user_roles')
+        .update({ is_active: false })
+        .eq('user_id', userId);
+      
+      // ✅ SQL: Insert new role assignments
+      const roleAssignments = roles.map((roleId: string) => ({
+        user_id: userId,
+        role_id: roleId,
+        assigned_by: assignedBy || null,
+        is_active: true
+      }));
+      
+      const { error: insertError } = await client
+        .from('user_roles')
+        .insert(roleAssignments);
+      
+      if (insertError) {
+        console.error('Assign Roles Error:', insertError);
+        return sendError(c, insertError, 500);
       }
       
-      // Update user roles
-      user.roles = roles;
-      user.updatedAt = new Date().toISOString();
-      await kv.set(userKey, user);
-      
-      // Also maintain separate mapping
-      await kv.set(`user:${userId}:roles`, roles);
+      // ✅ SQL: Log audit event
+      await client
+        .from('rbac_audit_logs')
+        .insert({
+          action: 'role_assigned',
+          user_id: assignedBy || userId,
+          target_user_id: userId,
+          details: { roles }
+        });
       
       console.log(`✅ Roles assigned to user ${userId}: ${roles.join(', ')}`);
-      return c.json({ success: true, roles });
+      return sendSuccess(c, { roles });
     } catch (error) {
       console.error('Assign Roles Error:', error);
-      return c.json({ error: String(error) }, 500);
+      return sendError(c, error, 500);
     }
   });
 
   /**
-   * DELETE /admin/rbac/users/:userId/roles/:roleId
+   * DELETE /admin/rbac/users/:userId/roles/:roleId (✅ SQL-only)
    * Remove a role from a user
    */
   app.delete("/make-server-3dd53475/admin/rbac/users/:userId/roles/:roleId", async (c) => {
     try {
       const { userId, roleId } = c.req.param();
+      const adminId = c.req.query('adminId') || userId;
       
-      let user = await kv.get(`user:${userId}`);
-      let userKey = `user:${userId}`;
+      // ✅ SQL: Deactivate role assignment
+      const { error: updateError } = await client
+        .from('user_roles')
+        .update({ is_active: false })
+        .eq('user_id', userId)
+        .eq('role_id', roleId);
       
-      if (!user) {
-        user = await kv.get(`admin:${userId}`);
-        userKey = `admin:${userId}`;
+      if (updateError) {
+        console.error('Remove Role Error:', updateError);
+        return sendError(c, updateError, 500);
       }
       
-      if (!user) {
-        return c.json({ error: 'User not found' }, 404);
-      }
+      // ✅ SQL: Log audit event
+      await client
+        .from('rbac_audit_logs')
+        .insert({
+          action: 'role_removed',
+          user_id: adminId,
+          target_user_id: userId,
+          role_id: roleId
+        });
       
-      const userRoles = user.roles || [];
-      const updatedRoles = userRoles.filter((r: string) => r !== roleId);
+      // Get updated roles
+      const { data: userRoles } = await client
+        .from('user_roles')
+        .select('role_id')
+        .eq('user_id', userId)
+        .eq('is_active', true);
       
-      user.roles = updatedRoles;
-      user.updatedAt = new Date().toISOString();
-      await kv.set(userKey, user);
-      await kv.set(`user:${userId}:roles`, updatedRoles);
+      const updatedRoles = (userRoles || []).map((ur: any) => ur.role_id);
       
       console.log(`✅ Role ${roleId} removed from user ${userId}`);
-      return c.json({ success: true, roles: updatedRoles });
+      return sendSuccess(c, { roles: updatedRoles });
     } catch (error) {
       console.error('Remove Role Error:', error);
-      return c.json({ error: String(error) }, 500);
+      return sendError(c, error, 500);
     }
   });
 
   /**
-   * POST /admin/rbac/check-permission
+   * POST /admin/rbac/check-permission (✅ SQL-only)
    * Check if user has specific permission
    */
   app.post("/make-server-3dd53475/admin/rbac/check-permission", async (c) => {
@@ -308,64 +534,116 @@ export function rbacEndpoints(app: Hono) {
       const { userId, permission } = await c.req.json();
       
       if (!userId || !permission) {
-        return c.json({ error: 'userId and permission are required' }, 400);
+        return sendError(c, 'userId and permission are required', 400);
       }
       
-      const user = await kv.get(`user:${userId}`) || await kv.get(`admin:${userId}`);
-      if (!user) {
-        return c.json({ hasPermission: false, reason: 'User not found' });
+      // ✅ SQL: Get user's roles
+      const { data: userRoles } = await client
+        .from('user_roles')
+        .select('role_id')
+        .eq('user_id', userId)
+        .eq('is_active', true);
+      
+      if (!userRoles || userRoles.length === 0) {
+        return sendSuccess(c, { 
+          hasPermission: false,
+          reason: 'User has no roles assigned',
+          permission,
+          userId
+        });
       }
       
-      const userRoles = user.roles || [];
-      const allPermissions = new Set<string>();
+      const roleIds = userRoles.map((ur: any) => ur.role_id);
       
-      for (const roleId of userRoles) {
-        await collectRolePermissions(roleId, allPermissions);
-      }
+      // ✅ SQL: Check if any role has this permission
+      const { data: rolePermissions } = await client
+        .from('role_permissions')
+        .select('id')
+        .in('role_id', roleIds)
+        .eq('permission_name', permission)
+        .limit(1);
       
-      const hasPermission = allPermissions.has(permission);
+      const hasPermission = (rolePermissions && rolePermissions.length > 0);
       
-      return c.json({ 
-        success: true,
+      return sendSuccess(c, { 
         hasPermission,
         permission,
         userId
       });
     } catch (error) {
       console.error('Check Permission Error:', error);
-      return c.json({ error: String(error) }, 500);
+      return sendError(c, error, 500);
     }
   });
 
   /**
-   * GET /admin/rbac/audit-log
+   * GET /admin/rbac/audit-log (✅ SQL-only)
    * Get RBAC audit log
    */
   app.get("/make-server-3dd53475/admin/rbac/audit-log", async (c) => {
     try {
       const limit = parseInt(c.req.query('limit') || '50');
-      const logs = await kv.getByPrefix('rbac:audit:');
       
-      const sortedLogs = logs
-        .filter((l: any) => l.timestamp)
-        .sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-        .slice(0, limit);
+      // ✅ SQL: Get audit logs
+      const { data: logs, error } = await client
+        .from('rbac_audit_logs')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(limit);
       
-      return c.json({ success: true, logs: sortedLogs });
+      if (error) {
+        console.error('Get Audit Log Error:', error);
+        return sendError(c, error, 500);
+      }
+      
+      // Transform SQL rows to expected format
+      const formattedLogs = (logs || []).map((log: any) => ({
+        id: log.id,
+        action: log.action,
+        userId: log.user_id,
+        targetUserId: log.target_user_id,
+        roleId: log.role_id,
+        permissionName: log.permission_name,
+        details: log.details,
+        timestamp: log.created_at
+      }));
+      
+      return sendSuccess(c, { logs: formattedLogs });
     } catch (error) {
       console.error('Get Audit Log Error:', error);
-      return c.json({ error: String(error) }, 500);
+      return sendError(c, error, 500);
     }
   });
 
   /**
    * GET /admin/rbac/policies
-   * Get all access policies
+   * Get all access policies (✅ SQL-only)
    */
   app.get("/make-server-3dd53475/admin/rbac/policies", async (c) => {
     try {
-      const policies = await kv.getByPrefix('policy:');
-      const validPolicies = policies.filter((p: any) => p.id && !p.id.includes(':policies'));
+      const { data: policies, error } = await client
+        .from('rbac_policies')
+        .select('*')
+        .eq('is_active', true)
+        .order('priority', { ascending: false });
+      
+      if (error) {
+        console.error('Get Policies Error:', error);
+        return c.json({ error: String(error) }, 500);
+      }
+      
+      // Transform SQL rows to expected format
+      const validPolicies = (policies || []).map((p: any) => ({
+        id: p.policy_id,
+        name: p.name,
+        description: p.description,
+        rules: p.rules,
+        effect: p.effect,
+        priority: p.priority,
+        isActive: p.is_active,
+        createdAt: p.created_at,
+        updatedAt: p.updated_at
+      }));
       
       return c.json({ success: true, policies: validPolicies });
     } catch (error) {
@@ -376,7 +654,7 @@ export function rbacEndpoints(app: Hono) {
 
   /**
    * POST /admin/rbac/policies
-   * Create a new access policy
+   * Create a new access policy (✅ SQL-only)
    */
   app.post("/make-server-3dd53475/admin/rbac/policies", async (c) => {
     try {
@@ -388,22 +666,40 @@ export function rbacEndpoints(app: Hono) {
       
       const policyId = `policy_${Date.now()}_${Math.random().toString(36).substring(7)}`;
       
-      const policy = {
-        id: policyId,
-        name,
-        description: description || '',
-        rules,
-        effect: effect || 'allow', // allow or deny
-        priority: priority || 0,
-        isActive: true,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+      const { data: policy, error } = await client
+        .from('rbac_policies')
+        .insert({
+          policy_id: policyId,
+          name,
+          description: description || '',
+          rules: rules,
+          effect: effect || 'allow',
+          priority: priority || 0,
+          is_active: true
+        })
+        .select()
+        .single();
+      
+      if (error) {
+        console.error('Create Policy Error:', error);
+        return c.json({ error: String(error) }, 500);
+      }
+      
+      // Transform to expected format
+      const formattedPolicy = {
+        id: policy.policy_id,
+        name: policy.name,
+        description: policy.description,
+        rules: policy.rules,
+        effect: policy.effect,
+        priority: policy.priority,
+        isActive: policy.is_active,
+        createdAt: policy.created_at,
+        updatedAt: policy.updated_at
       };
       
-      await kv.set(`policy:${policyId}`, policy);
-      
       console.log(`✅ Policy created: ${policyId} - ${name}`);
-      return c.json({ success: true, policy });
+      return c.json({ success: true, policy: formattedPolicy });
     } catch (error) {
       console.error('Create Policy Error:', error);
       return c.json({ error: String(error) }, 500);
@@ -414,33 +710,7 @@ export function rbacEndpoints(app: Hono) {
   // HELPER FUNCTIONS
   // ============================================
   
-  async function collectRolePermissions(roleId: string, permissionsSet: Set<string>): Promise<void> {
-    const role = await kv.get(`role:${roleId}`);
-    if (!role || !role.isActive) return;
-    
-    // Add this role's permissions
-    if (role.permissions && Array.isArray(role.permissions)) {
-      role.permissions.forEach((p: string) => permissionsSet.add(p));
-    }
-    
-    // Recursively add parent role permissions (inheritance)
-    if (role.parentRole) {
-      await collectRolePermissions(role.parentRole, permissionsSet);
-    }
-  }
-
-  async function logAuditEvent(action: string, userId: string, details: any): Promise<void> {
-    const logId = `rbac:audit:${Date.now()}_${Math.random().toString(36).substring(7)}`;
-    const log = {
-      id: logId,
-      action,
-      userId,
-      details,
-      timestamp: new Date().toISOString()
-    };
-    
-    await kv.set(logId, log);
-  }
+  // Helper functions removed - now using SQL directly
   
   function getDefaultPermissions() {
     return [

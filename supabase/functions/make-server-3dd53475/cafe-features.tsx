@@ -1,7 +1,39 @@
+/**
+ * ============================================================================
+ * CAFE FEATURES - SQL-ONLY VERSION
+ * ============================================================================
+ * 
+ * REFACTORED: Removed all KV usage, using SQL repositories only
+ * 
+ * Features:
+ * - Table management
+ * - Party packages (stored in service_packages)
+ * - Availability checking
+ * - Cafe profile & menu (stored in vendor metadata)
+ * 
+ * RULES:
+ * ❌ NO KV imports allowed
+ * ✅ All operations use SQL only
+ * ✅ Proper error handling
+ * ✅ CRUD operations via repositories
+ * 
+ * Date: 2025-01-27
+ * Migration: Phase 2 - Critical Flow Migration
+ * ============================================================================
+ */
+
 import { Hono } from "npm:hono";
-import * as kv from "./kv_store.tsx";
+import { getCafeTablesRepository } from "../../lib/repositories/cafe-tables.ts";
+import { getVendorsRepository } from "../../lib/repositories/vendors.ts";
+import { getBookingsRepository } from "../../lib/repositories/bookings.ts";
+import { getPackagesRepository } from "../../lib/repositories/packages.ts";
 
 export function registerCafeFeatures(app: Hono) {
+  const BASE = '/make-server-3dd53475';
+  const cafeTablesRepo = getCafeTablesRepository();
+  const vendorsRepo = getVendorsRepository();
+  const bookingsRepo = getBookingsRepository();
+  const packagesRepo = getPackagesRepository();
 
   // ==========================================
   // 1. TABLE MANAGEMENT
@@ -11,7 +43,7 @@ export function registerCafeFeatures(app: Hono) {
    * POST /make-server-3dd53475/cafe/tables
    * Create a new table configuration
    */
-  app.post("/make-server-3dd53475/cafe/tables", async (c) => {
+  app.post(`${BASE}/cafe/tables`, async (c) => {
     try {
       const { vendorId, name, capacity, section, isOutdoor } = await c.req.json();
       
@@ -19,27 +51,16 @@ export function registerCafeFeatures(app: Hono) {
         return c.json({ error: 'Missing required fields: vendorId, name, capacity' }, 400);
       }
 
-      const tableId = `table_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-      
-      const newTable = {
-        id: tableId,
+      // ✅ SQL: Create table
+      const newTable = await cafeTablesRepo.create({
         vendorId,
+        tableNumber: name,
         name,
-        capacity: Number(capacity), // PAX capacity
+        capacity: Number(capacity),
         section: section || 'Main Area',
         isOutdoor: isOutdoor || false,
         isActive: true,
-        createdAt: new Date().toISOString()
-      };
-
-      // Save Table
-      await kv.set(`cafe:table:${tableId}`, newTable);
-      
-      // Index by Vendor
-      const vendorTablesKey = `vendor:${vendorId}:tables`;
-      const vendorTables = await kv.get(vendorTablesKey) || [];
-      vendorTables.push(tableId);
-      await kv.set(vendorTablesKey, vendorTables);
+      });
 
       return c.json({ success: true, table: newTable });
     } catch (error) {
@@ -51,19 +72,12 @@ export function registerCafeFeatures(app: Hono) {
    * GET /make-server-3dd53475/cafe/tables/:vendorId
    * Get all tables for a vendor
    */
-  app.get("/make-server-3dd53475/cafe/tables/:vendorId", async (c) => {
+  app.get(`${BASE}/cafe/tables/:vendorId`, async (c) => {
     try {
       const { vendorId } = c.req.param();
-      const vendorTablesKey = `vendor:${vendorId}:tables`;
-      const tableIds = await kv.get(vendorTablesKey) || [];
       
-      const tables = [];
-      for (const id of tableIds) {
-        const table = await kv.get(`cafe:table:${id}`);
-        if (table && table.isActive) {
-          tables.push(table);
-        }
-      }
+      // ✅ SQL: Get tables
+      const tables = await cafeTablesRepo.findByVendor(vendorId, { isActive: true });
 
       return c.json({ success: true, tables });
     } catch (error) {
@@ -75,22 +89,22 @@ export function registerCafeFeatures(app: Hono) {
    * DELETE /make-server-3dd53475/cafe/tables/:tableId
    * Soft delete a table
    */
-  app.delete("/make-server-3dd53475/cafe/tables/:tableId", async (c) => {
+  app.delete(`${BASE}/cafe/tables/:tableId`, async (c) => {
     try {
       const { tableId } = c.req.param();
-      const table = await kv.get(`cafe:table:${tableId}`);
       
-      if (!table) return c.json({ error: 'Table not found' }, 404);
+      // ✅ SQL: Soft delete table
+      const deleted = await cafeTablesRepo.delete(tableId);
       
-      table.isActive = false;
-      await kv.set(`cafe:table:${tableId}`, table);
+      if (!deleted) {
+        return c.json({ error: 'Table not found' }, 404);
+      }
 
       return c.json({ success: true, message: 'Table deleted' });
     } catch (error) {
       return c.json({ error: String(error) }, 500);
     }
   });
-
 
   // ==========================================
   // 2. PARTY PACKAGES
@@ -100,7 +114,7 @@ export function registerCafeFeatures(app: Hono) {
    * POST /make-server-3dd53475/cafe/packages
    * Create a party package
    */
-  app.post("/make-server-3dd53475/cafe/packages", async (c) => {
+  app.post(`${BASE}/cafe/packages`, async (c) => {
     try {
       const { vendorId, name, description, price, minPax, maxPax, duration, inclusions } = await c.req.json();
       
@@ -108,28 +122,26 @@ export function registerCafeFeatures(app: Hono) {
         return c.json({ error: 'Missing required fields' }, 400);
       }
 
-      const packageId = `party_pkg_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+      // ✅ SQL: Create package (stored in service_packages with service_type='cafe_party')
+      // Store cafe-specific details in includes array
+      const cafePackageIncludes = [
+        ...(inclusions || []),
+        `minPax:${Number(minPax) || 1}`,
+        `maxPax:${Number(maxPax) || 100}`,
+        `duration:${Number(duration) || 120}`
+      ];
       
-      const newPackage = {
-        id: packageId,
+      const newPackage = await packagesRepo.createPackage({
         vendorId,
         name,
         description,
+        serviceType: 'cafe_party',
         price: Number(price),
-        minPax: Number(minPax) || 1,
-        maxPax: Number(maxPax) || 100,
-        duration: Number(duration) || 120, // Minutes
-        inclusions: inclusions || [], // Array of strings (e.g., "Cake", "Decor")
+        totalSessions: 1,
+        pricePerSession: Number(price),
+        includes: cafePackageIncludes,
         isActive: true,
-        createdAt: new Date().toISOString()
-      };
-
-      await kv.set(`cafe:package:${packageId}`, newPackage);
-      
-      const vendorPkgKey = `vendor:${vendorId}:party_packages`;
-      const vendorPkgs = await kv.get(vendorPkgKey) || [];
-      vendorPkgs.push(packageId);
-      await kv.set(vendorPkgKey, vendorPkgs);
+      });
 
       return c.json({ success: true, package: newPackage });
     } catch (error) {
@@ -141,19 +153,12 @@ export function registerCafeFeatures(app: Hono) {
    * GET /make-server-3dd53475/cafe/packages/:vendorId
    * List party packages
    */
-  app.get("/make-server-3dd53475/cafe/packages/:vendorId", async (c) => {
+  app.get(`${BASE}/cafe/packages/:vendorId`, async (c) => {
     try {
       const { vendorId } = c.req.param();
-      const vendorPkgKey = `vendor:${vendorId}:party_packages`;
-      const pkgIds = await kv.get(vendorPkgKey) || [];
       
-      const packages = [];
-      for (const id of pkgIds) {
-        const pkg = await kv.get(`cafe:package:${id}`);
-        if (pkg && pkg.isActive) {
-          packages.push(pkg);
-        }
-      }
+      // ✅ SQL: Get packages (filter by service_type='cafe_party')
+      const packages = await packagesRepo.getVendorPackages(vendorId, 'cafe_party');
 
       return c.json({ success: true, packages });
     } catch (error) {
@@ -170,7 +175,7 @@ export function registerCafeFeatures(app: Hono) {
    * Check if there is a table with enough capacity for the requested time
    * Query: vendorId, date, time, pax
    */
-  app.get("/make-server-3dd53475/cafe/availability", async (c) => {
+  app.get(`${BASE}/cafe/availability`, async (c) => {
     try {
       const vendorId = c.req.query('vendorId');
       const date = c.req.query('date');
@@ -181,47 +186,40 @@ export function registerCafeFeatures(app: Hono) {
         return c.json({ error: 'Missing params: vendorId, date, time, pax' }, 400);
       }
 
-      // 1. Get all tables for vendor
-      const vendorTablesKey = `vendor:${vendorId}:tables`;
-      const tableIds = await kv.get(vendorTablesKey) || [];
-      const allTables = [];
-      for (const id of tableIds) {
-        const t = await kv.get(`cafe:table:${id}`);
-        if (t && t.isActive && t.capacity >= pax) {
-          allTables.push(t);
-        }
-      }
+      // ✅ SQL: Get all tables for vendor with sufficient capacity
+      const allTables = await cafeTablesRepo.findByVendor(vendorId, { isActive: true });
+      const suitableTables = allTables.filter((t: any) => t.capacity >= pax);
 
       // If no table can fit this PAX, return false immediately
-      if (allTables.length === 0) {
+      if (suitableTables.length === 0) {
          return c.json({ success: true, available: false, message: 'No table with sufficient capacity' });
       }
 
-      // 2. Check existing bookings for this time slot
-      // Note: This is a simplified check. A real system would check duration overlaps.
-      // We'll assume a standard 90 min slot for now or check exact matches.
-      const vendorBookingsKey = `vendor:${vendorId}:bookings`;
-      const bookingIds = await kv.get(vendorBookingsKey) || [];
-      
+      // ✅ SQL: Check existing bookings for this time slot
+      const bookings = await bookingsRepo.findAll({
+        status: undefined, // Get all non-cancelled bookings
+      });
+
       const occupiedTableIds = new Set();
 
-      for (const bId of bookingIds) {
-        const booking = await kv.get(`booking:${bId}`);
-        if (booking && 
+      for (const booking of bookings) {
+        if (booking.vendor_id === vendorId &&
             booking.status !== 'cancelled' && 
-            booking.status !== 'rejected' && 
-            booking.bookingDate === date && 
-            booking.tableId) {
-            
-            // Check time overlap (Simple equality for MVP, ideally range check)
-            if (booking.bookingTime === time) {
-              occupiedTableIds.add(booking.tableId);
+            booking.booking_date === date &&
+            booking.notes) {
+          try {
+            const notes = typeof booking.notes === 'string' ? JSON.parse(booking.notes) : booking.notes;
+            if (notes.tableId && booking.booking_time === time) {
+              occupiedTableIds.add(notes.tableId);
             }
+          } catch (e) {
+            // Ignore parse errors
+          }
         }
       }
 
-      // 3. Find available tables
-      const availableTables = allTables.filter(t => !occupiedTableIds.has(t.id));
+      // Find available tables
+      const availableTables = suitableTables.filter((t: any) => !occupiedTableIds.has(t.id));
 
       return c.json({
         success: true,
@@ -243,32 +241,36 @@ export function registerCafeFeatures(app: Hono) {
    * GET /make-server-3dd53475/cafe/profile/:vendorId
    * Get detailed cafe profile
    */
-  app.get("/make-server-3dd53475/cafe/profile/:vendorId", async (c) => {
+  app.get(`${BASE}/cafe/profile/:vendorId`, async (c) => {
     try {
       const { vendorId } = c.req.param();
       
-      const vendor = await kv.get(`vendor:${vendorId}`);
-      if (!vendor) return c.json({ error: 'Vendor not found' }, 404);
+      // ✅ SQL: Get vendor
+      const vendor = await vendorsRepo.findById(vendorId);
+      if (!vendor) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
 
-      const cafeProfile = await kv.get(`cafe:profile:${vendorId}`) || {};
-      const menu = await kv.get(`cafe:menu:${vendorId}`) || [];
+      // Get cafe profile and menu from vendor metadata
+      const cafeProfile = (vendor.metadata as any)?.cafeProfile || {};
+      const menu = (vendor.metadata as any)?.cafeMenu || [];
 
       return c.json({
         success: true,
         profile: {
           id: vendorId,
-          name: vendor.businessName || vendor.fullName,
+          name: vendor.business_name,
           description: cafeProfile.description || vendor.description || 'Welcome to our pet cafe!',
           address: vendor.address || 'Address not available',
-          rating: vendor.rating || 5.0,
-          reviewsCount: vendor.reviewsCount || 0,
+          rating: (vendor as any).rating || 5.0,
+          reviewsCount: (vendor as any).reviewsCount || 0,
           costForTwo: cafeProfile.costForTwo || 500,
           cuisines: cafeProfile.cuisines || ['Cafe', 'Snacks'],
-          photos: cafeProfile.photos || vendor.gallery || [],
+          photos: cafeProfile.photos || (vendor as any).gallery || [],
           amenities: cafeProfile.amenities || ['Pet Friendly', 'WiFi'],
           openHours: cafeProfile.openHours || '9:00 AM - 9:00 PM',
           phone: vendor.phone,
-          coordinates: vendor.location || { lat: 0, lng: 0 },
+          coordinates: vendor.address ? { lat: (vendor as any).latitude || 0, lng: (vendor as any).longitude || 0 } : { lat: 0, lng: 0 },
           menu: menu
         }
       });
@@ -280,13 +282,30 @@ export function registerCafeFeatures(app: Hono) {
   /**
    * POST /make-server-3dd53475/cafe/profile/:vendorId
    */
-  app.post("/make-server-3dd53475/cafe/profile/:vendorId", async (c) => {
+  app.post(`${BASE}/cafe/profile/:vendorId`, async (c) => {
     try {
       const { vendorId } = c.req.param();
       const body = await c.req.json();
-      const profile = { ...body, updatedAt: new Date().toISOString() };
-      await kv.set(`cafe:profile:${vendorId}`, profile);
-      return c.json({ success: true, profile });
+      
+      // ✅ SQL: Get vendor
+      const vendor = await vendorsRepo.findById(vendorId);
+      if (!vendor) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+
+      // ✅ SQL: Update vendor metadata with cafe profile
+      const metadata = vendor.metadata || {};
+      (metadata as any).cafeProfile = {
+        ...(metadata as any).cafeProfile,
+        ...body,
+        updatedAt: new Date().toISOString()
+      };
+
+      await vendorsRepo.update(vendorId, {
+        metadata: metadata,
+      });
+
+      return c.json({ success: true, profile: (metadata as any).cafeProfile });
     } catch (error) {
       return c.json({ error: String(error) }, 500);
     }
@@ -295,15 +314,31 @@ export function registerCafeFeatures(app: Hono) {
   /**
    * POST /make-server-3dd53475/cafe/menu/:vendorId
    */
-  app.post("/make-server-3dd53475/cafe/menu/:vendorId", async (c) => {
+  app.post(`${BASE}/cafe/menu/:vendorId`, async (c) => {
     try {
       const { vendorId } = c.req.param();
       const { menu } = await c.req.json();
-      await kv.set(`cafe:menu:${vendorId}`, menu);
+      
+      // ✅ SQL: Get vendor
+      const vendor = await vendorsRepo.findById(vendorId);
+      if (!vendor) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+
+      // ✅ SQL: Update vendor metadata with cafe menu
+      const metadata = vendor.metadata || {};
+      (metadata as any).cafeMenu = menu;
+
+      await vendorsRepo.update(vendorId, {
+        metadata: metadata,
+      });
+
       return c.json({ success: true });
     } catch (error) {
       return c.json({ error: String(error) }, 500);
     }
   });
 
+  console.log('✅ Cafe Features (SQL) registered');
 }
+

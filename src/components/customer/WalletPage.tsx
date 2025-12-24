@@ -69,11 +69,21 @@ export function WalletPage({ customerPhone, customerId }: WalletPageProps) {
   const loadLoyaltyProfile = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/loyalty/profile/${customerId}?type=customer`,
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/loyalty/profile?customerId=${customerId}`,
         { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
       );
       const data = await response.json();
-      setLoyaltyProfile(data.profile);
+      // Transform backend response structure
+      if (data.profile) {
+        setLoyaltyProfile({
+          pointsBalance: data.profile.totalPoints || 0,
+          totalPoints: data.profile.totalPoints || 0,
+          lifetimePointsEarned: data.profile.lifetimePointsEarned || 0,
+          lifetimePointsRedeemed: data.profile.lifetimePointsRedeemed || 0
+        });
+      } else {
+        setLoyaltyProfile(data.profile || data);
+      }
     } catch (err) {
       console.error('Error loading loyalty:', err);
     }
@@ -96,16 +106,17 @@ export function WalletPage({ customerPhone, customerId }: WalletPageProps) {
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            userId: customerId,
-            pointsToRedeem: loyaltyProfile.pointsBalance, // Redeem all for now
-            userType: 'customer'
+            customerId: customerId,
+            points: loyaltyProfile.pointsBalance || loyaltyProfile.totalPoints || 0
           })
         }
       );
       
       const data = await response.json();
       if (data.success) {
-        alert(`Successfully redeemed ${data.redeemed} points for ₹${data.walletCredited}!`);
+        const pointsRedeemed = data.pointsRedeemed || data.redeemed || 0;
+        const cashValue = data.cashValue || data.walletCredited || 0;
+        alert(`Successfully redeemed ${pointsRedeemed} points for ₹${cashValue}!`);
         loadWalletData();
         loadLoyaltyProfile();
       } else {

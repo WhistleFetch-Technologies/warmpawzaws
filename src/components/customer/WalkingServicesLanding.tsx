@@ -14,6 +14,7 @@ import {
   Trophy
 } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { SpotlightOffers } from './SpotlightOffers';
 import { WALKING_NEEDS } from './ProblemGridSection';
 
 interface WalkingServicesLandingProps {
@@ -131,55 +132,11 @@ export function WalkingServicesLanding({ onBack, onNavigate, customerId, phone }
         <div className="space-y-8">
           
           {/* Spotlight Offers */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-orange-500" />
-              <h2 className="text-lg font-bold text-slate-900">Spotlight Offers</h2>
-            </div>
-            
-            <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide -mx-6 px-6">
-              <Card className="min-w-[280px] flex-shrink-0 bg-white border border-slate-100 p-5 shadow-sm rounded-2xl">
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <div className="bg-orange-100 text-orange-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase mb-2 w-fit">New Customer</div>
-                    <div className="text-2xl font-bold text-slate-900">50% OFF</div>
-                    <div className="text-slate-500 text-xs">First 3 Walks</div>
-                  </div>
-                  <div className="w-10 h-10 bg-orange-50 rounded-full flex items-center justify-center">
-                    <MapPin className="w-5 h-5 text-orange-600" />
-                  </div>
-                </div>
-                <div className="flex items-center justify-between pt-3 border-t border-slate-50">
-                  <div className="text-sm">
-                    <span className="line-through text-slate-400 text-xs">₹300</span>
-                    <span className="ml-2 font-bold text-slate-900">₹150</span>
-                  </div>
-                  <Button size="sm" className="bg-orange-600 text-white hover:bg-orange-700 h-8 text-xs px-4 rounded-lg" onClick={() => onNavigate('walker_service')}>
-                    Book Now
-                  </Button>
-                </div>
-              </Card>
-
-              <Card className="min-w-[280px] flex-shrink-0 bg-white border border-slate-100 p-5 shadow-sm rounded-2xl">
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <div className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase mb-2 w-fit">Premium</div>
-                    <div className="text-2xl font-bold text-slate-900">FREE</div>
-                    <div className="text-slate-500 text-xs">Live GPS Tracking</div>
-                  </div>
-                  <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center">
-                    <MapPin className="w-5 h-5 text-slate-600" />
-                  </div>
-                </div>
-                <div className="flex items-center justify-between pt-3 border-t border-slate-50">
-                  <div className="text-xs text-slate-500">Included in all walks</div>
-                  <Button size="sm" className="bg-slate-900 text-white hover:bg-slate-800 h-8 text-xs px-4 rounded-lg" onClick={() => onNavigate('walker_service')}>
-                    Book
-                  </Button>
-                </div>
-              </Card>
-            </div>
-          </div>
+          <SpotlightOffers
+            roleId="pet_walker"
+            onNavigate={onNavigate}
+            compact={true}
+          />
 
           {/* Walking Needs Grid - Unified Style */}
           <div>

@@ -13,6 +13,8 @@ import { RBACDashboard } from './admin/rbac/RBACDashboard';
 import { ReportsDashboard } from './admin/reports/ReportsDashboard';
 import { AdminAnalyticsDashboard } from './admin/analytics/AdminAnalyticsDashboard';
 import { AdminOperationsDashboard } from './admin/operations/AdminOperationsDashboard';
+import { EnterpriseRevenue } from './admin/EnterpriseRevenue';
+import { DatabaseSeeding } from './admin/DatabaseSeeding';
 import { supabase } from '../utils/supabase/client';
 
 export function AdminApp() {
@@ -109,6 +111,14 @@ export function AdminApp() {
 
   if (currentView === 'marketing') {
     return <AdminDashboard session={session} onNavigate={handleNavigation} initialView="marketing" />;
+  }
+
+  if (currentView === 'enterprise') {
+    return <EnterpriseRevenue onBack={() => setCurrentView('vendor-management')} />;
+  }
+
+  if (currentView === 'database-seeding') {
+    return <DatabaseSeeding onBack={() => setCurrentView('vendor-management')} />;
   }
   
   if (currentView === 'support') {

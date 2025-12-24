@@ -19,24 +19,22 @@ import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 
 export interface Notification {
   id: string;
-  recipient_type: string;
-  recipient_id: string;
+  user_id: string | null;
   notification_type: string;
   title: string;
   message: string;
-  channels: any; // JSONB
+  data: any; // JSONB
   is_read: boolean;
-  read_at?: string | null;
+  is_sent: boolean;
+  sent_at?: string | null;
   created_at: string;
 }
 
 export interface CreateNotificationInput {
-  recipient_type: string;
-  recipient_id: string;
+  user_id: string;
   notification_type: string;
   title: string;
   message: string;
-  channels: any;
   data?: any;
 }
 
@@ -49,13 +47,13 @@ export class NotificationsRepository {
 
   async create(input: CreateNotificationInput): Promise<Notification> {
     const results = await insertQuery<Notification>("notifications", {
-      recipient_type: input.recipient_type,
-      recipient_id: input.recipient_id,
+      user_id: input.user_id,
       notification_type: input.notification_type,
       title: input.title,
       message: input.message,
-      channels: input.channels,
+      data: input.data || {},
       is_read: false,
+      is_sent: false,
     });
     
     if (!results[0]) {
@@ -65,14 +63,13 @@ export class NotificationsRepository {
     return results[0];
   }
 
-  async findByRecipient(recipientType: string, recipientId: string, options?: {
+  async findByUser(userId: string, options?: {
     limit?: number;
     offset?: number;
     unreadOnly?: boolean;
   }): Promise<Notification[]> {
     const filters: any = {
-      recipient_type: recipientType,
-      recipient_id: recipientId,
+      user_id: userId,
     };
     
     if (options?.unreadOnly) {
@@ -87,13 +84,23 @@ export class NotificationsRepository {
     });
   }
 
+  // Legacy method for backward compatibility
+  async findByRecipient(recipientType: string, recipientId: string, options?: {
+    limit?: number;
+    offset?: number;
+    unreadOnly?: boolean;
+  }): Promise<Notification[]> {
+    // For now, treat recipient_id as user_id
+    // This maintains backward compatibility while we migrate
+    return this.findByUser(recipientId, options);
+  }
+
   async markAsRead(notificationId: string): Promise<Notification> {
     const results = await updateQuery<Notification>(
       "notifications",
       { id: notificationId },
       {
         is_read: true,
-        read_at: new Date().toISOString(),
       }
     );
     

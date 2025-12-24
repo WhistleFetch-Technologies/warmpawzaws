@@ -1144,31 +1144,7 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
 
             {/* Payout History */}
             <div className="p-4">
-              <h3 className="font-semibold text-gray-900 mb-3">Payout History</h3>
-              <div className="space-y-2">
-                {[
-                  { id: '1', date: '2024-11-10', amount: 45000, status: 'completed', txnId: 'TXN123456789' },
-                  { id: '2', date: '2024-11-03', amount: 38500, status: 'completed', txnId: 'TXN123456788' },
-                  { id: '3', date: '2024-10-27', amount: 52300, status: 'completed', txnId: 'TXN123456787' },
-                  { id: '4', date: '2024-10-20', amount: 41200, status: 'completed', txnId: 'TXN123456786' },
-                  { id: '5', date: '2024-10-13', amount: 39800, status: 'completed', txnId: 'TXN123456785' },
-                ].map((payout) => (
-                  <div key={payout.id} className="border border-gray-200 rounded-xl p-3">
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="flex-1">
-                        <div className="font-medium text-gray-900 text-sm">Payout - {payout.date}</div>
-                        <div className="text-xs text-gray-500">TXN ID: {payout.txnId}</div>
-                      </div>
-                      <div className="text-right">
-                        <div className="font-bold text-blue-600">₹{payout.amount.toLocaleString()}</div>
-                        <div className="text-xs px-2 py-0.5 rounded-full inline-block mt-1 bg-green-100 text-green-700">
-                          {payout.status}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <VendorPayoutRecords vendorId={vendorId} />
             </div>
 
             {/* Payout Schedule Info */}

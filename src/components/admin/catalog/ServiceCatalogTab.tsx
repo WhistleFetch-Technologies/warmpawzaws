@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
 import { toast } from 'sonner@2.0.3';
+import { ServiceCatalogConfirmationModal } from './ServiceCatalogConfirmationModal';
 
 interface ServiceCatalogItem {
   catalogId?: string;
@@ -302,10 +303,47 @@ export function ServiceCatalogTab() {
     return true;
   };
 
+  const [showSeedModal, setShowSeedModal] = useState(false);
+  const [showPriceModal, setShowPriceModal] = useState(false);
+  const [seedPreview, setSeedPreview] = useState<any>(null);
+  const [pricePreview, setPricePreview] = useState<any>(null);
+
   const handleSeedCatalog = async () => {
     try {
       setSaving(true);
-      toast.info('Seeding catalog with 150+ comprehensive services...', { duration: 2000 });
+      
+      // First, get preview
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/catalog/seed-all-services`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${publicAnonKey}`,
+          },
+          body: JSON.stringify({ confirm: false })
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        setSeedPreview(data);
+        setShowSeedModal(true);
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        toast.error(`Failed to fetch seed preview: ${errorData.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error fetching seed preview:', error);
+      toast.error('Failed to fetch seed preview. Check console for details.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleConfirmSeed = async () => {
+    try {
+      setSaving(true);
       
       const response = await fetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/catalog/seed-all-services`,
@@ -314,7 +352,8 @@ export function ServiceCatalogTab() {
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${publicAnonKey}`,
-          }
+          },
+          body: JSON.stringify({ confirm: true })
         }
       );
 
@@ -325,13 +364,13 @@ export function ServiceCatalogTab() {
           `${b.category}: ${b.services}`
         ).join(' | ') || '';
         
-        toast.success(`🎉 Successfully seeded ${data.stats?.totalServices || '150+'} services!`, {
+        toast.success(`🎉 Successfully seeded ${data.stats?.inserted || data.stats?.totalServices || '150+'} services!`, {
           description: breakdown,
           duration: 5000
         });
         
+        setShowSeedModal(false);
         await loadServices();
-        // Auto-expand all after seeding
         setTimeout(expandAll, 500);
       } else {
         const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
@@ -348,8 +387,14 @@ export function ServiceCatalogTab() {
   const handleUpdatePrices = async () => {
     try {
       setSaving(true);
-      toast.info('Updating prices with realistic Indian market rates...', { duration: 2000 });
       
+      // Get selected services (all if none selected)
+      const selectedServiceIds = services
+        .filter(s => s.selected)
+        .map(s => s.catalogId || s.id)
+        .filter(Boolean);
+
+      // First, get AI-researched price preview
       const response = await fetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/catalog/update-realistic-prices`,
         {
@@ -357,17 +402,67 @@ export function ServiceCatalogTab() {
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${publicAnonKey}`,
-          }
+          },
+          body: JSON.stringify({
+            confirm: false,
+            selectedServices: selectedServiceIds.length > 0 ? selectedServiceIds : undefined
+          })
         }
       );
 
       if (response.ok) {
         const data = await response.json();
-        toast.success(`💰 Successfully updated ${data.stats.updated} service prices!`, {
-          description: `${data.stats.updated} updated, ${data.stats.skipped} skipped`,
+        setPricePreview(data);
+        setShowPriceModal(true);
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        toast.error(`Failed to research prices: ${errorData.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error researching prices:', error);
+      toast.error('Failed to research prices. Check console for details.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleConfirmPriceUpdate = async () => {
+    try {
+      setSaving(true);
+      
+      // Get selected services from preview
+      const selectedServices = pricePreview.services
+        ?.filter((s: any) => s.selected !== false)
+        .map((s: any) => ({
+          serviceId: s.serviceId,
+          serviceName: s.serviceName,
+          currentPrice: s.currentPrice,
+          newPrice: s.suggestedPrice
+        })) || [];
+
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/catalog/update-realistic-prices`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${publicAnonKey}`,
+          },
+          body: JSON.stringify({
+            confirm: true,
+            priceUpdates: selectedServices
+          })
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        toast.success(`💰 Successfully updated ${data.stats?.updated || 0} service prices!`, {
+          description: `${data.stats?.updated || 0} updated, ${data.stats?.skipped || 0} skipped`,
           duration: 5000
         });
         
+        setShowPriceModal(false);
         await loadServices();
       } else {
         const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
@@ -1024,6 +1119,29 @@ export function ServiceCatalogTab() {
           );
         })}
       </div>
+
+      {/* Confirmation Modals */}
+      {showSeedModal && seedPreview && (
+        <ServiceCatalogConfirmationModal
+          isOpen={showSeedModal}
+          onClose={() => setShowSeedModal(false)}
+          onConfirm={handleConfirmSeed}
+          mode="seed"
+          data={seedPreview}
+          isLoading={saving}
+        />
+      )}
+
+      {showPriceModal && pricePreview && (
+        <ServiceCatalogConfirmationModal
+          isOpen={showPriceModal}
+          onClose={() => setShowPriceModal(false)}
+          onConfirm={handleConfirmPriceUpdate}
+          mode="price_update"
+          data={pricePreview}
+          isLoading={saving}
+        />
+      )}
     </div>
   );
 }

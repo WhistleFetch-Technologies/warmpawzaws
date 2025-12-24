@@ -107,6 +107,64 @@ export class SupportTicketsRepository {
   }
 
   /**
+   * Find ticket by ticket_id (alias for getTicketById)
+   */
+  async findByTicketId(ticketId: string): Promise<SupportTicket | null> {
+    return this.getTicketById(ticketId);
+  }
+
+  /**
+   * Find tickets with filters
+   */
+  async findTickets(filters?: {
+    userId?: string;
+    customerId?: string;
+    vendorId?: string;
+    status?: string;
+    category?: string;
+    priority?: string;
+  }): Promise<SupportTicket[]> {
+    try {
+      let query = this.client
+        .from('support_tickets')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (filters?.userId) {
+        query = query.or(`customer_id.eq.${filters.userId},vendor_id.eq.${filters.userId},staff_id.eq.${filters.userId},user_id.eq.${filters.userId}`);
+      }
+      if (filters?.customerId) {
+        query = query.eq('customer_id', filters.customerId);
+      }
+      if (filters?.vendorId) {
+        query = query.eq('vendor_id', filters.vendorId);
+      }
+      if (filters?.status) {
+        query = query.eq('status', filters.status);
+      }
+      if (filters?.category) {
+        query = query.eq('category', filters.category);
+      }
+      if (filters?.priority) {
+        query = query.eq('priority', filters.priority);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        console.error('Error fetching tickets:', error);
+        return [];
+      }
+
+      return (data || []).map(this.mapTicketFromDb);
+    } catch (error) {
+      console.error('Error in findTickets:', error);
+      return [];
+    }
+  }
+
+  /**
    * Get tickets for a user
    */
   async getUserTickets(userId: string, status?: string): Promise<SupportTicket[]> {

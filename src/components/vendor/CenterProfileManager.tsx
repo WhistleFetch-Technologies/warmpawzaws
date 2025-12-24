@@ -172,7 +172,7 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
 
       const allPhotos = [...profile.photos, ...uploadedPhotoUrls];
 
-      // 2. Save facility data
+      // 2. Save facility data (including centerName to update vendor business_name)
       const facilityRes = await fetch(
         `${API_BASE}/vendor/facility/${vendorId}`,
         {
@@ -182,6 +182,7 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
+            centerName: profile.centerName, // ✅ FIX: Include centerName to update vendor business_name
             description: profile.description,
             address: profile.address,
             operatingHours: generateOperatingHoursText(profile.operatingHours),

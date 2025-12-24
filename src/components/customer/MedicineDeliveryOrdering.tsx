@@ -69,7 +69,11 @@ export function MedicineDeliveryOrdering({ customerId, petId, onBack, onSuccess 
               prescriptionUrl = "https://mock.url/prescription.jpg";
           }
 
-          // 2. Create Order
+          // 2. Create Order (✅ SQL: Use SQL-only endpoint)
+          // First, get pharmacy vendor ID (would need pharmacy selection in real flow)
+          // For now, use a default or get from context
+          const pharmacyVendorId = 'default_pharmacy'; // TODO: Get from pharmacy selection
+          
           const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/integrated-services/medicine/order`, {
               method: 'POST',
               headers: {
@@ -79,9 +83,17 @@ export function MedicineDeliveryOrdering({ customerId, petId, onBack, onSuccess 
               body: JSON.stringify({
                   customerId,
                   petId,
-                  items: cart,
+                  vendorId: pharmacyVendorId, // ✅ FIX: Add required vendorId
+                  items: cart.map(item => ({
+                      id: item.id,
+                      name: item.name,
+                      quantity: item.qty || item.quantity || 1,
+                      price: item.price,
+                      prescriptionRequired: item.prescriptionRequired || false
+                  })),
                   prescriptionUrl,
-                  deliveryType: 'standard' // or express
+                  deliveryType: 'standard', // or express
+                  address: {} // Would come from customer profile
               })
           });
 

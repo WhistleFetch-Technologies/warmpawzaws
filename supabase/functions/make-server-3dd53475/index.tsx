@@ -6,6 +6,9 @@ import { getRegionsRepository } from '../../lib/repositories/regions.ts';
 import { sendSuccess, sendError } from './response-utils.ts';
 import { safeGetByPrefix } from './kv-safe.tsx';
 import { criticalActionGuard } from './critical-action-guard.tsx';
+// ✅ MIGRATED: Removed KV import - using SQL repositories
+import { getUIConfigRepository } from '../../lib/repositories/ui-config.ts';
+import { getPromotionsRepository } from '../../lib/repositories/promotions.ts';
 
 // Import all registration functions
 import { registerUniversalDiscovery } from './universal-problem-discovery.tsx';
@@ -31,13 +34,18 @@ import { registerVendorServicesSQLEndpoints } from './vendor-services-sql-endpoi
 import { registerVendorCatalogAPIV2 } from './vendor-catalog-api-v2.tsx';
 import { customServiceEndpoints } from './custom-service-endpoints-refactored.tsx';
 import { vendorScheduleV2Endpoints } from './vendor-schedule-v2.tsx';
-import { registerAdminVendorRoutes } from './admin-vendor-routes.tsx';
+// ⚠️ TEMPORARILY DISABLED: import { registerAdminVendorRoutes } from './admin-vendor-routes.tsx'; // ❌ KV-based, will be migrated
+import { adminPayoutEndpoints } from './admin-payout-endpoints.tsx';
+import { adminOperationsDashboard } from './admin-operations-dashboard.tsx';
+import { adminEnterpriseEndpoints } from './admin-enterprise-endpoints.tsx';
 import { adminVendorEndpoints } from './admin-vendor-endpoints-refactored.tsx';
 import { registerAdminCatalogEndpoints } from './admin-catalog-endpoints.tsx';
+import { registerAdminServiceCatalogSQL, generateComprehensiveServiceCatalog } from './admin-service-catalog-sql.tsx';
 import { adminIntegrationEndpoints } from './admin-integration-endpoints.tsx';
 import { registerVendorSettingsRulesEndpoints } from './vendor-settings-rules-endpoints.tsx';
 import { registerVideoCallEndpoints } from './video-call-endpoints.tsx';
 import { regionEndpoints } from './region-endpoints.tsx';
+import { registerServiceCatalogSeeding } from './service-catalog-seeding.tsx';
 import { registerProblemGridSpecializationSystem } from './problem-grid-specialization-system.tsx';
 import { registerCustomerServices } from './customer-services.tsx';
 import { registerCustomerRoutes } from './customer-routes-refactored.tsx';
@@ -46,7 +54,7 @@ import { registerAICRMRoutes } from './ai-crm-routes.tsx';
 import { registerAIChatbotRoutes } from './ai-chatbot-routes.tsx';
 import { paymentEndpoints } from '../server/payment-endpoints-fixed.tsx';
 import { marketplacePaymentEndpoints } from './marketplace-payment-endpoints.tsx';
-import { tierUpgradeEndpoints } from '../server/tier-upgrade-endpoints.tsx'; // ✅ NEW: SQL-only tier upgrade
+import { tierUpgradeEndpoints } from '../server/tier-upgrade-endpoints.tsx'; // ✅ SQL-only tier upgrade (already migrated)
 import { registerChatEndpoints } from './chat-endpoints.tsx';
 import { registerSubscriptionEndpoints } from './subscription-endpoints.tsx';
 import { registerVideoConsultationEndpoints } from './video-consultation-endpoints.tsx';
@@ -66,21 +74,26 @@ import { registerVendorMetricsEnhancement } from './vendor-metrics-enhancement.t
 import { bookingEndpoints } from './booking-endpoints-refactored.tsx';
 import { registerCafeFeatures } from './cafe-features.tsx';
 import { registerCapabilityEndpoints } from './capability-endpoints.tsx';
-import { registerResortInventory } from './resort-inventory.tsx';
+import { registerResortInventory } from './resort-inventory-sql.tsx'; // ✅ MIGRATED: SQL-only version
 import marketingRoutesV2 from './marketing-routes-v2.tsx';
-import { registerMarketplaceProducts } from './marketplace-products.tsx';
+// import { registerMarketingEndpoints } from './marketing-endpoints.tsx'; // Routes registered directly below
+// ✅ MIGRATED: Using SQL-only marketplace products (Phase 1, Task 1.1)
+import { registerMarketplaceProductsSQL } from './marketplace-products-sql.tsx';
+// ❌ DEPRECATED: import { registerMarketplaceProducts } from './marketplace-products.tsx';
 import { registerUniversalServiceDiscovery } from './universal-service-discovery.tsx';
 import { registerUniversalOTPSystem } from './universal-otp-system.tsx';
 import { registerHomeServiceBookingFlow } from './home-service-booking-flow.tsx';
 import { registerBookingLifecycleManagement } from './booking-lifecycle-management.tsx';
 import { bookingLifecycleCompleteEndpoints } from './booking-lifecycle-complete-refactored.tsx';
 import { registerPayoutCronJob } from './payout-cron-job.tsx';
+import automatedPayoutProcessingSQL from './automated-payout-processing-sql.tsx'; // ✅ MIGRATED: SQL-only payout processing
 import { registerSmsOtpService } from './sms-otp-service.tsx';
 import { registerRazorpayRefundProcessor } from './razorpay-refund-processor.tsx';
 import { registerGooglePlacesService } from './google-places-service.tsx';
 import { registerSettlementAutomation } from './settlement-automation-sql.tsx';
 import { registerS3AutoUploader } from './s3-auto-uploader.tsx';
 import { registerSmsEventNotifications } from './sms-event-notifications.tsx';
+import { registerGPSTrackingEndpointsSQL } from './gps-tracking-sql.tsx'; // ✅ MIGRATED: SQL-only GPS tracking
 import { registerShiprocketIntegration } from './shiprocket-integration.tsx';
 import { registerDelhiveryIntegration } from './delhivery-integration.tsx';
 import { registerLogisticsRoutingEndpoints } from './logistics-routing-engine.tsx';
@@ -93,10 +106,12 @@ import { transactionMonitoringEndpoints } from './transaction-monitoring-endpoin
 import enhancedServicePublishing from './enhanced-service-publishing.tsx';
 import enhancedStaffAvailability from './enhanced-staff-availability-routes.tsx';
 import { pharmacyPrescriptionEndpoints } from './pharmacy-prescription-endpoints.tsx';
+import { pharmacyPrescriptionEndpointsSQL } from './pharmacy-prescription-endpoints-sql.tsx'; // ✅ MIGRATED: SQL-only pharmacy prescription endpoints
 import vetSpecializedServices from './vet-specialized-services.tsx'; // ✅ FIX: Import vet specialized services (ambulance, diagnostics, pharmacy)
 import staffCrudEndpoints from './staff-crud-endpoints-refactored.tsx'; // ✅ REFACTORED: SQL-only staff CRUD endpoints
-import staffAuthEndpoints from './staff-auth-endpoints.tsx'; // ✅ FIX: Staff authentication endpoints
+import staffAuthEndpoints from './staff-auth-endpoints-sql.tsx'; // ✅ MIGRATED: SQL-only staff authentication endpoints
 import { homeSampleCollectionEndpoints } from './home-sample-collection-endpoints.tsx';
+import { homeSampleCollectionEndpointsSQL } from './home-sample-collection-endpoints-sql.tsx'; // ✅ MIGRATED: SQL-only home sample collection endpoints
 import { holidayPackageEndpoints } from './holiday-package-endpoints.tsx';
 import { smsNotificationServiceEnhanced } from './sms-notification-service-enhanced.tsx';
 import { tierSystemIntegration } from './tier-system-integration.tsx';
@@ -111,7 +126,9 @@ import trainerProgressTracking from './trainer-progress-tracking.tsx';
 import cafeTableManagement from './cafe-table-management.tsx';
 import { registerInsuranceClaimEndpoints } from './insurance-claim-management.tsx';
 import customerWalletTopup from './customer-wallet-topup.tsx';
-import rewardsLoyaltySystem from './rewards-loyalty-system.tsx';
+import rewardsLoyaltySystemSQL from './rewards-loyalty-system-sql.tsx';
+import referralSystemSQL from './referral-system-sql.tsx';
+import groomingBookingAPIsSQL from './grooming-booking-apis-sql.tsx';
 import portfolioEndpoints from './portfolio-endpoints.tsx';
 import cctvAccessEndpoints from './cctv-access-endpoints.tsx';
 import controlledSubstancesEndpoints from './controlled-substances-endpoints.tsx';
@@ -123,43 +140,55 @@ import donationManagementEndpoints from './donation-management-endpoints.tsx';
 import eventManagementEndpoints from './event-management-endpoints.tsx';
 import patientMonitoringEndpoints from "./patient-monitoring-endpoints.tsx";
 import customerEcommerceEndpoints from "./customer-ecommerce-endpoints.tsx";
+import customerEcommerceEndpointsSQL from "./customer-ecommerce-endpoints-sql.tsx";
 import additionalCapabilitiesEndpoints from "./additional-capabilities-endpoints.tsx";
 import { registerP0Features } from './p0-features-endpoints.tsx';
 import missingCrudEndpoints from './missing-crud-endpoints.tsx';
 import facilityEndpoints from './facility-endpoints.tsx';
 import { packageEndpoints } from './package-endpoints.tsx';
+import { packageEndpointsSQL } from './package-endpoints-sql.tsx'; // ✅ MIGRATED: SQL-only package endpoints
 import { registerContentManagementEndpoints } from './content-management-endpoints.tsx';
-import { registerMatingDatingService } from './mating-dating-service.tsx';
+import { registerBannerEndpointsSQL } from './banner-endpoints-sql.tsx';
+import { registerCouponEndpointsSQL } from './coupon-endpoints-sql.tsx';
+import { registerSpotlightEndpointsSQL } from './spotlight-endpoints-sql.tsx';
+import { registerLoyaltyEndpointsSQL } from './loyalty-endpoints-sql.tsx';
+// Legacy KV-based service (deprecated - use SQL version)
+// import { registerMatingDatingService } from './mating-dating-service.tsx';
 import { registerPetSuggestionSystem } from './pet-suggestion-system.tsx';
-import { registerPlatformSubscriptionTiers } from './platform-subscription-tiers.tsx';
+// Legacy KV-based subscription tiers (deprecated - use SQL version)
+// import { registerPlatformSubscriptionTiers } from './platform-subscription-tiers.tsx';
 import { registerDatingChatEndpoints } from './dating-chat-endpoints.tsx';
 import { registerAWSChimeChatEndpoints } from './aws-chime-chat-integration.tsx';
 import { registerAWSChimeVideoEndpoints } from './aws-chime-video-integration.tsx';
-import { promotionEndpoints } from './promotion-endpoints.tsx';
+// ✅ MIGRATED: Using SQL-only promotion endpoints (Phase 1, Task 1.3)
+import { promotionEndpointsSQL } from './promotion-endpoints-sql.tsx';
+// ❌ DEPRECATED: import { promotionEndpoints } from './promotion-endpoints.tsx';
 
 import { ambulanceServiceEndpoints } from './ambulance-service-endpoints.tsx';
 import { diagnosticsCenterEndpoints } from './diagnostics-center-endpoints.tsx';
 import specializedVendorConfigEndpoints from './specialized-vendor-config-endpoints.tsx'; // ✅ NEW: Specialized vendor configurations
-import { backwardsCompatibleEndpoints } from './backwards-compatible-endpoints.tsx'; // ✅ NEW: Backwards compatible routes for UI
+import { backwardsCompatibleEndpoints } from './backwards-compatible-endpoints-sql.tsx'; // ✅ MIGRATED: SQL-only version // ✅ NEW: Backwards compatible routes for UI
 import { razorpayPaymentEndpoints } from './razorpay-payment-endpoints.tsx';
 import { specializedServicesEndpoints } from './specialized-services-endpoints.tsx';
 import { insuranceEndpoints } from './insurance-endpoints.tsx';
-import { trainingProgressEndpoints } from './training-progress-endpoints.tsx';
+import { trainingProgressEndpoints } from './training-progress-endpoints-sql.tsx'; // ✅ MIGRATED: SQL-only version
 import { instantTeleEndpoints } from './instant-tele-endpoints.tsx';
-import { petProfilePublishingEndpoints } from './pet-profile-publishing-endpoints.tsx';
-import { deliveryIntegrationEndpoints } from './delivery-integration-endpoints.tsx';
-import { resortPreCheckEndpoints } from './resort-precheck-endpoints.tsx';
-import { notificationTemplateSystem } from './notification-template-system.tsx';
-import { bankVerificationEndpoints } from './bank-verification-endpoints.tsx';
+import { petProfilePublishingEndpoints } from './pet-profile-publishing-endpoints-sql.tsx'; // ✅ MIGRATED: SQL-only version
+import { deliveryIntegrationEndpoints } from './delivery-integration-endpoints-sql.tsx'; // ✅ MIGRATED: SQL-only version
+import { resortPreCheckEndpoints } from './resort-precheck-endpoints-sql.tsx'; // ✅ MIGRATED: SQL-only version
+import { notificationTemplateSystem } from './notification-template-system-sql.tsx'; // ✅ MIGRATED: SQL-only version
+import { bankVerificationEndpoints } from './bank-verification-endpoints-sql.tsx'; // ✅ MIGRATED: SQL-only bank verification
 // Tier upgrade endpoints imported from server directory
 import { settlementScheduleEndpoints } from './settlement-schedule-endpoints.tsx';
 import { gstRuleEngineEndpoints } from './gst-rule-engine.tsx';
-import { gstConfigurationEndpoints } from './gst-configuration-endpoints.tsx';
+// ✅ MIGRATED: Using SQL-only GST configuration endpoints (Phase 1, Task 1.2)
+import { gstConfigurationEndpointsSQL } from './gst-configuration-endpoints-sql.tsx';
+// ❌ DEPRECATED: import { gstConfigurationEndpoints } from './gst-configuration-endpoints.tsx';
 import { cancellationPolicyEndpoints } from './cancellation-policy-endpoints.tsx';
 import { comprehensiveGapFixes } from './gap-fixes-comprehensive.tsx';
-import { analyticsDashboardEndpoints } from './analytics-dashboard-endpoints.tsx';
-import { performanceMonitoringEndpoints } from './performance-monitoring-endpoints.tsx';
-import { systemOptimizationEndpoints } from './system-optimization-endpoints.tsx';
+import { analyticsDashboardEndpoints } from './analytics-dashboard-endpoints-sql.tsx'; // ✅ MIGRATED: SQL-only version
+import { performanceMonitoringEndpoints } from './performance-monitoring-endpoints-sql.tsx'; // ✅ MIGRATED: SQL-only version
+import { systemOptimizationEndpoints } from './system-optimization-endpoints-sql.tsx'; // ✅ MIGRATED: SQL-only version
 import { elasticsearchCoreEndpoints } from './elasticsearch-core.tsx';
 import { advancedSearchAPI } from './advanced-search-api.tsx';
 import { searchAnalyticsAPI } from './search-analytics-api.tsx';
@@ -177,7 +206,9 @@ import { independentVendorSystemEndpoints } from './independent-vendor-system.ts
 import { unifiedServiceDiscoveryEndpoints } from './unified-service-discovery.tsx';
 import { logisticsPartnerIntegrationEndpoints } from './logistics-partner-integration.tsx';
 import { automatedBankVerificationEndpoints } from './automated-bank-verification.tsx';
-import { marketplaceSettlementAutomationEndpoints } from './marketplace-settlement-automation.tsx';
+// ✅ MIGRATED: Using SQL-only marketplace settlement automation (Phase 1, Task 1.4)
+import { marketplaceSettlementAutomationEndpointsSQL } from './marketplace-settlement-automation-sql.tsx';
+// ❌ DEPRECATED: import { marketplaceSettlementAutomationEndpoints } from './marketplace-settlement-automation.tsx';
 import { tierCommissionIntegrationEndpoints } from './tier-commission-integration.tsx';
 import { reschedulingPoliciesEndpoints } from './rescheduling-policies.tsx';
 import { servicesByProblemEndpoints } from './services-by-problem.tsx';
@@ -196,10 +227,14 @@ import { settlementTierSystemEndpoints } from './settlement-tier-system-enhanced
 import { integratedServicesManagerEndpoints } from './integrated-services-manager.tsx';
 
 import { tierSystemEndpoints } from './tier-system.tsx';
+import { tierSystemEndpoints as tierSystemEndpointsSQL } from './tier-system-sql.tsx';
 import { razorpayMarketplaceSettlement } from './razorpay-marketplace-settlement.tsx';
 import appointmentDetailEndpoints from './appointment-detail-endpoints.tsx'; // ✅ FIX: Prescription upload endpoints
+import prescriptionEndpoints from './prescription-endpoints.tsx'; // ✅ MIGRATED: SQL-only prescription endpoints
+import vetBookingEndpoints from './vet-booking-endpoints.tsx'; // ✅ MIGRATED: SQL-only vet booking endpoints
 import { registerStorageEndpoints } from './storage-handler.tsx'; // ✅ FIX: Storage upload endpoints
 import { staffServiceEndpoints } from './staff-service-endpoints.tsx'; // ✅ FIX: Staff service management endpoints
+import { staffServiceEndpointsSQL } from './staff-service-endpoints-sql.tsx'; // ✅ MIGRATED: SQL-only staff service endpoints
 import { soloProviderEndpoints } from './solo-provider-endpoints-refactored.tsx'; // ✅ REFACTORED: SQL-only solo provider endpoints
 import { registerMedicalAISummaryEndpoints } from './medical-ai-summary-endpoints.tsx'; // ✅ NEW: Medical AI summary endpoints
 import walletEndpoints from './wallet-endpoints-refactored.tsx'; // ✅ REFACTORED: SQL-only wallet endpoints
@@ -207,7 +242,13 @@ import walletEndpoints from './wallet-endpoints-refactored.tsx'; // ✅ REFACTOR
 const app = new Hono();
 
 // Global Middleware
-app.use('*', cors());
+app.use('*', cors({
+  origin: '*',
+  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowHeaders: ['Content-Type', 'Authorization'],
+  exposeHeaders: ['Content-Length'],
+  maxAge: 86400,
+}));
 app.use('*', logger(console.log));
 
 // ------------------------------------------------------------------
@@ -465,6 +506,82 @@ app.use('/make-server-3dd53475/admin/onboarding-fields/sync', criticalActionGuar
 registerUniversalDiscovery(app); // ✅ MIGRATED TO SQL
 registerUniversalCustomerSearch(app);
 registerCustomerBookingHistory(app);
+
+// ✅ Register marketing endpoints (promotions, UI config) - register routes directly
+console.log('✅ Registering Marketing Endpoints (promotions, UI config)...');
+console.log('📍 [DEBUG] About to register config/ui/dashboard route');
+// Register UI config dashboard endpoint
+app.get("/make-server-3dd53475/config/ui/dashboard", async (c) => {
+  console.log('🎯 [DEBUG] config/ui/dashboard route HANDLER called!');
+  try {
+    const roleId = c.req.query("roleId");
+    const DEFAULT_UI_CONFIG: any = {
+      'veterinarian': [
+        { id: 'tele_consultation', label: 'Tele Consultation', icon: 'Video', enabled: true, serviceStyle: 'tele' },
+        { id: 'clinic_visit', label: 'Clinic Visit', icon: 'Building2', enabled: true, serviceStyle: 'at_center' },
+        { id: 'home_visit', label: 'Home Visit', icon: 'Home', enabled: true, serviceStyle: 'at_home' },
+        { id: 'lab_collection', label: 'Lab Tests', icon: 'FlaskConical', enabled: true, serviceStyle: 'lab' },
+        { id: 'medicine_delivery', label: 'Pharmacy', icon: 'Pill', enabled: true, serviceStyle: 'pharmacy' }
+      ],
+      'groomer': [
+        { id: 'grooming_center', label: 'Visit Center', icon: 'Scissors', enabled: true, serviceStyle: 'at_center' },
+        { id: 'grooming_home', label: 'Home Grooming', icon: 'Home', enabled: true, serviceStyle: 'at_home' }
+      ]
+    };
+    // ✅ SQL: Get UI config from database
+    const uiConfigRepo = getUIConfigRepository();
+    const storedConfig = await uiConfigRepo.get('dashboard_buttons') || DEFAULT_UI_CONFIG;
+    
+    if (roleId) {
+      return c.json({ success: true, config: storedConfig[roleId] || [] });
+    }
+    
+    return c.json({ success: true, config: storedConfig });
+  } catch (error) {
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+console.log('📍 [DEBUG] About to register customer/marketing/promotions route');
+// Register customer promotions endpoint
+app.get("/make-server-3dd53475/customer/marketing/promotions", async (c) => {
+  console.log('🎯 [DEBUG] customer/marketing/promotions route HANDLER called!');
+  try {
+    const roleId = c.req.query("roleId");
+    const serviceStyle = c.req.query("serviceStyle");
+    // ✅ SQL: Get promotions from database
+    const promotionsRepo = getPromotionsRepository();
+    const allPromotions = await promotionsRepo.findActive({ 
+      roleId: roleId || undefined,
+      serviceStyle: serviceStyle || undefined 
+    });
+    
+    // Transform to frontend-expected format
+    const transformedPromotions = allPromotions.map((promo: any) => ({
+      id: promo.id,
+      title: promo.name, // Backend uses 'name', frontend expects 'title'
+      name: promo.name,
+      description: promo.description,
+      discountPercentage: promo.discount_type === 'percentage' ? promo.discount_value : undefined,
+      discountAmount: promo.discount_type === 'fixed' ? promo.discount_value : undefined,
+      discountType: promo.discount_type,
+      discountValue: promo.discount_value,
+      maxDiscountAmount: promo.max_discount_amount,
+      minOrderAmount: promo.min_order_amount || 0,
+      startDate: promo.start_date,
+      endDate: promo.end_date,
+      validFrom: promo.start_date,
+      validUntil: promo.end_date,
+      applicableServices: promo.applicable_services || [],
+      applicableRoles: promo.applicable_roles || [],
+      priority: promo.priority || 0,
+      isActive: promo.is_active
+    }));
+    
+    return c.json({ success: true, promotions: transformedPromotions });
+  } catch (error) {
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
 // ✅ NEW: SQL-based discovery endpoints
 if (registerDiscoverySQLEndpoints) {
   registerDiscoverySQLEndpoints(app);
@@ -477,9 +594,9 @@ notificationEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL r
 reviewEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 analyticsEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 
-// ✅ NEW: Advanced Search Engine with Fuse.js
+// ✅ NEW: Advanced Search Engine with Fuse.js (SQL-only)
 console.log('🔍 Registering Advanced Search Engine...');
-enhancedSearchEngineEndpoints(app, kv);
+enhancedSearchEngineEndpoints(app);
 
 // 2. Vendor Specific Routes (Dashboard, Onboarding, Config, Services)
 // These must be registered BEFORE customer-routes because customer-routes
@@ -515,13 +632,22 @@ if (staffCrudEndpoints && typeof staffCrudEndpoints === 'object') {
 }
 
 // 3. Admin Routes
-registerAdminVendorRoutes(app);
+// ⚠️ TEMPORARILY DISABLED: registerAdminVendorRoutes(app); // ❌ KV-based, duplicate of adminVendorEndpoints
 adminVendorEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
+adminPayoutEndpoints(app); // ✅ MIGRATED: SQL-only payout management
+adminOperationsDashboard(app); // ✅ MIGRATED: SQL-only operations dashboard
+adminEnterpriseEndpoints(app); // ✅ NEW: SQL-only enterprise revenue endpoints
 registerAdminCatalogEndpoints(app);
+// ✅ NEW: SQL-based service catalog with AI price research  
+registerAdminServiceCatalogSQL(app);
 adminIntegrationEndpoints(app);
 registerVendorSettingsRulesEndpoints(app);
 registerVideoCallEndpoints(app);
 regionEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
+
+// ✅ PHASE 1: Service Catalog Seeding Endpoints
+console.log('✅ Registering Service Catalog Seeding Endpoints...');
+registerServiceCatalogSeeding(app);
 registerProblemGridSpecializationSystem(app);
 
 // 4. Staff Auth Routes (MUST BE BEFORE CUSTOMER ROUTES to avoid shadowing)
@@ -535,6 +661,9 @@ if (staffAuthEndpoints && typeof staffAuthEndpoints === 'object') {
 // MUST BE REGISTERED AFTER STAFF ROUTES to avoid shadowing staff routes
 registerCustomerServices(app); // Register specific routes BEFORE wildcard
 registerCustomerRoutes(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
+// ✅ NEW: Payment Cards Endpoints
+import { registerPaymentCardsEndpoints } from './payment-cards-endpoints.tsx';
+registerPaymentCardsEndpoints(app);
 // ✅ REFACTORED: Register SQL-only wallet endpoints
 if (walletEndpoints && typeof walletEndpoints === 'object') {
   console.log('✅ Registering Wallet Endpoints (SQL-only)...');
@@ -543,7 +672,7 @@ if (walletEndpoints && typeof walletEndpoints === 'object') {
   console.warn('⚠️ Wallet Endpoints module undefined, skipping');
 }
 registerAuthEndpoints(app);
-registerAICRMRoutes(app, kv);
+registerAICRMRoutes(app); // ✅ MIGRATED: Removed kv parameter - uses SQL
 registerAIChatbotRoutes(app);
 paymentEndpoints(app); // ✅ FIXED: SQL-only with all financial fixes, removed kv parameter
 // ✅ NEW: SQL-only payment endpoints (alternative)
@@ -587,22 +716,78 @@ if (marketingRoutesV2 && typeof marketingRoutesV2 === 'object') {
   console.warn('⚠️ Marketing routes module is undefined or invalid, skipping registration');
 }
 
-registerMarketplaceProducts(app);
+// ✅ MIGRATED: SQL-only marketplace products (Phase 1, Task 1.1)
+registerMarketplaceProductsSQL(app);
 // ✅ NEW: SQL-only e-commerce endpoints (with GST and inventory fixes)
 import { ecommerceEndpointsSQL } from './ecommerce-endpoints-sql.tsx';
 ecommerceEndpointsSQL(app);
+
+// ✅ MIGRATED: SQL-only ecommerce routes (Phase 1, Task 1.5)
+import { ecommerceRoutesSQL } from './ecommerce-routes-sql.tsx';
+ecommerceRoutesSQL(app);
+
+// ✅ NEW: Customer ecommerce endpoints (Cart, Checkout, Wishlist)
+import customerEcommerceEndpoints from './customer-ecommerce-endpoints-sql.tsx';
+app.route('/make-server-3dd53475', customerEcommerceEndpoints);
+
+// ✅ NEW: Invoice endpoints (Phase 2, Task 2.1)
+import { invoiceEndpointsSQL } from './invoice-endpoints-sql.tsx';
+invoiceEndpointsSQL(app);
+
+// ✅ NEW: Advertising endpoints (Phase 2, Task 2.2)
+import { advertisingEndpointsSQL } from './advertising-endpoints-sql.tsx';
+advertisingEndpointsSQL(app);
+
+// ✅ NEW: Profit margin endpoints (Phase 2, Task 2.3)
+import { profitMarginEndpointsSQL } from './profit-margin-endpoints-sql.tsx';
+profitMarginEndpointsSQL(app);
+
+// ✅ NEW: Seller analytics endpoints (Phase 3, Task 3.1)
+import { sellerAnalyticsEndpointsSQL } from './seller-analytics-endpoints-sql.tsx';
+sellerAnalyticsEndpointsSQL(app);
+
+// ✅ NEW: Ecommerce policies endpoints (Phase 3, Task 3.2)
+import { ecommercePoliciesEndpointsSQL } from './ecommerce-policies-endpoints-sql.tsx';
+ecommercePoliciesEndpointsSQL(app);
+
+// ✅ NEW: Admin ecommerce dashboard endpoints (Phase 3, Task 3.3)
+import { adminEcommerceDashboardEndpointsSQL } from './admin-ecommerce-dashboard-sql.tsx';
+adminEcommerceDashboardEndpointsSQL(app);
+
+// ✅ NEW: Order lifecycle complete endpoints (Phase 4, Task 4.1)
+import { orderLifecycleCompleteEndpointsSQL } from './order-lifecycle-complete-sql.tsx';
+orderLifecycleCompleteEndpointsSQL(app);
+
+// ✅ NEW: Payment & settlement integration endpoints (Phase 4, Task 4.2)
+import { paymentSettlementIntegrationEndpointsSQL } from './payment-settlement-integration-sql.tsx';
+paymentSettlementIntegrationEndpointsSQL(app);
+
+// ✅ NEW: Logistics order integration endpoints (Phase 4, Task 4.3)
+import { logisticsOrderIntegrationEndpointsSQL } from './logistics-order-integration-sql.tsx';
+logisticsOrderIntegrationEndpointsSQL(app);
+
 registerUniversalServiceDiscovery(app);
 registerUniversalOTPSystem(app);
 registerHomeServiceBookingFlow(app);
 registerBookingLifecycleManagement(app);
 bookingLifecycleCompleteEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 registerPayoutCronJob(app);
+// ✅ MIGRATED: Automated Payout Processing Endpoints (SQL-only)
+if (automatedPayoutProcessingSQL && typeof automatedPayoutProcessingSQL === 'object') {
+  console.log('✅ Registering Automated Payout Processing Endpoints (SQL)...');
+  app.route('/make-server-3dd53475', automatedPayoutProcessingSQL);
+} else {
+  console.warn('⚠️ Automated Payout Processing module undefined, skipping');
+}
 registerSmsOtpService(app);
 registerRazorpayRefundProcessor(app);
 registerGooglePlacesService(app);
 registerSettlementAutomation(app);
 registerS3AutoUploader(app);
 const smsNotifications = registerSmsEventNotifications(app);
+// ✅ MIGRATED: GPS Tracking Endpoints (SQL-only)
+console.log('✅ Registering GPS Tracking Endpoints (SQL)...');
+registerGPSTrackingEndpointsSQL(app);
 
 // ✅ Payment & Logistics Integrations
 registerShiprocketIntegration(app);
@@ -621,17 +806,40 @@ transactionMonitoringEndpoints(app);
 console.log('✅ Registering Content Management Endpoints...');
 registerContentManagementEndpoints(app);
 
-// ✅ Mating & Dating Service
-console.log('✅ Registering Mating & Dating Service Endpoints...');
-registerMatingDatingService(app);
+// ✅ NEW: SQL-only Banner Endpoints (replaces KV-based banners in content-management)
+console.log('✅ Registering Banner Endpoints (SQL-only)...');
+registerBannerEndpointsSQL(app);
+
+// ✅ NEW: SQL-only Coupon Endpoints (replaces KV-based coupons in marketing-routes-v2 and grooming-booking-apis)
+console.log('✅ Registering Coupon Endpoints (SQL-only)...');
+registerCouponEndpointsSQL(app);
+
+// ✅ NEW: SQL-only Spotlight Offers Endpoints (replaces hardcoded spotlight offers in customer app)
+console.log('✅ Registering Spotlight Offers Endpoints (SQL-only)...');
+registerSpotlightEndpointsSQL(app);
+
+// ✅ NEW: SQL-only Loyalty & Rewards Endpoints (replaces KV-based loyalty in rewards-loyalty-system)
+console.log('✅ Registering Loyalty & Rewards Endpoints (SQL-only)...');
+registerLoyaltyEndpointsSQL(app);
+
+// ✅ Mating & Dating Service (SQL-only)
+console.log('✅ Registering Mating & Dating Service Endpoints (SQL-only)...');
+import { registerMatingDatingServiceSQL } from './mating-dating-service-sql.tsx';
+registerMatingDatingServiceSQL(app);
+
+// ✅ Dating Chat Service (SQL-only)
+console.log('✅ Registering Dating Chat Service Endpoints (SQL-only)...');
+import { registerDatingChatSQL } from './dating-chat-sql.tsx';
+registerDatingChatSQL(app);
 
 // ✅ Pet Suggestion System
 console.log('✅ Registering Pet Suggestion System Endpoints...');
 registerPetSuggestionSystem(app);
 
-// ✅ Platform Subscription Tiers (includes subscription access check)
-console.log('✅ Registering Platform Subscription Tiers Endpoints...');
-registerPlatformSubscriptionTiers(app);
+// ✅ Platform Subscription Tiers (SQL-only with role management)
+console.log('✅ Registering Platform Subscription Tiers Endpoints (SQL-only)...');
+import { registerSubscriptionTiersSQL } from './subscription-tiers-sql.tsx';
+registerSubscriptionTiersSQL(app);
 
 // ✅ AWS Chime Integration (Video & Chat)
 console.log('✅ Registering AWS Chime Video Endpoints...');
@@ -643,109 +851,110 @@ registerAWSChimeChatEndpoints(app);
 console.log('✅ Registering Dating Chat Endpoints...');
 registerDatingChatEndpoints(app);
 
-// ✅ Promotion Endpoints
-console.log('✅ Registering Promotion Endpoints...');
-promotionEndpoints(app);
+// ✅ MIGRATED: SQL-only promotion endpoints (Phase 1, Task 1.3)
+console.log('✅ Registering Promotion Endpoints (SQL-only)...');
+promotionEndpointsSQL(app);
 
 // ✅ NEW: Phase 2 & 3 Endpoints
+// ✅ MIGRATED: Removed kv parameters - all endpoints should use SQL
 if (ambulanceServiceEndpoints && typeof ambulanceServiceEndpoints === 'function') {
   console.log('✅ Registering Ambulance Service Endpoints...');
-  ambulanceServiceEndpoints(app, kv);
+  ambulanceServiceEndpoints(app);
 } else {
   console.warn('⚠️ Ambulance Service Endpoints module undefined, skipping');
 }
 
 if (diagnosticsCenterEndpoints && typeof diagnosticsCenterEndpoints === 'function') {
   console.log('✅ Registering Diagnostics Center Endpoints...');
-  diagnosticsCenterEndpoints(app, kv);
+  diagnosticsCenterEndpoints(app);
 } else {
   console.warn('⚠️ Diagnostics Center Endpoints module undefined, skipping');
 }
 
 if (razorpayPaymentEndpoints && typeof razorpayPaymentEndpoints === 'function') {
   console.log('✅ Registering Razorpay Payment Endpoints...');
-  razorpayPaymentEndpoints(app, kv);
+  razorpayPaymentEndpoints(app);
 } else {
   console.warn('⚠️ Razorpay Payment Endpoints module undefined, skipping');
 }
 
 if (specializedServicesEndpoints && typeof specializedServicesEndpoints === 'function') {
   console.log('✅ Registering Specialized Services Endpoints...');
-  specializedServicesEndpoints(app, kv);
+  specializedServicesEndpoints(app);
 } else {
   console.warn('⚠️ Specialized Services Endpoints module undefined, skipping');
 }
 
 // ✅ NEW: Specialized Vendor Configuration Endpoints
 if (specializedVendorConfigEndpoints && typeof specializedVendorConfigEndpoints === 'function') {
-  console.log('✅ Registering Specialized Vendor Config Endpoints...');
-  specializedVendorConfigEndpoints(app, kv);
+  console.log('✅ Registering Specialized Vendor Config Endpoints (SQL)...');
+  specializedVendorConfigEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 } else {
   console.warn('⚠️ Specialized Vendor Config Endpoints module undefined, skipping');
 }
 
 // ✅ NEW: Backwards Compatible Endpoints (UI Compatibility Layer)
 if (backwardsCompatibleEndpoints && typeof backwardsCompatibleEndpoints === 'function') {
-  console.log('🔄 Registering Backwards Compatible Endpoints...');
-  backwardsCompatibleEndpoints(app, kv);
+  console.log('🔄 Registering Backwards Compatible Endpoints (SQL)...');
+  backwardsCompatibleEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 } else {
   console.warn('⚠️ Backwards Compatible Endpoints module undefined, skipping');
 }
 
 if (insuranceEndpoints && typeof insuranceEndpoints === 'function') {
-  console.log('✅ Registering Insurance Endpoints...');
-  insuranceEndpoints(app, kv);
+  console.log('✅ Registering Insurance Endpoints (SQL)...');
+  insuranceEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 } else {
   console.warn('⚠️ Insurance Endpoints module undefined, skipping');
 }
 
 if (trainingProgressEndpoints && typeof trainingProgressEndpoints === 'function') {
-  console.log('✅ Registering Training Progress Endpoints...');
-  trainingProgressEndpoints(app, kv);
+  console.log('✅ Registering Training Progress Endpoints (SQL)...');
+  trainingProgressEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 } else {
   console.warn('⚠️ Training Progress Endpoints module undefined, skipping');
 }
 
-// ✅ NEW: Phase 4 Endpoints
+// ✅ MIGRATED: Phase 4 Endpoints (SQL-only)
 if (instantTeleEndpoints && typeof instantTeleEndpoints === 'function') {
-  console.log('✅ Registering Instant Tele-Consultation Endpoints...');
-  instantTeleEndpoints(app, kv);
+  console.log('✅ Registering Instant Tele-Consultation Endpoints (SQL)...');
+  instantTeleEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 } else {
   console.warn('⚠️ Instant Tele Endpoints module undefined, skipping');
 }
 
 if (petProfilePublishingEndpoints && typeof petProfilePublishingEndpoints === 'function') {
-  console.log('✅ Registering Pet Profile Publishing Endpoints...');
-  petProfilePublishingEndpoints(app, kv);
+  console.log('✅ Registering Pet Profile Publishing Endpoints (SQL)...');
+  petProfilePublishingEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 } else {
   console.warn('⚠️ Pet Profile Publishing Endpoints module undefined, skipping');
 }
 
 if (deliveryIntegrationEndpoints && typeof deliveryIntegrationEndpoints === 'function') {
-  console.log('✅ Registering Delivery Integration Endpoints...');
-  deliveryIntegrationEndpoints(app, kv);
+  console.log('✅ Registering Delivery Integration Endpoints (SQL)...');
+  deliveryIntegrationEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 } else {
   console.warn('⚠️ Delivery Integration Endpoints module undefined, skipping');
 }
 
 if (resortPreCheckEndpoints && typeof resortPreCheckEndpoints === 'function') {
-  console.log('✅ Registering Resort Pre-Check Endpoints...');
-  resortPreCheckEndpoints(app, kv);
+  console.log('✅ Registering Resort Pre-Check Endpoints (SQL)...');
+  resortPreCheckEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 } else {
   console.warn('⚠️ Resort Pre-Check Endpoints module undefined, skipping');
 }
 
 // ✅ NEW: Phase 5 Endpoints
 if (notificationTemplateSystem && typeof notificationTemplateSystem === 'function') {
-  console.log('✅ Registering Notification Template System...');
-  notificationTemplateSystem(app, kv);
+  console.log('✅ Registering Notification Template System (SQL)...');
+  notificationTemplateSystem(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 } else {
   console.warn('⚠️ Notification Template System module undefined, skipping');
 }
 
 if (bankVerificationEndpoints && typeof bankVerificationEndpoints === 'function') {
-  console.log('✅ Registering Bank Verification Endpoints...');
-  bankVerificationEndpoints(app, kv);
+  console.log('✅ Registering Bank Verification Endpoints (SQL)...');
+  bankVerificationEndpoints(app); // ✅ MIGRATED: No KV parameter needed
 } else {
   console.warn('⚠️ Bank Verification Endpoints module undefined, skipping');
 }
@@ -766,9 +975,10 @@ if (gstRuleEngineEndpoints && typeof gstRuleEngineEndpoints === 'function') {
   console.warn('⚠️ GST Rule Engine Endpoints module undefined, skipping');
 }
 
-if (gstConfigurationEndpoints && typeof gstConfigurationEndpoints === 'function') {
-  console.log('✅ Registering GST Configuration Endpoints...');
-  gstConfigurationEndpoints(app);
+// ✅ MIGRATED: SQL-only GST configuration endpoints (Phase 1, Task 1.2)
+if (gstConfigurationEndpointsSQL && typeof gstConfigurationEndpointsSQL === 'function') {
+  console.log('✅ Registering GST Configuration Endpoints (SQL-only)...');
+  gstConfigurationEndpointsSQL(app);
 } else {
   console.warn('⚠️ GST Configuration Endpoints module undefined, skipping');
 }
@@ -788,22 +998,22 @@ if (comprehensiveGapFixes && typeof comprehensiveGapFixes === 'function') {
 }
 
 if (analyticsDashboardEndpoints && typeof analyticsDashboardEndpoints === 'function') {
-  console.log('✅ Registering Analytics Dashboard Endpoints...');
-  analyticsDashboardEndpoints(app, kv);
+  console.log('✅ Registering Analytics Dashboard Endpoints (SQL)...');
+  analyticsDashboardEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 } else {
   console.warn('⚠️ Analytics Dashboard Endpoints module undefined, skipping');
 }
 
 if (performanceMonitoringEndpoints && typeof performanceMonitoringEndpoints === 'function') {
-  console.log('✅ Registering Performance Monitoring Endpoints...');
-  performanceMonitoringEndpoints(app, kv);
+  console.log('✅ Registering Performance Monitoring Endpoints (SQL)...');
+  performanceMonitoringEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 } else {
   console.warn('⚠️ Performance Monitoring Endpoints module undefined, skipping');
 }
 
 if (systemOptimizationEndpoints && typeof systemOptimizationEndpoints === 'function') {
-  console.log('✅ Registering System Optimization Endpoints...');
-  systemOptimizationEndpoints(app, kv);
+  console.log('✅ Registering System Optimization Endpoints (SQL)...');
+  systemOptimizationEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 } else {
   console.warn('⚠️ System Optimization Endpoints module undefined, skipping');
 }
@@ -866,8 +1076,8 @@ if (foodDeliveryHyperlocalEndpoints && typeof foodDeliveryHyperlocalEndpoints ==
 }
 
 if (holidayPackageSystemEndpoints && typeof holidayPackageSystemEndpoints === 'function') {
-  console.log('✅ Registering Holiday Package System Endpoints...');
-  holidayPackageSystemEndpoints(app, kv);
+  console.log('✅ Registering Holiday Package System Endpoints (SQL)...');
+  holidayPackageSystemEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 } else {
   console.warn('⚠️ Holiday Package System Endpoints module undefined, skipping');
 }
@@ -925,8 +1135,24 @@ if (customerWalletTopup && typeof customerWalletTopup === 'object') {
   console.warn('⚠️ Customer Wallet Topup module undefined, skipping');
 }
 
+// ✅ NEW: SQL-only Referral & Loyalty Systems
+if (referralSystemSQL && typeof referralSystemSQL === 'object') {
+  console.log('✅ Registering Referral System (SQL)...');
+  app.route('/make-server-3dd53475', referralSystemSQL);
+} else {
+  console.warn('⚠️ Referral System (SQL) module undefined, skipping');
+}
+
+if (rewardsLoyaltySystemSQL && typeof rewardsLoyaltySystemSQL === 'object') {
+  console.log('✅ Registering Rewards Loyalty System (SQL)...');
+  app.route('/make-server-3dd53475', rewardsLoyaltySystemSQL);
+} else {
+  console.warn('⚠️ Rewards Loyalty System (SQL) module undefined, skipping');
+}
+
+// ⚠️ LEGACY: Old KV-based rewards system (deprecated)
 if (rewardsLoyaltySystem && typeof rewardsLoyaltySystem === 'object') {
-  app.route('/make-server-3dd53475', rewardsLoyaltySystem);
+  console.warn('⚠️ Legacy KV-based Rewards Loyalty System detected, skipping (use SQL version)');
 } else {
   console.warn('⚠️ Rewards Loyalty System module undefined, skipping');
 }
@@ -1002,8 +1228,9 @@ if (patientMonitoringEndpoints && typeof patientMonitoringEndpoints === 'object'
   console.warn('⚠️ Patient Monitoring Endpoints module undefined, skipping');
 }
 
-if (customerEcommerceEndpoints && typeof customerEcommerceEndpoints === 'object') {
-  app.route('/make-server-3dd53475', customerEcommerceEndpoints);
+// ✅ MIGRATED: Use SQL-only customer ecommerce endpoints
+if (customerEcommerceEndpointsSQL && typeof customerEcommerceEndpointsSQL === 'object') {
+  app.route('/make-server-3dd53475', customerEcommerceEndpointsSQL);
   console.log('✅ Registered Customer E-commerce Endpoints');
 } else {
   console.warn('⚠️ Customer E-commerce Endpoints module undefined, skipping');
@@ -1022,6 +1249,22 @@ if (appointmentDetailEndpoints && typeof appointmentDetailEndpoints === 'object'
   console.log('✅ Registered Appointment Detail & Prescription Endpoints');
 } else {
   console.warn('⚠️ Appointment Detail Endpoints module undefined, skipping');
+}
+
+// ✅ MIGRATED: Prescription Endpoints (SQL-only)
+if (prescriptionEndpoints && typeof prescriptionEndpoints === 'object') {
+  app.route('/', prescriptionEndpoints);
+  console.log('✅ Registered Prescription Endpoints (SQL)');
+} else {
+  console.warn('⚠️ Prescription Endpoints module undefined, skipping');
+}
+
+// ✅ MIGRATED: Vet Booking Endpoints (SQL-only)
+if (vetBookingEndpoints && typeof vetBookingEndpoints === 'object') {
+  app.route('/', vetBookingEndpoints);
+  console.log('✅ Registered Vet Booking Endpoints (SQL)');
+} else {
+  console.warn('⚠️ Vet Booking Endpoints module undefined, skipping');
 }
 
 // ✅ P0 Features
@@ -1097,13 +1340,9 @@ if (facilityEndpoints && typeof facilityEndpoints === 'object') {
   console.warn('⚠️ Facility Endpoints module undefined, skipping');
 }
 
-// ✅ NEW: Register package endpoints
-if (packageEndpoints && typeof packageEndpoints === 'function') {
-  console.log('✅ Registering package endpoints...');
-  packageEndpoints(app, kv);
-} else {
-  console.warn('⚠️ Package Endpoints module undefined, skipping');
-}
+// ✅ MIGRATED: Register SQL-only package endpoints
+console.log('✅ Registering package endpoints (SQL)...');
+packageEndpointsSQL(app);
 
 // ✅ NEW: Additional Capabilities Endpoints (Prescription Verification, Delivery, Diet Charts, Counseling, Policy Management)
 if (additionalCapabilitiesEndpoints && typeof additionalCapabilitiesEndpoints === 'object') {
@@ -1113,26 +1352,18 @@ if (additionalCapabilitiesEndpoints && typeof additionalCapabilitiesEndpoints ==
   console.warn('⚠️ Additional Capabilities Endpoints module undefined, skipping');
 }
 
-// ✅ NEW: Pharmacy Prescription Endpoints
-if (pharmacyPrescriptionEndpoints && typeof pharmacyPrescriptionEndpoints === 'function') {
-  console.log('✅ Registering Pharmacy Prescription Endpoints...');
-  pharmacyPrescriptionEndpoints(app, kv);
-} else {
-  console.warn('⚠️ Pharmacy Prescription Endpoints module undefined, skipping');
-}
+// ✅ MIGRATED: Register SQL-only pharmacy prescription endpoints
+console.log('✅ Registering pharmacy prescription endpoints (SQL)...');
+pharmacyPrescriptionEndpointsSQL(app);
 
-// ✅ NEW: Home Sample Collection Endpoints
-if (homeSampleCollectionEndpoints && typeof homeSampleCollectionEndpoints === 'function') {
-  console.log('✅ Registering Home Sample Collection Endpoints...');
-  homeSampleCollectionEndpoints(app, kv);
-} else {
-  console.warn('⚠️ Home Sample Collection Endpoints module undefined, skipping');
-}
+// ✅ MIGRATED: Register SQL-only home sample collection endpoints
+console.log('✅ Registering home sample collection endpoints (SQL)...');
+homeSampleCollectionEndpointsSQL(app);
 
 // ✅ NEW: Holiday Package Endpoints
 if (holidayPackageEndpoints && typeof holidayPackageEndpoints === 'function') {
-  console.log('✅ Registering Holiday Package Endpoints...');
-  holidayPackageEndpoints(app, kv);
+  console.log('✅ Registering Holiday Package Endpoints (SQL)...');
+  holidayPackageEndpoints(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 } else {
   console.warn('⚠️ Holiday Package Endpoints module undefined, skipping');
 }
@@ -1156,7 +1387,7 @@ if (tierSystemIntegration && typeof tierSystemIntegration === 'function') {
 // ✅ NEW: Hyperlocal Delivery Endpoints
 if (hyperlocalDeliveryEndpoints && typeof hyperlocalDeliveryEndpoints === 'function') {
   console.log('✅ Registering Hyperlocal Delivery Endpoints...');
-  hyperlocalDeliveryEndpoints(app, kv);
+  hyperlocalDeliveryEndpoints(app);
 } else {
   console.warn('⚠️ Hyperlocal Delivery Endpoints module undefined, skipping');
 }
@@ -1187,8 +1418,8 @@ if (integratedServicesEndpoints && typeof integratedServicesEndpoints === 'funct
 
 // ✅ NEW: Specialized Services Booking
 if (specializedServicesBooking && typeof specializedServicesBooking === 'function') {
-  console.log('✅ Registering Specialized Services Booking...');
-  specializedServicesBooking(app, kv);
+  console.log('✅ Registering Specialized Services Booking Endpoints (SQL)...');
+  specializedServicesBooking(app); // ✅ REFACTORED: Removed kv parameter - uses SQL repositories
 } else {
   console.warn('⚠️ Specialized Services Booking module undefined, skipping');
 }
@@ -1258,9 +1489,10 @@ if (automatedBankVerificationEndpoints && typeof automatedBankVerificationEndpoi
 }
 
 // ✅ NEW: Marketplace Settlement Automation Endpoints
-if (marketplaceSettlementAutomationEndpoints && typeof marketplaceSettlementAutomationEndpoints === 'function') {
-  console.log('✅ Registering Marketplace Settlement Automation Endpoints...');
-  marketplaceSettlementAutomationEndpoints(app, kv);
+// ✅ MIGRATED: SQL-only marketplace settlement automation (Phase 1, Task 1.4)
+if (marketplaceSettlementAutomationEndpointsSQL && typeof marketplaceSettlementAutomationEndpointsSQL === 'function') {
+  console.log('✅ Registering Marketplace Settlement Automation Endpoints (SQL-only)...');
+  marketplaceSettlementAutomationEndpointsSQL(app);
 } else {
   console.warn('⚠️ Marketplace Settlement Automation Endpoints module undefined, skipping');
 }
@@ -1291,16 +1523,16 @@ if (servicesByProblemEndpoints && typeof servicesByProblemEndpoints === 'functio
 
 // ✅ NEW: Search Suggestions Endpoints (Rule 4)
 if (searchSuggestionsEndpoints && typeof searchSuggestionsEndpoints === 'function') {
-  console.log('✅ Registering Search Suggestions Endpoints...');
-  searchSuggestionsEndpoints(app, kv);
+  console.log('✅ Registering Search Suggestions Endpoints (SQL-only)...');
+  searchSuggestionsEndpoints(app);
 } else {
   console.warn('⚠️ Search Suggestions Endpoints module undefined, skipping');
 }
 
 // ✅ NEW: Enhanced Search Engine Endpoints (Rule 5)
 if (enhancedSearchEngineEndpoints && typeof enhancedSearchEngineEndpoints === 'function') {
-  console.log('✅ Registering Enhanced Search Engine Endpoints...');
-  enhancedSearchEngineEndpoints(app, kv);
+  console.log('✅ Registering Enhanced Search Engine Endpoints (SQL-only)...');
+  enhancedSearchEngineEndpoints(app);
 } else {
   console.warn('⚠️ Enhanced Search Engine Endpoints module undefined, skipping');
 }
@@ -1406,9 +1638,10 @@ if (cafeTableManagement && typeof cafeTableManagement === 'object') {
 }
 
 // ✅ NEW: Tier System Endpoints (Rule 15)
-if (tierSystemEndpoints && typeof tierSystemEndpoints === 'function') {
-  console.log('✅ Registering Tier System Endpoints...');
-  tierSystemEndpoints(app, kv);
+// ✅ MIGRATED: Use SQL-only tier system endpoints
+if (tierSystemEndpointsSQL && typeof tierSystemEndpointsSQL === 'function') {
+  console.log('✅ Registering Tier System Endpoints (SQL)...');
+  tierSystemEndpointsSQL(app);
 }
 
 // ✅ NEW: Razorpay Marketplace Settlement (Rule 15)
@@ -1421,9 +1654,9 @@ if (razorpayMarketplaceSettlement && typeof razorpayMarketplaceSettlement === 'f
 console.log('✅ Registering Storage Upload Endpoints...');
 registerStorageEndpoints(app);
 
-// ✅ CRITICAL: Staff Service Management Endpoints (Service Assignment, Custom Services)
-console.log('✅ Registering Staff Service Management Endpoints...');
-staffServiceEndpoints(app, kv);
+// ✅ MIGRATED: Register SQL-only staff service endpoints
+console.log('✅ Registering staff service endpoints (SQL)...');
+staffServiceEndpointsSQL(app);
 
 // ✅ NEW: Medical AI Summary Endpoints (AI-powered consultation summaries)
 console.log('✅ Registering Medical AI Summary Endpoints...');

@@ -1,10 +1,10 @@
 import { Hono } from 'npm:hono@4';
 import { getStandardFieldsForRole, INDIAN_BANKS } from './common-onboarding-fields.tsx';
+import { createClient } from "npm:@supabase/supabase-js@2.39.3";
 
 export function roleConfigEndpoints(app: Hono, kvStore: any) {
   
-  // Note: createClient not needed for role config endpoints
-  // These endpoints only use KV store, not Supabase client
+  // ✅ FIXED: Now uses SQL for vendor lookups when KV is not available
 
   // ============================================
   // CONFIGURATION ENDPOINTS
@@ -67,36 +67,77 @@ export function roleConfigEndpoints(app: Hono, kvStore: any) {
   /**
    * Get all roles
    * GET /make-server-3dd53475/config/roles
+   * ✅ FIXED: Handles missing kvStore, falls back to SQL
    */
   app.get("/make-server-3dd53475/config/roles", async (c) => {
     try {
-      const rawRoles = await kvStore.getByPrefix('role:config:');
+      const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
+      const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+      const supabase = createClient(supabaseUrl, supabaseServiceKey);
       
-      console.log(`📋 [GET ROLES] Raw KV response count: ${rawRoles.length}`);
+      let roles: any[] = [];
       
-      // Transform KV data: { key, value } -> parsed role object
-      const roles = rawRoles
-        .map((item: any) => {
-          try {
-            // Parse the JSON value
-            const roleData = typeof item.value === 'string' ? JSON.parse(item.value) : item.value;
-            
-            // Extract role ID from key: "role:config:veterinarian" -> "veterinarian"
-            const roleId = item.key.replace('role:config:', '');
-            
-            // Ensure the role has an ID field
+      // Try KV store first if available
+      if (kvStore && typeof kvStore.getByPrefix === 'function') {
+        try {
+          const rawRoles = await kvStore.getByPrefix('role:config:');
+          
+          console.log(`📋 [GET ROLES] Raw KV response count: ${rawRoles.length}`);
+          
+          // Transform KV data: { key, value } -> parsed role object
+          roles = rawRoles
+            .map((item: any) => {
+              try {
+                // Parse the JSON value
+                const roleData = typeof item.value === 'string' ? JSON.parse(item.value) : item.value;
+                
+                // Extract role ID from key: "role:config:veterinarian" -> "veterinarian"
+                const roleId = item.key.replace('role:config:', '');
+                
+                // Ensure the role has an ID field
+                return {
+                  ...roleData,
+                  id: roleData.id || roleId,
+                  // Fix missing icons - use emoji instead of "briefcase" text
+                  icon: roleData.icon && roleData.icon !== 'briefcase' ? roleData.icon : '🔧'
+                };
+              } catch (e) {
+                console.error('⚠️ [GET ROLES] Failed to parse role:', item.key, e);
+                return null;
+              }
+            })
+            .filter(Boolean); // Remove nulls
+        } catch (kvError) {
+          console.warn('⚠️ [GET ROLES] KV store error, falling back to SQL:', kvError);
+        }
+      }
+      
+      // Fallback to SQL if KV is empty or unavailable
+      if (roles.length === 0) {
+        console.log('📋 [GET ROLES] Fetching from SQL roles table...');
+        const { data: sqlRoles, error: sqlError } = await supabase
+          .from('roles')
+          .select('*')
+          .eq('is_active', true);
+        
+        if (sqlError) {
+          console.error('❌ [GET ROLES] SQL error:', sqlError);
+        } else if (sqlRoles && sqlRoles.length > 0) {
+          roles = sqlRoles.map((role: any) => {
+            const config = typeof role.config === 'string' ? JSON.parse(role.config || '{}') : (role.config || {});
             return {
-              ...roleData,
-              id: roleData.id || roleId,
-              // Fix missing icons - use emoji instead of "briefcase" text
-              icon: roleData.icon && roleData.icon !== 'briefcase' ? roleData.icon : '🔧'
+              ...config,
+              id: role.name || role.id,
+              name: role.display_name || role.name,
+              displayName: role.display_name,
+              description: role.description,
+              icon: config.icon || '🔧',
+              isActive: role.is_active
             };
-          } catch (e) {
-            console.error('⚠️ [GET ROLES] Failed to parse role:', item.key, e);
-            return null;
-          }
-        })
-        .filter(Boolean); // Remove nulls
+          });
+          console.log(`✅ [GET ROLES] Found ${roles.length} roles from SQL`);
+        }
+      }
       
       console.log(`✅ [GET ROLES] Returning ${roles.length} parsed roles`);
       
@@ -165,6 +206,7 @@ export function roleConfigEndpoints(app: Hono, kvStore: any) {
   /**
    * Get allowed service styles for a vendor
    * GET /make-server-3dd53475/vendor/:vendorId/allowed-service-styles
+   * ✅ FIXED: Uses SQL instead of KV, converts vendor_id to UUID
    */
   app.get("/make-server-3dd53475/vendor/:vendorId/allowed-service-styles", async (c) => {
     try {
@@ -172,13 +214,35 @@ export function roleConfigEndpoints(app: Hono, kvStore: any) {
       
       console.log('📡 [ALLOWED-STYLES] Fetching allowed service styles for vendor:', vendorId);
       
-      // Get vendor
-      const vendor = await kvStore.get(`vendor:${vendorId}`);
-      if (!vendor) {
+      // ✅ FIX: Convert vendor_id to UUID using SQL
+      const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
+      const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+      const supabase = createClient(supabaseUrl, supabaseServiceKey);
+      
+      // Get vendor from SQL - handle both UUID and vendor_id formats
+      let vendorRecord;
+      if (vendorId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+        // It's already a UUID
+        vendorRecord = await supabase
+          .from('vendors')
+          .select('id, vendor_id, role_id, metadata')
+          .eq('id', vendorId)
+          .single();
+      } else {
+        // It's a vendor_id (like vendor_9611377119)
+        vendorRecord = await supabase
+          .from('vendors')
+          .select('id, vendor_id, role_id, metadata')
+          .eq('vendor_id', vendorId)
+          .single();
+      }
+      
+      if (!vendorRecord?.data) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
       
-      const roleId = vendor.roleId;
+      const vendor = vendorRecord.data;
+      const roleId = vendor.role_id;
       console.log('📋 [ALLOWED-STYLES] Vendor roleId:', roleId);
       
       if (!roleId) {
@@ -188,8 +252,26 @@ export function roleConfigEndpoints(app: Hono, kvStore: any) {
         }, 400);
       }
       
-      // Get role configuration
-      const role = await kvStore.get(`role:config:${roleId}`);
+      // ✅ FIX: Get role configuration from SQL or KV (fallback)
+      let role;
+      if (kvStore) {
+        role = await kvStore.get(`role:config:${roleId}`);
+      }
+      
+      // If not in KV, try SQL roles table
+      if (!role) {
+        const { data: roleData } = await supabase
+          .from('roles')
+          .select('*')
+          .eq('name', roleId)
+          .eq('is_active', true)
+          .single();
+        
+        if (roleData && roleData.config) {
+          role = typeof roleData.config === 'string' ? JSON.parse(roleData.config) : roleData.config;
+        }
+      }
+      
       if (!role) {
         return c.json({ 
           error: 'Role configuration not found',
@@ -200,10 +282,17 @@ export function roleConfigEndpoints(app: Hono, kvStore: any) {
       console.log('✅ [ALLOWED-STYLES] Role found:', role.name, 'Styles:', role.serviceStyles);
       
       // ✅ NEW: Calculate resolved capabilities
+      // Get centres count from SQL if needed
+      const { data: centresData } = await supabase
+        .from('centres')
+        .select('id')
+        .eq('vendor_id', vendor.id);
+      const centresCount = centresData?.length || 0;
+      
       const resolvedCapabilities = {
         canManageCentres: role.staffManagement?.enabled || false,
         canManageStaff: role.staffManagement?.enabled || false,
-        canCreatePackages: (vendor.centres?.length > 0) && (role.capabilities?.includes('package_management') || false),
+        canCreatePackages: (centresCount > 0) && (role.capabilities?.includes('package_management') || false),
         canOfferHomeServices: role.serviceStyles?.includes('at_home') || false,
         canOfferTeleServices: role.serviceStyles?.includes('tele') || false,
         canOfferCentreServices: role.serviceStyles?.includes('at_center') || false

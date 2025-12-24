@@ -116,6 +116,10 @@ CREATE INDEX idx_bookings_otp_expires ON bookings(otp_expires_at) WHERE otp_expi
 CREATE INDEX idx_bookings_is_package ON bookings(is_package) WHERE is_package = true;
 CREATE INDEX idx_bookings_package_id ON bookings(package_id) WHERE package_id IS NOT NULL;
 
+-- Settlement tracking
+CREATE INDEX idx_bookings_settled_at ON bookings(settled_at);
+CREATE INDEX idx_bookings_settled_at_null ON bookings(settled_at) WHERE settled_at IS NULL;
+
 -- ============================================================================
 -- EMERGENCY BOOKING QUEUE
 -- ============================================================================

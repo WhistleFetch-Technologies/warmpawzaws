@@ -97,13 +97,15 @@ export function PaymentPage({ bookingData, phone, onBack, onPaymentSuccess }: Pa
   const loadLoyaltyProfile = async () => {
     try {
       const response = await fetch(
-        `${API_BASE}/loyalty/profile/${phone}?type=customer`,
+        `${API_BASE}/customer/loyalty/profile?customerId=${customerId || phone}`,
         { headers: { Authorization: `Bearer ${publicAnonKey}` } }
       );
       
       if (response.ok) {
         const data = await response.json();
-        setLoyaltyPoints(data.profile?.pointsBalance || 0);
+        // Handle both response structures
+        const profile = data.profile || data;
+        setLoyaltyPoints(profile?.totalPoints || profile?.pointsBalance || profile?.points || 0);
         setLoyaltyTier(data.tier || null);
         
         // Tier discount will be calculated in useEffect when subtotal changes
@@ -328,9 +330,8 @@ export function PaymentPage({ bookingData, phone, onBack, onPaymentSuccess }: Pa
               'Authorization': `Bearer ${publicAnonKey}`
             },
             body: JSON.stringify({
-              userId: phone,
-              pointsToRedeem: pointsRedemption,
-              userType: 'customer'
+              customerId: customerId || phone,
+              points: pointsRedemption
             })
           });
           console.log(`✅ [PAYMENT] Redeemed ${pointsRedemption} loyalty points`);

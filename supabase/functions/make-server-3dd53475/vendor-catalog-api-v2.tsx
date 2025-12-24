@@ -1,17 +1,21 @@
 /**
- * VENDOR CATALOG API V2 - CORRECTED ARCHITECTURE
+ * VENDOR CATALOG API V2 - SQL MIGRATION
  * 
- * ✅ READS FROM: platform:service_catalog (single source of truth)
- * ✅ CATEGORIES: catalog:categories (only structure, no nested services)
+ * ✅ MIGRATED TO SQL: Reads from service_catalog table
+ * ✅ CATEGORIES: service_categories table
  * 
  * Architecture:
- * - Services stored in platform:service_catalog with categoryId, subCategoryId, applicableRoles
- * - Categories in catalog:categories provide organizational structure only
- * - Vendor App filters services by applicableRoles
+ * - Services stored in service_catalog table with category_id, sub_category_id, applicable_roles
+ * - Categories in service_categories table provide organizational structure
+ * - Vendor App filters services by applicable_roles array
  */
 
 import type { Hono } from "npm:hono@4.6.14";
-import * as kv from "./kv_store.tsx";
+import { createClient } from "npm:@supabase/supabase-js@2.39.3";
+
+const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
+const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 export function registerVendorCatalogAPIV2(app: Hono) {
   
@@ -45,48 +49,59 @@ export function registerVendorCatalogAPIV2(app: Hono) {
       console.log(`   Role ID: ${roleId}`);
       console.log(`   Service Style Filter: ${serviceStyle || 'all'}`);
       
-      // ✅ Read from platform:service_catalog (single source of truth)
-      const allServices = await kv.get('platform:service_catalog') || [];
-      
-      console.log(`   Total services in catalog: ${allServices.length}`);
-      
-      // Get acceptable role variations for this vendor role
+      // ✅ SQL: Read from service_catalog table
       const acceptableRoles = roleMappings[roleId] || [roleId];
       console.log(`   Looking for services with roles: [${acceptableRoles.join(', ')}]`);
       
-      // Filter services
-      let filteredServices = allServices.filter((service: any) => {
-        // Check if service's applicableRoles includes any of our acceptable roles
-        if (!service.applicableRoles || !Array.isArray(service.applicableRoles)) {
-          return false;
-        }
-        
-        const hasMatchingRole = service.applicableRoles.some((role: string) => 
-          acceptableRoles.includes(role)
-        );
-        
-        if (!hasMatchingRole) {
-          return false;
+      // Build query
+      let query = supabase
+        .from('service_catalog')
+        .select('*')
+        .eq('status', 'active')
+        .in('publish_status', ['published']);
+      
+      // Filter by applicable roles (using array overlap)
+      if (acceptableRoles.length > 0) {
+        query = query.overlaps('applicable_roles', acceptableRoles);
         }
         
         // Filter by service style if provided
         if (serviceStyle) {
-          // Normalize style comparison (at_home vs at-home)
-          const normalizedFilter = serviceStyle.replace('-', '_');
-          const normalizedServiceStyle = service.serviceStyle?.replace('-', '_');
-          
-          if (normalizedServiceStyle !== normalizedFilter) {
-            return false;
-          }
-        }
-
-        // Only return Published services for vendors to see (unless we want draft previews)
-        // For now, let's show all or filter by publishedStatus if needed.
-        // Usually catalog browsing shows active templates.
-        if (service.status === 'archived') return false;
-        
-        return true;
-      });
+        const normalizedStyle = serviceStyle.replace('-', '_');
+        query = query.or(`service_style.eq.${normalizedStyle},service_style.eq.all`);
+      }
+      
+      const { data: allServices, error } = await query.order('display_order');
+      
+      if (error) {
+        console.error('Error fetching service catalog:', error);
+        return c.json({ error: String(error) }, 500);
+      }
+      
+      console.log(`   Total services in catalog: ${allServices?.length || 0}`);
+      
+      // Transform SQL results to match expected format
+      const filteredServices = (allServices || []).map((service: any) => ({
+        id: service.service_id || service.id,
+        serviceId: service.service_id || service.id,
+        serviceName: service.service_name,
+        displayName: service.display_name || service.service_name,
+        name: service.service_name,
+        description: service.description,
+        categoryId: service.category_id,
+        categoryName: service.category_name,
+        subCategoryId: service.sub_category_id,
+        subCategoryName: service.sub_category_name,
+        applicableRoles: service.applicable_roles || [],
+        serviceStyle: service.service_style || 'at_center',
+        basePrice: parseFloat(service.base_price || '0'),
+        price: parseFloat(service.base_price || '0'),
+        duration: service.duration_minutes || 30,
+        durationMinutes: service.duration_minutes || 30,
+        status: service.status,
+        publishStatus: service.publish_status,
+        metadata: service.metadata || {}
+      }));
       
       console.log(`   Services found after filtering: ${filteredServices.length}`);
       
@@ -111,15 +126,42 @@ export function registerVendorCatalogAPIV2(app: Hono) {
   app.get("/make-server-3dd53475/service-catalog/:serviceId", async (c) => {
     try {
       const serviceId = c.req.param('serviceId');
-      const allServices = await kv.get('platform:service_catalog') || [];
       
-      const service = allServices.find((s: any) => s.id === serviceId);
+      // ✅ SQL: Get service by service_id or id
+      const { data: service, error } = await supabase
+        .from('service_catalog')
+        .select('*')
+        .or(`service_id.eq.${serviceId},id.eq.${serviceId}`)
+        .single();
       
-      if (!service) {
+      if (error || !service) {
         return c.json({ error: 'Service not found' }, 404);
       }
       
-      return c.json({ success: true, service });
+      // Transform to expected format
+      const serviceData = {
+        id: service.service_id || service.id,
+        serviceId: service.service_id || service.id,
+        serviceName: service.service_name,
+        displayName: service.display_name || service.service_name,
+        name: service.service_name,
+        description: service.description,
+        categoryId: service.category_id,
+        categoryName: service.category_name,
+        subCategoryId: service.sub_category_id,
+        subCategoryName: service.sub_category_name,
+        applicableRoles: service.applicable_roles || [],
+        serviceStyle: service.service_style || 'at_center',
+        basePrice: parseFloat(service.base_price || '0'),
+        price: parseFloat(service.base_price || '0'),
+        duration: service.duration_minutes || 30,
+        durationMinutes: service.duration_minutes || 30,
+        status: service.status,
+        publishStatus: service.publish_status,
+        metadata: service.metadata || {}
+      };
+      
+      return c.json({ success: true, service: serviceData });
     } catch (error) {
       console.error('❌ Error fetching service details:', error);
       return c.json({ error: String(error) }, 500);
@@ -150,45 +192,59 @@ export function registerVendorCatalogAPIV2(app: Hono) {
       
       const newServiceId = `svc_cat_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
       
-      const newService = {
-        id: newServiceId,
-        serviceName,
-        description: description || '',
-        basePrice: Number(basePrice),
-        duration: Number(duration) || 30,
-        serviceStyle: serviceStyle || 'at_center',
-        applicableRoles: applicableRoles || [],
-        categoryId: categoryId || null,
-        subCategoryId: subCategoryId || null,
-        status: 'draft', // Default to draft
+      // ✅ SQL: Insert into service_catalog table
+      const { data: newService, error } = await supabase
+        .from('service_catalog')
+        .insert({
+          service_id: newServiceId,
+          service_name: serviceName,
+          display_name: serviceName,
+          description: description || null,
+          base_price: parseFloat(basePrice || '0'),
+          duration_minutes: parseInt(duration || '30'),
+          service_style: serviceStyle || 'at_center',
+          applicable_roles: applicableRoles || [],
+          category_id: categoryId || null,
+          sub_category_id: subCategoryId || null,
+          status: 'draft',
+          publish_status: 'draft',
+          metadata: {
         approvalStatus: 'pending',
         version: 1,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        
-        // Pricing Management
         pricing: {
-          basePrice: Number(basePrice),
+              basePrice: parseFloat(basePrice || '0'),
           addOns: [],
           packages: []
-        },
-        
-        // Availability
-        isActive: true
-      };
+            }
+          }
+        })
+        .select()
+        .single();
       
-      // Read current catalog
-      const allServices = await kv.get('platform:service_catalog') || [];
-      
-      // Append new service
-      allServices.push(newService);
-      
-      // Save back
-      await kv.set('platform:service_catalog', allServices);
+      if (error) {
+        console.error('Error creating catalog service:', error);
+        return c.json({ error: String(error) }, 500);
+      }
       
       console.log(`✅ Created new catalog service: ${newServiceId}`);
       
-      return c.json({ success: true, service: newService });
+      const responseService = {
+        id: newService.service_id || newService.id,
+        serviceId: newService.service_id || newService.id,
+        serviceName: newService.service_name,
+        description: newService.description,
+        basePrice: parseFloat(newService.base_price || '0'),
+        duration: newService.duration_minutes || 30,
+        serviceStyle: newService.service_style,
+        applicableRoles: newService.applicable_roles || [],
+        categoryId: newService.category_id,
+        subCategoryId: newService.sub_category_id,
+        status: newService.status,
+        publishStatus: newService.publish_status,
+        metadata: newService.metadata || {}
+      };
+      
+      return c.json({ success: true, service: responseService });
       
     } catch (error) {
       console.error('❌ Error creating catalog service:', error);
@@ -205,29 +261,76 @@ export function registerVendorCatalogAPIV2(app: Hono) {
       const serviceId = c.req.param('serviceId');
       const updates = await c.req.json();
       
-      const allServices = await kv.get('platform:service_catalog') || [];
-      const serviceIndex = allServices.findIndex((s: any) => s.id === serviceId);
+      // ✅ SQL: Get existing service
+      const { data: existingService, error: fetchError } = await supabase
+        .from('service_catalog')
+        .select('*')
+        .or(`service_id.eq.${serviceId},id.eq.${serviceId}`)
+        .single();
       
-      if (serviceIndex === -1) {
+      if (fetchError || !existingService) {
         return c.json({ error: 'Service not found' }, 404);
       }
       
-      const currentService = allServices[serviceIndex];
-      
-      const updatedService = {
-        ...currentService,
-        ...updates,
-        version: (currentService.version || 1) + 1, // Increment version
-        updatedAt: new Date().toISOString()
+      // ✅ SQL: Prepare update data
+      const updateData: any = {
+        updated_at: new Date().toISOString()
       };
       
-      allServices[serviceIndex] = updatedService;
+      if (updates.serviceName) updateData.service_name = updates.serviceName;
+      if (updates.displayName) updateData.display_name = updates.displayName;
+      if (updates.description !== undefined) updateData.description = updates.description;
+      if (updates.basePrice !== undefined) updateData.base_price = parseFloat(updates.basePrice);
+      if (updates.duration !== undefined) updateData.duration_minutes = parseInt(updates.duration);
+      if (updates.serviceStyle !== undefined) updateData.service_style = updates.serviceStyle;
+      if (updates.applicableRoles !== undefined) updateData.applicable_roles = updates.applicableRoles;
+      if (updates.categoryId !== undefined) updateData.category_id = updates.categoryId;
+      if (updates.subCategoryId !== undefined) updateData.sub_category_id = updates.subCategoryId;
+      if (updates.status !== undefined) updateData.status = updates.status;
+      if (updates.publishStatus !== undefined) updateData.publish_status = updates.publishStatus;
+      if (updates.metadata !== undefined) {
+        const currentMetadata = existingService.metadata || {};
+        const currentVersion = currentMetadata.version || 1;
+        updateData.metadata = {
+          ...currentMetadata,
+          ...updates.metadata,
+          version: currentVersion + 1
+        };
+      }
       
-      await kv.set('platform:service_catalog', allServices);
+      // ✅ SQL: Update service
+      const { data: updatedService, error: updateError } = await supabase
+        .from('service_catalog')
+        .update(updateData)
+        .or(`service_id.eq.${serviceId},id.eq.${serviceId}`)
+        .select()
+        .single();
       
-      console.log(`✅ Updated catalog service: ${serviceId} (v${updatedService.version})`);
+      if (updateError) {
+        console.error('Error updating catalog service:', updateError);
+        return c.json({ error: String(updateError) }, 500);
+      }
       
-      return c.json({ success: true, service: updatedService });
+      console.log(`✅ Updated catalog service: ${serviceId}`);
+      
+      const responseService = {
+        id: updatedService.service_id || updatedService.id,
+        serviceId: updatedService.service_id || updatedService.id,
+        serviceName: updatedService.service_name,
+        displayName: updatedService.display_name,
+        description: updatedService.description,
+        basePrice: parseFloat(updatedService.base_price || '0'),
+        duration: updatedService.duration_minutes || 30,
+        serviceStyle: updatedService.service_style,
+        applicableRoles: updatedService.applicable_roles || [],
+        categoryId: updatedService.category_id,
+        subCategoryId: updatedService.sub_category_id,
+        status: updatedService.status,
+        publishStatus: updatedService.publish_status,
+        metadata: updatedService.metadata || {}
+      };
+      
+      return c.json({ success: true, service: responseService });
       
     } catch (error) {
       console.error('❌ Error updating catalog service:', error);
@@ -243,22 +346,21 @@ export function registerVendorCatalogAPIV2(app: Hono) {
     try {
       const serviceId = c.req.param('serviceId');
       
-      const allServices = await kv.get('platform:service_catalog') || [];
-      const serviceIndex = allServices.findIndex((s: any) => s.id === serviceId);
+      // ✅ SQL: Soft delete (archive) service
+      const { data: updatedService, error } = await supabase
+        .from('service_catalog')
+        .update({
+          status: 'archived',
+          publish_status: 'archived',
+          updated_at: new Date().toISOString()
+        })
+        .or(`service_id.eq.${serviceId},id.eq.${serviceId}`)
+        .select()
+        .single();
       
-      if (serviceIndex === -1) {
+      if (error || !updatedService) {
         return c.json({ error: 'Service not found' }, 404);
       }
-      
-      // Option 1: Hard delete
-      // allServices.splice(serviceIndex, 1);
-      
-      // Option 2: Soft delete (preferred for catalog)
-      allServices[serviceIndex].status = 'archived';
-      allServices[serviceIndex].isActive = false;
-      allServices[serviceIndex].updatedAt = new Date().toISOString();
-      
-      await kv.set('platform:service_catalog', allServices);
       
       console.log(`✅ Archived catalog service: ${serviceId}`);
       
@@ -278,26 +380,50 @@ export function registerVendorCatalogAPIV2(app: Hono) {
     try {
       const serviceId = c.req.param('serviceId');
       
-      const allServices = await kv.get('platform:service_catalog') || [];
-      const serviceIndex = allServices.findIndex((s: any) => s.id === serviceId);
+      // ✅ SQL: Publish service
+      const { data: existingService } = await supabase
+        .from('service_catalog')
+        .select('*')
+        .or(`service_id.eq.${serviceId},id.eq.${serviceId}`)
+        .single();
       
-      if (serviceIndex === -1) {
+      if (!existingService) {
         return c.json({ error: 'Service not found' }, 404);
       }
       
-      // Logic: Require approval before publishing?
-      // For now, we'll assume this action includes approval
+      const currentMetadata = existingService.metadata || {};
+      const { data: updatedService, error } = await supabase
+        .from('service_catalog')
+        .update({
+          status: 'active',
+          publish_status: 'published',
+          updated_at: new Date().toISOString(),
+          metadata: {
+            ...currentMetadata,
+            approvalStatus: 'approved',
+            publishedAt: new Date().toISOString()
+          }
+        })
+        .or(`service_id.eq.${serviceId},id.eq.${serviceId}`)
+        .select()
+        .single();
       
-      allServices[serviceIndex].status = 'published';
-      allServices[serviceIndex].approvalStatus = 'approved';
-      allServices[serviceIndex].publishedAt = new Date().toISOString();
-      allServices[serviceIndex].updatedAt = new Date().toISOString();
-      
-      await kv.set('platform:service_catalog', allServices);
+      if (error) {
+        console.error('Error publishing service:', error);
+        return c.json({ error: String(error) }, 500);
+      }
       
       console.log(`✅ Published catalog service: ${serviceId}`);
       
-      return c.json({ success: true, service: allServices[serviceIndex] });
+      const responseService = {
+        id: updatedService.service_id || updatedService.id,
+        serviceName: updatedService.service_name,
+        status: updatedService.status,
+        publishStatus: updatedService.publish_status,
+        metadata: updatedService.metadata
+      };
+      
+      return c.json({ success: true, service: responseService });
       
     } catch (error) {
       console.error('❌ Error publishing catalog service:', error);
@@ -313,21 +439,32 @@ export function registerVendorCatalogAPIV2(app: Hono) {
     try {
       const serviceId = c.req.param('serviceId');
       
-      const allServices = await kv.get('platform:service_catalog') || [];
-      const serviceIndex = allServices.findIndex((s: any) => s.id === serviceId);
+      // ✅ SQL: Unpublish service
+      const { data: updatedService, error } = await supabase
+        .from('service_catalog')
+        .update({
+          status: 'draft',
+          publish_status: 'draft',
+          updated_at: new Date().toISOString()
+        })
+        .or(`service_id.eq.${serviceId},id.eq.${serviceId}`)
+        .select()
+        .single();
       
-      if (serviceIndex === -1) {
+      if (error || !updatedService) {
         return c.json({ error: 'Service not found' }, 404);
       }
       
-      allServices[serviceIndex].status = 'draft';
-      allServices[serviceIndex].updatedAt = new Date().toISOString();
-      
-      await kv.set('platform:service_catalog', allServices);
-      
       console.log(`✅ Unpublished catalog service: ${serviceId}`);
       
-      return c.json({ success: true, service: allServices[serviceIndex] });
+      const responseService = {
+        id: updatedService.service_id || updatedService.id,
+        serviceName: updatedService.service_name,
+        status: updatedService.status,
+        publishStatus: updatedService.publish_status
+      };
+      
+      return c.json({ success: true, service: responseService });
       
     } catch (error) {
       console.error('❌ Error unpublishing catalog service:', error);
@@ -343,26 +480,52 @@ export function registerVendorCatalogAPIV2(app: Hono) {
     try {
       const serviceId = c.req.param('serviceId');
       
-      const allServices = await kv.get('platform:service_catalog') || [];
-      const serviceIndex = allServices.findIndex((s: any) => s.id === serviceId);
+      // ✅ SQL: Get existing service
+      const { data: existingService, error: fetchError } = await supabase
+        .from('service_catalog')
+        .select('*')
+        .or(`service_id.eq.${serviceId},id.eq.${serviceId}`)
+        .single();
       
-      if (serviceIndex === -1) {
+      if (fetchError || !existingService) {
         return c.json({ error: 'Service not found' }, 404);
       }
 
-      if (allServices[serviceIndex].status !== 'draft') {
+      if (existingService.status !== 'draft') {
         return c.json({ error: 'Only draft services can be submitted for approval' }, 400);
       }
       
-      allServices[serviceIndex].status = 'pending_approval';
-      allServices[serviceIndex].approvalStatus = 'pending';
-      allServices[serviceIndex].submittedAt = new Date().toISOString();
-      allServices[serviceIndex].updatedAt = new Date().toISOString();
+      const currentMetadata = existingService.metadata || {};
+      const { data: updatedService, error } = await supabase
+        .from('service_catalog')
+        .update({
+          status: 'pending_approval',
+          updated_at: new Date().toISOString(),
+          metadata: {
+            ...currentMetadata,
+            approvalStatus: 'pending',
+            submittedAt: new Date().toISOString()
+          }
+        })
+        .or(`service_id.eq.${serviceId},id.eq.${serviceId}`)
+        .select()
+        .single();
       
-      await kv.set('platform:service_catalog', allServices);
+      if (error) {
+        console.error('Error submitting service:', error);
+        return c.json({ error: String(error) }, 500);
+      }
       
       console.log(`✅ Submitted service for approval: ${serviceId}`);
-      return c.json({ success: true, service: allServices[serviceIndex] });
+      
+      const responseService = {
+        id: updatedService.service_id || updatedService.id,
+        serviceName: updatedService.service_name,
+        status: updatedService.status,
+        metadata: updatedService.metadata
+      };
+      
+      return c.json({ success: true, service: responseService });
       
     } catch (error) {
       console.error('❌ Error submitting service:', error);
@@ -379,22 +542,50 @@ export function registerVendorCatalogAPIV2(app: Hono) {
       const serviceId = c.req.param('serviceId');
       // In real app, verify admin token here
       
-      const allServices = await kv.get('platform:service_catalog') || [];
-      const serviceIndex = allServices.findIndex((s: any) => s.id === serviceId);
+      // ✅ SQL: Get existing service
+      const { data: existingService, error: fetchError } = await supabase
+        .from('service_catalog')
+        .select('*')
+        .or(`service_id.eq.${serviceId},id.eq.${serviceId}`)
+        .single();
       
-      if (serviceIndex === -1) {
+      if (fetchError || !existingService) {
         return c.json({ error: 'Service not found' }, 404);
       }
       
-      allServices[serviceIndex].status = 'published';
-      allServices[serviceIndex].approvalStatus = 'approved';
-      allServices[serviceIndex].approvedAt = new Date().toISOString();
-      allServices[serviceIndex].updatedAt = new Date().toISOString();
+      const currentMetadata = existingService.metadata || {};
+      const { data: updatedService, error } = await supabase
+        .from('service_catalog')
+        .update({
+          status: 'active',
+          publish_status: 'published',
+          updated_at: new Date().toISOString(),
+          metadata: {
+            ...currentMetadata,
+            approvalStatus: 'approved',
+            approvedAt: new Date().toISOString()
+          }
+        })
+        .or(`service_id.eq.${serviceId},id.eq.${serviceId}`)
+        .select()
+        .single();
       
-      await kv.set('platform:service_catalog', allServices);
+      if (error) {
+        console.error('Error approving service:', error);
+        return c.json({ error: String(error) }, 500);
+      }
       
       console.log(`✅ Approved service: ${serviceId}`);
-      return c.json({ success: true, service: allServices[serviceIndex] });
+      
+      const responseService = {
+        id: updatedService.service_id || updatedService.id,
+        serviceName: updatedService.service_name,
+        status: updatedService.status,
+        publishStatus: updatedService.publish_status,
+        metadata: updatedService.metadata
+      };
+      
+      return c.json({ success: true, service: responseService });
       
     } catch (error) {
       console.error('❌ Error approving service:', error);
@@ -411,23 +602,50 @@ export function registerVendorCatalogAPIV2(app: Hono) {
       const serviceId = c.req.param('serviceId');
       const { reason } = await c.req.json();
       
-      const allServices = await kv.get('platform:service_catalog') || [];
-      const serviceIndex = allServices.findIndex((s: any) => s.id === serviceId);
+      // ✅ SQL: Get existing service
+      const { data: existingService, error: fetchError } = await supabase
+        .from('service_catalog')
+        .select('*')
+        .or(`service_id.eq.${serviceId},id.eq.${serviceId}`)
+        .single();
       
-      if (serviceIndex === -1) {
+      if (fetchError || !existingService) {
         return c.json({ error: 'Service not found' }, 404);
       }
       
-      allServices[serviceIndex].status = 'draft'; // Revert to draft for editing
-      allServices[serviceIndex].approvalStatus = 'rejected';
-      allServices[serviceIndex].rejectionReason = reason || 'Does not meet guidelines';
-      allServices[serviceIndex].rejectedAt = new Date().toISOString();
-      allServices[serviceIndex].updatedAt = new Date().toISOString();
+      const currentMetadata = existingService.metadata || {};
+      const { data: updatedService, error } = await supabase
+        .from('service_catalog')
+        .update({
+          status: 'draft',
+          publish_status: 'draft',
+          updated_at: new Date().toISOString(),
+          metadata: {
+            ...currentMetadata,
+            approvalStatus: 'rejected',
+            rejectionReason: reason || 'Does not meet guidelines',
+            rejectedAt: new Date().toISOString()
+          }
+        })
+        .or(`service_id.eq.${serviceId},id.eq.${serviceId}`)
+        .select()
+        .single();
       
-      await kv.set('platform:service_catalog', allServices);
+      if (error) {
+        console.error('Error rejecting service:', error);
+        return c.json({ error: String(error) }, 500);
+      }
       
       console.log(`❌ Rejected service: ${serviceId}`);
-      return c.json({ success: true, service: allServices[serviceIndex] });
+      
+      const responseService = {
+        id: updatedService.service_id || updatedService.id,
+        serviceName: updatedService.service_name,
+        status: updatedService.status,
+        metadata: updatedService.metadata
+      };
+      
+      return c.json({ success: true, service: responseService });
       
     } catch (error) {
       console.error('❌ Error rejecting service:', error);
@@ -444,21 +662,45 @@ export function registerVendorCatalogAPIV2(app: Hono) {
       const serviceId = c.req.param('serviceId');
       const { images, videos } = await c.req.json(); // Array of URLs
       
-      const allServices = await kv.get('platform:service_catalog') || [];
-      const serviceIndex = allServices.findIndex((s: any) => s.id === serviceId);
+      // ✅ SQL: Get existing service
+      const { data: existingService, error: fetchError } = await supabase
+        .from('service_catalog')
+        .select('*')
+        .or(`service_id.eq.${serviceId},id.eq.${serviceId}`)
+        .single();
       
-      if (serviceIndex === -1) {
+      if (fetchError || !existingService) {
         return c.json({ error: 'Service not found' }, 404);
       }
       
-      // Update media
-      if (images) allServices[serviceIndex].images = images;
-      if (videos) allServices[serviceIndex].videos = videos;
-      allServices[serviceIndex].updatedAt = new Date().toISOString();
+      const currentMetadata = existingService.metadata || {};
+      const updatedMetadata = { ...currentMetadata };
+      if (images) updatedMetadata.images = images;
+      if (videos) updatedMetadata.videos = videos;
       
-      await kv.set('platform:service_catalog', allServices);
+      // ✅ SQL: Update service media
+      const { data: updatedService, error } = await supabase
+        .from('service_catalog')
+        .update({
+          metadata: updatedMetadata,
+          updated_at: new Date().toISOString()
+        })
+        .or(`service_id.eq.${serviceId},id.eq.${serviceId}`)
+        .select()
+        .single();
       
-      return c.json({ success: true, service: allServices[serviceIndex] });
+      if (error) {
+        console.error('Error updating service media:', error);
+        return c.json({ error: String(error) }, 500);
+      }
+      
+      const responseService = {
+        id: updatedService.service_id || updatedService.id,
+        serviceName: updatedService.service_name,
+        metadata: updatedService.metadata
+      };
+      
+      return c.json({ success: true, service: responseService });
       
     } catch (error) {
       console.error('❌ Error updating service media:', error);
@@ -475,19 +717,22 @@ export function registerVendorCatalogAPIV2(app: Hono) {
       const serviceId = c.req.param('serviceId');
       const { isActive } = await c.req.json();
       
-      const allServices = await kv.get('platform:service_catalog') || [];
-      const serviceIndex = allServices.findIndex((s: any) => s.id === serviceId);
+      // ✅ SQL: Toggle service availability
+      const { data: updatedService, error } = await supabase
+        .from('service_catalog')
+        .update({
+          status: isActive ? 'active' : 'archived',
+          updated_at: new Date().toISOString()
+        })
+        .or(`service_id.eq.${serviceId},id.eq.${serviceId}`)
+        .select()
+        .single();
       
-      if (serviceIndex === -1) {
+      if (error || !updatedService) {
         return c.json({ error: 'Service not found' }, 404);
       }
       
-      allServices[serviceIndex].isActive = isActive;
-      allServices[serviceIndex].updatedAt = new Date().toISOString();
-      
-      await kv.set('platform:service_catalog', allServices);
-      
-      return c.json({ success: true, isActive: allServices[serviceIndex].isActive });
+      return c.json({ success: true, isActive: updatedService.status === 'active' });
       
     } catch (error) {
       console.error('❌ Error toggling service availability:', error);
@@ -506,12 +751,27 @@ export function registerVendorCatalogAPIV2(app: Hono) {
       // In a real system, this would aggregate data from a 'bookings' table/collection
       // For now, we'll generate realistic mock data or aggregate from bookings if available
       
-      // Try to fetch actual bookings count
-      const allBookings = await kv.getByPrefix('booking:');
-      const serviceBookings = allBookings.filter((b: any) => b.serviceId === serviceId);
+      // ✅ SQL: Get bookings for this service
+      const { data: serviceData } = await supabase
+        .from('service_catalog')
+        .select('service_id')
+        .or(`service_id.eq.${serviceId},id.eq.${serviceId}`)
+        .single();
       
-      const bookingsCount = serviceBookings.length;
-      const revenue = serviceBookings.reduce((sum: number, b: any) => sum + (Number(b.price) || 0), 0);
+      let bookingsCount = 0;
+      let revenue = 0;
+      
+      if (serviceData) {
+        const { data: bookings } = await supabase
+          .from('bookings')
+          .select('id, total_amount, base_price')
+          .eq('service_id', serviceData.service_id || serviceId);
+        
+        bookingsCount = bookings?.length || 0;
+        revenue = bookings?.reduce((sum: number, b: any) => 
+          sum + parseFloat(b.total_amount || b.base_price || '0'), 0) || 0;
+      }
+      
       const views = Math.floor(bookingsCount * (Math.random() * 10 + 5)) + 50; // Mock views based on bookings
       const conversionRate = views > 0 ? ((bookingsCount / views) * 100).toFixed(1) : 0;
       
@@ -564,8 +824,28 @@ export function registerVendorCatalogAPIV2(app: Hono) {
    */
   app.get("/make-server-3dd53475/service-catalog/debug/v2", async (c) => {
     try {
-      const services = await kv.get('platform:service_catalog') || [];
-      const categories = await kv.get('catalog:categories') || [];
+      // ✅ SQL: Get services and categories
+      const { data: servicesData } = await supabase
+        .from('service_catalog')
+        .select('*');
+      
+      const { data: categoriesData } = await supabase
+        .from('service_categories')
+        .select('*');
+      
+      const services = (servicesData || []).map((s: any) => ({
+        id: s.service_id || s.id,
+        serviceName: s.service_name,
+        applicableRoles: s.applicable_roles || [],
+        serviceStyle: s.service_style,
+        categoryName: s.category_name,
+        basePrice: parseFloat(s.base_price || '0')
+      }));
+      
+      const categories = (categoriesData || []).map((c: any) => ({
+        id: c.id,
+        name: c.name
+      }));
       
       // Analyze services
       const roleSet = new Set<string>();

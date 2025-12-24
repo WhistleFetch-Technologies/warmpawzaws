@@ -70,6 +70,45 @@ export class PackagesRepository {
   }
 
   /**
+   * Get all active packages (across all vendors or specific vendor)
+   */
+  async getAllPackages(options?: { vendorId?: string; serviceType?: string; isActive?: boolean }): Promise<ServicePackage[]> {
+    try {
+      let query = this.client
+        .from('service_packages')
+        .select('*');
+
+      if (options?.vendorId) {
+        query = query.eq('vendor_id', options.vendorId);
+      }
+
+      if (options?.serviceType) {
+        query = query.eq('service_type', options.serviceType);
+      }
+
+      if (options?.isActive !== undefined) {
+        query = query.eq('is_active', options.isActive);
+      } else {
+        query = query.eq('is_active', true); // Default to active only
+      }
+
+      query = query.order('created_at', { ascending: false });
+
+      const { data, error } = await query;
+
+      if (error) {
+        console.error('Error fetching all packages:', error);
+        return [];
+      }
+
+      return (data || []).map(this.mapPackageFromDb);
+    } catch (error) {
+      console.error('Error in getAllPackages:', error);
+      return [];
+    }
+  }
+
+  /**
    * Get all packages for a vendor
    */
   async getVendorPackages(vendorId: string, serviceType?: string): Promise<ServicePackage[]> {
@@ -288,6 +327,35 @@ export class PackagesRepository {
   }
 
   /**
+   * Get package enrollments for a customer
+   */
+  async getCustomerEnrollments(customerId: string, status?: string): Promise<PackageEnrollment[]> {
+    try {
+      let query = this.client
+        .from('package_enrollments')
+        .select('*')
+        .eq('customer_id', customerId)
+        .order('created_at', { ascending: false });
+
+      if (status) {
+        query = query.eq('status', status);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        console.error('Error fetching customer enrollments:', error);
+        return [];
+      }
+
+      return (data || []).map(this.mapEnrollmentFromDb);
+    } catch (error) {
+      console.error('Error in getCustomerEnrollments:', error);
+      return [];
+    }
+  }
+
+  /**
    * Create a new enrollment
    */
   async createEnrollment(enrollmentData: Partial<PackageEnrollment>): Promise<PackageEnrollment> {
@@ -488,6 +556,195 @@ export class PackagesRepository {
       createdAt: row.created_at,
       updatedAt: row.updated_at
     };
+  }
+
+  /**
+   * Create a package purchase (using package_purchases table)
+   */
+  async createPurchase(purchaseData: {
+    purchaseId: string;
+    packageId: string;
+    customerId: string;
+    vendorId: string;
+    packageName: string;
+    packageType: string;
+    packagePrice: number;
+    totalSessions: number;
+    unlimitedUsage: boolean;
+    expiresAt?: string | null;
+    paymentMethod?: string;
+    paymentId?: string;
+    isRecurring?: boolean;
+    nextBillingDate?: string | null;
+  }): Promise<any> {
+    try {
+      const { data, error } = await this.client
+        .from('package_purchases')
+        .insert({
+          purchase_id: purchaseData.purchaseId,
+          package_id: purchaseData.packageId,
+          customer_id: purchaseData.customerId,
+          vendor_id: purchaseData.vendorId,
+          package_name: purchaseData.packageName,
+          package_type: purchaseData.packageType,
+          package_price: purchaseData.packagePrice,
+          total_sessions: purchaseData.totalSessions,
+          remaining_sessions: purchaseData.totalSessions,
+          unlimited_usage: purchaseData.unlimitedUsage,
+          expires_at: purchaseData.expiresAt || null,
+          amount: purchaseData.packagePrice,
+          payment_method: purchaseData.paymentMethod || null,
+          payment_id: purchaseData.paymentId || null,
+          payment_status: 'completed',
+          status: 'active',
+          is_recurring: purchaseData.isRecurring || false,
+          next_billing_date: purchaseData.nextBillingDate || null,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      return data;
+    } catch (error) {
+      console.error('Error creating purchase:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get purchase by ID
+   */
+  async getPurchaseById(purchaseId: string): Promise<any | null> {
+    try {
+      const { data, error } = await this.client
+        .from('package_purchases')
+        .select('*')
+        .or(`id.eq.${purchaseId},purchase_id.eq.${purchaseId}`)
+        .single();
+
+      if (error || !data) {
+        return null;
+      }
+
+      return data;
+    } catch (error) {
+      console.error('Error fetching purchase:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Get customer purchases
+   */
+  async getCustomerPurchases(customerId: string, status?: string): Promise<any[]> {
+    try {
+      let query = this.client
+        .from('package_purchases')
+        .select('*')
+        .eq('customer_id', customerId)
+        .order('created_at', { ascending: false });
+
+      if (status) {
+        query = query.eq('status', status);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        console.error('Error fetching customer purchases:', error);
+        return [];
+      }
+
+      return data || [];
+    } catch (error) {
+      console.error('Error in getCustomerPurchases:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Update purchase
+   */
+  async updatePurchase(purchaseId: string, updates: {
+    status?: string;
+    remainingSessions?: number;
+    expiresAt?: string | null;
+    paymentStatus?: string;
+  }): Promise<any | null> {
+    try {
+      const updateData: any = {
+        updated_at: new Date().toISOString(),
+      };
+
+      if (updates.status !== undefined) updateData.status = updates.status;
+      if (updates.remainingSessions !== undefined) updateData.remaining_sessions = updates.remainingSessions;
+      if (updates.expiresAt !== undefined) updateData.expires_at = updates.expiresAt;
+      if (updates.paymentStatus !== undefined) updateData.payment_status = updates.paymentStatus;
+
+      const { data, error } = await this.client
+        .from('package_purchases')
+        .update(updateData)
+        .or(`id.eq.${purchaseId},purchase_id.eq.${purchaseId}`)
+        .select()
+        .single();
+
+      if (error || !data) {
+        return null;
+      }
+
+      return data;
+    } catch (error) {
+      console.error('Error updating purchase:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Get package sales analytics
+   */
+  async getPackageSalesAnalytics(packageId: string): Promise<any> {
+    try {
+      const { data: purchases, error } = await this.client
+        .from('package_purchases')
+        .select('*')
+        .eq('package_id', packageId);
+
+      if (error) {
+        console.error('Error fetching package sales:', error);
+        return {
+          totalSales: 0,
+          totalRevenue: 0,
+          activePurchases: 0,
+          expiredPurchases: 0,
+          purchases: []
+        };
+      }
+
+      const totalSales = purchases?.length || 0;
+      const totalRevenue = purchases?.reduce((sum: number, p: any) => sum + parseFloat(p.amount || 0), 0) || 0;
+      const activePurchases = purchases?.filter((p: any) => p.status === 'active').length || 0;
+      const expiredPurchases = purchases?.filter((p: any) => p.status === 'expired').length || 0;
+
+      return {
+        totalSales,
+        totalRevenue,
+        activePurchases,
+        expiredPurchases,
+        purchases: purchases || []
+      };
+    } catch (error) {
+      console.error('Error in getPackageSalesAnalytics:', error);
+      return {
+        totalSales: 0,
+        totalRevenue: 0,
+        activePurchases: 0,
+        expiredPurchases: 0,
+        purchases: []
+      };
+    }
   }
 }
 

@@ -19,6 +19,7 @@ import {
   DialogFooter,
 } from '../ui/dialog';
 import { EnhancedPackageCreationModal } from './EnhancedPackageCreationModal';
+import { ServiceStaffAssignmentButton } from './ServiceStaffAssignmentButton';
 
 interface VendorServiceConfigurationScreenProps {
   vendorId: string;
@@ -302,6 +303,8 @@ export function VendorServiceConfigurationScreen({
         console.log('✅ Configuration saved:', data);
         toast.success('Services saved successfully');
         setHasChanges(false);
+        // ✅ FIX: Reload services to show updated state immediately
+        await loadServices();
         return true;
       } else {
         const error = await response.json();
@@ -497,8 +500,9 @@ export function VendorServiceConfigurationScreen({
         console.log('✅ Custom service added:', data);
         toast.success('Custom service added successfully!');
         
-        // Reload services
+        // ✅ FIX: Reload services to show new service immediately
         await loadServices();
+        setShowAddCustomDialog(false); // Close dialog after success
       } else {
         const error = await response.json();
         console.error('❌ Failed to add custom service:', error);

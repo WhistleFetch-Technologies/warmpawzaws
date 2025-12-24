@@ -179,216 +179,9 @@ app.post("/staff/auth/login", async (c) => {
 // ============================================================================
 // STAFF MANAGEMENT (Vendor creates/manages staff)
 // ============================================================================
-
-/**
- * POST /staff/create
- * Create new staff member (doctor, groomer, trainer)
- */
-app.post("/staff/create", async (c) => {
-  try {
-    const staffData = await c.req.json();
-    
-    console.log(`📝 Creating staff member:`, staffData);
-    
-    // Validate required fields
-    const required = ['vendorId', 'fullName', 'phone', 'role', 'roleType', 'specializations', 'photo', 'degree'];
-    for (const field of required) {
-      if (!staffData[field]) {
-        return c.json({ error: `${field} is required` }, 400);
-      }
-    }
-    
-    // Check if phone already exists
-    const allStaffKeys = await kv.getByPrefix("staff:");
-    const existingStaff = allStaffKeys.find((item: any) => 
-      item.value?.phone === staffData.phone
-    );
-    
-    if (existingStaff) {
-      return c.json({ error: "Phone number already registered" }, 400);
-    }
-    
-    // Generate staff ID
-    const staffId = `staff_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
-    const staff = {
-      id: staffId,
-      vendorId: staffData.vendorId,
-      fullName: staffData.fullName,
-      phone: staffData.phone,
-      email: staffData.email || '',
-      role: staffData.role, // 'doctor', 'groomer', 'trainer', 'assistant'
-      roleType: staffData.roleType, // 'vet', 'groomer', 'trainer', 'clinic_doctor'
-      specializations: staffData.specializations, // Array of specializations
-      degree: staffData.degree, // Education qualification
-      experience: staffData.experience || 0,
-      photo: staffData.photo, // Photo URL
-      bio: staffData.bio || '',
-      consultationFee: staffData.consultationFee || 0,
-      
-      // Service configuration
-      services: staffData.services || [], // Services this staff can perform
-      
-      // Schedule
-      availability: staffData.availability || {
-        monday: { enabled: true, slots: [{ start: '09:00', end: '17:00' }] },
-        tuesday: { enabled: true, slots: [{ start: '09:00', end: '17:00' }] },
-        wednesday: { enabled: true, slots: [{ start: '09:00', end: '17:00' }] },
-        thursday: { enabled: true, slots: [{ start: '09:00', end: '17:00' }] },
-        friday: { enabled: true, slots: [{ start: '09:00', end: '17:00' }] },
-        saturday: { enabled: true, slots: [{ start: '09:00', end: '12:00' }] },
-        sunday: { enabled: false, slots: [] }
-      },
-      
-      // Status
-      status: 'active', // 'active', 'inactive', 'on_leave'
-      isActive: true,
-      
-      // Stats
-      totalAppointments: 0,
-      completedAppointments: 0,
-      totalEarnings: 0,
-      rating: 0,
-      reviewCount: 0,
-      
-      // Metadata
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      lastLogin: null
-    };
-    
-    // Save staff
-    await kv.set(`staff:${staffId}`, staff);
-    
-    // Add to vendor's staff list
-    const vendorStaffKey = `vendor:${staffData.vendorId}:staff`;
-    const vendorStaff = await kv.get(vendorStaffKey) || [];
-    vendorStaff.push(staffId);
-    await kv.set(vendorStaffKey, vendorStaff);
-    
-    console.log(`✅ Staff created successfully: ${staffId}`);
-    
-    return c.json({
-      success: true,
-      staffId,
-      staff
-    });
-    
-  } catch (error) {
-    console.error("Error creating staff:", error);
-    return c.json({ error: "Internal server error" }, 500);
-  }
-});
-
-/**
- * GET /staff/:staffId
- * Get staff profile
- */
-app.get("/staff/:staffId", async (c) => {
-  try {
-    const staffId = c.req.param("staffId");
-    const staff = await kv.get(`staff:${staffId}`);
-    
-    if (!staff) {
-      return c.json({ error: "Staff not found" }, 404);
-    }
-    
-    return c.json({ staff });
-    
-  } catch (error) {
-    console.error("Error fetching staff:", error);
-    return c.json({ error: "Internal server error" }, 500);
-  }
-});
-
-/**
- * GET /staff/vendor/:vendorId
- * ✅ MIGRATED TO SQL: Now uses SQL-based staff repository
- * Get all staff for a vendor
- */
-app.get("/staff/vendor/:vendorId", async (c) => {
-  try {
-    const vendorId = c.req.param("vendorId");
-    
-    // ✅ USE SQL-BASED STAFF REPOSITORY (NO KV STORE)
-    const staffRepo = getStaffRepository();
-    const staff = await staffRepo.findByVendorId(vendorId);
-    
-    return c.json({ staff });
-    
-  } catch (error) {
-    console.error("Error fetching vendor staff:", error);
-    return c.json({ error: "Internal server error" }, 500);
-  }
-});
-
-/**
- * PUT /staff/:staffId
- * Update staff profile
- */
-app.put("/staff/:staffId", async (c) => {
-  try {
-    const staffId = c.req.param("staffId");
-    const updates = await c.req.json();
-    
-    const staff = await kv.get(`staff:${staffId}`);
-    
-    if (!staff) {
-      return c.json({ error: "Staff not found" }, 404);
-    }
-    
-    // Update staff
-    const updatedStaff = {
-      ...staff,
-      ...updates,
-      id: staffId, // Ensure ID doesn't change
-      updatedAt: new Date().toISOString()
-    };
-    
-    await kv.set(`staff:${staffId}`, updatedStaff);
-    
-    console.log(`✅ Staff updated: ${staffId}`);
-    
-    return c.json({
-      success: true,
-      staff: updatedStaff
-    });
-    
-  } catch (error) {
-    console.error("Error updating staff:", error);
-    return c.json({ error: "Internal server error" }, 500);
-  }
-});
-
-/**
- * DELETE /staff/:staffId
- * Delete staff (soft delete)
- */
-app.delete("/staff/:staffId", async (c) => {
-  try {
-    const staffId = c.req.param("staffId");
-    const staff = await kv.get(`staff:${staffId}`);
-    
-    if (!staff) {
-      return c.json({ error: "Staff not found" }, 404);
-    }
-    
-    // Soft delete
-    staff.status = 'inactive';
-    staff.isActive = false;
-    staff.updatedAt = new Date().toISOString();
-    
-    await kv.set(`staff:${staffId}`, staff);
-    
-    console.log(`✅ Staff deactivated: ${staffId}`);
-    
-    return c.json({ success: true });
-    
-  } catch (error) {
-    console.error("Error deleting staff:", error);
-    return c.json({ error: "Internal server error" }, 500);
-  }
-});
+// ✅ NOTE: CRUD operations (create, read, update, delete) are handled by
+//    staff-crud-endpoints-refactored.tsx which uses SQL repositories.
+//    This file only handles authentication endpoints.
 
 // ============================================================================
 // STAFF APPOINTMENTS
@@ -396,37 +189,35 @@ app.delete("/staff/:staffId", async (c) => {
 
 /**
  * GET /staff/:staffId/appointments
- * Get all appointments for a staff member
+ * ✅ MIGRATED TO SQL: Get all appointments for a staff member
  */
 app.get("/staff/:staffId/appointments", async (c) => {
   try {
     const staffId = c.req.param("staffId");
     const status = c.req.query("status"); // upcoming, completed, cancelled
     
-    console.log(`📅 Fetching appointments for staff: ${staffId}, status: ${status || 'all'}`);
+    console.log(`📅 [SQL] Fetching appointments for staff: ${staffId}, status: ${status || 'all'}`);
     
-    // Get all bookings
-    const bookingKeys = await kv.getByPrefix("booking:");
+    // ✅ SQL: Get bookings from bookings table
+    const { getBookingsRepository } = await import("../../lib/repositories/bookings.ts");
+    const bookingsRepo = getBookingsRepository();
     
-    // Filter bookings for this staff
-    // getByPrefix returns objects directly, not wrapped in .value
-    const staffBookings = bookingKeys
-      .filter((booking: any) => {
-        // Check if booking is valid
-        if (!booking) return false;
-        // Check if this booking belongs to this staff member
-        if (booking.staffId !== staffId && booking.doctorId !== staffId) return false;
-        // Filter by status if provided
-        if (status && booking.status !== status) return false;
-        return true;
-      })
-      .sort((a: any, b: any) => {
-        return new Date(a.date || a.createdAt).getTime() - new Date(b.date || b.createdAt).getTime();
-      });
+    // Find staff by ID first to get the UUID
+    const staffRepo = getStaffRepository();
+    const staff = await staffRepo.findById(staffId);
     
-    console.log(`✅ Found ${staffBookings.length} appointments for staff`);
+    if (!staff) {
+      return c.json({ error: "Staff not found" }, 404);
+    }
     
-    return c.json({ appointments: staffBookings });
+    // Get bookings for this staff
+    const bookings = await bookingsRepo.findByStaff(staff.id, {
+      status: status as any,
+    });
+    
+    console.log(`✅ [SQL] Found ${bookings.length} appointments for staff`);
+    
+    return c.json({ appointments: bookings });
     
   } catch (error) {
     console.error("Error fetching staff appointments:", error);

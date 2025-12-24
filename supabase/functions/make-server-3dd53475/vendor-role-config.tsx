@@ -1,5 +1,5 @@
 import { Hono } from "npm:hono";
-import * as kv from "./kv_store.tsx";
+import { getRolesRepository } from '../../lib/repositories/roles.ts';
 
 // ----------------------------------------------------------------------------
 // CONFIGURATION & CONSTANTS
@@ -411,14 +411,24 @@ const STANDARD_ROLE_DEFINITIONS: Record<string, any> = {
 async function cleanupAndMergeRoles() {
   console.log('🧹 [CLEANUP] Starting Deep Role Cleanup & Merge...');
   
-  const allConfigs = await kv.getByPrefix('role:config:') || [];
+  // ✅ SQL: Get all roles with configs
+  const rolesRepo = getRolesRepository();
+  const allRoles = await rolesRepo.findAllWithConfigs();
   const stats = { merged: 0, deleted: 0, renamed: 0 };
 
   // 1. Group by Canonical ID (or Best Guess ID)
   const buckets = new Map<string, any[]>();
 
-  for (const config of allConfigs) {
-    let id = config.roleId || config.id;
+  for (const role of allRoles) {
+    // Extract config from role.config JSONB or use role data
+    const config = role.config || {
+      roleId: role.name,
+      id: role.name,
+      roleName: role.display_name,
+      ...role
+    };
+    
+    let id = config.roleId || config.id || role.name;
     if (!id) continue;
     id = id.toLowerCase().trim();
 
@@ -513,13 +523,24 @@ async function cleanupAndMergeRoles() {
       if (winner.pricingControl && Object.keys(winner.pricingControl).length > 0) optimizedConfig.pricingControl = winner.pricingControl;
       else optimizedConfig.pricingControl = standardDef.pricingControl || {};
 
-      // Save Winner to Correct Key
-      await kv.set(`role:config:${bucketKey}`, optimizedConfig);
+      // ✅ SQL: Save Winner to roles table
+      const existingRole = await rolesRepo.findById(bucketKey);
+      if (existingRole) {
+        await rolesRepo.setConfig(bucketKey, optimizedConfig);
+      } else {
+        await rolesRepo.create({
+          name: bucketKey,
+          display_name: optimizedConfig.roleName || bucketKey,
+          description: optimizedConfig.description,
+          config: optimizedConfig,
+          is_active: true
+        });
+      }
       stats.merged++;
 
-      // Delete Old Key if ID changed
+      // ✅ SQL: Delete Old Key if ID changed (soft delete)
       if (winner._originalId && winner._originalId !== bucketKey) {
-        await kv.del(`role:config:${winner._originalId}`);
+        await rolesRepo.delete(winner._originalId);
         stats.renamed++;
       }
     } else {
@@ -533,7 +554,9 @@ async function cleanupAndMergeRoles() {
              status: 'active',
              updatedAt: new Date().toISOString()
           };
-          await kv.set(`role:config:${bucketKey}`, activeConfig);
+          // ✅ SQL: Update role config
+          await rolesRepo.setConfig(bucketKey, activeConfig);
+          await rolesRepo.update(bucketKey, { is_active: true });
           stats.merged++; // Count as an update
        }
     }
@@ -542,7 +565,8 @@ async function cleanupAndMergeRoles() {
     for (const loser of losers) {
       if (loser._originalId && loser._originalId !== bucketKey) { // Don't delete if it's the same key we just wrote
          console.log(`🗑️ [DELETE] Removing duplicate/inferior config: ${loser._originalId}`);
-         await kv.del(`role:config:${loser._originalId}`);
+         // ✅ SQL: Soft delete duplicate role
+         await rolesRepo.delete(loser._originalId);
          stats.deleted++;
       }
     }
@@ -566,31 +590,24 @@ export function vendorRoleConfigEndpoints(app: Hono) {
     try {
       console.log('📋 [ROLES] Fetching roles...');
       
-      // Fetch roles WITHOUT triggering cleanup (cleanup was causing timeouts)
-      const allConfigs = await kv.getByPrefix('role:config:').catch(err => {
-        console.error('❌ [ROLES] KV timeout fetching roles:', err.message);
-        return [];
-      });
+      // ✅ SQL: Fetch all active roles with configs
+      const rolesRepo = getRolesRepository();
+      const allRoles = await rolesRepo.findActive();
       
-      console.log(`📋 [ROLES] Raw KV response count: ${allConfigs?.length || 0}`);
-      if (allConfigs && allConfigs.length > 0) {
-        console.log(`📋 [ROLES] First item structure:`, JSON.stringify(allConfigs[0], null, 2).substring(0, 300));
-      }
+      console.log(`📋 [ROLES] Raw SQL response count: ${allRoles?.length || 0}`);
       
       // Filter & Transform
-      const rawRoles = (allConfigs || [])
-        .map((item: any) => {
-          // KV store returns { key: string, value: string }
-          // The value is a JSON STRING that needs to be parsed!
-          let config;
-          try {
-            config = typeof item.value === 'string' ? JSON.parse(item.value) : item.value;
-          } catch (e) {
-            console.error('⚠️ [ROLES] Failed to parse role JSON:', e);
-            return null;
-          }
+      const rawRoles = (allRoles || [])
+        .map((role: any) => {
+          // Extract config from role.config JSONB or use role data
+          const config = role.config || {
+            roleId: role.name,
+            id: role.name,
+            roleName: role.display_name,
+            ...role
+          };
           
-          const id = config.roleId || config.id;
+          const id = config.roleId || config.id || role.name;
           if (!id) {
             console.warn('⚠️ [ROLES] Skipping role with no ID');
             return null;
@@ -599,7 +616,7 @@ export function vendorRoleConfigEndpoints(app: Hono) {
           console.log(`✅ [ROLES] Found role: ${id}`);
           
           // Ensure Name is NEVER empty
-          let name = config.roleName || config.displayName || config.name;
+          let name = config.roleName || config.displayName || config.name || role.display_name;
           
           // Fallback to Known Name
           if (!name && KNOWN_ROLE_NAMES[id]) {
@@ -626,11 +643,11 @@ export function vendorRoleConfigEndpoints(app: Hono) {
             id: id,
             name: name, 
             displayName: name,
-            description: config.description || 'Vendor Role',
+            description: config.description || role.description || 'Vendor Role',
             icon: icon,
             version: config.version || 1,
             status: 'active', // Force active for all roles
-            isActive: true,   // Force active for all roles
+            isActive: role.is_active !== false,   // Use SQL is_active
             
             vendorTypes,
             serviceStyles,
@@ -683,23 +700,24 @@ export function vendorRoleConfigEndpoints(app: Hono) {
       
       console.log(`🗑️ [DELETE ROLE] Attempting to delete role: ${roleId}`);
       
-      // Check if role exists
-      const existingRole = await kv.get(`role:config:${roleId}`);
+      // ✅ SQL: Check if role exists
+      const rolesRepo = getRolesRepository();
+      const existingRole = await rolesRepo.findById(roleId);
       if (!existingRole) {
         console.error(`❌ [DELETE ROLE] Role not found: ${roleId}`);
         return c.json({ error: 'Role not found', roleId }, 404);
       }
       
-      console.log(`✅ [DELETE ROLE] Found role: ${existingRole.name || roleId}`);
+      console.log(`✅ [DELETE ROLE] Found role: ${existingRole.display_name || roleId}`);
       
-      // Delete the role from KV store
-      await kv.del(`role:config:${roleId}`);
+      // ✅ SQL: Soft delete the role
+      await rolesRepo.delete(roleId);
       
       console.log(`✅ [DELETE ROLE] Successfully deleted role: ${roleId}`);
       
       return c.json({ 
         success: true, 
-        message: `Role "${existingRole.name || roleId}" deleted successfully`,
+        message: `Role "${existingRole.display_name || roleId}" deleted successfully`,
         deletedRoleId: roleId
       });
     } catch (error) {
@@ -726,8 +744,9 @@ export function vendorRoleConfigEndpoints(app: Hono) {
         return c.json({ error: "Role Name or ID is required" }, 400);
       }
 
-      // Check if exists
-      const existing = await kv.get(`role:config:${id}`);
+      // ✅ SQL: Check if exists
+      const rolesRepo = getRolesRepository();
+      const existing = await rolesRepo.findById(id);
       if (existing) {
         return c.json({ error: `Role with ID '${id}' already exists` }, 409);
       }
@@ -743,7 +762,14 @@ export function vendorRoleConfigEndpoints(app: Hono) {
         version: 1
       };
       
-      await kv.set(`role:config:${id}`, newRole);
+      // ✅ SQL: Create role with config
+      await rolesRepo.create({
+        name: id,
+        display_name: body.roleName || body.name || id,
+        description: body.description,
+        config: newRole,
+        is_active: true
+      });
       return c.json({ success: true, role: newRole });
     } catch (error) {
       console.error('Error creating role:', error);
@@ -760,20 +786,28 @@ export function vendorRoleConfigEndpoints(app: Hono) {
       const id = c.req.param('id');
       const body = await c.req.json();
       
-      const existing = await kv.get(`role:config:${id}`);
+      // ✅ SQL: Get existing role
+      const rolesRepo = getRolesRepository();
+      const existing = await rolesRepo.findById(id);
       if (!existing) {
         return c.json({ error: `Role '${id}' not found` }, 404);
       }
 
+      const existingConfig = existing.config || {};
       const updatedRole = {
-        ...existing,
+        ...existingConfig,
         ...body,
         id, // Ensure ID matches URL param
         roleId: id,
         updatedAt: new Date().toISOString()
       };
       
-      await kv.set(`role:config:${id}`, updatedRole);
+      // ✅ SQL: Update role config
+      await rolesRepo.setConfig(id, updatedRole);
+      await rolesRepo.update(id, {
+        display_name: body.roleName || body.name || existing.display_name,
+        description: body.description || existing.description
+      });
       return c.json({ success: true, role: updatedRole });
     } catch (error) {
       console.error('Error updating role:', error);
@@ -786,12 +820,16 @@ export function vendorRoleConfigEndpoints(app: Hono) {
   app.get("/make-server-3dd53475/admin/onboarding-forms/:roleId", async (c) => {
     try {
       const { roleId } = c.req.param();
-      let config = await kv.get(`role:config:${roleId}`);
+      // ✅ SQL: Get role config
+      const rolesRepo = getRolesRepository();
+      const role = await rolesRepo.findById(roleId);
+      let config = role?.config || null;
       
-      // Fallback: If head missing
+      // Fallback: If config missing
       if (!config) {
-        // Check legacy
-        const legacyFields = await kv.get(`onboarding:fields:${roleId}`);
+        // Check legacy (TODO: Migrate onboarding:fields to SQL if needed)
+        // For now, return empty config
+        const legacyFields = null; // await kv.get(`onboarding:fields:${roleId}`);
         if (legacyFields) {
            const baseConfig = {
              id: roleId,
@@ -808,7 +846,8 @@ export function vendorRoleConfigEndpoints(app: Hono) {
                 fields: legacyFields.map((f: any) => ({...f, section: 'general'}))
              }]
            };
-           await kv.set(`role:config:${roleId}`, baseConfig);
+           // ✅ SQL: Save restored config
+           await rolesRepo.setConfig(roleId, baseConfig);
            config = baseConfig;
         } else {
            // Generate Default
@@ -841,7 +880,10 @@ export function vendorRoleConfigEndpoints(app: Hono) {
     try {
       const { roleId } = c.req.param();
       const formData = await c.req.json();
-      const existing = await kv.get(`role:config:${roleId}`);
+      // ✅ SQL: Get existing role
+      const rolesRepo = getRolesRepository();
+      const existingRole = await rolesRepo.findById(roleId);
+      const existing = existingRole?.config || {};
       const newVersion = (existing?.version || 0) + 1;
 
       const config = {
@@ -855,9 +897,9 @@ export function vendorRoleConfigEndpoints(app: Hono) {
         status: formData.status || existing?.status || 'draft' 
       };
       
-      await kv.set(`role:config:${roleId}`, config);
-      // History
-      await kv.set(`role:config:${roleId}:v${newVersion}`, config);
+      // ✅ SQL: Save config
+      await rolesRepo.setConfig(roleId, config);
+      // TODO: History can be stored in a separate role_config_history table if needed
       
       return c.json({ success: true, message: 'Saved', form: config });
     } catch (error) {
@@ -880,15 +922,13 @@ export function vendorRoleConfigEndpoints(app: Hono) {
     try {
        console.log('☢️ [RESURRECT] Starting Nuclear Role Restoration...');
        
-       // 1. Delete ALL existing role configs
-       const allConfigs = await kv.getByPrefix('role:config:') || [];
+       // ✅ SQL: Soft delete ALL existing role configs
+       const rolesRepo = getRolesRepository();
+       const allRoles = await rolesRepo.findAll();
        let deleted = 0;
-       for (const config of allConfigs) {
-          const key = config.roleId || config.id;
-          if (key) {
-             await kv.del(`role:config:${key}`);
-             deleted++;
-          }
+       for (const role of allRoles) {
+          await rolesRepo.delete(role.name);
+          deleted++;
        }
        console.log(`🗑️ [RESURRECT] Deleted ${deleted} potentially corrupted role configs.`);
 
@@ -909,7 +949,20 @@ export function vendorRoleConfigEndpoints(app: Hono) {
             _restored: true
           };
           
-          await kv.set(`role:config:${roleId}`, config);
+          // ✅ SQL: Create/update role with config
+          const existing = await rolesRepo.findById(roleId);
+          if (existing) {
+            await rolesRepo.setConfig(roleId, config);
+            await rolesRepo.update(roleId, { is_active: true });
+          } else {
+            await rolesRepo.create({
+              name: roleId,
+              display_name: config.roleName,
+              description: config.description,
+              config: config,
+              is_active: true
+            });
+          }
           restored++;
        }
 
@@ -933,22 +986,15 @@ export function vendorRoleConfigEndpoints(app: Hono) {
     try {
       console.log('🔄 [UPDATE-CAPS] Starting capability update for all roles...');
       
-      const allConfigs = await kv.getByPrefix('role:config:') || [];
+      // ✅ SQL: Get all roles with configs
+      const rolesRepo = getRolesRepository();
+      const allRoles = await rolesRepo.findAllWithConfigs();
       let updated = 0;
       let skipped = 0;
       
-      for (const item of allConfigs) {
-        // Parse the config
-        let config;
-        try {
-          config = typeof item.value === 'string' ? JSON.parse(item.value) : item.value;
-        } catch (e) {
-          console.error('⚠️ [UPDATE-CAPS] Failed to parse role JSON:', e);
-          skipped++;
-          continue;
-        }
-        
-        const roleId = config.roleId || config.id;
+      for (const role of allRoles) {
+        const config = role.config || {};
+        const roleId = config.roleId || config.id || role.name;
         if (!roleId) {
           skipped++;
           continue;
@@ -982,7 +1028,8 @@ export function vendorRoleConfigEndpoints(app: Hono) {
             _capabilitiesUpdated: true
           };
           
-          await kv.set(`role:config:${roleId}`, updatedConfig);
+          // ✅ SQL: Update role config
+          await rolesRepo.setConfig(roleId, updatedConfig);
           updated++;
         } else {
           console.log(`✅ [UPDATE-CAPS] ${roleId} already has latest capabilities`);
@@ -1005,10 +1052,26 @@ export function vendorRoleConfigEndpoints(app: Hono) {
   app.get("/make-server-3dd53475/vendor/:vendorId/allowed-service-styles", async (c) => {
     try {
       const { vendorId } = c.req.param();
-      const vendor = await kv.get(`vendor:${vendorId}`);
+      // ✅ SQL: Get vendor
+      const { getVendorsRepository } = await import('../../lib/repositories/vendors.ts');
+      const vendorsRepo = getVendorsRepository();
+      
+      // ✅ FIX: Resolve vendor ID (handles both UUID and vendor_id string like "vendor_9611377119")
+      const resolvedVendorId = await vendorsRepo.resolveVendorId(vendorId);
+      
+      if (!resolvedVendorId) {
+        console.error(`❌ [ALLOWED-STYLES] Vendor not found: ${vendorId}`);
+        return c.json({ error: `Vendor not found: ${vendorId}` }, 404);
+      }
+      
+      console.log(`✅ [ALLOWED-STYLES] Resolved vendor ID: ${vendorId} -> ${resolvedVendorId}`);
+      
+      const vendor = await vendorsRepo.findById(resolvedVendorId);
       if (!vendor) return c.json({ error: 'Vendor not found' }, 404);
       
-      const roleId = vendor.roleId || 'veterinarian';
+      // ✅ FIX: Use role_id (database field) - check both snake_case and camelCase
+      const roleId = (vendor as any).role_id || (vendor as any).roleId || 'veterinarian';
+      console.log(`📋 [ALLOWED-STYLES] Vendor roleId: ${roleId}`);
       const stylesList: string[] = [];
       
       // Use standard defs if available
@@ -1036,7 +1099,10 @@ export function vendorRoleConfigEndpoints(app: Hono) {
   app.get("/make-server-3dd53475/vendor/onboarding-form/:roleId", async (c) => {
     try {
       const { roleId } = c.req.param();
-      let config = await kv.get(`role:config:${roleId}`);
+      // ✅ SQL: Get role config
+      const rolesRepo = getRolesRepository();
+      const role = await rolesRepo.findById(roleId);
+      let config = role?.config || null;
       // If clean-up worked, config should be good.
       // If still missing, fallback to basic generator
       if (!config) {
@@ -1067,13 +1133,17 @@ export function vendorRoleConfigEndpoints(app: Hono) {
   app.post("/make-server-3dd53475/admin/role-config/save", async (c) => {
     const config = await c.req.json();
     if (!config.id) return c.json({ error: 'Role ID required' }, 400);
-    await kv.set(`role:config:${config.id}`, { ...config, updatedAt: new Date().toISOString() });
+    // ✅ SQL: Save role config
+    const rolesRepo = getRolesRepository();
+    await rolesRepo.setConfig(config.id, { ...config, updatedAt: new Date().toISOString() });
     return c.json({ success: true });
   });
   
     // Get all
   app.get("/make-server-3dd53475/admin/role-config/all", async (c) => {
-    const configs = await kv.getByPrefix('role:config:');
-    return c.json({ success: true, configs });
+    // ✅ SQL: Get all roles with configs
+    const rolesRepo = getRolesRepository();
+    const configs = await rolesRepo.findAllWithConfigs();
+    return c.json({ success: true, configs: configs.map(r => r.config || {}) });
   });
 }

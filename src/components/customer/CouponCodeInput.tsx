@@ -55,7 +55,7 @@ export function CouponCodeInput({
       setError(null);
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/coupons/validate`,
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/coupon/validate`,
         {
           method: 'POST',
           headers: {
@@ -74,18 +74,19 @@ export function CouponCodeInput({
 
       if (data.success && data.valid) {
         // Coupon is valid
+        const coupon = data.coupon || {};
         const couponData: Coupon = {
-          id: data.couponId,
-          code: code.trim().toUpperCase(),
-          type: data.discountType,
-          value: data.discountValue,
-          maxDiscountAmount: data.maxDiscountAmount,
-          minOrderAmount: data.minOrderAmount,
-          isActive: true
+          id: coupon.id || data.couponId,
+          code: coupon.code || code.trim().toUpperCase(),
+          type: coupon.discount_type || data.discountType,
+          value: coupon.discount_value || data.discountValue,
+          maxDiscountAmount: coupon.max_discount || data.maxDiscountAmount,
+          minOrderAmount: coupon.minimum_amount || data.minOrderAmount,
+          isActive: coupon.is_active !== false
         };
 
         setAppliedCoupon(couponData);
-        setDiscountAmount(data.discountAmount);
+        setDiscountAmount(data.discountAmount || 0);
         setError(null);
 
         if (onCouponApplied) {

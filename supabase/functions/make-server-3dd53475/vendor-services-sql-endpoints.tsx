@@ -370,19 +370,40 @@ export function registerVendorServicesSQLEndpoints(app: Hono) {
         return sendError(c, 'Staff not found', 404);
       }
 
-      // Get vendor's center services (excluding custom services and packages)
-      const { data: centerServices, error: servicesError } = await supabase
-        .from('services')
+      // ✅ FIX: Get vendor's center services from vendor_services table (not services table)
+      // Center services are those with service_style = 'at_center' in vendor_services
+      const { data: vendorServices, error: servicesError } = await supabase
+        .from('vendor_services')
         .select(`
           *,
-          vendor_services!inner (*)
+          services:service_id (
+            id,
+            name,
+            description,
+            category,
+            base_price,
+            duration_minutes,
+            is_custom_service,
+            is_package,
+            is_live,
+            publish_status
+          )
         `)
         .eq('vendor_id', staff.vendor_id)
-        .eq('is_custom_service', false)
-        .eq('is_package', false)
-        .eq('is_live', true)
-        .eq('publish_status', 'published')
-        .not('center_id', 'is', null);
+        .eq('service_style', 'at_center') // ✅ FIX: Center services have service_style = 'at_center'
+        .eq('is_enabled', true)
+        .eq('is_published', true)
+        .eq('publish_status', 'published');
+      
+      // Filter out custom services and packages
+      const centerServices = (vendorServices || []).filter((vs: any) => {
+        const service = vs.services;
+        return service && 
+               !service.is_custom_service && 
+               !service.is_package && 
+               service.is_live &&
+               service.publish_status === 'published';
+      });
 
       if (servicesError) {
         console.error('Error fetching center services:', servicesError);
@@ -401,12 +422,22 @@ export function registerVendorServicesSQLEndpoints(app: Hono) {
           .map((ss: any) => ss.service_id)
       );
 
-      // Mark which services are enabled for this staff
-      const availableServices = (centerServices || []).map((service: any) => ({
-        ...service,
-        isEnabled: enabledServiceIds.has(service.id),
-        canEnable: true // Center services can always be enabled by staff
-      }));
+      // ✅ FIX: Mark which services are enabled for this staff
+      const availableServices = centerServices.map((vs: any) => {
+        const service = vs.services;
+        return {
+          id: vs.id,
+          service_id: service?.id,
+          name: service?.name || 'Service',
+          description: vs.custom_description || service?.description || '',
+          category: service?.category || '',
+          price: vs.custom_price || service?.base_price || 0,
+          duration: vs.custom_duration || service?.duration_minutes || 60,
+          service_style: vs.service_style || 'at_center',
+          isEnabled: enabledServiceIds.has(service?.id),
+          canEnable: true // Center services can always be enabled by staff
+        };
+      });
 
       return sendSuccess(c, {
         success: true,
@@ -442,12 +473,33 @@ export function registerVendorServicesSQLEndpoints(app: Hono) {
         return sendError(c, 'Staff not found', 404);
       }
 
-      // Get service
-      const { data: service, error: serviceError } = await supabase
+      // ✅ FIX: Get service - handle both UUID (id) and string (service_id)
+      let service: any = null;
+      let serviceError: any = null;
+      
+      // Try UUID first
+      const { data: serviceByUuid } = await supabase
         .from('services')
-        .select('id, is_custom_service, is_package')
-        .eq('service_id', serviceId)
+        .select('id, service_id, is_custom_service, is_package')
+        .eq('id', serviceId)
         .single();
+      
+      if (serviceByUuid) {
+        service = serviceByUuid;
+      } else {
+        // Try service_id string
+        const { data: serviceByString, error: err } = await supabase
+          .from('services')
+          .select('id, service_id, is_custom_service, is_package')
+          .eq('service_id', serviceId)
+          .single();
+        
+        if (err) {
+          serviceError = err;
+        } else {
+          service = serviceByString;
+        }
+      }
 
       if (serviceError || !service) {
         return sendError(c, 'Service not found', 404);
@@ -458,12 +510,22 @@ export function registerVendorServicesSQLEndpoints(app: Hono) {
         return sendError(c, 'Custom services and packages cannot be enabled by staff', 400);
       }
 
+      // ✅ FIX: Get vendor_service_id if exists (link to vendor_services)
+      const { data: vendorService } = await supabase
+        .from('vendor_services')
+        .select('id')
+        .eq('vendor_id', staff.vendor_id)
+        .eq('service_id', service.id)
+        .eq('service_style', 'at_center')
+        .single();
+      
       // Upsert staff service
       const { data: staffService, error: upsertError } = await supabase
         .from('staff_services')
         .upsert({
           staff_id: staff.id,
           service_id: service.id,
+          vendor_service_id: vendorService?.id || null,
           is_enabled: enabled,
           updated_at: new Date().toISOString()
         }, {

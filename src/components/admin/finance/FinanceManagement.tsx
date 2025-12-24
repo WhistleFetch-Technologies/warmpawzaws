@@ -10,6 +10,7 @@ import { SettlementScheduleSettings } from './SettlementScheduleSettings';
 import { ScheduleSettingsManagement } from '../settings/ScheduleSettingsManagement';
 import { GSTConfigurationManagement } from './GSTConfigurationManagement';
 import { CancellationPolicyManagement } from './CancellationPolicyManagement';
+import { DynamicSettlementRulesManager } from './DynamicSettlementRulesManager';
 import { UnifiedAdminSidebar } from '../layout/UnifiedAdminSidebar';
 import { Button } from '../../ui/button';
 import { ArrowLeft } from 'lucide-react';
@@ -19,7 +20,7 @@ interface FinanceManagementProps {
   onNavigate?: (view: string) => void;
 }
 
-type TabType = 'dashboard' | 'payment-policies' | 'refund-policies' | 'cancellation-policy' | 'gst-config' | 'settlements' | 'payouts' | 'tiers' | 'schedule-settings' | 'payment-settings' | 'reports';
+type TabType = 'dashboard' | 'payment-policies' | 'refund-policies' | 'cancellation-policy' | 'gst-config' | 'settlements' | 'payouts' | 'tiers' | 'schedule-settings' | 'payment-settings' | 'settlement-rules' | 'reports';
 
 export function FinanceManagement({ onBack, onNavigate }: FinanceManagementProps) {
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
@@ -35,6 +36,7 @@ export function FinanceManagement({ onBack, onNavigate }: FinanceManagementProps
     { id: 'payouts', label: 'Payout Management', icon: Wallet },
     { id: 'tiers', label: 'Tier System', icon: Layers },
     { id: 'schedule-settings', label: 'Schedule Settings', icon: Clock },
+    { id: 'settlement-rules', label: 'Settlement Rules', icon: TrendingUp },
     { id: 'payment-settings', label: 'Payment Gateway', icon: Settings },
     { id: 'reports', label: 'Reports', icon: FileText }
   ];
@@ -215,6 +217,11 @@ export function FinanceManagement({ onBack, onNavigate }: FinanceManagementProps
           {activeTab === 'settlements' && <SettlementDashboard />}
           {activeTab === 'payouts' && <PayoutManagement />}
           {activeTab === 'tiers' && <TierManagement />}
+          {activeTab === 'settlement-rules' && (
+            <div className="bg-white rounded-lg border border-gray-200 p-6">
+              <DynamicSettlementRulesManager />
+            </div>
+          )}
           
           {activeTab === 'schedule-settings' && (
             <div className="space-y-6">

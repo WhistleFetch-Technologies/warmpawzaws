@@ -245,12 +245,14 @@ export function UniversalServicesLanding({
                     className={`min-w-[260px] rounded-2xl p-5 text-white shadow-lg bg-gradient-to-r from-blue-500 to-purple-600`}
                   >
                     <div className="bg-white/20 w-fit px-2 py-1 rounded-lg text-xs font-medium mb-3 backdrop-blur-sm">
-                      {promo.discountType === 'percentage' ? `${promo.discountValue}% OFF` : `₹${promo.discountValue} OFF`}
+                      {promo.discountPercentage ? `${promo.discountPercentage}% OFF` : promo.discountAmount ? `₹${promo.discountAmount} OFF` : 'Special Offer'}
                     </div>
-                    <h3 className="font-bold text-lg leading-tight mb-1">{promo.title}</h3>
-                    <p className="text-white/80 text-sm mb-4">{promo.subtitle}</p>
+                    <h3 className="font-bold text-lg leading-tight mb-1">{promo.title || promo.name}</h3>
+                    <p className="text-white/80 text-sm mb-4">{promo.description || promo.subtitle || ''}</p>
                     <div className="flex items-center justify-between mt-auto">
-                       <span className="text-sm font-mono bg-black/20 px-2 py-1 rounded">{promo.code}</span>
+                      <span className="text-xs text-white/70">
+                        {promo.endDate ? `Valid until ${new Date(promo.endDate).toLocaleDateString()}` : 'Limited time'}
+                      </span>
                     </div>
                   </div>
                 ))}

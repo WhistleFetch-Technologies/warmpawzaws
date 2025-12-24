@@ -60,6 +60,7 @@ export interface Booking {
   updated_at: string;
   completed_at?: string | null;
   cancelled_at?: string | null;
+  settled_at?: string | null;
 }
 
 export interface CreateBookingInput {
@@ -101,6 +102,7 @@ export interface UpdateBookingInput {
   rescheduled_from_booking_id?: string;
   completed_at?: string;
   cancelled_at?: string;
+  settled_at?: string;
 }
 
 // ============================================================================
@@ -119,8 +121,76 @@ export class BookingsRepository {
    * Replaces: kv.get(`booking:${bookingId}`)
    */
   async findById(bookingId: string): Promise<Booking | null> {
-    const results = await selectQuery<Booking>("bookings", { id: bookingId }, { limit: 1 });
-    return results[0] || null;
+    const results = await selectQuery<any>("bookings", { id: bookingId }, { limit: 1 });
+    if (results.length === 0) return null;
+    return this.mapBooking(results[0]);
+  }
+
+  /**
+   * Get all bookings (with optional filters)
+   */
+  async findAll(options?: { limit?: number; offset?: number; status?: string }): Promise<Booking[]> {
+    const conditions: any = {};
+    if (options?.status) {
+      conditions.status = options.status;
+    }
+    
+    const results = await selectQuery<any>("bookings", conditions, {
+      limit: options?.limit || 1000,
+      offset: options?.offset,
+      orderBy: "created_at",
+      orderDirection: "desc",
+    });
+    
+    return results.map((r: any) => this.mapBooking(r));
+  }
+  
+  /**
+   * Map database row to Booking interface
+   */
+  private mapBooking(data: any): Booking {
+    return {
+      id: data.id,
+      customer_id: data.customer_id,
+      vendor_id: data.vendor_id,
+      staff_id: data.staff_id,
+      service_id: data.service_id,
+      booking_date: data.scheduled_date || data.booking_date || '',
+      booking_time: data.scheduled_time || data.booking_time || '',
+      scheduled_date: data.scheduled_date || data.booking_date,
+      scheduled_time: data.scheduled_time || data.booking_time,
+      status: data.status,
+      service_type: data.service_type,
+      address: data.address,
+      city: data.city,
+      state: data.state,
+      pincode: data.pincode,
+      latitude: data.latitude ? parseFloat(data.latitude) : null,
+      longitude: data.longitude ? parseFloat(data.longitude) : null,
+      base_price: parseFloat(data.base_price || data.amount || '0'),
+      discount_amount: parseFloat(data.discount_amount || '0'),
+      tax_amount: parseFloat(data.tax_amount || '0'),
+      total_amount: parseFloat(data.total_amount || data.amount || '0'),
+      loyalty_points_used: parseInt(data.loyalty_points_used || '0'),
+      coupon_code: data.coupon_code,
+      promotion_id: data.promotion_id,
+      is_package: data.is_package || false,
+      package_id: data.package_id,
+      package_details: data.package_details,
+      payment_status: data.payment_status,
+      payment_id: data.payment_id,
+      otp_code: data.otp_code,
+      otp_verified: data.otp_verified || false,
+      otp_expires_at: data.otp_expires_at,
+      notes: data.notes,
+      cancellation_reason: data.cancellation_reason,
+      rescheduled_from_booking_id: data.rescheduled_from_booking_id,
+      created_at: data.created_at,
+      updated_at: data.updated_at,
+      completed_at: data.completed_at,
+      cancelled_at: data.cancelled_at,
+      settled_at: data.settled_at
+    };
   }
 
   /**
@@ -137,12 +207,14 @@ export class BookingsRepository {
       filters.status = options.status;
     }
     
-    return selectQuery<Booking>("bookings", filters, {
+    const results = await selectQuery<any>("bookings", filters, {
       limit: options?.limit,
       offset: options?.offset,
-      orderBy: "booking_date",
+      orderBy: "scheduled_date",
       orderDirection: "desc",
     });
+    
+    return results.map(r => this.mapBooking(r));
   }
 
   /**
@@ -154,6 +226,7 @@ export class BookingsRepository {
     offset?: number;
     status?: string;
     date?: string;
+    dateFrom?: string; // ✅ NEW: Filter bookings from this date onwards
   }): Promise<Booking[]> {
     const filters: any = { vendor_id: vendorId };
     if (options?.status) {
@@ -163,12 +236,42 @@ export class BookingsRepository {
       filters.booking_date = options.date;
     }
     
-    return selectQuery<Booking>("bookings", filters, {
-      limit: options?.limit,
-      offset: options?.offset,
-      orderBy: "booking_date",
-      orderDirection: "desc",
-    });
+    let query = this.client.from("bookings").select("*").eq("vendor_id", vendorId);
+    
+    if (options?.status) {
+      query = query.eq("status", options.status);
+    }
+    if (options?.date) {
+      query = query.eq("scheduled_date", options.date); // Use actual DB column name
+    }
+    if (options?.dateFrom) {
+      query = query.gte("scheduled_date", options.dateFrom); // Use actual DB column name
+    }
+    
+    if (options?.limit) {
+      query = query.limit(options.limit);
+    }
+    if (options?.offset) {
+      query = query.range(options.offset, options.offset + (options.limit || 10) - 1);
+    }
+    
+    query = query.order("scheduled_date", { ascending: false });
+    
+    const { data, error } = await query;
+    
+    if (error) {
+      throw error;
+    }
+    
+    return (data || []) as Booking[];
+  }
+
+  /**
+   * Get bookings by vendor and date
+   */
+  async findByVendorAndDate(vendorId: string, date: string): Promise<Booking[]> {
+    const results = await this.findByVendor(vendorId, { date });
+    return results;
   }
 
   /**
@@ -181,15 +284,17 @@ export class BookingsRepository {
   }): Promise<Booking[]> {
     const filters: any = { staff_id: staffId };
     if (options?.date) {
-      filters.booking_date = options.date;
+      filters.booking_date = options.date; // Use actual DB column name
     }
     
-    return selectQuery<Booking>("bookings", filters, {
+    const results = await selectQuery<any>("bookings", filters, {
       limit: options?.limit,
       offset: options?.offset,
-      orderBy: "booking_date",
+      orderBy: "scheduled_date",
       orderDirection: "desc",
     });
+    
+    return results.map(r => this.mapBooking(r));
   }
 
   /**
@@ -197,12 +302,14 @@ export class BookingsRepository {
    * Replaces: booking:pending KV key
    */
   async findPending(options?: { limit?: number; offset?: number }): Promise<Booking[]> {
-    return selectQuery<Booking>("bookings", { status: "pending" }, {
+    const results = await selectQuery<any>("bookings", { status: "pending" }, {
       limit: options?.limit,
       offset: options?.offset,
-      orderBy: "booking_date",
+      orderBy: "scheduled_date",
       orderDirection: "asc",
     });
+    
+    return results.map(r => this.mapBooking(r));
   }
 
   /**
@@ -221,7 +328,7 @@ export class BookingsRepository {
     let query = client
       .from("bookings")
       .select("*")
-      .gte("booking_date", new Date().toISOString().split("T")[0])
+      .gte("scheduled_date", new Date().toISOString().split("T")[0]) // Use actual DB column
       .in("status", ["pending", "confirmed"]);
     
     if (customerId) {
@@ -231,8 +338,8 @@ export class BookingsRepository {
       query = query.eq("vendor_id", vendorId);
     }
     
-    query = query.order("booking_date", { ascending: true })
-      .order("booking_time", { ascending: true });
+    query = query.order("scheduled_date", { ascending: true })
+      .order("scheduled_time", { ascending: true });
     
     if (options?.limit) {
       query = query.limit(options.limit);
@@ -252,16 +359,24 @@ export class BookingsRepository {
    * Replaces: kv.set(`booking:${bookingId}`, bookingData)
    */
   async create(input: CreateBookingInput): Promise<Booking> {
-    const results = await insertQuery<Booking>("bookings", {
+    // Map booking_date/booking_time to scheduled_date/scheduled_time for bookings table
+    const insertData: any = {
       ...input,
+      scheduled_date: input.booking_date, // Map to actual column name
+      scheduled_time: input.booking_time, // Map to actual column name
       status: "pending",
       payment_status: "pending",
       discount_amount: input.discount_amount || 0,
       tax_amount: input.tax_amount || 0,
       loyalty_points_used: input.loyalty_points_used || 0,
       is_package: input.is_package || false,
-      otp_verified: false,
-    });
+    };
+    
+    // Remove booking_date/booking_time as they're mapped above
+    delete insertData.booking_date;
+    delete insertData.booking_time;
+    
+    const results = await insertQuery<Booking>("bookings", insertData);
     
     if (!results[0]) {
       throw new Error("Failed to create booking");
@@ -296,11 +411,22 @@ export class BookingsRepository {
    * Replaces: kv.set(`booking:${bookingId}`, updatedData)
    */
   async update(bookingId: string, input: UpdateBookingInput): Promise<Booking> {
-    const results = await updateQuery<Booking>(
+    // Map booking_date/booking_time to scheduled_date/scheduled_time if present
+    const updateData: any = { ...input };
+    if (updateData.booking_date) {
+      updateData.scheduled_date = updateData.booking_date;
+      delete updateData.booking_date;
+    }
+    if (updateData.booking_time) {
+      updateData.scheduled_time = updateData.booking_time;
+      delete updateData.booking_time;
+    }
+    
+    const results = await updateQuery<any>(
       "bookings",
       { id: bookingId },
       {
-        ...input,
+        ...updateData,
         updated_at: new Date().toISOString(),
       }
     );
@@ -309,7 +435,7 @@ export class BookingsRepository {
       throw new Error(`Booking not found: ${bookingId}`);
     }
     
-    return results[0];
+    return this.mapBooking(results[0]);
   }
 
   /**
@@ -415,8 +541,8 @@ export class BookingsRepository {
         vendor_id: originalBooking.vendor_id || undefined,
         staff_id: originalBooking.staff_id || undefined,
         service_id: originalBooking.service_id,
-        booking_date: newDate,
-        booking_time: newTime,
+        booking_date: newDate, // Will be mapped to scheduled_date
+        booking_time: newTime, // Will be mapped to scheduled_time
         service_type: originalBooking.service_type,
         address: originalBooking.address || undefined,
         city: originalBooking.city || undefined,

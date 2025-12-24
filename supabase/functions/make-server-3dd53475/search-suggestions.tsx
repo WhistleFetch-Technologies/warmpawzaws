@@ -1,6 +1,8 @@
 import { Hono } from "npm:hono";
 import { sendSuccess, sendError } from "./response-utils.ts";
-import * as kv from "./kv_store.tsx";
+import { getSearchHistoryRepository } from "../../lib/repositories/search-history.ts";
+import { getBookingsRepository } from "../../lib/repositories/bookings.ts";
+import { getDbClient } from "../../lib/db.ts";
 
 /**
  * 🔍 SEARCH SUGGESTIONS ENDPOINT
@@ -26,8 +28,11 @@ interface SearchSuggestion {
   relevanceScore: number;
 }
 
-export function searchSuggestionsEndpoints(app: Hono, kvStore: any) {
+export function searchSuggestionsEndpoints(app: Hono) {
   const BASE_PATH = "/make-server-3dd53475";
+  const searchHistoryRepo = getSearchHistoryRepository();
+  const bookingsRepo = getBookingsRepository();
+  const client = getDbClient();
 
   // ========================================
   // GET SEARCH SUGGESTIONS
@@ -43,20 +48,22 @@ export function searchSuggestionsEndpoints(app: Hono, kvStore: any) {
 
       const suggestions: SearchSuggestion[] = [];
 
-      // 1. Get recent searches (if customer provided)
+      // ✅ SQL: 1. Get recent searches (if customer provided)
       if (customerId) {
-        const recentSearches = await kvStore.get(`customer:${customerId}:recent_searches`) || [];
+        const recentSearches = await searchHistoryRepo.findByCustomer(customerId, { limit: 3 });
         
-        for (const search of recentSearches.slice(0, 3)) {
+        for (const search of recentSearches) {
+          // Parse search query to extract type, id, title if stored in structured format
+          const searchData = search.filters || {};
           suggestions.push({
-            type: search.type || 'problem',
-            id: search.id,
-            title: search.title || search.name,
+            type: (searchData.type as any) || 'problem',
+            id: searchData.id || search.query,
+            title: searchData.title || search.query,
             subtitle: 'Recent search',
-            icon: search.icon,
-            color: search.color,
-            gradient: search.gradient,
-            category: search.category,
+            icon: searchData.icon,
+            color: searchData.color,
+            gradient: searchData.gradient,
+            category: searchData.category,
             relevanceScore: 100
           });
         }
@@ -179,33 +186,26 @@ export function searchSuggestionsEndpoints(app: Hono, kvStore: any) {
 
       console.log(`💾 [SAVE-SEARCH] Customer: ${customerId}, Type: ${type}, ID: ${id}`);
 
-      // Get existing recent searches
-      const recentSearches = await kvStore.get(`customer:${customerId}:recent_searches`) || [];
-
-      // Create search entry
-      const searchEntry = {
-        type: type || 'problem',
-        id,
-        title,
-        subtitle,
-        icon,
-        color,
-        gradient,
-        category,
-        timestamp: new Date().toISOString()
-      };
-
-      // Remove duplicate if exists
-      const filtered = recentSearches.filter((s: any) => s.id !== id);
-
-      // Add to beginning of array
-      filtered.unshift(searchEntry);
-
-      // Keep only last 20 searches
-      const updated = filtered.slice(0, 20);
-
-      // Save updated history
-      await kvStore.set(`customer:${customerId}:recent_searches`, updated);
+      // ✅ SQL: Save search history to database
+      await searchHistoryRepo.create({
+        customer_id: customerId,
+        query: title,
+        search_type: type || 'problem',
+        results_count: 0,
+        filters: {
+          id,
+          title,
+          subtitle,
+          icon,
+          color,
+          gradient,
+          category
+        }
+      });
+      
+      // Get updated count
+      const allSearches = await searchHistoryRepo.findByCustomer(customerId);
+      const updated = allSearches.length;
 
       console.log(`✅ Search history saved (${updated.length} total searches)`);
 
@@ -230,16 +230,18 @@ export function searchSuggestionsEndpoints(app: Hono, kvStore: any) {
 
       console.log(`📈 [TRENDING-PROBLEMS] Role: ${roleId || 'all'}`);
 
-      // Get all bookings to calculate trending problems
-      const allBookings = await kvStore.getByPrefix('booking:') || [];
-
+      // ✅ SQL: Get all bookings to calculate trending problems
+      const allBookings = await bookingsRepo.findAll({ limit: 1000 }); // Get recent bookings
+      
       // Count problem occurrences (simplified - in production, use time-windowed analytics)
       const problemCounts = new Map<string, number>();
 
       for (const booking of allBookings) {
-        if (booking.problemId) {
-          const count = problemCounts.get(booking.problemId) || 0;
-          problemCounts.set(booking.problemId, count + 1);
+        // Extract problemId from booking metadata or service category
+        const problemId = (booking as any).problem_id || (booking as any).metadata?.problemId;
+        if (problemId) {
+          const count = problemCounts.get(problemId) || 0;
+          problemCounts.set(problemId, count + 1);
         }
       }
 
@@ -287,7 +289,9 @@ export function searchSuggestionsEndpoints(app: Hono, kvStore: any) {
 
       console.log(`🗑️ [CLEAR-SEARCH] Customer: ${customerId}`);
 
-      await kvStore.del(`customer:${customerId}:recent_searches`);
+      // ✅ SQL: Clear search history for customer
+      const client = getDbClient();
+      await client.from('search_history').delete().eq('customer_id', customerId);
 
       console.log(`✅ Search history cleared`);
 

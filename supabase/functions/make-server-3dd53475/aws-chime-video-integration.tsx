@@ -1,5 +1,4 @@
 import { Hono } from "npm:hono";
-import * as kv from "./kv_store.tsx";
 import { 
   ChimeSDKMeetingsClient, 
   CreateMeetingCommand, 
@@ -8,6 +7,7 @@ import {
   GetMeetingCommand,
   ListAttendeesCommand
 } from "npm:@aws-sdk/client-chime-sdk-meetings@3.450.0";
+import { getPlatformSettingsRepository } from "../../lib/repositories/platform-settings.ts";
 
 /**
  * AWS Chime Video Integration
@@ -36,23 +36,32 @@ export function registerAWSChimeVideoEndpoints(app: Hono) {
 
   /**
    * Helper: Get AWS Chime Client
+   * ✅ SQL: Uses aws_settings table instead of KV
    */
   async function getChimeClient() {
-    const awsSettings = await kv.get('admin:settings:aws');
+    const platformRepo = getPlatformSettingsRepository();
+    const awsSettings = await platformRepo.getAWSSettings();
     
-    if (!awsSettings?.chime?.enabled) {
+    if (!awsSettings) {
+      throw new Error('AWS settings not configured. Please configure in Admin Portal → Platform Settings → AWS');
+    }
+
+    const chimeConfig = awsSettings.chime_config || {};
+    
+    if (!chimeConfig.enabled) {
       throw new Error('AWS Chime is not enabled. Please configure it in Admin Portal → Platform Settings → Cloud & Maps → AWS Chime');
     }
 
-    if (!awsSettings.credentials?.accessKeyId || !awsSettings.credentials?.secretAccessKey) {
+    const credentials = awsSettings.credentials || {};
+    if (!credentials.accessKeyId || !credentials.secretAccessKey) {
       throw new Error('AWS credentials not configured');
     }
 
     return new ChimeSDKMeetingsClient({
-      region: awsSettings.chime.region || 'us-east-1',
+      region: chimeConfig.region || 'us-east-1',
       credentials: {
-        accessKeyId: awsSettings.credentials.accessKeyId,
-        secretAccessKey: awsSettings.credentials.secretAccessKey
+        accessKeyId: credentials.accessKeyId,
+        secretAccessKey: credentials.secretAccessKey
       }
     });
   }
@@ -63,9 +72,21 @@ export function registerAWSChimeVideoEndpoints(app: Hono) {
    */
   app.get(`${BASE_PATH}/video/config`, async (c) => {
     try {
-      const awsSettings = await kv.get('admin:settings:aws');
+      // ✅ SQL: Get AWS settings from aws_settings table
+      const platformRepo = getPlatformSettingsRepository();
+      const awsSettings = await platformRepo.getAWSSettings();
       
-      if (!awsSettings?.chime?.enabled) {
+      if (!awsSettings) {
+        return c.json({
+          success: false,
+          enabled: false,
+          message: 'AWS settings not configured. Please configure in Admin Portal → Platform Settings → AWS'
+        });
+      }
+
+      const chimeConfig = awsSettings.chime_config || {};
+      
+      if (!chimeConfig.enabled) {
         return c.json({
           success: false,
           enabled: false,
@@ -76,13 +97,13 @@ export function registerAWSChimeVideoEndpoints(app: Hono) {
       return c.json({
         success: true,
         enabled: true,
-        region: awsSettings.chime.region || 'us-east-1',
+        region: chimeConfig.region || 'us-east-1',
         features: {
           video: true,
           audio: true,
           chat: true,
           screenShare: true,
-          recording: awsSettings.chime.recordingEnabled || false
+          recording: chimeConfig.recordingEnabled || false
         }
       });
     } catch (error) {
@@ -110,12 +131,20 @@ export function registerAWSChimeVideoEndpoints(app: Hono) {
 
       // 2. Get Chime client
       const chimeClient = await getChimeClient();
-      const awsSettings = await kv.get('admin:settings:aws');
+      // ✅ SQL: Get AWS settings from aws_settings table
+      const platformRepo = getPlatformSettingsRepository();
+      const awsSettings = await platformRepo.getAWSSettings();
+      
+      if (!awsSettings) {
+        throw new Error('AWS settings not configured');
+      }
+
+      const chimeConfig = awsSettings.chime_config || {};
 
       // 3. Create Chime Meeting
       const createMeetingCommand = new CreateMeetingCommand({
         ClientRequestToken: `warmpawz-${bookingId}-${Date.now()}`,
-        MediaRegion: awsSettings.chime.region || 'us-east-1',
+        MediaRegion: chimeConfig.region || 'us-east-1',
         ExternalMeetingId: bookingId,
         MeetingFeatures: {
           Audio: {

@@ -138,9 +138,9 @@ export function UniversalHomeServiceTracking({
 
   // Fetch tracking data
   useEffect(() => {
-    if (!trackingSessionId) {
-        // If no session ID, try to fetch booking to get session ID or status
-        // For now, just return
+    // ✅ FIX: Use bookingId instead of trackingSessionId
+    if (!bookingId) {
+        // If no booking ID, cannot fetch tracking
         setLoading(false);
         return;
     }
@@ -149,14 +149,15 @@ export function UniversalHomeServiceTracking({
     
     const interval = setInterval(fetchTrackingData, 5000);
     return () => clearInterval(interval);
-  }, [trackingSessionId]);
+  }, [bookingId]);
 
   const fetchTrackingData = async () => {
     try {
-      if (!trackingSessionId) return;
+      // ✅ FIX: Use bookingId instead of trackingSessionId
+      if (!bookingId) return;
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/tracking/${trackingSessionId}`,
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/gps/tracking/${bookingId}`,
         {
           headers: {
             Authorization: `Bearer ${publicAnonKey}`,

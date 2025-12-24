@@ -307,6 +307,84 @@ export class VendorsRepository {
     
     return results[0];
   }
+
+  /**
+   * Normalize phone number to 10-digit Indian mobile number
+   * Removes country code, spaces, special characters
+   */
+  private normalizePhone(phone: string): string {
+    if (!phone) return '';
+    
+    // Remove all non-digit characters
+    let clean = phone.replace(/[^0-9]/g, '');
+    
+    // If starts with 91 and has 12 digits (91 + 10 digits), remove country code
+    if (clean.startsWith('91') && clean.length === 12) {
+      clean = clean.substring(2);
+    }
+    
+    // If starts with 0, remove it (some people write 09876543210)
+    if (clean.startsWith('0') && clean.length === 11) {
+      clean = clean.substring(1);
+    }
+    
+    return clean;
+  }
+
+  /**
+   * Resolve vendor ID from various formats
+   * Handles:
+   * - UUID format (returns as-is if found)
+   * - Legacy string format like "vendor_9611377119" (extracts phone number and looks up)
+   * - Phone number lookup (with normalization and multiple format attempts)
+   * 
+   * @param vendorIdOrPhone - Vendor ID in various formats or phone number
+   * @returns Resolved UUID vendor ID or null if not found
+   */
+  async resolveVendorId(vendorIdOrPhone: string): Promise<string | null> {
+    if (!vendorIdOrPhone) {
+      return null;
+    }
+
+    // Check if it's already a valid UUID
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (uuidRegex.test(vendorIdOrPhone)) {
+      const vendor = await this.findById(vendorIdOrPhone);
+      return vendor ? vendor.id : null;
+    }
+
+    // Extract phone number if it's a legacy format like "vendor_9611377119"
+    let phoneToSearch = vendorIdOrPhone;
+    if (vendorIdOrPhone.startsWith('vendor_')) {
+      phoneToSearch = vendorIdOrPhone.replace(/^vendor_/, '');
+    }
+
+    // Normalize the phone number
+    const normalizedPhone = this.normalizePhone(phoneToSearch);
+    
+    // Try multiple phone formats to find the vendor
+    const phoneVariants = [
+      normalizedPhone,                    // "9611377119"
+      `+91${normalizedPhone}`,           // "+919611377119"
+      `91${normalizedPhone}`,            // "919611377119"
+      phoneToSearch,                      // Original format
+    ];
+
+    // Remove duplicates
+    const uniqueVariants = [...new Set(phoneVariants.filter(v => v))];
+
+    // Try each variant
+    for (const phoneVariant of uniqueVariants) {
+      const vendor = await this.findByPhone(phoneVariant);
+      if (vendor) {
+        return vendor.id;
+      }
+    }
+
+    // Last resort: try to find by ID as-is (in case it's stored differently)
+    const vendorById = await this.findById(vendorIdOrPhone);
+    return vendorById ? vendorById.id : null;
+  }
 }
 
 // ============================================================================

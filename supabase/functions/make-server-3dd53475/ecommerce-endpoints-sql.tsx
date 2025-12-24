@@ -19,9 +19,12 @@ import { getCustomersRepository } from "../../lib/repositories/customers.ts";
 import { getVendorsRepository } from "../../lib/repositories/vendors.ts";
 import { getPaymentsRepository } from "../../lib/repositories/payments.ts";
 import { getSettlementsRepository } from "../../lib/repositories/settlements.ts";
+import { getInvoicesRepository } from "../../lib/repositories/invoices.ts";
+import { getNotificationsRepository } from "../../lib/repositories/notifications.ts";
 import { calculateGST } from "../../lib/services/gst-calculator.ts";
 import { selectQuery } from "../../lib/db.ts";
 import { withTransaction } from "../../lib/utils/transaction-helper.ts";
+import { generateInvoiceForOrder } from "../../lib/services/invoice-generator.ts";
 
 const BASE_PATH = "/make-server-3dd53475";
 
@@ -338,6 +341,144 @@ export function ecommerceEndpointsSQL(app: Hono) {
         order_status: status,
         tracking_number: tracking_number || order.tracking_number
       });
+      
+      // ✅ FULL LIFECYCLE INTEGRATION when order is delivered
+      // Note: Full lifecycle is handled by order-lifecycle-complete-sql.tsx
+      // This endpoint is kept for backward compatibility but delegates to lifecycle endpoint
+      if (status === 'delivered') {
+        try {
+          const invoicesRepo = getInvoicesRepository();
+          const settlementsRepo = getSettlementsRepository();
+          const notificationsRepo = getNotificationsRepository();
+          const customersRepo = getCustomersRepository();
+          const vendorsRepo = getVendorsRepository();
+
+          // 1. Auto-generate invoice
+          const existingInvoice = await invoicesRepo.findByOrder(orderId);
+          if (!existingInvoice) {
+            await generateInvoiceForOrder(orderId);
+            console.log(`✅ [ECOMMERCE] Auto-generated invoice for delivered order ${orderId}`);
+          }
+
+          // 2. Create settlement for vendor (if multi-vendor order, create settlements per vendor)
+          const { data: orderItems } = await db
+            .from('order_items')
+            .select('product_id, total_price')
+            .eq('order_id', orderId);
+
+          // Group by vendor
+          const vendorGroups: Record<string, number> = {};
+          for (const item of orderItems || []) {
+            if (item.product_id) {
+              const product = await productsRepo.findById(item.product_id);
+              if (product?.vendor_id) {
+                vendorGroups[product.vendor_id] = (vendorGroups[product.vendor_id] || 0) + item.total_price;
+              }
+            }
+          }
+
+          // Create settlements for each vendor
+          for (const [vendorId, vendorAmount] of Object.entries(vendorGroups)) {
+            const commissionRate = 0.15; // 15% platform commission
+            const commission = vendorAmount * commissionRate;
+            const vendorPayout = vendorAmount - commission;
+
+            // Check if settlement already exists
+            const existingSettlements = await settlementsRepo.findByVendor(vendorId);
+            const existingSettlement = existingSettlements.find(s => s.booking_id === orderId || s.payment_id === order.payment_id);
+
+            if (!existingSettlement) {
+              await settlementsRepo.create({
+                vendor_id: vendorId,
+                booking_id: null, // E-commerce order, not booking
+                payment_id: order.payment_id || null,
+                settlement_amount: vendorAmount,
+                commission_amount: commission,
+                vendor_amount: vendorPayout,
+                settlement_date: new Date().toISOString().split('T')[0],
+              });
+              console.log(`✅ [ECOMMERCE] Created settlement for vendor ${vendorId} on order ${orderId}`);
+            }
+          }
+
+          // 3. Send notifications
+          const customer = await customersRepo.findById(order.customer_id);
+          if (customer) {
+            await notificationsRepo.create({
+              recipient_id: customer.id,
+              recipient_type: 'customer',
+              type: 'order_delivered',
+              title: 'Order Delivered',
+              message: `Your order ${order.order_number} has been delivered successfully!`,
+              data: {
+                order_id: orderId,
+                order_number: order.order_number,
+                status: 'delivered',
+              },
+            });
+          }
+
+          if (order.vendor_id) {
+            const vendor = await vendorsRepo.findById(order.vendor_id);
+            if (vendor) {
+              await notificationsRepo.create({
+                recipient_id: order.vendor_id,
+                recipient_type: 'vendor',
+                type: 'order_delivered',
+                title: 'Order Delivered',
+                message: `Order ${order.order_number} has been delivered to customer`,
+                data: {
+                  order_id: orderId,
+                  order_number: order.order_number,
+                  status: 'delivered',
+                },
+              });
+            }
+          }
+
+          console.log(`✅ [ECOMMERCE] Full lifecycle completed for delivered order ${orderId}`);
+        } catch (lifecycleError) {
+          console.error(`⚠️ [ECOMMERCE] Failed to complete lifecycle for order ${orderId}:`, lifecycleError);
+          // Don't fail the order status update if lifecycle completion fails
+        }
+      }
+
+      // ✅ SEND NOTIFICATIONS for other status changes
+      if (status !== 'delivered') {
+        try {
+          const notificationsRepo = getNotificationsRepository();
+          const customersRepo = getCustomersRepository();
+          const vendorsRepo = getVendorsRepository();
+
+          const customer = await customersRepo.findById(order.customer_id);
+          if (customer) {
+            const statusMessages: Record<string, { title: string; message: string }> = {
+              'confirmed': { title: 'Order Confirmed', message: `Your order ${order.order_number} has been confirmed` },
+              'processing': { title: 'Order Processing', message: `Your order ${order.order_number} is being processed` },
+              'shipped': { title: 'Order Shipped', message: `Your order ${order.order_number} has been shipped` },
+              'cancelled': { title: 'Order Cancelled', message: `Your order ${order.order_number} has been cancelled` },
+            };
+
+            const statusMessage = statusMessages[status];
+            if (statusMessage) {
+              await notificationsRepo.create({
+                recipient_id: customer.id,
+                recipient_type: 'customer',
+                type: 'order_status_update',
+                title: statusMessage.title,
+                message: statusMessage.message,
+                data: {
+                  order_id: orderId,
+                  order_number: order.order_number,
+                  status,
+                },
+              });
+            }
+          }
+        } catch (notifError) {
+          console.error(`⚠️ [ECOMMERCE] Failed to send notification for order ${orderId}:`, notifError);
+        }
+      }
       
       // Log audit
       await selectQuery(

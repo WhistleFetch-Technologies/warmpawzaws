@@ -1,5 +1,8 @@
 import { Hono } from "npm:hono";
 import { sendSuccess, sendError } from "./response-utils.ts";
+import { getDeliveriesRepository } from '../../lib/repositories/deliveries.ts';
+import { getVendorsRepository } from '../../lib/repositories/vendors.ts';
+import { getStaffRepository } from '../../lib/repositories/staff.ts';
 
 /**
  * 🚚 HYPERLOCAL DELIVERY SYSTEM
@@ -82,7 +85,7 @@ interface DeliveryOrder {
   notes?: string;
 }
 
-export function hyperlocalDeliveryEndpoints(app: Hono, kv: any) {
+export function hyperlocalDeliveryEndpoints(app: Hono) {
   const BASE_PATH = "/make-server-3dd53475";
 
   /**
@@ -139,22 +142,22 @@ export function hyperlocalDeliveryEndpoints(app: Hono, kv: any) {
    * Find nearby vendors for hyperlocal delivery
    */
   async function findNearbyVendors(lat: number, lng: number, maxDistance: number = 5) {
-    const allVendors = await kv.getByPrefix('vendor:') || [];
+    // ✅ SQL: Get all active vendors
+    const vendorsRepo = getVendorsRepository();
+    const allVendors = await vendorsRepo.findAll();
     
     const nearbyVendors = [];
     
-    for (const item of allVendors) {
-      const vendor = item.value || item;
-      
-      // Check if vendor has delivery service
-      if (!vendor.services || !vendor.services.includes('nutritionist')) continue;
-      if (!vendor.location || !vendor.location.lat || !vendor.location.lng) continue;
+    for (const vendor of allVendors) {
+      // Check if vendor has delivery service (nutritionist role)
+      if (vendor.role_id !== 'pet_nutritionist' && vendor.category !== 'nutritionist') continue;
+      if (!vendor.latitude || !vendor.longitude) continue;
       
       const distance = calculateDistance(
         lat,
         lng,
-        vendor.location.lat,
-        vendor.location.lng
+        Number(vendor.latitude),
+        Number(vendor.longitude)
       );
       
       if (distance <= maxDistance) {
@@ -180,36 +183,48 @@ export function hyperlocalDeliveryEndpoints(app: Hono, kv: any) {
     // In production, this would integrate with delivery partner APIs
     // For now, we'll use internal delivery staff
     
-    const allStaff = await kv.getByPrefix('staff:') || [];
+    // ✅ SQL: Get all active staff with delivery role
+    const staffRepo = getStaffRepository();
+    const allStaff = await staffRepo.findAll();
     
     const availablePartners = [];
     
-    for (const item of allStaff) {
-      const staff = item.value || item;
-      
+    for (const staff of allStaff) {
       // Check if staff is delivery partner
-      if (!staff.roles || !staff.roles.includes('delivery_partner')) continue;
-      if (staff.availability !== 'available') continue;
+      if (staff.role !== 'delivery_partner' && staff.role !== 'delivery') continue;
+      if (!staff.is_active) continue;
       
-      // Check location if available
-      if (staff.currentLocation && staff.currentLocation.lat && staff.currentLocation.lng) {
-        const distance = calculateDistance(
-          pickupLat,
-          pickupLng,
-          staff.currentLocation.lat,
-          staff.currentLocation.lng
-        );
-        
-        if (distance <= maxDistance) {
-          availablePartners.push({
-            id: staff.id,
-            name: staff.name,
-            phone: staff.phone,
-            distance,
-            rating: staff.rating || 0,
-            totalDeliveries: staff.totalDeliveries || 0
-          });
-        }
+      // Check location from active deliveries (location is tracked per delivery)
+      // For now, we'll use vendor location as approximation
+      // TODO: Track staff current location separately if needed
+      const deliveriesRepo = getDeliveriesRepository();
+      const activeDeliveries = await deliveriesRepo.findByDeliveryPartner(staff.id);
+      const inTransitDelivery = activeDeliveries.find(d => d.status === 'in_transit' || d.status === 'out_for_delivery');
+      
+      let staffLat = pickupLat; // Default to pickup location
+      let staffLng = pickupLng;
+      
+      if (inTransitDelivery && inTransitDelivery.current_lat && inTransitDelivery.current_lng) {
+        staffLat = Number(inTransitDelivery.current_lat);
+        staffLng = Number(inTransitDelivery.current_lng);
+      }
+      
+      const distance = calculateDistance(
+        pickupLat,
+        pickupLng,
+        staffLat,
+        staffLng
+      );
+      
+      if (distance <= maxDistance) {
+        availablePartners.push({
+          id: staff.id,
+          name: staff.name,
+          phone: staff.phone,
+          distance,
+          rating: 0, // TODO: Calculate from reviews
+          totalDeliveries: activeDeliveries.length // Count from deliveries table
+        });
       }
     }
     
@@ -305,25 +320,42 @@ export function hyperlocalDeliveryEndpoints(app: Hono, kv: any) {
         instructions
       };
 
-      // Save delivery
-      await kv.set(`delivery:${deliveryId}`, delivery);
-
-      // Add to customer's deliveries
-      const customerDeliveries = await kv.get(`customer:${customerId}:deliveries`) || [];
-      customerDeliveries.unshift(deliveryId);
-      await kv.set(`customer:${customerId}:deliveries`, customerDeliveries);
-
-      // Add to vendor's deliveries
-      const vendorDeliveries = await kv.get(`vendor:${vendorId}:deliveries`) || [];
-      vendorDeliveries.unshift(deliveryId);
-      await kv.set(`vendor:${vendorId}:deliveries`, vendorDeliveries);
+      // ✅ SQL: Save delivery
+      const deliveriesRepo = getDeliveriesRepository();
+      const savedDelivery = await deliveriesRepo.create({
+        order_id: deliveryId,
+        customer_id: customerId,
+        vendor_id: vendorId,
+        nutritionist_id: nutritionistId,
+        items: items,
+        pickup_address: pickupLocation.address,
+        pickup_lat: pickupLocation.lat,
+        pickup_lng: pickupLocation.lng,
+        pickup_contact_name: pickupLocation.contactName,
+        pickup_contact_phone: pickupLocation.contactPhone,
+        dropoff_address: dropoffLocation.address,
+        dropoff_lat: dropoffLocation.lat,
+        dropoff_lng: dropoffLocation.lng,
+        dropoff_contact_name: dropoffLocation.contactName,
+        dropoff_contact_phone: dropoffLocation.contactPhone,
+        distance_km: distance,
+        estimated_duration_minutes: estimatedDuration,
+        delivery_fee: deliveryFee,
+        status: 'pending',
+        pickup_otp: generateOTP(),
+        delivery_otp: generateOTP(),
+        ordered_at: new Date().toISOString(),
+        instructions: instructions
+      });
+      
+      // Lists are query-based, no need to maintain separate lists
 
       console.log(`✅ Delivery created: ${deliveryId}`);
 
       // TODO: Send notification to vendor
       // TODO: Find and assign delivery partner
 
-      return sendSuccess(c, { delivery, message: 'Delivery order created successfully' });
+      return sendSuccess(c, { delivery: savedDelivery, message: 'Delivery order created successfully' });
 
     } catch (error) {
       console.error('❌ Error creating delivery:', error);
@@ -339,7 +371,9 @@ export function hyperlocalDeliveryEndpoints(app: Hono, kv: any) {
     try {
       const { deliveryId } = c.req.param();
 
-      const delivery = await kv.get(`delivery:${deliveryId}`);
+      // ✅ SQL: Get delivery
+      const deliveriesRepo = getDeliveriesRepository();
+      const delivery = await deliveriesRepo.findById(deliveryId);
 
       if (!delivery) {
         return sendError(c, 'Delivery not found', 404);
@@ -361,18 +395,26 @@ export function hyperlocalDeliveryEndpoints(app: Hono, kv: any) {
     try {
       const { deliveryId } = c.req.param();
 
-      const delivery = await kv.get(`delivery:${deliveryId}`);
+      // ✅ SQL: Get delivery
+      const deliveriesRepo = getDeliveriesRepository();
+      const delivery = await deliveriesRepo.findById(deliveryId);
 
       if (!delivery) {
         return sendError(c, 'Delivery not found', 404);
       }
 
-      // Get current GPS location if delivery partner assigned
+      // ✅ SQL: Get current GPS location if delivery partner assigned
       let partnerLocation = null;
-      if (delivery.deliveryPartnerId) {
-        const staff = await kv.get(`staff:${delivery.deliveryPartnerId}`);
-        if (staff && staff.currentLocation) {
-          partnerLocation = staff.currentLocation;
+      if (delivery.delivery_partner_id) {
+        const staffRepo = getStaffRepository();
+        const staff = await staffRepo.findById(delivery.delivery_partner_id);
+        // TODO: Add current_location to staff table if needed
+        if (delivery.current_lat && delivery.current_lng) {
+          partnerLocation = {
+            lat: delivery.current_lat,
+            lng: delivery.current_lng,
+            timestamp: delivery.current_location_timestamp
+          };
         }
       }
 
@@ -405,15 +447,9 @@ export function hyperlocalDeliveryEndpoints(app: Hono, kv: any) {
     try {
       const { customerId } = c.req.param();
 
-      const deliveryIds = await kv.get(`customer:${customerId}:deliveries`) || [];
-
-      const deliveries = [];
-      for (const id of deliveryIds) {
-        const delivery = await kv.get(`delivery:${id}`);
-        if (delivery) {
-          deliveries.push(delivery);
-        }
-      }
+      // ✅ SQL: Get customer's deliveries
+      const deliveriesRepo = getDeliveriesRepository();
+      const deliveries = await deliveriesRepo.findByCustomer(customerId);
 
       return sendSuccess(c, { deliveries, total: deliveries.length });
 
@@ -436,16 +472,13 @@ export function hyperlocalDeliveryEndpoints(app: Hono, kv: any) {
       const { vendorId } = c.req.param();
       const { status } = c.req.query();
 
-      const deliveryIds = await kv.get(`vendor:${vendorId}:deliveries`) || [];
-
-      const deliveries = [];
-      for (const id of deliveryIds) {
-        const delivery = await kv.get(`delivery:${id}`);
-        if (delivery) {
-          if (!status || delivery.status === status) {
-            deliveries.push(delivery);
-          }
-        }
+      // ✅ SQL: Get vendor's deliveries
+      const deliveriesRepo = getDeliveriesRepository();
+      let deliveries = await deliveriesRepo.findByVendor(vendorId);
+      
+      // Filter by status if provided
+      if (status) {
+        deliveries = deliveries.filter(d => d.status === status);
       }
 
       return sendSuccess(c, { deliveries, total: deliveries.length });
@@ -465,51 +498,54 @@ export function hyperlocalDeliveryEndpoints(app: Hono, kv: any) {
       const { vendorId, deliveryId } = c.req.param();
       const { status, notes } = await c.req.json();
 
-      const delivery = await kv.get(`delivery:${deliveryId}`);
+      // ✅ SQL: Get delivery
+      const deliveriesRepo = getDeliveriesRepository();
+      const delivery = await deliveriesRepo.findById(deliveryId);
 
       if (!delivery) {
         return sendError(c, 'Delivery not found', 404);
       }
 
-      if (delivery.vendorId !== vendorId) {
+      if (delivery.vendor_id !== vendorId) {
         return sendError(c, 'Unauthorized', 403);
       }
 
       // Update status
       const oldStatus = delivery.status;
-      delivery.status = status;
+      const updates: any = { status };
 
       // Update timestamps
       if (status === 'confirmed') {
-        delivery.confirmedAt = new Date().toISOString();
+        updates.confirmed_at = new Date().toISOString();
         
         // Auto-assign delivery partner
         const partners = await findAvailableDeliveryPartners(
-          delivery.pickupLocation.lat,
-          delivery.pickupLocation.lng
+          delivery.pickup_lat,
+          delivery.pickup_lng
         );
         
         if (partners.length > 0) {
-          delivery.deliveryPartnerId = partners[0].id;
-          delivery.deliveryPartnerName = partners[0].name;
-          delivery.deliveryPartnerPhone = partners[0].phone;
+          updates.delivery_partner_id = partners[0].id;
+          updates.delivery_partner_name = partners[0].name;
+          updates.delivery_partner_phone = partners[0].phone;
         }
       } else if (status === 'ready_for_pickup') {
-        delivery.preparedAt = new Date().toISOString();
+        updates.prepared_at = new Date().toISOString();
       }
 
       if (notes) {
-        delivery.notes = (delivery.notes || '') + '\n' + notes;
+        updates.notes = (delivery.notes || '') + '\n' + notes;
       }
 
-      await kv.set(`delivery:${deliveryId}`, delivery);
+      // ✅ SQL: Update delivery
+      const updatedDelivery = await deliveriesRepo.update(deliveryId, updates);
 
       console.log(`✅ Delivery ${deliveryId} status updated: ${oldStatus} → ${status}`);
 
       // TODO: Send notification to customer
       // TODO: Send notification to delivery partner
 
-      return sendSuccess(c, { delivery, message: 'Delivery status updated' });
+      return sendSuccess(c, { delivery: updatedDelivery, message: 'Delivery status updated' });
 
     } catch (error) {
       console.error('❌ Error updating delivery status:', error);
@@ -530,12 +566,14 @@ export function hyperlocalDeliveryEndpoints(app: Hono, kv: any) {
       const { partnerId } = c.req.param();
       const { status } = c.req.query();
 
-      const allDeliveries = await kv.getByPrefix('delivery:') || [];
-
-      const assignedDeliveries = allDeliveries
-        .map((item: any) => item.value || item)
-        .filter((d: any) => d.deliveryPartnerId === partnerId)
-        .filter((d: any) => !status || d.status === status);
+      // ✅ SQL: Get partner's deliveries
+      const deliveriesRepo = getDeliveriesRepository();
+      let assignedDeliveries = await deliveriesRepo.findByDeliveryPartner(partnerId);
+      
+      // Filter by status if provided
+      if (status) {
+        assignedDeliveries = assignedDeliveries.filter(d => d.status === status);
+      }
 
       return sendSuccess(c, { deliveries: assignedDeliveries, total: assignedDeliveries.length });
 
@@ -554,32 +592,34 @@ export function hyperlocalDeliveryEndpoints(app: Hono, kv: any) {
       const { partnerId, deliveryId } = c.req.param();
       const { otp } = await c.req.json();
 
-      const delivery = await kv.get(`delivery:${deliveryId}`);
+      // ✅ SQL: Get delivery
+      const deliveriesRepo = getDeliveriesRepository();
+      const delivery = await deliveriesRepo.findById(deliveryId);
 
       if (!delivery) {
         return sendError(c, 'Delivery not found', 404);
       }
 
-      if (delivery.deliveryPartnerId !== partnerId) {
+      if (delivery.delivery_partner_id !== partnerId) {
         return sendError(c, 'Unauthorized', 403);
       }
 
       // Verify OTP
-      if (otp !== delivery.pickupOtp) {
+      if (otp !== delivery.pickup_otp) {
         return sendError(c, 'Invalid OTP', 400);
       }
 
-      // Update status
-      delivery.status = 'picked_up';
-      delivery.pickedUpAt = new Date().toISOString();
-
-      await kv.set(`delivery:${deliveryId}`, delivery);
+      // ✅ SQL: Update status
+      const updatedDelivery = await deliveriesRepo.update(deliveryId, {
+        status: 'picked_up',
+        picked_up_at: new Date().toISOString()
+      });
 
       console.log(`✅ Delivery ${deliveryId} picked up by ${partnerId}`);
 
       // TODO: Send notification to customer
 
-      return sendSuccess(c, { delivery, message: 'Delivery picked up successfully' });
+      return sendSuccess(c, { delivery: updatedDelivery, message: 'Delivery picked up successfully' });
 
     } catch (error) {
       console.error('❌ Error marking pickup:', error);
@@ -596,42 +636,41 @@ export function hyperlocalDeliveryEndpoints(app: Hono, kv: any) {
       const { partnerId, deliveryId } = c.req.param();
       const { otp } = await c.req.json();
 
-      const delivery = await kv.get(`delivery:${deliveryId}`);
+      // ✅ SQL: Get delivery
+      const deliveriesRepo = getDeliveriesRepository();
+      const delivery = await deliveriesRepo.findById(deliveryId);
 
       if (!delivery) {
         return sendError(c, 'Delivery not found', 404);
       }
 
-      if (delivery.deliveryPartnerId !== partnerId) {
+      if (delivery.delivery_partner_id !== partnerId) {
         return sendError(c, 'Unauthorized', 403);
       }
 
       // Verify OTP
-      if (otp !== delivery.deliveryOtp) {
+      if (otp !== delivery.delivery_otp) {
         return sendError(c, 'Invalid OTP', 400);
       }
 
-      // Update status
-      delivery.status = 'delivered';
-      delivery.deliveredAt = new Date().toISOString();
-
-      await kv.set(`delivery:${deliveryId}`, delivery);
+      // ✅ SQL: Update status
+      const updatedDelivery = await deliveriesRepo.update(deliveryId, {
+        status: 'delivered',
+        delivered_at: new Date().toISOString()
+      });
 
       console.log(`✅ Delivery ${deliveryId} completed by ${partnerId}`);
 
-      // Update delivery partner stats
-      const staff = await kv.get(`staff:${partnerId}`);
-      if (staff) {
-        staff.totalDeliveries = (staff.totalDeliveries || 0) + 1;
-        staff.availability = 'available';
-        await kv.set(`staff:${partnerId}`, staff);
-      }
+      // ✅ SQL: Update delivery partner stats (TODO: Add total_deliveries column to staff table if needed)
+      const staffRepo = getStaffRepository();
+      const staff = await staffRepo.findById(partnerId);
+      // Stats can be calculated from deliveries table, no need to store separately
 
       // TODO: Send notification to customer
       // TODO: Send notification to vendor
       // TODO: Process payment settlement
 
-      return sendSuccess(c, { delivery, message: 'Delivery completed successfully' });
+      return sendSuccess(c, { delivery: updatedDelivery, message: 'Delivery completed successfully' });
 
     } catch (error) {
       console.error('❌ Error completing delivery:', error);
@@ -648,20 +687,27 @@ export function hyperlocalDeliveryEndpoints(app: Hono, kv: any) {
       const { partnerId } = c.req.param();
       const { lat, lng } = await c.req.json();
 
-      const staff = await kv.get(`staff:${partnerId}`);
+      // ✅ SQL: Get staff
+      const staffRepo = getStaffRepository();
+      const staff = await staffRepo.findById(partnerId);
 
       if (!staff) {
         return sendError(c, 'Delivery partner not found', 404);
       }
 
-      // Update location
-      staff.currentLocation = {
-        lat,
-        lng,
-        timestamp: new Date().toISOString()
-      };
-
-      await kv.set(`staff:${partnerId}`, staff);
+      // ✅ SQL: Update delivery's current location (location is tracked per delivery, not per staff)
+      // Find active delivery for this partner and update its location
+      const deliveriesRepo = getDeliveriesRepository();
+      const activeDeliveries = await deliveriesRepo.findByDeliveryPartner(partnerId);
+      const inTransitDelivery = activeDeliveries.find(d => d.status === 'in_transit' || d.status === 'out_for_delivery');
+      
+      if (inTransitDelivery) {
+        await deliveriesRepo.update(inTransitDelivery.id, {
+          current_lat: lat,
+          current_lng: lng,
+          current_location_timestamp: new Date().toISOString()
+        });
+      }
 
       return sendSuccess(c, { message: 'Location updated' });
 

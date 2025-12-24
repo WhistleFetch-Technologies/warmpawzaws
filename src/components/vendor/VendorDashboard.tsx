@@ -39,7 +39,8 @@ import {
   Heart,
   Shield,
   Truck,
-  MapPin
+  MapPin,
+  AlertCircle
 } from 'lucide-react';
 import { Badge } from '../ui/badge';
 import { VendorNotificationModal } from './VendorNotificationModal';
@@ -194,7 +195,21 @@ export function VendorDashboard({
   onNavigateToCounseling,
   onNavigateToDistancePricing,
   onNavigateToMultiDoctorManagement,
-  onNavigateToPolicyManagement
+  onNavigateToPolicyManagement,
+  // ✅ NEW: Additional navigation handlers (Phase 3)
+  onNavigateToMedicalRecords,
+  onNavigateToEmergency,
+  onNavigateToEmergencyProtocols,
+  onNavigateToVetSummary,
+  onNavigateToRoomManagement,
+  onNavigateToClaimsManagement,
+  onNavigateToDiagnosticLab,
+  onNavigateToAmbulanceServices,
+  // ✅ NEW: Additional navigation handlers (Phase 4)
+  onNavigateToTableManagement,
+  onNavigateToPaxManagement,
+  onNavigateToOccupancyTracking,
+  onNavigateToNightlyPricing
 }: VendorDashboardProps) {
   const [activeTab, setActiveTab] = useState<'today' | 'week' | 'month'>('today');
   const [activeBottomTab, setActiveBottomTab] = useState<'home' | 'bookings' | 'reporting' | 'settings'>('home');

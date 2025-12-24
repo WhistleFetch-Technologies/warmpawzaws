@@ -176,7 +176,7 @@ export function GroomingAtHome({ onBack, customerId, customerData, phone, onNavi
       };
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/booking/create`,
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/bookings/create`,
         {
           method: 'POST',
           headers: {

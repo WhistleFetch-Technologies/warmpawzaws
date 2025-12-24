@@ -1,54 +1,65 @@
 import { Hono } from "npm:hono";
+import { getPayoutsRepository } from "../../lib/repositories/payouts.ts";
+import { getVendorsRepository } from "../../lib/repositories/vendors.ts";
+import { getNotificationsRepository } from "../../lib/repositories/notifications.ts";
+import { getDbClient } from "../../lib/db.ts";
+import { sendSuccess, sendError } from "./response-utils.ts";
 
 /**
- * ADMIN PAYOUT MANAGEMENT ENDPOINTS
+ * ADMIN PAYOUT MANAGEMENT ENDPOINTS (✅ SQL-ONLY)
  * 
  * Admin-side endpoints for managing vendor payouts:
  * - Review pending payout requests
  * - Approve/reject payouts
  * - Process settlements
  * - Track payout history
+ * 
+ * MIGRATED: All KV operations replaced with SQL repositories
  */
 
-export function adminPayoutEndpoints(app: Hono, kv: any) {
+export function adminPayoutEndpoints(app: Hono) {
+  const payoutsRepo = getPayoutsRepository();
+  const vendorsRepo = getVendorsRepository();
+  const notificationsRepo = getNotificationsRepository();
+  const client = getDbClient();
   
   /**
-   * Get all pending payouts for admin review
+   * Get all pending payouts for admin review (✅ SQL-only)
    * GET /make-server-3dd53475/admin/payouts/pending
    */
   app.get("/make-server-3dd53475/admin/payouts/pending", async (c) => {
     try {
-      const pendingPayoutIds = await kv.get(`admin:payouts:pending`) || [];
+      // ✅ SQL: Get all pending payouts
+      const payouts = await payoutsRepo.findByStatus('pending', { limit: 100 });
       
-      const payouts = [];
-      
-      for (const payoutId of pendingPayoutIds) {
-        const payout = await kv.get(`payout:${payoutId}`);
-        if (payout && payout.status === 'pending') {
-          // Get vendor details
-          const vendor = await kv.get(`vendor:${payout.vendorId}`);
-          
-          payouts.push({
+      // Enrich with vendor details
+      const enrichedPayouts = await Promise.all(
+        payouts.map(async (payout) => {
+          const vendor = await vendorsRepo.findById(payout.vendor_id);
+          return {
             ...payout,
-            vendorName: vendor?.fullName || vendor?.businessName || 'Unknown',
+            vendorName: vendor?.business_name || vendor?.owner_name || 'Unknown',
             vendorPhone: vendor?.phone,
-            vendorType: vendor?.vendorType
-          });
-        }
-      }
+            vendorType: vendor?.role_id || 'unknown',
+            createdAt: payout.created_at
+          };
+        })
+      );
       
       // Sort by date (oldest first for processing)
-      payouts.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      enrichedPayouts.sort((a, b) => 
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      );
       
-      return c.json({ success: true, payouts, total: payouts.length });
+      return sendSuccess(c, { payouts: enrichedPayouts, total: enrichedPayouts.length });
     } catch (error) {
       console.error('Error fetching pending payouts:', error);
-      return c.json({ error: String(error) }, 500);
+      return sendError(c, error, 500);
     }
   });
   
   /**
-   * Get all payouts (with filters)
+   * Get all payouts (with filters) (✅ SQL-only)
    * GET /make-server-3dd53475/admin/payouts
    */
   app.get("/make-server-3dd53475/admin/payouts", async (c) => {
@@ -57,55 +68,48 @@ export function adminPayoutEndpoints(app: Hono, kv: any) {
       const vendorId = c.req.query('vendorId');
       const limit = parseInt(c.req.query('limit') || '50');
       
-      // Get all payout IDs from different queues
-      let allPayoutIds: string[] = [];
+      let payouts;
       
-      if (status === 'pending') {
-        allPayoutIds = await kv.get(`admin:payouts:pending`) || [];
-      } else if (status === 'processing') {
-        allPayoutIds = await kv.get(`admin:payouts:processing`) || [];
-      } else if (status === 'completed') {
-        allPayoutIds = await kv.get(`admin:payouts:completed`) || [];
-      } else if (status === 'failed') {
-        allPayoutIds = await kv.get(`admin:payouts:failed`) || [];
+      if (status) {
+        // ✅ SQL: Get payouts by status
+        payouts = await payoutsRepo.findByStatus(status, { limit });
+      } else if (vendorId) {
+        // ✅ SQL: Get payouts by vendor
+        payouts = await payoutsRepo.findByVendor(vendorId, { limit });
       } else {
-        // Get all
-        const pending = await kv.get(`admin:payouts:pending`) || [];
-        const processing = await kv.get(`admin:payouts:processing`) || [];
-        const completed = await kv.get(`admin:payouts:completed`) || [];
-        const failed = await kv.get(`admin:payouts:failed`) || [];
-        allPayoutIds = [...pending, ...processing, ...completed, ...failed];
+        // ✅ SQL: Get all payouts (using direct query for multiple statuses)
+        const { data, error } = await client
+          .from('payouts')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(limit);
+        
+        if (error) throw error;
+        payouts = data || [];
       }
       
-      const payouts = [];
+      // Enrich with vendor details
+      const enrichedPayouts = await Promise.all(
+        payouts.map(async (payout: any) => {
+          const vendor = await vendorsRepo.findById(payout.vendor_id);
+          return {
+            ...payout,
+            vendorName: vendor?.business_name || vendor?.owner_name || 'Unknown',
+            vendorPhone: vendor?.phone,
+            vendorType: vendor?.role_id || 'unknown'
+          };
+        })
+      );
       
-      for (const payoutId of allPayoutIds.slice(0, limit)) {
-        const payout = await kv.get(`payout:${payoutId}`);
-        if (!payout) continue;
-        
-        // Filter by vendorId if provided
-        if (vendorId && payout.vendorId !== vendorId) continue;
-        
-        // Get vendor details
-        const vendor = await kv.get(`vendor:${payout.vendorId}`);
-        
-        payouts.push({
-          ...payout,
-          vendorName: vendor?.fullName || vendor?.businessName || 'Unknown',
-          vendorPhone: vendor?.phone,
-          vendorType: vendor?.vendorType
-        });
-      }
-      
-      return c.json({ success: true, payouts, total: payouts.length });
+      return sendSuccess(c, { payouts: enrichedPayouts, total: enrichedPayouts.length });
     } catch (error) {
       console.error('Error fetching payouts:', error);
-      return c.json({ error: String(error) }, 500);
+      return sendError(c, error, 500);
     }
   });
   
   /**
-   * Approve payout and move to processing
+   * Approve payout and move to processing (✅ SQL-only)
    * POST /make-server-3dd53475/admin/payouts/:payoutId/approve
    */
   app.post("/make-server-3dd53475/admin/payouts/:payoutId/approve", async (c) => {
@@ -113,64 +117,54 @@ export function adminPayoutEndpoints(app: Hono, kv: any) {
       const { payoutId } = c.req.param();
       const { adminId, notes, transactionId } = await c.req.json();
       
-      const payout = await kv.get(`payout:${payoutId}`);
+      // ✅ SQL: Get payout
+      const payout = await payoutsRepo.findById(payoutId);
       
       if (!payout) {
-        return c.json({ error: 'Payout not found' }, 404);
+        return sendError(c, 'Payout not found', 404);
       }
       
-      if (payout.status !== 'pending') {
-        return c.json({ error: 'Payout is not in pending status' }, 400);
+      if (payout.payout_status !== 'pending') {
+        return sendError(c, 'Payout is not in pending status', 400);
       }
       
-      // Update payout status
-      payout.status = 'processing';
-      payout.approvedBy = adminId;
-      payout.approvedAt = new Date().toISOString();
-      payout.adminNotes = notes || '';
-      payout.transactionId = transactionId || null;
-      payout.updatedAt = new Date().toISOString();
+      // ✅ SQL: Update payout status to processing
+      const updatedPayout = await payoutsRepo.update(payoutId, {
+        payout_status: 'processing',
+        processed_at: new Date().toISOString()
+      });
       
-      await kv.set(`payout:${payoutId}`, payout);
+      // ✅ SQL: Update admin tracking fields
+      await client
+        .from('payouts')
+        .update({
+          approved_by: adminId,
+          approved_at: new Date().toISOString(),
+          admin_notes: notes || '',
+          transaction_id: transactionId || null
+        })
+        .eq('id', payoutId);
       
-      // Remove from pending queue
-      const pendingPayouts = await kv.get(`admin:payouts:pending`) || [];
-      const updatedPending = pendingPayouts.filter((id: string) => id !== payoutId);
-      await kv.set(`admin:payouts:pending`, updatedPending);
-      
-      // Add to processing queue
-      const processingPayouts = await kv.get(`admin:payouts:processing`) || [];
-      processingPayouts.unshift(payoutId);
-      await kv.set(`admin:payouts:processing`, processingPayouts);
-      
-      // Create notification for vendor
-      const notificationId = `notification_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-      const notification = {
-        notificationId,
-        vendorId: payout.vendorId,
-        type: 'payout_approved',
+      // ✅ SQL: Create notification for vendor
+      await notificationsRepo.create({
+        recipient_type: 'vendor',
+        recipient_id: payout.vendor_id,
+        notification_type: 'payout_approved',
         title: 'Payout Approved',
         message: `Your payout request of ₹${payout.amount} has been approved and is being processed.`,
-        createdAt: new Date().toISOString(),
-        isRead: false
-      };
-      
-      await kv.set(`notification:${notificationId}`, notification);
-      
-      const vendorNotifications = await kv.get(`vendor:${payout.vendorId}:notifications`) || [];
-      vendorNotifications.unshift(notificationId);
-      await kv.set(`vendor:${payout.vendorId}:notifications`, vendorNotifications);
+        channels: { in_app: true, email: false, sms: false }
+      });
       
       console.log(`✅ Payout ${payoutId} approved and moved to processing`);
-      return c.json({ success: true, payout });
+      return sendSuccess(c, { payout: updatedPayout });
     } catch (error) {
       console.error('Error approving payout:', error);
-      return c.json({ error: String(error) }, 500);
+      return sendError(c, error, 500);
     }
   });
   
   /**
-   * Complete payout (mark as settled)
+   * Complete payout (mark as settled) (✅ SQL-only)
    * POST /make-server-3dd53475/admin/payouts/:payoutId/complete
    */
   app.post("/make-server-3dd53475/admin/payouts/:payoutId/complete", async (c) => {
@@ -178,72 +172,54 @@ export function adminPayoutEndpoints(app: Hono, kv: any) {
       const { payoutId } = c.req.param();
       const { adminId, transactionId, notes } = await c.req.json();
       
-      const payout = await kv.get(`payout:${payoutId}`);
+      // ✅ SQL: Get payout
+      const payout = await payoutsRepo.findById(payoutId);
       
       if (!payout) {
-        return c.json({ error: 'Payout not found' }, 404);
+        return sendError(c, 'Payout not found', 404);
       }
       
-      if (payout.status !== 'processing') {
-        return c.json({ error: 'Payout is not in processing status' }, 400);
+      if (payout.payout_status !== 'processing') {
+        return sendError(c, 'Payout is not in processing status', 400);
       }
       
-      // Update payout status
-      payout.status = 'completed';
-      payout.completedBy = adminId;
-      payout.completedAt = new Date().toISOString();
-      payout.transactionId = transactionId || payout.transactionId;
-      payout.adminNotes = (payout.adminNotes || '') + '\n' + (notes || '');
-      payout.updatedAt = new Date().toISOString();
+      // ✅ SQL: Complete payout
+      const completedPayout = await payoutsRepo.complete(payoutId);
       
-      await kv.set(`payout:${payoutId}`, payout);
+      // ✅ SQL: Update admin tracking fields
+      const existingNotes = (completedPayout as any).admin_notes || '';
+      await client
+        .from('payouts')
+        .update({
+          completed_by: adminId,
+          transaction_id: transactionId || (completedPayout as any).transaction_id,
+          admin_notes: existingNotes ? `${existingNotes}\n${notes || ''}` : (notes || '')
+        })
+        .eq('id', payoutId);
       
-      // Remove from processing queue
-      const processingPayouts = await kv.get(`admin:payouts:processing`) || [];
-      const updatedProcessing = processingPayouts.filter((id: string) => id !== payoutId);
-      await kv.set(`admin:payouts:processing`, updatedProcessing);
+      // ✅ SQL: Update vendor stats (if needed, could be a trigger or separate service)
+      // For now, we'll just log it - vendor stats can be calculated from payouts table
       
-      // Add to completed queue
-      const completedPayouts = await kv.get(`admin:payouts:completed`) || [];
-      completedPayouts.unshift(payoutId);
-      await kv.set(`admin:payouts:completed`, completedPayouts);
-      
-      // Update vendor stats
-      const vendor = await kv.get(`vendor:${payout.vendorId}`);
-      if (vendor) {
-        vendor.totalPayoutsReceived = (vendor.totalPayoutsReceived || 0) + payout.amount;
-        vendor.lastPayoutAt = payout.completedAt;
-        await kv.set(`vendor:${payout.vendorId}`, vendor);
-      }
-      
-      // Create notification for vendor
-      const notificationId = `notification_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-      const notification = {
-        notificationId,
-        vendorId: payout.vendorId,
-        type: 'payout_completed',
+      // ✅ SQL: Create notification for vendor
+      await notificationsRepo.create({
+        recipient_type: 'vendor',
+        recipient_id: payout.vendor_id,
+        notification_type: 'payout_completed',
         title: 'Payout Completed',
-        message: `Your payout of ₹${payout.amount} has been successfully transferred. Transaction ID: ${transactionId}`,
-        createdAt: new Date().toISOString(),
-        isRead: false
-      };
-      
-      await kv.set(`notification:${notificationId}`, notification);
-      
-      const vendorNotifications = await kv.get(`vendor:${payout.vendorId}:notifications`) || [];
-      vendorNotifications.unshift(notificationId);
-      await kv.set(`vendor:${payout.vendorId}:notifications`, vendorNotifications);
+        message: `Your payout of ₹${payout.amount} has been successfully transferred. Transaction ID: ${transactionId || 'N/A'}`,
+        channels: { in_app: true, email: true, sms: false }
+      });
       
       console.log(`✅ Payout ${payoutId} completed and settled`);
-      return c.json({ success: true, payout });
+      return sendSuccess(c, { payout: completedPayout });
     } catch (error) {
       console.error('Error completing payout:', error);
-      return c.json({ error: String(error) }, 500);
+      return sendError(c, error, 500);
     }
   });
   
   /**
-   * Reject payout
+   * Reject payout (✅ SQL-only)
    * POST /make-server-3dd53475/admin/payouts/:payoutId/reject
    */
   app.post("/make-server-3dd53475/admin/payouts/:payoutId/reject", async (c) => {
@@ -251,100 +227,67 @@ export function adminPayoutEndpoints(app: Hono, kv: any) {
       const { payoutId } = c.req.param();
       const { adminId, reason } = await c.req.json();
       
-      const payout = await kv.get(`payout:${payoutId}`);
+      // ✅ SQL: Get payout
+      const payout = await payoutsRepo.findById(payoutId);
       
       if (!payout) {
-        return c.json({ error: 'Payout not found' }, 404);
+        return sendError(c, 'Payout not found', 404);
       }
       
-      if (payout.status === 'completed') {
-        return c.json({ error: 'Cannot reject completed payout' }, 400);
+      if (payout.payout_status === 'completed') {
+        return sendError(c, 'Cannot reject completed payout', 400);
       }
       
-      // Update payout status
-      payout.status = 'failed';
-      payout.rejectedBy = adminId;
-      payout.failedAt = new Date().toISOString();
-      payout.failureReason = reason || 'Rejected by admin';
-      payout.updatedAt = new Date().toISOString();
+      // ✅ SQL: Reject payout
+      const rejectedPayout = await payoutsRepo.fail(payoutId, reason || 'Rejected by admin');
       
-      await kv.set(`payout:${payoutId}`, payout);
+      // ✅ SQL: Update admin tracking fields
+      await client
+        .from('payouts')
+        .update({
+          rejected_by: adminId,
+          failed_at: new Date().toISOString()
+        })
+        .eq('id', payoutId);
       
-      // Remove from pending or processing queue
-      if (payout.status === 'pending') {
-        const pendingPayouts = await kv.get(`admin:payouts:pending`) || [];
-        const updatedPending = pendingPayouts.filter((id: string) => id !== payoutId);
-        await kv.set(`admin:payouts:pending`, updatedPending);
-      } else {
-        const processingPayouts = await kv.get(`admin:payouts:processing`) || [];
-        const updatedProcessing = processingPayouts.filter((id: string) => id !== payoutId);
-        await kv.set(`admin:payouts:processing`, updatedProcessing);
-      }
-      
-      // Add to failed queue
-      const failedPayouts = await kv.get(`admin:payouts:failed`) || [];
-      failedPayouts.unshift(payoutId);
-      await kv.set(`admin:payouts:failed`, failedPayouts);
-      
-      // Create notification for vendor
-      const notificationId = `notification_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-      const notification = {
-        notificationId,
-        vendorId: payout.vendorId,
-        type: 'payout_rejected',
+      // ✅ SQL: Create notification for vendor
+      await notificationsRepo.create({
+        recipient_type: 'vendor',
+        recipient_id: payout.vendor_id,
+        notification_type: 'payout_rejected',
         title: 'Payout Rejected',
-        message: `Your payout request of ₹${payout.amount} has been rejected. Reason: ${reason}`,
-        createdAt: new Date().toISOString(),
-        isRead: false
-      };
-      
-      await kv.set(`notification:${notificationId}`, notification);
-      
-      const vendorNotifications = await kv.get(`vendor:${payout.vendorId}:notifications`) || [];
-      vendorNotifications.unshift(notificationId);
-      await kv.set(`vendor:${payout.vendorId}:notifications`, vendorNotifications);
+        message: `Your payout request of ₹${payout.amount} has been rejected. Reason: ${reason || 'Rejected by admin'}`,
+        channels: { in_app: true, email: true, sms: false }
+      });
       
       console.log(`✅ Payout ${payoutId} rejected`);
-      return c.json({ success: true, payout });
+      return sendSuccess(c, { payout: rejectedPayout });
     } catch (error) {
       console.error('Error rejecting payout:', error);
-      return c.json({ error: String(error) }, 500);
+      return sendError(c, error, 500);
     }
   });
   
   /**
-   * Get payout statistics for admin dashboard
+   * Get payout statistics for admin dashboard (✅ SQL-only)
    * GET /make-server-3dd53475/admin/payouts/stats
    */
   app.get("/make-server-3dd53475/admin/payouts/stats", async (c) => {
     try {
-      const pending = await kv.get(`admin:payouts:pending`) || [];
-      const processing = await kv.get(`admin:payouts:processing`) || [];
-      const completed = await kv.get(`admin:payouts:completed`) || [];
-      const failed = await kv.get(`admin:payouts:failed`) || [];
+      // ✅ SQL: Get payout stats by status
+      const [pending, processing, completed, failed] = await Promise.all([
+        payoutsRepo.findByStatus('pending'),
+        payoutsRepo.findByStatus('processing'),
+        payoutsRepo.findByStatus('completed'),
+        payoutsRepo.findByStatus('failed')
+      ]);
       
-      let totalPending = 0;
-      let totalProcessing = 0;
-      let totalCompleted = 0;
+      // Calculate totals
+      const totalPending = pending.reduce((sum, p) => sum + Number(p.amount), 0);
+      const totalProcessing = processing.reduce((sum, p) => sum + Number(p.amount), 0);
+      const totalCompleted = completed.reduce((sum, p) => sum + Number(p.amount), 0);
       
-      // Calculate amounts
-      for (const payoutId of pending) {
-        const payout = await kv.get(`payout:${payoutId}`);
-        if (payout) totalPending += payout.amount;
-      }
-      
-      for (const payoutId of processing) {
-        const payout = await kv.get(`payout:${payoutId}`);
-        if (payout) totalProcessing += payout.amount;
-      }
-      
-      for (const payoutId of completed) {
-        const payout = await kv.get(`payout:${payoutId}`);
-        if (payout) totalCompleted += payout.amount;
-      }
-      
-      return c.json({
-        success: true,
+      return sendSuccess(c, {
         stats: {
           pending: {
             count: pending.length,
@@ -369,9 +312,9 @@ export function adminPayoutEndpoints(app: Hono, kv: any) {
       });
     } catch (error) {
       console.error('Error fetching payout stats:', error);
-      return c.json({ error: String(error) }, 500);
+      return sendError(c, error, 500);
     }
   });
   
-  console.log('✅ Admin payout endpoints registered');
+  console.log('✅ Admin payout endpoints registered (SQL-only)');
 }

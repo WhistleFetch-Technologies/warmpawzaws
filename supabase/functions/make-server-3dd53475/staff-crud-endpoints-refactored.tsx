@@ -57,8 +57,19 @@ app.post('/make-server-3dd53475/staff/create', async (c) => {
       return sendError(c, 'Vendor ID is required', 400);
     }
     
-    // ✅ SQL: Verify vendor exists
-    const vendor = await getVendorsRepository().findById(staffData.vendorId);
+    // ✅ FIX: Resolve vendor ID (handles both UUID and vendor_id string like "vendor_9611377119")
+    const vendorsRepo = getVendorsRepository();
+    const resolvedVendorId = await vendorsRepo.resolveVendorId(staffData.vendorId);
+    
+    if (!resolvedVendorId) {
+      console.error(`❌ [STAFF-CREATE] Vendor not found: ${staffData.vendorId}`);
+      return sendError(c, `Vendor not found: ${staffData.vendorId}`, 404);
+    }
+    
+    console.log(`✅ [STAFF-CREATE] Resolved vendor ID: ${staffData.vendorId} -> ${resolvedVendorId}`);
+    
+    // ✅ SQL: Verify vendor exists (using resolved UUID)
+    const vendor = await vendorsRepo.findById(resolvedVendorId);
     if (!vendor) {
       return sendError(c, 'Vendor not found', 404);
     }
@@ -76,9 +87,9 @@ app.post('/make-server-3dd53475/staff/create', async (c) => {
     const fixedStaffData = await autoFixStaffData(validationResult.data);
     console.log('✅ Fixed Staff Data:', fixedStaffData);
     
-    // ✅ SQL: Create staff using repository
+    // ✅ SQL: Create staff using repository (use resolved UUID)
     const staff = await getStaffRepository().create({
-      vendor_id: staffData.vendorId,
+      vendor_id: resolvedVendorId, // ✅ FIX: Use resolved UUID, not string vendor ID
       full_name: fixedStaffData.fullName,
       phone: fixedStaffData.phone,
       email: fixedStaffData.email,

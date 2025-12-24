@@ -371,19 +371,27 @@ export function vendorOnboardingEndpoints(app: Hono) {
    * 
    * REFACTORED: Uses SQL repositories instead of KV
    */
+  /**
+   * GET /make-server-3dd53475/vendor/profile/:vendorId
+   * Get vendor profile
+   * ✅ FIX: Uses resolveVendorId to handle both UUID and vendor_id string
+   */
   app.get("/make-server-3dd53475/vendor/profile/:vendorId", async (c) => {
     try {
       const { vendorId } = c.req.param();
 
       console.log(`📖 Loading vendor profile: ${vendorId}`);
 
-      // ✅ SQL: Get vendor
-      const vendor = await getVendorsRepository().findById(vendorId);
+      // ✅ FIX: Use standardized vendor ID resolver
+      const { resolveVendor } = await import('../../lib/utils/vendor-id-resolver.ts');
+      const vendor = await resolveVendor(vendorId);
 
       if (!vendor) {
         console.error(`❌ Vendor not found: ${vendorId}`);
-        return c.json({ error: 'Vendor not found' }, 404);
+        return c.json({ error: `Vendor not found: ${vendorId}` }, 404);
       }
+      
+      console.log(`✅ Resolved vendor ID: ${vendorId} -> ${vendor.id}`);
 
       console.log(`✅ Vendor profile loaded: ${vendorId}`);
 
@@ -416,13 +424,16 @@ export function vendorOnboardingEndpoints(app: Hono) {
 
       console.log(`📖 Loading vendor application: ${vendorId}`);
 
-      // ✅ SQL: Get vendor
-      const vendor = await getVendorsRepository().findById(vendorId);
+      // ✅ FIX: Use standardized vendor ID resolver
+      const { resolveVendor } = await import('../../lib/utils/vendor-id-resolver.ts');
+      const vendor = await resolveVendor(vendorId);
 
       if (!vendor) {
         console.error(`❌ Vendor not found: ${vendorId}`);
-        return c.json({ error: 'Vendor not found' }, 404);
+        return c.json({ error: `Vendor not found: ${vendorId}` }, 404);
       }
+      
+      console.log(`✅ Resolved vendor ID: ${vendorId} -> ${vendor.id}`);
 
       console.log(`✅ Vendor application loaded: ${vendorId}`);
 

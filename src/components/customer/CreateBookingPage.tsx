@@ -79,7 +79,7 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
       setError(null);
       
       const response = await fetch(
-        `${API_BASE}/booking/create`,
+        `${API_BASE}/bookings/create`,
         {
           method: 'POST',
           headers: {

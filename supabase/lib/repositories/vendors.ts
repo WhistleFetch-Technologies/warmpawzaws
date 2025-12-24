@@ -123,12 +123,76 @@ export class VendorsRepository {
   }
 
   /**
-   * Get vendor by ID
+   * Get vendor by ID (UUID)
    * Replaces: kv.get(`vendor:${vendorId}`)
    */
   async findById(vendorId: string): Promise<Vendor | null> {
     const results = await selectQuery<Vendor>("vendors", { id: vendorId }, { limit: 1 });
     return results[0] || null;
+  }
+
+  /**
+   * Get vendor by vendor_id (string identifier like vendor_9611377119)
+   * ✅ CRITICAL: Handles vendor_id string identifiers, not just UUIDs
+   */
+  async findByVendorId(vendorIdString: string): Promise<Vendor | null> {
+    const results = await selectQuery<Vendor>("vendors", { vendor_id: vendorIdString }, { limit: 1 });
+    return results[0] || null;
+  }
+
+  /**
+   * Resolve vendor ID - handles both UUID and vendor_id string
+   * ✅ CRITICAL FIX: Resolves vendor_9611377119 to UUID
+   * ✅ FIX: Also tries phone number as fallback
+   */
+  async resolveVendorId(identifier: string): Promise<string | null> {
+    // Check if it's a UUID format
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (uuidRegex.test(identifier)) {
+      const vendor = await this.findById(identifier);
+      return vendor ? vendor.id : null;
+    }
+    
+    // Check if it's a vendor_id string (like vendor_9611377119)
+    if (identifier.startsWith('vendor_')) {
+      const vendor = await this.findByVendorId(identifier);
+      if (vendor) {
+        return vendor.id;
+      }
+      
+      // ✅ FIX: If vendor_id not found, try extracting phone number from vendor_id
+      // e.g., "vendor_9611377119" -> "9611377119"
+      const phoneMatch = identifier.match(/vendor_(\d+)/);
+      if (phoneMatch) {
+        const phone = phoneMatch[1];
+        console.log(`🔍 [RESOLVE-VENDOR] Trying phone number fallback: ${phone}`);
+        const vendorByPhone = await this.findByPhone(phone);
+        if (vendorByPhone) {
+          console.log(`✅ [RESOLVE-VENDOR] Found vendor by phone: ${vendorByPhone.id}`);
+          return vendorByPhone.id;
+        }
+      }
+      
+      return null;
+    }
+    
+    // Try as vendor_id string anyway
+    const vendor = await this.findByVendorId(identifier);
+    if (vendor) {
+      return vendor.id;
+    }
+    
+    // ✅ FIX: Last resort - try as phone number
+    if (/^\d+$/.test(identifier)) {
+      console.log(`🔍 [RESOLVE-VENDOR] Trying as phone number: ${identifier}`);
+      const vendorByPhone = await this.findByPhone(identifier);
+      if (vendorByPhone) {
+        console.log(`✅ [RESOLVE-VENDOR] Found vendor by phone: ${vendorByPhone.id}`);
+        return vendorByPhone.id;
+      }
+    }
+    
+    return null;
   }
 
   /**
@@ -184,8 +248,44 @@ export class VendorsRepository {
   }
 
   /**
+   * Get vendors by role_id
+   */
+  async findByRole(roleId: string, options?: { limit?: number; offset?: number; status?: string }): Promise<Vendor[]> {
+    const filters: any = {
+      role_id: roleId,
+      is_active: true,
+    };
+    if (options?.status) {
+      filters.status = options.status;
+    }
+    return selectQuery<Vendor>("vendors", filters, {
+      limit: options?.limit,
+      offset: options?.offset,
+      orderBy: "created_at",
+      orderDirection: "desc",
+    });
+  }
+
+  /**
    * Get all active vendors
    */
+  /**
+   * Get all vendors (with optional filters)
+   */
+  async findAll(options?: { limit?: number; offset?: number; status?: string }): Promise<Vendor[]> {
+    const conditions: any = {};
+    if (options?.status) {
+      conditions.status = options.status;
+    }
+    
+    return selectQuery<Vendor>("vendors", conditions, {
+      limit: options?.limit || 1000,
+      offset: options?.offset,
+      orderBy: "created_at",
+      orderDirection: "desc",
+    });
+  }
+
   async findAllActive(options?: { limit?: number; offset?: number }): Promise<Vendor[]> {
     return selectQuery<Vendor>("vendors", { is_active: true }, {
       limit: options?.limit,
