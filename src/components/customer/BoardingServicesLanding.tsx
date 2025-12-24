@@ -163,7 +163,6 @@ export function BoardingServicesLanding({ onBack, onNavigate, customerId, phone 
                 </div>
               </Card>
             </div>
-          </div>
 
           {/* Boarding Options */}
           <div>
