@@ -9,7 +9,7 @@
  */
 
 import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
+import { getDbClient } from "../../lib/db.ts";
 import { sendSuccess, sendError } from './response-utils.ts';
 
 export interface GSTRule {
@@ -46,7 +46,15 @@ export function gstRuleEngineEndpoints(app: Hono) {
    */
   app.get(`${BASE_PATH}/admin/finance/gst-rules`, async (c) => {
     try {
-      const rules = await kv.get('platform:gst_rules') || [];
+      const client = getDbClient();
+      const { data: rules, error } = await client
+        .from('gst_rules')
+        .select('*')
+        .order('priority', { ascending: true });
+      
+      if (error) {
+        throw new Error(`Failed to fetch GST rules: ${error.message}`);
+      }
       
       // Sort by priority
       const sortedRules = rules.sort((a: GSTRule, b: GSTRule) => a.priority - b.priority);
@@ -66,21 +74,32 @@ export function gstRuleEngineEndpoints(app: Hono) {
     try {
       const ruleData = await c.req.json();
 
-      const rule: GSTRule = {
-        id: `gst_rule_${Date.now()}_${Math.random().toString(36).substring(7)}`,
-        name: ruleData.name,
-        enabled: ruleData.enabled !== false,
-        priority: ruleData.priority || 100,
-        conditions: ruleData.conditions || {},
-        gst: ruleData.gst || { type: 'percentage', rate: 18 },
-        description: ruleData.description,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
+      const client = getDbClient();
+      const { data: rule, error } = await client
+        .from('gst_rules')
+        .insert({
+          rule_name: ruleData.name,
+          enabled: ruleData.enabled !== false,
+          priority: ruleData.priority || 100,
+          category: ruleData.conditions?.categories?.[0] || null,
+          role_id: ruleData.conditions?.roles?.[0] || null,
+          service_style: ruleData.conditions?.serviceTypes?.[0] || null,
+          min_amount: ruleData.conditions?.minAmount || null,
+          max_amount: ruleData.conditions?.maxAmount || null,
+          vendor_state: ruleData.conditions?.states?.[0] || null,
+          gst_type: ruleData.gst?.type || 'percentage',
+          gst_rate: ruleData.gst?.rate || 18,
+          cgst_percentage: ruleData.gst?.cgst || null,
+          sgst_percentage: ruleData.gst?.sgst || null,
+          igst_percentage: ruleData.gst?.igst || null,
+          description: ruleData.description || null,
+        })
+        .select()
+        .single();
 
-      const rules = await kv.get('platform:gst_rules') || [];
-      rules.push(rule);
-      await kv.set('platform:gst_rules', rules);
+      if (error) {
+        throw new Error(`Failed to create GST rule: ${error.message}`);
+      }
 
       console.log('✅ GST rule created:', rule.id);
 
@@ -100,25 +119,48 @@ export function gstRuleEngineEndpoints(app: Hono) {
       const { ruleId } = c.req.param();
       const updates = await c.req.json();
 
-      const rules = await kv.get('platform:gst_rules') || [];
-      const ruleIndex = rules.findIndex((r: GSTRule) => r.id === ruleId);
-
-      if (ruleIndex === -1) {
-        return sendError(c, 'GST rule not found', 404);
-      }
-
-      rules[ruleIndex] = {
-        ...rules[ruleIndex],
-        ...updates,
-        id: ruleId, // Prevent ID change
-        updatedAt: new Date().toISOString()
+      const client = getDbClient();
+      const updateData: any = {
+        updated_at: new Date().toISOString()
       };
 
-      await kv.set('platform:gst_rules', rules);
+      if (updates.name) updateData.rule_name = updates.name;
+      if (updates.enabled !== undefined) updateData.enabled = updates.enabled;
+      if (updates.priority !== undefined) updateData.priority = updates.priority;
+      if (updates.conditions) {
+        if (updates.conditions.categories) updateData.category = updates.conditions.categories[0];
+        if (updates.conditions.roles) updateData.role_id = updates.conditions.roles[0];
+        if (updates.conditions.serviceTypes) updateData.service_style = updates.conditions.serviceTypes[0];
+        if (updates.conditions.minAmount !== undefined) updateData.min_amount = updates.conditions.minAmount;
+        if (updates.conditions.maxAmount !== undefined) updateData.max_amount = updates.conditions.maxAmount;
+        if (updates.conditions.states) updateData.vendor_state = updates.conditions.states[0];
+      }
+      if (updates.gst) {
+        if (updates.gst.type) updateData.gst_type = updates.gst.type;
+        if (updates.gst.rate !== undefined) updateData.gst_rate = updates.gst.rate;
+        if (updates.gst.cgst !== undefined) updateData.cgst_percentage = updates.gst.cgst;
+        if (updates.gst.sgst !== undefined) updateData.sgst_percentage = updates.gst.sgst;
+        if (updates.gst.igst !== undefined) updateData.igst_percentage = updates.gst.igst;
+      }
+      if (updates.description !== undefined) updateData.description = updates.description;
+
+      const { data: rule, error } = await client
+        .from('gst_rules')
+        .update(updateData)
+        .eq('id', ruleId)
+        .select()
+        .single();
+
+      if (error) {
+        if (error.code === 'PGRST116') {
+          return sendError(c, 'GST rule not found', 404);
+        }
+        throw new Error(`Failed to update GST rule: ${error.message}`);
+      }
 
       console.log('✅ GST rule updated:', ruleId);
 
-      return sendSuccess(c, { rule: rules[ruleIndex] });
+      return sendSuccess(c, { rule });
     } catch (error) {
       console.error('Error updating GST rule:', error);
       return sendError(c, error, 500);
@@ -133,10 +175,15 @@ export function gstRuleEngineEndpoints(app: Hono) {
     try {
       const { ruleId } = c.req.param();
 
-      const rules = await kv.get('platform:gst_rules') || [];
-      const filteredRules = rules.filter((r: GSTRule) => r.id !== ruleId);
+      const client = getDbClient();
+      const { error } = await client
+        .from('gst_rules')
+        .delete()
+        .eq('id', ruleId);
 
-      await kv.set('platform:gst_rules', filteredRules);
+      if (error) {
+        throw new Error(`Failed to delete GST rule: ${error.message}`);
+      }
 
       console.log('✅ GST rule deleted:', ruleId);
 
@@ -189,7 +236,41 @@ export async function calculateGST(params: {
   customerState?: string;
   vendorState?: string;
 }): Promise<any> {
-  const rules = await kv.get('platform:gst_rules') || [];
+  const client = getDbClient();
+  const { data: rulesData, error } = await client
+    .from('gst_rules')
+    .select('*')
+    .eq('enabled', true)
+    .order('priority', { ascending: true });
+  
+  if (error) {
+    throw new Error(`Failed to fetch GST rules: ${error.message}`);
+  }
+  
+  const rules = (rulesData || []).map((r: any) => ({
+    id: r.id,
+    name: r.rule_name,
+    enabled: r.enabled,
+    priority: r.priority,
+    conditions: {
+      categories: r.category ? [r.category] : undefined,
+      roles: r.role_id ? [r.role_id] : undefined,
+      serviceTypes: r.service_style ? [r.service_style] : undefined,
+      states: r.vendor_state ? [r.vendor_state] : undefined,
+      minAmount: r.min_amount ? parseFloat(r.min_amount) : undefined,
+      maxAmount: r.max_amount ? parseFloat(r.max_amount) : undefined,
+    },
+    gst: {
+      type: r.gst_type,
+      rate: parseFloat(r.gst_rate || '0'),
+      cgst: r.cgst_percentage ? parseFloat(r.cgst_percentage) : undefined,
+      sgst: r.sgst_percentage ? parseFloat(r.sgst_percentage) : undefined,
+      igst: r.igst_percentage ? parseFloat(r.igst_percentage) : undefined,
+    },
+    description: r.description,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at
+  }));
   
   // Filter enabled rules and sort by priority
   const applicableRules = rules

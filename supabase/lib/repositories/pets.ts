@@ -73,10 +73,34 @@ export class PetsRepository {
   }
 
   async create(input: CreatePetInput): Promise<Pet> {
-    const results = await insertQuery<Pet>("pets", {
-      ...input,
-      is_active: true,
-    });
+    // ✅ FIX: Map interface fields to database schema
+    // Database has: species, age_years, age_months (not type, age)
+    const dbData: any = {
+      customer_id: input.customer_id,
+      name: input.name,
+      species: input.type || input.species || 'Unknown', // Map type to species (required field)
+      breed: input.breed || null,
+      gender: input.gender || null,
+      weight_kg: input.weight ? parseFloat(String(input.weight)) : null,
+      profile_photo_url: input.photo_url || null,
+      medical_history: {
+        conditions: input.medical_conditions || null,
+        allergies: input.allergies || null,
+        vaccinations: input.vaccinations || null,
+      },
+      // Note: pets table doesn't have is_active column, so we don't set it
+    };
+    
+    // ✅ FIX: Map age to age_years (database uses age_years, not age)
+    if (input.age !== undefined && input.age !== null) {
+      const ageNum = typeof input.age === 'string' ? parseInt(input.age, 10) : input.age;
+      if (!isNaN(ageNum) && ageNum > 0) {
+        dbData.age_years = ageNum;
+        dbData.age_months = 0; // Default to 0 months if only years provided
+      }
+    }
+    
+    const results = await insertQuery<Pet>("pets", dbData);
     
     if (!results[0]) {
       throw new Error("Failed to create pet");

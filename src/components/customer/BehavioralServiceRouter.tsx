@@ -2,7 +2,9 @@ import { useState, useEffect } from 'react';
 import { BehavioralServicesLanding } from './BehavioralServicesLanding';
 import { ProblemGridSelector } from './ProblemGridSelector';
 import { VendorDiscoveryByProblem } from './VendorDiscoveryByProblem';
+import { BookingFlowDispatcher } from './BookingFlowDispatcher';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { toast } from 'sonner@2.0.3';
 
 type ViewType = 
   | 'landing'
@@ -87,13 +89,11 @@ export function BehavioralServiceRouter({ onBack, phone, onNavigate, onViewBooki
     console.log('📍 [BEHAVIORAL-ROUTER] Navigating to:', screen, data);
     
     if (screen === 'behavioral_center') {
-      // TODO: Implement behavioral center list view
-      console.log('🚧 Behavioral center view - coming soon');
-      alert('Behavioral center booking coming soon!');
+      // ✅ FIX: Navigate to problem grid for center-based behavioral services
+      setCurrentView('problem_grid');
     } else if (screen === 'behavioral_home') {
-      // TODO: Implement behavioral at-home service view
-      console.log('🚧 Behavioral at-home view - coming soon');
-      alert('Behavioral at-home booking coming soon!');
+      // ✅ FIX: Navigate to problem grid for home-based behavioral services
+      setCurrentView('problem_grid');
     } else if (screen === 'problem_grid') {
       setCurrentView('problem_grid');
     } else if (screen === 'problem_selected') {
@@ -138,8 +138,20 @@ export function BehavioralServiceRouter({ onBack, phone, onNavigate, onViewBooki
         onBack={() => setCurrentView('problem_grid')}
         onVendorSelect={(vendor) => {
           console.log('✅ [BEHAVIORAL-ROUTER] Behaviorist selected:', vendor);
-          // For now, show alert - can be replaced with actual booking flow
-          alert(`Selected: ${vendor.vendorName || vendor.businessName}\nBooking flow coming soon!`);
+          // ✅ FIX: Use BookingFlowDispatcher for behavioral service booking
+          if (onNavigate) {
+            onNavigate('booking-dispatcher', {
+              serviceType: 'training',
+              serviceStyle: 'at_home',
+              vendorId: vendor.id || vendor.vendorId,
+              vendorName: vendor.vendorName || vendor.businessName,
+              vendorRoleId: 'pet_behaviourist',
+              customerId: customerId,
+              customerPhone: phone,
+            });
+          } else {
+            toast.success(`Selected: ${vendor.vendorName || vendor.businessName}. Booking flow will open.`);
+          }
         }}
         customerId={customerId}
         phone={phone}

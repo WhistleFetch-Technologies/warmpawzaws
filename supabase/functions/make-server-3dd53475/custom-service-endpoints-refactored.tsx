@@ -49,11 +49,22 @@ export function customServiceEndpoints(app: Hono) {
       
       console.log(`📋 Loading custom services for vendor: ${vendorId}`);
       
+      // ✅ CRITICAL FIX: Resolve vendor ID (handles both UUID and vendor_id string)
+      const vendorsRepo = getVendorsRepository();
+      const resolvedVendorId = await vendorsRepo.resolveVendorId(vendorId);
+      
+      if (!resolvedVendorId) {
+        console.log(`❌ Vendor not found: ${vendorId}`);
+        return c.json({ error: `Vendor not found: ${vendorId}` }, 404);
+      }
+      
+      console.log(`✅ Resolved vendor ID: ${vendorId} -> ${resolvedVendorId}`);
+      
       // ✅ SQL: Load vendor to verify service style
-      const vendor = await getVendorsRepository().findById(vendorId);
+      const vendor = await vendorsRepo.findById(resolvedVendorId);
       
       if (!vendor) {
-        console.log(`❌ Vendor not found: ${vendorId}`);
+        console.log(`❌ Vendor not found after resolution: ${resolvedVendorId}`);
         return c.json({ error: 'Vendor not found' }, 404);
       }
       
@@ -80,13 +91,19 @@ export function customServiceEndpoints(app: Hono) {
       console.log(`✅ Vendor ${vendorId} is eligible for custom services (serviceStyle: ${vendor.service_style})`);
       
       // ✅ SQL: Load all custom services for this vendor
+      // ✅ CRITICAL FIX: Use resolved vendor ID (UUID) not the original string
       const client = getDbClient();
-      const { data: customServices } = await client
+      const { data: customServices, error: queryError } = await client
         .from('vendor_services')
         .select('*')
-        .eq('vendor_id', vendorId)
+        .eq('vendor_id', resolvedVendorId) // ✅ Use UUID, not vendor_id string
         .eq('is_custom_service', true)
         .order('created_at', { ascending: false });
+      
+      if (queryError) {
+        console.error('❌ Error querying custom services:', queryError);
+        return c.json({ error: `Failed to load custom services: ${queryError.message}` }, 500);
+      }
       
       console.log(`📦 Found ${customServices?.length || 0} custom services`);
       
@@ -120,11 +137,22 @@ export function customServiceEndpoints(app: Hono) {
       console.log(`💾 Creating custom service for vendor: ${vendorId}`);
       console.log(`   Service Name: ${serviceData.serviceName}`);
       
+      // ✅ CRITICAL FIX: Resolve vendor ID (handles both UUID and vendor_id string)
+      const vendorsRepo = getVendorsRepository();
+      const resolvedVendorId = await vendorsRepo.resolveVendorId(vendorId);
+      
+      if (!resolvedVendorId) {
+        console.log(`❌ Vendor not found: ${vendorId}`);
+        return c.json({ error: `Vendor not found: ${vendorId}. Please ensure vendor exists.` }, 404);
+      }
+      
+      console.log(`✅ Resolved vendor ID: ${vendorId} -> ${resolvedVendorId}`);
+      
       // ✅ SQL: Load vendor to verify eligibility
-      const vendor = await getVendorsRepository().findById(vendorId);
+      const vendor = await vendorsRepo.findById(resolvedVendorId);
       
       if (!vendor) {
-        console.log(`❌ Vendor not found: ${vendorId}`);
+        console.log(`❌ Vendor not found after resolution: ${resolvedVendorId}`);
         return c.json({ error: 'Vendor not found' }, 404);
       }
       
@@ -179,11 +207,12 @@ export function customServiceEndpoints(app: Hono) {
       const serviceId = `CS${Date.now()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
       
       // ✅ SQL: Create custom service in vendor_services table
+      // ✅ CRITICAL FIX: Use resolved vendor ID (UUID) not the original string
       const client = getDbClient();
-      const { data: customService } = await client
+      const { data: customService, error: insertError } = await client
         .from('vendor_services')
         .insert({
-          vendor_id: vendorId,
+          vendor_id: resolvedVendorId, // ✅ Use UUID, not vendor_id string
           service_style: 'at_center',
           service_id: serviceId,
           service_name: serviceData.serviceName.trim(),
@@ -202,6 +231,11 @@ export function customServiceEndpoints(app: Hono) {
         })
         .select()
         .single();
+      
+      if (insertError) {
+        console.error('❌ Error inserting custom service:', insertError);
+        return c.json({ error: `Failed to create custom service: ${insertError.message}` }, 500);
+      }
       
       console.log(`✅ Custom service created: ${serviceId}`);
       

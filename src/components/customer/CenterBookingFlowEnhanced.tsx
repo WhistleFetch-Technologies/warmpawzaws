@@ -259,7 +259,7 @@ export function CenterBookingFlowEnhanced({
       };
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/bookings`,
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/bookings/create`,
         {
           method: 'POST',
           headers: {

@@ -1,111 +1,75 @@
-# Server Deployment Instructions
+# Service Catalog Deployment Instructions
 
-## Quick Start
+## Step 1: Login to Supabase
 
-### Step 1: Login to Supabase
-```bash
-npx supabase login
-```
-This will open a browser window for you to authenticate.
+You need to login to Supabase first. Run this in your terminal:
 
-### Step 2: Deploy
-```bash
-./quick-deploy.sh
-```
-
-Or manually:
-```bash
-npx supabase functions deploy make-server-3dd53475 --no-verify-jwt
-```
-
-## Manual Deployment Steps
-
-### 1. Prepare Function Structure
-The function structure is already prepared in:
-```
-supabase/functions/make-server-3dd53475/
-```
-
-### 2. Link Project (if not already linked)
-```bash
-npx supabase link --project-ref vpvpbdwtyugbknrntkho
-```
-
-### 3. Login (if not already logged in)
 ```bash
 npx supabase login
 ```
 
-### 4. Deploy Function
+This will open a browser window for authentication.
+
+## Step 2: Deploy the Function
+
+After logging in, run:
+
 ```bash
 npx supabase functions deploy make-server-3dd53475 --no-verify-jwt
 ```
 
-## Verify Deployment
+## Alternative: Use Access Token
+
+If you prefer to use an access token instead:
+
+1. Get your access token from: https://supabase.com/dashboard/account/tokens
+2. Set it as an environment variable:
+   ```bash
+   export SUPABASE_ACCESS_TOKEN=your_token_here
+   ```
+3. Then deploy:
+   ```bash
+   npx supabase functions deploy make-server-3dd53475 --no-verify-jwt
+   ```
+
+## Step 3: Verify Deployment
 
 After deployment, test the health endpoint:
+
 ```bash
 curl https://vpvpbdwtyugbknrntkho.supabase.co/functions/v1/make-server-3dd53475/health
 ```
 
-Expected response:
-```json
-{
-  "success": true,
-  "status": "ok",
-  "timestamp": "2024-01-01T00:00:00.000Z"
-}
+## Step 4: Test Service Catalog Endpoints
+
+### Test Seed Preview (No changes made):
+```bash
+curl -X POST https://vpvpbdwtyugbknrntkho.supabase.co/functions/v1/make-server-3dd53475/admin/catalog/seed-all-services \
+  -H "Authorization: Bearer YOUR_ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"confirm": false}'
 ```
 
-## Function Endpoints
-
-Once deployed, your function will be available at:
+### Test Price Update Preview:
+```bash
+curl -X POST https://vpvpbdwtyugbknrntkho.supabase.co/functions/v1/make-server-3dd53475/admin/catalog/update-realistic-prices \
+  -H "Authorization: Bearer YOUR_ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"confirm": false}'
 ```
-https://vpvpbdwtyugbknrntkho.supabase.co/functions/v1/make-server-3dd53475
-```
 
-All API endpoints will be prefixed with this base URL, for example:
-- Health: `/make-server-3dd53475/health`
-- Customer Services: `/make-server-3dd53475/customer/services`
-- Bookings: `/make-server-3dd53475/bookings/create`
-- etc.
+## Expected Results
+
+After successful deployment:
+- ✅ Function deployed to Supabase
+- ✅ Endpoints accessible
+- ✅ Preview mode works (returns preview without making changes)
+- ✅ Ready to seed services via UI or API
 
 ## Troubleshooting
 
-### "Access token not provided"
-Run: `npx supabase login`
-
-### "Project not linked"
-Run: `npx supabase link --project-ref vpvpbdwtyugbknrntkho`
-
-### "Function not found"
-Make sure the function directory exists:
-```bash
-ls -la supabase/functions/make-server-3dd53475/
-```
-
-If it doesn't exist, copy the files:
-```bash
-mkdir -p supabase/functions/make-server-3dd53475
-cp -r src/supabase/functions/server/* supabase/functions/make-server-3dd53475/
-```
-
-### View Deployment Logs
-```bash
-npx supabase functions logs make-server-3dd53475
-```
-
-## Environment Variables
-
-If your function needs environment variables or secrets:
-1. Go to Supabase Dashboard
-2. Navigate to: Project Settings → Edge Functions → Secrets
-3. Add your secrets (AWS keys, Razorpay keys, etc.)
-
-## Next Steps After Deployment
-
-1. ✅ Verify health endpoint works
-2. ✅ Test a sample API call (e.g., list services)
-3. ✅ Check function logs for any errors
-4. ✅ Update frontend to use the deployed function URL
-
+If deployment fails:
+1. Make sure you're logged in: `npx supabase login`
+2. Check project is linked: `npx supabase projects list`
+3. Verify function directory exists: `ls -la supabase/functions/make-server-3dd53475/`
+4. Check logs: `npx supabase functions logs make-server-3dd53475`

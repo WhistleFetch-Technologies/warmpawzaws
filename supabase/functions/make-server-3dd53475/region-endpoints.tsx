@@ -464,6 +464,95 @@ export function regionEndpoints(app: Hono) {
       }
     });
 
+    // ✅ NEW: Seed regions from custom data (UI-friendly)
+    app.post('/make-server-3dd53475/admin/regions/seed', async (c) => {
+      try {
+        const body = await c.req.json();
+        const { regions } = body;
+        
+        if (!regions || !Array.isArray(regions)) {
+          return c.json({
+            success: false,
+            error: 'regions array is required',
+          }, 400);
+        }
+        
+        console.log(`🌍 [REGION] POST /admin/regions/seed called with ${regions.length} regions`);
+        
+        const results = [];
+        
+        for (const regionData of regions) {
+          const { regionId, regionName, regionCode, country, isActive, metadata } = regionData;
+          
+          if (!regionId && !regionCode) {
+            results.push({ 
+              regionId: regionId || regionCode, 
+              status: 'error', 
+              message: 'regionId or regionCode is required' 
+            });
+            continue;
+          }
+          
+          const code = regionCode || regionId;
+          
+          // Check if exists
+          const existing = await regionsRepo.findByCode(code);
+          
+          if (existing) {
+            results.push({ 
+              regionId: code, 
+              status: 'skipped', 
+              message: 'Already exists' 
+            });
+            continue;
+          }
+          
+          // Create region
+          const newRegion = await regionsRepo.create({
+            name: regionName || regionData.name || code,
+            code: code,
+            country: country || regionData.country || 'India',
+            region_config: {
+              ...metadata,
+              regionId: code,
+              regionName: regionName || regionData.name || code,
+              regionCode: code,
+              country: country || regionData.country || 'India',
+            },
+            is_active: isActive !== undefined ? isActive : (code === 'india'),
+          });
+          
+          results.push({ 
+            regionId: code, 
+            status: 'created', 
+            message: 'Seeded successfully',
+            region: {
+              regionId: newRegion.code,
+              regionName: newRegion.name,
+              regionCode: newRegion.code,
+              country: newRegion.country,
+              isActive: newRegion.is_active,
+            }
+          });
+          
+          console.log(`✅ Region ${code} seeded successfully`);
+        }
+        
+        return c.json({
+          success: true,
+          message: `Seeded ${results.filter(r => r.status === 'created').length} regions`,
+          results,
+        });
+        
+      } catch (error) {
+        console.error('Error seeding regions:', error);
+        return c.json({
+          success: false,
+          error: String(error),
+        }, 500);
+      }
+    });
+
     // Seed ALL regions (Singapore, UAE, EMEA, UK, US, Australia)
     app.post('/make-server-3dd53475/admin/regions/seed-all', async (c) => {
       try {

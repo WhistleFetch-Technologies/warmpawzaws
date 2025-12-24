@@ -29,7 +29,9 @@ import { getCustomersRepository } from "../../lib/repositories/customers.ts";
 import { getCommissionsRepository } from "../../lib/repositories/commissions.ts";
 import { getPayoutsRepository } from "../../lib/repositories/payouts.ts";
 import { getReviewsRepository } from "../../lib/repositories/reviews.ts";
+import { getStaffRepository } from "../../lib/repositories/staff.ts";
 import { getDbClient } from "../../lib/db.ts";
+import { createClient } from "npm:@supabase/supabase-js@2.39.3";
 
 /**
  * SQL-ONLY Vendor Dashboard Endpoints
@@ -51,16 +53,12 @@ export function vendorDashboardEndpoints(app: Hono) {
       
       console.log(`📊 [DASHBOARD] Fetching dashboard for vendor: ${vendorId}, timeframe: ${timeframe}`);
       
-      // ✅ SQL: Get vendor profile
-      let vendor;
-      try {
-        vendor = await getVendorsRepository().findById(vendorId);
-      } catch (vendorError) {
-        console.error(`❌ [DASHBOARD] Error fetching vendor ${vendorId}:`, vendorError);
-        vendor = null;
-      }
+      // ✅ FIX: Use standardized vendor ID resolver
+      const { resolveVendor } = await import('../../lib/utils/vendor-id-resolver.ts');
+      const vendor = await resolveVendor(vendorId);
       
       if (!vendor) {
+        console.error(`❌ [DASHBOARD] Vendor not found: ${vendorId}`);
         console.log(`⚠️ [DASHBOARD] Vendor not found: ${vendorId}, returning default dashboard`);
         return sendSuccess(c, { 
           vendor: {
@@ -85,10 +83,12 @@ export function vendorDashboardEndpoints(app: Hono) {
         });
       }
       
+      const vendorUuid = vendor.id;
+      
       // ✅ SQL: Get all vendor bookings
       let bookings = [];
       try {
-        bookings = await getBookingsRepository().findByVendor(vendorId);
+        bookings = await getBookingsRepository().findByVendor(vendorUuid);
       } catch (bookingsError) {
         console.error(`❌ [DASHBOARD] Error fetching bookings for vendor ${vendorId}:`, bookingsError);
         bookings = [];
@@ -133,7 +133,9 @@ export function vendorDashboardEndpoints(app: Hono) {
           
           // Filter by timeframe
           if (bookingDate >= startDate) {
-            if (booking.status === 'confirmed' || booking.status === 'pending') {
+            // ✅ FIX: Show bookings that are paid AND confirmed/pending (vendor can see after payment)
+            if ((booking.status === 'confirmed' || booking.status === 'pending') && 
+                (booking.payment_status === 'paid' || booking.payment_status === 'pending')) {
               stats.appointments++;
             }
             
@@ -143,7 +145,9 @@ export function vendorDashboardEndpoints(app: Hono) {
               stats.earnings += booking.total_amount || 0;
             }
             
-            if (booking.status === 'in_progress' || booking.status === 'confirmed') {
+            // ✅ FIX: Pending earnings = confirmed bookings with paid status but not yet completed
+            if ((booking.status === 'in_progress' || booking.status === 'confirmed') && 
+                booking.payment_status === 'paid') {
               stats.pendingEarnings += booking.total_amount || 0;
             }
           }
@@ -197,11 +201,23 @@ export function vendorDashboardEndpoints(app: Hono) {
    * GET /make-server-3dd53475/vendor/schedule/:vendorId
    * 
    * REFACTORED: Uses SQL repositories instead of KV
+   * ✅ FIXED: Converts vendor_id to UUID before querying
    */
   app.get("/make-server-3dd53475/vendor/schedule/:vendorId", async (c) => {
     try {
       const { vendorId } = c.req.param();
       const dateParam = c.req.query('date');
+      
+      // ✅ FIX: Use standardized vendor ID resolver
+      const { resolveVendorIdToUuid } = await import('../../lib/utils/vendor-id-resolver.ts');
+      const vendorUuid = await resolveVendorIdToUuid(vendorId);
+      
+      if (!vendorUuid) {
+        console.warn(`⚠️ [SCHEDULE] Vendor not found: ${vendorId}, returning empty schedule`);
+        return sendSuccess(c, { schedule: [], date: dateParam || new Date().toISOString().split('T')[0] });
+      }
+      
+      console.log(`✅ [SCHEDULE] Resolved vendor ID: ${vendorId} -> ${vendorUuid}`);
       
       // Normalize date format (YYYY-MM-DD)
       let date: string;
@@ -220,7 +236,7 @@ export function vendorDashboardEndpoints(app: Hono) {
       console.log(`📅 [SCHEDULE] Vendor: ${vendorId}, Date: ${date}`);
       
       // ✅ SQL: Get bookings for vendor on specific date
-      const bookings = await getBookingsRepository().findByVendor(vendorId, {
+      const bookings = await getBookingsRepository().findByVendor(vendorUuid, {
         date,
       });
       
@@ -233,9 +249,10 @@ export function vendorDashboardEndpoints(app: Hono) {
             ? booking.booking_date.toISOString().split('T')[0]
             : booking.booking_date?.split('T')[0] || booking.booking_date;
           
-          // Filter by date and active statuses
+          // ✅ FIX: Filter by date, active statuses, AND payment status (vendor should only see paid bookings)
           if (bookingDate === date && 
-              (booking.status === 'pending' || booking.status === 'confirmed' || booking.status === 'in_progress')) {
+              (booking.status === 'pending' || booking.status === 'confirmed' || booking.status === 'in_progress') &&
+              (booking.payment_status === 'paid' || booking.payment_status === 'pending')) {
             
             // ✅ SQL: Get customer details
             let customer = null;
@@ -297,8 +314,16 @@ export function vendorDashboardEndpoints(app: Hono) {
       const { vendorId } = c.req.param();
       const timeframe = c.req.query('timeframe') || 'month';
       
+      // ✅ FIX: Use standardized vendor ID resolver
+      const { resolveVendorIdToUuid } = await import('../../lib/utils/vendor-id-resolver.ts');
+      const resolvedVendorId = await resolveVendorIdToUuid(vendorId);
+      
+      if (!resolvedVendorId) {
+        return sendError(c, `Vendor not found: ${vendorId}`, 404);
+      }
+      
       // ✅ SQL: Get all commissions for vendor
-      const commissions = await getCommissionsRepository().findByVendor(vendorId);
+      const commissions = await getCommissionsRepository().findByVendor(resolvedVendorId);
       
       const revenue = {
         total: 0,
@@ -376,8 +401,16 @@ export function vendorDashboardEndpoints(app: Hono) {
     try {
       const { vendorId } = c.req.param();
       
+      // ✅ FIX: Use standardized vendor ID resolver
+      const { resolveVendorIdToUuid } = await import('../../lib/utils/vendor-id-resolver.ts');
+      const resolvedVendorId = await resolveVendorIdToUuid(vendorId);
+      
+      if (!resolvedVendorId) {
+        return sendError(c, `Vendor not found: ${vendorId}`, 404);
+      }
+      
       // ✅ SQL: Get payouts for vendor
-      const payouts = await getPayoutsRepository().findByVendor(vendorId);
+      const payouts = await getPayoutsRepository().findByVendor(resolvedVendorId);
       
       return sendSuccess(c, { payouts, total: payouts.length });
     } catch (error) {
@@ -407,6 +440,319 @@ export function vendorDashboardEndpoints(app: Hono) {
     } catch (error) {
       console.error('Error fetching vendor watchlist:', error);
       return sendError(c, error, 500);
+    }
+  });
+
+  /**
+   * Get comprehensive analytics for vendor
+   * GET /make-server-3dd53475/vendor/:vendorId/analytics?period=month
+   * 
+   * REFACTORED: Uses SQL repositories instead of KV
+   */
+  app.get("/make-server-3dd53475/vendor/:vendorId/analytics", async (c) => {
+    try {
+      const { vendorId: paramVendorId } = c.req.param();
+      const period = c.req.query("period") || "month"; // day, week, month, year, all
+      
+      console.log(`📊 [ANALYTICS] Fetching analytics for vendor: ${paramVendorId}, period: ${period}`);
+      
+      // ✅ CRITICAL FIX: Resolve vendorId to UUID
+      const resolvedVendorId = await getVendorsRepository().resolveVendorId(paramVendorId);
+      
+      if (!resolvedVendorId) {
+        console.error(`❌ [ANALYTICS] Vendor not found or invalid ID format: ${paramVendorId}`);
+        return sendError(c, 'Vendor not found or invalid ID format', 404);
+      }
+      
+      // ✅ SQL: Get vendor
+      const vendor = await getVendorsRepository().findById(resolvedVendorId);
+      if (!vendor) {
+        return sendError(c, 'Vendor not found', 404);
+      }
+      
+      // ✅ SQL: Get all bookings for vendor
+      const allBookings = await getBookingsRepository().findByVendor(resolvedVendorId);
+      
+      // Calculate period start
+      const now = new Date();
+      let periodStart = new Date();
+      
+      switch (period) {
+        case 'day':
+          periodStart.setHours(0, 0, 0, 0);
+          break;
+        case 'week':
+          periodStart.setDate(now.getDate() - 7);
+          break;
+        case 'month':
+          periodStart.setMonth(now.getMonth() - 1);
+          break;
+        case 'year':
+          periodStart.setFullYear(now.getFullYear() - 1);
+          break;
+        case 'all':
+          periodStart = new Date(0); // Beginning of time
+          break;
+      }
+      
+      // Filter bookings by period
+      const periodBookings = period === 'all' 
+        ? allBookings 
+        : allBookings.filter((booking) => {
+            const bookingDate = booking.created_at ? new Date(booking.created_at) : new Date(booking.booking_date || booking.created_at || 0);
+            return bookingDate >= periodStart;
+          });
+      
+      // Calculate status breakdown
+      const completed = periodBookings.filter((b) => b.status === 'completed');
+      const cancelled = periodBookings.filter((b) => b.status === 'cancelled');
+      const pending = periodBookings.filter((b) => b.status === 'pending');
+      const confirmed = periodBookings.filter((b) => b.status === 'confirmed');
+      const inProgress = periodBookings.filter((b) => b.status === 'in_progress');
+      
+      // Calculate earnings
+      const totalEarnings = completed.reduce((sum, b) => sum + (b.total_amount || 0), 0);
+      const pendingEarnings = confirmed.reduce((sum, b) => sum + (b.total_amount || 0), 0);
+      
+      // Calculate service breakdown
+      const serviceBreakdown: Record<string, any> = {};
+      periodBookings.forEach((booking) => {
+        const serviceName = booking.service_type || 'Unknown';
+        if (!serviceBreakdown[serviceName]) {
+          serviceBreakdown[serviceName] = {
+            count: 0,
+            revenue: 0,
+            completed: 0
+          };
+        }
+        serviceBreakdown[serviceName].count++;
+        if (booking.status === 'completed') {
+          serviceBreakdown[serviceName].completed++;
+          serviceBreakdown[serviceName].revenue += booking.total_amount || 0;
+        }
+      });
+      
+      // ✅ SQL: Get reviews for vendor
+      const allReviews = await getReviewsRepository().findByVendor(resolvedVendorId);
+      const periodReviews = period === 'all'
+        ? allReviews
+        : allReviews.filter((r) => {
+            const reviewDate = r.created_at ? new Date(r.created_at) : new Date(0);
+            return reviewDate >= periodStart;
+          });
+      
+      const avgRating = periodReviews.length > 0
+        ? Number((periodReviews.reduce((sum, r) => sum + (r.rating || 0), 0) / periodReviews.length).toFixed(1))
+        : 0;
+      
+      // ✅ SQL: Get staff count
+      const staff = await getStaffRepository().findByVendorId(resolvedVendorId);
+      const activeStaff = staff.filter((s) => s.isActive !== false);
+      const staffCount = activeStaff.length;
+      
+      // Calculate customer breakdown
+      const uniqueCustomers = new Set(periodBookings.map((b) => b.customer_id));
+      const customerBookingsMap = new Map<string, number>();
+      periodBookings.forEach((booking) => {
+        const count = customerBookingsMap.get(booking.customer_id) || 0;
+        customerBookingsMap.set(booking.customer_id, count + 1);
+      });
+      const returningCustomers = Array.from(customerBookingsMap.entries())
+        .filter(([_, count]) => count > 1)
+        .map(([customerId]) => customerId);
+      
+      // Calculate daily earnings trend (last 7 days)
+      const dailyEarnings = [];
+      for (let i = 6; i >= 0; i--) {
+        const date = new Date();
+        date.setDate(date.getDate() - i);
+        date.setHours(0, 0, 0, 0);
+        
+        const nextDate = new Date(date);
+        nextDate.setDate(nextDate.getDate() + 1);
+        
+        const dayBookings = completed.filter((b) => {
+          const bookingDate = b.completed_at 
+            ? new Date(b.completed_at)
+            : (b.created_at ? new Date(b.created_at) : new Date(0));
+          return bookingDate >= date && bookingDate < nextDate;
+        });
+        
+        const dayEarnings = dayBookings.reduce((sum, b) => sum + (b.total_amount || 0), 0);
+        
+        dailyEarnings.push({
+          date: date.toISOString().split('T')[0],
+          earnings: dayEarnings,
+          bookings: dayBookings.length
+        });
+      }
+      
+      const analytics = {
+        period,
+        overview: {
+          totalBookings: periodBookings.length,
+          completed: completed.length,
+          cancelled: cancelled.length,
+          pending: pending.length,
+          confirmed: confirmed.length,
+          inProgress: inProgress.length,
+          
+          totalEarnings,
+          pendingEarnings,
+          avgBookingValue: completed.length > 0 ? Number((totalEarnings / completed.length).toFixed(0)) : 0,
+          
+          completionRate: periodBookings.length > 0 
+            ? Number(((completed.length / periodBookings.length) * 100).toFixed(1))
+            : 0,
+          cancellationRate: periodBookings.length > 0
+            ? Number(((cancelled.length / periodBookings.length) * 100).toFixed(1))
+            : 0,
+          
+          avgRating,
+          reviewCount: periodReviews.length,
+          
+          staffCount,
+          uniqueCustomers: uniqueCustomers.size,
+          returningCustomers: returningCustomers.length,
+          customerRetentionRate: uniqueCustomers.size > 0
+            ? Number(((returningCustomers.length / uniqueCustomers.size) * 100).toFixed(1))
+            : 0
+        },
+        
+        serviceBreakdown: Object.entries(serviceBreakdown)
+          .map(([name, data]) => ({
+            serviceName: name,
+            ...data
+          }))
+          .sort((a, b) => b.revenue - a.revenue),
+        
+        dailyEarnings,
+        
+        topServices: Object.entries(serviceBreakdown)
+          .map(([name, data]: [string, any]) => ({
+            serviceName: name,
+            count: data.count
+          }))
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 5)
+      };
+      
+      console.log(`✅ [ANALYTICS] Analytics calculated for ${paramVendorId} (resolved: ${resolvedVendorId})`);
+      
+      return sendSuccess(c, { analytics });
+      
+    } catch (error) {
+      console.error("❌ [ANALYTICS] Error fetching vendor analytics:", error);
+      return sendError(c, `Failed to fetch analytics: ${String(error)}`, 500);
+    }
+  });
+
+  /**
+   * Get performance metrics for all staff members
+   * GET /make-server-3dd53475/vendor/:vendorId/staff-performance?period=month
+   * 
+   * REFACTORED: Uses SQL repositories instead of KV
+   */
+  app.get("/make-server-3dd53475/vendor/:vendorId/staff-performance", async (c) => {
+    try {
+      const { vendorId: paramVendorId } = c.req.param();
+      const period = c.req.query("period") || "month";
+      
+      console.log(`👥 [STAFF-PERFORMANCE] Fetching staff performance for vendor: ${paramVendorId}`);
+      
+      // ✅ CRITICAL FIX: Resolve vendorId to UUID
+      const resolvedVendorId = await getVendorsRepository().resolveVendorId(paramVendorId);
+      
+      if (!resolvedVendorId) {
+        console.error(`❌ [STAFF-PERFORMANCE] Vendor not found or invalid ID format: ${paramVendorId}`);
+        return sendError(c, 'Vendor not found or invalid ID format', 404);
+      }
+      
+      // ✅ SQL: Get all staff for vendor
+      const allStaff = await getStaffRepository().findByVendorId(resolvedVendorId);
+      const activeStaff = allStaff.filter((s) => s.isActive !== false);
+      
+      // Calculate period start
+      const now = new Date();
+      let periodStart = new Date();
+      
+      switch (period) {
+        case 'day':
+          periodStart.setHours(0, 0, 0, 0);
+          break;
+        case 'week':
+          periodStart.setDate(now.getDate() - 7);
+          break;
+        case 'month':
+          periodStart.setMonth(now.getMonth() - 1);
+          break;
+        case 'year':
+          periodStart.setFullYear(now.getFullYear() - 1);
+          break;
+      }
+      
+      // Get performance for each staff
+      const staffPerformance = await Promise.all(
+        activeStaff.map(async (staff) => {
+          // ✅ SQL: Get bookings for this staff
+          const allStaffBookings = await getBookingsRepository().findByVendor(resolvedVendorId);
+          const staffBookings = allStaffBookings.filter((booking) => 
+            booking.staff_id === staff.id
+          );
+          
+          // Filter by period
+          const periodBookings = staffBookings.filter((booking) => {
+            const bookingDate = booking.created_at ? new Date(booking.created_at) : new Date(booking.booking_date || booking.created_at || 0);
+            return bookingDate >= periodStart;
+          });
+          
+          const completed = periodBookings.filter((b) => b.status === 'completed');
+          const totalEarnings = completed.reduce((sum, b) => sum + (b.total_amount || 0), 0);
+          
+          // ✅ SQL: Get reviews for this staff (if reviews table has staff_id)
+          const staffReviews = await getReviewsRepository().findByVendor(resolvedVendorId);
+          // Filter reviews that mention this staff (if we have staff_id in reviews)
+          const relevantReviews = staffReviews; // TODO: Add staff_id to reviews table if needed
+          
+          return {
+            staffId: staff.id,
+            fullName: staff.fullName || 'Staff Member',
+            role: staff.role || 'staff',
+            photo: staff.photo || null,
+            specializations: staff.specializations || [],
+            
+            totalAppointments: periodBookings.length,
+            completed: completed.length,
+            completionRate: periodBookings.length > 0
+              ? Number(((completed.length / periodBookings.length) * 100).toFixed(1))
+              : 0,
+            
+            totalEarnings,
+            avgBookingValue: completed.length > 0
+              ? Number((totalEarnings / completed.length).toFixed(0))
+              : 0,
+            
+            rating: 0, // TODO: Calculate from staff-specific reviews
+            reviewCount: relevantReviews.length
+          };
+        })
+      );
+      
+      // Sort by earnings
+      const sortedStaffPerformance = staffPerformance
+        .sort((a, b) => b.totalEarnings - a.totalEarnings);
+      
+      console.log(`✅ [STAFF-PERFORMANCE] Staff performance calculated for ${paramVendorId} (resolved: ${resolvedVendorId})`);
+      
+      return sendSuccess(c, { 
+        staffPerformance: sortedStaffPerformance,
+        period,
+        totalStaff: sortedStaffPerformance.length
+      });
+      
+    } catch (error) {
+      console.error("❌ [STAFF-PERFORMANCE] Error fetching staff performance:", error);
+      return sendError(c, `Failed to fetch staff performance: ${String(error)}`, 500);
     }
   });
 

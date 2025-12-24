@@ -95,6 +95,23 @@ export class PaymentsRepository {
   }
 
   /**
+   * Get all payments (with optional filters)
+   */
+  async findAll(options?: { limit?: number; offset?: number; paymentStatus?: string }): Promise<Payment[]> {
+    const conditions: any = {};
+    if (options?.paymentStatus) {
+      conditions.payment_status = options.paymentStatus;
+    }
+    
+    return selectQuery<Payment>("payments", conditions, {
+      limit: options?.limit || 1000,
+      offset: options?.offset,
+      orderBy: "created_at",
+      orderDirection: "desc",
+    });
+  }
+
+  /**
    * Get payment by Razorpay order ID
    */
   async findByRazorpayOrderId(orderId: string): Promise<Payment | null> {

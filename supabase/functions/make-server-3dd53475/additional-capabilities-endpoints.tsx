@@ -1,7 +1,8 @@
 import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
+import { getDbClient } from '../../lib/db.ts';
 
 const app = new Hono();
+const client = getDbClient();
 
 // ============================================
 // PRESCRIPTION VERIFICATION ENDPOINTS
@@ -392,27 +393,58 @@ app.get('/vendor/policy-management/:vendorId', async (c) => {
     const vendorId = c.req.param('vendorId');
     const status = c.req.query('status');
     
-    const allPolicies = await kv.getByPrefix(`policy:${vendorId}:`);
+    // ✅ SQL: Get all policies for vendor
+    let query = client
+      .from('vendor_policies')
+      .select('*')
+      .eq('vendor_id', vendorId);
     
-    let policies = allPolicies;
     if (status) {
-      policies = allPolicies.filter((p: any) => p.status === status);
+      query = query.eq('status', status);
+    }
+    
+    const { data: policies, error } = await query.order('created_at', { ascending: false });
+    
+    if (error) {
+      console.error('Error fetching policies:', error);
+      return c.json({ error: 'Failed to fetch policies' }, 500);
     }
     
     // Auto-update expired policies
     const now = new Date();
-    for (const policy of policies) {
-      if (new Date(policy.endDate) < now && policy.status === 'active') {
-        policy.status = 'expired';
-        await kv.set(`policy:${vendorId}:${policy.id}`, policy);
-      }
+    const expiredPolicies = (policies || []).filter((p: any) => 
+      new Date(p.end_date) < now && p.status === 'active'
+    );
+    
+    if (expiredPolicies.length > 0) {
+      const expiredIds = expiredPolicies.map((p: any) => p.id);
+      await client
+        .from('vendor_policies')
+        .update({ status: 'expired', updated_at: new Date().toISOString() })
+        .in('id', expiredIds);
     }
+    
+    // Transform SQL rows to expected format
+    const formattedPolicies = (policies || []).map((p: any) => ({
+      id: p.policy_id,
+      vendorId: p.vendor_id,
+      policyName: p.policy_name,
+      policyType: p.policy_type,
+      premium: p.premium,
+      coverageAmount: p.coverage_amount,
+      deductible: p.deductible,
+      waitingPeriod: p.waiting_period_days,
+      startDate: p.start_date,
+      endDate: p.end_date,
+      status: p.status,
+      policyData: p.policy_data,
+      createdAt: p.created_at,
+      updatedAt: p.updated_at
+    }));
     
     return c.json({
       success: true,
-      policies: policies.sort((a: any, b: any) => 
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      )
+      policies: formattedPolicies
     });
   } catch (error) {
     console.error('Error fetching policies:', error);
@@ -426,24 +458,53 @@ app.post('/vendor/policy-management/:vendorId', async (c) => {
     const policyData = await c.req.json();
     
     const policyId = `policy_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    const policyKey = `policy:${vendorId}:${policyId}`;
     
-    const policy = {
-      id: policyId,
-      ...policyData,
-      premium: parseFloat(policyData.premium),
-      coverageAmount: parseFloat(policyData.coverageAmount),
-      deductible: parseFloat(policyData.deductible),
-      waitingPeriod: parseInt(policyData.waitingPeriod) || 30,
-      status: 'active',
-      createdAt: new Date().toISOString()
+    // ✅ SQL: Create policy in database
+    const { data: policy, error } = await client
+      .from('vendor_policies')
+      .insert({
+        policy_id: policyId,
+        vendor_id: vendorId,
+        policy_name: policyData.policyName || policyData.name,
+        policy_type: policyData.policyType || 'insurance',
+        premium: parseFloat(policyData.premium),
+        coverage_amount: parseFloat(policyData.coverageAmount),
+        deductible: parseFloat(policyData.deductible || 0),
+        waiting_period_days: parseInt(policyData.waitingPeriod || 30),
+        start_date: policyData.startDate || new Date().toISOString().split('T')[0],
+        end_date: policyData.endDate,
+        status: 'active',
+        policy_data: policyData.policyData || {}
+      })
+      .select()
+      .single();
+    
+    if (error) {
+      console.error('Error creating policy:', error);
+      return c.json({ error: 'Failed to create policy' }, 500);
+    }
+    
+    // Transform to expected format
+    const formattedPolicy = {
+      id: policy.policy_id,
+      vendorId: policy.vendor_id,
+      policyName: policy.policy_name,
+      policyType: policy.policy_type,
+      premium: policy.premium,
+      coverageAmount: policy.coverage_amount,
+      deductible: policy.deductible,
+      waitingPeriod: policy.waiting_period_days,
+      startDate: policy.start_date,
+      endDate: policy.end_date,
+      status: policy.status,
+      policyData: policy.policy_data,
+      createdAt: policy.created_at,
+      updatedAt: policy.updated_at
     };
-    
-    await kv.set(policyKey, policy);
     
     return c.json({
       success: true,
-      policy
+      policy: formattedPolicy
     });
   } catch (error) {
     console.error('Error creating policy:', error);

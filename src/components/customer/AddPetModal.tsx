@@ -4,6 +4,7 @@ import { X, Camera, Upload } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { LOGO_CIRCULAR_ORANGE, WARM_ORANGE } from '../../assets/design-tokens';
 import { WarmpawzButton } from '../shared/design-system/WarmpawzButton';
+import { toast } from 'sonner@2.0.3';
 
 const logoImage = LOGO_CIRCULAR_ORANGE;
 
@@ -78,7 +79,7 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
     if (file) {
       // Check file size (max 5MB)
       if (file.size > 5 * 1024 * 1024) {
-        alert('Image size should be less than 5MB');
+        toast.error('Image size should be less than 5MB');
         return;
       }
       
@@ -95,7 +96,7 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
   const handleSavePet = async () => {
     // Validate required fields
     if (!petData.name || !petData.type || !petData.breed || !petData.age) {
-      alert('Please fill in all required fields (Name, Type, Breed, Age)');
+      toast.error('Please fill in all required fields (Name, Type, Breed, Age)');
       return;
     }
     
@@ -149,7 +150,7 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
       console.log('=== SAVE COMPLETE ===');
       
       // Show success message
-      alert(`${petData.name} added successfully! 🎉`);
+      toast.success(`${petData.name} added successfully! 🎉`);
       
       // Call success callback to refresh data
       onSuccess();
@@ -157,7 +158,7 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
       
     } catch (error) {
       console.error('❌ Error saving pet:', error);
-      alert(`Error: ${error instanceof Error ? error.message : 'Failed to save pet. Please try again.'}`);
+      toast.error(`Error: ${error instanceof Error ? error.message : 'Failed to save pet. Please try again.'}`);
     } finally {
       setLoading(false);
     }
@@ -235,13 +236,13 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
               className={`py-2.5 px-3 border-2 rounded-xl transition-all font-medium text-xs ${
                 petData.type === type
                   ? 'bg-orange-50'
-                  }
-                  style={{
-                    borderColor: petData.type === type ? WARM_ORANGE : '#E5E7EB',
-                    color: petData.type === type ? WARM_ORANGE : '#374151',
-                    borderWidth: '2px'
                   : 'border-gray-200 text-gray-700 hover:border-gray-300'
               }`}
+              style={{
+                borderColor: petData.type === type ? WARM_ORANGE : '#E5E7EB',
+                color: petData.type === type ? WARM_ORANGE : '#374151',
+                borderWidth: '2px'
+              }}
             >
               {type === 'Dog' ? '🐕' : type === 'Cat' ? '🐈' : '🐾'} {type}
             </button>
@@ -719,16 +720,18 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
           <div className="flex items-center justify-between">
             {['basic', 'health', 'vaccination'].map((step, index) => (
               <div key={step} className="flex items-center flex-1">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold transition-all shadow-sm ${
-                  currentStep === step
-                    ? 'text-white scale-110'
-                  }
+                <div 
+                  className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold transition-all shadow-sm ${
+                    currentStep === step
+                      ? 'text-white scale-110'
+                      : step === 'basic' || (step === 'health' && (currentStep === 'health' || currentStep === 'vaccination')) || currentStep === 'vaccination'
+                      ? 'bg-green-500 text-white'
+                      : 'bg-gray-200 text-gray-500'
+                  }`}
                   style={{
                     backgroundColor: currentStep === step ? WARM_ORANGE : undefined
-                    : step === 'basic' || (step === 'health' && (currentStep === 'health' || currentStep === 'vaccination')) || currentStep === 'vaccination'
-                    ? 'bg-green-500 text-white'
-                    : 'bg-gray-200 text-gray-500'
-                }`}>
+                  }}
+                >
                   {index + 1}
                 </div>
                 {index < 2 && (

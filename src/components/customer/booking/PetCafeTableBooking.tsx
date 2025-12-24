@@ -105,7 +105,7 @@ export function PetCafeTableBooking({ vendorId, vendorName, onBack, onBookingCom
 
       // 2. Create Booking
       const bookingRes = await fetch(
-        `${API_BASE}/customer/bookings/create`,
+        `${API_BASE}/bookings/create`,
         {
           method: 'POST',
           headers: {

@@ -61,7 +61,7 @@ export function RewardsLoyaltyPage({ customerId }: RewardsLoyaltyPageProps) {
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/loyalty/${customerId}`,
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/loyalty/profile?customerId=${customerId}`,
         {
           headers: {
             'Authorization': `Bearer ${publicAnonKey}`,
@@ -75,7 +75,18 @@ export function RewardsLoyaltyPage({ customerId }: RewardsLoyaltyPageProps) {
       }
 
       const data = await response.json();
-      setLoyaltyProfile(data);
+      // Transform backend response structure to match frontend expectations
+      if (data.profile) {
+        setLoyaltyProfile({
+          points: data.profile.totalPoints || 0,
+          totalPoints: data.profile.totalPoints || 0,
+          lifetimePointsEarned: data.profile.lifetimePointsEarned || 0,
+          lifetimePointsRedeemed: data.profile.lifetimePointsRedeemed || 0,
+          customerId: data.profile.customerId
+        });
+      } else {
+        setLoyaltyProfile(data);
+      }
     } catch (err) {
       console.error('Error loading loyalty profile:', err);
       setError('Failed to load loyalty data');

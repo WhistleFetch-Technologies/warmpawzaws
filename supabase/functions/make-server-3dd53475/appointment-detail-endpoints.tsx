@@ -1,6 +1,9 @@
 import { Hono } from "npm:hono";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import * as kv from "./kv_store.tsx";
+import { getPrescriptionsRepository } from "../../lib/repositories/prescriptions.ts";
+import { getBookingsRepository } from "../../lib/repositories/bookings.ts";
+import { getVendorsRepository } from "../../lib/repositories/vendors.ts";
 
 const app = new Hono();
 
@@ -170,6 +173,8 @@ app.get('/make-server-3dd53475/vendor/bookings/:bookingId/details', async (c) =>
 // ============================================
 // POST /vendor/prescription/upload
 // Upload prescription with detailed fields
+// 
+// ✅ MIGRATED: Uses SQL repository instead of KV
 // ============================================
 app.post('/make-server-3dd53475/vendor/prescription/upload', async (c) => {
   const body = await c.req.json();
@@ -198,46 +203,81 @@ app.post('/make-server-3dd53475/vendor/prescription/upload', async (c) => {
   }
 
   try {
-    // 1. Create prescription object and store in KV store
-    const prescriptionId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    const prescriptionKey = `prescription:${bookingId}:${prescriptionId}`;
+    // ✅ SQL: Get booking to extract required IDs
+    const bookingsRepo = getBookingsRepository();
+    const booking = await bookingsRepo.findById(bookingId);
     
-    const prescription = {
-      id: prescriptionId,
-      booking_id: bookingId,
-      vendor_id: vendorId,
-      vendor_name: vendorName || 'Vendor',
-      diagnosis: diagnosis || null,
-      medications,
-      dosage: dosage || null,
-      frequency: frequency || 'Once Daily',
-      duration: duration || '7 days',
-      notes: notes || null,
-      follow_up_date: followUpDate || null,
-      uploaded_at: new Date().toISOString()
-    };
-
-    await kv.set(prescriptionKey, prescription);
-    console.log('✅ [PRESCRIPTION] Prescription saved:', prescriptionId);
-
-    // 2. Update booking to mark has_prescription = true
-    const bookingKey = `booking:${bookingId}`;
-    const bookingData = await kv.get(bookingKey);
-    
-    if (bookingData) {
-      bookingData.hasPrescription = true;
-      bookingData.prescriptionNotes = notes || medications;
-      await kv.set(bookingKey, bookingData);
-      console.log('✅ [PRESCRIPTION] Updated booking with prescription flag');
+    if (!booking) {
+      console.error('❌ [PRESCRIPTION] Booking not found:', bookingId);
+      return c.json({ error: 'Booking not found' }, 404);
     }
+    
+    // Verify vendor owns this booking
+    if (booking.vendor_id !== vendorId) {
+      console.error('❌ [PRESCRIPTION] Vendor mismatch');
+      return c.json({ error: 'Unauthorized' }, 403);
+    }
+    
+    // ✅ SQL: Get vendor for created_by
+    const vendorsRepo = getVendorsRepository();
+    const vendor = await vendorsRepo.findById(vendorId);
+    
+    if (!vendor) {
+      console.error('❌ [PRESCRIPTION] Vendor not found:', vendorId);
+      return c.json({ error: 'Vendor not found' }, 404);
+    }
+    
+    // Convert medications array format if needed
+    // Handle both old format (array of strings) and new format (array of objects)
+    let medicationsArray: any[] = [];
+    if (Array.isArray(medications)) {
+      medicationsArray = medications.map((med: any) => {
+        if (typeof med === 'string') {
+          return { name: med, dosage: dosage || '', frequency: frequency || 'Once Daily', duration: duration || '7 days' };
+        }
+        return med;
+      });
+    } else if (medications) {
+      // Single medication object
+      medicationsArray = [medications];
+    }
+    
+    // ✅ SQL: Create prescription using repository
+    const prescriptionsRepo = getPrescriptionsRepository();
+    const createdBy = vendor.user_id || vendor.id;
+    
+    const prescription = await prescriptionsRepo.create({
+      booking_id: bookingId,
+      pet_id: booking.pet_id || '',
+      customer_id: booking.customer_id,
+      vendor_id: vendorId,
+      staff_id: booking.staff_id || undefined,
+      diagnosis: diagnosis || undefined,
+      observations: undefined,
+      medications: medicationsArray,
+      products_used: [],
+      tests_recommended: [],
+      general_notes: notes || undefined,
+      recommendations: undefined,
+      follow_up_date: followUpDate || undefined,
+      follow_up_reason: undefined,
+      vitals: undefined,
+      prescription_file_url: undefined,
+      attachments: [],
+      created_by: createdBy,
+      created_by_role: 'vendor',
+      expires_at: undefined
+    });
 
-    // 3. Log activity
+    console.log('✅ [PRESCRIPTION] Prescription saved to SQL:', prescription.id);
+
+    // 3. Log activity (keep KV for activity logs for now)
     await logBookingActivity(
       bookingId,
       'prescription',
-      `${vendorName} added prescription`,
+      `${vendorName || vendor.business_name || 'Vendor'} added prescription`,
       'vendor',
-      vendorName
+      vendorName || vendor.business_name || 'Vendor'
     );
 
     console.log('✅ [PRESCRIPTION] Activity logged');
@@ -246,17 +286,16 @@ app.post('/make-server-3dd53475/vendor/prescription/upload', async (c) => {
     return c.json({
       success: true,
       prescriptionId: prescription.id,
+      prescriptionNumber: prescription.prescription_number,
       prescription: {
         id: prescription.id,
+        prescriptionNumber: prescription.prescription_number,
         bookingId: prescription.booking_id,
         diagnosis: prescription.diagnosis,
         medications: prescription.medications,
-        dosage: prescription.dosage,
-        frequency: prescription.frequency,
-        duration: prescription.duration,
-        notes: prescription.notes,
+        generalNotes: prescription.general_notes,
         followUpDate: prescription.follow_up_date,
-        uploadedAt: prescription.uploaded_at
+        createdAt: prescription.created_at
       }
     });
 
@@ -272,27 +311,26 @@ app.post('/make-server-3dd53475/vendor/prescription/upload', async (c) => {
 // ============================================
 // GET /vendor/prescription/:bookingId
 // Get prescription for a booking
+// 
+// ✅ MIGRATED: Uses SQL repository instead of KV
 // ============================================
 app.get('/make-server-3dd53475/vendor/prescription/:bookingId', async (c) => {
   const bookingId = c.req.param('bookingId');
+  const actorId = c.req.query('actor_id') || '';
+  const actorRole = c.req.query('actor_role') || 'vendor';
   
   console.log('💊 [PRESCRIPTION] Loading prescription for booking:', bookingId);
 
   try {
-    // Load prescriptions from KV store
-    const prescriptionPrefix = `prescription:${bookingId}:`;
-    const prescriptionsData = await kv.getByPrefix(prescriptionPrefix);
-    
-    // Sort prescriptions by uploaded_at (newest first) and get the most recent
-    const sortedPrescriptions = prescriptionsData.sort((a, b) => {
-      const timeA = new Date(a.uploaded_at).getTime();
-      const timeB = new Date(b.uploaded_at).getTime();
-      return timeB - timeA;
-    });
+    // ✅ SQL: Get prescriptions by booking ID
+    const prescriptionsRepo = getPrescriptionsRepository();
+    const prescriptions = await prescriptionsRepo.getByBookingId(
+      bookingId,
+      actorId || 'system',
+      actorRole as any
+    );
 
-    const prescription = sortedPrescriptions[0];
-
-    if (!prescription) {
+    if (!prescriptions || prescriptions.length === 0) {
       console.log('ℹ️ [PRESCRIPTION] No prescription found for booking:', bookingId);
       return c.json({ 
         prescription: null,
@@ -300,21 +338,33 @@ app.get('/make-server-3dd53475/vendor/prescription/:bookingId', async (c) => {
       });
     }
 
+    // Get the most recent prescription (already sorted by created_at DESC)
+    const prescription = prescriptions[0];
+    
+    // ✅ SQL: Get vendor details
+    const vendorsRepo = getVendorsRepository();
+    const vendor = await vendorsRepo.findById(prescription.vendor_id);
+
     console.log('✅ [PRESCRIPTION] Found prescription:', prescription.id);
 
     return c.json({
       prescription: {
         id: prescription.id,
+        prescriptionNumber: prescription.prescription_number,
         bookingId: prescription.booking_id,
         diagnosis: prescription.diagnosis,
+        observations: prescription.observations,
         medications: prescription.medications,
-        dosage: prescription.dosage,
-        frequency: prescription.frequency,
-        duration: prescription.duration,
-        notes: prescription.notes,
+        productsUsed: prescription.products_used,
+        testsRecommended: prescription.tests_recommended,
+        generalNotes: prescription.general_notes,
+        recommendations: prescription.recommendations,
         followUpDate: prescription.follow_up_date,
-        uploadedAt: prescription.uploaded_at,
-        uploadedBy: prescription.vendor_name
+        followUpReason: prescription.follow_up_reason,
+        vitals: prescription.vitals,
+        notes: prescription.general_notes,
+        uploadedAt: prescription.created_at,
+        uploadedBy: vendor?.business_name || vendor?.owner_name || 'Vendor'
       }
     });
 

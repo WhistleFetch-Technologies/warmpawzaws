@@ -13,11 +13,23 @@
  */
 
 import type { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
+import { getBookingsRepository } from '../../lib/repositories/bookings.ts';
+import { getVendorsRepository } from '../../lib/repositories/vendors.ts';
+import { getReviewsRepository } from '../../lib/repositories/reviews.ts';
+import { getPaymentsRepository } from '../../lib/repositories/payments.ts';
+import { getPlatformSettingsRepository } from '../../lib/repositories/platform-settings.ts';
+import { getDbClient } from '../../lib/db.ts';
+import { sendSuccess, sendError } from './response-utils.ts';
 
 const BASE_PATH = '/make-server-3dd53475';
 
 export function adminOperationsDashboard(app: Hono) {
+  const bookingsRepo = getBookingsRepository();
+  const vendorsRepo = getVendorsRepository();
+  const reviewsRepo = getReviewsRepository();
+  const paymentsRepo = getPaymentsRepository();
+  const platformSettingsRepo = getPlatformSettingsRepository();
+  const client = getDbClient();
 
   /**
    * GET /admin/operations/dashboard
@@ -29,45 +41,45 @@ export function adminOperationsDashboard(app: Hono) {
       const now = new Date();
       const startTime = getStartTime(timeRange, now);
 
-      // Optimized: Fetch data once and reuse
-      const [bookingsData, vendorsData, reviewsData, razorpayConfig, shiprocketConfig] = await Promise.all([
-        kv.getByPrefix('booking:'),
-        kv.getByPrefix('vendor:'),
-        kv.getByPrefix('review:'),
-        kv.get('platform:integrations:razorpay'),
-        kv.get('platform:settings:logistics')
+      // ✅ SQL: Fetch data from repositories
+      const [allBookings, allVendors, allReviews, razorpayConfig, logisticsConfig] = await Promise.all([
+        bookingsRepo.findAll({ limit: 1000 }),
+        vendorsRepo.findAll({ limit: 1000 }),
+        reviewsRepo.findAll({ limit: 1000 }),
+        platformSettingsRepo.getPaymentGatewaySettings(),
+        platformSettingsRepo.getLogisticsSettings()
       ]);
 
-      // Filter data once
-      const recentBookings = bookingsData.filter((b: any) => 
-        new Date(b.value.createdAt) > startTime
+      // Filter data by time range
+      const recentBookings = allBookings.filter((b: any) => 
+        new Date(b.created_at) > startTime
       );
-      const activeVendors = vendorsData.filter((v: any) => v.value.status === 'approved');
-      const recentReviews = reviewsData.filter((r: any) => 
-        new Date(r.value.createdAt) > startTime
+      const activeVendors = allVendors.filter((v: any) => v.status === 'approved');
+      const recentReviews = allReviews.filter((r: any) => 
+        new Date(r.created_at) > startTime
       );
 
       // Calculate metrics inline to avoid multiple iterations
       const liveBookings = {
         totalBookings: recentBookings.length,
         activeBookings: recentBookings.filter((b: any) => 
-          ['pending', 'confirmed', 'in_progress'].includes(b.value.status)
+          ['pending', 'confirmed', 'in_progress'].includes(b.status)
         ).length,
         completedBookings: recentBookings.filter((b: any) => 
-          b.value.status === 'completed'
+          b.status === 'completed'
         ).length,
         cancelledBookings: recentBookings.filter((b: any) => 
-          b.value.status === 'cancelled'
+          b.status === 'cancelled'
         ).length
       };
 
       const vendorMetrics = {
         totalActiveVendors: activeVendors.length,
-        avgRating: calculateAverage(activeVendors.map((v: any) => v.value), 'rating')
+        avgRating: calculateAverage(activeVendors, 'rating')
       };
 
       const avgRating = recentReviews.length > 0
-        ? recentReviews.reduce((sum: number, r: any) => sum + r.value.rating, 0) / recentReviews.length
+        ? recentReviews.reduce((sum: number, r: any) => sum + (r.rating || 0), 0) / recentReviews.length
         : 0;
 
       const serviceMetrics = {
@@ -80,11 +92,11 @@ export function adminOperationsDashboard(app: Hono) {
       };
 
       const paidBookings = recentBookings.filter((b: any) => 
-        b.value.paymentStatus === 'completed'
+        b.payment_status === 'paid' || b.payment_status === 'completed'
       );
 
       const totalRevenue = paidBookings.reduce((sum: number, b: any) => 
-        sum + (b.value.amount || b.value.price || 0), 0
+        sum + Number(b.total_amount || 0), 0
       );
 
       const financialMetrics = {
@@ -94,8 +106,8 @@ export function adminOperationsDashboard(app: Hono) {
       };
 
       const integrationHealth = {
-        razorpay: razorpayConfig?.value?.enabled ? 'healthy' : 'disabled',
-        shiprocket: shiprocketConfig?.value?.shiprocket?.enabled ? 'healthy' : 'disabled'
+        razorpay: razorpayConfig?.enabled ? 'healthy' : 'disabled',
+        shiprocket: logisticsConfig?.enabled ? 'healthy' : 'disabled'
       };
 
       const systemAlerts = {
@@ -104,8 +116,7 @@ export function adminOperationsDashboard(app: Hono) {
         criticalAlerts: 0
       };
 
-      return c.json({
-        success: true,
+      return sendSuccess(c, {
         dashboard: {
           timeRange,
           generatedAt: now.toISOString(),
@@ -120,7 +131,7 @@ export function adminOperationsDashboard(app: Hono) {
 
     } catch (error: any) {
       console.error('Error fetching operations dashboard:', error);
-      return c.json({ error: error.message }, 500);
+      return sendError(c, error, 500);
     }
   });
 
@@ -130,56 +141,55 @@ export function adminOperationsDashboard(app: Hono) {
    */
   app.get(`${BASE_PATH}/admin/operations/live-activity`, async (c) => {
     try {
-      const bookings = await kv.getByPrefix('booking:');
+      // ✅ SQL: Get all bookings
+      const allBookings = await bookingsRepo.findAll({ limit: 1000 });
       const now = new Date();
       const last30Min = new Date(now.getTime() - 30 * 60 * 1000);
 
       // Filter active bookings
-      const activeBookings = bookings.filter((b: any) => {
-        const booking = b.value;
-        const bookingDate = new Date(booking.scheduledDate || booking.createdAt);
+      const activeBookings = allBookings.filter((b: any) => {
+        const bookingDate = new Date(b.booking_date || b.created_at);
         const isToday = bookingDate.toDateString() === now.toDateString();
-        const isActive = ['pending', 'confirmed', 'in_progress'].includes(booking.status);
+        const isActive = ['pending', 'confirmed', 'in_progress'].includes(b.status);
         return isToday && isActive;
       });
 
       // Recent activity (last 30 minutes)
-      const recentActivity = bookings
-        .filter((b: any) => new Date(b.value.createdAt) > last30Min)
+      const recentActivity = allBookings
+        .filter((b: any) => new Date(b.created_at) > last30Min)
         .map((b: any) => ({
-          id: b.value.id,
+          id: b.id,
           type: 'booking_created',
-          serviceName: b.value.serviceName,
-          vendorId: b.value.vendorId,
-          customerId: b.value.customerId,
-          amount: b.value.amount || b.value.price,
-          status: b.value.status,
-          timestamp: b.value.createdAt
+          serviceName: b.service_type || 'Service',
+          vendorId: b.vendor_id,
+          customerId: b.customer_id,
+          amount: b.total_amount || 0,
+          status: b.status,
+          timestamp: b.created_at
         }))
         .sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
         .slice(0, 50);
 
-      // Service style breakdown
+      // Service style breakdown (using service_type)
       const serviceStyleStats = {
-        at_home: activeBookings.filter((b: any) => b.value.serviceStyle === 'at_home').length,
-        at_center: activeBookings.filter((b: any) => b.value.serviceStyle === 'at_center').length,
-        tele: activeBookings.filter((b: any) => b.value.serviceStyle === 'tele').length
+        at_home: activeBookings.filter((b: any) => b.service_type?.includes('home') || b.service_type === 'at_home').length,
+        at_center: activeBookings.filter((b: any) => b.service_type?.includes('center') || b.service_type === 'at_center').length,
+        tele: activeBookings.filter((b: any) => b.service_type?.includes('tele') || b.service_type === 'tele').length
       };
 
-      return c.json({
-        success: true,
+      return sendSuccess(c, {
         liveActivity: {
           activeBookingsCount: activeBookings.length,
           recentActivityCount: recentActivity.length,
           serviceStyleStats,
           activeBookings: activeBookings.slice(0, 20).map((b: any) => ({
-            id: b.value.id,
-            serviceName: b.value.serviceName,
-            serviceStyle: b.value.serviceStyle,
-            vendorId: b.value.vendorId,
-            status: b.value.status,
-            scheduledDate: b.value.scheduledDate,
-            amount: b.value.amount || b.value.price
+            id: b.id,
+            serviceName: b.service_type || 'Service',
+            serviceStyle: b.service_type,
+            vendorId: b.vendor_id,
+            status: b.status,
+            scheduledDate: b.booking_date,
+            amount: b.total_amount || 0
           })),
           recentActivity: recentActivity.slice(0, 10)
         }
@@ -187,7 +197,7 @@ export function adminOperationsDashboard(app: Hono) {
 
     } catch (error: any) {
       console.error('Error fetching live activity:', error);
-      return c.json({ error: error.message }, 500);
+      return sendError(c, error, 500);
     }
   });
 
@@ -201,34 +211,32 @@ export function adminOperationsDashboard(app: Hono) {
       const limit = parseInt(c.req.query('limit') || '50'); // Limit results
       const startTime = getStartTime(timeRange, new Date());
 
-      // Fetch only what we need with limits
-      const vendorsResult = await kv.getByPrefix('vendor:');
-      const approvedVendors = vendorsResult
-        .filter((v: any) => v.value.status === 'approved')
-        .slice(0, limit); // Limit vendors processed
+      // ✅ SQL: Fetch vendors and bookings
+      const allVendors = await vendorsRepo.findAll({ limit });
+      const approvedVendors = allVendors
+        .filter((v: any) => v.status === 'approved')
+        .slice(0, limit);
 
-      const bookingsResult = await kv.getByPrefix('booking:');
+      const allBookings = await bookingsRepo.findAll({ limit: 1000 });
       
       // Filter bookings by time first to reduce processing
-      const recentBookings = bookingsResult.filter((b: any) => 
-        new Date(b.value.createdAt) > startTime
+      const recentBookings = allBookings.filter((b: any) => 
+        new Date(b.created_at) > startTime
       );
 
       // Build vendor performance with optimized logic
-      const vendorPerformance = approvedVendors.map((v: any) => {
-        const vendor = v.value;
-        
+      const vendorPerformance = approvedVendors.map((vendor: any) => {
         // Filter bookings for this vendor
         const vendorBookings = recentBookings.filter((b: any) => 
-          b.value.vendorId === vendor.id
+          b.vendor_id === vendor.id
         );
 
         const completedBookings = vendorBookings.filter((b: any) => 
-          b.value.status === 'completed'
+          b.status === 'completed'
         );
 
         const totalRevenue = vendorBookings.reduce((sum: number, b: any) => 
-          sum + (b.value.amount || b.value.price || 0), 0
+          sum + Number(b.total_amount || 0), 0
         );
 
         const avgRating = vendor.rating || 0;
@@ -238,8 +246,8 @@ export function adminOperationsDashboard(app: Hono) {
 
         return {
           vendorId: vendor.id,
-          businessName: vendor.businessName,
-          roleId: vendor.roleId,
+          businessName: vendor.business_name,
+          roleId: vendor.role_id,
           totalBookings: vendorBookings.length,
           completedBookings: completedBookings.length,
           totalRevenue,
@@ -261,8 +269,7 @@ export function adminOperationsDashboard(app: Hono) {
       // Role-wise performance (simplified)
       const roleWisePerformance = aggregateByRole(vendorPerformance.slice(0, 50));
 
-      return c.json({
-        success: true,
+      return sendSuccess(c, {
         vendorPerformance: {
           totalVendors: approvedVendors.length,
           topPerformers,
@@ -275,7 +282,7 @@ export function adminOperationsDashboard(app: Hono) {
 
     } catch (error: any) {
       console.error('Error fetching vendor performance:', error);
-      return c.json({ error: error.message }, 500);
+      return sendError(c, error, 500);
     }
   });
 
@@ -285,17 +292,18 @@ export function adminOperationsDashboard(app: Hono) {
    */
   app.get(`${BASE_PATH}/admin/operations/service-quality`, async (c) => {
     try {
-      const bookings = await kv.getByPrefix('booking:');
-      const reviews = await kv.getByPrefix('review:');
+      // ✅ SQL: Get bookings and reviews
+      const allBookings = await bookingsRepo.findAll({ limit: 1000 });
+      const allReviews = await reviewsRepo.findAll({ limit: 1000 });
       const timeRange = c.req.query('timeRange') || '30d';
       const startTime = getStartTime(timeRange, new Date());
 
-      const recentBookings = bookings.filter((b: any) => 
-        new Date(b.value.createdAt) > startTime
+      const recentBookings = allBookings.filter((b: any) => 
+        new Date(b.created_at) > startTime
       );
 
-      const recentReviews = reviews.filter((r: any) => 
-        new Date(r.value.createdAt) > startTime
+      const recentReviews = allReviews.filter((r: any) => 
+        new Date(r.created_at) > startTime
       );
 
       // Service style quality
@@ -307,27 +315,26 @@ export function adminOperationsDashboard(app: Hono) {
 
       // Issue tracking
       const issues = recentBookings.filter((b: any) => 
-        ['cancelled', 'failed', 'payment_failed'].includes(b.value.status)
+        ['cancelled', 'failed'].includes(b.status) || b.payment_status === 'failed'
       );
 
       const issueBreakdown = {
-        cancellations: issues.filter((b: any) => b.value.status === 'cancelled').length,
-        failures: issues.filter((b: any) => b.value.status === 'failed').length,
-        paymentFailures: issues.filter((b: any) => b.value.status === 'payment_failed').length
+        cancellations: issues.filter((b: any) => b.status === 'cancelled').length,
+        failures: issues.filter((b: any) => b.status === 'failed').length,
+        paymentFailures: issues.filter((b: any) => b.payment_status === 'failed').length
       };
 
       // Customer satisfaction
       const avgRating = recentReviews.length > 0
-        ? recentReviews.reduce((sum: number, r: any) => sum + r.value.rating, 0) / recentReviews.length
+        ? recentReviews.reduce((sum: number, r: any) => sum + (r.rating || 0), 0) / recentReviews.length
         : 0;
 
       const satisfactionScore = calculateSatisfactionScore(recentReviews);
 
-      return c.json({
-        success: true,
+      return sendSuccess(c, {
         serviceQuality: {
           totalBookings: recentBookings.length,
-          completedBookings: recentBookings.filter((b: any) => b.value.status === 'completed').length,
+          completedBookings: recentBookings.filter((b: any) => b.status === 'completed').length,
           serviceStyleQuality,
           issueBreakdown,
           avgRating,
@@ -339,7 +346,7 @@ export function adminOperationsDashboard(app: Hono) {
 
     } catch (error: any) {
       console.error('Error fetching service quality:', error);
-      return c.json({ error: error.message }, 500);
+      return sendError(c, error, 500);
     }
   });
 
@@ -349,40 +356,60 @@ export function adminOperationsDashboard(app: Hono) {
    */
   app.get(`${BASE_PATH}/admin/operations/financial-overview`, async (c) => {
     try {
-      const bookings = await kv.getByPrefix('booking:');
-      const vendors = await kv.getByPrefix('vendor:');
+      // ✅ SQL: Get bookings and payouts
+      const allBookings = await bookingsRepo.findAll({ limit: 1000 });
       const timeRange = c.req.query('timeRange') || '30d';
       const startTime = getStartTime(timeRange, new Date());
 
-      const paidBookings = bookings.filter((b: any) => 
-        b.value.paymentStatus === 'completed' &&
-        new Date(b.value.createdAt) > startTime
+      const paidBookings = allBookings.filter((b: any) => 
+        (b.payment_status === 'paid' || b.payment_status === 'completed') &&
+        new Date(b.created_at) > startTime
       );
 
       const totalRevenue = paidBookings.reduce((sum: number, b: any) => 
-        sum + (b.value.amount || b.value.price || 0), 0
+        sum + Number(b.total_amount || 0), 0
       );
 
-      const commission = totalRevenue * 0.15; // 15% platform commission
+      // ✅ SQL: Get commission from payout rules or use default
+      const { data: payoutRule } = await client
+        .from('payout_rules')
+        .select('commission_percentage')
+        .eq('is_active', true)
+        .order('priority', { ascending: false })
+        .limit(1)
+        .single();
+      
+      const commissionRate = payoutRule?.commission_percentage ? parseFloat(payoutRule.commission_percentage) : 15;
+      const commission = totalRevenue * (commissionRate / 100);
       const vendorPayout = totalRevenue - commission;
 
-      // Pending payouts
-      const pendingPayouts = vendors.reduce((sum: number, v: any) => 
-        sum + (v.value.pendingPayouts || 0), 0
+      // ✅ SQL: Calculate pending payouts
+      const { data: pendingPayoutsData } = await client
+        .from('payouts')
+        .select('amount')
+        .eq('payout_status', 'pending');
+      
+      const pendingPayouts = (pendingPayoutsData || []).reduce((sum: number, p: any) => 
+        sum + Number(p.amount || 0), 0
+      );
+
+      // ✅ SQL: Get payment methods from payments table
+      const allPayments = await paymentsRepo.findAll({ limit: 1000 });
+      const recentPayments = allPayments.filter((p: any) => 
+        new Date(p.created_at) > startTime && p.payment_status === 'completed'
       );
 
       // Payment method breakdown
-      const paymentMethods = paidBookings.reduce((acc: any, b: any) => {
-        const method = b.value.paymentMethod || 'razorpay';
-        acc[method] = (acc[method] || 0) + (b.value.amount || b.value.price || 0);
+      const paymentMethods = recentPayments.reduce((acc: any, p: any) => {
+        const method = p.payment_method || 'razorpay';
+        acc[method] = (acc[method] || 0) + Number(p.amount || 0);
         return acc;
       }, {});
 
       // Daily revenue trend
       const dailyRevenue = calculateDailyRevenue(paidBookings, startTime);
 
-      return c.json({
-        success: true,
+      return sendSuccess(c, {
         financialOverview: {
           totalRevenue,
           commission,
@@ -397,7 +424,7 @@ export function adminOperationsDashboard(app: Hono) {
 
     } catch (error: any) {
       console.error('Error fetching financial overview:', error);
-      return c.json({ error: error.message }, 500);
+      return sendError(c, error, 500);
     }
   });
 
@@ -407,48 +434,51 @@ export function adminOperationsDashboard(app: Hono) {
    */
   app.get(`${BASE_PATH}/admin/operations/integration-health`, async (c) => {
     try {
-      const razorpayConfig = await kv.get('platform:integrations:razorpay');
-      const shiprocketConfig = await kv.get('platform:settings:logistics');
+      // ✅ SQL: Get platform settings
+      const razorpayConfig = await platformSettingsRepo.getPaymentGatewaySettings();
+      const logisticsConfig = await platformSettingsRepo.getLogisticsSettings();
 
       const integrationStatus = {
         razorpay: {
-          configured: !!(razorpayConfig?.value?.keyId),
-          enabled: razorpayConfig?.value?.enabled || false,
-          status: razorpayConfig?.value?.enabled ? 'active' : 'disabled',
+          configured: !!(razorpayConfig?.key_id || razorpayConfig?.api_key),
+          enabled: razorpayConfig?.enabled || false,
+          status: razorpayConfig?.enabled ? 'active' : 'disabled',
           lastChecked: new Date().toISOString()
         },
         shiprocket: {
-          configured: !!(shiprocketConfig?.value?.shiprocket?.email),
-          enabled: shiprocketConfig?.value?.shiprocket?.enabled || false,
-          status: shiprocketConfig?.value?.shiprocket?.enabled ? 'active' : 'disabled',
+          configured: !!(logisticsConfig?.email || logisticsConfig?.api_key),
+          enabled: logisticsConfig?.enabled || false,
+          status: logisticsConfig?.enabled ? 'active' : 'disabled',
           lastChecked: new Date().toISOString()
         }
       };
 
-      // Check recent payment activities
-      const recentPayments = await kv.getByPrefix('payment:razorpay:order:');
+      // ✅ SQL: Check recent payment activities
+      const allPayments = await paymentsRepo.findAll({ limit: 1000 });
       const last24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
-      const recentPaymentCount = recentPayments.filter((p: any) => 
-        new Date(p.value.createdAt) > last24h
+      const recentPaymentCount = allPayments.filter((p: any) => 
+        new Date(p.created_at) > last24h && p.payment_status === 'completed'
       ).length;
 
-      // Check recent shipments
-      const recentShipments = await kv.getByPrefix('logistics:shiprocket:order:');
-      const recentShipmentCount = recentShipments.filter((s: any) => 
-        new Date(s.value.createdAt) > last24h
-      ).length;
+      // ✅ SQL: Check recent shipments (from orders table if exists)
+      const { data: recentOrders } = await client
+        .from('orders')
+        .select('id')
+        .gte('created_at', last24h.toISOString())
+        .not('tracking_id', 'is', null);
+      
+      const recentShipmentCount = recentOrders?.length || 0;
 
       integrationStatus.razorpay.recentTransactions = recentPaymentCount;
       integrationStatus.shiprocket.recentShipments = recentShipmentCount;
 
-      return c.json({
-        success: true,
+      return sendSuccess(c, {
         integrationHealth: integrationStatus
       });
 
     } catch (error: any) {
       console.error('Error fetching integration health:', error);
-      return c.json({ error: error.message }, 500);
+      return sendError(c, error, 500);
     }
   });
 
@@ -460,26 +490,30 @@ export function adminOperationsDashboard(app: Hono) {
     try {
       const alerts: any[] = [];
 
-      // Check for vendors with pending applications
-      const applications = await kv.getByPrefix('application:');
-      const pendingApps = applications.filter((a: any) => a.value.status === 'pending');
-      if (pendingApps.length > 0) {
+      // ✅ SQL: Check for vendors with pending applications
+      const { data: pendingVendors } = await client
+        .from('vendors')
+        .select('id')
+        .eq('status', 'pending');
+      
+      if (pendingVendors && pendingVendors.length > 0) {
         alerts.push({
           id: 'pending_applications',
           type: 'warning',
           severity: 'medium',
           title: 'Pending Vendor Applications',
-          message: `${pendingApps.length} vendor applications awaiting review`,
-          count: pendingApps.length,
+          message: `${pendingVendors.length} vendor applications awaiting review`,
+          count: pendingVendors.length,
           action: '/admin/vendors/pending'
         });
       }
 
-      // Check for failed payments
-      const bookings = await kv.getByPrefix('booking:');
-      const failedPayments = bookings.filter((b: any) => 
-        b.value.paymentStatus === 'failed' &&
-        new Date(b.value.createdAt) > new Date(Date.now() - 24 * 60 * 60 * 1000)
+      // ✅ SQL: Check for failed payments
+      const allBookings = await bookingsRepo.findAll({ limit: 1000 });
+      const last24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const failedPayments = allBookings.filter((b: any) => 
+        b.payment_status === 'failed' &&
+        new Date(b.created_at) > last24h
       );
       if (failedPayments.length > 0) {
         alerts.push({
@@ -493,12 +527,12 @@ export function adminOperationsDashboard(app: Hono) {
         });
       }
 
-      // Check for vendors with low ratings
-      const vendors = await kv.getByPrefix('vendor:');
-      const lowRatedVendors = vendors.filter((v: any) => 
-        v.value.status === 'approved' && 
-        v.value.rating && 
-        v.value.rating < 3.0
+      // ✅ SQL: Check for vendors with low ratings
+      const allVendors = await vendorsRepo.findAll({ limit: 1000 });
+      const lowRatedVendors = allVendors.filter((v: any) => 
+        v.status === 'approved' && 
+        v.rating && 
+        v.rating < 3.0
       );
       if (lowRatedVendors.length > 0) {
         alerts.push({
@@ -512,11 +546,11 @@ export function adminOperationsDashboard(app: Hono) {
         });
       }
 
-      // Check for incomplete bookings (stuck in pending)
-      const oldPendingBookings = bookings.filter((b: any) => {
-        const createdAt = new Date(b.value.createdAt);
+      // ✅ SQL: Check for incomplete bookings (stuck in pending)
+      const oldPendingBookings = allBookings.filter((b: any) => {
+        const createdAt = new Date(b.created_at);
         const hoursSinceCreation = (Date.now() - createdAt.getTime()) / (1000 * 60 * 60);
-        return b.value.status === 'pending' && hoursSinceCreation > 24;
+        return b.status === 'pending' && hoursSinceCreation > 24;
       });
       if (oldPendingBookings.length > 0) {
         alerts.push({
@@ -530,8 +564,7 @@ export function adminOperationsDashboard(app: Hono) {
         });
       }
 
-      return c.json({
-        success: true,
+      return sendSuccess(c, {
         alerts: alerts.sort((a: any, b: any) => {
           const severityOrder = { high: 0, medium: 1, low: 2 };
           return severityOrder[a.severity as keyof typeof severityOrder] - 
@@ -543,11 +576,11 @@ export function adminOperationsDashboard(app: Hono) {
 
     } catch (error: any) {
       console.error('Error fetching system alerts:', error);
-      return c.json({ error: error.message }, 500);
+      return sendError(c, error, 500);
     }
   });
 
-  console.log('✅ Admin Operations Dashboard endpoints registered');
+  console.log('✅ Admin Operations Dashboard endpoints registered (SQL-only)');
 }
 
 // ============================================
@@ -566,89 +599,7 @@ function getStartTime(timeRange: string, now: Date): Date {
   return new Date(now.getTime() - hours * 60 * 60 * 1000);
 }
 
-async function getLiveBookingActivity(startTime: Date): Promise<any> {
-  const bookings = await kv.getByPrefix('booking:');
-  const recentBookings = bookings.filter((b: any) => 
-    new Date(b.value.createdAt) > startTime
-  );
-
-  return {
-    totalBookings: recentBookings.length,
-    activeBookings: recentBookings.filter((b: any) => 
-      ['pending', 'confirmed', 'in_progress'].includes(b.value.status)
-    ).length,
-    completedBookings: recentBookings.filter((b: any) => 
-      b.value.status === 'completed'
-    ).length,
-    cancelledBookings: recentBookings.filter((b: any) => 
-      b.value.status === 'cancelled'
-    ).length
-  };
-}
-
-async function getVendorPerformanceMetrics(startTime: Date): Promise<any> {
-  const vendors = await kv.getByPrefix('vendor:');
-  const activeVendors = vendors.filter((v: any) => v.value.status === 'approved');
-
-  return {
-    totalActiveVendors: activeVendors.length,
-    avgRating: calculateAverage(activeVendors.map((v: any) => v.value), 'rating'),
-    topPerformers: activeVendors.slice(0, 5).map((v: any) => ({
-      id: v.value.id,
-      name: v.value.businessName,
-      rating: v.value.rating || 0
-    }))
-  };
-}
-
-async function getServiceQualityMetrics(startTime: Date): Promise<any> {
-  const reviews = await kv.getByPrefix('review:');
-  const recentReviews = reviews.filter((r: any) => 
-    new Date(r.value.createdAt) > startTime
-  );
-
-  const avgRating = recentReviews.length > 0
-    ? recentReviews.reduce((sum: number, r: any) => sum + r.value.rating, 0) / recentReviews.length
-    : 0;
-
-  return {
-    totalReviews: recentReviews.length,
-    avgRating,
-    satisfactionScore: (avgRating / 5) * 100
-  };
-}
-
-async function getFinancialMetrics(startTime: Date): Promise<any> {
-  const bookings = await kv.getByPrefix('booking:');
-  const paidBookings = bookings.filter((b: any) => 
-    b.value.paymentStatus === 'completed' &&
-    new Date(b.value.createdAt) > startTime
-  );
-
-  const totalRevenue = paidBookings.reduce((sum: number, b: any) => 
-    sum + (b.value.amount || b.value.price || 0), 0
-  );
-
-  return {
-    totalRevenue,
-    transactionCount: paidBookings.length,
-    avgTransactionValue: paidBookings.length > 0 ? totalRevenue / paidBookings.length : 0
-  };
-}
-
-async function getIntegrationHealthStatus(): Promise<any> {
-  const razorpayConfig = await kv.get('platform:integrations:razorpay');
-  const shiprocketConfig = await kv.get('platform:settings:logistics');
-
-  return {
-    razorpay: razorpayConfig?.value?.enabled ? 'healthy' : 'disabled',
-    shiprocket: shiprocketConfig?.value?.shiprocket?.enabled ? 'healthy' : 'disabled'
-  };
-}
-
-async function getSystemAlerts(): Promise<any[]> {
-  return []; // Populated by dedicated endpoint
-}
+// Helper functions removed - now using SQL repositories directly
 
 function calculateAvgResponseTime(bookings: any[]): number {
   // Mock calculation - in real implementation, would calculate from actual timestamps
@@ -687,8 +638,10 @@ function aggregateByRole(vendorPerformance: any[]): any {
 }
 
 function analyzeServiceQuality(bookings: any[], serviceStyle: string, reviews: any[]): any {
-  const styleBookings = bookings.filter((b: any) => b.value.serviceStyle === serviceStyle);
-  const completedBookings = styleBookings.filter((b: any) => b.value.status === 'completed');
+  const styleBookings = bookings.filter((b: any) => 
+    b.service_type?.includes(serviceStyle) || b.service_type === serviceStyle
+  );
+  const completedBookings = styleBookings.filter((b: any) => b.status === 'completed');
 
   return {
     totalBookings: styleBookings.length,
@@ -701,7 +654,7 @@ function analyzeServiceQuality(bookings: any[], serviceStyle: string, reviews: a
 
 function calculateSatisfactionScore(reviews: any[]): number {
   if (reviews.length === 0) return 0;
-  const avgRating = reviews.reduce((sum: number, r: any) => sum + r.value.rating, 0) / reviews.length;
+  const avgRating = reviews.reduce((sum: number, r: any) => sum + (r.rating || 0), 0) / reviews.length;
   return (avgRating / 5) * 100;
 }
 
@@ -709,8 +662,8 @@ function calculateDailyRevenue(bookings: any[], startTime: Date): any[] {
   const dailyData: { [key: string]: number } = {};
   
   bookings.forEach((b: any) => {
-    const date = new Date(b.value.createdAt).toISOString().split('T')[0];
-    dailyData[date] = (dailyData[date] || 0) + (b.value.amount || b.value.price || 0);
+    const date = new Date(b.created_at).toISOString().split('T')[0];
+    dailyData[date] = (dailyData[date] || 0) + Number(b.total_amount || 0);
   });
 
   return Object.entries(dailyData)

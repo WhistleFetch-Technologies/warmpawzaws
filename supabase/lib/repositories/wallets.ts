@@ -68,7 +68,7 @@ export class WalletsRepository {
   }
 
   async findByCustomer(customerId: string): Promise<Wallet | null> {
-    const results = await selectQuery<Wallet>("wallets", { customer_id: customerId, is_active: true }, { limit: 1 });
+    const results = await selectQuery<Wallet>("customer_wallets", { customer_id: customerId }, { limit: 1 });
     return results[0] || null;
   }
 
@@ -87,7 +87,7 @@ export class WalletsRepository {
   }
 
   async create(input: CreateWalletInput): Promise<Wallet> {
-    const results = await insertQuery<Wallet>("wallets", {
+    const results = await insertQuery<Wallet>("customer_wallets", {
       customer_id: input.customer_id,
       balance: input.balance || 0,
       total_earned: 0,
@@ -100,7 +100,12 @@ export class WalletsRepository {
       throw new Error("Failed to create wallet");
     }
     
-    return results[0];
+    return {
+      ...results[0],
+      total_earned: results[0].total_earned || 0,
+      total_spent: results[0].total_spent || 0,
+      is_active: results[0].is_active !== undefined ? results[0].is_active : true
+    };
   }
 
   async updateBalance(walletId: string, newBalance: number, totalEarned?: number, totalSpent?: number): Promise<Wallet> {
@@ -112,23 +117,27 @@ export class WalletsRepository {
     if (totalEarned !== undefined) {
       updateData.total_earned = totalEarned;
     }
-    
     if (totalSpent !== undefined) {
       updateData.total_spent = totalSpent;
     }
     
-    const results = await updateQuery<Wallet>("wallets", { id: walletId }, updateData);
+    const results = await updateQuery<Wallet>("customer_wallets", { id: walletId }, updateData);
     
     if (!results[0]) {
       throw new Error(`Wallet not found: ${walletId}`);
     }
     
-    return results[0];
+    return {
+      ...results[0],
+      total_earned: results[0].total_earned || 0,
+      total_spent: results[0].total_spent || 0,
+      is_active: results[0].is_active !== undefined ? results[0].is_active : true
+    };
   }
 
   async addTransaction(input: CreateTransactionInput): Promise<WalletTransaction> {
     // Get current wallet balance
-    const wallet = await selectQuery<Wallet>("wallets", { id: input.wallet_id }, { limit: 1 });
+    const wallet = await selectQuery<Wallet>("customer_wallets", { id: input.wallet_id }, { limit: 1 });
     if (!wallet[0]) {
       throw new Error(`Wallet not found: ${input.wallet_id}`);
     }

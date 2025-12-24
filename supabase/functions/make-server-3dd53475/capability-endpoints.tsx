@@ -9,8 +9,14 @@
  * - Table Management (Additional)
  */
 
+// ✅ MIGRATED TO SQL: All KV operations removed
 import { Hono } from "npm:hono";
-import * as kv from "./kv_store.tsx";
+import { getVendorsRepository } from '../../lib/repositories/vendors.ts';
+import { getBoardingRoomsRepository } from '../../lib/repositories/boarding-rooms.ts';
+import { getPricingRulesRepository } from '../../lib/repositories/pricing-rules.ts';
+import { getBookingsRepository } from '../../lib/repositories/bookings.ts';
+import { getStaffRepository } from '../../lib/repositories/staff.ts';
+import { getCafeTablesRepository } from '../../lib/repositories/cafe-tables.ts';
 
 const BASE = '/make-server-3dd53475';
 
@@ -23,19 +29,32 @@ export function registerCapabilityEndpoints(app: Hono) {
   /**
    * GET /vendor/cafe/:vendorId/pax-config
    * Get pax configuration for a cafe vendor
+   * ✅ MIGRATED TO SQL: Uses vendors.business_hours JSONB
    */
   app.get(`${BASE}/vendor/cafe/:vendorId/pax-config`, async (c) => {
     try {
       const { vendorId } = c.req.param();
 
-      // Verify vendor
-      const vendor = await kv.get(`vendor:${vendorId}`);
-      if (!vendor) {
+      // ✅ SQL: Resolve vendor ID and get vendor
+      const { getVendorsRepository } = await import('../../lib/repositories/vendors.ts');
+      const vendorsRepo = getVendorsRepository();
+      const resolvedVendorId = await vendorsRepo.resolveVendorId(vendorId);
+      
+      if (!resolvedVendorId) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
 
-      // Get pax config
-      const config = await kv.get(`vendor:${vendorId}:pax_config`) || {
+      // ✅ SQL: Get pax config from business_hours JSONB
+      const { getDbClient } = await import('../../lib/db.ts');
+      const client = getDbClient();
+      const { data: vendorData } = await client
+        .from('vendors')
+        .select('business_hours')
+        .eq('id', resolvedVendorId)
+        .single();
+
+      const businessHours = (vendorData as any)?.business_hours || {};
+      const config = businessHours.paxConfig || {
         maxGuestsPerTable: 8,
         maxPetsPerTable: 4,
         maxGuestsPerBooking: 20,
@@ -62,15 +81,19 @@ export function registerCapabilityEndpoints(app: Hono) {
   /**
    * PUT /vendor/cafe/:vendorId/pax-config
    * Update pax configuration for a cafe vendor
+   * ✅ MIGRATED TO SQL: Uses vendors.business_hours JSONB
    */
   app.put(`${BASE}/vendor/cafe/:vendorId/pax-config`, async (c) => {
     try {
       const { vendorId } = c.req.param();
       const config = await c.req.json();
 
-      // Verify vendor
-      const vendor = await kv.get(`vendor:${vendorId}`);
-      if (!vendor) {
+      // ✅ SQL: Resolve vendor ID
+      const { getVendorsRepository } = await import('../../lib/repositories/vendors.ts');
+      const vendorsRepo = getVendorsRepository();
+      const resolvedVendorId = await vendorsRepo.resolveVendorId(vendorId);
+      
+      if (!resolvedVendorId) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
 
@@ -79,11 +102,39 @@ export function registerCapabilityEndpoints(app: Hono) {
         return c.json({ error: 'Invalid capacity limits' }, 400);
       }
 
-      // Save config
-      await kv.set(`vendor:${vendorId}:pax_config`, {
-        ...config,
-        updatedAt: new Date().toISOString()
-      });
+      // ✅ SQL: Get existing business_hours
+      const { getDbClient } = await import('../../lib/db.ts');
+      const client = getDbClient();
+      const { data: existingVendor } = await client
+        .from('vendors')
+        .select('business_hours')
+        .eq('id', resolvedVendorId)
+        .single();
+
+      if (!existingVendor) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+
+      const existingBusinessHours = (existingVendor as any).business_hours || {};
+      
+      // ✅ SQL: Update business_hours JSONB with pax config
+      const updatedBusinessHours = {
+        ...existingBusinessHours,
+        paxConfig: {
+          ...config,
+          updatedAt: new Date().toISOString()
+        }
+      };
+
+      await client
+        .from('vendors')
+        .update({
+          business_hours: updatedBusinessHours,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', resolvedVendorId);
+
+      console.log(`✅ [PAX CONFIG] Updated pax config for vendor: ${resolvedVendorId}`);
 
       return c.json({ success: true, config });
     } catch (error) {
@@ -105,54 +156,58 @@ export function registerCapabilityEndpoints(app: Hono) {
       const { vendorId } = c.req.param();
       const date = c.req.query('date') || new Date().toISOString().split('T')[0];
 
-      // Verify vendor
-      const vendor = await kv.get(`vendor:${vendorId}`);
-      if (!vendor) {
+      // ✅ SQL: Verify vendor
+      const vendorsRepo = getVendorsRepository();
+      const resolvedVendorId = await vendorsRepo.resolveVendorId(vendorId);
+      if (!resolvedVendorId) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
 
-      // Get rooms
-      const rooms = await kv.get(`vendor:${vendorId}:boarding_rooms`) || [];
+      // ✅ SQL: Get rooms
+      const boardingRoomsRepo = getBoardingRoomsRepository();
+      const rooms = await boardingRoomsRepo.findByVendor(resolvedVendorId, { is_active: true });
 
-      // Get bookings for the date
-      const vendorBookingsKey = `vendor:${vendorId}:bookings`;
-      const bookingIds = await kv.get(vendorBookingsKey) || [];
+      // ✅ SQL: Get bookings for the date
+      const bookingsRepo = getBookingsRepository();
+      const allBookings = await bookingsRepo.findByVendorAndDate(resolvedVendorId, date);
       
       const bookings = [];
-      for (const bookingId of bookingIds) {
-        const booking = await kv.get(`booking:${bookingId}`);
-        if (booking && 
-            booking.serviceType === 'boarding' &&
-            booking.status !== 'cancelled' &&
-            booking.metadata?.checkinDate &&
-            booking.metadata?.checkoutDate) {
-          const checkIn = new Date(booking.metadata.checkinDate).toISOString().split('T')[0];
-          const checkOut = new Date(booking.metadata.checkoutDate).toISOString().split('T')[0];
-          const targetDate = new Date(date).toISOString().split('T')[0];
+      for (const booking of allBookings) {
+        if (booking.service_type === 'at_vendor' && // Boarding is at_vendor
+            booking.status !== 'cancelled') {
+          const packageDetails = (booking.package_details as any) || {};
+          const checkIn = packageDetails.checkinDate || packageDetails.checkInDate;
+          const checkOut = packageDetails.checkoutDate || packageDetails.checkOutDate;
           
-          if (targetDate >= checkIn && targetDate <= checkOut) {
-            bookings.push({
-              id: booking.id,
-              bookingId: booking.bookingId,
-              roomId: booking.metadata?.roomId,
-              roomName: booking.metadata?.roomName || 'Unknown',
-              customerName: booking.customerName,
-              petName: booking.petName,
-              checkInDate: booking.metadata.checkinDate,
-              checkOutDate: booking.metadata.checkoutDate,
-              status: booking.status,
-              guestCount: booking.metadata?.guestCount || 1,
-              petCount: booking.metadata?.petCount || 1
-            });
+          if (checkIn && checkOut) {
+            const checkInDate = new Date(checkIn).toISOString().split('T')[0];
+            const checkOutDate = new Date(checkOut).toISOString().split('T')[0];
+            const targetDate = new Date(date).toISOString().split('T')[0];
+            
+            if (targetDate >= checkInDate && targetDate <= checkOutDate) {
+              bookings.push({
+                id: booking.id,
+                bookingId: booking.id,
+                roomId: packageDetails.roomId,
+                roomName: packageDetails.roomName || 'Unknown',
+                customerName: (booking as any).customer_name,
+                petName: (booking as any).pet_name,
+                checkInDate: checkIn,
+                checkOutDate: checkOut,
+                status: booking.status,
+                guestCount: packageDetails.guestCount || 1,
+                petCount: packageDetails.petCount || 1
+              });
+            }
           }
         }
       }
 
       // Calculate occupancy per room
-      const occupancy = rooms.map((room: any) => {
+      const occupancy = rooms.map((room) => {
         const roomBookings = bookings.filter((b: any) => b.roomId === room.id);
         const occupiedUnits = roomBookings.length;
-        const totalUnits = room.totalInventory || 1;
+        const totalUnits = room.total_units || 1;
         const availableUnits = Math.max(0, totalUnits - occupiedUnits);
         const reservedUnits = roomBookings.filter((b: any) => b.status === 'confirmed').length;
         const occupancyRate = totalUnits > 0 ? (occupiedUnits / totalUnits) * 100 : 0;
@@ -188,14 +243,16 @@ export function registerCapabilityEndpoints(app: Hono) {
     try {
       const { vendorId } = c.req.param();
 
-      // Verify vendor
-      const vendor = await kv.get(`vendor:${vendorId}`);
-      if (!vendor) {
+      // ✅ SQL: Verify vendor
+      const vendorsRepo = getVendorsRepository();
+      const resolvedVendorId = await vendorsRepo.resolveVendorId(vendorId);
+      if (!resolvedVendorId) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
 
-      // Get pricing rules
-      const pricingRules = await kv.get(`vendor:${vendorId}:boarding_pricing`) || [];
+      // ✅ SQL: Get pricing rules
+      const pricingRulesRepo = getPricingRulesRepository();
+      const pricingRules = await pricingRulesRepo.findByVendor(resolvedVendorId, { is_active: true });
 
       return c.json({ success: true, pricingRules });
     } catch (error) {
@@ -213,9 +270,10 @@ export function registerCapabilityEndpoints(app: Hono) {
       const { vendorId } = c.req.param();
       const pricingData = await c.req.json();
 
-      // Verify vendor
-      const vendor = await kv.get(`vendor:${vendorId}`);
-      if (!vendor) {
+      // ✅ SQL: Verify vendor
+      const vendorsRepo = getVendorsRepository();
+      const resolvedVendorId = await vendorsRepo.resolveVendorId(vendorId);
+      if (!resolvedVendorId) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
 
@@ -224,38 +282,30 @@ export function registerCapabilityEndpoints(app: Hono) {
         return c.json({ error: 'Missing required fields: roomId, baseNightPrice' }, 400);
       }
 
-      // Verify room exists
-      const rooms = await kv.get(`vendor:${vendorId}:boarding_rooms`) || [];
-      const room = rooms.find((r: any) => r.id === pricingData.roomId);
-      if (!room) {
+      // ✅ SQL: Verify room exists
+      const boardingRoomsRepo = getBoardingRoomsRepository();
+      const room = await boardingRoomsRepo.findById(pricingData.roomId);
+      if (!room || room.vendor_id !== resolvedVendorId) {
         return c.json({ error: 'Room not found' }, 404);
       }
 
-      const ruleId = `pricing_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-
-      const pricingRule = {
-        id: ruleId,
-        vendorId,
-        roomId: pricingData.roomId,
-        roomName: room.name,
-        baseNightPrice: Number(pricingData.baseNightPrice),
-        sizeBasedPricing: pricingData.sizeBasedPricing || {
+      // ✅ SQL: Create pricing rule
+      const pricingRulesRepo = getPricingRulesRepository();
+      const pricingRule = await pricingRulesRepo.create({
+        vendor_id: resolvedVendorId,
+        room_id: pricingData.roomId,
+        room_name: room.name,
+        base_night_price: Number(pricingData.baseNightPrice),
+        size_based_pricing: pricingData.sizeBasedPricing || {
           small: Number(pricingData.baseNightPrice),
           medium: Number(pricingData.baseNightPrice),
           large: Number(pricingData.baseNightPrice),
           extraLarge: Number(pricingData.baseNightPrice)
         },
-        seasonalPricing: pricingData.seasonalPricing || [],
-        specialOffers: pricingData.specialOffers || [],
-        isActive: pricingData.isActive !== false,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-
-      // Get existing rules
-      const pricingRules = await kv.get(`vendor:${vendorId}:boarding_pricing`) || [];
-      pricingRules.push(pricingRule);
-      await kv.set(`vendor:${vendorId}:boarding_pricing`, pricingRules);
+        seasonal_pricing: pricingData.seasonalPricing || [],
+        special_offers: pricingData.specialOffers || [],
+        is_active: pricingData.isActive !== false,
+      });
 
       return c.json({ success: true, pricingRule });
     } catch (error) {
@@ -273,28 +323,23 @@ export function registerCapabilityEndpoints(app: Hono) {
       const { vendorId, ruleId } = c.req.param();
       const updates = await c.req.json();
 
-      // Verify vendor
-      const vendor = await kv.get(`vendor:${vendorId}`);
-      if (!vendor) {
+      // ✅ SQL: Verify vendor
+      const vendorsRepo = getVendorsRepository();
+      const resolvedVendorId = await vendorsRepo.resolveVendorId(vendorId);
+      if (!resolvedVendorId) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
 
-      // Get existing rules
-      const pricingRules = await kv.get(`vendor:${vendorId}:boarding_pricing`) || [];
-      const ruleIndex = pricingRules.findIndex((r: any) => r.id === ruleId);
-
-      if (ruleIndex === -1) {
-        return c.json({ error: 'Pricing rule not found' }, 404);
-      }
-
-      // Update rule
-      pricingRules[ruleIndex] = {
-        ...pricingRules[ruleIndex],
-        ...updates,
-        updatedAt: new Date().toISOString()
-      };
-
-      await kv.set(`vendor:${vendorId}:boarding_pricing`, pricingRules);
+      // ✅ SQL: Update pricing rule
+      const pricingRulesRepo = getPricingRulesRepository();
+      const updateData: any = {};
+      if (updates.baseNightPrice !== undefined) updateData.base_night_price = updates.baseNightPrice;
+      if (updates.sizeBasedPricing !== undefined) updateData.size_based_pricing = updates.sizeBasedPricing;
+      if (updates.seasonalPricing !== undefined) updateData.seasonal_pricing = updates.seasonalPricing;
+      if (updates.specialOffers !== undefined) updateData.special_offers = updates.specialOffers;
+      if (updates.isActive !== undefined) updateData.is_active = updates.isActive;
+      
+      const updated = await pricingRulesRepo.update(ruleId, updateData);
 
       return c.json({ success: true, pricingRule: pricingRules[ruleIndex] });
     } catch (error) {
@@ -311,17 +356,16 @@ export function registerCapabilityEndpoints(app: Hono) {
     try {
       const { vendorId, ruleId } = c.req.param();
 
-      // Verify vendor
-      const vendor = await kv.get(`vendor:${vendorId}`);
-      if (!vendor) {
+      // ✅ SQL: Verify vendor
+      const vendorsRepo = getVendorsRepository();
+      const resolvedVendorId = await vendorsRepo.resolveVendorId(vendorId);
+      if (!resolvedVendorId) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
 
-      // Get existing rules
-      const pricingRules = await kv.get(`vendor:${vendorId}:boarding_pricing`) || [];
-      const filteredRules = pricingRules.filter((r: any) => r.id !== ruleId);
-
-      await kv.set(`vendor:${vendorId}:boarding_pricing`, filteredRules);
+      // ✅ SQL: Delete pricing rule (soft delete)
+      const pricingRulesRepo = getPricingRulesRepository();
+      await pricingRulesRepo.delete(ruleId);
 
       return c.json({ success: true, message: 'Pricing rule deleted' });
     } catch (error) {
@@ -342,22 +386,17 @@ export function registerCapabilityEndpoints(app: Hono) {
     try {
       const { vendorId } = c.req.param();
 
-      // Verify vendor
-      const vendor = await kv.get(`vendor:${vendorId}`);
-      if (!vendor) {
+      // ✅ SQL: Verify vendor
+      const vendorsRepo = getVendorsRepository();
+      const resolvedVendorId = await vendorsRepo.resolveVendorId(vendorId);
+      if (!resolvedVendorId) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
 
-      // Get doctors associated with this clinic
-      const doctorIds = vendor.doctors || [];
-      const doctors = [];
-
-      for (const doctorId of doctorIds) {
-        const doctor = await kv.get(`doctor:${doctorId}`);
-        if (doctor) {
-          doctors.push(doctor);
-        }
-      }
+      // ✅ SQL: Get doctors (staff with role='doctor') for this clinic
+      const staffRepo = getStaffRepository();
+      const allStaff = await staffRepo.findByVendor(resolvedVendorId);
+      const doctors = allStaff.filter(s => s.role === 'doctor' && s.isActive);
 
       return c.json({ success: true, doctors, total: doctors.length });
     } catch (error) {
@@ -375,9 +414,10 @@ export function registerCapabilityEndpoints(app: Hono) {
       const { vendorId } = c.req.param();
       const doctorData = await c.req.json();
 
-      // Verify vendor
-      const vendor = await kv.get(`vendor:${vendorId}`);
-      if (!vendor) {
+      // ✅ SQL: Verify vendor
+      const vendorsRepo = getVendorsRepository();
+      const resolvedVendorId = await vendorsRepo.resolveVendorId(vendorId);
+      if (!resolvedVendorId) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
 
@@ -386,40 +426,21 @@ export function registerCapabilityEndpoints(app: Hono) {
         return c.json({ error: 'Missing required fields: name, phone' }, 400);
       }
 
-      const doctorId = `doctor_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-
-      const doctor = {
-        id: doctorId,
-        clinicId: vendorId,
-        name: doctorData.name,
+      // ✅ SQL: Create doctor (staff with role='doctor')
+      const staffRepo = getStaffRepository();
+      const doctor = await staffRepo.create({
+        vendor_id: resolvedVendorId,
+        full_name: doctorData.name,
         phone: doctorData.phone,
         email: doctorData.email || '',
-        specialization: doctorData.specialization || [],
-        experience: doctorData.experience || 0,
-        qualifications: doctorData.qualifications || [],
-        about: doctorData.about || '',
-        consultationFee: doctorData.consultationFee || 0,
-        profilePhoto: doctorData.profilePhoto || '',
-        isActive: true,
-        totalAppointments: 0,
-        completedAppointments: 0,
-        rating: 0,
-        totalReviews: 0,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-
-      // Save doctor
-      await kv.set(`doctor:${doctorId}`, doctor);
-
-      // Add to clinic's doctor list
-      if (!vendor.doctors) {
-        vendor.doctors = [];
-      }
-      vendor.doctors.push(doctorId);
-      vendor.totalDoctors = vendor.doctors.length;
-      vendor.updatedAt = new Date().toISOString();
-      await kv.set(`vendor:${vendorId}`, vendor);
+        role: 'doctor',
+        specialization: Array.isArray(doctorData.specialization) 
+          ? doctorData.specialization.join(',') 
+          : doctorData.specialization || '',
+        experience_years: doctorData.experience || 0,
+        photo: doctorData.profilePhoto || '',
+        is_active: true,
+      });
 
       return c.json({ success: true, doctor });
     } catch (error) {
@@ -437,30 +458,35 @@ export function registerCapabilityEndpoints(app: Hono) {
       const { vendorId, doctorId } = c.req.param();
       const updates = await c.req.json();
 
-      // Verify vendor
-      const vendor = await kv.get(`vendor:${vendorId}`);
-      if (!vendor) {
+      // ✅ SQL: Verify vendor
+      const vendorsRepo = getVendorsRepository();
+      const resolvedVendorId = await vendorsRepo.resolveVendorId(vendorId);
+      if (!resolvedVendorId) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
 
-      // Verify doctor exists and belongs to clinic
-      const doctor = await kv.get(`doctor:${doctorId}`);
-      if (!doctor) {
+      // ✅ SQL: Verify doctor exists and belongs to clinic
+      const staffRepo = getStaffRepository();
+      const doctor = await staffRepo.findById(doctorId);
+      if (!doctor || doctor.role !== 'doctor') {
         return c.json({ error: 'Doctor not found' }, 404);
       }
 
-      if (doctor.clinicId !== vendorId) {
+      if (doctor.vendorId !== resolvedVendorId) {
         return c.json({ error: 'Doctor does not belong to this clinic' }, 403);
       }
 
-      // Update doctor
-      const updatedDoctor = {
-        ...doctor,
-        ...updates,
-        updatedAt: new Date().toISOString()
-      };
-
-      await kv.set(`doctor:${doctorId}`, updatedDoctor);
+      // ✅ SQL: Update doctor
+      const updateData: any = {};
+      if (updates.name !== undefined) updateData.full_name = updates.name;
+      if (updates.phone !== undefined) updateData.phone = updates.phone;
+      if (updates.email !== undefined) updateData.email = updates.email;
+      if (updates.specialization !== undefined) updateData.specialization = Array.isArray(updates.specialization) ? updates.specialization.join(',') : updates.specialization;
+      if (updates.experience !== undefined) updateData.experience_years = updates.experience;
+      if (updates.profilePhoto !== undefined) updateData.photo = updates.profilePhoto;
+      if (updates.isActive !== undefined) updateData.is_active = updates.isActive;
+      
+      const updatedDoctor = await staffRepo.update(doctorId, updateData);
 
       return c.json({ success: true, doctor: updatedDoctor });
     } catch (error) {
@@ -477,31 +503,26 @@ export function registerCapabilityEndpoints(app: Hono) {
     try {
       const { vendorId, doctorId } = c.req.param();
 
-      // Verify vendor
-      const vendor = await kv.get(`vendor:${vendorId}`);
-      if (!vendor) {
+      // ✅ SQL: Verify vendor
+      const vendorsRepo = getVendorsRepository();
+      const resolvedVendorId = await vendorsRepo.resolveVendorId(vendorId);
+      if (!resolvedVendorId) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
 
-      // Verify doctor exists
-      const doctor = await kv.get(`doctor:${doctorId}`);
-      if (!doctor) {
+      // ✅ SQL: Verify doctor exists and belongs to clinic
+      const staffRepo = getStaffRepository();
+      const doctor = await staffRepo.findById(doctorId);
+      if (!doctor || doctor.role !== 'doctor') {
         return c.json({ error: 'Doctor not found' }, 404);
       }
 
-      // Remove from clinic's doctor list
-      if (vendor.doctors) {
-        vendor.doctors = vendor.doctors.filter((id: string) => id !== doctorId);
-        vendor.totalDoctors = vendor.doctors.length;
-        vendor.updatedAt = new Date().toISOString();
-        await kv.set(`vendor:${vendorId}`, vendor);
+      if (doctor.vendorId !== resolvedVendorId) {
+        return c.json({ error: 'Doctor does not belong to this clinic' }, 403);
       }
 
-      // Mark doctor as inactive (soft delete)
-      doctor.isActive = false;
-      doctor.clinicId = null;
-      doctor.updatedAt = new Date().toISOString();
-      await kv.set(`doctor:${doctorId}`, doctor);
+      // ✅ SQL: Mark doctor as inactive (soft delete)
+      await staffRepo.update(doctorId, { is_active: false });
 
       return c.json({ success: true, message: 'Doctor removed from clinic' });
     } catch (error) {
@@ -523,30 +544,26 @@ export function registerCapabilityEndpoints(app: Hono) {
       const { vendorId, tableId } = c.req.param();
       const updates = await c.req.json();
 
-      // Verify vendor
-      const vendor = await kv.get(`vendor:${vendorId}`);
-      if (!vendor) {
+      // ✅ SQL: Verify vendor
+      const vendorsRepo = getVendorsRepository();
+      const resolvedVendorId = await vendorsRepo.resolveVendorId(vendorId);
+      if (!resolvedVendorId) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
 
-      // Get table
-      const table = await kv.get(`cafe:table:${tableId}`);
+      // ✅ SQL: Get table
+      const cafeTablesRepo = getCafeTablesRepository();
+      const table = await cafeTablesRepo.findById(tableId);
       if (!table) {
         return c.json({ error: 'Table not found' }, 404);
       }
 
-      if (table.vendorId !== vendorId) {
+      if (table.vendor_id !== resolvedVendorId) {
         return c.json({ error: 'Table does not belong to this vendor' }, 403);
       }
 
-      // Update table
-      const updatedTable = {
-        ...table,
-        ...updates,
-        updatedAt: new Date().toISOString()
-      };
-
-      await kv.set(`cafe:table:${tableId}`, updatedTable);
+      // ✅ SQL: Update table
+      const updatedTable = await cafeTablesRepo.update(tableId, updates);
 
       return c.json({ success: true, table: updatedTable });
     } catch (error) {
@@ -564,19 +581,21 @@ export function registerCapabilityEndpoints(app: Hono) {
       const { vendorId, tableId } = c.req.param();
       const { status } = await c.req.json();
 
-      // Verify vendor
-      const vendor = await kv.get(`vendor:${vendorId}`);
-      if (!vendor) {
+      // ✅ SQL: Verify vendor
+      const vendorsRepo = getVendorsRepository();
+      const resolvedVendorId = await vendorsRepo.resolveVendorId(vendorId);
+      if (!resolvedVendorId) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
 
-      // Get table
-      const table = await kv.get(`cafe:table:${tableId}`);
+      // ✅ SQL: Get table
+      const cafeTablesRepo = getCafeTablesRepository();
+      const table = await cafeTablesRepo.findById(tableId);
       if (!table) {
         return c.json({ error: 'Table not found' }, 404);
       }
 
-      if (table.vendorId !== vendorId) {
+      if (table.vendor_id !== resolvedVendorId) {
         return c.json({ error: 'Table does not belong to this vendor' }, 403);
       }
 
@@ -586,12 +605,10 @@ export function registerCapabilityEndpoints(app: Hono) {
         return c.json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` }, 400);
       }
 
-      // Update status
-      table.status = status;
-      table.updatedAt = new Date().toISOString();
-      await kv.set(`cafe:table:${tableId}`, table);
+      // ✅ SQL: Update status
+      const updatedTable = await cafeTablesRepo.update(tableId, { status });
 
-      return c.json({ success: true, table });
+      return c.json({ success: true, table: updatedTable });
     } catch (error) {
       console.error('[TABLE STATUS PUT] Error:', error);
       return c.json({ error: String(error) }, 500);

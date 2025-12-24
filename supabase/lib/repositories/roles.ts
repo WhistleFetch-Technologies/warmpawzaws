@@ -129,6 +129,59 @@ export function getRolesRepository() {
       if (error) throw error;
       return data;
     },
+
+    /**
+     * Get role config by roleId (name or UUID)
+     */
+    async getConfig(roleId: string): Promise<any | null> {
+      const role = await this.findById(roleId);
+      return role?.config || null;
+    },
+
+    /**
+     * Set role config by roleId (name or UUID)
+     */
+    async setConfig(roleId: string, config: any): Promise<Role> {
+      const role = await this.findById(roleId);
+      if (!role) {
+        throw new Error(`Role not found: ${roleId}`);
+      }
+      return this.update(roleId, { config });
+    },
+
+    /**
+     * Find all roles with configs (for migration/compatibility)
+     */
+    async findAllWithConfigs(): Promise<Role[]> {
+      const { data, error } = await client
+        .from('roles')
+        .select('*')
+        .not('config', 'is', null)
+        .order('display_name', { ascending: true });
+
+      if (error) throw error;
+      return data || [];
+    },
+
+    /**
+     * Delete a role (soft delete by setting is_active = false)
+     */
+    async delete(roleId: string): Promise<void> {
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(roleId);
+      
+      let query = client
+        .from('roles')
+        .update({ is_active: false, updated_at: new Date().toISOString() });
+      
+      if (isUuid) {
+        query = query.eq('id', roleId);
+      } else {
+        query = query.eq('name', roleId);
+      }
+
+      const { error } = await query;
+      if (error) throw error;
+    },
   };
 }
 

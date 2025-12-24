@@ -57,8 +57,19 @@ app.post('/make-server-3dd53475/staff/create', async (c) => {
       return sendError(c, 'Vendor ID is required', 400);
     }
     
-    // ✅ SQL: Verify vendor exists
-    const vendor = await getVendorsRepository().findById(staffData.vendorId);
+    // ✅ FIX: Resolve vendor ID (handles both UUID and vendor_id string like "vendor_9611377119")
+    const vendorsRepo = getVendorsRepository();
+    const resolvedVendorId = await vendorsRepo.resolveVendorId(staffData.vendorId);
+    
+    if (!resolvedVendorId) {
+      console.error(`❌ [STAFF-CREATE] Vendor not found: ${staffData.vendorId}`);
+      return sendError(c, `Vendor not found: ${staffData.vendorId}`, 404);
+    }
+    
+    console.log(`✅ [STAFF-CREATE] Resolved vendor ID: ${staffData.vendorId} -> ${resolvedVendorId}`);
+    
+    // ✅ SQL: Verify vendor exists (using resolved UUID)
+    const vendor = await vendorsRepo.findById(resolvedVendorId);
     if (!vendor) {
       return sendError(c, 'Vendor not found', 404);
     }
@@ -76,9 +87,9 @@ app.post('/make-server-3dd53475/staff/create', async (c) => {
     const fixedStaffData = await autoFixStaffData(validationResult.data);
     console.log('✅ Fixed Staff Data:', fixedStaffData);
     
-    // ✅ SQL: Create staff using repository
+    // ✅ SQL: Create staff using repository (use resolved UUID)
     const staff = await getStaffRepository().create({
-      vendor_id: staffData.vendorId,
+      vendor_id: resolvedVendorId, // ✅ FIX: Use resolved UUID, not string vendor ID
       full_name: fixedStaffData.fullName,
       phone: fixedStaffData.phone,
       email: fixedStaffData.email,
@@ -134,8 +145,8 @@ app.post('/make-server-3dd53475/staff/create', async (c) => {
       console.log(`✅ Created staff phone index: staff:phone:${normalizedPhone} -> ${staff.id}`);
     }
     
-    // ✅ SQL: Update vendor staff count
-    const staffList = await getStaffRepository().findByVendor(staffData.vendorId);
+    // ✅ SQL: Update vendor staff count (use resolved UUID)
+    const staffList = await getStaffRepository().findByVendorId(resolvedVendorId);
     // Note: Staff count is automatically maintained by foreign key relationship
     
     console.log('🎉 ===== STAFF CREATION COMPLETE =====\n');
@@ -233,23 +244,44 @@ app.put('/make-server-3dd53475/staff/:staffId', async (c) => {
     console.log('📝 Staff ID:', staffId);
     console.log('📝 Updates:', updates);
     
-    // ✅ SQL: Get existing staff
-    const existingStaff = await getStaffRepository().findById(staffId);
+    // ✅ SQL: Get existing staff (handle both UUID and staff_id string)
+    const staffRepo = getStaffRepository();
+    let existingStaff = await staffRepo.findById(staffId);
+    
+    // If not found by UUID, try by staff_id
+    if (!existingStaff) {
+      const { getDbClient } = await import('../../lib/db.ts');
+      const client = getDbClient();
+      const { data: staffByStringId } = await client
+        .from('staff')
+        .select('*')
+        .eq('staff_id', staffId)
+        .single();
+      
+      if (staffByStringId) {
+        existingStaff = await staffRepo.findById(staffByStringId.id);
+      }
+    }
     
     if (!existingStaff) {
       console.error(`❌ Staff ${staffId} not found`);
       return sendError(c, 'Staff not found', 404);
     }
     
-    // ✅ SQL: Update staff
-    const updatedStaff = await getStaffRepository().update(staffId, {
-      full_name: updates.fullName,
-      phone: updates.phone,
-      email: updates.email,
-      role_type: updates.roleType,
-      specialization: updates.specialization,
-      experience_years: updates.experienceYears,
-    });
+    // ✅ SQL: Update staff (include service_radius for home services)
+    const updateData: any = {};
+    if (updates.fullName !== undefined) updateData.full_name = updates.fullName;
+    if (updates.phone !== undefined) updateData.phone = updates.phone;
+    if (updates.email !== undefined) updateData.email = updates.email;
+    if (updates.roleType !== undefined) updateData.role_type = updates.roleType;
+    if (updates.role !== undefined) updateData.role = updates.role;
+    if (updates.specialization !== undefined) updateData.specialization = updates.specialization;
+    if (updates.experienceYears !== undefined) updateData.experience_years = updates.experienceYears;
+    if (updates.serviceRadius !== undefined) updateData.service_radius = updates.serviceRadius; // ✅ NEW: Service radius for home services
+    if (updates.workingHours !== undefined) updateData.working_hours = updates.workingHours;
+    
+    // ✅ FIX: Use existingStaff.id (UUID) for update
+    const updatedStaff = await staffRepo.update(existingStaff.id, updateData);
     
     console.log(`✅ Staff record updated: ${staffId}`);
     console.log('🎉 ===== STAFF UPDATE COMPLETE =====\n');

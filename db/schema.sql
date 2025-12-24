@@ -252,7 +252,8 @@ CREATE TABLE bookings (
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     completed_at TIMESTAMPTZ,
-    cancelled_at TIMESTAMPTZ
+    cancelled_at TIMESTAMPTZ,
+    settled_at TIMESTAMPTZ
 );
 
 COMMENT ON TABLE bookings IS 'Bookings - maps from booking:{id} KV keys';

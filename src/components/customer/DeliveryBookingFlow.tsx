@@ -487,10 +487,11 @@ export function DeliveryBookingFlow({
         status: paymentMethod === 'cod' ? 'pending' : 'confirmed' // COD is pending, online payment is confirmed
       };
 
-      // Use appropriate endpoint based on service type
+      // ✅ SQL: Use SQL-only endpoints based on service type
       let endpoint = '';
       if (serviceType === 'pharmacy') {
-        endpoint = `${API_BASE}/vet/medicine-order`;
+        // ✅ FIX: Use SQL-only pharmacy medicine order endpoint
+        endpoint = `${API_BASE}/pharmacy/medicine-order`;
         // Transform data for pharmacy endpoint
         orderData = {
           customerId,

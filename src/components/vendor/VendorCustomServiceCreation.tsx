@@ -69,18 +69,21 @@ interface CustomService {
 interface VendorCustomServiceCreationProps {
   vendorId: string;
   vendorData: any;
-  serviceStyle: 'at_center' | 'both'; // ONLY for center-based services
+  serviceStyle?: 'at_center' | 'both' | 'at_home' | 'tele'; // Optional - will validate in useEffect
   onClose: () => void;
-  onServiceCreated: () => void;
+  onServiceCreated?: () => void; // Optional
 }
 
 export function VendorCustomServiceCreation({
   vendorId,
   vendorData,
-  serviceStyle,
+  serviceStyle: propServiceStyle,
   onClose,
   onServiceCreated
 }: VendorCustomServiceCreationProps) {
+  // ✅ FIX: Handle undefined serviceStyle by getting it from vendorData or defaulting
+  const serviceStyle = propServiceStyle || vendorData?.serviceStyle || 'at_center';
+  
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [customServices, setCustomServices] = useState<CustomService[]>([]);
   const [loading, setLoading] = useState(true);
@@ -188,6 +191,13 @@ export function VendorCustomServiceCreation({
   // ✅ CRITICAL: Validation - Only allow for at_center or both
   // ❌ EXPLICITLY BLOCKED: at_home and tele service styles
   useEffect(() => {
+    // ✅ FIX: Handle undefined serviceStyle
+    if (!serviceStyle) {
+      console.warn('⚠️ serviceStyle is undefined, defaulting to at_center');
+      // Don't close, just log - the component can still work with undefined
+      return;
+    }
+    
     if (serviceStyle !== 'at_center' && serviceStyle !== 'both') {
       console.error('❌ Custom service creation NOT allowed for service style:', serviceStyle);
       console.error('   ✅ ALLOWED: at_center, both');
@@ -202,9 +212,12 @@ export function VendorCustomServiceCreation({
         toast.error('Custom services are only available for center-based vendors');
       }
       
-      onClose();
+      // ✅ FIX: Only call onClose if it's a function
+      if (typeof onClose === 'function') {
+        onClose();
+      }
     }
-  }, [serviceStyle]);
+  }, [serviceStyle, onClose]);
 
   useEffect(() => {
     loadCustomServices();
@@ -374,7 +387,9 @@ export function VendorCustomServiceCreation({
         
         // Reload services
         await loadCustomServices();
-        onServiceCreated();
+        if (onServiceCreated && typeof onServiceCreated === 'function') {
+          onServiceCreated();
+        }
       } else {
         const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
         console.error('❌ Failed to create custom service:', errorData);

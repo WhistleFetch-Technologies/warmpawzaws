@@ -44,7 +44,7 @@ export function CouponInput({
       }
 
       const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/coupons/validate`,
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/coupon/validate`,
         {
           method: 'POST',
           headers,

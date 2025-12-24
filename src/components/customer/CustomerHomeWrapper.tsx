@@ -390,12 +390,18 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   
   const handleVetNavigate = (screen: string, data?: any) => {
     setVetServiceData(data);
-    if (screen === 'vet-booking') setCurrentScreen('vet-booking');
-    else if (screen === 'vet-doctor-details') setCurrentScreen('vet-doctor-details');
+    if (screen === 'vet-booking' || screen === 'booking-dispatcher') {
+      setCurrentScreen('booking-dispatcher');
+    } else if (screen === 'vet-doctor-details') setCurrentScreen('vet-doctor-details');
     else if (screen === 'vet-clinic-list') setCurrentScreen('vet-clinic-list');
     else if (screen === 'vet-clinic-profile') setCurrentScreen('vet-clinic-profile');
     else if (screen === 'vet-clinic-booking') setCurrentScreen('vet-clinic-booking');
     else if (screen === 'home') { setCurrentScreen('home'); setVetServiceData(null); }
+    else if (screen === 'integrated-services') {
+      setCurrentScreen('integrated-services');
+    } else if (screen === 'pharmacy_store') {
+      setCurrentScreen('pharmacy_store');
+    }
   };
   
   const handleWalkerNavigate = (screen: string, data?: any) => {
@@ -476,6 +482,8 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
           onPetClick={handlePetClick}
           onAddPet={handleAddPet}
           onViewBooking={handleViewBooking}
+          onOpenMenu={() => setCurrentScreen('bookings')}
+          onOpenCategoryMapper={() => setCurrentScreen('category-mapper')}
         />
         {userSidebarOpen && (
           <UserAccountSidebar 
@@ -486,6 +494,13 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
             onNavigate={handleAccountNavigate}
           />
         )}
+        {/* ✅ FIX: Add Pet Modal */}
+        <AddPetModal
+          phone={phone}
+          isOpen={showAddPetModal}
+          onClose={() => setShowAddPetModal(false)}
+          onSuccess={handleAddPetSuccess}
+        />
       </>
     );
   }
@@ -675,6 +690,32 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
 
   // ✅ NEW: Create Booking
   if (currentScreen === 'create-booking') return <CreateBookingPage phone={phone} serviceId={selectedService} vendorId={selectedVendorId} onBack={() => setCurrentScreen('services')} onSuccess={(bookingId) => handleViewBooking(bookingId)} />;
+
+  // ✅ NEW: Booking Dispatcher (Universal Booking Flow)
+  if (currentScreen === 'booking-dispatcher') {
+    // Extract booking data from navigation
+    const bookingData = vetServiceData || walkerServiceData || {};
+    return (
+      <BookingFlowDispatcher
+        serviceType={bookingData.serviceType || selectedService || 'vet'}
+        serviceStyle={bookingData.serviceStyle || 'at_center'}
+        vendorId={bookingData.vendorId || selectedVendorId || ''}
+        vendorName={bookingData.vendorName || selectedVendorName}
+        vendorType={bookingData.vendorType || 'center'}
+        vendorRoleId={bookingData.vendorRoleId}
+        staffId={bookingData.staffId || bookingData.doctorId}
+        selectedService={bookingData.selectedService || bookingData.service}
+        customerId={customerId || phone}
+        customerPhone={phone}
+        petId={bookingData.petId || selectedPetId || undefined}
+        petName={bookingData.petName}
+        customerName={bookingData.customerName}
+        onBack={handleBack}
+        onNavigate={handleNavigateToService}
+        onBookingComplete={(bookingId) => handleViewBooking(bookingId)}
+      />
+    );
+  }
 
   // ✅ NEW: Pets
   if (currentScreen === 'pets') return <CustomerPetsPage 

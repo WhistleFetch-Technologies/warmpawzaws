@@ -7,7 +7,8 @@
 import { Hono } from 'npm:hono';
 import * as authService from './auth-service.tsx';
 import { generateId } from './database-schema.tsx';
-import * as kv from './kv_store.tsx';
+import { getOtpRepository } from '../../lib/repositories/otp.ts';
+import { getDbClient } from '../../lib/db.ts';
 import { SNSClient, PublishCommand } from "npm:@aws-sdk/client-sns";
 import { sendSuccess, sendError } from './response-utils.ts';
 
@@ -23,12 +24,24 @@ export function registerAuthEndpoints(app: Hono) {
       
       console.log(`🔐 [AUTH] Generating OTP for ${phone}: ${otp}`);
       
-      // 1. Store OTP in KV (expires in 5 mins)
-      // We store it with a prefix to verify later
-      await kv.set(`otp:${phone}`, { code: otp, expiresAt: Date.now() + 5 * 60 * 1000 });
+      // ✅ SQL: Store OTP using repository
+      await getOtpRepository().create({
+        phone,
+        otp_code: otp,
+        otp_type: 'login',
+        expires_in_minutes: 5,
+        max_attempts: 3,
+      });
 
-      // 2. Fetch AWS Settings
-      const awsSettings = await kv.get('admin:settings:aws');
+      // ✅ SQL: Fetch AWS Settings from platform_settings table
+      const client = getDbClient();
+      const { data: awsSettingsData } = await client
+        .from('platform_settings')
+        .select('setting_value')
+        .eq('setting_key', 'admin:settings:aws')
+        .maybeSingle();
+      
+      const awsSettings = awsSettingsData?.setting_value || null;
       
       if (awsSettings?.sns?.enabled && awsSettings?.credentials?.accessKeyId) {
         try {
@@ -77,44 +90,48 @@ export function registerAuthEndpoints(app: Hono) {
   
   app.get("/make-server-3dd53475/auth/diagnostic/all-vendors", async (c) => {
     try {
-      // Get ALL vendor-related data
-      const users = await kv.getByPrefix('user:');
-      const vendorProfiles = await kv.getByPrefix('vendor:profile:');
-      const vendorVendors = await kv.getByPrefix('vendor:vendor_');
-      const vendorApplications = await kv.getByPrefix('vendor:application:');
+      // ✅ SQL: Get ALL vendor-related data from SQL tables
+      const client = getDbClient();
+      const vendorsRepo = await import('../../lib/repositories/vendors.ts').then(m => m.getVendorsRepository());
+      const customersRepo = await import('../../lib/repositories/customers.ts').then(m => m.getCustomersRepository());
+      
+      // Get all vendors
+      const { data: vendors } = await client
+        .from('vendors')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      // Get all customers
+      const { data: customers } = await client
+        .from('customers')
+        .select('*')
+        .order('created_at', { ascending: false });
       
       return sendSuccess(c, {
         data: {
-          users: users.map((u: any) => ({
-            userId: u.userId,
-            phone: u.phone,
-            role: u.role,
-            name: u.name,
-            email: u.email
+          vendors: (vendors || []).map((v: any) => ({
+            id: v.id,
+            vendorId: v.vendor_id,
+            phone: v.phone,
+            ownerName: v.owner_name,
+            businessName: v.business_name,
+            email: v.email,
+            status: v.status,
+            approvalStatus: v.approval_status
           })),
-          vendorProfiles: vendorProfiles.map((vp: any) => ({
-            id: vp.id,
-            phone: vp.phone,
-            ownerName: vp.ownerName,
-            businessName: vp.businessName,
-            email: vp.email,
-            status: vp.status
+          customers: (customers || []).map((c: any) => ({
+            id: c.id,
+            customerId: c.customer_id,
+            phone: c.phone,
+            name: c.full_name,
+            email: c.email
           })),
-          vendorVendors: vendorVendors.map((vv: any) => ({
-            id: vv.id || vv.vendorId,
-            phone: vv.phone,
-            ownerName: vv.ownerName,
-            businessName: vv.businessName,
-            email: vv.email,
-            status: vv.status
-          })),
-          applications: vendorApplications.map((va: any) => ({
-            applicationId: va.applicationId,
-            vendorId: va.vendorId,
-            phone: va.phone,
-            status: va.status,
-            submittedAt: va.submittedAt
-          }))
+          summary: {
+            totalVendors: vendors?.length || 0,
+            totalCustomers: customers?.length || 0,
+            activeVendors: vendors?.filter((v: any) => v.status === 'active').length || 0,
+            approvedVendors: vendors?.filter((v: any) => v.approval_status === 'approved').length || 0
+          }
         }
       });
     } catch (error) {

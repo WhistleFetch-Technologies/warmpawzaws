@@ -53,6 +53,23 @@ export class ReviewsRepository {
     return results[0] || null;
   }
 
+  /**
+   * Get all reviews (with optional filters)
+   */
+  async findAll(options?: { limit?: number; offset?: number; vendorId?: string }): Promise<Review[]> {
+    const conditions: any = {};
+    if (options?.vendorId) {
+      conditions.vendor_id = options.vendorId;
+    }
+    
+    return selectQuery<Review>("reviews", conditions, {
+      limit: options?.limit || 1000,
+      offset: options?.offset,
+      orderBy: "created_at",
+      orderDirection: "desc",
+    });
+  }
+
   async findByVendor(vendorId: string, options?: { limit?: number; offset?: number }): Promise<Review[]> {
     return selectQuery<Review>("reviews", { vendor_id: vendorId }, {
       limit: options?.limit,

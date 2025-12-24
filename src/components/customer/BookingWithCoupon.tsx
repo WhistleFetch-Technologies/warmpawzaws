@@ -82,7 +82,7 @@ export function BookingWithCoupon({
 
       // Step 1: Create booking
       const bookingResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/booking/create`,
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/bookings/create`,
         {
           method: 'POST',
           headers: {

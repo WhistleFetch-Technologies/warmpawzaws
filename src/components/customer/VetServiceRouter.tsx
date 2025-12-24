@@ -17,6 +17,7 @@ import { ProblemGridSelector } from './ProblemGridSelector'; // ✅ NEW: Problem
 import { VendorDiscoveryByProblem } from './VendorDiscoveryByProblem'; // ✅ NEW: Vendor discovery
 import { BookingFlowDispatcher, determineServiceStyle } from './BookingFlowDispatcher'; // ✅ MIGRATION: Use unified dispatcher
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { toast } from 'sonner@2.0.3';
 
 type ViewType = 
   | 'landing'
@@ -158,14 +159,24 @@ export function VetServiceRouter({ onBack, phone, onNavigate, onViewBooking, dat
       setBookingFlow(prev => ({ ...prev, serviceType: 'home' }));
       setCurrentView('vet_home');
     } else if (screen === 'tele_consultation') {
-      // Navigate to tele consultation - to be implemented
-      alert('Tele Consultation - Coming Soon!');
+      // ✅ FIX: Navigate to tele consultation using BookingFlowDispatcher
+      resetBookingFlow();
+      setBookingFlow(prev => ({ ...prev, serviceType: 'tele' }));
+      setCurrentView('booking_dispatcher');
     } else if (screen === 'lab_collection') {
-      // Navigate to lab collection - to be implemented
-      alert('Lab Sample Collection - Coming Soon!');
+      // ✅ FIX: Navigate to diagnostics/lab collection via integrated services
+      if (onNavigate) {
+        onNavigate('integrated-services', { serviceType: 'diagnostics' });
+      } else {
+        toast.info('Lab collection booking - Navigate to diagnostics');
+      }
     } else if (screen === 'medicine_delivery') {
-      // Navigate to medicine delivery - to be implemented
-      alert('Medicine Delivery - Coming Soon!');
+      // ✅ FIX: Navigate to pharmacy store for medicine delivery
+      if (onNavigate) {
+        onNavigate('pharmacy_store');
+      } else {
+        toast.info('Medicine delivery - Navigate to pharmacy');
+      }
     } else if (screen === 'followup') {
       // Navigate to follow-up consultation selection
       setCurrentView('followup_selection');
@@ -279,7 +290,7 @@ export function VetServiceRouter({ onBack, phone, onNavigate, onViewBooking, dat
       }
     } catch (error) {
       console.error('❌ [VET-ROUTER] Error fetching problem details:', error);
-      alert('An error occurred. Please try again.');
+      toast.error('An error occurred. Please try again.');
     }
   };
 
@@ -373,11 +384,11 @@ export function VetServiceRouter({ onBack, phone, onNavigate, onViewBooking, dat
         setCurrentView('confirmation');
       } else {
         console.error('❌ [VET-ROUTER] Booking creation failed');
-        alert('Failed to create booking. Please try again.');
+        toast.error('Failed to create booking. Please try again.');
       }
     } catch (error) {
       console.error('❌ [VET-ROUTER] Error creating booking:', error);
-      alert('An error occurred. Please try again.');
+      toast.error('An error occurred. Please try again.');
     }
   };
 

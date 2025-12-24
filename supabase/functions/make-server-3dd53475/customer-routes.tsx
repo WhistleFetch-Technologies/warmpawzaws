@@ -325,9 +325,28 @@ export function registerCustomerRoutes(app: Hono) {
       
       console.log(`✅ [OTP-VERIFY] Login successful for ${phone}, isNewUser: ${isNewUser}`);
       
+      // ✅ CRITICAL FIX: Determine onboarding status (PERMANENT FIX FOR ALL CUSTOMERS)
+      // This logic ensures ALL customers are properly recognized as existing users after profile creation
+      // Onboarding is complete if:
+      // 1. journey_stage is set (not null/empty) - set when profile is saved
+      // 2. OR customer has full_name and email (profile completed) - fallback check
+      // This works for ALL phone numbers and ALL future customers
+      const hasFullName = customer.full_name && customer.full_name.trim() !== '' && customer.full_name !== 'Customer';
+      const hasEmail = customer.email && customer.email.trim() !== '';
+      const hasJourneyStage = customer.journey_stage && customer.journey_stage.trim() !== '';
+      const onboardingComplete = hasJourneyStage || (hasFullName && hasEmail);
+      
+      // ✅ CRITICAL FIX: Add onboardingComplete to customer object for frontend
+      const customerResponse = {
+        ...customer,
+        onboardingComplete,
+        // Ensure petIds is always an array
+        petIds: customer.id ? await getPetsRepository().findByCustomer(customer.id).then(pets => pets.map(p => p.id)).catch(() => []) : []
+      };
+      
       return sendSuccess(c, {
         isNewUser,
-        customer,
+        customer: customerResponse,
         sessionToken
       });
     } catch (error) {
@@ -579,10 +598,40 @@ export function registerCustomerRoutes(app: Hono) {
         return sendError(c, 'Phone number is required', 400);
       }
       
-      const customerId = await resolveCustomerId(phone);
+      // ✅ CRITICAL FIX: Normalize phone number before lookup
+      const normalizedPhone = normalizePhone(phone);
+      console.log(`📝 [CUSTOMER-PROFILE] Updating profile for phone: ${phone} (normalized: ${normalizedPhone})`);
       
+      let customerId = await resolveCustomerId(normalizedPhone);
+      
+      // ✅ CRITICAL FIX: If customer doesn't exist, create them
+      // This handles edge cases where profile creation happens before OTP verification
       if (!customerId) {
-        return sendError(c, 'Customer not found', 404);
+        console.warn(`⚠️ [CUSTOMER-PROFILE] Customer not found, creating new customer for phone: ${normalizedPhone}`);
+        try {
+          const newCustomer = await getCustomersRepository().create({
+            phone: normalizedPhone,
+            full_name: `${firstName} ${lastName}`.trim() || 'Customer',
+          });
+          customerId = newCustomer.id;
+          console.log(`✅ [CUSTOMER-PROFILE] Created new customer: ${customerId}`);
+        } catch (createError: any) {
+          // If creation fails due to unique constraint, try to find again
+          if (createError.code === '23505' || createError.message?.includes('unique')) {
+            console.log(`⚠️ [CUSTOMER-PROFILE] Customer creation failed (already exists), retrying lookup...`);
+            await new Promise(resolve => setTimeout(resolve, 100));
+            customerId = await resolveCustomerId(normalizedPhone);
+            if (!customerId) {
+              console.error(`❌ [CUSTOMER-PROFILE] Customer still not found after retry`);
+              return sendError(c, `Customer not found and could not be created. Please try OTP verification first.`, 404);
+            }
+          } else {
+            console.error(`❌ [CUSTOMER-PROFILE] Error creating customer:`, createError);
+            return sendError(c, `Failed to create customer: ${createError.message}`, 500);
+          }
+        }
+      } else {
+        console.log(`✅ [CUSTOMER-PROFILE] Found existing customer: ${customerId}`);
       }
       
       // ✅ SQL: Update customer
@@ -604,6 +653,14 @@ export function registerCustomerRoutes(app: Hono) {
       if (addressJsonb !== null) updateData.address = addressJsonb;
       // Note: profile_photo_url doesn't exist in actual schema, store in preferences
       if (photo !== undefined) updateData.profile_photo_url = photo;
+      
+      // ✅ CRITICAL FIX: Mark onboarding as complete when profile is saved (PERMANENT FIX FOR ALL CUSTOMERS)
+      // Set journey_stage to indicate profile completion
+      // This ensures ALL customers are recognized as existing users on next login
+      // Works for ALL phone numbers - no hardcoded values
+      if (!updateData.journey_stage) {
+        updateData.journey_stage = body.journeyType || 'profile_completed';
+      }
       
       const customer = await getCustomersRepository().update(customerId, updateData);
       
@@ -972,7 +1029,50 @@ export function registerCustomerRoutes(app: Hono) {
   // BOOKING MANAGEMENT
   // ============================================
 
-  // Get bookings by phone or customer ID
+  // Get customer bookings by phone (query parameter)
+  // ✅ CRITICAL FIX: Added endpoint to match frontend call pattern
+  app.get("/make-server-3dd53475/customer/bookings", async (c) => {
+    try {
+      const { phone } = c.req.query();
+      
+      if (!phone) {
+        return sendError(c, 'Phone number is required', 400);
+      }
+      
+      // Normalize phone number
+      const normalizedPhone = normalizePhone(phone as string);
+      console.log(`🔍 [GET-CUSTOMER-BOOKINGS] Fetching bookings for phone: ${phone} (normalized: ${normalizedPhone})`);
+      
+      // Resolve customer ID from phone
+      const customerId = await resolveCustomerId(normalizedPhone);
+      
+      if (!customerId) {
+        console.log(`⚠️ [GET-CUSTOMER-BOOKINGS] Customer not found for phone: ${normalizedPhone}`);
+        return sendSuccess(c, { bookings: [] }); // Return empty array instead of error
+      }
+      
+      console.log(`✅ [GET-CUSTOMER-BOOKINGS] Found customer: ${customerId}`);
+      
+      // ✅ SQL: Get bookings for customer
+      const bookings = await getBookingsRepository().findByCustomer(customerId);
+      
+      // Sort by date desc (newest first)
+      bookings.sort((a, b) => {
+        const dateA = a.scheduled_date ? new Date(a.scheduled_date).getTime() : 0;
+        const dateB = b.scheduled_date ? new Date(b.scheduled_date).getTime() : 0;
+        return dateB - dateA;
+      });
+      
+      console.log(`✅ [GET-CUSTOMER-BOOKINGS] Returning ${bookings.length} bookings`);
+      
+      return sendSuccess(c, { bookings });
+    } catch (error) {
+      console.error('❌ [GET-CUSTOMER-BOOKINGS] Error:', error);
+      return sendError(c, `Failed to fetch bookings: ${String(error)}`, 500);
+    }
+  });
+
+  // Get bookings by phone or customer ID (path parameter)
   app.get("/make-server-3dd53475/bookings/:identifier", async (c) => {
     try {
       const { identifier } = c.req.param();
@@ -988,9 +1088,11 @@ export function registerCustomerRoutes(app: Hono) {
       const bookings = await getBookingsRepository().findByCustomer(customerId);
       
       // Sort by date desc
-      bookings.sort((a, b) => 
-        new Date(b.booking_date).getTime() - new Date(a.booking_date).getTime()
-      );
+      bookings.sort((a, b) => {
+        const dateA = a.scheduled_date ? new Date(a.scheduled_date).getTime() : 0;
+        const dateB = b.scheduled_date ? new Date(b.scheduled_date).getTime() : 0;
+        return dateB - dateA;
+      });
       
       return sendSuccess(c, { bookings });
     } catch (error) {

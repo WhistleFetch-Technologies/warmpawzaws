@@ -39,10 +39,58 @@ import { getServicesRepository } from "../../lib/repositories/services.ts";
 import { getReviewsRepository } from "../../lib/repositories/reviews.ts";
 import { getNotificationsRepository } from "../../lib/repositories/notifications.ts";
 import { getSearchHistoryRepository } from "../../lib/repositories/search-history.ts";
+import { getAddressesRepository } from "../../lib/repositories/addresses.ts";
 import { getDbClient } from "../../lib/db.ts";
 
 export function registerCustomerRoutes(app: Hono) {
   console.log('✅ Registering Customer Routes (SQL-only)...');
+
+  // ============================================
+  // WALLET ENDPOINTS (Customer-specific)
+  // ============================================
+  
+  // GET /customer/wallet/:phone - Get wallet by phone (for frontend compatibility)
+  app.get("/make-server-3dd53475/customer/wallet/:phone", async (c) => {
+    try {
+      const { phone } = c.req.param();
+      const normalizedPhone = normalizePhone(phone);
+      
+      // Find customer by phone
+      const customer = await getCustomersRepository().findByPhone(normalizedPhone);
+      if (!customer) {
+        return sendSuccess(c, {
+          balance: 0,
+          totalEarned: 0,
+          totalSpent: 0,
+          transactions: []
+        });
+      }
+      
+      // Get wallet data
+      const { getWalletsRepository } = await import("../../lib/repositories/wallets.ts");
+      const walletsRepo = getWalletsRepository();
+      const wallet = await walletsRepo.findOrCreate(customer.id);
+      const transactions = await walletsRepo.getTransactionsByCustomer(customer.id, { limit: 50 });
+      
+      return sendSuccess(c, {
+        balance: wallet.balance || 0,
+        totalEarned: wallet.total_earned || 0,
+        totalSpent: wallet.total_spent || 0,
+        transactions: transactions.map(t => ({
+          id: t.id,
+          type: t.transaction_type,
+          amount: t.amount,
+          description: t.description || t.purpose || 'Transaction',
+          source: t.source || 'wallet',
+          createdAt: t.created_at,
+          balanceAfter: t.balance_after
+        }))
+      });
+    } catch (error) {
+      console.error('❌ [WALLET] Error:', error);
+      return sendError(c, `Failed to get wallet: ${String(error)}`, 500);
+    }
+  });
 
   // ============================================
   // OTP & AUTHENTICATION
@@ -178,9 +226,10 @@ export function registerCustomerRoutes(app: Hono) {
 
   // Helper to resolve customer ID from phone or ID
   async function resolveCustomerId(identifier: string): Promise<string | null> {
-    // Allow 10-15 digits, optionally starting with +
+    // ✅ FIX: Normalize phone number before lookup
     if (/^\+?\d{10,15}$/.test(identifier)) {
-      const customer = await getCustomersRepository().findByPhone(identifier);
+      const normalizedPhone = normalizePhone(identifier);
+      const customer = await getCustomersRepository().findByPhone(normalizedPhone);
       if (customer) return customer.id;
     }
     // Check if it's already a customer ID
@@ -502,12 +551,22 @@ export function registerCustomerRoutes(app: Hono) {
       }
       
       // ✅ SQL: Create pet using repository
+      // ✅ FIX: Map age string to age_years integer (pets table uses age_years, not age)
+      let ageYears: number | undefined;
+      if (petData.age) {
+        const ageNum = typeof petData.age === 'string' ? parseInt(petData.age, 10) : petData.age;
+        ageYears = isNaN(ageNum) ? undefined : ageNum;
+      }
+      
+      // ✅ FIX: Map type to species (pets table uses species, not type)
+      const species = petData.type || petData.species;
+      
       const pet = await getPetsRepository().create({
         customer_id: customerId,
         name: petData.name,
-        type: petData.type,
+        type: species, // Will be mapped to species in repository
         breed: petData.breed,
-        age: petData.age,
+        age: ageYears, // Will be mapped to age_years in repository
         gender: petData.gender,
         weight: petData.weight,
         color: petData.color,
@@ -810,6 +869,44 @@ export function registerCustomerRoutes(app: Hono) {
   });
 
   // Get customer bookings
+  // ✅ FIX: Add query param support for phone-based booking lookup
+  app.get("/make-server-3dd53475/customer/bookings", async (c) => {
+    try {
+      const { phone } = c.req.query();
+      
+      if (!phone) {
+        return sendError(c, 'Phone number is required', 400);
+      }
+      
+      const normalizedPhone = normalizePhone(phone);
+      const customer = await getCustomersRepository().findByPhone(normalizedPhone);
+      
+      if (!customer) {
+        return sendSuccess(c, { bookings: [] });
+      }
+      
+      const bookings = await getBookingsRepository().findByCustomer(customer.id);
+      
+      return sendSuccess(c, {
+        bookings: bookings.map(b => ({
+          id: b.id,
+          bookingId: b.booking_id,
+          vendorName: b.vendor_name || 'Unknown Vendor',
+          serviceName: b.service_name || 'Unknown Service',
+          petName: b.pet_name || 'Unknown Pet',
+          scheduledDate: b.scheduled_date,
+          scheduledTime: b.scheduled_time,
+          status: b.status,
+          paymentStatus: b.payment_status,
+          amount: parseFloat(b.total_amount || '0')
+        }))
+      });
+    } catch (error) {
+      console.error('❌ [BOOKINGS] Error:', error);
+      return sendError(c, `Failed to get bookings: ${String(error)}`, 500);
+    }
+  });
+
   app.get("/make-server-3dd53475/customer/:customerId/bookings", async (c) => {
     try {
       const rawId = c.req.param('customerId');
@@ -1084,10 +1181,12 @@ export function registerCustomerRoutes(app: Hono) {
       return sendSuccess(c, { 
         notifications: notifications.map(n => ({
           id: n.id,
+          notificationId: n.id, // ✅ FIX: Add notificationId for frontend compatibility
           type: n.notification_type,
           title: n.title,
           message: n.message,
           isRead: n.is_read,
+          read: n.is_read, // ✅ FIX: Add read field for frontend compatibility
           createdAt: n.created_at
         })),
         unreadCount: notifications.filter(n => !n.is_read).length
@@ -1293,24 +1392,45 @@ export function registerCustomerRoutes(app: Hono) {
       
       console.log(`📬 [NOTIFICATIONS] Fetching for userId: ${userId}, limit: ${limit}, unreadOnly: ${unreadOnly}`);
       
-      // ✅ SQL: Resolve userId (phone or UUID) to customer ID
-      let customerId = userId;
+      // ✅ SQL: Resolve userId (phone or UUID) to user_id
+      let resolvedUserId: string | null = null;
+      
       if (/^\d{10,15}$/.test(userId)) {
-        // It's a phone number, resolve to customer ID
-        const customer = await getCustomersRepository().findByPhone(userId);
-        if (customer) {
-          customerId = customer.id;
-          console.log(`📬 [NOTIFICATIONS] Resolved phone ${userId} to customer ID: ${customerId}`);
+        // It's a phone number, normalize and resolve to user_id
+        const normalizedPhone = normalizePhone(userId);
+        console.log(`📬 [NOTIFICATIONS] Normalized phone: ${normalizedPhone}`);
+        
+        // Find customer by phone
+        const customer = await getCustomersRepository().findByPhone(normalizedPhone);
+        if (customer && customer.user_id) {
+          resolvedUserId = customer.user_id;
+          console.log(`📬 [NOTIFICATIONS] Resolved phone ${userId} to user_id: ${resolvedUserId}`);
         } else {
           console.warn(`📬 [NOTIFICATIONS] Customer not found for phone: ${userId}`);
           return sendSuccess(c, { notifications: [], unreadCount: 0 });
         }
+      } else {
+        // Assume it's already a UUID (could be customer_id or user_id)
+        // Try to find customer first
+        const customer = await getCustomersRepository().findById(userId);
+        if (customer && customer.user_id) {
+          resolvedUserId = customer.user_id;
+          console.log(`📬 [NOTIFICATIONS] Resolved customer_id ${userId} to user_id: ${resolvedUserId}`);
+        } else {
+          // Assume it's already a user_id
+          resolvedUserId = userId;
+          console.log(`📬 [NOTIFICATIONS] Using provided userId as user_id: ${resolvedUserId}`);
+        }
       }
       
-      // ✅ SQL: Get notifications for customer
-      const notifications = await getNotificationsRepository().findByRecipient(
-        'customer',
-        customerId,
+      if (!resolvedUserId) {
+        console.warn(`📬 [NOTIFICATIONS] Could not resolve user_id for: ${userId}`);
+        return sendSuccess(c, { notifications: [], unreadCount: 0 });
+      }
+      
+      // ✅ SQL: Get notifications for user
+      const notifications = await getNotificationsRepository().findByUser(
+        resolvedUserId,
         {
           limit: parseInt(limit as string),
           unreadOnly: unreadOnly === 'true',
@@ -1322,10 +1442,12 @@ export function registerCustomerRoutes(app: Hono) {
       return sendSuccess(c, { 
         notifications: notifications.map(n => ({
           id: n.id,
+          notificationId: n.id, // ✅ FIX: Add notificationId for frontend compatibility
           type: n.notification_type,
           title: n.title,
           message: n.message,
           isRead: n.is_read,
+          read: n.is_read, // ✅ FIX: Add read field for frontend compatibility
           createdAt: n.created_at
         })),
         unreadCount: notifications.filter(n => !n.is_read).length
@@ -1335,6 +1457,296 @@ export function registerCustomerRoutes(app: Hono) {
       return sendError(c, `Failed to get notifications: ${String(error)}`, 500);
     }
   };
+
+  // ============================================
+  // ADDRESS MANAGEMENT
+  // ============================================
+
+  // Get all addresses
+  app.get("/make-server-3dd53475/customer/:identifier/addresses", async (c) => {
+    try {
+      const identifier = c.req.param('identifier');
+      const customerId = await resolveCustomerId(identifier);
+      
+      if (!customerId) {
+        return sendError(c, 'Customer not found', 404);
+      }
+      
+      const addressesRepo = getAddressesRepository();
+      const addresses = await addressesRepo.findByCustomer(customerId);
+      
+      return sendSuccess(c, {
+        addresses: addresses.map(addr => ({
+          id: addr.id,
+          customerId: addr.customer_id,
+          label: addr.address_type,
+          name: addr.full_name,
+          phone: addr.phone,
+          addressLine1: addr.address_line1,
+          addressLine2: addr.address_line2,
+          city: addr.city,
+          state: addr.state,
+          pincode: addr.pincode,
+          landmark: addr.landmark,
+          isDefault: addr.is_default,
+          createdAt: addr.created_at,
+          updatedAt: addr.updated_at
+        }))
+      });
+    } catch (error) {
+      return sendError(c, error, 500);
+    }
+  });
+
+  // Add new address
+  app.post("/make-server-3dd53475/customer/:identifier/addresses", async (c) => {
+    try {
+      const identifier = c.req.param('identifier');
+      const customerId = await resolveCustomerId(identifier);
+      
+      if (!customerId) {
+        return sendError(c, 'Customer not found', 404);
+      }
+      
+      const body = await c.req.json();
+      const { 
+        label, 
+        name, 
+        phone, 
+        addressLine1, 
+        addressLine2, 
+        city, 
+        state, 
+        pincode, 
+        landmark,
+        isDefault = false 
+      } = body;
+      
+      const addressesRepo = getAddressesRepository();
+      const existingAddresses = await addressesRepo.findByCustomer(customerId);
+      const shouldBeDefault = isDefault || existingAddresses.length === 0;
+      
+      const address = await addressesRepo.create({
+        customer_id: customerId,
+        address_type: (label || 'home') as 'home' | 'work' | 'other',
+        full_name: name,
+        phone,
+        address_line1: addressLine1,
+        address_line2: addressLine2,
+        city,
+        state,
+        pincode,
+        landmark,
+        is_default: shouldBeDefault
+      });
+      
+      return sendSuccess(c, {
+        address: {
+          id: address.id,
+          customerId: address.customer_id,
+          label: address.address_type,
+          name: address.full_name,
+          phone: address.phone,
+          addressLine1: address.address_line1,
+          addressLine2: address.address_line2,
+          city: address.city,
+          state: address.state,
+          pincode: address.pincode,
+          landmark: address.landmark,
+          isDefault: address.is_default,
+          createdAt: address.created_at,
+          updatedAt: address.updated_at
+        }
+      });
+    } catch (error) {
+      return sendError(c, error, 500);
+    }
+  });
+
+  // Update address
+  app.put("/make-server-3dd53475/address/:addressId", async (c) => {
+    try {
+      const { addressId } = c.req.param();
+      const updates = await c.req.json();
+      
+      const addressesRepo = getAddressesRepository();
+      const address = await addressesRepo.findById(addressId);
+      
+      if (!address) {
+        return sendError(c, 'Address not found', 404);
+      }
+      
+      const updatedAddress = await addressesRepo.update(addressId, {
+        address_type: updates.label || updates.address_type,
+        full_name: updates.name || updates.full_name,
+        phone: updates.phone,
+        address_line1: updates.addressLine1 || updates.address_line1,
+        address_line2: updates.addressLine2 || updates.address_line2,
+        city: updates.city,
+        state: updates.state,
+        pincode: updates.pincode,
+        landmark: updates.landmark,
+        is_default: updates.isDefault !== undefined ? updates.isDefault : updates.is_default
+      });
+      
+      return sendSuccess(c, {
+        address: {
+          id: updatedAddress.id,
+          customerId: updatedAddress.customer_id,
+          label: updatedAddress.address_type,
+          name: updatedAddress.full_name,
+          phone: updatedAddress.phone,
+          addressLine1: updatedAddress.address_line1,
+          addressLine2: updatedAddress.address_line2,
+          city: updatedAddress.city,
+          state: updatedAddress.state,
+          pincode: updatedAddress.pincode,
+          landmark: updatedAddress.landmark,
+          isDefault: updatedAddress.is_default,
+          createdAt: updatedAddress.created_at,
+          updatedAt: updatedAddress.updated_at
+        }
+      });
+    } catch (error) {
+      return sendError(c, error, 500);
+    }
+  });
+
+  // Delete address
+  app.delete("/make-server-3dd53475/address/:addressId", async (c) => {
+    try {
+      const { addressId } = c.req.param();
+      
+      const addressesRepo = getAddressesRepository();
+      const address = await addressesRepo.findById(addressId);
+      
+      if (!address) {
+        return sendError(c, 'Address not found', 404);
+      }
+      
+      // If deleting default, set first remaining as default
+      if (address.is_default) {
+        const allAddresses = await addressesRepo.findByCustomer(address.customer_id);
+        const otherAddresses = allAddresses.filter(a => a.id !== addressId);
+        if (otherAddresses.length > 0) {
+          await addressesRepo.update(otherAddresses[0].id, { is_default: true });
+        }
+      }
+      
+      await addressesRepo.delete(addressId);
+      
+      return sendSuccess(c, { message: 'Address deleted successfully' });
+    } catch (error) {
+      return sendError(c, error, 500);
+    }
+  });
+
+  // Set default address
+  app.put("/make-server-3dd53475/address/:addressId/default", async (c) => {
+    try {
+      const { addressId } = c.req.param();
+      
+      const addressesRepo = getAddressesRepository();
+      const address = await addressesRepo.findById(addressId);
+      
+      if (!address) {
+        return sendError(c, 'Address not found', 404);
+      }
+      
+      // Unset all other defaults
+      const allAddresses = await addressesRepo.findByCustomer(address.customer_id);
+      for (const addr of allAddresses) {
+        if (addr.id !== addressId && addr.is_default) {
+          await addressesRepo.update(addr.id, { is_default: false });
+        }
+      }
+      
+      // Set this as default
+      const updatedAddress = await addressesRepo.update(addressId, { is_default: true });
+      
+      return sendSuccess(c, {
+        address: {
+          id: updatedAddress.id,
+          isDefault: updatedAddress.is_default
+        }
+      });
+    } catch (error) {
+      return sendError(c, error, 500);
+    }
+  });
+
+  // ============================================
+  // ACCOUNT DELETION
+  // ============================================
+
+  app.delete("/make-server-3dd53475/customer/:identifier", async (c) => {
+    try {
+      const identifier = c.req.param('identifier');
+      const customerId = await resolveCustomerId(identifier);
+      
+      if (!customerId) {
+        return sendError(c, 'Customer not found', 404);
+      }
+      
+      // ✅ SQL: Soft delete (set is_active = false)
+      await getCustomersRepository().update(customerId, {
+        is_active: false
+      });
+      
+      // ✅ SQL: Invalidate all sessions
+      const sessionsRepo = getSessionsRepository();
+      const sessions = await sessionsRepo.findByUserId(customerId);
+      for (const session of sessions) {
+        await sessionsRepo.invalidate(session.id);
+      }
+      
+      return sendSuccess(c, { message: 'Account deactivated successfully' });
+    } catch (error) {
+      return sendError(c, error, 500);
+    }
+  });
+
+  // ============================================
+  // PROFILE PHOTO UPLOAD
+  // ============================================
+
+  app.post("/make-server-3dd53475/customer/:identifier/profile/photo", async (c) => {
+    try {
+      const identifier = c.req.param('identifier');
+      const customerId = await resolveCustomerId(identifier);
+      
+      if (!customerId) {
+        return sendError(c, 'Customer not found', 404);
+      }
+      
+      const { photoUrl } = await c.req.json();
+      
+      if (!photoUrl) {
+        return sendError(c, 'Photo URL is required', 400);
+      }
+      
+      // ✅ SQL: Update customer profile photo in preferences JSONB
+      const customer = await getCustomersRepository().findById(customerId);
+      if (!customer) {
+        return sendError(c, 'Customer not found', 404);
+      }
+      
+      const preferences = (customer.preferences as any) || {};
+      preferences.profile_photo_url = photoUrl;
+      
+      await getCustomersRepository().update(customerId, {
+        preferences
+      });
+      
+      return sendSuccess(c, {
+        profile: {
+          photo: photoUrl
+        }
+      });
+    } catch (error) {
+      return sendError(c, error, 500);
+    }
+  });
 
   // Calculate distance between two coordinates (Haversine formula)
   function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {

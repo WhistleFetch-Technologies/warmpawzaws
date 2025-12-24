@@ -1,9 +1,9 @@
-import { Hono } from "npm:hono";
-import * as kv from './kv_store.tsx';
-import { generateId } from './database-schema.tsx';
-
 /**
- * SETTLEMENT AUTOMATION
+ * ============================================================================
+ * SETTLEMENT AUTOMATION - SQL-ONLY VERSION
+ * ============================================================================
+ * 
+ * REFACTORED: Removed all KV usage, using SQL repositories only
  * 
  * Features:
  * - Daily settlement calculation
@@ -12,7 +12,19 @@ import { generateId } from './database-schema.tsx';
  * - Razorpay transfer integration
  * - Payout history tracking
  * - Vendor notifications
+ * 
+ * Date: 2025-01-23
+ * Migration: Phase 7 - Settlements
+ * ============================================================================
  */
+
+import { Hono } from "npm:hono";
+import { getSettlementsRepository } from '../../lib/repositories/settlements.ts';
+import { getBookingsRepository } from '../../lib/repositories/bookings.ts';
+import { getVendorsRepository } from '../../lib/repositories/vendors.ts';
+import { getNotificationsRepository } from '../../lib/repositories/notifications.ts';
+import { getDbClient } from '../../lib/db.ts';
+import { generateId } from './database-schema.tsx';
 
 export function registerSettlementAutomation(app: Hono) {
   const BASE = '/make-server-3dd53475';
@@ -26,8 +38,15 @@ export function registerSettlementAutomation(app: Hono) {
     try {
       console.log('💰 [SETTLEMENT] Starting daily settlement calculation...');
 
-      // Get payout rules
-      const rules = await kv.get('admin:settings:payout_rules') || {
+      // ✅ SQL: Get payout rules from platform_settings
+      const client = getDbClient();
+      const { data: payoutRulesData } = await client
+        .from('platform_settings')
+        .select('setting_value')
+        .eq('setting_key', 'admin:settings:payout_rules')
+        .maybeSingle();
+      
+      const rules = payoutRulesData?.setting_value || {
         holdPeriodDays: 7,
         minimumPayout: 1000,
         autoPayout: true,
@@ -37,13 +56,14 @@ export function registerSettlementAutomation(app: Hono) {
       const holdPeriodMs = rules.holdPeriodDays * 24 * 60 * 60 * 1000;
       const cutoffDate = new Date(Date.now() - holdPeriodMs);
 
-      // Get all completed bookings that passed hold period
-      const allBookings = await kv.getByPrefix('booking:');
+      // ✅ SQL: Get all completed bookings that passed hold period
+      const bookingsRepo = getBookingsRepository();
+      const allBookings = await bookingsRepo.findAll();
       const eligibleBookings = allBookings.filter((b: any) => {
         if (b.status !== 'completed') return false;
-        if (b.settled) return false; // Already settled
+        if (b.settlement_status === 'settled') return false; // Already settled
         
-        const completedDate = new Date(b.completedAt || b.scheduledDate);
+        const completedDate = new Date(b.completed_at || b.booking_date);
         return completedDate < cutoffDate;
       });
 
@@ -65,10 +85,11 @@ export function registerSettlementAutomation(app: Hono) {
           };
         }
 
-        // Calculate commission
-        const vendor = await kv.get(`vendor:${vendorId}`);
-        const commissionRate = vendor?.commissionRate || rules.defaultCommission;
-        const bookingAmount = booking.totalAmount || booking.amount || 0;
+        // ✅ SQL: Get vendor and calculate commission
+        const vendorsRepo = getVendorsRepository();
+        const vendor = await vendorsRepo.findById(vendorId);
+        const commissionRate = vendor?.commission_rate || rules.defaultCommission;
+        const bookingAmount = booking.total_amount || booking.base_price || 0;
         const commissionAmount = (bookingAmount * commissionRate) / 100;
         const netAmount = bookingAmount - commissionAmount;
 
@@ -77,10 +98,11 @@ export function registerSettlementAutomation(app: Hono) {
         vendorSettlements[vendorId].commission += commissionAmount;
         vendorSettlements[vendorId].netAmount += netAmount;
 
-        // Mark booking as settled
-        booking.settled = true;
-        booking.settledAt = new Date().toISOString();
-        await kv.set(`booking:${booking.id}`, booking);
+        // ✅ SQL: Mark booking as settled
+        await bookingsRepo.update(booking.id, {
+          settlement_status: 'settled',
+          settled_at: new Date().toISOString(),
+        });
       }
 
       // Process settlements
@@ -94,26 +116,15 @@ export function registerSettlementAutomation(app: Hono) {
           continue;
         }
 
-        // Create settlement record
-        const settlementId = generateId('settlement');
-        const settlementRecord = {
-          id: settlementId,
-          vendorId,
-          amount: settlement.netAmount,
-          totalAmount: settlement.totalAmount,
-          commission: settlement.commission,
-          bookingCount: settlement.bookings.length,
-          bookings: settlement.bookings,
-          status: rules.autoPayout ? 'pending_transfer' : 'pending_approval',
-          createdAt: new Date().toISOString()
-        };
-
-        await kv.set(`settlement:${settlementId}`, settlementRecord);
-        
-        // Add to pending settlements
-        const pendingSettlements = await kv.get('admin:settlements:pending') || [];
-        pendingSettlements.push(settlementId);
-        await kv.set('admin:settlements:pending', pendingSettlements);
+        // ✅ SQL: Create settlement record
+        const settlementsRepo = getSettlementsRepository();
+        const settlementRecord = await settlementsRepo.create({
+          vendor_id: vendorId,
+          settlement_amount: settlement.totalAmount,
+          commission_amount: settlement.commission,
+          vendor_amount: settlement.netAmount,
+          settlement_status: rules.autoPayout ? 'pending_transfer' : 'pending_approval',
+        });
 
         settlements.push(settlementRecord);
 
@@ -150,19 +161,21 @@ export function registerSettlementAutomation(app: Hono) {
       const { settlementId } = c.req.param();
       const { adminId } = await c.req.json();
 
-      const settlement = await kv.get(`settlement:${settlementId}`);
+      // ✅ SQL: Get settlement
+      const settlementsRepo = getSettlementsRepository();
+      const settlement = await settlementsRepo.findById(settlementId);
       if (!settlement) {
         return c.json({ error: 'Settlement not found' }, 404);
       }
 
-      if (settlement.status !== 'pending_approval') {
+      if (settlement.settlement_status !== 'pending_approval') {
         return c.json({ error: 'Settlement already processed' }, 400);
       }
 
-      settlement.status = 'approved';
-      settlement.approvedBy = adminId;
-      settlement.approvedAt = new Date().toISOString();
-      await kv.set(`settlement:${settlementId}`, settlement);
+      // ✅ SQL: Update settlement
+      await settlementsRepo.update(settlementId, {
+        settlement_status: 'approved',
+      });
 
       // Initiate transfer
       await initiateRazorpayTransfer(settlement);
@@ -186,19 +199,16 @@ export function registerSettlementAutomation(app: Hono) {
     try {
       const { vendorId } = c.req.param();
 
-      const allSettlements = await kv.getByPrefix('settlement:');
-      const vendorSettlements = allSettlements
-        .filter((s: any) => s.vendorId === vendorId)
-        .sort((a: any, b: any) => 
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        );
+      // ✅ SQL: Get vendor settlements
+      const settlementsRepo = getSettlementsRepository();
+      const vendorSettlements = await settlementsRepo.findByVendor(vendorId);
 
       return c.json({
         success: true,
         settlements: vendorSettlements,
         totalSettled: vendorSettlements
-          .filter((s: any) => s.status === 'completed')
-          .reduce((sum: number, s: any) => sum + s.amount, 0)
+          .filter((s: any) => s.settlement_status === 'completed')
+          .reduce((sum: number, s: any) => sum + s.vendor_amount, 0)
       });
 
     } catch (error) {
@@ -215,35 +225,43 @@ export function registerSettlementAutomation(app: Hono) {
     try {
       console.log(`💸 [TRANSFER] Initiating for settlement ${settlement.id}`);
 
-      // Get vendor details
-      const vendor = await kv.get(`vendor:${settlement.vendorId}`);
+      // ✅ SQL: Get vendor details
+      const vendorsRepo = getVendorsRepository();
+      const vendor = await vendorsRepo.findById(settlement.vendor_id);
       if (!vendor) {
         throw new Error('Vendor not found');
       }
 
-      // Get Razorpay credentials
-      const paymentSettings = await kv.get('admin:settings:payment') || {};
+      // ✅ SQL: Get Razorpay credentials from platform_settings
+      const client = getDbClient();
+      const { data: paymentSettingsData } = await client
+        .from('platform_settings')
+        .select('setting_value')
+        .eq('setting_key', 'admin:settings:payment')
+        .maybeSingle();
+      const paymentSettings = paymentSettingsData?.setting_value || {};
       const razorpayKeyId = paymentSettings.razorpay?.keyId || Deno.env.get('RAZORPAY_KEY_ID');
       const razorpayKeySecret = paymentSettings.razorpay?.keySecret || Deno.env.get('RAZORPAY_KEY_SECRET');
 
       if (!razorpayKeyId || !razorpayKeySecret) {
         console.error('[TRANSFER] Razorpay credentials not configured');
-        settlement.status = 'failed';
-        settlement.error = 'Payment gateway not configured';
-        await kv.set(`settlement:${settlement.id}`, settlement);
+        await settlementsRepo.update(settlement.id, {
+          settlement_status: 'failed',
+        });
         return;
       }
 
       // Create/Get contact
-      let contactId = vendor.razorpayContactId;
+      let contactId = vendor.razorpay_contact_id;
       if (!contactId) {
         contactId = await createRazorpayContact(vendor, razorpayKeyId, razorpayKeySecret);
-        vendor.razorpayContactId = contactId;
-        await kv.set(`vendor:${vendor.id}`, vendor);
+        await vendorsRepo.update(vendor.id, {
+          razorpay_contact_id: contactId,
+        });
       }
 
       // Create/Get fund account
-      let fundAccountId = vendor.razorpayFundAccountId;
+      let fundAccountId = vendor.razorpay_fund_account_id;
       if (!fundAccountId) {
         fundAccountId = await createRazorpayFundAccount(
           contactId,
@@ -251,32 +269,35 @@ export function registerSettlementAutomation(app: Hono) {
           razorpayKeyId,
           razorpayKeySecret
         );
-        vendor.razorpayFundAccountId = fundAccountId;
-        await kv.set(`vendor:${vendor.id}`, vendor);
+        await vendorsRepo.update(vendor.id, {
+          razorpay_fund_account_id: fundAccountId,
+        });
       }
 
       // Create payout
       const payout = await createRazorpayPayout(
         fundAccountId,
-        settlement.amount,
+        settlement.vendor_amount,
         settlement.id,
         razorpayKeyId,
         razorpayKeySecret
       );
 
-      // Update settlement
-      settlement.status = 'processing';
-      settlement.razorpayPayoutId = payout.id;
-      settlement.transferInitiatedAt = new Date().toISOString();
-      await kv.set(`settlement:${settlement.id}`, settlement);
+      // ✅ SQL: Update settlement
+      await settlementsRepo.update(settlement.id, {
+        settlement_status: 'processing',
+        razorpay_settlement_id: payout.id,
+      });
 
       console.log(`✅ [TRANSFER] Payout created: ${payout.id}`);
 
     } catch (error) {
       console.error('[TRANSFER] Error:', error);
-      settlement.status = 'failed';
-      settlement.error = error instanceof Error ? error.message : 'Transfer failed';
-      await kv.set(`settlement:${settlement.id}`, settlement);
+      // ✅ SQL: Update settlement status to failed
+      const settlementsRepo = getSettlementsRepository();
+      await settlementsRepo.update(settlement.id, {
+        settlement_status: 'failed',
+      });
     }
   }
 
@@ -380,22 +401,16 @@ export function registerSettlementAutomation(app: Hono) {
 
   async function sendSettlementNotification(vendorId: string, settlement: any) {
     try {
-      const notification = {
-        id: generateId('notif'),
-        userId: vendorId,
-        userType: 'vendor',
-        type: 'settlement_processed',
+      // ✅ SQL: Create notification using repository
+      const notificationsRepo = getNotificationsRepository();
+      await notificationsRepo.create({
+        recipient_id: vendorId,
+        recipient_type: 'vendor',
+        notification_type: 'settlement_processed',
         title: 'Settlement Processed! 💰',
-        message: `₹${settlement.amount.toFixed(2)} will be transferred to your account within 2-3 business days.`,
+        message: `₹${settlement.vendor_amount?.toFixed(2) || settlement.amount?.toFixed(2)} will be transferred to your account within 2-3 business days.`,
         data: { settlementId: settlement.id },
-        read: false,
-        priority: 'high',
-        createdAt: new Date().toISOString()
-      };
-
-      const notifications = await kv.get(`notifications:${vendorId}`) || [];
-      notifications.unshift(notification);
-      await kv.set(`notifications:${vendorId}`, notifications);
+      });
 
       console.log(`📧 [NOTIFICATION] Settlement notification sent to vendor ${vendorId}`);
     } catch (error) {

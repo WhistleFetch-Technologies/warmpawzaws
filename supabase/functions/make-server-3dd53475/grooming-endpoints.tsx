@@ -1,5 +1,13 @@
 import { Hono } from "npm:hono";
-import * as kv from "./kv_store.tsx";
+import { createClient } from "npm:@supabase/supabase-js@2.39.3";
+import { getVendorsRepository } from "../../lib/repositories/vendors.ts";
+import { getBookingsRepository } from "../../lib/repositories/bookings.ts";
+import { getCustomersRepository } from "../../lib/repositories/customers.ts";
+import { getNotificationsRepository } from "../../lib/repositories/notifications.ts";
+
+const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
+const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 const app = new Hono();
 
@@ -12,16 +20,31 @@ app.get("/grooming/services", async (c) => {
   try {
     console.log('📦 Fetching grooming services...');
 
-    // Get all vendors with groomer role
-    const allVendorKeys = await kv.getByPrefix('vendor:vendor_');
-    const groomers = allVendorKeys
-      .map(item => item.value)
-      .filter((v: any) => 
-        v && 
-        (v.roleId === 'pet_groomer' || v.roleId === 'groomer') && 
-        v.status === 'approved' && 
-        v.isAvailable
-      );
+    // ✅ SQL: Get all vendors with groomer role
+    const vendorsRepo = getVendorsRepository();
+    const allVendors = await vendorsRepo.findByRole('pet_groomer', { status: 'approved' });
+    
+    // Also get 'groomer' role
+    const groomerVendors = await vendorsRepo.findByRole('groomer', { status: 'approved' });
+    const allGroomerVendors = [...allVendors, ...groomerVendors];
+    
+    // Transform to expected format
+    const groomers = allGroomerVendors
+      .filter((v: any) => v.is_active)
+      .map((v: any) => ({
+        id: v.vendor_id || v.id,
+        vendorId: v.vendor_id || v.id,
+        businessName: v.business_name,
+        roleId: v.role_id,
+        status: v.status,
+        isAvailable: v.is_active,
+        address: v.address,
+        city: v.city,
+        latitude: v.latitude,
+        longitude: v.longitude,
+        coordinates: v.latitude && v.longitude ? { lat: v.latitude, lng: v.longitude } : null,
+        serviceStyles: ['at_center', 'at_home'] // Default, can be enhanced
+      }));
 
     console.log(`Found ${groomers.length} active groomers`);
 
@@ -90,16 +113,28 @@ app.get("/grooming/:serviceType/providers", async (c) => {
 
     console.log(`📍 Fetching ${serviceType} providers near ${lat},${lng}`);
 
-    // Get all groomers
-    const allVendorKeys = await kv.getByPrefix('vendor:vendor_');
-    let groomers = allVendorKeys
-      .map(item => item.value)
-      .filter((v: any) => 
-        v && 
-        (v.roleId === 'pet_groomer' || v.roleId === 'groomer') && 
-        v.status === 'approved' && 
-        v.isAvailable
-      );
+    // ✅ SQL: Get all groomers
+    const vendorsRepo = getVendorsRepository();
+    const allVendors = await vendorsRepo.findByRole('pet_groomer', { status: 'approved' });
+    const groomerVendors = await vendorsRepo.findByRole('groomer', { status: 'approved' });
+    const allGroomerVendors = [...allVendors, ...groomerVendors];
+    
+    let groomers = allGroomerVendors
+      .filter((v: any) => v.is_active)
+      .map((v: any) => ({
+        id: v.vendor_id || v.id,
+        vendorId: v.vendor_id || v.id,
+        businessName: v.business_name,
+        roleId: v.role_id,
+        status: v.status,
+        isAvailable: v.is_active,
+        address: v.address,
+        city: v.city,
+        latitude: v.latitude,
+        longitude: v.longitude,
+        coordinates: v.latitude && v.longitude ? { lat: v.latitude, lng: v.longitude } : null,
+        serviceStyles: ['at_center', 'at_home']
+      }));
 
     // Filter by service type (standardized: at_center, at_home)
     const serviceStyle = serviceType === 'grooming_center' ? 'at_center' : 'at_home';
@@ -155,53 +190,40 @@ app.post("/booking/:bookingId/complete", async (c) => {
 
     console.log(`🔐 Completing booking ${bookingId} with OTP`);
 
-    // Get booking
-    const booking = await kv.get(`booking:${bookingId}`);
+    // ✅ SQL: Get booking
+    const bookingsRepo = getBookingsRepository();
+    const booking = await bookingsRepo.findById(bookingId);
     
     if (!booking) {
       return c.json({ error: 'Booking not found' }, 404);
     }
 
     // ✅ PRODUCTION: Verify OTP from booking
-    if (!booking.completionOTP || otp !== booking.completionOTP) {
+    if (!booking.otp_code || otp !== booking.otp_code) {
       return c.json({ error: 'Invalid OTP' }, 400);
     }
 
-    // Update booking status
-    booking.status = 'completed';
-    booking.completedAt = new Date().toISOString();
-    booking.updatedAt = new Date().toISOString();
-    
-    await kv.set(`booking:${bookingId}`, booking);
+    // ✅ SQL: Update booking status
+    const updatedBooking = await bookingsRepo.update(bookingId, {
+      status: 'completed',
+      completed_at: new Date().toISOString(),
+      otp_verified: true
+    });
 
-    // Update customer stats
-    const customer = await kv.get(`customer:${booking.customerId}`);
-    if (customer) {
-      customer.completedBookings = (customer.completedBookings || 0) + 1;
-      customer.activeBookings = Math.max((customer.activeBookings || 0) - 1, 0);
-      await kv.set(`customer:${booking.customerId}`, customer);
-    }
+    // ✅ SQL: Update customer stats (if needed, can be done via triggers or computed)
+    // For now, we'll skip direct updates as stats can be computed from bookings
 
-    // Update vendor stats
-    const vendor = await kv.get(`vendor:${booking.vendorId}`);
-    if (vendor) {
-      vendor.completedBookings = (vendor.completedBookings || 0) + 1;
-      await kv.set(`vendor:${booking.vendorId}`, vendor);
-    }
-
-    // Create notification for review
-    const notificationId = `notif_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-    await kv.set(`notification:${notificationId}`, {
-      id: notificationId,
-      userId: booking.customerId,
-      userType: 'customer',
+    // ✅ SQL: Create notification for review
+    const notificationsRepo = getNotificationsRepository();
+    await notificationsRepo.create({
+      user_id: booking.customer_id,
+      user_type: 'customer',
       type: 'service_completed',
       title: 'Service Completed',
       message: 'Please rate your grooming experience',
-      actionType: 'rate_booking',
-      actionData: { bookingId },
-      read: false,
-      createdAt: new Date().toISOString()
+      action_type: 'rate_booking',
+      action_data: { bookingId },
+      is_read: false
     });
 
     console.log('✅ Booking completed successfully');

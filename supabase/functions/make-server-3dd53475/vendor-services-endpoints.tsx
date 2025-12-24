@@ -1,7 +1,15 @@
+import { Hono } from "npm:hono";
+import { createClient } from "npm:@supabase/supabase-js@2.39.3";
 import { sendSuccess, sendError } from "./response-utils.ts";
-import { cascadeDeleteVendorService, checkSafeDelete } from "./cascade-delete-service.tsx"; // ✅ GAP #14 FIX
-import * as kv from './kv_store.tsx';
+import { getVendorsRepository } from "../../lib/repositories/vendors.ts";
+import { getServicesRepository } from "../../lib/repositories/services.ts";
+import { getStaffRepository } from "../../lib/repositories/staff.ts";
+import { getBookingsRepository } from "../../lib/repositories/bookings.ts";
 import { getProblemGridByRole } from "./problem-grid-catalog.tsx";
+
+const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
+const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 export function registerVendorServiceEndpoints(app: Hono) {
   
@@ -14,26 +22,53 @@ export function registerVendorServiceEndpoints(app: Hono) {
     try {
       const { vendorId } = c.req.param();
       
-      // Get vendor profile
-      const vendor = await kv.get(`vendor:${vendorId}`);
+      // ✅ FIX: Use standardized vendor ID resolver
+      const { resolveVendor, resolveVendorIdToUuid } = await import('../../lib/utils/vendor-id-resolver.ts');
+      const vendor = await resolveVendor(vendorId);
+      
       if (!vendor) {
-        return sendError(c, 'Vendor not found', 404);
+        console.error(`❌ [VENDOR-SERVICES] Vendor not found: ${vendorId}`);
+        return sendError(c, `Vendor not found: ${vendorId}`, 404);
       }
 
-      // ✅ NEW: Read from vendor_services system (primary source)
+      const vendorUuid = vendor.id;
+      console.log(`✅ [VENDOR-SERVICES] Resolved vendor ID: ${vendorId} -> ${vendorUuid}`);
+
+      // ✅ SQL: Read from vendor_services table (primary source)
       const serviceStyles = ['at_home', 'at_center', 'tele'];
       const servicesByStyle: any = {};
       let allEnabledServices: any[] = [];
       
       for (const style of serviceStyles) {
-        const vendorServicesKey = `vendor_services:${vendorId}:${style}`;
-        const vendorServicesData = await kv.get(vendorServicesKey);
+        const { data: vendorServicesData, error } = await supabase
+          .from('vendor_services')
+          .select('*')
+          .eq('vendor_id', vendorUuid)
+          .eq('service_style', style)
+          .eq('is_enabled', true)
+          .in('publish_status', ['published', 'auto_published']);
         
-        if (vendorServicesData && vendorServicesData.services) {
-          // Filter for enabled services
-          const enabledServices = vendorServicesData.services.filter(
-            (s: any) => s.isEnabled === true
-          );
+        if (error) {
+          console.error(`Error fetching vendor services for style ${style}:`, error);
+          servicesByStyle[style] = { services: [], count: 0 };
+          continue;
+        }
+        
+        const enabledServices = (vendorServicesData || []).map((s: any) => ({
+          id: s.id,
+          serviceId: s.service_id,
+          serviceName: s.service_name,
+          name: s.service_name,
+          category: s.category,
+          subCategory: s.sub_category,
+          price: parseFloat(s.price || s.custom_price || '0'),
+          duration: s.duration_minutes || s.custom_duration || 30,
+          serviceStyle: s.service_style,
+          publishStatus: s.publish_status,
+          isEnabled: s.is_enabled,
+          isCustomService: s.is_custom_service,
+          metadata: s.metadata
+        }));
           
           servicesByStyle[style] = {
             services: enabledServices,
@@ -41,28 +76,31 @@ export function registerVendorServiceEndpoints(app: Hono) {
           };
           
           allEnabledServices.push(...enabledServices);
-        } else {
-          servicesByStyle[style] = {
-            services: [],
-            count: 0
-          };
-        }
       }
       
-      console.log(`📋 Found ${allEnabledServices.length} enabled services from vendor_services system`);
+      console.log(`📋 Found ${allEnabledServices.length} enabled services from SQL vendor_services table`);
 
-      // ✅ LEGACY SUPPORT: Also check old system for backward compatibility
+      // ✅ SQL: Also get services from services table (legacy support)
       let legacyServices: any[] = [];
-      let serviceIds = await kv.get(`vendor:${vendorId}:services`) || [];
+      const { data: legacyServicesData } = await supabase
+        .from('services')
+        .select('*')
+        .eq('vendor_id', vendorUuid)
+        .eq('is_active', true);
       
-      if (serviceIds.length > 0) {
-        console.log(`🔍 Found ${serviceIds.length} services in legacy system`);
-        for (const id of serviceIds) {
-          const service = await kv.get(`service:${id}`);
-          if (service && service.isActive !== false) {
-            legacyServices.push(service);
-          }
-        }
+      if (legacyServicesData && legacyServicesData.length > 0) {
+        console.log(`🔍 Found ${legacyServicesData.length} services in services table`);
+        legacyServices = legacyServicesData.map((s: any) => ({
+          id: s.id,
+          serviceId: s.id,
+          serviceName: s.name,
+          name: s.name,
+          description: s.description,
+          category: s.category,
+          price: parseFloat(s.price || '0'),
+          duration: s.duration_minutes || 30,
+          isActive: s.is_active
+        }));
       }
 
       return sendSuccess(c, {
@@ -88,20 +126,43 @@ export function registerVendorServiceEndpoints(app: Hono) {
     try {
       const { vendorId, serviceStyle } = c.req.param();
       
-      // Get vendor services
-      const serviceIds = await kv.get(`vendor:${vendorId}:services`) || [];
+      // ✅ FIX: Use standardized vendor ID resolver
+      const { resolveVendorIdToUuid } = await import('../../lib/utils/vendor-id-resolver.ts');
+      const vendorUuid = await resolveVendorIdToUuid(vendorId);
       
-      const services = [];
-      for (const id of serviceIds) {
-        const service = await kv.get(`service:${id}`);
-        // Filter by active status AND style
-        // We check both 'type' and 'serviceStyle' properties to be safe
-        if (service && service.isActive !== false) {
-          if (service.type === serviceStyle || service.serviceStyle === serviceStyle) {
-            services.push(service);
-          }
-        }
+      if (!vendorUuid) {
+        console.error(`❌ [VENDOR-SERVICES] Vendor not found: ${vendorId}`);
+        return sendError(c, `Vendor not found: ${vendorId}`, 404);
       }
+      
+      console.log(`✅ [VENDOR-SERVICES] Resolved vendor ID: ${vendorId} -> ${vendorUuid}`);
+
+      const { data: vendorServicesData, error } = await supabase
+        .from('vendor_services')
+        .select('*')
+        .eq('vendor_id', vendorUuid)
+        .eq('service_style', serviceStyle)
+        .eq('is_enabled', true)
+        .in('publish_status', ['published', 'auto_published']);
+      
+      if (error) {
+        console.error(`Error fetching services for style ${serviceStyle}:`, error);
+        return sendError(c, error, 500);
+      }
+
+      const services = (vendorServicesData || []).map((s: any) => ({
+        id: s.id,
+        serviceId: s.service_id,
+        serviceName: s.service_name,
+        name: s.service_name,
+        category: s.category,
+        subCategory: s.sub_category,
+        price: parseFloat(s.price || s.custom_price || '0'),
+        duration: s.duration_minutes || s.custom_duration || 30,
+        serviceStyle: s.service_style,
+        publishStatus: s.publish_status,
+        isEnabled: s.is_enabled
+      }));
 
       return sendSuccess(c, {
         services,
@@ -143,90 +204,191 @@ export function registerVendorServiceEndpoints(app: Hono) {
   /**
    * POST /make-server-3dd53475/vendor/services/add
    * Add a new service to vendor catalog
+   * ✅ MIGRATED TO SQL: Uses vendor_services table
+   * ✅ FIXED: Accepts both wrapped {vendorId, serviceData} and flat object formats
    */
   app.post("/make-server-3dd53475/vendor/services/add", async (c) => {
     try {
-      const { vendorId, serviceData } = await c.req.json();
+      const body = await c.req.json();
       
-      if (!vendorId || !serviceData) {
-        return sendError(c, 'Missing required fields', 400);
+      // ✅ FIX: Support both formats - wrapped {vendorId, serviceData} and flat object
+      let vendorId: string;
+      let serviceData: any;
+      
+      if (body.vendorId && body.serviceData) {
+        // Wrapped format: {vendorId, serviceData}
+        vendorId = body.vendorId;
+        serviceData = body.serviceData;
+      } else if (body.vendorId && (body.catalogId || body.serviceName || body.categoryId)) {
+        // Flat format: all fields at root level
+        vendorId = body.vendorId;
+        serviceData = {
+          catalogId: body.catalogId,
+          categoryId: body.categoryId,
+          categoryName: body.categoryName,
+          category: body.categoryName || body.category,
+          subCategoryId: body.subCategoryId,
+          subCategoryName: body.subCategoryName,
+          subCategory: body.subCategoryName || body.subCategory,
+          serviceGroupId: body.serviceGroupId,
+          serviceGroupName: body.serviceGroupName,
+          serviceName: body.serviceName,
+          name: body.serviceName || body.name,
+          serviceStyle: body.serviceStyle,
+          type: body.serviceStyle,
+          basePrice: body.basePrice,
+          price: body.basePrice || body.price,
+          customPrice: body.basePrice || body.price,
+          isPackage: body.isPackage,
+          packageDetails: body.packageDetails,
+          description: body.description,
+          customDescription: body.description,
+          duration: body.duration,
+          durationMinutes: body.duration,
+          isActive: body.isActive,
+          isEnabled: body.isActive !== false,
+          publishStatus: body.publishStatus || 'published',
+          isCustomService: body.isCustomService !== false,
+          serviceId: body.catalogId,
+          id: body.catalogId,
+          metadata: body.metadata || {}
+        };
+      } else {
+        return sendError(c, 'Missing required fields: vendorId and service data', 400);
       }
-
-      const serviceId = `svc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       
-      const newService = {
-        id: serviceId,
-        vendorId,
-        ...serviceData,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        isActive: true
-      };
+      if (!vendorId) {
+        return sendError(c, 'Missing required field: vendorId', 400);
+      }
       
       console.log(`\n💾 [SERVICE-PERSISTENCE] Creating service...`);
-      console.log(`   Service ID: ${serviceId}`);
       console.log(`   Vendor ID: ${vendorId}`);
       console.log(`   Service Type: ${serviceData.type || serviceData.serviceStyle}`);
       
-      // Save service object
-      await kv.set(`service:${serviceId}`, newService);
-      console.log(`   ✅ Service object saved to KV: service:${serviceId}`);
+      // ✅ SQL: Get vendor UUID
+      const vendorRecord = await supabase
+        .from('vendors')
+        .select('id, vendor_id')
+        .eq('vendor_id', vendorId)
+        .single();
       
-      // Add to vendor's service list
-      const serviceIds = await kv.get(`vendor:${vendorId}:services`) || [];
-      console.log(`   📋 Current service count for vendor: ${serviceIds.length}`);
-      
-      if (!serviceIds.includes(serviceId)) {
-        serviceIds.push(serviceId);
-        await kv.set(`vendor:${vendorId}:services`, serviceIds);
-        console.log(`   ✅ Service ID added to vendor's service list`);
-      } else {
-        console.log(`   ⚠️  Service ID already in vendor's list (duplicate)`);
-      }
-      
-      // ✅ PERSISTENCE VERIFICATION
-      const verifyService = await kv.get(`service:${serviceId}`);
-      const verifyList = await kv.get(`vendor:${vendorId}:services`);
-      
-      if (verifyService && verifyList && verifyList.includes(serviceId)) {
-        console.log(`   ✅ PERSISTENCE VERIFIED: Service successfully persisted`);
-      } else {
-        console.error(`   ❌ PERSISTENCE FAILED: Service not found after save`);
-        console.error(`      - Service object exists: ${!!verifyService}`);
-        console.error(`      - Service in vendor list: ${verifyList?.includes(serviceId)}`);
+      if (!vendorRecord?.data) {
+        return sendError(c, 'Vendor not found', 404);
       }
 
-      // ✅ INTEGRATION: Auto-sync to staff for solo providers
+      const vendorUuid = vendorRecord.data.id;
+      const serviceStyle = serviceData.serviceStyle || serviceData.type || 'at_center';
+      const serviceCatalogId = serviceData.serviceId || serviceData.id || `svc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
+      // ✅ SQL: Insert into vendor_services table
+      const { data: vendorService, error: insertError } = await supabase
+        .from('vendor_services')
+        .insert({
+          vendor_id: vendorUuid,
+          service_id: serviceCatalogId,
+          service_name: serviceData.serviceName || serviceData.name || 'Custom Service',
+          category: serviceData.category || null,
+          sub_category: serviceData.subCategory || serviceData.subCategoryName || null,
+          price: parseFloat(serviceData.price || serviceData.customPrice || '0'),
+          duration_minutes: parseInt(serviceData.duration || serviceData.durationMinutes || '30'),
+          service_style: serviceStyle,
+          publish_status: serviceData.publishStatus || 'published',
+          is_enabled: serviceData.isEnabled !== false,
+          is_custom_service: serviceData.isCustomService || true,
+          custom_price: serviceData.customPrice ? parseFloat(serviceData.customPrice) : null,
+          custom_duration: serviceData.customDuration ? parseInt(serviceData.customDuration) : null,
+          custom_description: serviceData.description || serviceData.customDescription || null,
+          metadata: serviceData.metadata || {}
+        })
+        .select()
+        .single();
+      
+      if (insertError) {
+        console.error('❌ Error inserting vendor service:', insertError);
+        return sendError(c, `Failed to create service: ${insertError.message}`, 500);
+      }
+
+      console.log(`   ✅ Service created in SQL: ${vendorService.id}`);
+
+      // ✅ SQL: Auto-sync to staff for solo providers
       let autoSynced = false;
-      const vendor = await kv.get(`vendor:${vendorId}`);
-      if (vendor?.isSoloProvider) {
+      const { data: vendorData } = await supabase
+        .from('vendors')
+        .select('id, metadata')
+        .eq('id', vendorUuid)
+        .single();
+      
+      const isSoloProvider = vendorData?.metadata?.isSoloProvider || false;
+      
+      if (isSoloProvider) {
         console.log(`   🔄 Solo provider detected - auto-syncing to staff...`);
-        const staffRecords = await kv.get(`vendor:${vendorId}:staff`);
+        
+        // Get staff for this vendor
+        const { data: staffRecords } = await supabase
+          .from('staff')
+          .select('id')
+          .eq('vendor_id', vendorUuid)
+          .eq('is_active', true)
+          .limit(1);
+        
         if (staffRecords && staffRecords.length > 0) {
-          const staffId = staffRecords[0];
-          const staff = await kv.get(`staff:${staffId}`);
-          if (staff) {
-            // Get all updated services
-            const allServiceIds = await kv.get(`vendor:${vendorId}:services`) || [];
-            const allServices = [];
-            for (const sId of allServiceIds) {
-              const svc = await kv.get(`service:${sId}`);
-              if (svc && svc.isActive !== false) {
-                allServices.push(svc);
-              }
+          const staffId = staffRecords[0].id;
+          
+          // Get all vendor services for this staff
+          const { data: allVendorServices } = await supabase
+            .from('vendor_services')
+            .select('*')
+            .eq('vendor_id', vendorUuid)
+            .eq('is_enabled', true);
+          
+          // Sync to staff_services table
+          if (allVendorServices && allVendorServices.length > 0) {
+            const staffServicesToInsert = allVendorServices.map((vs: any) => ({
+              staff_id: staffId,
+              vendor_id: vendorUuid,
+              service_id: vs.service_id,
+              service_name: vs.service_name,
+              category: vs.category,
+              sub_category: vs.sub_category,
+              price: vs.price,
+              duration_minutes: vs.duration_minutes,
+              service_style: vs.service_style,
+              is_active: true,
+              metadata: vs.metadata
+            }));
+            
+            // Upsert staff services (insert or update)
+            for (const ss of staffServicesToInsert) {
+              await supabase
+                .from('staff_services')
+                .upsert(ss, { onConflict: 'staff_id,service_id' });
             }
             
-            staff.services = allServices;
-            staff.updatedAt = new Date().toISOString();
-            await kv.set(`staff:${staffId}`, staff);
             autoSynced = true;
-            console.log(`   ✅ Auto-synced ${allServices.length} services to staff: ${staffId}`);
+            console.log(`   ✅ Auto-synced ${staffServicesToInsert.length} services to staff: ${staffId}`);
           }
         }
       }
 
+      const responseService = {
+        id: vendorService.id,
+        serviceId: vendorService.service_id,
+        serviceName: vendorService.service_name,
+        name: vendorService.service_name,
+        category: vendorService.category,
+        subCategory: vendorService.sub_category,
+        price: parseFloat(vendorService.price || '0'),
+        duration: vendorService.duration_minutes || 30,
+        serviceStyle: vendorService.service_style,
+        publishStatus: vendorService.publish_status,
+        isEnabled: vendorService.is_enabled,
+        isCustomService: vendorService.is_custom_service,
+        createdAt: vendorService.created_at,
+        updatedAt: vendorService.updated_at
+      };
+
       return sendSuccess(c, { 
-        service: newService, 
+        service: responseService, 
         autoSynced,
         message: autoSynced ? 'Service added and synced to your staff profile!' : 'Service added successfully'
       });
@@ -239,55 +401,136 @@ export function registerVendorServiceEndpoints(app: Hono) {
   /**
    * PUT /make-server-3dd53475/vendor/services/:serviceId
    * Update a service
+   * ✅ MIGRATED TO SQL: Uses vendor_services table
    */
   app.put("/make-server-3dd53475/vendor/services/:serviceId", async (c) => {
     try {
       const { serviceId } = c.req.param();
       const updates = await c.req.json();
       
-      const service = await kv.get(`service:${serviceId}`);
-      if (!service) {
+      // ✅ SQL: Get existing service
+      const { data: existingService, error: fetchError } = await supabase
+        .from('vendor_services')
+        .select('*, vendors!inner(id, vendor_id, metadata)')
+        .eq('id', serviceId)
+        .single();
+      
+      if (fetchError || !existingService) {
         return sendError(c, 'Service not found', 404);
       }
 
-      const updatedService = {
-        ...service,
-        ...updates,
-        updatedAt: new Date().toISOString()
+      const vendorUuid = existingService.vendor_id;
+      
+      // ✅ SQL: Prepare update data
+      const updateData: any = {
+        updated_at: new Date().toISOString()
       };
       
-      await kv.set(`service:${serviceId}`, updatedService);
+      if (updates.serviceName || updates.name) {
+        updateData.service_name = updates.serviceName || updates.name;
+      }
+      if (updates.category !== undefined) updateData.category = updates.category;
+      if (updates.subCategory !== undefined || updates.subCategoryName !== undefined) {
+        updateData.sub_category = updates.subCategory || updates.subCategoryName;
+      }
+      if (updates.price !== undefined || updates.customPrice !== undefined) {
+        updateData.price = parseFloat(updates.price || updates.customPrice || '0');
+      }
+      if (updates.duration !== undefined || updates.durationMinutes !== undefined) {
+        updateData.duration_minutes = parseInt(updates.duration || updates.durationMinutes || '30');
+      }
+      if (updates.serviceStyle !== undefined || updates.type !== undefined) {
+        updateData.service_style = updates.serviceStyle || updates.type;
+      }
+      if (updates.publishStatus !== undefined) updateData.publish_status = updates.publishStatus;
+      if (updates.isEnabled !== undefined) updateData.is_enabled = updates.isEnabled;
+      if (updates.customPrice !== undefined) updateData.custom_price = parseFloat(updates.customPrice);
+      if (updates.customDuration !== undefined) updateData.custom_duration = parseInt(updates.customDuration);
+      if (updates.description !== undefined || updates.customDescription !== undefined) {
+        updateData.custom_description = updates.description || updates.customDescription;
+      }
+      if (updates.metadata !== undefined) updateData.metadata = updates.metadata;
       
-      // ✅ INTEGRATION: Auto-sync to staff for solo providers
+      // ✅ SQL: Update service
+      const { data: updatedService, error: updateError } = await supabase
+        .from('vendor_services')
+        .update(updateData)
+        .eq('id', serviceId)
+        .select()
+        .single();
+      
+      if (updateError) {
+        console.error('Error updating service:', updateError);
+        return sendError(c, `Failed to update service: ${updateError.message}`, 500);
+      }
+      
+      // ✅ SQL: Auto-sync to staff for solo providers
       let autoSynced = false;
-      const vendor = await kv.get(`vendor:${service.vendorId}`);
-      if (vendor?.isSoloProvider) {
-        const staffRecords = await kv.get(`vendor:${service.vendorId}:staff`);
+      const vendorMetadata = existingService.vendors?.metadata || {};
+      const isSoloProvider = vendorMetadata.isSoloProvider || false;
+      
+      if (isSoloProvider) {
+        // Get staff for this vendor
+        const { data: staffRecords } = await supabase
+          .from('staff')
+          .select('id')
+          .eq('vendor_id', vendorUuid)
+          .eq('is_active', true)
+          .limit(1);
+        
         if (staffRecords && staffRecords.length > 0) {
-          const staffId = staffRecords[0];
-          const staff = await kv.get(`staff:${staffId}`);
-          if (staff) {
-            // Get all updated services
-            const allServiceIds = await kv.get(`vendor:${service.vendorId}:services`) || [];
-            const allServices = [];
-            for (const sId of allServiceIds) {
-              const svc = await kv.get(`service:${sId}`);
-              if (svc && svc.isActive !== false) {
-                allServices.push(svc);
-              }
+          const staffId = staffRecords[0].id;
+          
+          // Get all vendor services
+          const { data: allVendorServices } = await supabase
+            .from('vendor_services')
+            .select('*')
+            .eq('vendor_id', vendorUuid)
+            .eq('is_enabled', true);
+          
+          // Sync to staff_services
+          if (allVendorServices && allVendorServices.length > 0) {
+            for (const vs of allVendorServices) {
+              await supabase
+                .from('staff_services')
+                .upsert({
+                  staff_id: staffId,
+                  vendor_id: vendorUuid,
+                  service_id: vs.service_id,
+                  service_name: vs.service_name,
+                  category: vs.category,
+                  sub_category: vs.sub_category,
+                  price: vs.price,
+                  duration_minutes: vs.duration_minutes,
+                  service_style: vs.service_style,
+                  is_active: true,
+                  metadata: vs.metadata
+                }, { onConflict: 'staff_id,service_id' });
             }
             
-            staff.services = allServices;
-            staff.updatedAt = new Date().toISOString();
-            await kv.set(`staff:${staffId}`, staff);
             autoSynced = true;
             console.log(`   ✅ Auto-synced updated services to staff: ${staffId}`);
           }
         }
       }
       
+      const responseService = {
+        id: updatedService.id,
+        serviceId: updatedService.service_id,
+        serviceName: updatedService.service_name,
+        name: updatedService.service_name,
+        category: updatedService.category,
+        subCategory: updatedService.sub_category,
+        price: parseFloat(updatedService.price || '0'),
+        duration: updatedService.duration_minutes || 30,
+        serviceStyle: updatedService.service_style,
+        publishStatus: updatedService.publish_status,
+        isEnabled: updatedService.is_enabled,
+        updatedAt: updatedService.updated_at
+      };
+      
       return sendSuccess(c, { 
-        service: updatedService, 
+        service: responseService, 
         autoSynced 
       }, autoSynced ? 'Service updated and synced!' : 'Service updated successfully');
     } catch (error) {
@@ -317,45 +560,111 @@ export function registerVendorServiceEndpoints(app: Hono) {
       console.log(`   Force: ${force}`);
       console.log(`   Cancel Bookings: ${cancelBookings}`);
 
-      // First, check if it's safe to delete
-      const safetyCheck = await checkSafeDelete('service', serviceId, vendorId);
+      // ✅ SQL: Get vendor UUID
+      const vendorRecord = await supabase
+        .from('vendors')
+        .select('id')
+        .eq('vendor_id', vendorId)
+        .single();
       
-      console.log(`   Safety Check Result:`);
-      console.log(`   - Can Delete: ${safetyCheck.canDelete}`);
-      console.log(`   - Blockers: ${safetyCheck.blockers.join(', ') || 'None'}`);
-      console.log(`   - Warnings: ${safetyCheck.warnings.join(', ') || 'None'}`);
+      if (!vendorRecord?.data) {
+        return sendError(c, 'Vendor not found', 404);
+      }
 
-      // If not safe and force not specified, return error
-      if (!safetyCheck.canDelete && !force) {
+      const vendorUuid = vendorRecord.data.id;
+
+      // ✅ SQL: Check if service exists
+      const { data: existingService, error: fetchError } = await supabase
+        .from('vendor_services')
+        .select('*')
+        .eq('id', serviceId)
+        .eq('vendor_id', vendorUuid)
+        .single();
+      
+      if (fetchError || !existingService) {
+        return sendError(c, 'Service not found', 404);
+      }
+
+      // ✅ SQL: Check for active bookings
+      const bookingsRepo = getBookingsRepository();
+      const pendingBookings = await bookingsRepo.findByVendor(vendorUuid, { status: 'pending' });
+      const confirmedBookings = await bookingsRepo.findByVendor(vendorUuid, { status: 'confirmed' });
+      const activeBookings = [...pendingBookings, ...confirmedBookings];
+      
+      const serviceBookings = activeBookings.filter((b: any) => 
+        b.service_id === existingService.service_id
+      );
+
+      console.log(`   Active bookings found: ${serviceBookings.length}`);
+
+      if (serviceBookings.length > 0 && !force && !cancelBookings) {
         return sendError(c, {
-          message: 'Cannot delete service',
-          blockers: safetyCheck.blockers,
-          warnings: safetyCheck.warnings,
+          message: 'Cannot delete service with active bookings',
+          activeBookings: serviceBookings.length,
           suggestion: 'Use force=true to delete anyway, or cancelBookings=true to cancel active bookings'
         }, 400);
       }
 
-      // Perform cascade delete
-      const result = await cascadeDeleteVendorService(vendorId, serviceId, {
-        force,
-        cancelBookings
-      });
+      const deleted: string[] = [];
+      const cancelled: string[] = [];
+      const errors: string[] = [];
 
-      if (!result.success) {
+      // ✅ SQL: Cancel bookings if requested
+      if (cancelBookings && serviceBookings.length > 0) {
+        console.log(`   🔄 Cancelling ${serviceBookings.length} active bookings...`);
+        
+        for (const booking of serviceBookings) {
+          try {
+            await bookingsRepo.update(booking.id, {
+              status: 'cancelled',
+              cancellation_reason: 'Service discontinued by vendor'
+            });
+            cancelled.push(booking.id);
+          } catch (error: any) {
+            errors.push(`Failed to cancel booking ${booking.id}: ${error.message}`);
+          }
+        }
+      }
+
+      // ✅ SQL: Delete from staff_services (cascade)
+      const { error: staffServicesError } = await supabase
+        .from('staff_services')
+        .delete()
+        .eq('service_id', existingService.service_id)
+        .eq('vendor_id', vendorUuid);
+      
+      if (staffServicesError) {
+        console.error('Error deleting staff services:', staffServicesError);
+        errors.push(`Failed to delete staff services: ${staffServicesError.message}`);
+      } else {
+        deleted.push('staff_services');
+      }
+
+      // ✅ SQL: Delete vendor service
+      const { error: deleteError } = await supabase
+        .from('vendor_services')
+        .delete()
+        .eq('id', serviceId)
+        .eq('vendor_id', vendorUuid);
+      
+      if (deleteError) {
+        console.error('Error deleting vendor service:', deleteError);
         return sendError(c, {
           message: 'Service deletion failed',
-          errors: result.errors
+          error: deleteError.message,
+          errors
         }, 500);
       }
 
+      deleted.push(serviceId);
       console.log(`✅ [SERVICE-DELETE] Service deleted successfully`);
 
       return sendSuccess(c, {
-        deleted: result.deleted,
-        cancelled: result.cancelled,
+        deleted,
+        cancelled,
         summary: {
-          recordsDeleted: result.deleted.length,
-          bookingsCancelled: result.cancelled.length
+          recordsDeleted: deleted.length,
+          bookingsCancelled: cancelled.length
         }
       }, 'Service deleted successfully with cascade cleanup');
 
@@ -374,12 +683,42 @@ export function registerVendorServiceEndpoints(app: Hono) {
     try {
       const { category, subCategory, roleId } = c.req.query();
       
-      // 1. Get Categories (Correct Key: catalog:categories)
-      const categories = await kv.get('catalog:categories') || [];
+      // ✅ SQL: Get Categories from service_categories table
+      const { data: categoriesData } = await supabase
+        .from('service_categories')
+        .select('*')
+        .order('display_order');
       
-      // 2. Get Services (Correct Key: platform:service_catalog)
-      // In V2, services are stored flat, not nested in categories
-      const allMasterServices = await kv.get('platform:service_catalog') || [];
+      const categories = (categoriesData || []).map((cat: any) => ({
+        id: cat.id,
+        name: cat.name,
+        description: cat.description,
+        parentCategoryId: cat.parent_category_id,
+        displayOrder: cat.display_order
+      }));
+      
+      // ✅ SQL: Get Services from services table (master catalog)
+      // For now, we'll use services table. If platform:service_catalog is needed,
+      // we should create a service_catalog table
+      const { data: allMasterServicesData } = await supabase
+        .from('services')
+        .select('*')
+        .is('vendor_id', null) // Master catalog services have no vendor_id
+        .eq('is_active', true);
+      
+      const allMasterServices = (allMasterServicesData || []).map((s: any) => ({
+        id: s.id,
+        serviceId: s.id,
+        serviceName: s.name,
+        name: s.name,
+        description: s.description,
+        category: s.category,
+        categoryId: s.category,
+        price: parseFloat(s.price || '0'),
+        duration: s.duration_minutes || 30,
+        status: 'active',
+        isActive: s.is_active
+      }));
       
       // 3. Filter and Enrich
       let filteredServices = allMasterServices.filter((svc: any) => {

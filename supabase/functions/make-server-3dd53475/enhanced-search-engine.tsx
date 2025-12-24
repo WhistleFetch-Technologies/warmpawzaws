@@ -1,6 +1,7 @@
 import { Hono } from "npm:hono";
 import { sendSuccess, sendError } from "./response-utils.ts";
-import * as kv from "./kv_store.tsx";
+import { getDbClient } from "../../lib/db.ts";
+import { getSearchHistoryRepository } from "../../lib/repositories/search-history.ts";
 
 /**
  * 🔍 ENHANCED SEARCH ENGINE WITH RELEVANCE SCORING
@@ -202,8 +203,10 @@ function calculateRelevanceScore(
   return { score, matchedFields, distance };
 }
 
-export function enhancedSearchEngineEndpoints(app: Hono, kvStore: any) {
+export function enhancedSearchEngineEndpoints(app: Hono) {
   const BASE_PATH = "/make-server-3dd53475";
+  const client = getDbClient();
+  const searchHistoryRepo = getSearchHistoryRepository();
 
   // ========================================
   // ENHANCED SEARCH
@@ -240,22 +243,38 @@ export function enhancedSearchEngineEndpoints(app: Hono, kvStore: any) {
         offset
       };
 
-      // Get all search indexes
+      // ✅ SQL: Get all search indexes from database
       const allIndexes: any[] = [];
       
-      if (type === 'all' || type === 'staff') {
-        const staffIndexes = await kvStore.getByPrefix('search_index_staff_') || [];
-        allIndexes.push(...staffIndexes);
-      }
+      const indexTypes: string[] = [];
+      if (type === 'all' || type === 'staff') indexTypes.push('staff');
+      if (type === 'all' || type === 'center') indexTypes.push('center');
+      if (type === 'all' || type === 'service') indexTypes.push('service');
       
-      if (type === 'all' || type === 'center') {
-        const centerIndexes = await kvStore.getByPrefix('search_index_center_') || [];
-        allIndexes.push(...centerIndexes);
-      }
-      
-      if (type === 'all' || type === 'service') {
-        const serviceIndexes = await kvStore.getByPrefix('search_index_service_') || [];
-        allIndexes.push(...serviceIndexes);
+      if (indexTypes.length > 0) {
+        const { data: indexes, error } = await client
+          .from('search_index')
+          .select('*')
+          .in('entity_type', indexTypes)
+          .eq('is_active', true);
+        
+        if (error) {
+          console.error('❌ Error fetching search indexes:', error);
+        } else {
+          // Transform SQL rows to index format
+          const transformedIndexes = (indexes || []).map((idx: any) => ({
+            id: idx.entity_id,
+            type: idx.entity_type,
+            data: idx.entity_data || {},
+            searchableText: idx.searchable_text || '',
+            tags: idx.tags || [],
+            rating: idx.rating || 0,
+            totalReviews: idx.total_reviews || 0,
+            experience: idx.experience || 0,
+            price: idx.price || 0
+          }));
+          allIndexes.push(...transformedIndexes);
+        }
       }
 
       console.log(`   Found ${allIndexes.length} items in search index`);
@@ -312,19 +331,17 @@ export function enhancedSearchEngineEndpoints(app: Hono, kvStore: any) {
 
       console.log(`✅ Found ${results.length} results, returning ${paginatedResults.length}`);
 
-      // Track search analytics
+      // ✅ SQL: Track search analytics in search_history table
       const customerId = c.req.query('customerId');
       if (customerId) {
         try {
-          const searchLog = {
-            customerId,
-            query,
-            type,
-            resultsCount: results.length,
-            timestamp: new Date().toISOString(),
+          await searchHistoryRepo.create({
+            customer_id: customerId,
+            query: query,
+            search_type: type,
+            results_count: results.length,
             filters: { city, specialization, minRating }
-          };
-          await kvStore.set(`search_log:${customerId}:${Date.now()}`, searchLog);
+          });
         } catch (err) {
           console.error('Error logging search:', err);
         }
@@ -359,12 +376,26 @@ export function enhancedSearchEngineEndpoints(app: Hono, kvStore: any) {
 
       console.log(`💡 [AUTOCOMPLETE] Query: "${query}"`);
 
-      // Get all search indexes
-      const allIndexes = [
-        ...(await kvStore.getByPrefix('search_index_staff_') || []),
-        ...(await kvStore.getByPrefix('search_index_center_') || []),
-        ...(await kvStore.getByPrefix('search_index_service_') || [])
-      ];
+      // ✅ SQL: Get all search indexes from database
+      const { data: indexes, error } = await client
+        .from('search_index')
+        .select('*')
+        .in('entity_type', ['staff', 'center', 'service'])
+        .eq('is_active', true);
+      
+      if (error) {
+        console.error('❌ Error fetching search indexes:', error);
+        return sendSuccess(c, { suggestions: [] });
+      }
+      
+      // Transform SQL rows to index format
+      const allIndexes = (indexes || []).map((idx: any) => ({
+        id: idx.entity_id,
+        type: idx.entity_type,
+        data: idx.entity_data || {},
+        tags: idx.tags || [],
+        searchableText: idx.searchable_text || ''
+      }));
 
       const suggestionSet = new Set<string>();
       const scoredSuggestions: Array<{ text: string; score: number }> = [];
@@ -426,20 +457,31 @@ export function enhancedSearchEngineEndpoints(app: Hono, kvStore: any) {
 
       console.log(`📊 [FACETS] Query: "${query}", Type: ${type}`);
 
-      // Get relevant indexes
-      const allIndexes: any[] = [];
+      // ✅ SQL: Get relevant indexes from database
+      const indexTypes: string[] = [];
+      if (type === 'all' || type === 'staff') indexTypes.push('staff');
+      if (type === 'all' || type === 'center') indexTypes.push('center');
+      if (type === 'all' || type === 'service') indexTypes.push('service');
       
-      if (type === 'all' || type === 'staff') {
-        allIndexes.push(...(await kvStore.getByPrefix('search_index_staff_') || []));
+      const { data: indexes, error } = await client
+        .from('search_index')
+        .select('*')
+        .in('entity_type', indexTypes.length > 0 ? indexTypes : ['staff', 'center', 'service'])
+        .eq('is_active', true);
+      
+      if (error) {
+        console.error('❌ Error fetching search indexes:', error);
+        return sendError(c, 'Failed to fetch search facets', 500);
       }
       
-      if (type === 'all' || type === 'center') {
-        allIndexes.push(...(await kvStore.getByPrefix('search_index_center_') || []));
-      }
-      
-      if (type === 'all' || type === 'service') {
-        allIndexes.push(...(await kvStore.getByPrefix('search_index_service_') || []));
-      }
+      // Transform SQL rows to index format
+      const allIndexes = (indexes || []).map((idx: any) => ({
+        id: idx.entity_id,
+        type: idx.entity_type,
+        data: idx.entity_data || {},
+        rating: idx.rating || 0,
+        price: idx.price || 0
+      }));
 
       // Extract facets
       const cities = new Set<string>();

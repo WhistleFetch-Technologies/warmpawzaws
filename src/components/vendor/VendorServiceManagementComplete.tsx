@@ -17,6 +17,34 @@ interface VendorServiceManagementCompleteProps {
 
 type ServiceStyle = 'at_home' | 'at_center' | 'tele';
 
+// ✅ FIX: Helper function to determine serviceStyle from vendorData
+function determineServiceStyle(vendorData: any): 'at_center' | 'both' {
+  // Check service_styles array (from database)
+  if (vendorData?.service_styles && Array.isArray(vendorData.service_styles)) {
+    if (vendorData.service_styles.includes('at_center') && vendorData.service_styles.includes('at_home')) {
+      return 'both';
+    } else if (vendorData.service_styles.includes('at_center')) {
+      return 'at_center';
+    }
+  }
+  
+  // Check serviceStyle field
+  if (vendorData?.serviceStyle === 'both' || vendorData?.serviceStyle === 'at_center') {
+    return vendorData.serviceStyle;
+  }
+  
+  // Check vendor_type or roleId to infer
+  if (vendorData?.vendor_type === 'center' || 
+      vendorData?.roleId?.includes('clinic') || 
+      vendorData?.roleId?.includes('salon') ||
+      vendorData?.roleId?.includes('resort')) {
+    return 'at_center';
+  }
+  
+  // Default to at_center for custom services (only center-based vendors can create custom services)
+  return 'at_center';
+}
+
 export function VendorServiceManagementComplete({ 
   vendorId, 
   vendorData, 
@@ -118,7 +146,7 @@ export function VendorServiceManagementComplete({
       <VendorCustomServiceCreation
         vendorId={vendorId}
         vendorData={vendorData}
-        serviceStyle={vendorData?.serviceStyle}
+        serviceStyle={determineServiceStyle(vendorData)}
         onClose={() => setShowCustomServices(false)}
         onServiceCreated={() => {
           toast.success('Custom service created!');

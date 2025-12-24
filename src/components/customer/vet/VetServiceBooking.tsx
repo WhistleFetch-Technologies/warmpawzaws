@@ -224,7 +224,7 @@ export function VetServiceBooking({ phone, serviceType, vendorId, onBack, onNavi
       
       // Create booking
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/bookings/create`,
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/bookings/create`,
         {
           method: 'POST',
           headers: {
