@@ -5,6 +5,7 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { handleVendorError, isVendorNotFound } from './utils/vendor-error-handler';
 import { useVendorNotificationService } from './useVendorNotificationService';
 import { StaffManagement } from './StaffManagement';
 import { VendorBusinessHub } from './business/VendorBusinessHub'; // ✅ NEW
@@ -320,11 +321,20 @@ export function VendorLandingPage({
           setStatus('new');
         }
       } else {
-        // No profile found
+        // No profile found - use standardized error handler
+        const errorData = await profileResponse.json().catch(() => ({}));
+        const error = { status: profileResponse.status, ...errorData };
+        
+        handleVendorError(error, vendorId);
+        
+        if (isVendorNotFound(error)) {
+          console.warn(`⚠️ Vendor not found: ${vendorId}. Showing new vendor form.`);
+        }
         setStatus('new');
       }
-    } catch (error) {
-      console.error('Error checking vendor status:', error);
+    } catch (error: any) {
+      console.error('❌ Error checking vendor status:', error);
+      handleVendorError(error, vendorId);
       setStatus('new');
     } finally {
       setLoading(false);

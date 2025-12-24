@@ -3,6 +3,7 @@ import { ArrowLeft, Plus, X, Package } from 'lucide-react';
 import { Button } from '../ui/button';
 import { toast } from 'sonner@2.0.3';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { handleVendorError, isVendorNotFound } from './utils/vendor-error-handler';
 import { VendorServiceConfigurationScreen } from './VendorServiceConfigurationScreen';
 import { VendorCustomServiceCreation } from './VendorCustomServiceCreation';
 import { PackageManagementContainer } from './packages/PackageManagementContainer';
@@ -89,10 +90,20 @@ export function VendorServiceManagementComplete({
           setAllowedServiceStyles([]);
         }
       } else {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
         console.error('❌ [ROLE-CONFIG] API request failed:', response.status, errorData);
-        toast.error(errorData.error || 'Failed to load role configuration');
-        setAllowedServiceStyles([]);
+        
+        // ✅ FIX: Use standardized error handler
+        const error = { status: response.status, ...errorData };
+        handleVendorError(error, vendorId);
+        
+        // If vendor not found, still allow service management with default styles
+        if (isVendorNotFound(error)) {
+          console.warn(`⚠️ [ROLE-CONFIG] Vendor not found: ${vendorId}, using default styles`);
+          setAllowedServiceStyles(['at_center', 'at_home', 'tele']);
+        } else {
+          setAllowedServiceStyles([]);
+        }
       }
     } catch (error) {
       console.error('❌ [ROLE-CONFIG] Exception during role config load:', error);
