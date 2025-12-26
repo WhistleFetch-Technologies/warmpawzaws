@@ -124,11 +124,11 @@ export function EnhancedVendorOnboarding({
         isSoloProvider: false // ✅ Explicitly mark as multi-staff
       };
 
-      console.log('📤 Submitting to /vendor/apply');
+      console.log('📤 Submitting to /vendor/applications');
       console.log('📤 Specializations:', applicationPayload.specializations);
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/apply`,
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/applications`,
         {
           method: 'POST',
           headers: {

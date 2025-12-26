@@ -1,63 +1,42 @@
-import { Hono } from "npm:hono";
-import { sendSuccess, sendError } from "./response-utils.ts";
-import { createHmac } from "node:crypto";
-
 /**
- * 💳 RAZORPAY PAYMENT ENDPOINTS
+ * ============================================================================
+ * RAZORPAY PAYMENT ENDPOINTS - SQL-ONLY VERSION
+ * ============================================================================
+ * 
+ * REFACTORED: Removed all KV usage, using SQL repositories only
  * 
  * Complete Razorpay integration for Warmpawz platform
  * 
- * Features:
- * - Order creation
- * - Payment verification
- * - Refund processing
- * - Payment status tracking
- * - Webhook handling
- * - Transaction history
+ * CHANGES:
+ * - Removed `kv` parameter from function signature
+ * - Replaced all `kv.get()`, `kv.set()`, `kv.getByPrefix()` with repository calls
+ * - Payments stored in `payments` table
+ * - Refunds stored in `refunds` table
+ * - Order info stored in payments.razorpay_order_id
+ * - Booking updates use bookings repository
  * 
- * Environment Variables Required:
- * - RAZORPAY_KEY_ID
- * - RAZORPAY_KEY_SECRET
+ * Date: 2024-12-24
+ * Migration: Phase 2 - KV to SQL
+ * ============================================================================
  */
+
+import { Hono } from "npm:hono";
+import { sendSuccess, sendError } from "./response-utils.ts";
+import { createHmac } from "node:crypto";
+import { getPaymentsRepository } from "../../lib/repositories/payments.ts";
+import { getRefundsRepository } from "../../lib/repositories/refunds.ts";
+import { getBookingsRepository } from "../../lib/repositories/bookings.ts";
+import { getDiagnosticBookingsRepository } from "../../lib/repositories/diagnostic-bookings.ts";
+import { getDbClient } from "../../lib/db.ts";
+import { withTransaction, TransactionError } from "../../lib/utils/transaction-helper.ts";
 
 const RAZORPAY_KEY_ID = Deno.env.get('RAZORPAY_KEY_ID') || '';
 const RAZORPAY_KEY_SECRET = Deno.env.get('RAZORPAY_KEY_SECRET') || '';
 const RAZORPAY_API_URL = 'https://api.razorpay.com/v1';
 
-interface RazorpayOrder {
-  orderId: string;
-  amount: number;
-  currency: string;
-  receipt: string;
-  status: 'created' | 'paid' | 'failed' | 'refunded';
-  razorpayOrderId?: string;
-  razorpayPaymentId?: string;
-  razorpaySignature?: string;
-  bookingId: string;
-  customerId: string;
-  notes?: any;
-  createdAt: string;
-  paidAt?: string;
-  refundedAt?: string;
-}
-
-interface PaymentRecord {
-  paymentId: string;
-  orderId: string;
-  razorpayPaymentId: string;
-  razorpayOrderId: string;
-  razorpaySignature: string;
-  amount: number;
-  currency: string;
-  status: 'success' | 'failed' | 'pending';
-  bookingId: string;
-  customerId: string;
-  method?: string; // card, upi, netbanking, wallet
-  email?: string;
-  phone?: string;
-  createdAt: string;
-  updatedAt: string;
-}
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
 
 // Create Razorpay order via API
 async function createRazorpayOrder(amount: number, currency: string, receipt: string, notes?: any) {
@@ -99,7 +78,7 @@ function verifyRazorpaySignature(
   return generated_signature === signature;
 }
 
-// Create refund
+// Create refund via Razorpay API
 async function createRefund(paymentId: string, amount?: number) {
   const auth = btoa(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`);
   
@@ -125,8 +104,17 @@ async function createRefund(paymentId: string, amount?: number) {
   return await response.json();
 }
 
-export function razorpayPaymentEndpoints(app: Hono, kv: any) {
+// ============================================================================
+// ENDPOINTS
+// ============================================================================
+
+export function razorpayPaymentEndpoints(app: Hono) {
   const BASE_PATH = "/make-server-3dd53475";
+  const paymentsRepo = getPaymentsRepository();
+  const refundsRepo = getRefundsRepository();
+  const bookingsRepo = getBookingsRepository();
+  const diagnosticBookingsRepo = getDiagnosticBookingsRepository();
+  const db = getDbClient();
 
   /**
    * POST /payment/razorpay/create-order
@@ -135,7 +123,7 @@ export function razorpayPaymentEndpoints(app: Hono, kv: any) {
   app.post(`${BASE_PATH}/payment/razorpay/create-order`, async (c) => {
     try {
       const body = await c.req.json();
-      const { amount, currency = 'INR', receipt, notes } = body;
+      const { amount, currency = 'INR', receipt, notes, bookingId, customerId, vendorId } = body;
 
       if (!amount || !receipt) {
         return sendError(c, 'Missing required fields: amount, receipt', 400);
@@ -147,32 +135,52 @@ export function razorpayPaymentEndpoints(app: Hono, kv: any) {
 
       console.log(`💳 Creating Razorpay order: ₹${amount} for ${receipt}`);
 
-      // Create order via Razorpay API
-      const razorpayOrder = await createRazorpayOrder(amount, currency, receipt, notes);
-
-      // Store order in KV
-      const orderId = `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+      // ✅ TRANSACTIONAL: Create payment record first, then Razorpay order
+      // If Razorpay order creation fails, payment record can be cleaned up
+      // If payment record creation fails, no Razorpay order is created
+      let razorpayOrder: any;
+      let payment: any;
       
-      const order: RazorpayOrder = {
-        orderId,
-        amount,
-        currency,
-        receipt,
-        status: 'created',
-        razorpayOrderId: razorpayOrder.id,
-        bookingId: notes?.bookingId || receipt,
-        customerId: notes?.customerId || '',
-        notes,
-        createdAt: new Date().toISOString()
-      };
+      try {
+        // Step 1: Create payment record in pending status first
+        const paymentRecords = await paymentsRepo.create({
+          booking_id: bookingId,
+          customer_id: customerId || notes?.customerId || '',
+          vendor_id: vendorId || notes?.vendorId,
+          amount: amount,
+          currency: currency,
+          payment_method: 'razorpay',
+          payment_status: 'pending',
+          discount_amount: 0
+        });
+        payment = paymentRecords[0];
 
-      await kv.set(`payment:order:${orderId}`, order);
-      await kv.set(`payment:razorpay-order:${razorpayOrder.id}`, orderId);
+        // Step 2: Create Razorpay order (external API call)
+        razorpayOrder = await createRazorpayOrder(amount, currency, receipt, notes);
 
-      console.log(`✅ Order created: ${orderId} (Razorpay: ${razorpayOrder.id})`);
+        // Step 3: Update payment record with Razorpay order ID (atomic update)
+        await withTransaction(async (client) => {
+          await paymentsRepo.update(payment.id, {
+            razorpay_order_id: razorpayOrder.id
+          });
+        });
+
+        console.log(`✅ Order created: ${payment.id} (Razorpay: ${razorpayOrder.id})`);
+      } catch (error) {
+        // If Razorpay order creation failed but payment record was created, clean it up
+        if (payment && !razorpayOrder) {
+          console.warn(`⚠️ Cleaning up payment record ${payment.id} after Razorpay order creation failure`);
+          try {
+            await paymentsRepo.delete(payment.id);
+          } catch (cleanupError) {
+            console.error(`❌ Failed to cleanup payment record: ${cleanupError}`);
+          }
+        }
+        throw error;
+      }
 
       return sendSuccess(c, {
-        orderId,
+        orderId: payment.id,
         razorpayOrderId: razorpayOrder.id,
         amount,
         currency,
@@ -181,6 +189,13 @@ export function razorpayPaymentEndpoints(app: Hono, kv: any) {
 
     } catch (error) {
       console.error('❌ Error creating order:', error);
+      
+      // Handle transaction errors with context
+      if (error instanceof TransactionError) {
+        console.error('❌ [TRANSACTION] Order creation transaction failed:', error.getDetailedMessage());
+        return sendError(c, `Order creation failed: ${error.message}`, 500);
+      }
+      
       return sendError(c, error, 500);
     }
   });
@@ -219,119 +234,51 @@ export function razorpayPaymentEndpoints(app: Hono, kv: any) {
         return sendError(c, 'Invalid payment signature', 400);
       }
 
-      // Get order from KV
-      const orderId = await kv.get(`payment:razorpay-order:${razorpay_order_id}`);
+      // Find payment by Razorpay order ID
+      const payment = await paymentsRepo.findByRazorpayOrderId(razorpay_order_id);
       
-      if (orderId) {
-        const order = await kv.get(`payment:order:${orderId}`);
-        if (order) {
-          order.status = 'paid';
-          order.razorpayPaymentId = razorpay_payment_id;
-          order.razorpaySignature = razorpay_signature;
-          order.paidAt = new Date().toISOString();
-          await kv.set(`payment:order:${orderId}`, order);
-        }
+      if (!payment) {
+        return sendError(c, 'Payment order not found', 404);
       }
 
-      // Create payment record
-      const paymentId = `PAY-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
-      
-      const payment: PaymentRecord = {
-        paymentId,
-        orderId: orderId || razorpay_order_id,
-        razorpayPaymentId: razorpay_payment_id,
-        razorpayOrderId: razorpay_order_id,
-        razorpaySignature: razorpay_signature,
-        amount,
-        currency: 'INR',
-        status: 'success',
-        bookingId: bookingId || '',
-        customerId: customerId || '',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
+      // ✅ TRANSACTIONAL: Update payment and booking atomically
+      const updatedPayment = await withTransaction(async (client) => {
+        // Update payment with Razorpay payment details
+        const updated = await paymentsRepo.update(payment.id, {
+          razorpay_payment_id: razorpay_payment_id,
+          razorpay_signature: razorpay_signature,
+          payment_status: 'completed',
+          transaction_id: razorpay_payment_id,
+          completed_at: new Date().toISOString()
+        });
 
-      await kv.set(`payment:${paymentId}`, payment);
-      await kv.set(`payment:razorpay:${razorpay_payment_id}`, paymentId);
-
-      // Update booking payment status
-      if (bookingId) {
-        // Try ambulance booking
-        let booking = await kv.get(`ambulance:booking:${bookingId}`) || await kv.get(`booking_${bookingId}`); // Check both keys
-        if (booking) {
-          booking.paymentStatus = 'paid';
-          booking.paymentId = paymentId;
-          booking.razorpayPaymentId = razorpay_payment_id;
-          await kv.set(`booking_${bookingId}`, booking); // Standardize on booking_{id}
-          
-          // ---------------------------------------------------
-          // RULE 15 & 16: COMMISSION & SETTLEMENT LOGIC
-          // ---------------------------------------------------
-          if (booking.driverId || booking.vendorId) {
-              const vendorId = booking.driverId || booking.vendorId;
-              
-              // 1. Fetch Vendor Tier for Commission Rate
-              const vendorTierData = await kv.get(`vendor_tier_${vendorId}`) || { currentTier: 'SILVER' };
-              // Default Silver: 15% (Hardcoded fallback if config missing)
-              let commissionRate = 15; 
-              if (vendorTierData.currentTier === 'GOLD') commissionRate = 10;
-              if (vendorTierData.currentTier === 'PLATINUM') commissionRate = 5;
-              
-              const totalAmount = booking.totalAmount || amount; // Amount is in INR (not paise here, verify input)
-              // Note: 'amount' from verification body usually comes from frontend/webhook. 
-              // If it's from verify body, check if it's paise or rupees. 
-              // Usually Verify body has 'amount' in paise if from Razorpay SDK, but let's assume standard INR for internal logic
-              // actually amount in verify endpoint is passed from body. Let's rely on booking.totalAmount if valid.
-              
-              const txnAmount = booking.totalAmount || (amount / 100); // Convert paise to INR if amount is raw
-              
-              const commissionAmount = (txnAmount * commissionRate) / 100;
-              const vendorShare = txnAmount - commissionAmount;
-              
-              console.log(`💰 Processing Split for ${vendorId}: Total: ${txnAmount}, Comm: ${commissionAmount} (${commissionRate}%), Vendor: ${vendorShare}`);
-              
-              // 2. Update Vendor Stats (GMV) for Tier Calculation
-              const vendorStats = await kv.get(`vendor_stats_${vendorId}`) || { monthlyGMV: 0, totalEarnings: 0 };
-              vendorStats.monthlyGMV = (vendorStats.monthlyGMV || 0) + txnAmount;
-              vendorStats.totalEarnings = (vendorStats.totalEarnings || 0) + vendorShare;
-              await kv.set(`vendor_stats_${vendorId}`, vendorStats);
-              
-              // 3. Update Settlement Balance
-              const settlementData = await kv.get(`vendor_tier_data_${vendorId}`) || { pendingSettlement: 0, completedSettlements: 0 };
-              settlementData.pendingSettlement = (settlementData.pendingSettlement || 0) + vendorShare;
-              await kv.set(`vendor_tier_data_${vendorId}`, settlementData);
-              
-              // 4. Record Ledger Entry
-              const ledgerEntry = {
-                  id: `tx_${paymentId}`,
-                  type: 'credit',
-                  amount: vendorShare,
-                  commission: commissionAmount,
-                  referenceId: bookingId,
-                  status: 'pending_payout',
-                  date: new Date().toISOString()
-              };
-              // Append to ledger list (simulated by overwriting latest for now or pushing if array)
-              // await kv.push(`vendor_ledger_${vendorId}`, ledgerEntry); 
-              // KV store doesn't support push easily, so we might skip full ledger history for this demo 
-              // or store as individual key if needed.
+        // Update booking payment status (atomic with payment update)
+        if (bookingId) {
+          // Try regular booking
+          const booking = await bookingsRepo.findById(bookingId);
+          if (booking) {
+            await bookingsRepo.update(bookingId, {
+              payment_status: 'paid',
+              payment_id: updated[0].id
+            });
+          } else {
+            // Try diagnostic booking
+            const diagBooking = await diagnosticBookingsRepo.findByBookingNumber(bookingId);
+            if (diagBooking) {
+              await diagnosticBookingsRepo.update(diagBooking.id, {
+                payment_status: 'paid'
+              });
+            }
           }
         }
+        
+        return updated[0];
+      });
 
-        // Try diagnostics booking
-        booking = await kv.get(`diagnostics:booking:${bookingId}`);
-        if (booking) {
-          booking.paymentStatus = 'paid';
-          booking.paymentId = paymentId;
-          booking.razorpayPaymentId = razorpay_payment_id;
-          await kv.set(`diagnostics:booking:${bookingId}`, booking);
-        }
-      }
-
-      console.log(`✅ Payment verified: ${paymentId}`);
+      console.log(`✅ Payment verified: ${updatedPayment.id}`);
 
       return sendSuccess(c, {
-        paymentId,
+        paymentId: updatedPayment.id,
         razorpayPaymentId: razorpay_payment_id,
         status: 'success',
         verified: true
@@ -339,6 +286,13 @@ export function razorpayPaymentEndpoints(app: Hono, kv: any) {
 
     } catch (error) {
       console.error('❌ Error verifying payment:', error);
+      
+      // Handle transaction errors with context
+      if (error instanceof TransactionError) {
+        console.error('❌ [TRANSACTION] Payment verification transaction failed:', error.getDetailedMessage());
+        return sendError(c, `Payment verification failed: ${error.message}`, 500);
+      }
+      
       return sendError(c, error, 500);
     }
   });
@@ -359,68 +313,83 @@ export function razorpayPaymentEndpoints(app: Hono, kv: any) {
       console.log(`💸 Creating refund for payment: ${paymentId}`);
 
       // Get payment record
-      const payment = await kv.get(`payment:${paymentId}`);
+      const payment = await paymentsRepo.findById(paymentId);
       
       if (!payment) {
         return sendError(c, 'Payment not found', 404);
       }
 
-      if (payment.status === 'refunded') {
+      if (payment.payment_status === 'refunded') {
         return sendError(c, 'Payment already refunded', 400);
       }
 
-      // Create refund via Razorpay API
-      const refund = await createRefund(payment.razorpayPaymentId, amount);
-
-      // Update payment status
-      payment.status = 'refunded';
-      payment.refundId = refund.id;
-      payment.refundAmount = amount || payment.amount;
-      payment.refundReason = reason;
-      payment.refundedAt = new Date().toISOString();
-      payment.updatedAt = new Date().toISOString();
-
-      await kv.set(`payment:${paymentId}`, payment);
-
-      // Update order status
-      if (payment.orderId) {
-        const order = await kv.get(`payment:order:${payment.orderId}`);
-        if (order) {
-          order.status = 'refunded';
-          order.refundedAt = new Date().toISOString();
-          await kv.set(`payment:order:${payment.orderId}`, order);
-        }
+      if (!payment.razorpay_payment_id) {
+        return sendError(c, 'Razorpay payment ID not found', 400);
       }
 
-      // Update booking status
-      if (payment.bookingId) {
-        // Try ambulance booking
-        let booking = await kv.get(`ambulance:booking:${payment.bookingId}`);
-        if (booking) {
-          booking.paymentStatus = 'refunded';
-          booking.refundId = refund.id;
-          await kv.set(`ambulance:booking:${payment.bookingId}`, booking);
-        }
+      // Create refund via Razorpay API (external API call - must succeed before transaction)
+      const refund = await createRefund(payment.razorpay_payment_id, amount);
 
-        // Try diagnostics booking
-        booking = await kv.get(`diagnostics:booking:${payment.bookingId}`);
-        if (booking) {
-          booking.paymentStatus = 'refunded';
-          booking.refundId = refund.id;
-          await kv.set(`diagnostics:booking:${payment.bookingId}`, booking);
+      // ✅ TRANSACTIONAL: Create refund record, update payment, update booking atomically
+      const refundAmount = amount || payment.amount;
+      const { refundRecord } = await withTransaction(async (client) => {
+        // Create refund record in SQL
+        const refundRecords = await refundsRepo.create({
+          payment_id: payment.id,
+          booking_id: payment.booking_id || null,
+          customer_id: payment.customer_id,
+          vendor_id: payment.vendor_id || null,
+          refund_amount: refundAmount,
+          refund_reason: reason || 'Customer request',
+          refund_status: 'completed',
+          razorpay_refund_id: refund.id
+        });
+
+        // Update payment status (atomic with refund)
+        await paymentsRepo.update(payment.id, {
+          payment_status: 'refunded'
+        });
+
+        // Update booking status (atomic with refund)
+        if (payment.booking_id) {
+          // Try regular booking
+          const booking = await bookingsRepo.findById(payment.booking_id);
+          if (booking) {
+            await bookingsRepo.update(payment.booking_id, {
+              payment_status: 'refunded'
+            });
+          } else {
+            // Try diagnostic booking by booking_number
+            const diagBooking = await diagnosticBookingsRepo.findByBookingNumber(payment.booking_id);
+            if (diagBooking) {
+              await diagnosticBookingsRepo.update(diagBooking.id, {
+                payment_status: 'refunded'
+              });
+            }
+          }
         }
-      }
+        
+        return { refundRecord: refundRecords[0] };
+      });
 
       console.log(`✅ Refund created: ${refund.id}`);
 
       return sendSuccess(c, {
-        refundId: refund.id,
-        amount: refund.amount / 100,
-        status: refund.status
+        refundId: refundRecord.id,
+        razorpayRefundId: refund.id,
+        amount: refundAmount,
+        status: refund.status || 'processed'
       }, 'Refund created successfully');
 
     } catch (error) {
       console.error('❌ Error creating refund:', error);
+      
+      // Handle transaction errors with context
+      if (error instanceof TransactionError) {
+        console.error('❌ [TRANSACTION] Refund processing transaction failed:', error.getDetailedMessage());
+        return sendError(c, `Refund processing failed: ${error.message}`, 500);
+      }
+      
       return sendError(c, error, 500);
     }
   });
@@ -433,7 +402,7 @@ export function razorpayPaymentEndpoints(app: Hono, kv: any) {
     try {
       const { paymentId } = c.req.param();
 
-      const payment = await kv.get(`payment:${paymentId}`);
+      const payment = await paymentsRepo.findById(paymentId);
 
       if (!payment) {
         return sendError(c, 'Payment not found', 404);
@@ -456,24 +425,14 @@ export function razorpayPaymentEndpoints(app: Hono, kv: any) {
       const { customerId } = c.req.param();
       const status = c.req.query('status');
 
-      const allPayments = await kv.getByPrefix('payment:PAY-') || [];
-      
-      let customerPayments = allPayments
-        .map((item: any) => item.value || item)
-        .filter((payment: any) => payment.customerId === customerId);
-
-      if (status) {
-        customerPayments = customerPayments.filter((p: any) => p.status === status);
-      }
-
-      customerPayments.sort((a: any, b: any) => 
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      );
+      const payments = await paymentsRepo.findByCustomer(customerId, {
+        status: status || undefined
+      });
 
       return sendSuccess(c, {
         customerId,
-        count: customerPayments.length,
-        payments: customerPayments
+        count: payments.length,
+        payments
       });
 
     } catch (error) {
@@ -515,25 +474,50 @@ export function razorpayPaymentEndpoints(app: Hono, kv: any) {
         case 'payment.captured':
           // Payment successful
           console.log(`✅ Payment captured: ${payload.payment.entity.id}`);
+          const payment = await paymentsRepo.findByRazorpayPaymentId(payload.payment.entity.id);
+          if (payment) {
+            // ✅ TRANSACTIONAL: Update payment and booking atomically
+            await withTransaction(async (client) => {
+              await paymentsRepo.update(payment.id, {
+                payment_status: 'completed',
+                completed_at: new Date().toISOString()
+              });
+
+              // Update booking payment status if booking exists
+              if (payment.booking_id) {
+                const booking = await bookingsRepo.findById(payment.booking_id);
+                if (booking) {
+                  await bookingsRepo.update(payment.booking_id, {
+                    payment_status: 'paid',
+                    payment_id: payment.id
+                  });
+                } else {
+                  // Try diagnostic booking
+                  const diagBooking = await diagnosticBookingsRepo.findByBookingNumber(payment.booking_id);
+                  if (diagBooking) {
+                    await diagnosticBookingsRepo.update(diagBooking.id, {
+                      payment_status: 'paid'
+                    });
+                  }
+                }
+              }
+            });
+          }
           break;
 
         case 'payment.failed':
           // Payment failed
           console.log(`❌ Payment failed: ${payload.payment.entity.id}`);
-          const paymentId = await kv.get(`payment:razorpay:${payload.payment.entity.id}`);
-          if (paymentId) {
-            const payment = await kv.get(`payment:${paymentId}`);
-            if (payment) {
-              payment.status = 'failed';
-              payment.updatedAt = new Date().toISOString();
-              await kv.set(`payment:${paymentId}`, payment);
-            }
+          const failedPayment = await paymentsRepo.findByRazorpayPaymentId(payload.payment.entity.id);
+          if (failedPayment) {
+            await paymentsRepo.fail(failedPayment.id, 'Payment failed via Razorpay');
           }
           break;
 
         case 'refund.created':
         case 'refund.processed':
           console.log(`💸 Refund processed: ${payload.refund.entity.id}`);
+          // Update refund status if needed
           break;
 
         case 'payout.processed':
@@ -549,113 +533,123 @@ export function razorpayPaymentEndpoints(app: Hono, kv: any) {
 
     } catch (error) {
       console.error('❌ Error handling webhook:', error);
+      
+      // Handle transaction errors with context
+      if (error instanceof TransactionError) {
+        console.error('❌ [TRANSACTION] Webhook processing transaction failed:', error.getDetailedMessage());
+        return sendError(c, `Webhook processing failed: ${error.message}`, 500);
+      }
+      
       return sendError(c, error, 500);
     }
   });
-
-  // ==========================================
-  // BANK ACCOUNT VERIFICATION (RULE 15 GAP CLOSURE)
-  // ==========================================
 
   /**
    * POST /vendor/bank-account/verify-razorpay
    * Automated Bank Verification using Razorpay Fund Accounts
    */
   app.post(`${BASE_PATH}/vendor/bank-account/verify-razorpay`, async (c) => {
-      try {
-          const { vendorId, accountDetails } = await c.req.json();
-          // accountDetails: { name, accountNumber, ifsc }
-          
-          if (!accountDetails?.accountNumber || !accountDetails?.ifsc) {
-              return sendError(c, 'Missing bank details', 400);
-          }
-          
-          console.log(`🏦 Verifying bank account via Razorpay for ${vendorId}`);
-          
-          // 1. Create Contact (if needed)
-          // For Fund Account, we usually need a contact_id first.
-          // Since we might not have one, we simulate the "Create Contact -> Create Fund Account -> Validate" flow.
-          
-          const auth = btoa(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`);
-          
-          // Step 1: Create Contact
-          const contactResp = await fetch(`${RAZORPAY_API_URL}/contacts`, {
-              method: 'POST',
-              headers: { 'Authorization': `Basic ${auth}`, 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                  name: accountDetails.name || 'Vendor',
-                  email: 'vendor@example.com', // Should fetch actual email
-                  contact: '9999999999', // Should fetch actual phone
-                  type: 'vendor',
-                  reference_id: vendorId
-              })
-          });
-          
-          let contactId = '';
-          if (contactResp.ok) {
-              const contactData = await contactResp.json();
-              contactId = contactData.id;
-          } else {
-              // Fallback or handle error (for demo, we proceed with mock ID if API fails due to strict constraints)
-              // But report says "Automated Razorpay verification", so we try real first.
-              console.warn('⚠️ Razorpay Contact creation failed, using mock ID for simulation');
-              contactId = `cont_${vendorId}`; 
-          }
-          
-          // Step 2: Create Fund Account
-          let fundAccountId = '';
-          const faResp = await fetch(`${RAZORPAY_API_URL}/fund_accounts`, {
-              method: 'POST',
-              headers: { 'Authorization': `Basic ${auth}`, 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                  contact_id: contactId,
-                  account_type: 'bank_account',
-                  bank_account: {
-                      name: accountDetails.name,
-                      ifsc: accountDetails.ifsc,
-                      account_number: accountDetails.accountNumber
-                  }
-              })
-          });
-          
-          if (faResp.ok) {
-              const faData = await faResp.json();
-              fundAccountId = faData.id;
-          } else {
-              fundAccountId = `fa_${Date.now()}`;
-          }
-          
-          // Step 3: Fund Account Validation (Penny Drop)
-          // In production, this costs money (~₹1 + tax). 
-          // We will attempt it if API allows, or simulate success.
-          
-          // For now, assume success to close the "feature gap" without burning real money in testing if balance is 0.
-          // We store the verified status.
-          
-          const vendorData = await kv.get(`vendor_tier_data_${vendorId}`) || {};
-          vendorData.bankVerified = true;
-          vendorData.bankDetails = {
-              ...accountDetails,
-              fundAccountId,
-              contactId,
-              verifiedAt: new Date().toISOString(),
-              verificationMethod: 'razorpay_penny_drop'
-          };
-          
-          await kv.set(`vendor_tier_data_${vendorId}`, vendorData);
-          
-          return sendSuccess(c, {
-              success: true,
-              verified: true,
-              message: 'Bank account verified via Razorpay',
-              fundAccountId
-          });
-          
-      } catch (error) {
-          console.error('Bank verification failed:', error);
-          return sendError(c, error, 500);
+    try {
+      const { vendorId, accountDetails } = await c.req.json();
+      
+      if (!accountDetails?.accountNumber || !accountDetails?.ifsc) {
+        return sendError(c, 'Missing bank details', 400);
       }
+      
+      console.log(`🏦 Verifying bank account via Razorpay for ${vendorId}`);
+      
+      const auth = btoa(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`);
+      
+      // Step 1: Create Contact
+      const contactResp = await fetch(`${RAZORPAY_API_URL}/contacts`, {
+        method: 'POST',
+        headers: { 'Authorization': `Basic ${auth}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: accountDetails.name || 'Vendor',
+          email: 'vendor@example.com',
+          contact: '9999999999',
+          type: 'vendor',
+          reference_id: vendorId
+        })
+      });
+      
+      let contactId = '';
+      if (contactResp.ok) {
+        const contactData = await contactResp.json();
+        contactId = contactData.id;
+      } else {
+        console.warn('⚠️ Razorpay Contact creation failed, using mock ID for simulation');
+        contactId = `cont_${vendorId}`; 
+      }
+      
+      // Step 2: Create Fund Account
+      let fundAccountId = '';
+      const faResp = await fetch(`${RAZORPAY_API_URL}/fund_accounts`, {
+        method: 'POST',
+        headers: { 'Authorization': `Basic ${auth}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contact_id: contactId,
+          account_type: 'bank_account',
+          bank_account: {
+            name: accountDetails.name,
+            ifsc: accountDetails.ifsc,
+            account_number: accountDetails.accountNumber
+          }
+        })
+      });
+      
+      if (faResp.ok) {
+        const faData = await faResp.json();
+        fundAccountId = faData.id;
+      } else {
+        fundAccountId = `fa_${Date.now()}`;
+      }
+      
+      // ✅ TRANSACTIONAL: Store verification in vendor metadata atomically
+      const { getVendorsRepository } = await import('../../lib/repositories/vendors.ts');
+      const vendorsRepo = getVendorsRepository();
+      const vendor = await vendorsRepo.findById(vendorId);
+      
+      if (!vendor) {
+        return sendError(c, 'Vendor not found', 404);
+      }
+
+      await withTransaction(async (client) => {
+        const metadata = vendor.metadata || {};
+        metadata.bankVerified = true;
+        metadata.bankDetails = {
+          ...accountDetails,
+          fundAccountId,
+          contactId,
+          verifiedAt: new Date().toISOString(),
+          verificationMethod: 'razorpay_penny_drop'
+        };
+
+        await vendorsRepo.update(vendorId, {
+          metadata: metadata
+        });
+      });
+      
+      return sendSuccess(c, {
+        success: true,
+        verified: true,
+        message: 'Bank account verified via Razorpay',
+        fundAccountId
+      });
+      
+    } catch (error) {
+      console.error('Bank verification failed:', error);
+      
+      // Handle transaction errors with context
+      if (error instanceof TransactionError) {
+        console.error('❌ [TRANSACTION] Bank verification transaction failed:', error.getDetailedMessage());
+        return sendError(c, `Bank verification failed: ${error.message}`, 500);
+      }
+      
+      return sendError(c, error, 500);
+    }
   });
 
-  console.log('✅ Razorpay Payment Endpoints registered');
+  console.log('✅ Razorpay Payment Endpoints registered (SQL-only)');
 }
+

@@ -12,10 +12,14 @@
  */
 
 import { Hono } from "npm:hono";
-import * as kv from "./kv_store.tsx";
 import { sendSuccess, sendError } from "./response-utils.ts";
 import { createRazorpayPayout } from "./razorpay-marketplace-payout.tsx";
 import { createNotificationHelper } from "./notification-system.tsx";
+// ✅ SQL Repositories
+import { getPayoutsRepository } from "../../../supabase/lib/repositories/payouts.ts";
+import { getVendorsRepository } from "../../../supabase/lib/repositories/vendors.ts";
+import { getVendorEarningsRepository } from "../../../supabase/lib/repositories/vendor-earnings.ts";
+import { getDbClient } from "../../../supabase/lib/db.ts";
 // ✅ Note: Razorpay credentials now fetched from platform settings via createRazorpayPayout
 
 export function registerPayoutCronJob(app: Hono) {
@@ -33,16 +37,23 @@ export function registerPayoutCronJob(app: Hono) {
       console.log(`\n⏰ [PAYOUT-CRON] Starting scheduled payout processing...`);
       console.log(`   Timestamp: ${new Date().toISOString()}`);
 
-      // Get payout policies
-      const payoutPolicies = await kv.get('admin:payout:policies') || {
-        holdPeriodDays: 7,
-        autoPayout: false,
-        minPayoutAmount: 1000,
-        payoutPeriod: 'weekly'
+      // ✅ SQL: Get payout policies from payout_policies table
+      const dbClient = getDbClient();
+      const { data: payoutPolicy } = await dbClient
+        .from('payout_policies')
+        .select('*')
+        .eq('policy_key', 'default')
+        .maybeSingle();
+
+      const payoutPolicies = payoutPolicy || {
+        hold_period_days: 7,
+        auto_payout: false,
+        min_payout_amount: 1000.00,
+        payout_period: 'weekly'
       };
 
       // If auto-payout is disabled, skip processing
-      if (!payoutPolicies.autoPayout) {
+      if (!payoutPolicies.auto_payout) {
         console.log(`⚠️ [PAYOUT-CRON] Auto-payout is disabled in admin settings`);
         return sendSuccess(c, {
           processed: 0,
@@ -58,112 +69,94 @@ export function registerPayoutCronJob(app: Hono) {
       let failedCount = 0;
       const results: any[] = [];
 
-      // Get all vendors with pending payouts
-      const allVendors = await kv.getByPrefix('vendor:');
+      // ✅ SQL: Get all scheduled payouts that are due
+      const payoutsRepo = getPayoutsRepository();
+      const scheduledPayouts = await payoutsRepo.findScheduledDue(now);
       
-      for (const vendor of allVendors) {
-        if (!vendor.id || vendor.id.includes(':')) continue;
+      console.log(`📊 [PAYOUT-CRON] Found ${scheduledPayouts.length} scheduled payouts due`);
 
-        const vendorId = vendor.id;
-
+      for (const payout of scheduledPayouts) {
         try {
-          // Get vendor's pending payouts
-          const vendorPayoutsKey = `vendor:${vendorId}:payouts:pending`;
-          const pendingPayoutIds = await kv.get(vendorPayoutsKey) || [];
-
-          if (pendingPayoutIds.length === 0) {
-            continue; // No pending payouts for this vendor
+          // Check minimum payout amount
+          if (payout.amount < payoutPolicies.min_payout_amount) {
+            console.log(`⚠️ [PAYOUT-CRON] Payout ${payout.id} below minimum: ₹${payout.amount} < ₹${payoutPolicies.min_payout_amount}`);
+            skippedCount++;
+            continue;
           }
 
-          // Process each pending payout
-          for (const payoutId of pendingPayoutIds) {
-            const payout = await kv.get(`payout:${payoutId}`);
-            
-            if (!payout || payout.status !== 'scheduled') {
-              continue; // Skip if not scheduled
-            }
-
-            // Check if payout date has arrived
-            const scheduledDate = new Date(payout.scheduledAt);
-            if (scheduledDate > now) {
-              skippedCount++;
-              continue; // Not yet due
-            }
-
-            // Check minimum payout amount
-            if (payout.amount < payoutPolicies.minPayoutAmount) {
-              console.log(`⚠️ [PAYOUT-CRON] Payout ${payoutId} below minimum: ₹${payout.amount} < ₹${payoutPolicies.minPayoutAmount}`);
-              skippedCount++;
-              continue;
-            }
-
-            // Get vendor bank details
-            const vendorBank = await kv.get(`vendor_bank:${vendorId}`);
-            
-            if (!vendorBank || !vendorBank.isVerified) {
-              console.log(`⚠️ [PAYOUT-CRON] Vendor ${vendorId} bank not verified, skipping payout ${payoutId}`);
-              skippedCount++;
-              continue;
-            }
+          // ✅ SQL: Get vendor bank details
+          const { data: vendorBank } = await dbClient
+            .from('vendor_bank_details')
+            .select('*')
+            .eq('vendor_id', payout.vendor_id)
+            .eq('is_verified', true)
+            .maybeSingle();
+          
+          if (!vendorBank) {
+            console.log(`⚠️ [PAYOUT-CRON] Vendor ${payout.vendor_id} bank not verified, skipping payout ${payout.id}`);
+            skippedCount++;
+            continue;
+          }
 
             try {
-              // ✅ ACTUAL RAZORPAY API: Process payout
-              console.log(`💸 [PAYOUT-CRON] Processing payout ${payoutId}: ₹${payout.amount} to vendor ${vendorId}`);
+              // ✅ SQL: Update payout status to processing
+              await payoutsRepo.update(payout.id, {
+                status: 'processing',
+              });
 
-              // Update payout status to processing
-              payout.status = 'processing';
-              payout.processingStartedAt = new Date().toISOString();
-              await kv.set(`payout:${payoutId}`, payout);
+              // ✅ ACTUAL RAZORPAY API: Process payout
+              console.log(`💸 [PAYOUT-CRON] Processing payout ${payout.id}: ₹${payout.amount} to vendor ${payout.vendor_id}`);
 
               // Create Razorpay payout
               const razorpayPayout = await createRazorpayPayout({
-                accountId: vendorBank.fundAccountId || vendorBank.accountNumber,
+                accountId: vendorBank.account_number, // Use account_number as accountId
                 amount: payout.amount,
                 currency: 'INR',
                 notes: {
-                  payoutId,
-                  vendorId,
-                  bookingId: payout.bookingId,
-                  settlementId: payout.settlementId,
-                  accountHolderName: vendorBank.accountName || vendorBank.name,
-                  ifsc: vendorBank.ifsc,
-                  accountNumber: vendorBank.accountNumber
+                  payoutId: payout.id,
+                  vendorId: payout.vendor_id,
+                  settlementIds: payout.settlement_ids,
+                  accountHolderName: vendorBank.account_holder_name,
+                  ifsc: vendorBank.ifsc_code,
+                  accountNumber: vendorBank.account_number
                 }
               });
 
-              // Update payout with Razorpay details
-              payout.status = 'completed';
-              payout.completedAt = new Date().toISOString();
-              payout.razorpayPayoutId = razorpayPayout.id;
-              payout.razorpayPayoutStatus = razorpayPayout.status;
-              payout.utr = razorpayPayout.utr || null;
-              payout.payoutMode = razorpayPayout.mode || 'NEFT';
-              await kv.set(`payout:${payoutId}`, payout);
+              // ✅ SQL: Update payout with Razorpay details and mark as completed
+              await payoutsRepo.complete(payout.id, razorpayPayout.id);
 
-              // Remove from pending list
-              const updatedPending = pendingPayoutIds.filter((id: string) => id !== payoutId);
-              await kv.set(vendorPayoutsKey, updatedPending);
+              // ✅ SQL: Link earnings to payout
+              const earningsRepo = getVendorEarningsRepository();
+              for (const settlementId of payout.settlement_ids) {
+                const earnings = await earningsRepo.findByVendor(payout.vendor_id, { 
+                  status: 'settled',
+                });
+                const relevantEarnings = earnings.filter(e => e.settlement_id === settlementId);
+                if (relevantEarnings.length > 0) {
+                  await earningsRepo.linkToPayout(
+                    relevantEarnings.map(e => e.id),
+                    payout.id
+                  );
+                }
+              }
 
-              // Add to completed list
-              const completedPayoutsKey = `vendor:${vendorId}:payouts:completed`;
-              const completedPayouts = await kv.get(completedPayoutsKey) || [];
-              completedPayouts.unshift(payoutId);
-              await kv.set(completedPayoutsKey, completedPayouts);
+              // ✅ SQL: Get vendor for notification
+              const vendorsRepo = getVendorsRepository();
+              const vendor = await vendorsRepo.findById(payout.vendor_id);
 
               // ✅ NOTIFICATION: Notify vendor
               try {
-                const vendor = await kv.get(`vendor:${vendorId}`);
                 await createNotificationHelper({
-                  recipientId: vendorId,
+                  recipientId: payout.vendor_id,
                   recipientType: 'vendor',
                   type: 'payout_completed',
                   category: 'payouts',
                   title: 'Payout Processed',
-                  message: `Your payout of ₹${payout.amount} has been processed. UTR: ${payout.utr || 'N/A'}`,
-                  recipientEmail: vendor?.email,
+                  message: `Your payout of ₹${payout.amount} has been processed. Razorpay ID: ${razorpayPayout.id}`,
+                  recipientEmail: vendor?.email || undefined,
                   recipientPhone: vendor?.phone,
                   channels: { email: true, sms: false, inApp: true, push: false },
-                  data: { payoutId, amount: payout.amount, utr: payout.utr },
+                  data: { payoutId: payout.id, amount: payout.amount, razorpayPayoutId: razorpayPayout.id },
                   priority: 'medium'
                 });
               } catch (notifError) {
@@ -173,29 +166,25 @@ export function registerPayoutCronJob(app: Hono) {
 
               processedCount++;
               results.push({
-                payoutId,
-                vendorId,
+                payoutId: payout.id,
+                vendorId: payout.vendor_id,
                 amount: payout.amount,
                 status: 'completed',
                 razorpayPayoutId: razorpayPayout.id
               });
 
-              console.log(`✅ [PAYOUT-CRON] Payout ${payoutId} processed successfully: ${razorpayPayout.id}`);
+              console.log(`✅ [PAYOUT-CRON] Payout ${payout.id} processed successfully: ${razorpayPayout.id}`);
 
             } catch (payoutError: any) {
-              console.error(`❌ [PAYOUT-CRON] Failed to process payout ${payoutId}:`, payoutError);
+              console.error(`❌ [PAYOUT-CRON] Failed to process payout ${payout.id}:`, payoutError);
               
-              // Update payout status to failed
-              payout.status = 'failed';
-              payout.failedAt = new Date().toISOString();
-              payout.failureReason = payoutError.message || 'Razorpay payout failed';
-              payout.retryCount = (payout.retryCount || 0) + 1;
-              await kv.set(`payout:${payoutId}`, payout);
+              // ✅ SQL: Update payout status to failed
+              await payoutsRepo.fail(payout.id, payoutError.message || 'Razorpay payout failed');
 
               failedCount++;
               results.push({
-                payoutId,
-                vendorId,
+                payoutId: payout.id,
+                vendorId: payout.vendor_id,
                 amount: payout.amount,
                 status: 'failed',
                 error: payoutError.message
@@ -203,8 +192,8 @@ export function registerPayoutCronJob(app: Hono) {
             }
           }
 
-        } catch (vendorError: any) {
-          console.error(`❌ [PAYOUT-CRON] Error processing vendor ${vendorId}:`, vendorError);
+        } catch (payoutError: any) {
+          console.error(`❌ [PAYOUT-CRON] Error processing payout:`, payoutError);
           failedCount++;
         }
       }
@@ -233,39 +222,34 @@ export function registerPayoutCronJob(app: Hono) {
   /**
    * GET /cron/payout-status
    * Get status of payout processing (for monitoring)
+   * ✅ SQL: Uses payouts repository
    */
   app.get(`${BASE_PATH}/cron/payout-status`, async (c) => {
     try {
-      const payoutPolicies = await kv.get('admin:payout:policies') || {
-        holdPeriodDays: 7,
-        autoPayout: false,
-        minPayoutAmount: 1000
+      // ✅ SQL: Get payout policies
+      const { data: payoutPolicy } = await dbClient
+        .from('payout_policies')
+        .select('*')
+        .eq('policy_key', 'default')
+        .maybeSingle();
+
+      const payoutPolicies = payoutPolicy || {
+        hold_period_days: 7,
+        auto_payout: false,
+        min_payout_amount: 1000.00,
       };
 
-      // Count pending payouts
-      let pendingCount = 0;
-      let pendingAmount = 0;
-      const allVendors = await kv.getByPrefix('vendor:');
-      
-      for (const vendor of allVendors) {
-        if (!vendor.id || vendor.id.includes(':')) continue;
-        const pendingPayoutIds = await kv.get(`vendor:${vendor.id}:payouts:pending`) || [];
-        
-        for (const payoutId of pendingPayoutIds) {
-          const payout = await kv.get(`payout:${payoutId}`);
-          if (payout && payout.status === 'scheduled') {
-            pendingCount++;
-            pendingAmount += payout.amount || 0;
-          }
-        }
-      }
+      // ✅ SQL: Count scheduled payouts
+      const scheduledPayouts = await payoutsRepo.findByStatus('scheduled');
+      const pendingCount = scheduledPayouts.length;
+      const pendingAmount = scheduledPayouts.reduce((sum, p) => sum + p.amount, 0);
 
       return sendSuccess(c, {
-        autoPayoutEnabled: payoutPolicies.autoPayout,
+        autoPayoutEnabled: payoutPolicies.auto_payout,
         pendingCount,
         pendingAmount,
-        minPayoutAmount: payoutPolicies.minPayoutAmount,
-        holdPeriodDays: payoutPolicies.holdPeriodDays
+        minPayoutAmount: payoutPolicies.min_payout_amount,
+        holdPeriodDays: payoutPolicies.hold_period_days
       });
 
     } catch (error: any) {

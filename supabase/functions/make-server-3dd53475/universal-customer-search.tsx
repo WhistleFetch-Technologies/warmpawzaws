@@ -9,35 +9,40 @@
  */
 
 import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
+import { getRolesRepository } from '../../lib/repositories/roles.ts';
 import { getPrimarySpecialization, getAllSpecializations } from './specialization-mapping.tsx';
 import { calculateDistance } from './schedule-utils.tsx';
 
 /**
- * ✅ DYNAMIC ROLE MAPPING: Load role configurations from KV store
- * This ensures the system adapts automatically when new roles are added via Admin Panel
+ * ✅ DYNAMIC ROLE MAPPING: Load role configurations from SQL (master data)
+ * Roles are independent of region - all active roles are available
  */
 async function getDynamicRoleMapping(): Promise<Record<string, string[]>> {
   try {
-    // Get all role configurations from KV store
-    const allRoles = await kv.getByPrefix('role:config:');
+    // ✅ SQL: Get all active roles from roles table (master data)
+    const rolesRepo = getRolesRepository();
+    const allRoles = await rolesRepo.findActive();
     
-    // Build dynamic mapping
+    // Build dynamic mapping by serviceCategory
     const mapping: Record<string, string[]> = {};
     
     for (const role of allRoles) {
-      if (role.serviceCategory && role.id) {
-        if (!mapping[role.serviceCategory]) {
-          mapping[role.serviceCategory] = [];
+      const config = role.config || {};
+      const serviceCategory = config.serviceCategory || role.serviceCategory;
+      const roleId = role.name || role.id;
+      
+      if (serviceCategory && roleId) {
+        if (!mapping[serviceCategory]) {
+          mapping[serviceCategory] = [];
         }
-        mapping[role.serviceCategory].push(role.id);
+        mapping[serviceCategory].push(roleId);
       }
     }
     
-    console.log('📋 [DYNAMIC-ROLES] Loaded role mapping:', mapping);
+    console.log('📋 [DYNAMIC-ROLES] Loaded role mapping from SQL:', mapping);
     return mapping;
   } catch (error) {
-    console.error('❌ [DYNAMIC-ROLES] Failed to load roles:', error);
+    console.error('❌ [DYNAMIC-ROLES] Failed to load roles from SQL:', error);
     // Fallback to basic mapping
     return {
       'veterinary_services': ['veterinarian', 'pet_clinic', 'vet_clinic'],
@@ -129,7 +134,7 @@ app.get('/make-server-3dd53475/universal/search', async (c) => {
       }, 400);
     }
 
-    // ✅ DYNAMIC ROLE MAPPING: Load role configurations from KV store
+    // ✅ DYNAMIC ROLE MAPPING: Load role configurations from SQL (master data, no region dependency)
     const dynamicRoleMapping = await getDynamicRoleMapping();
     const allowedRoleIds = dynamicRoleMapping[serviceCategory] || getStaticFallbackMapping(serviceCategory);
     console.log(`🔧 Mapped "${serviceCategory}" to roles:`, allowedRoleIds);

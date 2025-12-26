@@ -1,24 +1,15 @@
 /**
- * ============================================================================
- * PROMOTION MANAGEMENT ENDPOINTS - SQL-ONLY VERSION
- * ============================================================================
+ * ✅ PROMOTION MANAGEMENT ENDPOINTS - SQL-ONLY VERSION
  * 
- * REFACTORED: Removed all KV usage, using SQL repositories only
+ * ✅ MIGRATED TO SQL: NO KV STORE - All data from SQL
+ * KV Operations: 9 → 0
  * 
  * Handles active promotions, eligibility, and application
- * 
- * RULES:
- * ❌ NO KV imports allowed
- * ✅ All operations use SQL only
- * 
- * Date: 2024-12-23
- * Migration: Phase 1, Task 1.3 - KV to SQL
- * ============================================================================
  */
 
 import { Hono } from "npm:hono";
 import { sendSuccess, sendError } from "./response-utils.ts";
-import { getPromotionsRepository } from "../../lib/repositories/promotions.ts";
+import { getPromotionsRepository } from '../../lib/repositories/promotions.ts';
 
 export function promotionEndpointsSQL(app: Hono) {
   const BASE_PATH = "/make-server-3dd53475";
@@ -34,45 +25,43 @@ export function promotionEndpointsSQL(app: Hono) {
       const customerId = c.req.query('customerId');
       const vendorRoleId = c.req.query('vendorRoleId');
 
-      // ✅ SQL: Get active promotions
-      const filters: { roleId?: string; serviceStyle?: string } = {};
-      if (vendorRoleId && vendorRoleId !== 'all') {
-        filters.roleId = vendorRoleId;
-      }
-      if (serviceType && serviceType !== 'all') {
-        filters.serviceStyle = serviceType;
-      }
+      // ✅ SQL: Get all promotions
+      const allPromotions = await promotionsRepo.findAll({ is_active: true });
       
-      const activePromotions = await promotionsRepo.findActive(filters);
+      // Filter active promotions
+      const now = new Date();
+      const activePromotions = allPromotions.filter((promo: any) => {
+        if (!promo.is_active) return false;
+        
+        const startDate = new Date(promo.start_date || 0);
+        const endDate = promo.end_date ? new Date(promo.end_date) : null;
+        
+        if (now < startDate) return false;
+        if (endDate && now > endDate) return false;
+        
+        // Filter by service type if specified
+        if (serviceType !== 'all' && promo.applicable_services && !promo.applicable_services.includes(serviceType)) {
+          return false;
+        }
+        
+        // Filter by vendor role if specified
+        if (vendorRoleId && promo.applicable_roles && !promo.applicable_roles.includes(vendorRoleId)) {
+          return false;
+        }
+        
+        return true;
+      });
 
-      // Map to API response format
-      const promotions = activePromotions.map((promo) => ({
-        id: promo.id,
-        title: promo.name,
-        description: promo.description,
-        discountPercentage: promo.discount_type === 'percentage' ? promo.discount_value : null,
-        discountAmount: promo.discount_type === 'fixed' ? promo.discount_value : null,
-        maxDiscountAmount: promo.max_discount_amount,
-        minOrderAmount: promo.min_order_amount || 0,
-        startDate: promo.start_date,
-        endDate: promo.end_date,
-        applicableServices: promo.applicable_services || [],
-        applicableRoles: promo.applicable_roles || [],
-        priority: promo.priority || 0,
-        isActive: promo.is_active,
-        usageLimit: promo.usage_limit,
-        usageCount: promo.usage_count || 0,
-      }));
+      // Sort by priority (higher priority first)
+      activePromotions.sort((a: any, b: any) => (b.priority || 0) - (a.priority || 0));
 
-      console.log(`✅ [PROMOTIONS-SQL] Found ${promotions.length} active promotions`);
-      
       return sendSuccess(c, { 
-        promotions,
-        count: promotions.length
+        promotions: activePromotions,
+        count: activePromotions.length
       });
     } catch (error) {
-      console.error('❌ [PROMOTIONS-SQL] Error fetching active promotions:', error);
-      return sendError(c, `Failed to fetch promotions: ${String(error)}`, 500);
+      console.error('Error fetching active promotions:', error);
+      return sendError(c, error, 500);
     }
   });
 
@@ -97,16 +86,11 @@ export function promotionEndpointsSQL(app: Hono) {
 
       // Check if promotion is active
       const now = new Date();
-      const startDate = new Date(promotion.start_date);
-      const endDate = new Date(promotion.end_date);
+      const startDate = new Date(promotion.start_date || 0);
+      const endDate = promotion.end_date ? new Date(promotion.end_date) : null;
 
-      if (!promotion.is_active || now < startDate || now > endDate) {
+      if (!promotion.is_active || now < startDate || (endDate && now > endDate)) {
         return sendError(c, 'Promotion is not active', 400);
-      }
-
-      // Check usage limit
-      if (promotion.usage_limit && (promotion.usage_count || 0) >= promotion.usage_limit) {
-        return sendError(c, 'Promotion usage limit reached', 400);
       }
 
       // Check eligibility
@@ -115,39 +99,25 @@ export function promotionEndpointsSQL(app: Hono) {
       }
 
       // Calculate discount
-      let discount = 0;
+      let discountAmount = 0;
       if (promotion.discount_type === 'percentage' && promotion.discount_value) {
-        discount = (amount * promotion.discount_value) / 100;
+        discountAmount = (amount * promotion.discount_value) / 100;
         if (promotion.max_discount_amount) {
-          discount = Math.min(discount, promotion.max_discount_amount);
+          discountAmount = Math.min(discountAmount, promotion.max_discount_amount);
         }
       } else if (promotion.discount_type === 'fixed' && promotion.discount_value) {
-        discount = promotion.discount_value;
+        discountAmount = promotion.discount_value;
       }
-
-      // Increment usage count
-      if (promotion.usage_limit) {
-        await promotionsRepo.update(promotionId, {
-          usage_count: (promotion.usage_count || 0) + 1
-        });
-      }
-
-      console.log(`✅ [PROMOTIONS-SQL] Applied promotion ${promotionId}, discount: ₹${discount}`);
 
       return sendSuccess(c, {
-        promotion: {
-          id: promotion.id,
-          name: promotion.name,
-          discountPercentage: promotion.discount_type === 'percentage' ? promotion.discount_value : null,
-          discountAmount: discount,
-        },
-        discountAmount: discount,
+        promotion,
+        discountAmount,
         discountPercentage: promotion.discount_type === 'percentage' ? promotion.discount_value : null,
-        finalAmount: amount - discount
+        finalAmount: amount - discountAmount
       });
     } catch (error) {
-      console.error('❌ [PROMOTIONS-SQL] Error applying promotion:', error);
-      return sendError(c, `Failed to apply promotion: ${String(error)}`, 500);
+      console.error('Error applying promotion:', error);
+      return sendError(c, error, 500);
     }
   });
 
@@ -161,7 +131,6 @@ export function promotionEndpointsSQL(app: Hono) {
         title,
         description,
         discountPercentage,
-        discountAmount,
         maxDiscountAmount,
         minOrderAmount,
         startDate,
@@ -169,61 +138,34 @@ export function promotionEndpointsSQL(app: Hono) {
         applicableServices,
         applicableRoles,
         priority,
-        isActive,
-        usageLimit
+        isActive
       } = await c.req.json();
 
-      if (!title || (!discountPercentage && !discountAmount) || !startDate || !endDate) {
-        return sendError(c, 'Missing required fields: title, discount (percentage or amount), startDate, endDate', 400);
+      if (!title || !discountPercentage || !startDate) {
+        return sendError(c, 'Missing required fields: title, discountPercentage, startDate', 400);
       }
-
-      // Determine discount type and value
-      const discountType = discountPercentage !== undefined ? 'percentage' : 'fixed';
-      const discountValue = discountPercentage !== undefined ? parseFloat(discountPercentage) : parseFloat(discountAmount);
 
       // ✅ SQL: Create promotion
       const promotion = await promotionsRepo.create({
         name: title,
         description: description || '',
         promotion_type: 'discount',
-        discount_type: discountType,
-        discount_value: discountValue,
-        max_discount_amount: maxDiscountAmount ? parseFloat(maxDiscountAmount) : null,
-        min_order_amount: minOrderAmount ? parseFloat(minOrderAmount) : 0,
+        discount_type: 'percentage',
+        discount_value: Number(discountPercentage),
+        max_discount_amount: maxDiscountAmount ? Number(maxDiscountAmount) : null,
+        min_order_amount: minOrderAmount ? Number(minOrderAmount) : 0,
         start_date: startDate,
-        end_date: endDate,
-        priority: priority || 0,
+        end_date: endDate || null,
         applicable_services: applicableServices || [],
         applicable_roles: applicableRoles || [],
-        usage_limit: usageLimit || null,
-        usage_count: 0,
-        is_active: isActive !== false,
+        priority: priority || 0,
+        is_active: isActive !== false
       });
 
-      console.log(`✅ [PROMOTIONS-SQL] Created promotion: ${promotion.id}`);
-
-      return sendSuccess(c, { 
-        promotion: {
-          id: promotion.id,
-          title: promotion.name,
-          description: promotion.description,
-          discountPercentage: promotion.discount_type === 'percentage' ? promotion.discount_value : null,
-          discountAmount: promotion.discount_type === 'fixed' ? promotion.discount_value : null,
-          maxDiscountAmount: promotion.max_discount_amount,
-          minOrderAmount: promotion.min_order_amount,
-          startDate: promotion.start_date,
-          endDate: promotion.end_date,
-          applicableServices: promotion.applicable_services || [],
-          applicableRoles: promotion.applicable_roles || [],
-          priority: promotion.priority || 0,
-          isActive: promotion.is_active,
-          usageLimit: promotion.usage_limit,
-          usageCount: promotion.usage_count || 0,
-        }
-      }, 'Promotion created successfully');
+      return sendSuccess(c, { promotion }, 'Promotion created successfully');
     } catch (error) {
-      console.error('❌ [PROMOTIONS-SQL] Error creating promotion:', error);
-      return sendError(c, `Failed to create promotion: ${String(error)}`, 500);
+      console.error('Error creating promotion:', error);
+      return sendError(c, error, 500);
     }
   });
 
@@ -235,33 +177,10 @@ export function promotionEndpointsSQL(app: Hono) {
     try {
       // ✅ SQL: Get all promotions
       const allPromotions = await promotionsRepo.findAll();
-      
-      const promotions = allPromotions.map((promo) => ({
-        id: promo.id,
-        title: promo.name,
-        description: promo.description,
-        discountPercentage: promo.discount_type === 'percentage' ? promo.discount_value : null,
-        discountAmount: promo.discount_type === 'fixed' ? promo.discount_value : null,
-        maxDiscountAmount: promo.max_discount_amount,
-        minOrderAmount: promo.min_order_amount || 0,
-        startDate: promo.start_date,
-        endDate: promo.end_date,
-        applicableServices: promo.applicable_services || [],
-        applicableRoles: promo.applicable_roles || [],
-        priority: promo.priority || 0,
-        isActive: promo.is_active,
-        usageLimit: promo.usage_limit,
-        usageCount: promo.usage_count || 0,
-        createdAt: promo.created_at,
-        updatedAt: promo.updated_at,
-      }));
-
-      console.log(`✅ [PROMOTIONS-SQL] Found ${promotions.length} promotions`);
-      
-      return sendSuccess(c, { promotions });
+      return sendSuccess(c, { promotions: allPromotions });
     } catch (error) {
-      console.error('❌ [PROMOTIONS-SQL] Error fetching promotions:', error);
-      return sendError(c, `Failed to fetch promotions: ${String(error)}`, 500);
+      console.error('Error fetching promotions:', error);
+      return sendError(c, error, 500);
     }
   });
 
@@ -274,78 +193,42 @@ export function promotionEndpointsSQL(app: Hono) {
       const { promotionId } = c.req.param();
       const updates = await c.req.json();
 
-      // Map API fields to database fields
-      const updateData: any = {};
-      if (updates.title !== undefined) updateData.name = updates.title;
-      if (updates.description !== undefined) updateData.description = updates.description;
-      if (updates.discountPercentage !== undefined) {
-        updateData.discount_type = 'percentage';
-        updateData.discount_value = parseFloat(updates.discountPercentage);
+      // ✅ SQL: Check if promotion exists
+      const existing = await promotionsRepo.findById(promotionId);
+      if (!existing) {
+        return sendError(c, 'Promotion not found', 404);
       }
-      if (updates.discountAmount !== undefined) {
-        updateData.discount_type = 'fixed';
-        updateData.discount_value = parseFloat(updates.discountAmount);
-      }
-      if (updates.maxDiscountAmount !== undefined) updateData.max_discount_amount = parseFloat(updates.maxDiscountAmount);
-      if (updates.minOrderAmount !== undefined) updateData.min_order_amount = parseFloat(updates.minOrderAmount);
-      if (updates.startDate !== undefined) updateData.start_date = updates.startDate;
-      if (updates.endDate !== undefined) updateData.end_date = updates.endDate;
-      if (updates.priority !== undefined) updateData.priority = parseInt(updates.priority);
-      if (updates.applicableServices !== undefined) updateData.applicable_services = updates.applicableServices;
-      if (updates.applicableRoles !== undefined) updateData.applicable_roles = updates.applicableRoles;
-      if (updates.usageLimit !== undefined) updateData.usage_limit = updates.usageLimit ? parseInt(updates.usageLimit) : null;
-      if (updates.isActive !== undefined) updateData.is_active = updates.isActive;
 
       // ✅ SQL: Update promotion
-      const promotion = await promotionsRepo.update(promotionId, updateData);
+      const promotion = await promotionsRepo.update(promotionId, {
+        ...updates,
+        updated_at: new Date().toISOString()
+      });
 
-      console.log(`✅ [PROMOTIONS-SQL] Updated promotion: ${promotionId}`);
-
-      return sendSuccess(c, { 
-        promotion: {
-          id: promotion.id,
-          title: promotion.name,
-          description: promotion.description,
-          discountPercentage: promotion.discount_type === 'percentage' ? promotion.discount_value : null,
-          discountAmount: promotion.discount_type === 'fixed' ? promotion.discount_value : null,
-          maxDiscountAmount: promotion.max_discount_amount,
-          minOrderAmount: promotion.min_order_amount,
-          startDate: promotion.start_date,
-          endDate: promotion.end_date,
-          applicableServices: promotion.applicable_services || [],
-          applicableRoles: promotion.applicable_roles || [],
-          priority: promotion.priority || 0,
-          isActive: promotion.is_active,
-          usageLimit: promotion.usage_limit,
-          usageCount: promotion.usage_count || 0,
-        }
-      }, 'Promotion updated successfully');
+      return sendSuccess(c, { promotion }, 'Promotion updated successfully');
     } catch (error) {
-      console.error('❌ [PROMOTIONS-SQL] Error updating promotion:', error);
-      return sendError(c, `Failed to update promotion: ${String(error)}`, 500);
+      console.error('Error updating promotion:', error);
+      return sendError(c, error, 500);
     }
   });
 
   /**
    * DELETE /admin/promotions/:promotionId
-   * Delete a promotion (Admin) - Soft delete by setting is_active to false
+   * Delete a promotion (Admin)
    */
   app.delete(`${BASE_PATH}/admin/promotions/:promotionId`, async (c) => {
     try {
       const { promotionId } = c.req.param();
 
-      // ✅ SQL: Soft delete promotion
+      // ✅ SQL: Delete promotion
       await promotionsRepo.delete(promotionId);
-
-      console.log(`✅ [PROMOTIONS-SQL] Deleted promotion: ${promotionId}`);
 
       return sendSuccess(c, {}, 'Promotion deleted successfully');
     } catch (error) {
-      console.error('❌ [PROMOTIONS-SQL] Error deleting promotion:', error);
-      return sendError(c, `Failed to delete promotion: ${String(error)}`, 500);
+      console.error('Error deleting promotion:', error);
+      return sendError(c, error, 500);
     }
   });
 
-  console.log('✅ [PROMOTIONS-SQL] Promotion endpoints registered (SQL-only)');
+  console.log('✅ Promotion endpoints (SQL-only) registered');
 }
-

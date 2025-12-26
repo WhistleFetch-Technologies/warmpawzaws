@@ -1,9 +1,12 @@
-import { Hono } from "npm:hono";
-import * as kv from "./kv_store.tsx";
+import { Hono } from "npm:hono@4";
 import { sendSuccess, sendError } from "./response-utils.ts";
+import { getVendorsRepository } from '../../lib/repositories/vendors.ts';
+import { getDbClient } from '../../lib/db.ts';
 
 /**
- * 🏆 TIER SYSTEM IMPLEMENTATION
+ * 🏆 TIER SYSTEM IMPLEMENTATION - SQL VERSION
+ * 
+ * ✅ MIGRATED: Removed all KV usage, using SQL repositories only
  * 
  * Phase 7C: Rule 15 - Vendor Tiers & Commission Logic
  * 
@@ -16,6 +19,9 @@ import { sendSuccess, sendError } from "./response-utils.ts";
  * - Automated Tier Calculation based on GMV (Gross Merchandise Value)
  * - Commission Rate Lookup
  * - Manual/Auto Upgrades
+ * 
+ * Date: 2024-12-22
+ * Migration: Phase 5 - KV to SQL
  */
 
 export const TIER_CONFIG = {
@@ -42,30 +48,52 @@ export const TIER_CONFIG = {
   }
 };
 
-export function tierSystemEndpoints(app: Hono, kv: any) {
+export function tierSystemEndpoints(app: Hono) {
   const BASE_PATH = "/make-server-3dd53475";
 
   /**
    * GET /vendor/:vendorId/tier
    * Get current tier status
+   * ✅ SQL: Uses vendors table for tier lookup
    */
   app.get(`${BASE_PATH}/vendor/:vendorId/tier`, async (c) => {
     try {
       const { vendorId } = c.req.param();
+      const vendorsRepo = getVendorsRepository();
       
-      const tierData = await kv.get(`vendor_tier_${vendorId}`) || {
-        currentTier: 'SILVER',
-        totalGMV: 0,
-        lastUpdated: new Date().toISOString()
+      // ✅ SQL: Get vendor from SQL database
+      const vendor = await vendorsRepo.findById(vendorId);
+      
+      if (!vendor) {
+        return sendError(c, 'Vendor not found', 404);
+      }
+      
+      // Get tier from vendor record (defaults to 'Bronze' if not set)
+      const currentTier = (vendor.tier || 'Bronze').toUpperCase();
+      const config = TIER_CONFIG[currentTier as keyof typeof TIER_CONFIG] || TIER_CONFIG.SILVER;
+      
+      // ✅ SQL: Calculate monthly GMV from bookings (if analytics table exists)
+      const dbClient = getDbClient();
+      const { data: monthlyStats } = await dbClient
+        .from('vendor_earnings')
+        .select('amount')
+        .eq('vendor_id', vendorId)
+        .gte('created_at', new Date(new Date().setMonth(new Date().getMonth() - 1)).toISOString());
+      
+      const monthlyGMV = (monthlyStats || []).reduce((sum: number, e: any) => sum + (parseFloat(e.amount) || 0), 0);
+      
+      const tierData = {
+        currentTier: currentTier,
+        totalGMV: monthlyGMV,
+        lastUpdated: vendor.updated_at || vendor.created_at
       };
-
-      const config = TIER_CONFIG[tierData.currentTier as keyof typeof TIER_CONFIG];
 
       return sendSuccess(c, {
         ...tierData,
         config
       });
     } catch (error) {
+      console.error('Error getting vendor tier:', error);
       return sendError(c, error, 500);
     }
   });
@@ -73,43 +101,52 @@ export function tierSystemEndpoints(app: Hono, kv: any) {
   /**
    * POST /vendor/:vendorId/tier/calculate
    * Recalculate tier based on recent performance
+   * ✅ SQL: Uses vendors table and vendor_earnings for GMV calculation
    */
   app.post(`${BASE_PATH}/vendor/:vendorId/tier/calculate`, async (c) => {
     try {
       const { vendorId } = c.req.param();
+      const vendorsRepo = getVendorsRepository();
+      const dbClient = getDbClient();
       
-      // Fetch Vendor Stats (Mocked or from real analytics)
-      // In real scenario, query `analytics_vendor_monthly_${vendorId}`
-      const stats = await kv.get(`vendor_stats_${vendorId}`) || { monthlyGMV: 0 };
+      // ✅ SQL: Get vendor from SQL database
+      const vendor = await vendorsRepo.findById(vendorId);
       
-      let newTier = 'SILVER';
-      if (stats.monthlyGMV >= TIER_CONFIG.PLATINUM.minGMV) {
-        newTier = 'PLATINUM';
-      } else if (stats.monthlyGMV >= TIER_CONFIG.GOLD.minGMV) {
-        newTier = 'GOLD';
+      if (!vendor) {
+        return sendError(c, 'Vendor not found', 404);
+      }
+      
+      // ✅ SQL: Calculate monthly GMV from vendor_earnings
+      const { data: monthlyEarnings } = await dbClient
+        .from('vendor_earnings')
+        .select('amount')
+        .eq('vendor_id', vendorId)
+        .gte('created_at', new Date(new Date().setMonth(new Date().getMonth() - 1)).toISOString());
+      
+      const monthlyGMV = (monthlyEarnings || []).reduce((sum: number, e: any) => sum + (parseFloat(e.amount) || 0), 0);
+      
+      // Determine new tier based on GMV
+      let newTier = 'Silver';
+      if (monthlyGMV >= TIER_CONFIG.PLATINUM.minGMV) {
+        newTier = 'Platinum';
+      } else if (monthlyGMV >= TIER_CONFIG.GOLD.minGMV) {
+        newTier = 'Gold';
       }
 
-      const tierData = {
-        currentTier: newTier,
-        totalGMV: stats.monthlyGMV,
-        lastUpdated: new Date().toISOString()
-      };
-
-      await kv.set(`vendor_tier_${vendorId}`, tierData);
-      
-      // Update Vendor Profile with commission rate for quick lookup
-      const vendor = await kv.get(`vendor:${vendorId}`);
-      if (vendor) {
-        vendor.commissionRate = TIER_CONFIG[newTier as keyof typeof TIER_CONFIG].commissionRate;
-        vendor.tier = newTier;
-        await kv.set(`vendor:${vendorId}`, vendor);
-      }
+      // ✅ SQL: Update vendor tier and commission rate
+      await vendorsRepo.update(vendorId, {
+        tier: newTier,
+        commission_percentage: TIER_CONFIG[newTier.toUpperCase() as keyof typeof TIER_CONFIG].commissionRate
+      });
 
       return sendSuccess(c, {
         newTier,
+        monthlyGMV,
+        commissionRate: TIER_CONFIG[newTier.toUpperCase() as keyof typeof TIER_CONFIG].commissionRate,
         message: `Vendor tier updated to ${newTier}`
       });
     } catch (error) {
+      console.error('Error calculating vendor tier:', error);
       return sendError(c, error, 500);
     }
   });
@@ -125,15 +162,29 @@ export function tierSystemEndpoints(app: Hono, kv: any) {
   /**
    * POST /admin/tier-system/config
    * Update tier thresholds (Admin Only)
+   * ✅ SQL: Stores tier config in platform_settings table
    */
   app.post(`${BASE_PATH}/admin/tier-system/config`, async (c) => {
-      // In a real DB we would store this config. 
-      // Since it's a const in this file, we can't update it dynamically without DB.
-      // We will simulate updating a stored config in KV.
-      
+    try {
       const { tiers } = await c.req.json();
-      await kv.set('tier_system_config', tiers);
+      const dbClient = getDbClient();
+      
+      // ✅ SQL: Store tier config in platform_settings
+      await dbClient
+        .from('platform_settings')
+        .upsert({
+          setting_key: 'tier_system_config',
+          setting_value: tiers || TIER_CONFIG,
+          setting_type: 'object',
+          updated_at: new Date().toISOString(),
+        });
       
       return sendSuccess(c, { message: 'Tier configuration updated' });
+    } catch (error) {
+      console.error('Error updating tier config:', error);
+      return sendError(c, error, 500);
+    }
   });
+  
+  console.log('✅ Tier system endpoints registered (SQL-only)');
 }

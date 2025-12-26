@@ -22,28 +22,24 @@ export interface Payout {
   vendor_id: string;
   amount: number;
   currency: string;
-  payout_status: string;
-  bank_account_number: string;
-  ifsc_code: string;
-  account_holder_name: string;
-  razorpay_payout_id?: string | null;
-  settlement_id?: string | null;
-  payment_ids: string[];
-  created_at: string;
+  status: string; // 'scheduled', 'processing', 'completed', 'failed', 'cancelled'
+  scheduled_at: string;
   processed_at?: string | null;
-  completed_at?: string | null;
+  razorpay_payout_id?: string | null;
+  bank_account_id?: string | null;
+  settlement_ids: string[]; // Array of settlement IDs
   failure_reason?: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface CreatePayoutInput {
   vendor_id: string;
   amount: number;
-  bank_account_number: string;
-  ifsc_code: string;
-  account_holder_name: string;
-  payment_ids: string[];
+  scheduled_at?: string;
+  settlement_ids?: string[];
   razorpay_payout_id?: string;
-  settlement_id?: string;
+  bank_account_id?: string;
 }
 
 export class PayoutsRepository {
@@ -54,77 +50,143 @@ export class PayoutsRepository {
   }
 
   async findById(payoutId: string): Promise<Payout | null> {
-    const results = await selectQuery<Payout>("payouts", { id: payoutId }, { limit: 1 });
-    return results[0] || null;
+    const results = await selectQuery<any>("payouts", { id: payoutId }, { limit: 1 });
+    if (!results[0]) return null;
+    return this.mapPayout(results[0]);
   }
 
-  async findByVendor(vendorId: string, options?: { limit?: number; offset?: number }): Promise<Payout[]> {
-    return selectQuery<Payout>("payouts", { vendor_id: vendorId }, {
+  async findByVendor(vendorId: string, options?: { 
+    limit?: number; 
+    offset?: number;
+    status?: string;
+  }): Promise<Payout[]> {
+    const filters: any = { vendor_id: vendorId };
+    if (options?.status) {
+      filters.status = options.status;
+    }
+    
+    const results = await selectQuery<any>("payouts", filters, {
       limit: options?.limit,
       offset: options?.offset,
-      orderBy: "created_at",
+      orderBy: "scheduled_at",
       orderDirection: "desc",
     });
+    
+    return results.map(r => this.mapPayout(r));
   }
 
   async findByStatus(status: string, options?: { limit?: number; offset?: number }): Promise<Payout[]> {
-    return selectQuery<Payout>("payouts", { payout_status: status }, {
+    const results = await selectQuery<any>("payouts", { status }, {
       limit: options?.limit,
       offset: options?.offset,
-      orderBy: "created_at",
-      orderDirection: "desc",
+      orderBy: "scheduled_at",
+      orderDirection: "asc", // Process oldest first
     });
+    
+    return results.map(r => this.mapPayout(r));
+  }
+
+  async findScheduledDue(now: Date): Promise<Payout[]> {
+    // Find payouts scheduled for today or earlier
+    const client = getDbClient();
+    const { data, error } = await client
+      .from("payouts")
+      .select("*")
+      .eq("status", "scheduled")
+      .lte("scheduled_at", now.toISOString())
+      .order("scheduled_at", { ascending: true });
+    
+    if (error) throw error;
+    return (data || []).map(r => this.mapPayout(r));
   }
 
   async create(input: CreatePayoutInput): Promise<Payout> {
-    const results = await insertQuery<Payout>("payouts", {
-      ...input,
+    const insertData: any = {
+      vendor_id: input.vendor_id,
+      amount: input.amount,
       currency: "INR",
-      payout_status: "pending",
-    });
+      status: "scheduled",
+      scheduled_at: input.scheduled_at || new Date().toISOString(),
+      settlement_ids: input.settlement_ids || [],
+      razorpay_payout_id: input.razorpay_payout_id || null,
+      bank_account_id: input.bank_account_id || null,
+    };
+    
+    const results = await insertQuery<any>("payouts", insertData);
     
     if (!results[0]) {
       throw new Error("Failed to create payout");
     }
     
-    return results[0];
+    return this.mapPayout(results[0]);
   }
 
-  async update(payoutId: string, input: Partial<CreatePayoutInput & { payout_status?: string; processed_at?: string; completed_at?: string; failure_reason?: string }>): Promise<Payout> {
+  async update(payoutId: string, input: Partial<CreatePayoutInput & { 
+    status?: string; 
+    processed_at?: string; 
+    razorpay_payout_id?: string;
+    failure_reason?: string;
+    settlement_ids?: string[];
+  }>): Promise<Payout> {
     const updateData: any = { ...input };
     
-    if (input.payout_status === "completed" && !input.completed_at) {
-      updateData.completed_at = new Date().toISOString();
+    if (input.status === "completed" && !input.processed_at) {
+      updateData.processed_at = new Date().toISOString();
     }
-    if (input.payout_status && input.payout_status !== "pending" && !input.processed_at) {
+    if (input.status && input.status !== "scheduled" && !input.processed_at) {
       updateData.processed_at = new Date().toISOString();
     }
     
-    const results = await updateQuery<Payout>(
+    const results = await updateQuery<any>(
       "payouts",
       { id: payoutId },
-      updateData
+      {
+        ...updateData,
+        updated_at: new Date().toISOString(),
+      }
     );
     
     if (!results[0]) {
       throw new Error(`Payout not found: ${payoutId}`);
     }
     
-    return results[0];
+    return this.mapPayout(results[0]);
   }
 
-  async complete(payoutId: string): Promise<Payout> {
+  async complete(payoutId: string, razorpayPayoutId?: string): Promise<Payout> {
     return this.update(payoutId, {
-      payout_status: "completed",
-      completed_at: new Date().toISOString(),
+      status: "completed",
+      razorpay_payout_id: razorpayPayoutId,
+      processed_at: new Date().toISOString(),
     });
   }
 
   async fail(payoutId: string, reason: string): Promise<Payout> {
     return this.update(payoutId, {
-      payout_status: "failed",
+      status: "failed",
       failure_reason: reason,
     });
+  }
+
+  /**
+   * Map database row to Payout interface
+   */
+  private mapPayout(data: any): Payout {
+    return {
+      id: data.id,
+      vendor_id: data.vendor_id,
+      amount: parseFloat(data.amount || '0'),
+      currency: data.currency || 'INR',
+      status: data.status || 'scheduled',
+      scheduled_at: data.scheduled_at,
+      processed_at: data.processed_at || null,
+      razorpay_payout_id: data.razorpay_payout_id || null,
+      bank_account_id: data.bank_account_id || null,
+      settlement_ids: data.settlement_ids || [],
+      failure_reason: data.failure_reason || null,
+      created_at: data.created_at,
+      updated_at: data.updated_at,
+    };
   }
 }
 

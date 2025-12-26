@@ -1,11 +1,15 @@
 import { Hono } from 'npm:hono';
+import { getDbClient } from '../../lib/db.ts';
+import { getRolesRepository } from '../../lib/repositories/roles.ts';
 
 /**
  * ========================================
- * ENHANCED ONBOARDING FORM MANAGEMENT
+ * ENHANCED ONBOARDING FORM MANAGEMENT - SQL VERSION
  * ========================================
  * 
  * Comprehensive onboarding form builder and management system
+ * 
+ * ✅ MIGRATED TO SQL: Uses platform_settings table instead of KV
  * 
  * Features:
  * - Section-based form management (Business Info, Address, Documents)
@@ -19,7 +23,25 @@ import { Hono } from 'npm:hono';
  * Production-grade, enterprise-ready implementation
  */
 
-export function enhancedOnboardingManagement(app: Hono, kv: any) {
+export function enhancedOnboardingManagement(app: Hono) {
+  
+  // ✅ CORS: Explicit OPTIONS handlers for onboarding endpoints
+  // These MUST be simple and never throw errors
+  app.options("/make-server-3dd53475/admin/onboarding-forms", (c) => {
+    c.header('Access-Control-Allow-Origin', '*');
+    c.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept');
+    c.header('Access-Control-Max-Age', '86400');
+    return c.text('', 204);
+  });
+  
+  app.options("/make-server-3dd53475/admin/onboarding-forms/:roleId", (c) => {
+    c.header('Access-Control-Allow-Origin', '*');
+    c.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept');
+    c.header('Access-Control-Max-Age', '86400');
+    return c.text('', 204);
+  });
   
   // ========================================
   // FORM CONFIGURATION STRUCTURE
@@ -111,10 +133,16 @@ export function enhancedOnboardingManagement(app: Hono, kv: any) {
       
       console.log('[GET FORMS] Fetching onboarding forms', { roleId, status });
       
-      // Get all form configurations
-      const allForms = await kv.getByPrefix('onboarding:form:');
+      // ✅ SQL MIGRATION: Get all form configurations from platform_settings
+      const db = getDbClient();
+      const { data: formSettings } = await db
+        .from('platform_settings')
+        .select('*')
+        .like('setting_key', 'onboarding:form:%:active');
       
-      let forms = allForms.filter((f: any) => f.id && f.roleId);
+      let forms = (formSettings || [])
+        .map((setting: any) => setting.setting_value)
+        .filter((f: any) => f && f.id && f.roleId);
       
       // Apply filters
       if (roleId) {
@@ -160,34 +188,271 @@ export function enhancedOnboardingManagement(app: Hono, kv: any) {
       
       console.log('[GET FORM] Fetching form for role:', roleId);
       
-      // STEP 1: Check for enhanced form (new system)
-      const formKey = `onboarding:form:${roleId}:active`;
-      let enhancedForm = await kv.get(formKey);
+      // ✅ SQL MIGRATION: Read from platform_settings instead of KV
+      const db = getDbClient();
       
-      if (enhancedForm) {
-        console.log('[GET FORM] ✅ Enhanced form found:', enhancedForm.id);
-        console.log('[GET FORM] 📋 Version:', enhancedForm.version, 'Status:', enhancedForm.status);
+      // ✅ CRITICAL FIX: Get the LATEST version by checking ALL version entries
+      // Use separate queries for active form and version entries to ensure we find everything
+      console.log('[GET FORM] Fetching all forms for role:', roleId);
+      
+      // Query 1: Get active form
+      const activeFormKey = `onboarding:form:${roleId}:active`;
+      console.log('[GET FORM] Querying for active form with key:', activeFormKey);
+      const { data: activeFormSetting, error: activeError } = await db
+        .from('platform_settings')
+        .select('*')
+        .eq('setting_key', activeFormKey)
+        .maybeSingle();
+      
+      console.log('[GET FORM] Active form query result:', {
+        found: !!activeFormSetting,
+        key: activeFormSetting?.setting_key,
+        has_error: !!activeError,
+        error: activeError ? String(activeError) : null,
+        form_version: activeFormSetting ? (activeFormSetting.setting_value as any)?.version : null,
+        form_id: activeFormSetting ? (activeFormSetting.setting_value as any)?.id : null
+      });
+      
+      // Query 2: Get all version entries
+      const versionPattern = `onboarding:form:${roleId}:version:%`;
+      console.log('[GET FORM] Querying for version entries with pattern:', versionPattern);
+      const { data: versionSettings, error: versionsError } = await db
+        .from('platform_settings')
+        .select('*')
+        .ilike('setting_key', versionPattern)
+        .order('updated_at', { ascending: false });
+      
+      console.log('[GET FORM] Version entries query result:', {
+        found_count: versionSettings?.length || 0,
+        has_error: !!versionsError,
+        error: versionsError ? String(versionsError) : null,
+        keys: versionSettings?.map((s: any) => s.setting_key) || []
+      });
+      
+      // Query 3: Also check for any other forms with this roleId (fallback)
+      const fallbackPattern = `onboarding:form:${roleId}%`;
+      console.log('[GET FORM] Querying for all forms with pattern:', fallbackPattern);
+      const { data: allFormSettingsFallback, error: fallbackError } = await db
+        .from('platform_settings')
+        .select('*')
+        .ilike('setting_key', fallbackPattern)
+        .order('updated_at', { ascending: false });
+      
+      console.log('[GET FORM] Fallback query result:', {
+        found_count: allFormSettingsFallback?.length || 0,
+        has_error: !!fallbackError,
+        error: fallbackError ? String(fallbackError) : null,
+        keys: allFormSettingsFallback?.map((s: any) => s.setting_key) || []
+      });
+      
+      // Combine all forms (prioritize active and version entries, then add fallback)
+      const allFormSettings: any[] = [];
+      const seenKeys = new Set<string>();
+      
+      if (activeFormSetting && activeFormSetting.setting_key) {
+        allFormSettings.push(activeFormSetting);
+        seenKeys.add(activeFormSetting.setting_key);
+      }
+      if (versionSettings && versionSettings.length > 0) {
+        versionSettings.forEach((s: any) => {
+          if (s && s.setting_key && !seenKeys.has(s.setting_key)) {
+            allFormSettings.push(s);
+            seenKeys.add(s.setting_key);
+          }
+        });
+      }
+      if (allFormSettingsFallback && allFormSettingsFallback.length > 0) {
+        allFormSettingsFallback.forEach((s: any) => {
+          if (s && s.setting_key && !seenKeys.has(s.setting_key)) {
+            allFormSettings.push(s);
+            seenKeys.add(s.setting_key);
+          }
+        });
+      }
+      
+      console.log('[GET FORM] Combined query result:', {
+        active_form_found: !!activeFormSetting,
+        active_form_version: activeFormSetting ? (activeFormSetting.setting_value as any)?.version : null,
+        version_entries_found: versionSettings?.length || 0,
+        fallback_entries_found: allFormSettingsFallback?.length || 0,
+        total_forms_found: allFormSettings.length,
+        has_active_error: !!activeError,
+        has_versions_error: !!versionsError,
+        has_fallback_error: !!fallbackError,
+        found_keys: allFormSettings.map((s: any) => s?.setting_key).filter(Boolean),
+        active_form_preview: activeFormSetting ? {
+          key: activeFormSetting.setting_key,
+          version: (activeFormSetting.setting_value as any)?.version,
+          status: (activeFormSetting.setting_value as any)?.status,
+          id: (activeFormSetting.setting_value as any)?.id
+        } : null
+      });
+      
+      const allFormsError = activeError || versionsError || fallbackError;
+      
+      if (allFormsError) {
+        console.error('[GET FORM] ❌ Error fetching forms from SQL:', allFormsError);
+        // Don't throw - fall through to auto-generate
+      }
+      
+      
+      
+      let latestForm: any = null;
+      let latestVersion = 0;
+      let latestFormSetting: any = null;
+      
+      // ✅ CRITICAL: Find the form with the highest version number
+      // Handle both string and number versions from JSONB
+      if (allFormSettings && allFormSettings.length > 0) {
+        console.log('[GET FORM] Found', allFormSettings.length, 'form entries for role:', roleId);
+        console.log('[GET FORM] All form keys:', allFormSettings.map((s: any) => s?.setting_key).filter(Boolean));
+        
+        for (const setting of allFormSettings) {
+          if (!setting) continue;
+          if (setting.setting_value) {
+            // ✅ CRITICAL: Handle JSONB - it might be a string that needs parsing
+            let form: any = setting.setting_value;
+            if (typeof form === 'string') {
+              try {
+                form = JSON.parse(form);
+                console.log('[GET FORM] Parsed JSON string to object for key:', setting.setting_key);
+              } catch (parseError) {
+                console.error('[GET FORM] Failed to parse setting_value as JSON:', parseError);
+                continue; // Skip this form if we can't parse it
+              }
+            }
+            
+            // ✅ CRITICAL: Handle both string and number versions
+            let formVersion = 0;
+            if (form.version !== undefined && form.version !== null) {
+              if (typeof form.version === 'number') {
+                formVersion = form.version;
+              } else if (typeof form.version === 'string') {
+                formVersion = parseInt(form.version, 10) || 0;
+              }
+            }
+            
+            console.log('[GET FORM] Checking form:', {
+              setting_key: setting.setting_key,
+              version: formVersion,
+              version_type: typeof form.version,
+              status: form.status,
+              form_id: form.id,
+              raw_version: form.version,
+              current_latest: latestVersion,
+              setting_value_type: typeof setting.setting_value
+            });
+            
+            // ✅ CRITICAL: Only consider forms with valid versions > 0
+            // Also prioritize active forms over draft forms
+            if (formVersion > 0 && formVersion > latestVersion) {
+              latestVersion = formVersion;
+              latestForm = form;
+              latestFormSetting = setting;
+              console.log('[GET FORM] ✅ New latest version found:', formVersion, 'from key:', setting.setting_key);
+            } else if (formVersion > 0 && formVersion === latestVersion && form.status === 'active') {
+              // If same version, prefer active over draft
+              if (!latestForm || latestForm.status !== 'active') {
+                latestForm = form;
+                latestFormSetting = setting;
+                console.log('[GET FORM] ✅ Updated to active form with same version:', formVersion);
+              }
+            }
+          } else {
+            console.log('[GET FORM] ⚠️ Setting has no setting_value:', setting.setting_key);
+          }
+        }
+      } else {
+        console.log('[GET FORM] ⚠️ No form settings found in allFormSettings array');
+      }
+      
+      console.log('[GET FORM] Final selection:', {
+        latest_version: latestVersion,
+        latest_form_id: latestForm?.id,
+        latest_setting_key: latestFormSetting?.setting_key
+      });
+      
+      if (latestForm && latestFormSetting) {
+        // ✅ CRITICAL: Verify version is present and is a number
+        if (!latestForm.version || typeof latestForm.version !== 'number') {
+          console.error('[GET FORM] ⚠️ WARNING: Form version is missing or invalid!', {
+            version: latestForm.version,
+            version_type: typeof latestForm.version
+          });
+          // Set default version if missing
+          latestForm.version = latestForm.version || 1;
+        }
+        
+        console.log('[GET FORM] ✅ Latest form found in SQL:', {
+          form_id: latestForm.id,
+          version: latestForm.version,
+          status: latestForm.status,
+          sections_count: latestForm.sections?.length,
+          setting_key: latestFormSetting.setting_key,
+          updated_at: latestFormSetting.updated_at,
+          total_forms_found: allFormSettings?.length || 0
+        });
         
         // Add no-cache headers to prevent frontend caching
         c.header('Cache-Control', 'no-cache, no-store, must-revalidate');
         c.header('Pragma', 'no-cache');
         c.header('Expires', '0');
         
+        // ✅ CRITICAL: Return form directly from database (latest version)
         return c.json({
           success: true,
-          form: enhancedForm,
-          isNew: false
-        });
+          form: latestForm, // ✅ Use latestForm (highest version found)
+          isNew: false,
+          version: latestForm.version // ✅ Explicitly include version
+        }, 200);
       }
       
       // STEP 2: No form exists - auto-generate default active form for this role
-      console.log('[GET FORM] No enhanced form found, auto-generating default active form...');
+      console.log('[GET FORM] No enhanced form found in SQL, auto-generating default active form...');
       
-      const autoGeneratedForm = generateDefaultActiveForm(roleId);
+      const autoGeneratedForm = await generateDefaultActiveForm(roleId);
+      const formKey = `onboarding:form:${roleId}:active`;
       
-      // Save the auto-generated form
-      await kv.set(formKey, autoGeneratedForm);
-      await kv.set(`onboarding:form:${roleId}:version:${autoGeneratedForm.version}`, autoGeneratedForm);
+      // ✅ SQL MIGRATION: Save the auto-generated form to platform_settings
+      const { data: savedAutoForm, error: autoFormError } = await db
+        .from('platform_settings')
+        .upsert({
+          setting_key: formKey,
+          setting_value: autoGeneratedForm,
+          // NOTE: setting_type column doesn't exist in actual database schema
+          description: `Onboarding form for role ${roleId}`,
+          updated_at: new Date().toISOString(),
+        }, {
+          onConflict: 'setting_key'
+        })
+        .select();
+      
+      if (autoFormError) {
+        console.error('[GET FORM] ❌ Error saving auto-generated form:', autoFormError);
+        throw autoFormError;
+      }
+      console.log('[GET FORM] ✅ Auto-generated form saved:', savedAutoForm?.[0]?.setting_key);
+      
+      // Also save version
+      const { data: savedAutoVersion, error: autoVersionError } = await db
+        .from('platform_settings')
+        .upsert({
+          setting_key: `onboarding:form:${roleId}:version:${autoGeneratedForm.version}`,
+          setting_value: autoGeneratedForm,
+          // NOTE: setting_type column doesn't exist in actual database schema
+          description: `Onboarding form version ${autoGeneratedForm.version} for role ${roleId}`,
+          updated_at: new Date().toISOString(),
+        }, {
+          onConflict: 'setting_key'
+        })
+        .select();
+      
+      if (autoVersionError) {
+        console.error('[GET FORM] ❌ Error saving auto-generated version:', autoVersionError);
+        // Don't throw - version save is optional
+      } else {
+        console.log('[GET FORM] ✅ Auto-generated version saved:', savedAutoVersion?.[0]?.setting_key);
+      }
       
       console.log('[GET FORM] ✅ Auto-generated active form:', autoGeneratedForm.id);
       console.log('[GET FORM] 📋 Version:', autoGeneratedForm.version, 'Status:', autoGeneratedForm.status);
@@ -206,7 +471,14 @@ export function enhancedOnboardingManagement(app: Hono, kv: any) {
       
     } catch (error) {
       console.error('[GET FORM] Error:', error);
-      return c.json({ error: String(error) }, 500);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorStack = error instanceof Error ? error.stack : undefined;
+      console.error('[GET FORM] Error details:', { errorMessage, errorStack });
+      return c.json({ 
+        success: false,
+        error: errorMessage,
+        details: errorStack ? 'See server logs for details' : undefined
+      }, 500);
     }
   });
   
@@ -232,8 +504,59 @@ export function enhancedOnboardingManagement(app: Hono, kv: any) {
         return c.json({ error: 'Sections array is required' }, 400);
       }
       
-      // Get existing form or create new
-      const existingForm = await kv.get(`onboarding:form:${roleId}:active`);
+      // ✅ CRITICAL: Get existing form from platform_settings
+      // ✅ FIX: Query ALL forms for this role to find the highest version
+      const db = getDbClient();
+      const formKey = `onboarding:form:${roleId}:active`;
+      
+      // First, try to get the active form
+      const { data: existingFormSetting, error: fetchError } = await db
+        .from('platform_settings')
+        .select('*')
+        .eq('setting_key', formKey)
+        .maybeSingle();
+      
+      if (fetchError) {
+        console.error('[SAVE FORM] Error fetching active form:', fetchError);
+      }
+      
+      // ✅ CRITICAL: Also query ALL version entries to find the highest version
+      const { data: allVersionSettings, error: versionsError } = await db
+        .from('platform_settings')
+        .select('*')
+        .ilike('setting_key', `onboarding:form:${roleId}:version:%`)
+        .order('updated_at', { ascending: false });
+      
+      if (versionsError) {
+        console.error('[SAVE FORM] Error fetching version entries:', versionsError);
+      }
+      
+      // Find the highest version from all entries
+      let existingForm = existingFormSetting?.setting_value as any;
+      let highestVersion = existingForm?.version || 0;
+      
+      if (allVersionSettings && allVersionSettings.length > 0) {
+        for (const versionSetting of allVersionSettings) {
+          const versionForm = versionSetting.setting_value as any;
+          const versionNum = versionForm?.version && typeof versionForm.version === 'number' 
+            ? versionForm.version 
+            : (typeof versionForm?.version === 'string' ? parseInt(versionForm.version, 10) || 0 : 0);
+          
+          if (versionNum > highestVersion) {
+            highestVersion = versionNum;
+            existingForm = versionForm; // Use the form with highest version as base
+          }
+        }
+      }
+      
+      console.log('[SAVE FORM] Existing form from DB:', {
+        found: !!existingForm,
+        existing_version: existingForm?.version,
+        highest_version_found: highestVersion,
+        existing_status: existingForm?.status,
+        existing_id: existingForm?.id,
+        version_entries_found: allVersionSettings?.length || 0
+      });
       
       // Auto-generate document sections based on fields with requiresDocument
       const documentSections: FormSection[] = [];
@@ -277,12 +600,28 @@ export function enhancedOnboardingManagement(app: Hono, kv: any) {
         });
       }
       
+      // ✅ CRITICAL: Calculate version correctly
+      // Use the highest version found (from active form or version entries)
+      // If no form exists, start at 1. Otherwise increment from highest version
+      const currentVersion = highestVersion > 0 ? highestVersion : (existingForm?.version || 0);
+      const nextVersion = currentVersion > 0 
+        ? currentVersion + 1 
+        : 1;
+      
+      console.log('[SAVE FORM] Version calculation:', {
+        existing_form_version: existingForm?.version,
+        highest_version_found: highestVersion,
+        current_version: currentVersion,
+        next_version: nextVersion,
+        is_new_form: !existingForm && highestVersion === 0
+      });
+      
       // Create form object
       const form: OnboardingForm = {
         id: existingForm?.id || `form_${roleId}_${Date.now()}`,
         roleId,
         roleName: existingForm?.roleName || roleId,
-        version: existingForm ? existingForm.version + 1 : 1,
+        version: nextVersion, // ✅ CRITICAL: Use calculated next version
         status: status || 'draft',
         sections: sections.map((s: FormSection, index: number) => ({
           ...s,
@@ -310,31 +649,362 @@ export function enhancedOnboardingManagement(app: Hono, kv: any) {
         notes
       };
       
-      // Save form
-      await kv.set(`onboarding:form:${roleId}:active`, form);
-      await kv.set(`onboarding:form:${roleId}:version:${form.version}`, form);
+      // ✅ SQL MIGRATION: Save form to platform_settings
+      // IMPORTANT: Always save to 'active' key, regardless of status (vendor endpoint reads from 'active')
+      console.log('[SAVE FORM] Attempting to save form to SQL:', {
+        setting_key: `onboarding:form:${roleId}:active`,
+        form_id: form.id,
+        form_status: form.status,
+        form_version: form.version,
+        sections_count: form.sections?.length,
+        form_size: JSON.stringify(form).length
+      });
       
-      // If status is active, update the role's onboarding reference
+      // ✅ CRITICAL: Ensure form status is set correctly before saving
+      // If status is 'active', make sure the form.status is also 'active'
       if (status === 'active') {
-        const role = await kv.get(`role:config:${roleId}`);
-        if (role) {
-          role.onboardingFormId = form.id;
-          role.onboardingFormVersion = form.version;
-          role.updatedAt = new Date().toISOString();
-          await kv.set(`role:config:${roleId}`, role);
-          console.log('[SAVE FORM] ✅ Updated role reference');
+        form.status = 'active';
+        console.log('[SAVE FORM] Setting form status to active for vendor access');
+      }
+      
+      // ✅ SQL MIGRATION: Save form to platform_settings
+      // CRITICAL: Use explicit error handling and verification
+      console.log('[SAVE FORM] Preparing to save form to SQL:', {
+        setting_key: `onboarding:form:${roleId}:active`,
+        form_id: form.id,
+        form_status: form.status,
+        form_version: form.version,
+        sections_count: form.sections?.length,
+        form_size_bytes: JSON.stringify(form).length
+      });
+      
+      // Validate form object before saving
+      try {
+        JSON.stringify(form); // This will throw if form has circular references
+      } catch (jsonError) {
+        console.error('[SAVE FORM] Form object is not serializable:', jsonError);
+        throw new Error(`Form object cannot be serialized: ${jsonError}`);
+      }
+      
+      const upsertPayload = {
+          setting_key: `onboarding:form:${roleId}:active`,
+          setting_value: form,
+        description: status === 'active' 
+          ? `Active onboarding form for role ${roleId}` 
+          : `Draft onboarding form for role ${roleId}`,
+          updated_at: new Date().toISOString(),
+      };
+      
+      console.log('[SAVE FORM] Upsert payload prepared:', {
+        setting_key: upsertPayload.setting_key,
+        has_setting_value: !!upsertPayload.setting_value,
+        description: upsertPayload.description
+      });
+      
+      // ✅ CRITICAL: Save form with explicit error handling and verification
+      console.log('[SAVE FORM] Executing upsert to database...');
+      const settingKey = `onboarding:form:${roleId}:active`;
+      
+      const { data: savedForm, error: saveError } = await db
+        .from('platform_settings')
+        .upsert(upsertPayload, {
+          onConflict: 'setting_key'
+        })
+        .select();
+      
+      if (saveError) {
+        console.error('[SAVE FORM] ❌ CRITICAL ERROR saving form to SQL:', {
+          error: saveError,
+          message: saveError.message,
+          details: saveError.details,
+          hint: saveError.hint,
+          code: saveError.code
+        });
+        return c.json({ 
+          success: false,
+          error: `Failed to save form: ${saveError.message}`,
+          details: saveError.details,
+          hint: saveError.hint
+        }, 500);
+      }
+      
+      if (!savedForm || savedForm.length === 0) {
+        console.error('[SAVE FORM] ❌ CRITICAL: Upsert returned no data:', { savedForm });
+        return c.json({ 
+          success: false,
+          error: 'Failed to save form: No data returned from upsert'
+        }, 500);
+      }
+      
+      const savedFormRecord = savedForm[0];
+      
+      // ✅ CRITICAL: Verify the saved form by reading it back from database
+      const savedFormValue = savedFormRecord?.setting_value as any;
+      console.log('[SAVE FORM] Upsert returned data:', {
+        setting_key: savedFormRecord?.setting_key,
+        saved_form_id: savedFormValue?.id,
+        saved_form_status: savedFormValue?.status,
+        saved_form_version: savedFormValue?.version,
+        saved_sections_count: savedFormValue?.sections?.length,
+        updated_at: savedFormRecord?.updated_at
+      });
+      
+      // ✅ CRITICAL: Wait a moment for DB to sync, then re-read to verify persistence
+      await new Promise(resolve => setTimeout(resolve, 100)); // 100ms delay for DB sync
+      
+      // ✅ CRITICAL: Re-read from database to verify persistence
+      const { data: verifyForm, error: verifyError } = await db
+        .from('platform_settings')
+        .select('*')
+        .eq('setting_key', `onboarding:form:${roleId}:active`)
+        .maybeSingle();
+      
+      if (verifyError) {
+        console.error('[SAVE FORM] ❌ CRITICAL: Error verifying saved form:', verifyError);
+        return c.json({ 
+          success: false,
+          error: `Form saved but verification failed: ${verifyError.message}`
+        }, 500);
+      }
+      
+      if (!verifyForm || !verifyForm.setting_value) {
+        console.error('[SAVE FORM] ❌ CRITICAL: Form not found after save!', {
+          verifyForm_exists: !!verifyForm,
+          setting_value_exists: !!verifyForm?.setting_value
+        });
+        return c.json({ 
+          success: false,
+          error: 'Form was not persisted to database'
+        }, 500);
+      }
+      
+      const verifiedFormValue = verifyForm.setting_value as any;
+      console.log('[SAVE FORM] ✅ Verification successful:', {
+        verified_form_id: verifiedFormValue?.id,
+        verified_status: verifiedFormValue?.status,
+        verified_sections: verifiedFormValue?.sections?.length,
+        verified_version: verifiedFormValue?.version,
+        verified_sections_sample: verifiedFormValue?.sections?.slice(0, 2).map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          fields_count: s.fields?.length
+        }))
+      });
+      
+      // ✅ CRITICAL: Verify version matches expected version
+      if (verifiedFormValue?.version !== form.version) {
+        console.error('[SAVE FORM] ❌ CRITICAL: Version mismatch after save!', {
+          expected_version: form.version,
+          actual_version: verifiedFormValue?.version
+        });
+        return c.json({ 
+          success: false,
+          error: `Form saved but version mismatch: expected ${form.version}, got ${verifiedFormValue?.version}`
+        }, 500);
+      }
+      
+      // ✅ CRITICAL: Verify the saved form has the correct status
+      if (status === 'active' && verifiedFormValue?.status !== 'active') {
+        console.error('[SAVE FORM] ⚠️ WARNING: Form saved but status is not active!', {
+          expected_status: 'active',
+          actual_status: verifiedFormValue?.status
+        });
+        // Don't fail, but log the warning
+      }
+      
+      // Use verified form data
+      const savedFormData = verifiedFormValue;
+      
+      // ✅ CRITICAL: Verify version is correctly persisted
+      console.log('[SAVE FORM] ✅ Verified form version:', {
+        version: savedFormData.version,
+        status: savedFormData.status,
+        form_id: savedFormData.id
+      });
+      
+      // Save version (optional - for version history)
+      // ✅ CRITICAL: Use verified form data, not the constructed form
+      try {
+        const { data: savedVersion, error: versionError } = await db
+        .from('platform_settings')
+        .upsert({
+            setting_key: `onboarding:form:${roleId}:version:${savedFormData.version}`,
+            setting_value: savedFormData, // Use verified form from database
+            description: `Onboarding form version ${savedFormData.version} for role ${roleId}`,
+          updated_at: new Date().toISOString(),
+          }, {
+            onConflict: 'setting_key'
+          })
+          .select();
+        
+        if (versionError) {
+          console.error('[SAVE FORM] Error saving version to SQL (non-critical):', versionError);
+          // Don't throw - version save is optional
+        } else {
+          console.log('[SAVE FORM] Version saved to SQL:', savedVersion?.[0]?.setting_key);
+        }
+      } catch (versionErr) {
+        console.error('[SAVE FORM] Exception saving version (non-critical):', versionErr);
+        // Continue - version save is optional
+      }
+      
+      // ✅ CRITICAL: Final verification - ensure the form is actually in the database
+      // Wait a moment for DB to sync, then do a final check
+      await new Promise(resolve => setTimeout(resolve, 200)); // 200ms delay for DB sync
+      
+      const { data: finalCheck, error: finalCheckError } = await db
+        .from('platform_settings')
+        .select('*')
+        .eq('setting_key', `onboarding:form:${roleId}:active`)
+        .maybeSingle();
+      
+      if (finalCheckError) {
+        console.error('[SAVE FORM] ⚠️ Error in final version check:', finalCheckError);
+        return c.json({ 
+          success: false,
+          error: `Form saved but final verification failed: ${finalCheckError.message}`
+        }, 500);
+      }
+      
+      if (!finalCheck || !finalCheck.setting_value) {
+        console.error('[SAVE FORM] ❌ CRITICAL: Form not found in final check!');
+        return c.json({ 
+          success: false,
+          error: 'Form was not found in database after save'
+        }, 500);
+      }
+      
+      const finalForm = finalCheck.setting_value as any;
+      console.log('[SAVE FORM] ✅ Final version check:', {
+        active_form_version: finalForm.version,
+        expected_version: savedFormData.version,
+        versions_match: finalForm.version === savedFormData.version,
+        sections_count_match: finalForm.sections?.length === savedFormData.sections?.length
+      });
+      
+      // If versions don't match, this is a critical error - force update
+      if (finalForm.version !== savedFormData.version) {
+        console.error('[SAVE FORM] ❌ CRITICAL: Active form version mismatch! Forcing update...', {
+          active_version: finalForm.version,
+          expected_version: savedFormData.version
+        });
+        
+        // Force update the active form with the correct version
+        const { error: forceUpdateError } = await db
+          .from('platform_settings')
+          .update({
+            setting_value: savedFormData,
+            updated_at: new Date().toISOString()
+          })
+          .eq('setting_key', `onboarding:form:${roleId}:active`);
+        
+        if (forceUpdateError) {
+          console.error('[SAVE FORM] ❌ Failed to force update active form:', forceUpdateError);
+          return c.json({ 
+            success: false,
+            error: `Form saved but version mismatch and force update failed: ${forceUpdateError.message}`
+          }, 500);
+        } else {
+          console.log('[SAVE FORM] ✅ Force updated active form with correct version');
+          
+          // Re-verify after force update
+          await new Promise(resolve => setTimeout(resolve, 100));
+          const { data: reVerify, error: reVerifyError } = await db
+            .from('platform_settings')
+            .select('*')
+            .eq('setting_key', `onboarding:form:${roleId}:active`)
+            .maybeSingle();
+          
+          if (reVerifyError || !reVerify?.setting_value) {
+            console.error('[SAVE FORM] ❌ Failed to verify after force update');
+            return c.json({ 
+              success: false,
+              error: 'Form update failed verification'
+            }, 500);
+          }
+          
+          const reVerifiedForm = reVerify.setting_value as any;
+          if (reVerifiedForm.version !== savedFormData.version) {
+            console.error('[SAVE FORM] ❌ Version still incorrect after force update');
+            return c.json({ 
+              success: false,
+              error: 'Form version still incorrect after force update'
+            }, 500);
+          }
+          
+          console.log('[SAVE FORM] ✅ Form verified after force update');
         }
       }
       
-      console.log('[SAVE FORM] ✅ Form saved:', form.id, 'Version:', form.version);
+      // ✅ SQL MIGRATION: If status is active, update the role's onboarding reference in SQL
+      // ✅ CRITICAL: Use verified form data
+      if (status === 'active') {
+        try {
+        const rolesRepo = getRolesRepository();
+        const role = await rolesRepo.findById(roleId);
+        if (role) {
+            // Update role config with form reference using verified form data
+          const roleConfig = (role.config as any) || {};
+          await rolesRepo.update(roleId, {
+            config: {
+              ...roleConfig,
+                onboardingFormId: savedFormData.id,
+                onboardingFormVersion: savedFormData.version,
+              updatedAt: new Date().toISOString(),
+            },
+            updated_at: new Date().toISOString(),
+          });
+            console.log('[SAVE FORM] Updated role reference in SQL');
+          }
+        } catch (roleUpdateErr) {
+          console.error('[SAVE FORM] Error updating role reference (non-critical):', roleUpdateErr);
+          // Don't fail the save if role update fails
+        }
+      }
       
+      console.log('[SAVE FORM] ✅ Form successfully saved and verified:', {
+        form_id: savedFormData?.id,
+        version: savedFormData?.version,
+        status: savedFormData?.status,
+        sections_count: savedFormData?.sections?.length,
+        setting_key: `onboarding:form:${roleId}:active`
+      });
+      
+      // ✅ CRITICAL: One final database check to ensure form is actually there
+      // Wait 500ms for any async operations to complete
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      const { data: finalVerification, error: finalVerificationError } = await db
+        .from('platform_settings')
+        .select('setting_key, setting_value')
+        .eq('setting_key', `onboarding:form:${roleId}:active`)
+        .maybeSingle();
+      
+      if (finalVerificationError) {
+        console.error('[SAVE FORM] ⚠️ Final verification error (non-critical):', finalVerificationError);
+      } else if (!finalVerification || !finalVerification.setting_value) {
+        console.error('[SAVE FORM] ❌ CRITICAL: Form missing in final verification!');
+        return c.json({
+          success: false,
+          error: 'Form was not persisted to database after all verification steps'
+        }, 500);
+      } else {
+        const finalForm = finalVerification.setting_value as any;
+        console.log('[SAVE FORM] ✅ Final verification passed:', {
+          version: finalForm.version,
+          sections_count: finalForm.sections?.length
+        });
+      }
+      
+      // ✅ CRITICAL: Return the verified form from database, not the constructed one
+      // This ensures the frontend receives exactly what's in the database
       return c.json({
         success: true,
-        form,
+        form: savedFormData, // Use verified form from database
         message: status === 'active' 
           ? 'Form published successfully and is now active for vendor onboarding'
           : 'Form saved as draft successfully'
-      });
+      }, 200);
       
     } catch (error) {
       console.error('[SAVE FORM] Error:', error);
@@ -368,21 +1038,145 @@ export function enhancedOnboardingManagement(app: Hono, kv: any) {
       });
       console.log('========================================================\\n');
       
-      // Get active form
-      console.log('[VENDOR FORM] Checking KV for key:', `onboarding:form:${roleId}:active`);
-      let form = await kv.get(`onboarding:form:${roleId}:active`);
+      // ✅ SQL MIGRATION: Get active form from platform_settings
+      // ✅ CRITICAL FIX: Get the LATEST version by checking ALL version entries
+      const db = getDbClient();
+      console.log('[VENDOR FORM] Fetching all forms for role:', roleId);
       
-      if (!form) {
-        console.log('[VENDOR FORM] ⚠️ No form found in KV store');
-      } else {
-        console.log('[VENDOR FORM] ✓ Found form:', { id: form.id, status: form.status, version: form.version });
+      // Query 1: Get active form
+      const { data: activeFormSetting, error: activeError } = await db
+        .from('platform_settings')
+        .select('*')
+        .eq('setting_key', `onboarding:form:${roleId}:active`)
+        .maybeSingle();
+      
+      // Query 2: Get all version entries
+      const { data: versionSettings, error: versionsError } = await db
+        .from('platform_settings')
+        .select('*')
+        .ilike('setting_key', `onboarding:form:${roleId}:version:%`)
+        .order('updated_at', { ascending: false });
+      
+      // Combine all forms
+      const allFormSettings: any[] = [];
+      if (activeFormSetting) {
+        allFormSettings.push(activeFormSetting);
+      }
+      if (versionSettings && versionSettings.length > 0) {
+        allFormSettings.push(...versionSettings);
       }
       
-      if (!form || form.status !== 'active') {
-        console.log('[VENDOR FORM] No active form found, auto-generating...');
+      console.log('[VENDOR FORM] Query result:', {
+        active_form_found: !!activeFormSetting,
+        version_entries_found: versionSettings?.length || 0,
+        total_forms_found: allFormSettings.length,
+        has_active_error: !!activeError,
+        has_versions_error: !!versionsError,
+        found_keys: allFormSettings.map((s: any) => s?.setting_key).filter(Boolean)
+      });
+      
+      const allFormsError = activeError || versionsError;
+      
+      if (allFormsError) {
+        console.error('[VENDOR FORM] ❌ Error fetching forms from SQL:', allFormsError);
+        throw allFormsError;
+      }
+      
+      let latestForm: any = null;
+      let latestVersion = 0;
+      let latestFormSetting: any = null;
+      
+      // ✅ CRITICAL: Find the form with the highest version number
+      // Handle both string and number versions from JSONB
+      if (allFormSettings && allFormSettings.length > 0) {
+        console.log('[VENDOR FORM] Found', allFormSettings.length, 'form entries for role:', roleId);
+        
+        for (const setting of allFormSettings) {
+          if (!setting) continue;
+          if (setting.setting_value) {
+            const form = setting.setting_value as any;
+            // ✅ CRITICAL: Handle both string and number versions
+            let formVersion = 0;
+            if (form.version !== undefined && form.version !== null) {
+              if (typeof form.version === 'number') {
+                formVersion = form.version;
+              } else if (typeof form.version === 'string') {
+                formVersion = parseInt(form.version, 10) || 0;
+              }
+            }
+            
+            console.log('[VENDOR FORM] Checking form:', {
+              setting_key: setting.setting_key,
+              version: formVersion,
+              version_type: typeof form.version,
+              status: form.status
+            });
+            
+            if (formVersion > latestVersion) {
+              latestVersion = formVersion;
+              latestForm = form;
+              latestFormSetting = setting;
+              console.log('[VENDOR FORM] ✅ New latest version found:', formVersion);
+            }
+          }
+        }
+      }
+      
+      console.log('[VENDOR FORM] Final selection:', {
+        latest_version: latestVersion,
+        latest_form_id: latestForm?.id,
+        latest_setting_key: latestFormSetting?.setting_key
+      });
+      
+      console.log('[VENDOR FORM] Database query result:', {
+        total_forms_found: allFormSettings?.length || 0,
+        latest_version: latestVersion,
+        latest_form_found: !!latestForm,
+        latest_setting_key: latestFormSetting?.setting_key,
+        latest_form_status: latestForm?.status
+      });
+      
+      let form = latestForm;
+      
+      if (!form) {
+        console.log('[VENDOR FORM] ⚠️ No form found in SQL for role:', roleId);
+        console.log('[VENDOR FORM] Checking query results:', {
+          active_form_found: !!activeFormSetting,
+          version_entries_found: versionSettings?.length || 0,
+          total_forms_found: allFormSettings.length
+        });
+      } else {
+        console.log('[VENDOR FORM] ✓ Found latest form in SQL:', { 
+          id: form.id, 
+          status: form.status, 
+          version: form.version,
+          sections_count: form.sections?.length,
+          form_keys: Object.keys(form),
+          updated_at: latestFormSetting?.updated_at,
+          setting_key: latestFormSetting?.setting_key
+        });
+        
+        // ✅ CRITICAL: Verify version is present and is a number
+        if (!form.version || typeof form.version !== 'number') {
+          console.error('[VENDOR FORM] ⚠️ WARNING: Form version is missing or invalid!', {
+            version: form.version,
+            version_type: typeof form.version
+          });
+          // Set default version if missing
+          form.version = form.version || 1;
+        }
+        
+        // ✅ CRITICAL: Log that we're returning the latest version
+        console.log('[VENDOR FORM] ✅ Returning form with version:', form.version);
+      }
+      
+      // ✅ CRITICAL FIX: Only auto-generate if form doesn't exist
+      // If form exists but status is 'draft', DO NOT overwrite it - admin must publish it first
+      if (!form) {
+        console.log('[VENDOR FORM] No form found, auto-generating default form...');
         
         // Auto-generate a default active form
-        const autoGeneratedForm = generateDefaultActiveForm(roleId);
+        const autoGeneratedForm = await generateDefaultActiveForm(roleId);
         
         console.log('[VENDOR FORM] Generated form:', {
           id: autoGeneratedForm.id,
@@ -391,10 +1185,46 @@ export function enhancedOnboardingManagement(app: Hono, kv: any) {
           sectionsCount: autoGeneratedForm.sections.length
         });
         
-        // Save the auto-generated form
-        console.log('[VENDOR FORM] Saving to KV...');
-        await kv.set(`onboarding:form:${roleId}:active`, autoGeneratedForm);
-        await kv.set(`onboarding:form:${roleId}:version:${autoGeneratedForm.version}`, autoGeneratedForm);
+        // ✅ SQL MIGRATION: Save the auto-generated form to platform_settings
+        console.log('[VENDOR FORM] Saving to SQL...');
+        const { data: savedVendorForm, error: vendorFormError } = await db
+          .from('platform_settings')
+          .upsert({
+            setting_key: `onboarding:form:${roleId}:active`,
+            setting_value: autoGeneratedForm,
+            // NOTE: setting_type column doesn't exist in actual database schema
+            description: `Auto-generated active onboarding form for role ${roleId}`,
+            updated_at: new Date().toISOString(),
+          }, {
+            onConflict: 'setting_key'
+          })
+          .select();
+        
+        if (vendorFormError) {
+          console.error('[VENDOR FORM] Error saving form:', vendorFormError);
+          throw vendorFormError;
+        }
+        console.log('[VENDOR FORM] Form saved:', savedVendorForm?.[0]?.setting_key);
+        
+        const { data: savedVendorVersion, error: vendorVersionError } = await db
+          .from('platform_settings')
+          .upsert({
+            setting_key: `onboarding:form:${roleId}:version:${autoGeneratedForm.version}`,
+            setting_value: autoGeneratedForm,
+            // NOTE: setting_type column doesn't exist in actual database schema
+            description: `Onboarding form version ${autoGeneratedForm.version} for role ${roleId}`,
+            updated_at: new Date().toISOString(),
+          }, {
+            onConflict: 'setting_key'
+          })
+          .select();
+        
+        if (vendorVersionError) {
+          console.error('[VENDOR FORM] ❌ Error saving version:', vendorVersionError);
+          // Don't throw - version save is optional
+        } else {
+          console.log('[VENDOR FORM] ✅ Version saved:', savedVendorVersion?.[0]?.setting_key);
+        }
         
         console.log('[VENDOR FORM] ✅ Auto-generated active form saved:', autoGeneratedForm.id);
         
@@ -404,10 +1234,22 @@ export function enhancedOnboardingManagement(app: Hono, kv: any) {
           form: autoGeneratedForm,
           autoGenerated: true
         });
+      } else if (form && form.status !== 'active') {
+        // ✅ CRITICAL: If form exists but status is not 'active', return error instead of overwriting
+        console.log('[VENDOR FORM] Form exists but status is not active:', form.status);
+        console.log('[VENDOR FORM] Admin must publish the form first - NOT auto-generating');
+        return c.json({
+          success: false,
+          error: 'No active onboarding form available. The form is saved as draft and must be published by admin first.',
+          formStatus: form.status,
+          hasDraftForm: true,
+          message: 'Please contact admin to publish the onboarding form.'
+        }, 404);
       }
       
+      // Form exists and status is 'active' - proceed with filtering
       // Filter only active sections and fields
-      console.log('[VENDOR FORM] Filtering active sections and fields...');
+      console.log('[VENDOR FORM] Form is active, filtering active sections and fields...');
       const activeSections = form.sections
         .filter((s: FormSection) => s.isActive)
         .map((s: FormSection) => ({
@@ -426,15 +1268,18 @@ export function enhancedOnboardingManagement(app: Hono, kv: any) {
       
       console.log('[VENDOR FORM] Active sections:', activeSections.length);
       console.log('[VENDOR FORM] Active document sections:', activeDocumentSections.length);
-      console.log('[VENDOR FORM] ✅ Returning active form:', form.id);
+      console.log('[VENDOR FORM] ✅ Returning active form:', form.id, 'Version:', form.version);
       
+      // ✅ CRITICAL: Ensure version is included in response
       return c.json({
         success: true,
         form: {
           ...form,
+          version: form.version, // ✅ Explicitly include version
           sections: activeSections,
           documentSections: activeDocumentSections
-        }
+        },
+        version: form.version // ✅ Also include at top level for easy access
       });
       
     } catch (error) {
@@ -466,11 +1311,20 @@ export function enhancedOnboardingManagement(app: Hono, kv: any) {
       
       console.log('[DELETE FIELD] Deleting field:', fieldId, 'from role:', roleId);
       
-      const form = await kv.get(`onboarding:form:${roleId}:active`);
+      // ✅ SQL MIGRATION: Get form from platform_settings
+      const db = getDbClient();
+      const formKey = `onboarding:form:${roleId}:active`;
+      const { data: formSetting } = await db
+        .from('platform_settings')
+        .select('*')
+        .eq('setting_key', formKey)
+        .maybeSingle();
       
-      if (!form) {
+      if (!formSetting || !formSetting.setting_value) {
         return c.json({ error: 'Form not found' }, 404);
       }
+      
+      const form = formSetting.setting_value as any;
       
       // Find and remove field
       let fieldFound = false;
@@ -493,7 +1347,18 @@ export function enhancedOnboardingManagement(app: Hono, kv: any) {
       form.metadata.lastModifiedAt = new Date().toISOString();
       form.version += 1;
       
-      await kv.set(`onboarding:form:${roleId}:active`, form);
+      // ✅ SQL MIGRATION: Save updated form to platform_settings
+      await db
+        .from('platform_settings')
+        .upsert({
+          setting_key: formKey,
+          setting_value: form,
+          // NOTE: setting_type column doesn't exist in actual database schema
+          description: `Onboarding form for role ${roleId}`,
+          updated_at: new Date().toISOString(),
+        }, {
+          onConflict: 'setting_key'
+        });
       
       console.log('[DELETE FIELD] ✅ Field deleted successfully');
       
@@ -524,18 +1389,49 @@ export function enhancedOnboardingManagement(app: Hono, kv: any) {
       
       console.log('[ARCHIVE FORM] Archiving form for role:', roleId);
       
-      const form = await kv.get(`onboarding:form:${roleId}:active`);
+      // ✅ SQL MIGRATION: Get form from platform_settings
+      const db = getDbClient();
+      const formKey = `onboarding:form:${roleId}:active`;
+      const { data: formSetting } = await db
+        .from('platform_settings')
+        .select('*')
+        .eq('setting_key', formKey)
+        .maybeSingle();
       
-      if (!form) {
+      if (!formSetting || !formSetting.setting_value) {
         return c.json({ error: 'Form not found' }, 404);
       }
+      
+      const form = formSetting.setting_value as any;
       
       form.status = 'archived';
       form.metadata.lastModifiedBy = adminName || 'admin';
       form.metadata.lastModifiedAt = new Date().toISOString();
       
-      await kv.set(`onboarding:form:${roleId}:active`, form);
-      await kv.set(`onboarding:form:${roleId}:archived:${Date.now()}`, form);
+      // ✅ SQL MIGRATION: Save archived form to platform_settings
+      await db
+        .from('platform_settings')
+        .upsert({
+          setting_key: formKey,
+          setting_value: form,
+          // NOTE: setting_type column doesn't exist in actual database schema
+          description: `Archived onboarding form for role ${roleId}`,
+          updated_at: new Date().toISOString(),
+        }, {
+          onConflict: 'setting_key'
+        });
+      
+      await db
+        .from('platform_settings')
+        .upsert({
+          setting_key: `onboarding:form:${roleId}:archived:${Date.now()}`,
+          setting_value: form,
+          // NOTE: setting_type column doesn't exist in actual database schema
+          description: `Archived onboarding form snapshot for role ${roleId}`,
+          updated_at: new Date().toISOString(),
+        }, {
+          onConflict: 'setting_key'
+        });
       
       console.log('[ARCHIVE FORM] ✅ Form archived successfully');
       
@@ -563,31 +1459,57 @@ export function enhancedOnboardingManagement(app: Hono, kv: any) {
       console.log('[BULK MIGRATE] Starting bulk migration...');
       
       // Get all roles
-      const roles = await kv.getByPrefix('role:config:');
+      // ✅ SQL MIGRATION: Get roles from SQL instead of KV
+      const rolesRepo = getRolesRepository();
+      const allRoles = await rolesRepo.findAll();
+      const roles = allRoles.map((role: any) => ({
+        id: role.name, // Use name as roleId
+        ...role.config, // Spread config
+        ...role, // Include role properties
+      }));
       console.log('[BULK MIGRATE] Found roles:', roles.length);
       
-      const results = [];
+      const results: Array<{
+        roleId: string;
+        status: 'skipped' | 'migrated' | 'error';
+        message?: string;
+        formId?: any;
+        version?: any;
+        error?: string;
+      }> = [];
       
       for (const role of roles) {
         try {
           const roleId = role.id;
           console.log(`[BULK MIGRATE] Processing role: ${roleId}`);
           
-          // Check if enhanced form already exists
-          const existingForm = await kv.get(`onboarding:form:${roleId}:active`);
+          // ✅ SQL MIGRATION: Check if enhanced form already exists in platform_settings
+          const db = getDbClient();
+          const formKey = `onboarding:form:${roleId}:active`;
+          const { data: existingFormSetting } = await db
+            .from('platform_settings')
+            .select('*')
+            .eq('setting_key', formKey)
+            .maybeSingle();
           
-          if (existingForm) {
+          if (existingFormSetting && existingFormSetting.setting_value) {
             console.log(`[BULK MIGRATE] ✓ Form already exists for ${roleId}`);
             results.push({
-              roleId,
+              roleId: roleId as string,
               status: 'skipped',
               message: 'Form already exists'
             });
             continue;
           }
           
-          // Check for legacy config
-          const legacyConfig = await kv.get(`onboarding:config:${roleId}`);
+          // ✅ SQL MIGRATION: Check for legacy config in platform_settings
+          const { data: legacyConfigSetting } = await db
+            .from('platform_settings')
+            .select('*')
+            .eq('setting_key', `onboarding:config:${roleId}`)
+            .maybeSingle();
+          
+          const legacyConfig = legacyConfigSetting?.setting_value;
           
           if (!legacyConfig && !role) {
             console.log(`[BULK MIGRATE] ⚠ No legacy data for ${roleId}, creating default`);
@@ -596,12 +1518,22 @@ export function enhancedOnboardingManagement(app: Hono, kv: any) {
           // Migrate
           const migratedForm = migrateLegacyToEnhanced(roleId, role, legacyConfig);
           
-          // Save
-          await kv.set(`onboarding:form:${roleId}:active`, migratedForm);
+          // ✅ SQL MIGRATION: Save to platform_settings
+          await db
+            .from('platform_settings')
+            .upsert({
+              setting_key: formKey,
+              setting_value: migratedForm,
+              // NOTE: setting_type column doesn't exist in actual database schema
+              description: `Migrated onboarding form for role ${roleId}`,
+              updated_at: new Date().toISOString(),
+            }, {
+              onConflict: 'setting_key'
+            });
           
           console.log(`[BULK MIGRATE] ✅ Migrated ${roleId}`);
           results.push({
-            roleId,
+            roleId: roleId as string,
             status: 'migrated',
             formId: migratedForm.id,
             version: migratedForm.version
@@ -610,7 +1542,7 @@ export function enhancedOnboardingManagement(app: Hono, kv: any) {
         } catch (roleError) {
           console.error(`[BULK MIGRATE] ❌ Error migrating ${role.id}:`, roleError);
           results.push({
-            roleId: role.id,
+            roleId: role.id as string,
             status: 'error',
             error: String(roleError)
           });
@@ -625,9 +1557,9 @@ export function enhancedOnboardingManagement(app: Hono, kv: any) {
         results,
         summary: {
           total: roles.length,
-          migrated: results.filter(r => r.status === 'migrated').length,
-          skipped: results.filter(r => r.status === 'skipped').length,
-          errors: results.filter(r => r.status === 'error').length
+          migrated: results.filter((r) => r.status === 'migrated').length,
+          skipped: results.filter((r) => r.status === 'skipped').length,
+          errors: results.filter((r) => r.status === 'error').length
         }
       });
       
@@ -651,7 +1583,16 @@ export function enhancedOnboardingManagement(app: Hono, kv: any) {
       
       console.log('[GET VERSIONS] Fetching versions for role:', roleId);
       
-      const allVersions = await kv.getByPrefix(`onboarding:form:${roleId}:version:`);
+      // ✅ SQL MIGRATION: Get all versions from platform_settings
+      const db = getDbClient();
+      const { data: versionSettings } = await db
+        .from('platform_settings')
+        .select('*')
+        .like('setting_key', `onboarding:form:${roleId}:version:%`);
+      
+      const allVersions = (versionSettings || [])
+        .map((setting: any) => setting.setting_value)
+        .filter((v: any) => v && v.version);
       
       // Sort by version number (newest first)
       allVersions.sort((a: any, b: any) => b.version - a.version);
@@ -951,7 +1892,17 @@ export function enhancedOnboardingManagement(app: Hono, kv: any) {
   /**
    * Generates a default active form for a role
    */
-  function generateDefaultActiveForm(roleId: string): any {
+  async function generateDefaultActiveForm(roleId: string): Promise<any> {
+    // Try to get role info, but don't fail if it doesn't exist
+    let role: any = null;
+    try {
+      const rolesRepo = getRolesRepository();
+      role = await rolesRepo.findById(roleId);
+    } catch (roleError) {
+      console.log('[GENERATE FORM] Could not fetch role info (non-critical):', roleError);
+      // Continue with default values
+    }
+    
     const sections: any[] = [];
     let fieldOrder = 0;
     
@@ -1051,7 +2002,7 @@ export function enhancedOnboardingManagement(app: Hono, kv: any) {
     return {
       id: `form_${roleId}_default_${Date.now()}`,
       roleId,
-      roleName: roleId,
+      roleName: role?.displayName || role?.name || roleId,
       version: 1,
       status: 'active', // Mark as active since it was being used
       sections,

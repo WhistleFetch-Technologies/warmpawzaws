@@ -53,6 +53,18 @@ export interface Booking {
   otp_code?: string | null;
   otp_verified: boolean;
   otp_expires_at?: string | null;
+  // OTP Start/End for service lifecycle
+  otp_start_code?: string | null;
+  otp_start_verified?: boolean;
+  otp_start_attempts?: number;
+  otp_end_code?: string | null;
+  otp_end_verified?: boolean;
+  otp_end_attempts?: number;
+  started_at?: string | null;
+  // Earnings tracking
+  earnings_realized?: boolean;
+  earnings_amount?: number | null;
+  settlement_id?: string | null;
   notes?: string | null;
   cancellation_reason?: string | null;
   rescheduled_from_booking_id?: string | null;
@@ -117,11 +129,21 @@ export class BookingsRepository {
   }
 
   /**
-   * Get booking by ID
+   * Get booking by ID (UUID)
    * Replaces: kv.get(`booking:${bookingId}`)
    */
   async findById(bookingId: string): Promise<Booking | null> {
     const results = await selectQuery<any>("bookings", { id: bookingId }, { limit: 1 });
+    if (results.length === 0) return null;
+    return this.mapBooking(results[0]);
+  }
+
+  /**
+   * Get booking by booking_id (string identifier)
+   * For backward compatibility with string booking IDs
+   */
+  async findByBookingId(bookingIdString: string): Promise<Booking | null> {
+    const results = await selectQuery<any>("bookings", { booking_id: bookingIdString }, { limit: 1 });
     if (results.length === 0) return null;
     return this.mapBooking(results[0]);
   }
@@ -182,6 +204,18 @@ export class BookingsRepository {
       otp_code: data.otp_code,
       otp_verified: data.otp_verified || false,
       otp_expires_at: data.otp_expires_at,
+      // OTP Start/End
+      otp_start_code: data.otp_start_code,
+      otp_start_verified: data.otp_start_verified || false,
+      otp_start_attempts: data.otp_start_attempts || 0,
+      otp_end_code: data.otp_end_code,
+      otp_end_verified: data.otp_end_verified || false,
+      otp_end_attempts: data.otp_end_attempts || 0,
+      started_at: data.started_at,
+      // Earnings tracking
+      earnings_realized: data.earnings_realized || false,
+      earnings_amount: data.earnings_amount ? parseFloat(data.earnings_amount) : null,
+      settlement_id: data.settlement_id,
       notes: data.notes,
       cancellation_reason: data.cancellation_reason,
       rescheduled_from_booking_id: data.rescheduled_from_booking_id,
@@ -481,7 +515,7 @@ export class BookingsRepository {
   }
 
   /**
-   * Verify OTP
+   * Verify OTP (legacy - for backward compatibility)
    */
   async verifyOtp(bookingId: string, otpCode: string): Promise<boolean> {
     const booking = await this.findById(bookingId);
@@ -505,7 +539,7 @@ export class BookingsRepository {
   }
 
   /**
-   * Set OTP for booking
+   * Set OTP for booking (legacy - for backward compatibility)
    */
   async setOtp(bookingId: string, otpCode: string, expiresInMinutes: number = 10): Promise<void> {
     const expiresAt = new Date();
@@ -515,6 +549,114 @@ export class BookingsRepository {
       otp_code: otpCode,
       otp_verified: false,
       otp_expires_at: expiresAt.toISOString(),
+    });
+  }
+
+  /**
+   * Verify Start OTP (for service start)
+   */
+  async verifyStartOtp(bookingId: string, otpCode: string): Promise<{ verified: boolean; attempts: number; maxAttempts: number }> {
+    const booking = await this.findById(bookingId);
+    if (!booking) {
+      throw new Error(`Booking not found: ${bookingId}`);
+    }
+    
+    const maxAttempts = 3;
+    const currentAttempts = (booking.otp_start_attempts || 0);
+    
+    if (currentAttempts >= maxAttempts) {
+      return { verified: false, attempts: currentAttempts, maxAttempts };
+    }
+    
+    if (booking.otp_start_code !== otpCode) {
+      // Increment attempts
+      await this.update(bookingId, {
+        otp_start_attempts: currentAttempts + 1,
+      });
+      return { verified: false, attempts: currentAttempts + 1, maxAttempts };
+    }
+    
+    // OTP verified - mark as verified and start service
+    await this.update(bookingId, {
+      otp_start_verified: true,
+      status: 'in_progress',
+      started_at: new Date().toISOString(),
+    });
+    
+    return { verified: true, attempts: 0, maxAttempts };
+  }
+
+  /**
+   * Verify End OTP (for service completion)
+   */
+  async verifyEndOtp(bookingId: string, otpCode: string): Promise<{ verified: boolean; attempts: number; maxAttempts: number }> {
+    const booking = await this.findById(bookingId);
+    if (!booking) {
+      throw new Error(`Booking not found: ${bookingId}`);
+    }
+    
+    const maxAttempts = 3;
+    const currentAttempts = (booking.otp_end_attempts || 0);
+    
+    if (currentAttempts >= maxAttempts) {
+      return { verified: false, attempts: currentAttempts, maxAttempts };
+    }
+    
+    if (booking.otp_end_code !== otpCode) {
+      // Increment attempts
+      await this.update(bookingId, {
+        otp_end_attempts: currentAttempts + 1,
+      });
+      return { verified: false, attempts: currentAttempts + 1, maxAttempts };
+    }
+    
+    // OTP verified - mark as verified
+    await this.update(bookingId, {
+      otp_end_verified: true,
+    });
+    
+    return { verified: true, attempts: 0, maxAttempts };
+  }
+
+  /**
+   * Set Start OTP for booking
+   */
+  async setStartOtp(bookingId: string, otpCode: string): Promise<void> {
+    await this.update(bookingId, {
+      otp_start_code: otpCode,
+      otp_start_verified: false,
+      otp_start_attempts: 0,
+    });
+  }
+
+  /**
+   * Set End OTP for booking
+   */
+  async setEndOtp(bookingId: string, otpCode: string): Promise<void> {
+    await this.update(bookingId, {
+      otp_end_code: otpCode,
+      otp_end_verified: false,
+      otp_end_attempts: 0,
+    });
+  }
+
+  /**
+   * Mark earnings as realized
+   */
+  async markEarningsRealized(bookingId: string, earningsAmount: number): Promise<void> {
+    await this.update(bookingId, {
+      earnings_realized: true,
+      earnings_amount: earningsAmount,
+    });
+  }
+
+  /**
+   * Link settlement to booking
+   */
+  async linkSettlement(bookingId: string, settlementId: string): Promise<void> {
+    await this.update(bookingId, {
+      settlement_id: settlementId,
+      settled_at: new Date().toISOString(),
     });
   }
 

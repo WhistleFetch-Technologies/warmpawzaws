@@ -1,5 +1,5 @@
 import { Hono } from "npm:hono";
-import * as kv from './kv_store.tsx';
+import { getDbClient } from '../../lib/db.ts';
 
 /**
  * SMS EVENT NOTIFICATIONS SERVICE
@@ -69,8 +69,15 @@ export function registerSmsEventNotifications(app: Hono) {
     data: Record<string, any>
   ): Promise<boolean> {
     try {
-      // Get SMS settings
-      const smsSettings = await kv.get('admin:settings:sms') || {};
+      // ✅ SQL: Get SMS settings from configurations table
+      const db = getDbClient();
+      const { data: config } = await db
+        .from('configurations')
+        .select('value')
+        .eq('key', 'admin:settings:sms')
+        .maybeSingle();
+      
+      const smsSettings = config?.value || {};
       
       // Check if SMS is configured
       if (!smsSettings.provider || smsSettings.provider === 'mock') {

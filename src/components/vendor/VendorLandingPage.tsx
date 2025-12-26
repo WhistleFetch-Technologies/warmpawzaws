@@ -202,12 +202,10 @@ export function VendorLandingPage({
     console.log('🔍 Processing vendor data:', {
       id: vendor.id,
       status: vendor.status,
-      setupStage: vendor.setupStage,
-      servicesConfigured: vendor.servicesConfigured,
-      availabilityConfigured: vendor.availabilityConfigured,
       setupCompleted: vendor.setupCompleted,
       isActive: vendor.isActive,
-      applicationId: vendor.applicationId
+      applicationId: vendor.applicationId,
+      roleId: vendor.roleId
     });
     
     // Map vendor status to UI status
@@ -224,37 +222,47 @@ export function VendorLandingPage({
         console.log(`⚠️ Vendor was approved before, now pending re-approval after profile changes`);
         setStatus('pending');
       } else {
-        // First time pending OR just submitted
-        const finalStatus = justSubmitted || vendor.status === 'submitted' ? 'submitted' : 'pending';
-        console.log(`✅ Vendor has pending/submitted application - showing ${finalStatus} screen`);
-        setStatus(finalStatus);
+        // ✅ PHASE 2 FIX 2.1: Always use database status for routing decisions
+        // Remove justSubmitted dependency - routing must be deterministic based on database status only
+        // justSubmitted flag is ONLY for immediate UI feedback (toast, animation) - NOT for routing
+        // On refresh/logout/re-login, vendor with status='pending' should ALWAYS see "pending" screen
+        console.log(`✅ Vendor has pending/submitted application - showing pending screen`);
+        console.log(`   Database status: ${vendor.status} (routing based on database, not frontend flag)`);
+        setStatus('pending'); // ✅ Always show pending screen when status='pending' in database
+        
+        // Optional: Show toast/notification if justSubmitted is true (UI feedback only)
+        if (justSubmitted) {
+          console.log('   📢 Showing submission success notification (UI feedback only)');
+          // Toast notification can be shown here if needed
+        }
       }
     } else if (vendor.status === 'approved') {
-      // Check setup stage to determine which screen to show
-      const setupStage = vendor.setupStage || 'services_pending';
-      
-      console.log(`📊 Setup stage: ${setupStage}`);
+      // ✅ PHASE 2 FIX 2.3: Use setup_completed flag only (setupStage may not be stored in database)
+      // Simplified routing logic based on actual database fields
       
       // ✅ FIX: If vendor is approved AND active, show dashboard immediately
       // This handles existing vendors who are already fully onboarded
       if (vendor.isActive === true) {
         console.log('✅ Vendor is APPROVED and ACTIVE - showing dashboard');
         setStatus('active');
-      } else if (setupStage === 'completed' && vendor.setupCompleted) {
-        console.log('✅ Setup just completed - showing completion screen');
+      } else if (vendor.setupCompleted === true) {
+        // Setup completed but not yet active (shouldn't happen, but handle gracefully)
+        console.log('✅ Setup completed but not active - showing completion screen');
         setStatus('setup_completed');
-      } else if (setupStage === 'availability_pending' || vendor.servicesConfigured) {
-        console.log('📅 Services configured - showing availability setup');
-        setStatus('approved_availability');
       } else {
-        console.log('🎯 Approved - showing service setup');
+        // Approved but setup not complete - show service setup screen
+        // Note: setupStage, servicesConfigured, availabilityConfigured may not be in database
+        // Use setup_completed flag as the source of truth
+        console.log('🎯 Approved but setup not complete - showing service setup');
         setStatus('approved_services');
       }
     } else if (vendor.status === 'rejected') {
       console.log('❌ Vendor application rejected - showing rejection screen');
       setStatus('rejected');
     } else if (vendor.status === 'more_info_required' || vendor.status === 'clarification_requested') {
+      // ✅ PHASE 3 FIX 3.2: Standardize status handling (both values map to clarification screen)
       console.log('📝 More info/clarification requested - showing status screen');
+      console.log(`   Status: ${vendor.status} (standardized to clarification screen)`);
       setStatus('clarification');
     } else if (vendor.status === 'documents_required') {
       console.log('📄 Documents required - showing resubmit form');
@@ -311,7 +319,8 @@ export function VendorLandingPage({
             } else if (appData.application.status === 'clarification_requested') {
               setStatus('clarification');
             } else if (appData.application.status === 'pending' || appData.application.status === 'under_review') {
-              setStatus(justSubmitted ? 'submitted' : 'pending');
+              // ✅ PHASE 2 FIX 2.1: Always show pending screen (remove justSubmitted dependency)
+              setStatus('pending');
             }
           }
         } else if (profileData.vendor?.profileCreated) {
@@ -605,8 +614,15 @@ export function VendorLandingPage({
     }
   };
 
+  // ✅ PHASE 4 FIX 4.2: Handle resubmission after rejection
+  // This clears vendor data and allows them to start fresh application
   const handleResubmit = () => {
+    console.log('🔄 Starting fresh application after rejection');
+    // Clear vendor data to allow fresh application
+    setVendorData(null);
+    setApplicationData(null);
     setStatus('new');
+    // Note: Vendor will need to go through role selection and onboarding again
   };
 
   // ✅ NEW: Handler for correcting and resubmitting after rejection or clarification
@@ -798,11 +814,19 @@ export function VendorLandingPage({
       );
 
     case 'rejected':
+      // ✅ PHASE 4 FIX 4.2: Extract rejection reason from vendor data
+      // Rejection reason is stored in rejection_reason column (snake_case) or metadata.rejection
+      const rejectionReason = vendorData?.rejectionReason || 
+                             vendorData?.rejection_reason || 
+                             applicationData?.rejectionReason || 
+                             (vendorData?.metadata as any)?.rejection?.rejection_reason ||
+                             'No reason provided';
+      
       return (
         <VendorApplicationRejected
           applicationId={vendorData?.applicationId || applicationData?.id || 'N/A'}
-          rejectionReason={vendorData?.rejectionReason || applicationData?.rejectionReason || 'No reason provided'}
-          allowResubmit={applicationData?.allowResubmit !== false}
+          rejectionReason={rejectionReason}
+          allowResubmit={true} // ✅ PHASE 4 FIX 4.2: Always allow resubmit after rejection
           onResubmit={handleResubmit}
           onCorrectAndResubmit={() => handleCorrectAndResubmit('correction')}
         />

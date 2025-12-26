@@ -1,7 +1,16 @@
 import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
 import { broadcastOrderUpdate } from './websocket-server.tsx';
 import { getProductsRepository } from '../../../supabase/lib/repositories/products.ts';
+import { getEcommerceCategoriesRepository } from '../../../supabase/lib/repositories/ecommerce-categories.ts';
+import { getEcommerceCommissionSettingsRepository } from '../../../supabase/lib/repositories/ecommerce-commission-settings.ts';
+import { getPromotionsRepository } from '../../../supabase/lib/repositories/promotions.ts';
+import { getVendorsRepository } from '../../../supabase/lib/repositories/vendors.ts';
+import { getOrdersRepository } from '../../../supabase/lib/repositories/orders.ts';
+import { getWalletsRepository } from '../../../supabase/lib/repositories/wallets.ts';
+import { getReturnsRepository } from '../../../supabase/lib/repositories/returns.ts';
+import { getAdvertisingRepository } from '../../../supabase/lib/repositories/advertising.ts';
+import { getDisputesRepository } from '../../../supabase/lib/repositories/disputes.ts';
+import { getDbClient } from '../../../supabase/lib/db.ts';
 import { sendSuccess, sendError } from '../make-server-3dd53475/response-utils.ts';
 
 const ecommerce = new Hono();
@@ -10,155 +19,226 @@ const ecommerce = new Hono();
 // E-COMMERCE ADMIN ROUTES
 // ============================================
 
-// Commission Settings
+// ✅ SQL: Commission Settings
 ecommerce.get('/commission/settings', async (c) => {
   try {
-    const settings = await kv.get('ecommerce:commission_settings') || {
-      defaultRate: 15,
-      rules: [],
-      vendorTiers: []
-    };
-    return c.json({ success: true, settings });
+    const commissionRepo = getEcommerceCommissionSettingsRepository();
+    const settings = await commissionRepo.getSettings();
+    
+    // Map to expected format
+    return sendSuccess(c, {
+      defaultRate: settings.default_rate,
+      rules: settings.rules,
+      vendorTiers: settings.vendor_tiers,
+      sellerRates: settings.seller_rates
+    });
   } catch (error) {
     console.error('Error fetching commission settings:', error);
-    return c.json({ error: 'Failed to fetch commission settings' }, 500);
+    return sendError(c, error, 500);
   }
 });
 
 ecommerce.put('/commission/settings', async (c) => {
   try {
-    const settings = await c.req.json();
-    await kv.set('ecommerce:commission_settings', settings);
-    return c.json({ success: true, message: 'Commission settings updated' });
+    const input = await c.req.json();
+    const commissionRepo = getEcommerceCommissionSettingsRepository();
+    
+    // Map input to repository format
+    const updateInput: any = {};
+    if (input.defaultRate !== undefined) updateInput.default_rate = input.defaultRate;
+    if (input.rules !== undefined) updateInput.rules = input.rules;
+    if (input.vendorTiers !== undefined) updateInput.vendor_tiers = input.vendorTiers;
+    if (input.sellerRates !== undefined) updateInput.seller_rates = input.sellerRates;
+    
+    await commissionRepo.updateSettings(updateInput);
+    return sendSuccess(c, { message: 'Commission settings updated' });
   } catch (error) {
     console.error('Error updating commission settings:', error);
-    return c.json({ error: 'Failed to update commission settings' }, 500);
+    return sendError(c, error, 500);
   }
 });
 
-// Get vendor commission
+// ✅ SQL: Get vendor commission
 ecommerce.get('/commission/vendor/:vendorId', async (c) => {
   try {
     const vendorId = c.req.param('vendorId');
-    const settings = await kv.get('ecommerce:commission_settings') || { defaultRate: 15 };
-    const rate = settings.sellerRates?.[vendorId] || settings.defaultRate || 15;
+    const commissionRepo = getEcommerceCommissionSettingsRepository();
+    const rate = await commissionRepo.getVendorCommissionRate(vendorId);
     
-    // Get vendor earnings
-    const vendor = await kv.get(`vendor:${vendorId}`) || {};
-    const earnings = vendor.totalEarnings || 0;
+    // ✅ SQL: Get vendor earnings
+    const vendorsRepo = getVendorsRepository();
+    const vendor = await vendorsRepo.findById(vendorId);
     
-    return c.json({ 
-      success: true, 
+    return sendSuccess(c, { 
       vendorId,
       commissionRate: rate,
-      totalEarnings: earnings,
-      pendingPayout: vendor.pendingPayout || 0
+      totalEarnings: vendor?.total_earnings || 0,
+      pendingPayout: vendor?.pending_payout || 0
     });
   } catch (error) {
-    return c.json({ error: String(error) }, 500);
+    return sendError(c, error, 500);
   }
 });
 
-// Categories
+// ✅ SQL: Categories
 ecommerce.get('/categories', async (c) => {
   try {
-    let categories = await kv.get('ecommerce:categories');
+    const categoriesRepo = getEcommerceCategoriesRepository();
+    let categories = await categoriesRepo.findAll({ isActive: true });
     
-    // Fallback if no categories exist
-    if (!categories || categories.length === 0) {
-      categories = [
-        { id: 'food', name: 'Pet Food' },
-        { id: 'treats', name: 'Treats & Chews' },
-        { id: 'toys', name: 'Toys' },
-        { id: 'accessories', name: 'Accessories (Collars, Leashes)' },
-        { id: 'clothing', name: 'Clothing & Apparel' },
-        { id: 'bedding', name: 'Bedding & Furniture' },
-        { id: 'grooming_supplies', name: 'Grooming Supplies' },
-        { id: 'healthcare', name: 'Healthcare & Wellness' },
-        { id: 'bowls_feeders', name: 'Bowls & Feeders' },
-        { id: 'litter_accessories', name: 'Litter & Accessories' }
-      ];
-      // Optionally save these defaults to KV so they persist and can be edited
-      await kv.set('ecommerce:categories', categories);
+    // Seed default categories if none exist
+    if (categories.length === 0) {
+      await categoriesRepo.seedDefaultCategories();
+      categories = await categoriesRepo.findAll({ isActive: true });
     }
     
-    return c.json({ success: true, categories });
+    // Map to expected format (with category_id for backward compatibility)
+    const mappedCategories = categories.map(cat => ({
+      id: cat.id,
+      category_id: cat.id, // For backward compatibility
+      name: cat.name,
+      description: cat.description,
+      parent_category_id: cat.parent_category_id,
+      display_order: cat.display_order,
+      is_active: cat.is_active
+    }));
+    
+    return sendSuccess(c, { categories: mappedCategories });
   } catch (error) {
     console.error('Error fetching categories:', error);
-    return c.json({ error: 'Failed to fetch categories' }, 500);
+    return sendError(c, error, 500);
   }
 });
 
 ecommerce.put('/categories', async (c) => {
   try {
     const { categories } = await c.req.json();
-    await kv.set('ecommerce:categories', categories);
-    return c.json({ success: true, message: 'Categories updated' });
+    const categoriesRepo = getEcommerceCategoriesRepository();
+    
+    // Bulk update categories
+    for (const cat of categories) {
+      if (cat.id) {
+        // Update existing
+        await categoriesRepo.update(cat.id, {
+          name: cat.name,
+          description: cat.description,
+          parent_category_id: cat.parent_category_id,
+          display_order: cat.display_order,
+          is_active: cat.is_active !== false,
+        });
+      } else {
+        // Create new
+        await categoriesRepo.create({
+          name: cat.name,
+          description: cat.description,
+          parent_category_id: cat.parent_category_id,
+          display_order: cat.display_order,
+          is_active: cat.is_active !== false,
+        });
+      }
+    }
+    
+    return sendSuccess(c, { message: 'Categories updated' });
   } catch (error) {
     console.error('Error updating categories:', error);
-    return c.json({ error: 'Failed to update categories' }, 500);
+    return sendError(c, error, 500);
   }
 });
 
-// Promotions
+// ✅ SQL: Promotions
 ecommerce.get('/promotions', async (c) => {
   try {
-    let promotions = await kv.get('ecommerce:promotions');
-    if (!promotions) promotions = [];
+    const promotionsRepo = getPromotionsRepository();
+    const promotions = await promotionsRepo.findAll({ is_active: true });
     
-    if (typeof promotions === 'string') {
-      try { promotions = JSON.parse(promotions); } catch (e) { promotions = []; }
-    }
-
-    return c.json({ success: true, promotions });
+    return sendSuccess(c, { promotions });
   } catch (error) {
     console.error('Error fetching promotions:', error);
-    return c.json({ error: 'Failed to fetch promotions' }, 500);
+    return sendError(c, error, 500);
   }
 });
 
 ecommerce.put('/promotions', async (c) => {
   try {
     const { promotions } = await c.req.json();
-    await kv.set('ecommerce:promotions', promotions);
-    return c.json({ success: true, message: 'Promotions updated' });
+    const promotionsRepo = getPromotionsRepository();
+    
+    // Bulk update promotions
+    for (const promo of promotions) {
+      if (promo.id) {
+        // Update existing
+        await promotionsRepo.update(promo.id, {
+          name: promo.name,
+          description: promo.description,
+          promotion_type: promo.promotion_type,
+          discount_type: promo.discount_type,
+          discount_value: promo.discount_value,
+          min_order_amount: promo.min_order_amount,
+          max_discount_amount: promo.max_discount_amount,
+          start_date: promo.start_date,
+          end_date: promo.end_date,
+          is_active: promo.is_active !== false,
+        });
+      } else {
+        // Create new
+        await promotionsRepo.create({
+          name: promo.name,
+          description: promo.description,
+          promotion_type: promo.promotion_type,
+          discount_type: promo.discount_type,
+          discount_value: promo.discount_value,
+          min_order_amount: promo.min_order_amount,
+          max_discount_amount: promo.max_discount_amount,
+          start_date: promo.start_date,
+          end_date: promo.end_date,
+          is_active: promo.is_active !== false,
+        });
+      }
+    }
+    
+    return sendSuccess(c, { message: 'Promotions updated' });
   } catch (error) {
     console.error('Error updating promotions:', error);
-    return c.json({ error: 'Failed to update promotions' }, 500);
+    return sendError(c, error, 500);
   }
 });
 
-// Admin Products (Pending)
+// ✅ SQL: Admin Products (Pending)
 ecommerce.get('/admin/products/pending', async (c) => {
   try {
-    let products = await kv.getByPrefix('product:');
-    const pendingProducts = products.filter((p: any) => p.status === 'pending_approval' || p.status === 'pending');
-    return c.json({ success: true, products: pendingProducts });
+    const productsRepo = getProductsRepository();
+    const products = await productsRepo.findAll({ isActive: false });
+    // Filter for pending approval status
+    const pendingProducts = products.filter((p: any) => !p.is_active);
+    return sendSuccess(c, { products: pendingProducts });
   } catch (error) {
-    return c.json({ error: String(error) }, 500);
+    return sendError(c, error, 500);
   }
 });
 
-// Admin Vendors
+// ✅ SQL: Admin Vendors (Sellers)
 ecommerce.get('/admin/vendors', async (c) => {
   try {
-    let vendors = await kv.getByPrefix('seller:');
-    return c.json({ success: true, vendors });
+    const vendorsRepo = getVendorsRepository();
+    const vendors = await vendorsRepo.findAll();
+    return sendSuccess(c, { vendors });
   } catch (error) {
-    return c.json({ error: String(error) }, 500);
+    return sendError(c, error, 500);
   }
 });
 
-// Admin Orders
+// ✅ SQL: Admin Orders
 ecommerce.get('/admin/orders', async (c) => {
   try {
-    let orders = await kv.getByPrefix('order:');
-    orders.sort((a: any, b: any) => 
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
-    return c.json({ success: true, orders });
+    const { getOrdersRepository } = await import('../../../supabase/lib/repositories/orders.ts');
+    const ordersRepo = getOrdersRepository();
+    const orders = await ordersRepo.findAll({ 
+      orderBy: 'created_at',
+      orderDirection: 'desc'
+    });
+    return sendSuccess(c, { orders });
   } catch (error) {
-    return c.json({ error: String(error) }, 500);
+    return sendError(c, error, 500);
   }
 });
 
@@ -166,32 +246,70 @@ ecommerce.get('/admin/orders', async (c) => {
 // LOGISTICS ROUTES
 // ============================================
 
-// Get logistics vendors
+// ✅ SQL: Get logistics vendors (from platform_settings or delivery_partners)
 ecommerce.get('/logistics/vendors', async (c) => {
   try {
-    const vendors = await kv.get('ecommerce:logistics_vendors') || [
+    const dbClient = getDbClient();
+    
+    // Try to get from delivery_partners table first
+    const { data: partners } = await dbClient
+      .from('delivery_partners')
+      .select('*')
+      .eq('is_active', true);
+    
+    if (partners && partners.length > 0) {
+      const vendors = partners.map((p: any) => ({
+        id: p.id,
+        name: p.partner_name || p.name,
+        active: p.is_active,
+        rating: p.rating || 4.0
+      }));
+      return sendSuccess(c, { vendors });
+    }
+    
+    // Fallback to default vendors if table doesn't exist or is empty
+    const defaultVendors = [
       { id: 'fedex', name: 'FedEx', active: true, rating: 4.5 },
       { id: 'dhl', name: 'DHL', active: true, rating: 4.7 },
       { id: 'delhivery', name: 'Delhivery', active: true, rating: 4.2 },
       { id: 'dunzo', name: 'Dunzo', active: true, rating: 4.0 }
     ];
-    return c.json({ success: true, vendors });
+    return sendSuccess(c, { vendors: defaultVendors });
   } catch (error) {
-    return c.json({ error: String(error) }, 500);
+    console.error('Error fetching logistics vendors:', error);
+    return sendError(c, error, 500);
   }
 });
 
-// Get available vendors for shipping
+// ✅ SQL: Get available vendors for shipping
 ecommerce.get('/logistics/vendors/available', async (c) => {
   try {
-    const vendors = await kv.get('ecommerce:logistics_vendors') || [
+    const dbClient = getDbClient();
+    
+    // Try to get from delivery_partners table
+    const { data: partners } = await dbClient
+      .from('delivery_partners')
+      .select('*')
+      .eq('is_active', true);
+    
+    if (partners && partners.length > 0) {
+      const vendors = partners.map((p: any) => ({
+        id: p.id,
+        name: p.partner_name || p.name,
+        active: p.is_active
+      }));
+      return sendSuccess(c, { vendors });
+    }
+    
+    // Fallback to default
+    const defaultVendors = [
       { id: 'fedex', name: 'FedEx', active: true },
       { id: 'dhl', name: 'DHL', active: true }
     ];
-    const available = vendors.filter((v: any) => v.active);
-    return c.json({ success: true, vendors: available });
+    return sendSuccess(c, { vendors: defaultVendors });
   } catch (error) {
-    return c.json({ error: String(error) }, 500);
+    console.error('Error fetching available logistics vendors:', error);
+    return sendError(c, error, 500);
   }
 });
 
@@ -199,12 +317,15 @@ ecommerce.get('/logistics/vendors/available', async (c) => {
 // ADVERTISING ROUTES
 // ============================================
 
+// ✅ SQL: Get advertising campaigns
 ecommerce.get('/advertising/campaigns', async (c) => {
   try {
-    const campaigns = await kv.get('ecommerce:ad_campaigns') || [];
-    return c.json({ success: true, campaigns });
+    const advertisingRepo = getAdvertisingRepository();
+    const campaigns = await advertisingRepo.findAll({ isActive: true });
+    return sendSuccess(c, { campaigns });
   } catch (error) {
-    return c.json({ error: String(error) }, 500);
+    console.error('Error fetching advertising campaigns:', error);
+    return sendError(c, error, 500);
   }
 });
 
@@ -225,27 +346,42 @@ ecommerce.get('/advertising/packages', async (c) => {
 // WALLET ROUTES
 // ============================================
 
+// ✅ SQL: Get wallet
 ecommerce.get('/wallet/:customerId', async (c) => {
   try {
     const customerId = c.req.param('customerId');
-    const wallet = await kv.get(`wallet:${customerId}`) || {
-      balance: 0,
-      currency: 'INR',
-      status: 'active'
-    };
-    return c.json({ success: true, wallet });
+    const walletsRepo = getWalletsRepository();
+    const wallet = await walletsRepo.findOrCreate(customerId);
+    
+    return sendSuccess(c, {
+      wallet: {
+        id: wallet.id,
+        customerId: wallet.customer_id,
+        balance: wallet.balance,
+        currency: wallet.currency || 'INR',
+        status: wallet.is_active ? 'active' : 'inactive',
+        totalEarned: wallet.total_earned || 0,
+        totalSpent: wallet.total_spent || 0
+      }
+    });
   } catch (error) {
-    return c.json({ error: String(error) }, 500);
+    console.error('Error fetching wallet:', error);
+    return sendError(c, error, 500);
   }
 });
 
+// ✅ SQL: Get wallet transactions
 ecommerce.get('/wallet/:customerId/transactions', async (c) => {
   try {
     const customerId = c.req.param('customerId');
-    const transactions = await kv.get(`wallet:${customerId}:transactions`) || [];
-    return c.json({ success: true, transactions });
+    const walletsRepo = getWalletsRepository();
+    const wallet = await walletsRepo.findOrCreate(customerId);
+    const transactions = await walletsRepo.getTransactions(wallet.id);
+    
+    return sendSuccess(c, { transactions });
   } catch (error) {
-    return c.json({ error: String(error) }, 500);
+    console.error('Error fetching wallet transactions:', error);
+    return sendError(c, error, 500);
   }
 });
 
@@ -261,12 +397,24 @@ ecommerce.get('/bulk-upload/template', (c) => {
   });
 });
 
+// ✅ SQL: Get disputes
 ecommerce.get('/disputes', async (c) => {
   try {
-    const disputes = await kv.getByPrefix('dispute:') || [];
-    return c.json({ success: true, disputes });
+    const status = c.req.query('status');
+    const customerId = c.req.query('customerId');
+    const vendorId = c.req.query('vendorId');
+    
+    const disputesRepo = getDisputesRepository();
+    const disputes = await disputesRepo.findAll({
+      status: status || undefined,
+      customer_id: customerId || undefined,
+      vendor_id: vendorId || undefined,
+    });
+    
+    return sendSuccess(c, { disputes });
   } catch (error) {
-    return c.json({ error: String(error) }, 500);
+    console.error('Error fetching disputes:', error);
+    return sendError(c, error, 500);
   }
 });
 
@@ -274,59 +422,73 @@ ecommerce.get('/disputes', async (c) => {
 // SELLER/VENDOR ROUTES
 // ============================================
 
-// Get seller profile
+// ✅ SQL: Get seller profile (vendor)
 ecommerce.get('/seller/:sellerId', async (c) => {
   try {
     const sellerId = c.req.param('sellerId');
-    const seller = await kv.get(`seller:${sellerId}`);
+    const vendorsRepo = getVendorsRepository();
+    const seller = await vendorsRepo.findById(sellerId);
     
     if (!seller) {
-      return c.json({ error: 'Seller not found' }, 404);
+      return sendError(c, 'Seller not found', 404);
     }
     
-    return c.json({ seller });
+    return sendSuccess(c, { seller });
   } catch (error) {
     console.error('Error fetching seller:', error);
-    return c.json({ error: 'Failed to fetch seller' }, 500);
+    return sendError(c, error, 500);
   }
 });
 
-// Get seller by phone
+// ✅ SQL: Get seller by phone
 ecommerce.get('/seller/phone/:phone', async (c) => {
   try {
     const phone = c.req.param('phone');
-    const sellers = await kv.getByPrefix('seller:');
-    const seller = sellers.find((s: any) => s.phone === phone);
+    const vendorsRepo = getVendorsRepository();
+    const seller = await vendorsRepo.findByPhone(phone);
     
     if (!seller) {
-      return c.json({ error: 'Seller not found' }, 404);
+      return sendError(c, 'Seller not found', 404);
     }
     
-    return c.json({ seller });
+    return sendSuccess(c, { seller });
   } catch (error) {
     console.error('Error fetching seller by phone:', error);
-    return c.json({ error: 'Failed to fetch seller' }, 500);
+    return sendError(c, error, 500);
   }
 });
 
-// Update seller profile
+// ✅ SQL: Update seller profile
 ecommerce.put('/seller/:sellerId', async (c) => {
   try {
     const sellerId = c.req.param('sellerId');
     const updates = await c.req.json();
+    const vendorsRepo = getVendorsRepository();
     
-    const existing = await kv.get(`seller:${sellerId}`);
+    // Check if seller exists
+    const existing = await vendorsRepo.findById(sellerId);
     if (!existing) {
-      return c.json({ error: 'Seller not found' }, 404);
+      return sendError(c, 'Seller not found', 404);
     }
     
-    const updated = { ...existing, ...updates, updatedAt: new Date().toISOString() };
-    await kv.set(`seller:${sellerId}`, updated);
+    // Map updates to vendor repository format
+    const updateInput: any = {};
+    if (updates.business_name !== undefined) updateInput.business_name = updates.business_name;
+    if (updates.owner_name !== undefined) updateInput.owner_name = updates.owner_name;
+    if (updates.email !== undefined) updateInput.email = updates.email;
+    if (updates.phone !== undefined) updateInput.phone = updates.phone;
+    if (updates.address !== undefined) updateInput.address = updates.address;
+    if (updates.city !== undefined) updateInput.city = updates.city;
+    if (updates.state !== undefined) updateInput.state = updates.state;
+    if (updates.pincode !== undefined) updateInput.pincode = updates.pincode;
+    if (updates.status !== undefined) updateInput.status = updates.status;
     
-    return c.json({ seller: updated });
+    const updated = await vendorsRepo.update(sellerId, updateInput);
+    
+    return sendSuccess(c, { seller: updated });
   } catch (error) {
     console.error('Error updating seller:', error);
-    return c.json({ error: 'Failed to update seller' }, 500);
+    return sendError(c, error, 500);
   }
 });
 
@@ -607,15 +769,16 @@ ecommerce.put('/inventory/:productId', async (c) => {
   }
 });
 
-// Bulk Update Inventory
+// ✅ SQL: Bulk Update Inventory
 ecommerce.post('/inventory/bulk-update', async (c) => {
   try {
     const { updates } = await c.req.json();
     
     if (!Array.isArray(updates)) {
-      return c.json({ error: 'Invalid updates format' }, 400);
+      return sendError(c, 'Invalid updates format', 400);
     }
     
+    const productsRepo = getProductsRepository();
     const results = [];
     const errors = [];
     
@@ -623,40 +786,38 @@ ecommerce.post('/inventory/bulk-update', async (c) => {
       try {
         const { productId, stock, lowStockThreshold, header, size, weight, dimensions, images } = update;
         
-        const product = await kv.get(`product:${productId}`);
+        // ✅ SQL: Get product from repository
+        const product = await productsRepo.findById(productId);
         if (!product) {
           errors.push({ productId, error: 'Product not found' });
           continue;
         }
         
-        const updated = {
-          ...product,
-          stock: stock !== undefined ? stock : product.stock,
-          lowStockThreshold: lowStockThreshold !== undefined ? lowStockThreshold : product.lowStockThreshold,
-          header: header !== undefined ? header : product.header,
-          size: size !== undefined ? size : product.size,
-          weight: weight !== undefined ? weight : product.weight,
-          dimensions: dimensions !== undefined ? dimensions : product.dimensions,
-          images: images !== undefined ? images : product.images,
-          updatedAt: new Date().toISOString()
-        };
+        // ✅ SQL: Update product
+        const updateInput: any = {};
+        if (stock !== undefined) updateInput.stock = stock;
+        if (lowStockThreshold !== undefined) updateInput.min_stock = lowStockThreshold;
+        if (header !== undefined) updateInput.header = header;
+        if (size !== undefined) updateInput.size = size;
+        if (weight !== undefined) updateInput.weight = weight;
+        if (dimensions !== undefined) updateInput.dimensions = dimensions;
+        if (images !== undefined) updateInput.images = images;
         
-        await kv.set(`product:${productId}`, updated);
+        const updated = await productsRepo.update(productId, updateInput);
         results.push(updated);
       } catch (err) {
         errors.push({ productId: update.productId, error: String(err) });
       }
     }
     
-    return c.json({ 
-      success: true, 
+    return sendSuccess(c, { 
       updated: results.length, 
       failed: errors.length,
       errors 
     });
   } catch (error) {
     console.error('Error bulk updating inventory:', error);
-    return c.json({ error: 'Failed to bulk update inventory' }, 500);
+    return sendError(c, error, 500);
   }
 });
 
@@ -664,150 +825,163 @@ ecommerce.post('/inventory/bulk-update', async (c) => {
 // ORDER ROUTES
 // ============================================
 
-// Get orders
+// ✅ SQL: Get orders
 ecommerce.get('/orders', async (c) => {
   try {
     const sellerId = c.req.query('sellerId');
     const customerId = c.req.query('customerId');
     const status = c.req.query('status');
     
-    let orders = await kv.getByPrefix('order:');
-    
-    if (sellerId) {
-      // Filter orders containing items from this seller
-      orders = orders.filter((order: any) => 
-        order.items?.some((item: any) => item.sellerId === sellerId)
-      );
-    }
+    const ordersRepo = getOrdersRepository();
+    let orders: any[] = [];
     
     if (customerId) {
-      orders = orders.filter((o: any) => o.customerId === customerId);
+      // ✅ SQL: Get orders by customer
+      orders = await ordersRepo.findByCustomer(customerId);
+    } else if (sellerId) {
+      // ✅ SQL: Get orders by vendor
+      orders = await ordersRepo.findByVendor(sellerId);
+    } else {
+      // ✅ SQL: Get all orders
+      orders = await ordersRepo.findAll();
     }
     
+    // Filter by status if provided
     if (status) {
-      orders = orders.filter((o: any) => o.status === status);
+      orders = orders.filter((o: any) => o.order_status === status);
     }
     
-    orders.sort((a: any, b: any) => 
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
-    
-    return c.json({ orders, total: orders.length });
+    return sendSuccess(c, { orders, total: orders.length });
   } catch (error) {
     console.error('Error fetching orders:', error);
-    return c.json({ error: 'Failed to fetch orders' }, 500);
+    return sendError(c, error, 500);
   }
 });
 
-// Get single order
+// ✅ SQL: Get single order
 ecommerce.get('/order/:orderId', async (c) => {
   try {
     const orderId = c.req.param('orderId');
-    const order = await kv.get(`order:${orderId}`);
+    const ordersRepo = getOrdersRepository();
+    const order = await ordersRepo.findById(orderId);
     
     if (!order) {
-      return c.json({ error: 'Order not found' }, 404);
+      return sendError(c, 'Order not found', 404);
     }
     
-    return c.json({ order });
+    // ✅ SQL: Get order items
+    const items = await ordersRepo.getOrderItems(orderId);
+    
+    return sendSuccess(c, { 
+      order: {
+        ...order,
+        items
+      }
+    });
   } catch (error) {
     console.error('Error fetching order:', error);
-    return c.json({ error: 'Failed to fetch order' }, 500);
+    return sendError(c, error, 500);
   }
 });
 
-// Update order status
+// ✅ SQL: Update order status
 ecommerce.put('/order/:orderId/status', async (c) => {
   try {
     const orderId = c.req.param('orderId');
     const { status, trackingNumber } = await c.req.json();
     
-    const order = await kv.get(`order:${orderId}`);
+    const ordersRepo = getOrdersRepository();
+    const order = await ordersRepo.findById(orderId);
     if (!order) {
-      return c.json({ error: 'Order not found' }, 404);
+      return sendError(c, 'Order not found', 404);
     }
     
-    const updated = {
-      ...order,
-      status,
-      trackingNumber: trackingNumber || order.trackingNumber,
-      updatedAt: new Date().toISOString(),
-      statusHistory: [
-        ...(order.statusHistory || []),
-        {
-          status,
-          timestamp: new Date().toISOString(),
-          note: `Status updated to ${status}`
-        }
-      ]
-    };
+    // ✅ SQL: Update order status
+    const updateInput: any = { order_status: status };
+    if (trackingNumber) {
+      updateInput.tracking_number = trackingNumber;
+    }
+    if (status === 'shipped') {
+      updateInput.shipped_at = new Date().toISOString();
+    }
+    if (status === 'delivered') {
+      updateInput.delivered_at = new Date().toISOString();
+    }
+    if (status === 'cancelled') {
+      updateInput.cancelled_at = new Date().toISOString();
+    }
     
-    await kv.set(`order:${orderId}`, updated);
+    const updated = await ordersRepo.update(orderId, updateInput);
     
     // BROADCAST REAL-TIME UPDATE
-    if (updated.customerId) {
+    if (updated.customer_id) {
       try {
         broadcastOrderUpdate({
           orderId: updated.id,
-          customerId: updated.customerId,
-          status: updated.status,
+          customerId: updated.customer_id,
+          status: updated.order_status,
           message: `Order status updated to ${status}`,
-          updatedAt: updated.updatedAt
+          updatedAt: updated.updated_at
         });
       } catch (wsError) {
         console.error('Failed to broadcast order update:', wsError);
       }
     }
     
-    return c.json({ order: updated });
+    return sendSuccess(c, { order: updated });
   } catch (error) {
     console.error('Error updating order status:', error);
-    return c.json({ error: 'Failed to update order status' }, 500);
+    return sendError(c, error, 500);
   }
 });
 
-// Delivery Tracking
+// ✅ SQL: Delivery Tracking
 ecommerce.get('/delivery/track/:trackingNumber', async (c) => {
   try {
     const trackingNumber = c.req.param('trackingNumber');
     
-    // Find order by tracking number
-    const allOrders = await kv.getByPrefix('order:');
-    const order = allOrders.find((o: any) => o.trackingNumber === trackingNumber);
+    // ✅ SQL: Find order by tracking number
+    const dbClient = getDbClient();
+    const { data: orders } = await dbClient
+      .from('orders')
+      .select('*')
+      .eq('tracking_number', trackingNumber)
+      .limit(1);
     
-    if (!order) {
-       // Mock response for testing if tracking number is special
-       // Allow simple numeric tracking numbers for tests or those starting with common prefixes
-       if (trackingNumber.includes('TEST') || trackingNumber.startsWith('TRK') || trackingNumber.length < 12 || /^\d+$/.test(trackingNumber) || trackingNumber.length > 5) {
-          return c.json({
-           success: true,
-           tracking: {
-             trackingNumber,
-             status: 'in_transit',
-             location: 'Distribution Hub, Mumbai',
-             estimatedDelivery: new Date(Date.now() + 172800000).toISOString(),
-             updates: [
-               { status: 'picked_up', timestamp: new Date(Date.now() - 86400000).toISOString(), message: 'Picked up from seller' },
-               { status: 'in_transit', timestamp: new Date().toISOString(), message: 'Arrived at hub' }
-             ]
-           }
-         });
-       }
-       return c.json({ error: 'Tracking number not found' }, 404);
+    if (!orders || orders.length === 0) {
+      // Mock response for testing if tracking number is special
+      if (trackingNumber.includes('TEST') || trackingNumber.startsWith('TRK') || trackingNumber.length < 12 || /^\d+$/.test(trackingNumber) || trackingNumber.length > 5) {
+        return sendSuccess(c, {
+          tracking: {
+            trackingNumber,
+            status: 'in_transit',
+            location: 'Distribution Hub, Mumbai',
+            estimatedDelivery: new Date(Date.now() + 172800000).toISOString(),
+            updates: [
+              { status: 'picked_up', timestamp: new Date(Date.now() - 86400000).toISOString(), message: 'Picked up from seller' },
+              { status: 'in_transit', timestamp: new Date().toISOString(), message: 'Arrived at hub' }
+            ]
+          }
+        });
+      }
+      return sendError(c, 'Tracking number not found', 404);
     }
     
-    return c.json({ 
-      success: true,
+    const order = orders[0];
+    return sendSuccess(c, {
       tracking: {
         trackingNumber,
-        status: order.status,
+        status: order.order_status,
         orderId: order.id,
-        estimatedDelivery: new Date(Date.now() + 172800000).toISOString(), 
-        updates: order.statusHistory || []
+        estimatedDelivery: order.delivered_at || new Date(Date.now() + 172800000).toISOString(),
+        updates: [
+          { status: order.order_status, timestamp: order.updated_at, message: `Order ${order.order_status}` }
+        ]
       }
     });
   } catch (error) {
-    return c.json({ error: String(error) }, 500);
+    console.error('Error tracking delivery:', error);
+    return sendError(c, error, 500);
   }
 });
 
@@ -815,40 +989,35 @@ ecommerce.get('/delivery/track/:trackingNumber', async (c) => {
 // ANALYTICS ROUTES
 // ============================================
 
-// Get seller analytics
+// ✅ SQL: Get seller analytics
 ecommerce.get('/analytics/seller/:sellerId', async (c) => {
   try {
     const sellerId = c.req.param('sellerId');
     
-    // Get all orders for this seller
-    const allOrders = await kv.getByPrefix('order:');
-    const sellerOrders = allOrders.filter((order: any) =>
-      order.items?.some((item: any) => item.sellerId === sellerId)
-    );
+    // ✅ SQL: Get orders for this seller
+    const ordersRepo = getOrdersRepository();
+    const sellerOrders = await ordersRepo.findByVendor(sellerId);
     
-    // Get all products for this seller
-    const allProducts = await kv.getByPrefix('product:');
-    const sellerProducts = allProducts.filter((p: any) => p.sellerId === sellerId);
+    // ✅ SQL: Get products for this seller
+    const productsRepo = getProductsRepository();
+    const sellerProducts = await productsRepo.findByVendor(sellerId);
     
     // Calculate metrics
     const totalOrders = sellerOrders.length;
-    const totalRevenue = sellerOrders.reduce((sum: number, order: any) => {
-      const sellerItems = order.items?.filter((item: any) => item.sellerId === sellerId) || [];
-      return sum + sellerItems.reduce((itemSum: number, item: any) => itemSum + (item.price * item.quantity), 0);
-    }, 0);
+    const totalRevenue = sellerOrders.reduce((sum: number, order: any) => sum + (order.total_amount || 0), 0);
     
-    const activeProducts = sellerProducts.filter((p: any) => p.status === 'active').length;
+    const activeProducts = sellerProducts.filter((p: any) => p.is_active).length;
     const lowStockProducts = sellerProducts.filter((p: any) => 
-      (p.stock || 0) <= (p.lowStockThreshold || 10)
+      (p.stock || 0) <= (p.min_stock || 10)
     ).length;
     
-    // Commission calculation
-    const settings = await kv.get('ecommerce:commission_settings') || { defaultRate: 15 };
-    const rate = settings.sellerRates?.[sellerId] || settings.defaultRate || 15;
+    // ✅ SQL: Get commission rate
+    const commissionRepo = getEcommerceCommissionSettingsRepository();
+    const rate = await commissionRepo.getVendorCommissionRate(sellerId);
     const totalCommission = (totalRevenue * rate) / 100;
     const netEarnings = totalRevenue - totalCommission;
     
-    return c.json({
+    return sendSuccess(c, {
       totalOrders,
       totalRevenue,
       totalCommission,
@@ -857,79 +1026,100 @@ ecommerce.get('/analytics/seller/:sellerId', async (c) => {
       activeProducts,
       totalProducts: sellerProducts.length,
       lowStockProducts,
-      pendingOrders: sellerOrders.filter((o: any) => o.status === 'pending').length,
-      completedOrders: sellerOrders.filter((o: any) => o.status === 'delivered').length
+      pendingOrders: sellerOrders.filter((o: any) => o.order_status === 'pending').length,
+      completedOrders: sellerOrders.filter((o: any) => o.order_status === 'delivered').length
     });
   } catch (error) {
     console.error('Error fetching seller analytics:', error);
-    return c.json({ error: 'Failed to fetch analytics' }, 500);
+    return sendError(c, error, 500);
   }
 });
 
-// Get platform analytics (Admin)
+// ✅ SQL: Get platform analytics (Admin)
 ecommerce.get('/analytics/platform', async (c) => {
   try {
-    const allOrders = await kv.getByPrefix('order:');
-    const allProducts = await kv.getByPrefix('product:');
-    const allSellers = await kv.getByPrefix('seller:');
+    // ✅ SQL: Get all orders
+    const ordersRepo = getOrdersRepository();
+    const allOrders = await ordersRepo.findAll();
+    
+    // ✅ SQL: Get all products
+    const productsRepo = getProductsRepository();
+    const allProducts = await productsRepo.findAll();
+    
+    // ✅ SQL: Get all vendors (sellers)
+    const vendorsRepo = getVendorsRepository();
+    const allSellers = await vendorsRepo.findAll();
     
     const totalRevenue = allOrders.reduce((sum: number, order: any) => 
-      sum + (order.totalAmount || 0), 0
+      sum + (order.total_amount || 0), 0
     );
     
-    const settings = await kv.get('ecommerce:commission_settings') || { defaultRate: 15 };
-    const totalCommission = (totalRevenue * (settings.defaultRate || 15)) / 100;
+    // ✅ SQL: Get commission settings
+    const commissionRepo = getEcommerceCommissionSettingsRepository();
+    const settings = await commissionRepo.getSettings();
+    const totalCommission = (totalRevenue * settings.default_rate) / 100;
     
-    return c.json({
+    return sendSuccess(c, {
       totalSellers: allSellers.length,
       activeSellers: allSellers.filter((s: any) => s.status === 'active').length,
       totalProducts: allProducts.length,
-      activeProducts: allProducts.filter((p: any) => p.status === 'active').length,
+      activeProducts: allProducts.filter((p: any) => p.is_active).length,
       totalOrders: allOrders.length,
       totalRevenue,
       totalCommission,
-      pendingApprovals: allProducts.filter((p: any) => p.status === 'pending_approval').length
+      pendingApprovals: allProducts.filter((p: any) => !p.is_active).length
     });
   } catch (error) {
     console.error('Error fetching platform analytics:', error);
-    return c.json({ error: 'Failed to fetch analytics' }, 500);
+    return sendError(c, error, 500);
   }
 });
 
-// Get detailed ecommerce analytics with time series data
+// ✅ SQL: Get detailed ecommerce analytics with time series data
 ecommerce.get('/analytics', async (c) => {
   try {
     const days = parseInt(c.req.query('days') || '30');
-    const now = Date.now();
-    const startDate = now - (days * 24 * 60 * 60 * 1000);
+    const now = new Date();
+    const startDate = new Date(now.getTime() - (days * 24 * 60 * 60 * 1000));
     
-    const allOrders = await kv.getByPrefix('order:');
-    const allProducts = await kv.getByPrefix('product:');
-    const allSellers = await kv.getByPrefix('seller:');
-    const allReturns = await kv.getByPrefix('return:') || [];
-    
-    // Filter orders within date range
+    // ✅ SQL: Get all orders within date range
+    const ordersRepo = getOrdersRepository();
+    const allOrders = await ordersRepo.findAll();
     const recentOrders = allOrders.filter((order: any) => {
-      const orderDate = new Date(order.createdAt).getTime();
+      const orderDate = new Date(order.created_at);
       return orderDate >= startDate && orderDate <= now;
     });
     
+    // ✅ SQL: Get all products
+    const productsRepo = getProductsRepository();
+    const allProducts = await productsRepo.findAll();
+    
+    // ✅ SQL: Get all vendors (sellers)
+    const vendorsRepo = getVendorsRepository();
+    const allSellers = await vendorsRepo.findAll();
+    
+    // ✅ SQL: Get all returns
+    const returnsRepo = getReturnsRepository();
+    const allReturns = await returnsRepo.findAll();
+    
     // Calculate revenue metrics
     const totalRevenue = recentOrders.reduce((sum: number, order: any) => 
-      sum + (order.totalAmount || 0), 0
+      sum + (order.total_amount || 0), 0
     );
     
-    const settings = await kv.get('ecommerce:commission_settings') || { defaultRate: 15 };
-    const totalCommission = (totalRevenue * (settings.defaultRate || 15)) / 100;
+    // ✅ SQL: Get commission settings
+    const commissionRepo = getEcommerceCommissionSettingsRepository();
+    const settings = await commissionRepo.getSettings();
+    const totalCommission = (totalRevenue * settings.default_rate) / 100;
     
     // Calculate growth compared to previous period
-    const prevStartDate = startDate - (days * 24 * 60 * 60 * 1000);
+    const prevStartDate = new Date(startDate.getTime() - (days * 24 * 60 * 60 * 1000));
     const prevOrders = allOrders.filter((order: any) => {
-      const orderDate = new Date(order.createdAt).getTime();
+      const orderDate = new Date(order.created_at);
       return orderDate >= prevStartDate && orderDate < startDate;
     });
     const prevRevenue = prevOrders.reduce((sum: number, order: any) => 
-      sum + (order.totalAmount || 0), 0
+      sum + (order.total_amount || 0), 0
     );
     
     const revenueGrowth = prevRevenue > 0 ? 
@@ -938,20 +1128,20 @@ ecommerce.get('/analytics', async (c) => {
       ((recentOrders.length - prevOrders.length) / prevOrders.length) * 100 : 0;
     
     // Product metrics
-    const activeProducts = allProducts.filter((p: any) => p.status === 'active').length;
-    const pendingProducts = allProducts.filter((p: any) => p.status === 'pending_approval').length;
+    const activeProducts = allProducts.filter((p: any) => p.is_active).length;
+    const pendingProducts = allProducts.filter((p: any) => !p.is_active).length;
     const outOfStockProducts = allProducts.filter((p: any) => (p.stock || 0) === 0).length;
     
     // Seller metrics
     const activeSellers = allSellers.filter((s: any) => s.status === 'active').length;
     const newSellers = allSellers.filter((s: any) => {
-      const createdDate = new Date(s.createdAt || s.registrationDate).getTime();
+      const createdDate = new Date(s.created_at);
       return createdDate >= startDate;
     }).length;
     
     // Returns metrics
     const recentReturns = allReturns.filter((ret: any) => {
-      const returnDate = new Date(ret.createdAt).getTime();
+      const returnDate = new Date(ret.created_at);
       return returnDate >= startDate && returnDate <= now;
     });
     const returnRate = recentOrders.length > 0 ?
@@ -959,42 +1149,44 @@ ecommerce.get('/analytics', async (c) => {
     
     // Order status breakdown
     const ordersByStatus = {
-      pending: recentOrders.filter((o: any) => o.status === 'pending').length,
-      confirmed: recentOrders.filter((o: any) => o.status === 'confirmed').length,
-      processing: recentOrders.filter((o: any) => o.status === 'processing').length,
-      shipped: recentOrders.filter((o: any) => o.status === 'shipped').length,
-      delivered: recentOrders.filter((o: any) => o.status === 'delivered').length,
-      cancelled: recentOrders.filter((o: any) => o.status === 'cancelled').length,
+      pending: recentOrders.filter((o: any) => o.order_status === 'pending').length,
+      confirmed: recentOrders.filter((o: any) => o.order_status === 'confirmed').length,
+      processing: recentOrders.filter((o: any) => o.order_status === 'processing').length,
+      shipped: recentOrders.filter((o: any) => o.order_status === 'shipped').length,
+      delivered: recentOrders.filter((o: any) => o.order_status === 'delivered').length,
+      cancelled: recentOrders.filter((o: any) => o.order_status === 'cancelled').length,
     };
     
     // Average order value
     const avgOrderValue = recentOrders.length > 0 ?
       totalRevenue / recentOrders.length : 0;
     
-    // Top performing products
+    // Top performing products (from order items)
     const productSales: Record<string, { count: number; revenue: number; name: string }> = {};
-    recentOrders.forEach((order: any) => {
-      order.items?.forEach((item: any) => {
-        if (!productSales[item.productId]) {
-          productSales[item.productId] = {
+    for (const order of recentOrders) {
+      const items = await ordersRepo.getOrderItems(order.id);
+      for (const item of items) {
+        const productId = item.product_id || 'unknown';
+        if (!productSales[productId]) {
+          const product = await productsRepo.findById(productId);
+          productSales[productId] = {
             count: 0,
             revenue: 0,
-            name: item.productName || 'Unknown Product'
+            name: product?.name || 'Unknown Product'
           };
         }
-        productSales[item.productId].count += item.quantity;
-        productSales[item.productId].revenue += item.price * item.quantity;
-      });
-    });
+        productSales[productId].count += item.quantity;
+        productSales[productId].revenue += item.unit_price * item.quantity;
+      }
+    }
     
     const topProducts = Object.entries(productSales)
       .map(([id, data]) => ({ productId: id, ...data }))
       .sort((a, b) => b.revenue - a.revenue)
       .slice(0, 5);
     
-    return c.json({
-      success: true,
-      dateRange: { start: new Date(startDate).toISOString(), end: new Date(now).toISOString(), days },
+    return sendSuccess(c, {
+      dateRange: { start: startDate.toISOString(), end: now.toISOString(), days },
       revenue: {
         total: totalRevenue,
         growth: revenueGrowth,
@@ -1025,7 +1217,7 @@ ecommerce.get('/analytics', async (c) => {
     });
   } catch (error) {
     console.error('Error fetching ecommerce analytics:', error);
-    return c.json({ error: 'Failed to fetch analytics' }, 500);
+    return sendError(c, error, 500);
   }
 });
 
@@ -1033,130 +1225,117 @@ ecommerce.get('/analytics', async (c) => {
 // RETURNS MANAGEMENT
 // ============================================
 
-// Get all return requests (Admin)
+// ✅ SQL: Get all return requests (Admin)
 ecommerce.get('/admin/returns', async (c) => {
   try {
     const status = c.req.query('status');
-    let returns = await kv.getByPrefix('return:') || [];
+    const returnsRepo = getReturnsRepository();
     
-    if (status && status !== 'all') {
-      returns = returns.filter((r: any) => r.status === status);
-    }
+    const returns = await returnsRepo.findAll({
+      status: status && status !== 'all' ? status : undefined,
+    });
     
-    // Sort by creation date (newest first)
-    returns.sort((a: any, b: any) => 
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
-    
-    return c.json({ success: true, returns, total: returns.length });
+    return sendSuccess(c, { returns, total: returns.length });
   } catch (error) {
     console.error('Error fetching returns:', error);
-    return c.json({ error: 'Failed to fetch returns' }, 500);
+    return sendError(c, error, 500);
   }
 });
 
-// Get return statistics
+// ✅ SQL: Get return statistics
 ecommerce.get('/admin/returns/stats', async (c) => {
   try {
-    const returns = await kv.getByPrefix('return:') || [];
+    const returnsRepo = getReturnsRepository();
+    const allReturns = await returnsRepo.findAll();
     
     const stats = {
-      pendingCount: returns.filter((r: any) => r.status === 'pending').length,
-      approvedCount: returns.filter((r: any) => r.status === 'approved').length,
-      rejectedCount: returns.filter((r: any) => r.status === 'rejected').length,
-      refundedCount: returns.filter((r: any) => r.status === 'refunded').length,
-      totalRefundAmount: returns
+      pendingCount: allReturns.filter((r: any) => r.status === 'pending').length,
+      approvedCount: allReturns.filter((r: any) => r.status === 'approved').length,
+      rejectedCount: allReturns.filter((r: any) => r.status === 'rejected').length,
+      refundedCount: allReturns.filter((r: any) => r.status === 'refunded').length,
+      totalRefundAmount: allReturns
         .filter((r: any) => r.status === 'refunded')
-        .reduce((sum: number, r: any) => sum + (r.refundAmount || 0), 0),
+        .reduce((sum: number, r: any) => sum + (r.refund_amount || 0), 0),
     };
     
-    return c.json({ success: true, stats });
+    return sendSuccess(c, { stats });
   } catch (error) {
     console.error('Error fetching return stats:', error);
-    return c.json({ error: 'Failed to fetch return statistics' }, 500);
+    return sendError(c, error, 500);
   }
 });
 
-// Approve return request
+// ✅ SQL: Approve return request
 ecommerce.post('/admin/returns/:returnId/approve', async (c) => {
   try {
     const returnId = c.req.param('returnId');
-    const returnRequest = await kv.get(`return:${returnId}`);
+    const returnsRepo = getReturnsRepository();
     
+    const returnRequest = await returnsRepo.findById(returnId);
     if (!returnRequest) {
-      return c.json({ error: 'Return request not found' }, 404);
+      return sendError(c, 'Return request not found', 404);
     }
     
-    const updated = {
-      ...returnRequest,
+    const updated = await returnsRepo.update(returnId, {
       status: 'approved',
-      approvedAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+      approved_at: new Date().toISOString(),
+    });
     
-    await kv.set(`return:${returnId}`, updated);
-    
-    return c.json({ success: true, return: updated });
+    return sendSuccess(c, { return: updated });
   } catch (error) {
     console.error('Error approving return:', error);
-    return c.json({ error: 'Failed to approve return' }, 500);
+    return sendError(c, error, 500);
   }
 });
 
-// Reject return request
+// ✅ SQL: Reject return request
 ecommerce.post('/admin/returns/:returnId/reject', async (c) => {
   try {
     const returnId = c.req.param('returnId');
     const { reason } = await c.req.json();
-    const returnRequest = await kv.get(`return:${returnId}`);
+    const returnsRepo = getReturnsRepository();
     
+    const returnRequest = await returnsRepo.findById(returnId);
     if (!returnRequest) {
-      return c.json({ error: 'Return request not found' }, 404);
+      return sendError(c, 'Return request not found', 404);
     }
     
-    const updated = {
-      ...returnRequest,
+    const updated = await returnsRepo.update(returnId, {
       status: 'rejected',
-      rejectionReason: reason,
-      rejectedAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+      rejection_reason: reason,
+      rejected_at: new Date().toISOString(),
+    });
     
-    await kv.set(`return:${returnId}`, updated);
-    
-    return c.json({ success: true, return: updated });
+    return sendSuccess(c, { return: updated });
   } catch (error) {
     console.error('Error rejecting return:', error);
-    return c.json({ error: 'Failed to reject return' }, 500);
+    return sendError(c, error, 500);
   }
 });
 
-// Process refund
+// ✅ SQL: Process refund
 ecommerce.post('/admin/returns/:returnId/refund', async (c) => {
   try {
     const returnId = c.req.param('returnId');
     const { refundAmount, refundMethod } = await c.req.json();
-    const returnRequest = await kv.get(`return:${returnId}`);
+    const returnsRepo = getReturnsRepository();
     
+    const returnRequest = await returnsRepo.findById(returnId);
     if (!returnRequest) {
-      return c.json({ error: 'Return request not found' }, 404);
+      return sendError(c, 'Return request not found', 404);
     }
     
-    const updated = {
-      ...returnRequest,
+    const updated = await returnsRepo.update(returnId, {
       status: 'refunded',
-      refundAmount,
-      refundMethod: refundMethod || 'Original Payment Method',
-      refundedAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+      refund_amount: refundAmount,
+      refund_method: refundMethod || 'Original Payment Method',
+      refunded_at: new Date().toISOString(),
+    });
     
-    await kv.set(`return:${returnId}`, updated);
-    
-    return c.json({ success: true, return: updated });
+    return sendSuccess(c, { return: updated });
   } catch (error) {
     console.error('Error processing refund:', error);
-    return c.json({ error: 'Failed to process refund' }, 500);
+    return sendError(c, error, 500);
   }
 });
 

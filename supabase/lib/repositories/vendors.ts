@@ -24,6 +24,7 @@ import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 
 export interface Vendor {
   id: string;
+  user_id?: string | null; // ✅ UUID reference to user account
   phone: string;
   email: string;
   business_name: string;
@@ -49,6 +50,7 @@ export interface Vendor {
   capacity?: number | null;
   specialization?: string | null;
   is_active: boolean;
+  setup_completed?: boolean; // ✅ FIX: Add setup_completed field
   created_at: string;
   updated_at: string;
   approved_at?: string | null;
@@ -56,10 +58,12 @@ export interface Vendor {
 }
 
 export interface CreateVendorInput {
+  vendor_id?: string; // ✅ CRITICAL: vendor_id is required by DB (NOT NULL), but can be auto-generated if not provided
   phone: string;
   email: string;
   business_name: string;
   owner_name: string;
+  user_id?: string; // ✅ UUID reference to user account
   alternate_phone?: string;
   role_id?: string;
   category?: string;
@@ -75,14 +79,14 @@ export interface CreateVendorInput {
   latitude?: number;
   longitude?: number;
   status?: string;
-  tier?: string;
-  commission_percentage?: number;
+  // ✅ Removed: tier and commission_percentage don't exist in vendors table
   operating_hours?: string;
   capacity?: number;
   specialization?: string;
 }
 
 export interface UpdateVendorInput {
+  user_id?: string; // ✅ UUID reference to user account
   email?: string;
   business_name?: string;
   owner_name?: string;
@@ -101,14 +105,15 @@ export interface UpdateVendorInput {
   latitude?: number;
   longitude?: number;
   status?: string;
-  tier?: string;
-  commission_percentage?: number;
+  // ✅ Removed: tier and commission_percentage don't exist in vendors table
   operating_hours?: string;
   capacity?: number;
   specialization?: string;
   is_active?: boolean;
+  setup_completed?: boolean; // ✅ FIX: Add setup_completed field
   approved_at?: string;
   approved_by?: string;
+  rejection_reason?: string; // ✅ PHASE 4 FIX 4.2: Add rejection_reason field
 }
 
 // ============================================================================
@@ -300,12 +305,31 @@ export class VendorsRepository {
    * Replaces: kv.set(`vendor:${vendorId}`, vendorData)
    */
   async create(input: CreateVendorInput): Promise<Vendor> {
+    // ✅ CRITICAL FIX: Generate vendor_id if not provided (required field, NOT NULL)
+    // vendor_id format: vendor_{phone} (e.g., vendor_9611377118)
+    let vendorId = input.vendor_id;
+    if (!vendorId && input.phone) {
+      // Extract phone number and create vendor_id
+      const phoneDigits = input.phone.replace(/[^0-9]/g, '');
+      // Remove country code if present (91)
+      const cleanPhone = phoneDigits.startsWith('91') && phoneDigits.length === 12 
+        ? phoneDigits.substring(2) 
+        : phoneDigits.startsWith('0') && phoneDigits.length === 11
+        ? phoneDigits.substring(1)
+        : phoneDigits;
+      vendorId = `vendor_${cleanPhone}`;
+    }
+    
+    if (!vendorId) {
+      throw new Error("vendor_id is required. Either provide vendor_id or phone number.");
+    }
+    
     const results = await insertQuery<Vendor>("vendors", {
       ...input,
+      vendor_id: vendorId, // ✅ CRITICAL: Ensure vendor_id is set
       status: input.status || "pending",
-      tier: input.tier || "Bronze",
-      commission_percentage: input.commission_percentage || 15.00,
-      is_active: true,
+      // ✅ Removed: tier and commission_percentage don't exist in vendors table
+      is_active: input.is_active !== undefined ? input.is_active : true,
     });
     
     if (!results[0]) {

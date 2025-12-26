@@ -24,13 +24,14 @@ import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 // CONFIGURATION
 // ============================================================================
 
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-
-if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-  throw new Error(
-    "Missing required environment variables: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY"
-  );
+// Get environment variables (lazy evaluation to avoid boot errors)
+function getEnvVar(name: string): string {
+  const value = Deno.env.get(name);
+  if (!value) {
+    console.error(`❌ Missing required environment variable: ${name}`);
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+  return value;
 }
 
 // ============================================================================
@@ -45,7 +46,9 @@ let supabaseClient: SupabaseClient | null = null;
  */
 export function getDbClient(): SupabaseClient {
   if (!supabaseClient) {
-    supabaseClient = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!, {
+    const SUPABASE_URL = getEnvVar("SUPABASE_URL");
+    const SUPABASE_SERVICE_ROLE_KEY = getEnvVar("SUPABASE_SERVICE_ROLE_KEY");
+    supabaseClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
       db: {
         schema: "public",
       },

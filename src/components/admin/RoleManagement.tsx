@@ -81,14 +81,27 @@ export function RoleManagement() {
 
       if (response.ok) {
         const data = await response.json();
+        console.log('📋 [ROLES] Response data:', data);
+        console.log('📋 [ROLES] Roles array:', data.roles);
+        console.log('📋 [ROLES] Roles count:', data.roles?.length || 0);
+        
+        // ✅ FIX: Handle both response formats: { roles: [...] } and { success: true, roles: [...] }
+        const rolesArray = data.roles || data.data?.roles || [];
+        
         // Deduplicate roles by ID to prevent React key errors
         const uniqueRolesMap = new Map();
-        (data.roles || []).forEach((role: Role) => {
+        rolesArray.forEach((role: Role) => {
           if (!uniqueRolesMap.has(role.id)) {
             uniqueRolesMap.set(role.id, role);
           }
         });
-        setRoles(Array.from(uniqueRolesMap.values()));
+        const uniqueRoles = Array.from(uniqueRolesMap.values());
+        console.log('📋 [ROLES] Setting roles:', uniqueRoles.length);
+        setRoles(uniqueRoles);
+      } else {
+        const errorText = await response.text();
+        console.error('❌ [ROLES] Error response:', response.status, errorText);
+        toast.error(`Failed to load roles: ${response.status}`);
       }
     } catch (error) {
       console.error('Error fetching roles:', error);

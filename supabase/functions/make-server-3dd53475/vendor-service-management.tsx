@@ -276,19 +276,30 @@ export function registerVendorServiceManagementRoutes(app: Hono) {
       
       console.log(`📋 [VENDOR-SERVICES] Fetching configured services for vendor ${vendorId}`);
       
-      // ✅ SQL: Get vendor
-      const vendor = await getVendorsRepository().findById(vendorId);
+      // ✅ BUG FIX: Resolve vendor ID first (handles both UUID and legacy format)
+      const vendorsRepo = getVendorsRepository();
+      const resolvedVendorId = await vendorsRepo.resolveVendorId(vendorId);
+      
+      if (!resolvedVendorId) {
+        console.error(`❌ [VENDOR-SERVICES] Vendor not found: ${vendorId}`);
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+      
+      console.log(`✅ [VENDOR-SERVICES] Resolved vendor ID: ${vendorId} -> ${resolvedVendorId}`);
+      
+      // ✅ SQL: Get vendor (using resolved UUID)
+      const vendor = await vendorsRepo.findById(resolvedVendorId);
       
       if (!vendor) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
       
-      // ✅ SQL: Get all service styles configured for this vendor
+      // ✅ SQL: Get all service styles configured for this vendor (use resolved UUID)
       const client = getDbClient();
       const { data: vendorServices } = await client
         .from('vendor_services')
         .select('*')
-        .eq('vendor_id', vendorId);
+        .eq('vendor_id', resolvedVendorId);
       
       const serviceStyles = ['at_home', 'at_center', 'tele'];
       const allVendorServices: any = {
@@ -307,7 +318,8 @@ export function registerVendorServiceManagementRoutes(app: Hono) {
       
       return c.json({
         success: true,
-        vendorId,
+        vendorId: resolvedVendorId, // Return resolved UUID
+        legacyVendorId: vendorId, // Keep original for reference
         vendorType: vendor.category,
         services: allVendorServices
       });
@@ -334,8 +346,19 @@ export function registerVendorServiceManagementRoutes(app: Hono) {
       console.log(`🔧 [VENDOR-SERVICES] Configuring services for vendor ${vendorId}, style: ${serviceStyle}`);
       console.log(`📊 [VENDOR-SERVICES] Number of services: ${services.length}`);
       
-      // ✅ SQL: Validate vendor exists
-      const vendor = await getVendorsRepository().findById(vendorId);
+      // ✅ CRITICAL FIX: Resolve vendor ID (handles both UUID and vendor_id string)
+      const vendorsRepo = getVendorsRepository();
+      const resolvedVendorId = await vendorsRepo.resolveVendorId(vendorId);
+      
+      if (!resolvedVendorId) {
+        console.error(`❌ [VENDOR-SERVICES-CONFIGURE] Vendor not found: ${vendorId}`);
+        return c.json({ error: `Vendor not found: ${vendorId}` }, 404);
+      }
+      
+      console.log(`✅ [VENDOR-SERVICES-CONFIGURE] Resolved vendor ID: ${vendorId} -> ${resolvedVendorId}`);
+      
+      // ✅ SQL: Validate vendor exists (using resolved UUID)
+      const vendor = await vendorsRepo.findById(resolvedVendorId);
       
       if (!vendor) {
         return c.json({ error: 'Vendor not found' }, 404);

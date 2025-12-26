@@ -90,10 +90,16 @@ export function vendorApprovalWorkflowEndpoints(app: Hono) {
         roleId: vendor.role_id
       });
 
-      // ✅ SQL: Update vendor status to approved
-      const updatedVendor = await getVendorsRepository().approve(vendorId, {
-        approved_by: approvedBy || 'admin',
-        approval_notes: notes || '',
+      // ✅ PHASE 4 FIX 4.1: Update vendor status to approved
+      // Note: approve() method expects string for approvedBy, not object
+      // Also ensure is_active=false and setup_completed=false (vendor needs to complete setup)
+      const updatedVendor = await getVendorsRepository().update(vendorId, {
+        status: 'approved',
+        approved_at: new Date().toISOString(),
+        approved_by: typeof approvedBy === 'string' ? approvedBy : (approvedBy || 'admin'),
+        is_active: false, // ✅ Vendor is approved but not yet active (needs setup)
+        setup_completed: false, // ✅ Setup not complete yet
+        updated_at: new Date().toISOString(),
       });
 
       // ✅ SQL: Create status history entry in platform_settings or dedicated table
@@ -213,10 +219,15 @@ export function vendorApprovalWorkflowEndpoints(app: Hono) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
 
-      // ✅ SQL: Reject vendor
-      const updatedVendor = await getVendorsRepository().reject(vendorId, {
-        rejected_by: rejectedBy || 'admin',
-        rejection_reason: reason,
+      // ✅ PHASE 4 FIX 4.2: Reject vendor
+      // Use update() directly to set status and store rejection_reason (column exists in vendors table)
+      const updatedVendor = await getVendorsRepository().update(vendorId, {
+        status: 'rejected',
+        rejection_reason: reason, // ✅ Store rejection reason in rejection_reason column
+        approved_at: new Date().toISOString(), // Timestamp for rejection
+        approved_by: typeof rejectedBy === 'string' ? rejectedBy : (rejectedBy || 'admin'),
+        is_active: false, // ✅ Ensure vendor is not active after rejection
+        updated_at: new Date().toISOString(),
       });
 
       // ✅ SQL: Create status history entry
@@ -391,6 +402,7 @@ export function vendorApprovalWorkflowEndpoints(app: Hono) {
       console.log(`   Status: ${vendor.status}`);
 
       // Return comprehensive status
+      // ✅ BUG FIX #2 & #3: Use actual setup_completed value from database
       const response = {
         status: vendor.status,
         hasApplication: true,
@@ -399,8 +411,8 @@ export function vendorApprovalWorkflowEndpoints(app: Hono) {
         fullName: vendor.owner_name || vendor.business_name,
         roleName: vendor.role_id,
         roleId: vendor.role_id,
-        isActive: vendor.is_active || false,
-        setupCompleted: false, // TODO: Add setup tracking
+        isActive: vendor.is_active ?? false,
+        setupCompleted: vendor.setup_completed ?? false, // ✅ FIX: Use actual value from database
         servicesConfigured: false, // TODO: Add service configuration tracking
         availabilityConfigured: false, // TODO: Add availability tracking
         serviceCategory: vendor.category,
@@ -489,7 +501,7 @@ export function vendorApprovalWorkflowEndpoints(app: Hono) {
         }, 400);
       }
 
-      // ✅ SQL: Get info request details
+      // ✅ PHASE 4 FIX 4.3: Get info request details from platform_settings
       const client = getDbClient();
       const { data: infoRequest } = await client
         .from('platform_settings')
@@ -497,10 +509,51 @@ export function vendorApprovalWorkflowEndpoints(app: Hono) {
         .eq('setting_key', `vendor:info_request:${vendorId}`)
         .maybeSingle();
 
+      // ✅ BUG FIX #1 & #2: Return only camelCase fields, no snake_case duplicates
+      // ✅ BUG FIX #4: Add backward compatibility for metadata structure
+      const metadata = vendor.metadata as any;
+      const applicationMetadata = metadata?.application || metadata?.application_metadata || {};
+      
       return c.json({ 
-        vendor,
+        vendor: {
+          // ✅ BUG FIX #1 & #2: Only include camelCase fields, exclude snake_case fields from spread
+          id: vendor.id,
+          vendorId: vendor.id,
+          phone: vendor.phone,
+          email: vendor.email,
+          businessName: vendor.business_name,
+          ownerName: vendor.owner_name,
+          address: vendor.address,
+          city: vendor.city,
+          state: vendor.state,
+          pincode: vendor.pincode,
+          status: vendor.status,
+          // Convert snake_case to camelCase (only camelCase in response)
+          setupCompleted: vendor.setup_completed ?? false,
+          isActive: vendor.is_active ?? false,
+          roleId: vendor.role_id || applicationMetadata.roleId,
+          roleName: applicationMetadata.roleName,
+          // ✅ BUG FIX #2: Include rejectionReason (camelCase only, no duplicate rejection_reason)
+          rejectionReason: vendor.rejection_reason || null,
+          // Include application data with backward compatibility
+          formData: applicationMetadata.formData || {},
+          documents: applicationMetadata.documents || {},
+          location: applicationMetadata.location || (vendor.latitude && vendor.longitude ? {
+            lat: vendor.latitude,
+            lng: vendor.longitude
+          } : null),
+          applicationId: applicationMetadata.applicationId,
+          submittedAt: applicationMetadata.submittedAt || vendor.created_at,
+          updatedAt: vendor.updated_at,
+          previousStatus: applicationMetadata.previousStatus,
+          wasApprovedBefore: applicationMetadata.wasApprovedBefore,
+          reapprovalReason: applicationMetadata.reapprovalReason,
+          clarificationNotes: infoRequest?.setting_value?.message || applicationMetadata.clarificationNotes || '',
+          allowResubmit: applicationMetadata.allowResubmit,
+        },
         canEdit: true,
         infoRequestMessage: infoRequest?.setting_value?.message || '',
+        clarificationNotes: infoRequest?.setting_value?.message || '', // ✅ PHASE 4 FIX 4.3: Alias for frontend
         requiredFields: infoRequest?.setting_value?.required_fields || []
       });
     } catch (error) {
@@ -534,16 +587,42 @@ export function vendorApprovalWorkflowEndpoints(app: Hono) {
         }, 400);
       }
 
-      // ✅ SQL: Update vendor with new data
+      // ✅ PHASE 4 FIX 4.3: Update vendor with new data and update metadata.application
+      // ✅ BUG FIX #4: Add backward compatibility for metadata structure
+      const currentMetadata = (vendor.metadata as any) || {};
+      const currentApplication = currentMetadata.application || currentMetadata.application_metadata || {};
+      
+      // Update vendor fields and metadata
       const updatedVendor = await getVendorsRepository().update(vendorId, {
-        business_name: updates.formData?.businessName,
-        owner_name: updates.formData?.fullName,
-        email: updates.formData?.email,
-        address: updates.formData?.address,
-        city: updates.formData?.city,
-        state: updates.formData?.state,
-        pincode: updates.formData?.pincode,
+        business_name: updates.formData?.businessName || vendor.business_name,
+        owner_name: updates.formData?.fullName || vendor.owner_name,
+        email: updates.formData?.email || vendor.email,
+        address: updates.formData?.address || vendor.address,
+        city: updates.formData?.city || vendor.city,
+        state: updates.formData?.state || vendor.state,
+        pincode: updates.formData?.pincode || vendor.pincode,
+        latitude: updates.location?.lat || vendor.latitude,
+        longitude: updates.location?.lng || vendor.longitude,
         status: 'resubmitted',
+        metadata: {
+          ...currentMetadata,
+          application: {
+            ...currentApplication,
+            formData: updates.formData || currentApplication.formData,
+            documents: updates.documents || currentApplication.documents,
+            location: updates.location || currentApplication.location,
+            resubmittedAt: new Date().toISOString(),
+            history: [
+              ...(currentApplication.history || []),
+              {
+                status: 'resubmitted',
+                timestamp: new Date().toISOString(),
+                note: 'Application resubmitted with corrections'
+              }
+            ]
+          }
+        },
+        updated_at: new Date().toISOString(),
       });
 
       // ✅ SQL: Create status history entry
@@ -697,25 +776,69 @@ export function vendorApprovalWorkflowEndpoints(app: Hono) {
    * Get all pending applications (for admin dashboard)
    * GET /make-server-3dd53475/admin/vendor/pending
    * 
+   * ✅ PHASE 3 FIX 3.1: Fixed to query pending vendors correctly (not filtered by is_active)
    * REFACTORED: Uses SQL repositories instead of KV
    */
   app.get("/make-server-3dd53475/admin/vendor/pending", async (c) => {
     try {
-      // ✅ SQL: Get all pending vendors
-      const pendingVendors = await getVendorsRepository().findByStatus('pending');
-      const resubmittedVendors = await getVendorsRepository().findByStatus('resubmitted');
-      
-      const allPending = [...pendingVendors, ...resubmittedVendors];
+      // ✅ PHASE 3 FIX 3.1: Query pending vendors directly (findByStatus filters by is_active=true, which excludes pending vendors)
+      const client = getDbClient();
+      const { data: pendingVendors, error: pendingError } = await client
+        .from('vendors')
+        .select('*')
+        .in('status', ['pending', 'resubmitted', 'under_review', 'pending_approval'])
+        .order('submitted_at', { ascending: false, nullsFirst: false })
+        .order('created_at', { ascending: false });
 
-      // Sort by submission date
-      allPending.sort((a, b) => 
-        new Date(a.submitted_at || a.created_at).getTime() - 
-        new Date(b.submitted_at || b.created_at).getTime()
-      );
+      if (pendingError) {
+        console.error('Error fetching pending vendors:', pendingError);
+        throw pendingError;
+      }
+
+      // ✅ PHASE 3 FIX 3.1: Extract application metadata from metadata JSONB and format for admin
+      // ✅ BUG FIX #4: Add backward compatibility for metadata structure
+      const formattedVendors = (pendingVendors || []).map((vendor: any) => {
+        const metadata = vendor.metadata as any;
+        const applicationMetadata = metadata?.application || metadata?.application_metadata || {};
+        
+        return {
+          id: vendor.id,
+          vendorId: vendor.id,
+          applicationId: applicationMetadata.applicationId || `APP-${vendor.id}`,
+          phone: vendor.phone,
+          email: vendor.email,
+          businessName: vendor.business_name,
+          ownerName: vendor.owner_name || vendor.full_name,
+          roleId: vendor.role_id || applicationMetadata.roleId,
+          roleName: applicationMetadata.roleName,
+          status: vendor.status,
+          submittedAt: applicationMetadata.submittedAt || vendor.submitted_at || vendor.created_at,
+          updatedAt: vendor.updated_at,
+          // Include full application data
+          formData: applicationMetadata.formData || {},
+          documents: applicationMetadata.documents || {},
+          location: applicationMetadata.location || (vendor.latitude && vendor.longitude ? {
+            lat: vendor.latitude,
+            lng: vendor.longitude
+          } : null),
+          serviceStyle: applicationMetadata.serviceStyle,
+          serviceCategory: applicationMetadata.serviceCategory || vendor.service_category,
+          // Include review history if available
+          reviewNotes: applicationMetadata.reviewNotes || [],
+          history: applicationMetadata.history || [],
+          // Include address fields
+          address: vendor.address,
+          city: vendor.city || (typeof vendor.address === 'object' ? vendor.address?.city : null),
+          state: vendor.state || (typeof vendor.address === 'object' ? vendor.address?.state : null),
+          pincode: vendor.pincode || (typeof vendor.address === 'object' ? vendor.address?.pincode : null),
+        };
+      });
+
+      console.log(`✅ Found ${formattedVendors.length} pending vendor applications`);
 
       return c.json({ 
-        vendors: allPending,
-        total: allPending.length
+        vendors: formattedVendors,
+        total: formattedVendors.length
       });
     } catch (error) {
       console.error('Error fetching pending vendors:', error);

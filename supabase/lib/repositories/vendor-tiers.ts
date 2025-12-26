@@ -141,19 +141,6 @@ export function getVendorTiersRepository() {
           applicable_roles: input.applicable_roles || []
         }
       );
-        'vendor_tiers',
-        {
-          ...input,
-          payout_period_days: input.payout_period_days || 7,
-          allow_split_payment: input.allow_split_payment || false,
-          is_default: input.is_default || false,
-          is_active: input.is_active !== false,
-          is_free_tier: input.is_free_tier || false,
-          features: input.features || [],
-          applicable_roles: input.applicable_roles || []
-        },
-        ['*']
-      );
 
       return result[0];
     },

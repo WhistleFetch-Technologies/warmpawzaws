@@ -4,7 +4,7 @@
  * Complete auth flow for all three portals
  */
 
-import { Hono } from 'npm:hono';
+import { Hono } from 'npm:hono@4';
 import * as authService from './auth-service.tsx';
 import { generateId } from './database-schema.tsx';
 import { getOtpRepository } from '../../lib/repositories/otp.ts';
@@ -13,6 +13,15 @@ import { SNSClient, PublishCommand } from "npm:@aws-sdk/client-sns";
 import { sendSuccess, sendError } from './response-utils.ts';
 
 export function registerAuthEndpoints(app: Hono) {
+  
+  // ✅ CORS: Explicit OPTIONS handler for auth/send-otp
+  app.options("/make-server-3dd53475/auth/send-otp", async (c) => {
+    c.header('Access-Control-Allow-Origin', '*');
+    c.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+    c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept');
+    c.header('Access-Control-Max-Age', '86400');
+    return c.text('', 204);
+  });
   
   // ============================================
   // OTP SERVICE (SNS)
@@ -144,6 +153,15 @@ export function registerAuthEndpoints(app: Hono) {
   // LOGIN / AUTHENTICATION
   // ============================================
   
+  // ✅ CORS: Explicit OPTIONS handler for auth/login
+  app.options("/make-server-3dd53475/auth/login", async (c) => {
+    c.header('Access-Control-Allow-Origin', '*');
+    c.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+    c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept');
+    c.header('Access-Control-Max-Age', '86400');
+    return c.text('', 204);
+  });
+  
   /**
    * POST /auth/login
    * Universal login endpoint for all portals
@@ -202,28 +220,9 @@ export function registerAuthEndpoints(app: Hono) {
           state: currentState
         });
         
-        // DEBUG: If no vendor found, let's check what's in the database
+        // DEBUG: If no vendor found, log for debugging (removed KV usage)
         if (!vendorState.vendor) {
-          console.log(`❌ NO VENDOR FOUND - Checking database...`);
-          const allVendors = await kv.getByPrefix('vendor:vendor_');
-          console.log(`📋 Total vendors in database: ${allVendors.length}`);
-          
-          if (allVendors.length > 0) {
-            console.log(`📋 First 5 vendors:`);
-            allVendors.slice(0, 5).forEach((v: any, idx: number) => {
-              console.log(`   ${idx + 1}. ID: ${v.id}, Phone: ${v.phone}, Name: ${v.fullName}, Status: ${v.status}`);
-            });
-            
-            // Check if any match the login phone
-            const matchingVendor = allVendors.find((v: any) => v.phone === phone || v.phone === user.phone);
-            if (matchingVendor) {
-              console.log(`⚠️ FOUND MATCHING VENDOR BUT NOT RETURNED BY getVendorState:`, {
-                id: matchingVendor.id,
-                phone: matchingVendor.phone,
-                status: matchingVendor.status
-              });
-            }
-          }
+          console.log(`❌ NO VENDOR FOUND for phone: ${phone}, userId: ${user.userId}`);
         }
         
       } else if (user.role === 'customer' || portal === 'customer') {
@@ -257,29 +256,29 @@ export function registerAuthEndpoints(app: Hono) {
         state: currentState
       };
       
-      // DEBUG: If state is "new" for vendor, add debug information
+      // ✅ FIX: Include vendorId in response for new vendors
+      if ((user.role === 'vendor' || portal === 'vendor') && profileData) {
+        response.vendorId = profileData.id || profileData.vendorId;
+      } else if ((user.role === 'vendor' || portal === 'vendor') && currentState === 'new') {
+        // For new vendors, we might not have a vendor record yet, but we can use userId as fallback
+        response.vendorId = null; // Will be created on application submission
+      }
+      
+      // ✅ SQL: DEBUG: If state is "new" for vendor, add debug information
       if ((user.role === 'vendor' || portal === 'vendor') && currentState === 'new') {
-        const kv = await import('./kv_store.tsx');
-        
-        // Get all vendor profiles for debugging
-        const vendorProfileEntries = await kv.getByPrefix('vendor:profile:');
-        const vendorVendorEntries = await kv.getByPrefix('vendor:vendor_');
+        // ✅ SQL: Get vendor data from SQL for debugging
+        const vendorsRepo = await import('../../lib/repositories/vendors.ts').then(m => m.getVendorsRepository());
+        const allVendors = await vendorsRepo.findAll();
         
         const debugInfo = {
           searchedPhone: user.phone,
-          vendorProfileCount: vendorProfileEntries.length,
-          vendorVendorCount: vendorVendorEntries.length,
-          vendorProfiles: vendorProfileEntries.map((p: any) => ({
-            id: p.id,
-            phone: p.phone,
-            ownerName: p.ownerName || p.fullName,
-            email: p.email
-          })),
-          vendorVendors: vendorVendorEntries.map((v: any) => ({
-            id: v.id || v.vendorId,
+          vendorCount: allVendors.length,
+          vendors: allVendors.map((v: any) => ({
+            id: v.id,
             phone: v.phone,
-            ownerName: v.ownerName || v.fullName,
-            email: v.email
+            ownerName: v.owner_name,
+            email: v.email,
+            user_id: v.user_id
           }))
         };
         
@@ -297,9 +296,12 @@ export function registerAuthEndpoints(app: Hono) {
       
       return sendSuccess(c, response);
       
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Login error:', error);
-      return sendError(c, error, 500);
+      const errorMessage = error?.message || String(error) || 'Unknown error';
+      const errorStack = error?.stack || '';
+      console.error('❌ Login error details:', { errorMessage, errorStack });
+      return sendError(c, `Login failed: ${errorMessage}`, 500);
     }
   });
   
@@ -530,9 +532,10 @@ export function registerAuthEndpoints(app: Hono) {
         results.checks.allUsers = { error: String(e) };
       }
       
-      // 3. Check vendor:phone: format
+      // ✅ SQL: 3. Check vendor by phone using SQL
       try {
-        const vendorByPhone = await kvModule.get(`vendor:phone:${cleanedPhone}`);
+        const vendorsRepo = await import('../../lib/repositories/vendors.ts').then(m => m.getVendorsRepository());
+        const vendorByPhone = await vendorsRepo.findByPhone(cleanedPhone);
         results.checks.vendorByPhone = { found: !!vendorByPhone, data: vendorByPhone };
       } catch (e) {
         results.checks.vendorByPhone = { error: String(e) };
@@ -589,67 +592,51 @@ export function registerAuthEndpoints(app: Hono) {
   
   /**
    * POST /auth/admin/fix-vendor-indexes
-   * MIGRATION TOOL: Create missing phone indexes for existing vendors
+   * ✅ SQL: MIGRATION TOOL - No longer needed as phone indexing is SQL-based
+   * This endpoint is kept for backward compatibility but now just verifies SQL indexes
    */
   app.post("/make-server-3dd53475/auth/admin/fix-vendor-indexes", async (c) => {
     try {
-      console.log('🔧 MIGRATION: Fixing vendor indexes...');
+      console.log('🔧 MIGRATION: Verifying SQL phone indexes...');
       
-      // Get all vendors
-      const allVendors = await kv.getByPrefix('vendor:vendor_');
-      console.log(`Found ${allVendors.length} vendors to process`);
+      // ✅ SQL: Get all vendors from SQL
+      const vendorsRepo = await import('../../lib/repositories/vendors.ts').then(m => m.getVendorsRepository());
+      const allVendors = await vendorsRepo.findAll();
+      console.log(`Found ${allVendors.length} vendors in SQL`);
       
-      let fixed = 0;
-      let skipped = 0;
+      let withPhone = 0;
+      let withoutPhone = 0;
       const results: any[] = [];
       
       for (const vendor of allVendors) {
-        const vendorId = vendor.id || vendor.vendorId;
-        const phone = vendor.phone;
-        
-        if (!phone) {
-          console.log(`⚠️ Vendor ${vendorId} has no phone number`);
-          skipped++;
-          continue;
-        }
-        
-        // Clean phone
-        const cleanedPhone = phone.replace(/[^0-9]/g, '');
-        
-        // Check if index already exists
-        const existingIndex = await kv.get(`vendor:phone:${cleanedPhone}`);
-        
-        if (existingIndex) {
-          console.log(`✓ Vendor ${vendorId} already has phone index`);
-          skipped++;
-        } else {
-          // Create phone index
-          await kv.set(`vendor:phone:${cleanedPhone}`, vendorId);
-          console.log(`✅ Created phone index: vendor:phone:${cleanedPhone} → ${vendorId}`);
-          fixed++;
-          
+        if (vendor.phone) {
+          withPhone++;
           results.push({
-            vendorId,
-            phone: cleanedPhone,
-            fullName: vendor.fullName || vendor.ownerName,
+            vendorId: vendor.id,
+            phone: vendor.phone,
+            ownerName: vendor.owner_name,
+            businessName: vendor.business_name,
             status: vendor.status
           });
+        } else {
+          withoutPhone++;
         }
       }
       
-      console.log(`✅ Migration complete: ${fixed} fixed, ${skipped} skipped`);
+      console.log(`✅ Verification complete: ${withPhone} with phone, ${withoutPhone} without phone`);
       
       return sendSuccess(c, {
+        message: 'Phone indexing is now SQL-based. All vendors with phone numbers are automatically indexed.',
         stats: {
           total: allVendors.length,
-          fixed,
-          skipped
+          withPhone,
+          withoutPhone
         },
-        fixed: results
-      }, 'Vendor indexes fixed');
+        vendors: results
+      }, 'Vendor phone indexes verified');
       
     } catch (error) {
-      console.error('❌ Migration error:', error);
+      console.error('❌ Verification error:', error);
       return sendError(c, error, 500);
     }
   });

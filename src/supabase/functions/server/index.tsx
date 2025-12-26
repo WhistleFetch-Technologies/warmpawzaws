@@ -572,7 +572,7 @@ registerUniversalServiceDiscovery(app);
 registerUniversalOTPSystem(app);
 registerHomeServiceBookingFlow(app);
 registerBookingLifecycleManagement(app);
-bookingLifecycleCompleteEndpoints(app, kv);
+bookingLifecycleCompleteEndpoints(app);
 registerPayoutCronJob(app);
 registerSmsOtpService(app);
 registerRazorpayRefundProcessor(app);

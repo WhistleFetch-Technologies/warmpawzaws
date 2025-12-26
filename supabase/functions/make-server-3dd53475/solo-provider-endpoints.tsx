@@ -325,6 +325,106 @@ export function soloProviderEndpoints(app: Hono) {
     }
   });
 
+  /**
+   * POST /make-server-3dd53475/center/:centerId/service-area
+   * Configure service area for any vendor (works for all vendor roles)
+   * Supports both radius-based and specific areas from Google Maps
+   */
+  app.post("/make-server-3dd53475/center/:centerId/service-area", async (c) => {
+    try {
+      const { centerId } = c.req.param();
+      const { serviceArea } = await c.req.json();
+
+      console.log(`📍 Updating service area for center: ${centerId}`);
+
+      // ✅ SQL: Get center from platform_settings
+      const client = getDbClient();
+      const { data: centerSetting } = await client
+        .from('platform_settings')
+        .select('*')
+        .eq('setting_key', `center:${centerId}`)
+        .maybeSingle();
+      
+      if (!centerSetting) {
+        return sendError(c, 'Center not found', 404);
+      }
+
+      const center = centerSetting.setting_value;
+      
+      // Update service area
+      center.serviceArea = serviceArea;
+      center.updatedAt = new Date().toISOString();
+
+      // ✅ SQL: Save updated center
+      await client
+        .from('platform_settings')
+        .upsert({
+          setting_key: `center:${centerId}`,
+          setting_value: center,
+          updated_at: new Date().toISOString(),
+        });
+
+      // ✅ SQL: Also update vendor's solo_provider_data if it exists
+      if (center.vendor_id) {
+        const vendor = await getVendorsRepository().findById(center.vendor_id);
+        if (vendor?.solo_provider_data) {
+          await getVendorsRepository().update(center.vendor_id, {
+            solo_provider_data: {
+              ...vendor.solo_provider_data,
+              serviceArea: serviceArea
+            }
+          });
+        }
+      }
+
+      console.log(`✅ Service area updated:`, serviceArea);
+
+      return sendSuccess(c, {
+        centerId,
+        serviceArea,
+        message: 'Service area updated successfully'
+      });
+
+    } catch (error) {
+      console.error('❌ Service area update error:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
+  /**
+   * GET /make-server-3dd53475/center/:centerId/service-area
+   * Get service area configuration for a center
+   */
+  app.get("/make-server-3dd53475/center/:centerId/service-area", async (c) => {
+    try {
+      const { centerId } = c.req.param();
+
+      // ✅ SQL: Get center from platform_settings
+      const client = getDbClient();
+      const { data: centerSetting } = await client
+        .from('platform_settings')
+        .select('*')
+        .eq('setting_key', `center:${centerId}`)
+        .maybeSingle();
+      
+      if (!centerSetting) {
+        return sendError(c, 'Center not found', 404);
+      }
+
+      const center = centerSetting.setting_value;
+      const serviceArea = center.serviceArea || null;
+
+      return sendSuccess(c, {
+        centerId,
+        serviceArea,
+      });
+
+    } catch (error) {
+      console.error('❌ Service area fetch error:', error);
+      return sendError(c, error, 500);
+    }
+  });
+
   console.log('✅ Solo provider endpoints registered (SQL-only)');
 }
 

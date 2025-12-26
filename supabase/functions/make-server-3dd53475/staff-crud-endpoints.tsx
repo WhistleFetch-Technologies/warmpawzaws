@@ -74,6 +74,32 @@ app.post('/make-server-3dd53475/staff/create', async (c) => {
       return sendError(c, 'Vendor not found', 404);
     }
     
+    // ✅ CRITICAL FIX: Ensure vendor has role_id (backfill if missing)
+    if (!vendor.role_id) {
+      console.warn(`⚠️ [STAFF-CREATE] Vendor ${resolvedVendorId} has no role_id, attempting to backfill...`);
+      
+      // Use SQL RPC to update vendor role config
+      const { getDbClient } = await import('../../lib/db.ts');
+      const client = getDbClient();
+      
+      // Try to infer role_id from category or business_name
+      const { data: roleData } = await client.rpc('infer_role_id_from_category', {
+        p_category: vendor.category || '',
+        p_vendor_type: (vendor as any).vendor_type || '',
+        p_business_name: vendor.business_name || ''
+      });
+      
+      if (roleData) {
+        // Update vendor with inferred role_id
+        await vendorsRepo.update(resolvedVendorId, { role_id: roleData });
+        vendor.role_id = roleData;
+        console.log(`✅ [STAFF-CREATE] Backfilled role_id: ${roleData}`);
+      } else {
+        console.error(`❌ [STAFF-CREATE] Could not infer role_id for vendor ${resolvedVendorId}`);
+        return sendError(c, 'Vendor role not configured. Please contact support.', 400);
+      }
+    }
+    
     // ✅ CRITICAL FIX: Validate and auto-fix staff data
     const validationResult = validateStaffData(staffData);
     console.log('📋 Validation Result:', validationResult);

@@ -149,6 +149,14 @@ export function onboardingConfigEndpoints(app: Hono) {
   // VENDOR APPLICATION ENDPOINTS
   // ============================================
 
+  // OPTIONS handler for vendor applications
+  app.options("/make-server-3dd53475/vendor/applications", (c) => {
+    c.header('Access-Control-Allow-Origin', '*');
+    c.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept');
+    return c.text('', 204);
+  });
+
   /**
    * Submit vendor application
    * POST /make-server-3dd53475/vendor/applications
@@ -188,8 +196,16 @@ export function onboardingConfigEndpoints(app: Hono) {
       console.log('🆔 [VENDOR-APPLICATION] Generated vendorId:', vendorId, 'from phone:', phone, '(clean:', cleanPhone, ')');
       
       // ✅ SQL: Get role configuration to extract serviceCategory
+      // ✅ FIX: roles.id is UUID, but roleId might be a name string - findById handles both
       const role = await rolesRepo.findById(roleId);
-      console.log('📋 [VENDOR-APPLICATION] Role config:', role ? 'FOUND' : 'NOT FOUND');
+      if (!role) {
+        console.error(`❌ [VENDOR-APPLICATION] Role ${roleId} not found in roles table`);
+        return c.json({ 
+          error: 'Invalid role',
+          message: `Role ${roleId} not found. Please ensure the role exists before submitting an application.`
+        }, 400);
+      }
+      console.log('📋 [VENDOR-APPLICATION] Role config:', `FOUND (id: ${role.id}, name: ${role.name})`);
       
       const serviceCategory = role ? determineServiceCategory(role) : 'services';
       console.log('🏷️ [VENDOR-APPLICATION] Service category:', serviceCategory);
@@ -200,42 +216,54 @@ export function onboardingConfigEndpoints(app: Hono) {
       console.log('📋 [VENDOR-APPLICATION] Role details:', {
         roleName,
         serviceCategory,
-        vendorTypes
+        vendorTypes,
+        roleId: role?.id
       });
       
       // ✅ SQL: Create vendor with application metadata
-      const vendorProfile = {
+      // ✅ FIX: vendors table has address as JSONB, not separate city/state/pincode columns
+      // ✅ FIX: role_id must be UUID from roles table, not the string roleId
+      const vendorProfile: any = {
+        vendor_id: vendorId, // Use the generated vendor ID
         phone: cleanPhone,
-        email: formData.email || email,
+        email: formData.businessEmail || formData.email || email,
         business_name: formData.businessName || '',
-        owner_name: formData.ownerName || formData.fullName || '',
-        address: formData.address || '',
-        city: formData.city || '',
-        state: formData.state || '',
-        pincode: formData.pincode || '',
-        latitude: location?.lat || null,
-        longitude: location?.lng || null,
-        status: 'pending',
+        full_name: formData.ownerName || formData.fullName || formData.businessName || '',
+        ...(role?.id && { role_id: role.id }), // Only set if role exists and has UUID id
+        vendor_type: roleId, // Keep original roleId string for vendor_type
+        service_category: serviceCategory,
+        address: {
+          line1: formData.addressLine1 || formData.address || '',
+          line2: formData.addressLine2 || '',
+          city: formData.city || '',
+          state: formData.state || '',
+          pincode: formData.pincode || '',
+          landmark: formData.landmark || ''
+        },
+        status: 'pending', // Use 'pending' as it's a valid status value
+        approval_status: 'pending',
         is_active: false,
-        // Store application metadata in a JSONB column (if we add application_metadata to vendors table)
-        // For now, we'll store it in platform_settings
-        application_metadata: {
-          applicationId,
-          roleId,
-          roleName,
-          vendorType: roleId,
-          vendorTypes,
-          serviceCategory,
-          serviceStyle,
-          formData,
-          documents,
-          location,
-          submittedAt: new Date().toISOString(),
-          history: [{
-            status: 'pending',
-            timestamp: new Date().toISOString(),
-            note: 'Application submitted'
-          }]
+        submitted_at: new Date().toISOString(),
+        // ✅ FIX: Store application metadata in metadata JSONB column
+        metadata: {
+          application: {
+            applicationId,
+            roleId,
+            roleName,
+            vendorType: roleId,
+            vendorTypes,
+            serviceCategory,
+            serviceStyle,
+            formData,
+            documents,
+            location,
+            submittedAt: new Date().toISOString(),
+            history: [{
+              status: 'pending',
+              timestamp: new Date().toISOString(),
+              note: 'Application submitted'
+            }]
+          }
         },
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
@@ -244,11 +272,24 @@ export function onboardingConfigEndpoints(app: Hono) {
       console.log('👤 [VENDOR-APPLICATION] Vendor profile created:', {
         phone: vendorProfile.phone,
         status: vendorProfile.status,
+        role_id: vendorProfile.role_id,
+        role_found: !!role,
+        role_uuid: role?.id,
         applicationId
       });
 
       // ✅ SQL: Create vendor (this will fail if vendor already exists)
       try {
+        // Ensure role_id is set (we already validated role exists above)
+        if (!role.id) {
+          console.error('❌ [VENDOR-APPLICATION] Role found but has no ID:', role);
+          return c.json({ 
+            error: 'Invalid role data',
+            message: 'Role found but missing ID. Please contact support.'
+          }, 500);
+        }
+        
+        console.log('💾 [VENDOR-APPLICATION] Creating vendor with role_id:', role.id);
         const vendor = await vendorsRepo.create(vendorProfile);
         console.log(`✅ [VENDOR-APPLICATION] Vendor created with application metadata!`);
         
@@ -286,11 +327,18 @@ export function onboardingConfigEndpoints(app: Hono) {
           console.log(`⚠️ [VENDOR-APPLICATION] Vendor already exists, updating...`);
           const existingVendor = await vendorsRepo.findByPhone(cleanPhone);
           if (existingVendor) {
+            // ✅ PHASE 1 FIX 1.3: Merge application metadata into existing metadata JSONB
+            // ✅ BUG FIX #4: Add backward compatibility for metadata structure
+            const existingMetadata = (existingVendor.metadata as any) || {};
+            const existingApplication = existingMetadata.application || existingMetadata.application_metadata || {};
             await vendorsRepo.update(existingVendor.id, {
               ...vendorProfile,
-              application_metadata: {
-                ...existingVendor.application_metadata,
-                ...vendorProfile.application_metadata,
+              metadata: {
+                ...existingMetadata,
+                application: {
+                  ...existingApplication,
+                  ...vendorProfile.metadata.application,
+                }
               }
             });
             return c.json({ 
@@ -376,30 +424,38 @@ export function onboardingConfigEndpoints(app: Hono) {
         .eq('status', status || 'pending');
       
       if (roleId) {
-        // Filter by roleId from application_metadata
-        // Note: This requires application_metadata to be a JSONB column
-        // For now, we'll get all pending vendors and filter in code
+        // ✅ PHASE 3 FIX 3.1: Filter by roleId from metadata.application (not application_metadata)
+        // Filtering will be done in code after fetching vendors
       }
       
       const { data: vendors } = await query;
       
-      // Convert vendors to applications format
-      const applications = (vendors || []).map(v => ({
-        id: v.application_metadata?.applicationId || `APP-${v.id}`,
-        vendorId: v.id,
-        roleId: v.application_metadata?.roleId,
-        phone: v.phone,
-        email: v.email,
-        status: v.status,
-        formData: v.application_metadata?.formData,
-        documents: v.application_metadata?.documents,
-        serviceStyle: v.application_metadata?.serviceStyle,
-        location: v.application_metadata?.location,
-        submittedAt: v.application_metadata?.submittedAt || v.created_at,
-        updatedAt: v.updated_at,
-        reviewNotes: v.application_metadata?.reviewNotes || [],
-        history: v.application_metadata?.history || []
-      }));
+      // ✅ PHASE 3 FIX 3.1: Convert vendors to applications format using metadata.application
+      // ✅ BUG FIX #4: Add backward compatibility for metadata structure
+      const applications = (vendors || []).map((v: any) => {
+        const metadata = v.metadata as any;
+        const applicationMetadata = metadata?.application || metadata?.application_metadata || {};
+        
+        return {
+          id: applicationMetadata.applicationId || `APP-${v.id}`,
+          vendorId: v.id,
+          roleId: v.role_id || applicationMetadata.roleId,
+          phone: v.phone,
+          email: v.email,
+          status: v.status,
+          formData: applicationMetadata.formData || {},
+          documents: applicationMetadata.documents || {},
+          serviceStyle: applicationMetadata.serviceStyle,
+          location: applicationMetadata.location || (v.latitude && v.longitude ? {
+            lat: v.latitude,
+            lng: v.longitude
+          } : null),
+          submittedAt: applicationMetadata.submittedAt || v.submitted_at || v.created_at,
+          updatedAt: v.updated_at,
+          reviewNotes: applicationMetadata.reviewNotes || [],
+          history: applicationMetadata.history || []
+        };
+      });
 
       // Apply filters
       let filteredApplications = applications;

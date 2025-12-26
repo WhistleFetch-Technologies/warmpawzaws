@@ -298,6 +298,17 @@ export function getNotificationTemplatesRepository() {
       return data as NotificationLog;
     },
 
+    async getLogByLogId(logId: string): Promise<NotificationLog | null> {
+      const { data, error } = await client
+        .from('notification_logs')
+        .select('*')
+        .eq('log_id', logId)
+        .maybeSingle();
+
+      if (error) throw error;
+      return data as NotificationLog | null;
+    },
+
     async updateLog(logId: string, input: UpdateNotificationLogInput): Promise<NotificationLog> {
       const updateData: any = {
         updated_at: new Date().toISOString()

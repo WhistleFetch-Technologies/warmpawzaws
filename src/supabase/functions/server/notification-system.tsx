@@ -353,7 +353,8 @@ export function notificationEndpoints(app: Hono) {
     try {
         console.log(`🔔 [PUSH] Sending push to: ${notification.recipientId}`);
         // In a real implementation with FCM:
-        // const fcmToken = await kv.get(`fcm_token:${notification.recipientId}`);
+        // ✅ REMOVED: KV usage - FCM tokens should be stored in SQL (user_devices table)
+        // const fcmToken = await getDbClient().from('user_devices').select('fcm_token').eq('user_id', notification.recipientId).single();
         // if (!fcmToken) return false;
         // await firebaseAdmin.messaging().send({ token: fcmToken, notification: { title: notification.title, body: notification.message } });
         

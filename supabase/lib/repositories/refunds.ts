@@ -80,6 +80,19 @@ export class RefundsRepository {
     });
   }
 
+  async findByVendorId(vendorId: string, options?: { limit?: number; offset?: number; status?: string }): Promise<Refund[]> {
+    const filters: any = { vendor_id: vendorId };
+    if (options?.status) {
+      filters.refund_status = options.status;
+    }
+    return selectQuery<Refund>("refunds", filters, {
+      limit: options?.limit || 50,
+      offset: options?.offset,
+      orderBy: "requested_at",
+      orderDirection: "desc"
+    });
+  }
+
   async create(input: CreateRefundInput): Promise<Refund> {
     const results = await insertQuery<Refund>("refunds", {
       payment_id: input.payment_id,

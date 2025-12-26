@@ -14,7 +14,8 @@ export interface Role {
   is_active: boolean;
   created_at: string;
   updated_at: string;
-  // Additional fields from KV store
+  config?: any; // JSONB config field containing onboardingFields, vendorTypes, serviceStyles, etc.
+  // Additional fields from KV store (for backward compatibility)
   category?: string;
   vendorType?: string;
   serviceCategory?: string;
@@ -93,6 +94,7 @@ export function getRolesRepository() {
           description: roleData.description,
           is_system_role: roleData.is_system_role ?? false,
           is_active: roleData.is_active ?? true,
+          config: roleData.config || null,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         })
