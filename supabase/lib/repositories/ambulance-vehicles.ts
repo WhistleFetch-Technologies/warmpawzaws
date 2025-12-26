@@ -98,6 +98,13 @@ export class AmbulanceVehiclesRepository {
     
     return results[0];
   }
+
+  async findAll(): Promise<AmbulanceVehicle[]> {
+    return selectQuery<AmbulanceVehicle>("ambulance_vehicles", {}, {
+      orderBy: "created_at",
+      orderDirection: "desc"
+    });
+  }
 }
 
 let repositoryInstance: AmbulanceVehiclesRepository | null = null;

@@ -62,7 +62,6 @@ export class StaffRepository {
           email,
           role,
           specialization,
-          specializations,
           is_active,
           rating,
           experience_years,
@@ -107,9 +106,7 @@ export class StaffRepository {
         role: data.role || undefined,
         roleType: vendor?.role_id || undefined,
         specialization: data.specialization || undefined,
-        specializations: Array.isArray(data.specializations) 
-          ? data.specializations 
-          : (data.specializations ? [data.specializations] : []),
+        specializations: data.specialization ? [data.specialization] : [],
         isActive: data.is_active,
         rating: data.rating || 0,
         experience: data.experience_years || 0,
@@ -149,7 +146,6 @@ export class StaffRepository {
           email,
           role,
           specialization,
-          specializations,
           is_active,
           rating,
           experience_years,
@@ -193,9 +189,7 @@ export class StaffRepository {
         role: data.role || undefined,
         roleType: vendor?.role_id || undefined,
         specialization: data.specialization || undefined,
-        specializations: Array.isArray(data.specializations) 
-          ? data.specializations 
-          : (data.specializations ? [data.specializations] : []),
+        specializations: data.specialization ? [data.specialization] : [],
         isActive: data.is_active,
         rating: data.rating || 0,
         experience: data.experience_years || 0,
@@ -425,7 +419,6 @@ export class StaffRepository {
           email,
           role,
           specialization,
-          specializations,
           is_active,
           rating,
           experience_years,
@@ -457,9 +450,7 @@ export class StaffRepository {
         role: s.role || undefined,
         roleType: vendor?.role_id || undefined,
         specialization: s.specialization || undefined,
-        specializations: Array.isArray(s.specializations) 
-          ? s.specializations 
-          : (s.specializations ? [s.specializations] : []),
+        specializations: s.specialization ? [s.specialization] : [],
         isActive: s.is_active,
         rating: s.rating || 0,
         experience: s.experience_years || 0,
@@ -474,6 +465,72 @@ export class StaffRepository {
       }));
     } catch (error) {
       console.error('Error finding staff by vendor:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Find all staff (for reindexing)
+   */
+  async findAll(options?: { limit?: number; offset?: number; vendorId?: string }): Promise<StaffProfile[]> {
+    try {
+      let query = this.client
+        .from('staff')
+        .select(`
+          id,
+          staff_id,
+          vendor_id,
+          full_name,
+          phone,
+          email,
+          role,
+          specialization,
+          is_active,
+          rating,
+          experience_years,
+          created_at,
+          updated_at
+        `);
+
+      if (options?.vendorId) {
+        query = query.eq('vendor_id', options.vendorId);
+      }
+
+      if (options?.limit) {
+        query = query.limit(options.limit);
+      }
+
+      if (options?.offset) {
+        query = query.range(options.offset, options.offset + (options.limit || 100) - 1);
+      }
+
+      const { data, error } = await query;
+
+      if (error) throw error;
+
+      return (data || []).map((s: any) => ({
+        id: s.id,
+        staffId: s.staff_id,
+        vendorId: s.vendor_id,
+        fullName: s.full_name,
+        phone: s.phone,
+        email: s.email || undefined,
+        role: s.role || undefined,
+        specializations: s.specialization ? [s.specialization] : [],
+        isActive: s.is_active,
+        rating: s.rating || 0,
+        experience: s.experience_years || 0,
+        services: [],
+        availability: {},
+        totalAppointments: 0,
+        completedAppointments: 0,
+        totalEarnings: 0,
+        reviewCount: 0,
+        createdAt: s.created_at,
+        updatedAt: s.updated_at
+      }));
+    } catch (error) {
+      console.error('Error finding all staff:', error);
       return [];
     }
   }

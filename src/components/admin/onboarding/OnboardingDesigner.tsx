@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Button } from '../../ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../ui/card';
 import { Input } from '../../ui/input';
@@ -77,8 +77,21 @@ export function OnboardingDesigner() {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
 
+  // ✅ FIX: Refs for cleanup and mounted state tracking
+  const isMountedRef = useRef(true);
+  const refetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     fetchRoles();
+    
+    // ✅ FIX: Cleanup on unmount
+    return () => {
+      isMountedRef.current = false;
+      if (refetchTimeoutRef.current) {
+        clearTimeout(refetchTimeoutRef.current);
+        refetchTimeoutRef.current = null;
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -95,9 +108,19 @@ export function OnboardingDesigner() {
       const response = await fetch(`${API_BASE}/config/roles`, {
         headers: { 'Authorization': `Bearer ${publicAnonKey}` }
       });
+      console.log('[ONBOARDING DESIGNER] Roles response status:', response.status);
       if (response.ok) {
         const data = await response.json();
-        setRoles(data.roles || []);
+        console.log('[ONBOARDING DESIGNER] Roles data:', data);
+        console.log('[ONBOARDING DESIGNER] Roles array:', data.roles);
+        // ✅ FIX: Handle both response formats
+        const rolesArray = data.roles || data.data?.roles || [];
+        console.log('[ONBOARDING DESIGNER] Setting roles:', rolesArray.length);
+        setRoles(rolesArray);
+      } else {
+        const errorText = await response.text();
+        console.error('[ONBOARDING DESIGNER] Error fetching roles:', response.status, errorText);
+        toast.error(`Failed to load roles: ${response.status}`);
       }
     } catch (error) {
       console.error('Failed to fetch roles:', error);
@@ -107,12 +130,23 @@ export function OnboardingDesigner() {
     }
   };
 
-  const fetchFormConfig = async (roleId: string) => {
+  const fetchFormConfig = async (roleId: string): Promise<void> => {
+    // ✅ FIX Bug 2 & 3: Check if component is mounted before setting state
+    if (!isMountedRef.current) {
+      return Promise.resolve();
+    }
+    
     try {
       setLoading(true);
       const response = await fetch(`${API_BASE}/vendor/onboarding-form/${roleId}`, {
         headers: { 'Authorization': `Bearer ${publicAnonKey}` }
       });
+      
+      // ✅ FIX Bug 2 & 3: Check again after async operation
+      if (!isMountedRef.current) {
+        return Promise.resolve();
+      }
+      
       if (response.ok) {
         const data = await response.json();
         // Merge documentSections into sections if separated, or just use config as is
@@ -122,15 +156,25 @@ export function OnboardingDesigner() {
         if (config) {
             // Ensure sections is an array
             if (!config.sections) config.sections = [];
-            setFormConfig(config);
-            setUnsavedChanges(false);
+            
+            // ✅ FIX Bug 2 & 3: Final check before setting state
+            if (isMountedRef.current) {
+              setFormConfig(config);
+              setUnsavedChanges(false);
+            }
         }
       }
     } catch (error) {
-      console.error('Failed to fetch form config:', error);
-      toast.error('Failed to load form configuration');
+      // ✅ FIX Bug 2 & 3: Only show error if component is still mounted
+      if (isMountedRef.current) {
+        console.error('Failed to fetch form config:', error);
+        toast.error('Failed to load form configuration');
+      }
     } finally {
-      setLoading(false);
+      // ✅ FIX Bug 2 & 3: Only update loading state if component is still mounted
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
   };
 
@@ -175,11 +219,91 @@ export function OnboardingDesigner() {
       });
 
       if (response.ok) {
-        toast.success('Form configuration saved successfully');
+        const data = await response.json();
+        const deletedCount = data.deletedFields?.length || 0;
+        const isVerified = data.verified === true;
+        
+        if (deletedCount > 0) {
+          toast.success(`Form saved! ${deletedCount} field(s) deleted from database.`);
+        } else {
+          toast.success('Form configuration saved successfully');
+        }
+        
         setUnsavedChanges(false);
-        fetchFormConfig(formConfig.roleId);
+        
+        // ✅ FIX Bug 1, 2, 3: Smart refetch based on verification status with proper cleanup
+        // Clear any existing timeout
+        if (refetchTimeoutRef.current) {
+          clearTimeout(refetchTimeoutRef.current);
+          refetchTimeoutRef.current = null;
+        }
+        
+        // If backend verified the save, fetch immediately
+        // Otherwise, use a retry mechanism with exponential backoff
+        const refetchForm = () => {
+          // ✅ FIX Bug 2 & 3: Check if component is still mounted before setting state
+          if (!isMountedRef.current) {
+            return;
+          }
+          
+          fetchFormConfig(formConfig.roleId);
+        };
+        
+        if (isVerified) {
+          // ✅ FIX Bug 1: Backend verified the save - fetch immediately (no delay needed)
+          refetchForm();
+        } else {
+          // ✅ FIX Bug 1: Backend didn't verify - use smart retry with exponential backoff
+          // Start with 200ms, then 500ms, then 1000ms (instead of fixed 500ms)
+          let retryCount = 0;
+          const maxRetries = 3;
+          const delays = [200, 500, 1000];
+          
+          const scheduleRetry = () => {
+            // ✅ FIX Bug 2 & 3: Check if component unmounted before scheduling
+            if (!isMountedRef.current) {
+              return;
+            }
+            
+            if (retryCount >= maxRetries) {
+              // Final attempt
+              if (isMountedRef.current) {
+                refetchForm();
+              }
+              return;
+            }
+            
+            const delay = delays[retryCount] || 1000;
+            refetchTimeoutRef.current = setTimeout(() => {
+              // ✅ FIX Bug 2 & 3: Check again before executing
+              if (!isMountedRef.current) {
+                return;
+              }
+              
+              retryCount++;
+              // Try fetching - if successful, stop retrying
+              fetchFormConfig(formConfig.roleId)
+                .then(() => {
+                  // Success - clear any pending retries
+                  if (refetchTimeoutRef.current) {
+                    clearTimeout(refetchTimeoutRef.current);
+                    refetchTimeoutRef.current = null;
+                  }
+                })
+                .catch(() => {
+                  // Failed - schedule next retry if still mounted
+                  if (isMountedRef.current) {
+                    scheduleRetry();
+                  }
+                });
+            }, delay);
+          };
+          
+          scheduleRetry();
+        }
       } else {
-        toast.error('Failed to save configuration');
+        const errorData = await response.json().catch(() => ({}));
+        toast.error(`Failed to save: ${errorData.error || 'Unknown error'}`);
       }
     } catch (error) {
       toast.error('Error saving configuration');
@@ -211,6 +335,22 @@ export function OnboardingDesigner() {
 
   const toggleFieldActive = (sectionId: string, fieldId: string, currentStatus: boolean) => {
     updateField(sectionId, fieldId, { isActive: !currentStatus });
+  };
+
+  const deleteField = (sectionId: string, fieldId: string) => {
+    if (!formConfig) return;
+    
+    const newSections = formConfig.sections.map(section => {
+        if (section.id !== sectionId) return section;
+        
+        return {
+            ...section,
+            fields: section.fields.filter(field => field.id !== fieldId)
+        };
+    });
+    
+    setFormConfig({ ...formConfig, sections: newSections });
+    setUnsavedChanges(true);
   };
 
   const toggleSectionActive = (sectionId: string, currentStatus: boolean) => {
@@ -366,6 +506,18 @@ export function OnboardingDesigner() {
                                             </div>
                                             <div className="flex items-center gap-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                                                 <Button size="sm" variant="ghost" onClick={() => openEditDialog(section.id, field)}>Edit</Button>
+                                                <Button 
+                                                    size="sm" 
+                                                    variant="ghost" 
+                                                    onClick={() => {
+                                                        if (confirm(`Are you sure you want to delete "${field.label}"? This action cannot be undone.`)) {
+                                                            deleteField(section.id, field.id);
+                                                        }
+                                                    }}
+                                                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </Button>
                                                 <Switch 
                                                     checked={field.isActive} 
                                                     onCheckedChange={(checked) => toggleFieldActive(section.id, field.id, checked)} 

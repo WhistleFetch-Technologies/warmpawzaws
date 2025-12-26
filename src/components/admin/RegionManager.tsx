@@ -190,21 +190,38 @@ export function RegionManager({ onBack }: RegionManagerProps = {}) {
       
       const data = await response.json();
       console.log('🌍 [REGION] Response data:', data);
+      console.log('🌍 [REGION] Regions array:', data.regions);
+      console.log('🌍 [REGION] Regions count:', data.regions?.length || 0);
       
-      if (data.success) {
-        // ✅ CRITICAL FIX: Handle KV format { key: "...", value: {...} }
-        // Extract the region objects from the KV wrapper
-        const regionsData = data.regions || [];
+      // ✅ FIX: Handle both response formats - SQL returns direct array
+      const regionsData = data.regions || [];
+      console.log('🌍 [REGION] Processing regions data:', regionsData);
+      console.log('🌍 [REGION] Regions data type:', Array.isArray(regionsData) ? 'array' : typeof regionsData);
+      
+      if (regionsData.length > 0 || data.success) {
         const extractedRegions: Region[] = [];
         
         regionsData.forEach((item: any) => {
-          // If item has 'value' property, it's wrapped by KV - extract it
-          // If item has 'regionId', it's already unwrapped - use it directly
-          const region = item.value || item;
-          
-          // Only add valid regions with regionId
-          if (region && region.regionId) {
+          // ✅ SQL format: regions are already unwrapped with regionId, regionName, etc.
+          // Check if it's a valid region object
+          if (item && (item.regionId || item.regionCode)) {
+            // Ensure regionId is set (use regionCode as fallback)
+            const region: Region = {
+              regionId: item.regionId || item.regionCode,
+              regionName: item.regionName || item.name,
+              regionCode: item.regionCode || item.code || item.regionId,
+              country: item.country || 'India',
+              serviceCatalog: item.serviceCatalog || {},
+              isActive: item.isActive !== undefined ? item.isActive : (item.is_active !== undefined ? item.is_active : true),
+              ...item
+            };
             extractedRegions.push(region);
+          } else if (item && item.value) {
+            // ✅ Legacy KV format: unwrap from { key: "...", value: {...} }
+            const region = item.value;
+            if (region && region.regionId) {
+              extractedRegions.push(region);
+            }
           }
         });
         

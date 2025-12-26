@@ -13,15 +13,22 @@
  */
 
 import { Hono } from "npm:hono";
-import * as kv from "./kv_store.tsx";
 import { sendSuccess, sendError } from "./response-utils.ts";
 import { TIER_CONFIG } from "./tier-system.tsx";
 import { getOTPRequirements } from "./service-category-helpers.tsx";
 import { createNotificationHelper } from "./notification-system.tsx";
 import { createRazorpayPayout } from "./razorpay-marketplace-payout.tsx";
+// ✅ SQL Repositories
+import { getBookingsRepository } from "../../../supabase/lib/repositories/bookings.ts";
+import { getCustomersRepository } from "../../../supabase/lib/repositories/customers.ts";
+import { getVendorsRepository } from "../../../supabase/lib/repositories/vendors.ts";
+import { getSettlementsRepository } from "../../../supabase/lib/repositories/settlements.ts";
+import { getVendorEarningsRepository } from "../../../supabase/lib/repositories/vendor-earnings.ts";
+import { getPayoutsRepository } from "../../../supabase/lib/repositories/payouts.ts";
+import { getDbClient, withTransaction } from "../../../supabase/lib/db.ts";
 // ✅ Note: Razorpay credentials now fetched from platform settings via createRazorpayPayout
 
-export function bookingLifecycleCompleteEndpoints(app: Hono, kv: any) {
+export function bookingLifecycleCompleteEndpoints(app: Hono) {
   const BASE_PATH = "/make-server-3dd53475";
 
   /**
@@ -43,50 +50,52 @@ export function bookingLifecycleCompleteEndpoints(app: Hono, kv: any) {
       console.log(`\n🔄 [LIFECYCLE] Starting complete lifecycle for booking: ${bookingId}`);
       console.log(`   Action: ${action}, Vendor: ${vendorId}`);
 
-      // 1. Get booking
-      const booking = await kv.get(`booking:${bookingId}`);
+      // ✅ SQL: Get booking from repository
+      const bookingsRepo = getBookingsRepository();
+      const booking = await bookingsRepo.findById(bookingId);
       if (!booking) {
         return sendError(c, 'Booking not found', 404);
       }
 
       // Verify vendor
-      if (booking.vendorId !== vendorId) {
+      if (booking.vendor_id !== vendorId) {
         return sendError(c, 'Unauthorized vendor', 403);
       }
 
-      // 2. Verify OTP based on action
+      // ✅ SQL: Verify OTP based on action
       let otpVerified = false;
       let bookingCompleted = false;
 
       if (action === 'start') {
-        // Verify start OTP
-        if (booking.otp?.start !== otp && booking.completionOTP !== otp) {
-          return sendError(c, 'Invalid OTP', 400);
+        // ✅ SQL: Verify start OTP using repository
+        const otpResult = await bookingsRepo.verifyStartOtp(bookingId, otp);
+        if (!otpResult.verified) {
+          if (otpResult.attempts >= otpResult.maxAttempts) {
+            return sendError(c, 'Maximum OTP attempts exceeded. Please request a new OTP.', 400);
+          }
+          return sendError(c, `Invalid OTP. ${otpResult.maxAttempts - otpResult.attempts} attempts remaining.`, 400);
         }
-        booking.status = 'in_progress';
-        booking.startedAt = new Date().toISOString();
-        booking.otp = booking.otp || {};
-        booking.otp.startUsed = true;
         otpVerified = true;
         console.log(`✅ [LIFECYCLE] Start OTP verified, service in progress`);
 
-        // ✅ NOTIFICATION: Service Started
-        try {
-          const customer = await kv.get(`customer:${booking.customerId}`);
-          const vendor = await kv.get(`vendor:${booking.vendorId}`);
-          const endOTP = booking.otp?.end || booking.completionOTP;
+        // ✅ SQL: Get customer and vendor for notifications
+        const customersRepo = getCustomersRepository();
+        const vendorsRepo = getVendorsRepository();
+        const customer = await customersRepo.findById(booking.customer_id);
+        const vendor = await vendorsRepo.findById(booking.vendor_id!);
+        const endOTP = booking.otp_end_code;
 
           await createNotificationHelper({
-            recipientId: booking.customerId,
+            recipientId: booking.customer_id,
             recipientType: 'customer',
             type: 'service_started',
             category: 'bookings',
             title: 'Service Started',
             message: `Your service has started! End service OTP: ${endOTP}. Share with provider when done.`,
-            recipientEmail: customer?.email,
-            recipientPhone: booking.customerPhone || customer?.phone,
+            recipientEmail: customer?.email || undefined,
+            recipientPhone: customer?.phone,
             channels: { email: false, sms: true, inApp: true, push: false },
-            data: { bookingId, serviceName: booking.serviceName, endOTP },
+            data: { bookingId, endOTP },
             priority: 'high'
           });
 
@@ -97,52 +106,55 @@ export function bookingLifecycleCompleteEndpoints(app: Hono, kv: any) {
         }
 
       } else if (action === 'end' || action === 'complete') {
-        // Verify end/completion OTP
-        const endOTP = booking.otp?.end || booking.completionOTP;
-        if (endOTP !== otp) {
-          return sendError(c, 'Invalid OTP', 400);
+        // ✅ SQL: Verify end OTP using repository
+        const otpResult = await bookingsRepo.verifyEndOtp(bookingId, otp);
+        if (!otpResult.verified) {
+          if (otpResult.attempts >= otpResult.maxAttempts) {
+            return sendError(c, 'Maximum OTP attempts exceeded. Please request a new OTP.', 400);
+          }
+          return sendError(c, `Invalid OTP. ${otpResult.maxAttempts - otpResult.attempts} attempts remaining.`, 400);
         }
+        otpVerified = true;
 
-        // Mark booking as completed
-        // ✅ FIX: Handle package bookings differently
-        if (booking.isPackage && booking.packageDetails) {
-          // For package bookings, increment completed sessions instead of marking as completed
-          booking.packageDetails.completedSessions = (booking.packageDetails.completedSessions || 0) + 1;
-          booking.completedSessions = booking.packageDetails.completedSessions;
-          booking.upcomingSessions = (booking.packageDetails.totalSessions || 0) - booking.packageDetails.completedSessions;
+        // ✅ SQL: Mark booking as completed
+        // Handle package bookings differently
+        if (booking.is_package && booking.package_details) {
+          const packageDetails = typeof booking.package_details === 'string' 
+            ? JSON.parse(booking.package_details) 
+            : booking.package_details;
           
-          // Calculate completion percentage
-          const totalSessions = booking.packageDetails.totalSessions || 1;
-          booking.completionPercentage = Math.round((booking.packageDetails.completedSessions / totalSessions) * 100);
+          // Increment completed sessions
+          packageDetails.completedSessions = (packageDetails.completedSessions || 0) + 1;
           
           // Check if package is fully completed
-          if (booking.packageDetails.completedSessions >= totalSessions) {
-            booking.packageStatus = 'completed';
-            booking.status = 'completed';
-            booking.completedAt = new Date().toISOString();
+          const totalSessions = packageDetails.totalSessions || 1;
+          if (packageDetails.completedSessions >= totalSessions) {
+            // Package fully completed
+            await bookingsRepo.update(bookingId, {
+              status: 'completed',
+              completed_at: new Date().toISOString(),
+              package_details: packageDetails,
+            });
             bookingCompleted = true;
-            console.log(`✅ [LIFECYCLE] Package booking fully completed (${booking.packageDetails.completedSessions}/${totalSessions} sessions)`);
+            console.log(`✅ [LIFECYCLE] Package booking fully completed (${packageDetails.completedSessions}/${totalSessions} sessions)`);
           } else {
-            booking.packageStatus = 'in_progress';
-            booking.status = 'in_progress'; // Keep in progress until all sessions done
-            console.log(`📊 [LIFECYCLE] Package session completed (${booking.packageDetails.completedSessions}/${totalSessions} sessions)`);
+            // Package session completed but more sessions remain
+            await bookingsRepo.update(bookingId, {
+              status: 'in_progress',
+              package_details: packageDetails,
+            });
+            console.log(`📊 [LIFECYCLE] Package session completed (${packageDetails.completedSessions}/${totalSessions} sessions)`);
           }
         } else {
-          // For single bookings, mark as completed
-          booking.status = 'completed';
-          booking.completedAt = new Date().toISOString();
+          // Single booking - mark as completed
+          await bookingsRepo.update(bookingId, {
+            status: 'completed',
+            completed_at: new Date().toISOString(),
+          });
           bookingCompleted = true;
           console.log(`✅ [LIFECYCLE] Completion OTP verified, booking completed`);
         }
-        
-        booking.otp = booking.otp || {};
-        booking.otp.endUsed = true;
-        booking.serviceCompletionVerified = true;
-        otpVerified = true;
       }
-
-      // Save booking
-      await kv.set(`booking:${bookingId}`, booking);
 
       // 3. If booking completed, trigger earnings → settlement → payout
       if (bookingCompleted) {
@@ -193,11 +205,11 @@ export function bookingLifecycleCompleteEndpoints(app: Hono, kv: any) {
                 'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`
               },
               body: JSON.stringify({
-                userId: booking.customerId,
+                userId: booking.customer_id,
                 userType: 'customer',
                 actionKey,
-                amount: booking.totalAmount || booking.price || 0,
-                metadata: { bookingId, serviceType: booking.serviceType, vendorRoleId: booking.vendorRoleId }
+                amount: booking.total_amount || 0,
+                metadata: { bookingId, serviceType: booking.service_type }
               })
             }
           ).catch(err => {
@@ -207,42 +219,49 @@ export function bookingLifecycleCompleteEndpoints(app: Hono, kv: any) {
 
           if (loyaltyResponse?.ok) {
             const data = await loyaltyResponse.json();
-            console.log(`✅ [LOYALTY] Awarded ${data.pointsAwarded} points to customer ${booking.customerId}`);
+            console.log(`✅ [LOYALTY] Awarded ${data.pointsAwarded} points to customer ${booking.customer_id}`);
           }
         } catch (loyaltyErr) {
           console.error('[LOYALTY] Error processing loyalty points:', loyaltyErr);
           // Non-blocking: Continue with booking completion even if loyalty fails
         }
 
-        // ✅ NOTIFICATIONS: Service Completed
-        try {
-          const customer = await kv.get(`customer:${booking.customerId}`);
-          const vendor = await kv.get(`vendor:${booking.vendorId}`);
+        // ✅ SQL: Get updated booking and related entities for notifications
+        const updatedBooking = await bookingsRepo.findById(bookingId);
+        if (!updatedBooking) {
+          throw new Error('Booking not found after completion');
+        }
+        
+        // ✅ SQL: Get customer and vendor for notifications
+        const customersRepo = getCustomersRepository();
+        const vendorsRepo = getVendorsRepository();
+        const customer = await customersRepo.findById(updatedBooking.customer_id);
+        const vendor = await vendorsRepo.findById(updatedBooking.vendor_id!);
 
           // Notify Customer
           await createNotificationHelper({
-            recipientId: booking.customerId,
+            recipientId: updatedBooking.customer_id,
             recipientType: 'customer',
             type: 'booking_completed',
             category: 'bookings',
             title: 'Service Completed',
             message: `Your service has been completed! Please rate your experience. Booking ID: ${bookingId}`,
-            recipientEmail: customer?.email,
-            recipientPhone: booking.customerPhone || customer?.phone,
+            recipientEmail: customer?.email || undefined,
+            recipientPhone: customer?.phone,
             channels: { email: true, sms: true, inApp: true, push: false },
-            data: { bookingId, serviceName: booking.serviceName, vendorName: vendor?.businessName },
+            data: { bookingId, vendorName: vendor?.business_name },
             priority: 'medium'
           });
 
           // Notify Vendor
           await createNotificationHelper({
-            recipientId: booking.vendorId,
+            recipientId: updatedBooking.vendor_id!,
             recipientType: 'vendor',
             type: 'booking_completed',
             category: 'bookings',
             title: 'Service Completed',
             message: `Service completed for booking ${bookingId}. Earnings: ₹${earningsResult.vendorEarnings}`,
-            recipientEmail: vendor?.email,
+            recipientEmail: vendor?.email || undefined,
             recipientPhone: vendor?.phone,
             channels: { email: true, sms: false, inApp: true, push: false },
             data: { bookingId, earnings: earningsResult, settlement: settlementResult },
@@ -281,107 +300,61 @@ export function bookingLifecycleCompleteEndpoints(app: Hono, kv: any) {
 
   /**
    * Realize earnings for completed booking
+   * ✅ SQL: Uses vendor_earnings table and vendor repository
    */
   async function realizeEarnings(bookingId: string, booking: any) {
     try {
-      const vendorId = booking.vendorId;
-      const totalAmount = booking.totalAmount || booking.price || 0;
+      const vendorId = booking.vendor_id;
+      const totalAmount = booking.total_amount || 0;
 
-      // Get vendor tier and commission rate
-      const tierData = await kv.get(`vendor_tier_${vendorId}`) || { currentTier: 'SILVER' };
-      const tierConfig = TIER_CONFIG[tierData.currentTier as keyof typeof TIER_CONFIG] || TIER_CONFIG.SILVER;
-      const commissionRate = tierConfig.commissionRate;
+      // ✅ SQL: Get vendor tier and commission rate
+      const vendorsRepo = getVendorsRepository();
+      const vendor = await vendorsRepo.findById(vendorId);
+      if (!vendor) {
+        throw new Error(`Vendor not found: ${vendorId}`);
+      }
+
+      const tier = vendor.tier || 'Bronze';
+      const tierConfig = TIER_CONFIG[tier.toUpperCase() as keyof typeof TIER_CONFIG] || TIER_CONFIG.BRONZE;
+      const commissionRate = vendor.commission_percentage || tierConfig.commissionRate;
 
       // Calculate earnings
       const platformCommission = (totalAmount * commissionRate) / 100;
       const vendorEarnings = totalAmount - platformCommission;
 
-      // Get payout policies from admin settings
-      const payoutPolicies = await kv.get('admin:payout:policies') || {
-        holdPeriodDays: 7,
-        autoPayout: false,
-        minPayoutAmount: 1000
-      };
+      // ✅ SQL: Create earnings record in vendor_earnings table
+      const earningsRepo = getVendorEarningsRepository();
+      const earnings = await earningsRepo.create({
+        vendor_id: vendorId,
+        booking_id: bookingId,
+        amount: vendorEarnings,
+        commission_amount: platformCommission,
+        total_amount: totalAmount,
+        commission_rate: commissionRate,
+      });
 
-      const now = new Date();
-      const dateKey = now.toISOString().split('T')[0]; // YYYY-MM-DD
-      const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`; // YYYY-MM
+      // ✅ SQL: Update booking with earnings
+      const bookingsRepo = getBookingsRepository();
+      await bookingsRepo.markEarningsRealized(bookingId, vendorEarnings);
 
-      // Create earnings record
-      const earningsId = `earning_${Date.now()}_${bookingId}`;
-      const earnings = {
-        id: earningsId,
+      // ✅ SQL: Update vendor total earnings (using vendor repository)
+      await vendorsRepo.update(vendorId, {
+        total_earnings: (vendor.total_earnings || 0) + vendorEarnings,
+        pending_payout: (vendor.pending_payout || 0) + vendorEarnings,
+      });
+
+      console.log(`💰 [EARNINGS] Realized: Total ₹${totalAmount}, Vendor ₹${vendorEarnings}, Platform ₹${platformCommission}`);
+
+      return {
+        id: earnings.id,
         bookingId,
         vendorId,
-        customerId: booking.customerId,
         totalAmount,
         platformCommission,
         commissionRate,
         vendorEarnings,
         status: 'realized',
-        realizedAt: new Date().toISOString(),
-        payoutStatus: 'pending',
-        payoutScheduledAt: null,
-        holdPeriodDays: payoutPolicies.holdPeriodDays,
-        createdAt: new Date().toISOString()
       };
-
-      await kv.set(`earnings:${earningsId}`, earnings);
-
-      // Update vendor daily earnings
-      const vendorDailyKey = `vendor:${vendorId}:earnings:daily:${dateKey}`;
-      const vendorDaily = await kv.get(vendorDailyKey) || {
-        date: dateKey,
-        totalBookings: 0,
-        totalRevenue: 0,
-        totalEarnings: 0,
-        platformFees: 0
-      };
-      vendorDaily.totalBookings += 1;
-      vendorDaily.totalRevenue += totalAmount;
-      vendorDaily.totalEarnings += vendorEarnings;
-      vendorDaily.platformFees += platformCommission;
-      await kv.set(vendorDailyKey, vendorDaily);
-
-      // Update vendor monthly earnings
-      const vendorMonthlyKey = `vendor:${vendorId}:earnings:monthly:${monthKey}`;
-      const vendorMonthly = await kv.get(vendorMonthlyKey) || {
-        month: monthKey,
-        totalBookings: 0,
-        totalRevenue: 0,
-        totalEarnings: 0,
-        platformFees: 0
-      };
-      vendorMonthly.totalBookings += 1;
-      vendorMonthly.totalRevenue += totalAmount;
-      vendorMonthly.totalEarnings += vendorEarnings;
-      vendorMonthly.platformFees += platformCommission;
-      await kv.set(vendorMonthlyKey, vendorMonthly);
-
-      // Update vendor lifetime earnings
-      const vendorLifetimeKey = `vendor:${vendorId}:earnings:lifetime`;
-      const vendorLifetime = await kv.get(vendorLifetimeKey) || {
-        totalBookings: 0,
-        totalRevenue: 0,
-        totalEarnings: 0,
-        platformFees: 0
-      };
-      vendorLifetime.totalBookings += 1;
-      vendorLifetime.totalRevenue += totalAmount;
-      vendorLifetime.totalEarnings += vendorEarnings;
-      vendorLifetime.platformFees += platformCommission;
-      await kv.set(vendorLifetimeKey, vendorLifetime);
-
-      // Update booking with earnings
-      booking.earningsId = earningsId;
-      booking.earningsRealized = true;
-      booking.vendorEarnings = vendorEarnings;
-      booking.platformCommission = platformCommission;
-      await kv.set(`booking:${bookingId}`, booking);
-
-      console.log(`💰 [EARNINGS] Realized: Total ₹${totalAmount}, Vendor ₹${vendorEarnings}, Platform ₹${platformCommission}`);
-
-      return earnings;
 
     } catch (error) {
       console.error('❌ [EARNINGS] Error:', error);
@@ -391,97 +364,115 @@ export function bookingLifecycleCompleteEndpoints(app: Hono, kv: any) {
 
   /**
    * Create Razorpay marketplace settlement
+   * ✅ SQL: Uses settlements repository
    */
   async function createSettlement(bookingId: string, booking: any, earnings: any) {
     try {
-      // Check if already settled
-      if (booking.settlementStatus === 'settled') {
-        const existingSettlement = await kv.get(`settlement:${booking.settlementId}`);
-        return existingSettlement;
+      // ✅ SQL: Check if already settled
+      const bookingsRepo = getBookingsRepository();
+      const updatedBooking = await bookingsRepo.findById(bookingId);
+      if (updatedBooking?.settlement_id) {
+        const settlementsRepo = getSettlementsRepository();
+        const existingSettlement = await settlementsRepo.findById(updatedBooking.settlement_id);
+        if (existingSettlement) {
+          return existingSettlement;
+        }
       }
 
-      const vendorId = booking.vendorId;
+      const vendorId = booking.vendor_id;
       const totalAmount = earnings.totalAmount;
       const commissionAmount = earnings.platformCommission;
       const vendorShare = earnings.vendorEarnings;
 
-      // Create settlement record
-      const settlementId = `set_${Date.now()}_${bookingId}`;
-      const settlement = {
-        id: settlementId,
-        bookingId,
-        vendorId,
-        earningsId: earnings.id,
-        totalAmount,
-        commissionRate: earnings.commissionRate,
-        commissionAmount,
-        vendorShare,
-        status: 'processing', // Will be 'settled' after Razorpay transfer
-        createdAt: new Date().toISOString(),
-        settledAt: null
-      };
+      // ✅ SQL: Create settlement record
+      const settlementsRepo = getSettlementsRepository();
+      let settlement = await settlementsRepo.create({
+        vendor_id: vendorId,
+        booking_id: bookingId,
+        settlement_amount: totalAmount,
+        commission_amount: commissionAmount,
+        vendor_amount: vendorShare,
+        settlement_date: new Date().toISOString().split('T')[0],
+      });
 
-      await kv.set(`settlement:${settlementId}`, settlement);
-
-      // Get vendor bank details for Razorpay transfer
-      const vendorBank = await kv.get(`vendor_bank:${vendorId}`);
+      // ✅ SQL: Get vendor bank details for Razorpay transfer
+      const vendorsRepo = getVendorsRepository();
+      const vendor = await vendorsRepo.findById(vendorId);
       
-      if (vendorBank && vendorBank.isVerified) {
+      // Get bank account from vendor_bank_accounts table (if exists)
+      const dbClient = getDbClient();
+      const { data: bankAccount } = await dbClient
+        .from('vendor_bank_accounts')
+        .select('*')
+        .eq('vendor_id', vendorId)
+        .eq('is_verified', true)
+        .maybeSingle();
+      
+      if (bankAccount) {
         try {
           // ✅ ACTUAL RAZORPAY API: Initiate payout to vendor
           console.log(`💸 [SETTLEMENT] Initiating Razorpay payout: ₹${vendorShare} to vendor ${vendorId}`);
           
           const razorpayPayout = await createRazorpayPayout({
-            accountId: vendorBank.fundAccountId || vendorBank.accountNumber,
+            accountId: bankAccount.fund_account_id || bankAccount.account_number,
             amount: vendorShare,
             currency: 'INR',
             notes: {
               bookingId,
-              settlementId,
+              settlementId: settlement.id,
               vendorId,
-              accountHolderName: vendorBank.accountName || vendorBank.name,
-              ifsc: vendorBank.ifsc,
-              accountNumber: vendorBank.accountNumber
+              accountHolderName: bankAccount.account_holder_name,
+              ifsc: bankAccount.ifsc_code,
+              accountNumber: bankAccount.account_number
             }
           });
           
-          // Update settlement with Razorpay payout details
-          settlement.status = 'settled';
-          settlement.settledAt = new Date().toISOString();
-          settlement.razorpayPayoutId = razorpayPayout.id;
-          settlement.razorpayPayoutStatus = razorpayPayout.status;
-          settlement.utr = razorpayPayout.utr || null;
-          settlement.payoutMode = razorpayPayout.mode || 'NEFT';
+          // ✅ SQL: Update settlement with Razorpay payout details
+          settlement = await settlementsRepo.update(settlement.id, {
+            settlement_status: 'completed',
+            razorpay_settlement_id: razorpayPayout.id,
+            completed_at: new Date().toISOString(),
+          });
           
-          await kv.set(`settlement:${settlementId}`, settlement);
+          // ✅ SQL: Mark earnings as settled
+          const earningsRepo = getVendorEarningsRepository();
+          await earningsRepo.markSettled(earnings.id, settlement.id);
           
           console.log(`✅ [SETTLEMENT] Razorpay payout created: ${razorpayPayout.id}, Status: ${razorpayPayout.status}`);
         } catch (razorpayError: any) {
           console.error(`❌ [SETTLEMENT] Razorpay payout failed:`, razorpayError);
           
-          // Mark settlement as failed but keep record
-          settlement.status = 'failed';
-          settlement.failureReason = razorpayError.message || 'Razorpay payout failed';
-          settlement.retryCount = (settlement.retryCount || 0) + 1;
-          
-          await kv.set(`settlement:${settlementId}`, settlement);
+          // ✅ SQL: Mark settlement as failed but keep record
+          settlement = await settlementsRepo.update(settlement.id, {
+            settlement_status: 'failed',
+            failure_reason: razorpayError.message || 'Razorpay payout failed',
+          });
           
           // Don't throw - allow booking to complete, settlement can be retried
           console.log(`⚠️ [SETTLEMENT] Settlement failed but booking marked as completed. Retry later.`);
         }
       } else {
         console.log(`⚠️ [SETTLEMENT] Vendor bank not verified, settlement pending`);
-        settlement.status = 'pending_verification';
+        settlement = await settlementsRepo.update(settlement.id, {
+          settlement_status: 'pending',
+        });
       }
 
-      // Update booking
-      booking.settlementStatus = settlement.status;
-      booking.settlementId = settlementId;
-      await kv.set(`booking:${bookingId}`, booking);
+      // ✅ SQL: Link settlement to booking
+      await bookingsRepo.linkSettlement(bookingId, settlement.id);
 
       console.log(`💸 [SETTLEMENT] Created: Total ₹${totalAmount}, Vendor ₹${vendorShare}, Platform ₹${commissionAmount}`);
 
-      return settlement;
+      return {
+        id: settlement.id,
+        bookingId,
+        vendorId,
+        totalAmount: settlement.settlement_amount,
+        commissionAmount: settlement.commission_amount,
+        vendorShare: settlement.vendor_amount,
+        status: settlement.settlement_status,
+        razorpay_settlement_id: settlement.razorpay_settlement_id,
+      };
 
     } catch (error) {
       console.error('❌ [SETTLEMENT] Error:', error);
@@ -491,22 +482,30 @@ export function bookingLifecycleCompleteEndpoints(app: Hono, kv: any) {
 
   /**
    * Schedule payout based on admin policies
+   * ✅ SQL: Uses payouts repository and payout_policies table
    */
   async function schedulePayout(bookingId: string, booking: any, settlement: any) {
     try {
-      // Get payout policies
-      const payoutPolicies = await kv.get('admin:payout:policies') || {
-        holdPeriodDays: 7,
-        autoPayout: false,
-        minPayoutAmount: 1000,
-        payoutPeriod: 'weekly' // daily, weekly, monthly
+      // ✅ SQL: Get payout policies from payout_policies table
+      const dbClient = getDbClient();
+      const { data: payoutPolicy } = await dbClient
+        .from('payout_policies')
+        .select('*')
+        .eq('policy_key', 'default')
+        .maybeSingle();
+
+      const payoutPolicies = payoutPolicy || {
+        hold_period_days: 7,
+        auto_payout: false,
+        min_payout_amount: 1000.00,
+        payout_period: 'weekly'
       };
 
-      const vendorId = booking.vendorId;
-      const vendorShare = settlement.vendorShare;
+      const vendorId = booking.vendor_id;
+      const vendorShare = settlement.vendorShare || settlement.vendor_amount;
 
       // Check if auto payout is enabled
-      if (!payoutPolicies.autoPayout) {
+      if (!payoutPolicies.auto_payout) {
         console.log(`⚠️ [PAYOUT] Auto payout disabled, manual payout required`);
         return {
           scheduled: false,
@@ -516,8 +515,8 @@ export function bookingLifecycleCompleteEndpoints(app: Hono, kv: any) {
       }
 
       // Check minimum payout amount
-      if (vendorShare < payoutPolicies.minPayoutAmount) {
-        console.log(`⚠️ [PAYOUT] Amount below minimum: ₹${vendorShare} < ₹${payoutPolicies.minPayoutAmount}`);
+      if (vendorShare < payoutPolicies.min_payout_amount) {
+        console.log(`⚠️ [PAYOUT] Amount below minimum: ₹${vendorShare} < ₹${payoutPolicies.min_payout_amount}`);
         return {
           scheduled: false,
           reason: 'Amount below minimum payout threshold',
@@ -526,45 +525,42 @@ export function bookingLifecycleCompleteEndpoints(app: Hono, kv: any) {
       }
 
       // Calculate payout date based on hold period
-      const holdPeriodMs = payoutPolicies.holdPeriodDays * 24 * 60 * 60 * 1000;
+      const holdPeriodMs = payoutPolicies.hold_period_days * 24 * 60 * 60 * 1000;
       const payoutDate = new Date(Date.now() + holdPeriodMs);
 
-      // Create payout record
-      const payoutId = `payout_${Date.now()}_${bookingId}`;
-      const payout = {
-        id: payoutId,
-        bookingId,
-        settlementId: settlement.id,
-        vendorId,
+      // ✅ SQL: Create payout record
+      const payoutsRepo = getPayoutsRepository();
+      const payout = await payoutsRepo.create({
+        vendor_id: vendorId,
         amount: vendorShare,
-        status: 'scheduled',
-        scheduledAt: payoutDate.toISOString(),
-        holdPeriodDays: payoutPolicies.holdPeriodDays,
-        createdAt: new Date().toISOString(),
-        completedAt: null
-      };
+        bank_account_number: '', // Will be filled from vendor bank account
+        ifsc_code: '',
+        account_holder_name: '',
+        payment_ids: [],
+        settlement_id: settlement.id,
+      });
 
-      await kv.set(`payout:${payoutId}`, payout);
+      // ✅ SQL: Update payout with scheduled date
+      await payoutsRepo.update(payout.id, {
+        payout_status: 'scheduled',
+        scheduled_at: payoutDate.toISOString(),
+      });
 
-      // Add to vendor's pending payouts
-      const vendorPayoutsKey = `vendor:${vendorId}:payouts:pending`;
-      const vendorPayouts = await kv.get(vendorPayoutsKey) || [];
-      vendorPayouts.push(payoutId);
-      await kv.set(vendorPayoutsKey, vendorPayouts);
-
-      // Add to admin payout queue if needed
-      if (payoutPolicies.requiresApproval) {
-        const adminPayoutsKey = `admin:payouts:pending`;
-        const adminPayouts = await kv.get(adminPayoutsKey) || [];
-        adminPayouts.push(payoutId);
-        await kv.set(adminPayoutsKey, adminPayouts);
+      // ✅ SQL: Link earnings to payout (will be done when payout is processed)
+      // For now, just mark earnings as settled
+      const earningsRepo = getVendorEarningsRepository();
+      const earnings = await earningsRepo.findByBooking(bookingId);
+      if (earnings) {
+        await earningsRepo.update(earnings.id, {
+          payout_id: payout.id,
+        });
       }
 
       console.log(`📅 [PAYOUT] Scheduled: ₹${vendorShare} on ${payoutDate.toISOString()}`);
 
       return {
         scheduled: true,
-        payoutId,
+        payoutId: payout.id,
         scheduledAt: payoutDate.toISOString(),
         amount: vendorShare
       };

@@ -22,6 +22,7 @@ export function registerGooglePlacesService(app: Hono) {
       const input = c.req.query('input');
       const location = c.req.query('location'); // lat,lng for proximity bias
       const radius = c.req.query('radius') || '50000'; // 50km default
+      const types = c.req.query('types') || 'address'; // Default to address, can be (cities)|(regions) for area search
 
       if (!input || input.length < 3) {
         return c.json({ 
@@ -40,7 +41,7 @@ export function registerGooglePlacesService(app: Hono) {
         input,
         key: apiKey,
         components: 'country:in', // Restrict to India
-        types: 'address' // Only addresses
+        types: types // Support different types: address, (cities), (regions), etc.
       });
 
       if (location) {
@@ -68,10 +69,12 @@ export function registerGooglePlacesService(app: Hono) {
 
       // Transform predictions
       const predictions = (data.predictions || []).map((p: any) => ({
-        placeId: p.place_id,
+        place_id: p.place_id,
+        placeId: p.place_id, // Support both formats
         description: p.description,
         mainText: p.structured_formatting?.main_text,
         secondaryText: p.structured_formatting?.secondary_text,
+        structured_formatting: p.structured_formatting, // Include full structured formatting
         types: p.types
       }));
 
@@ -129,8 +132,18 @@ export function registerGooglePlacesService(app: Hono) {
       (place.address_components || []).forEach((comp: any) => {
         if (comp.types.includes('street_number')) addressComponents.streetNumber = comp.long_name;
         if (comp.types.includes('route')) addressComponents.route = comp.long_name;
-        if (comp.types.includes('sublocality_level_1')) addressComponents.area = comp.long_name;
-        if (comp.types.includes('locality')) addressComponents.city = comp.long_name;
+        if (comp.types.includes('sublocality_level_1') || comp.types.includes('sublocality')) {
+          addressComponents.sublocality = comp.long_name;
+          if (!addressComponents.area) addressComponents.area = comp.long_name;
+        }
+        if (comp.types.includes('neighborhood')) {
+          addressComponents.neighborhood = comp.long_name;
+          if (!addressComponents.area) addressComponents.area = comp.long_name;
+        }
+        if (comp.types.includes('locality')) {
+          addressComponents.locality = comp.long_name;
+          addressComponents.city = comp.long_name;
+        }
         if (comp.types.includes('administrative_area_level_1')) addressComponents.state = comp.long_name;
         if (comp.types.includes('country')) addressComponents.country = comp.long_name;
         if (comp.types.includes('postal_code')) addressComponents.pincode = comp.long_name;

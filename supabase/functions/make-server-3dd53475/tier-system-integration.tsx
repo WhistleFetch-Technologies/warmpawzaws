@@ -1,8 +1,12 @@
-import { Hono } from "npm:hono";
+import { Hono } from "npm:hono@4";
 import { sendSuccess, sendError } from "./response-utils.ts";
+import { getVendorsRepository } from '../../lib/repositories/vendors.ts';
+import { getDbClient } from '../../lib/db.ts';
 
 /**
- * 🏆 VENDOR TIER SYSTEM INTEGRATION
+ * 🏆 VENDOR TIER SYSTEM INTEGRATION - SQL VERSION
+ * 
+ * ✅ MIGRATED: Removed all KV usage, using SQL repositories only
  * 
  * Complete tier management system with commission calculation
  * 
@@ -12,6 +16,9 @@ import { sendSuccess, sendError } from "./response-utils.ts";
  * - Tier upgrade flow
  * - Benefits management
  * - Analytics and tracking
+ * 
+ * Date: 2024-12-22
+ * Migration: Phase 5 - KV to SQL
  */
 
 interface TierConfig {
@@ -51,7 +58,7 @@ interface VendorTier {
   };
 }
 
-export function tierSystemIntegration(app: Hono, kv: any) {
+export function tierSystemIntegration(app: Hono) {
   const BASE_PATH = "/make-server-3dd53475";
 
   // Tier Configuration
@@ -155,26 +162,49 @@ export function tierSystemIntegration(app: Hono, kv: any) {
 
   /**
    * Get vendor tier information
+   * ✅ SQL: Uses vendors table for tier lookup
    */
   async function getVendorTier(vendorId: string): Promise<VendorTier> {
-    let tierData = await kv.get(`vendor:${vendorId}:tier`);
+    const vendorsRepo = getVendorsRepository();
+    const vendor = await vendorsRepo.findById(vendorId);
     
-    if (!tierData) {
-      // Initialize new vendor with Bronze tier
-      tierData = {
-        vendorId,
-        currentTier: 'bronze',
-        tierLevel: 1,
-        commissionRate: 5.0,
-        joinedTierAt: new Date().toISOString(),
-        lifetime: {
-          totalRevenue: 0,
-          totalBookings: 0,
-          totalCommissionPaid: 0
-        }
-      };
-      await kv.set(`vendor:${vendorId}:tier`, tierData);
+    if (!vendor) {
+      throw new Error(`Vendor not found: ${vendorId}`);
     }
+    
+    // Get tier from vendor record (defaults to 'Bronze' if not set)
+    const currentTier = (vendor.tier || 'Bronze').toLowerCase();
+    const tierConfig = TIER_CONFIGS[currentTier] || TIER_CONFIGS.bronze;
+    
+    // ✅ SQL: Calculate lifetime stats from vendor_earnings
+    const dbClient = getDbClient();
+    const { data: earnings } = await dbClient
+      .from('vendor_earnings')
+      .select('amount, commission_amount')
+      .eq('vendor_id', vendorId);
+    
+    const totalRevenue = (earnings || []).reduce((sum: number, e: any) => sum + (parseFloat(e.amount) || 0), 0);
+    const totalCommissionPaid = (earnings || []).reduce((sum: number, e: any) => sum + (parseFloat(e.commission_amount) || 0), 0);
+    
+    // ✅ SQL: Count total bookings
+    const { count: bookingCount } = await dbClient
+      .from('bookings')
+      .select('*', { count: 'exact', head: true })
+      .eq('vendor_id', vendorId)
+      .eq('status', 'completed');
+    
+    const tierData: VendorTier = {
+      vendorId,
+      currentTier: currentTier,
+      tierLevel: tierConfig.level,
+      commissionRate: vendor.commission_percentage || tierConfig.commissionRate,
+      joinedTierAt: vendor.created_at,
+      lifetime: {
+        totalRevenue,
+        totalBookings: bookingCount || 0,
+        totalCommissionPaid
+      }
+    };
 
     return tierData;
   }
@@ -241,30 +271,42 @@ export function tierSystemIntegration(app: Hono, kv: any) {
 
   /**
    * Get vendor metrics for tier calculation
+   * ✅ SQL: Uses bookings and vendor_earnings tables
    */
   async function getVendorMetrics(vendorId: string): Promise<any> {
-    // Get last 30 days revenue
-    const bookings = await kv.getByPrefix(`booking:`) || [];
-    const vendorBookings = bookings
-      .map((item: any) => item.value || item)
-      .filter((b: any) => b.vendorId === vendorId);
-
+    const dbClient = getDbClient();
+    
+    // ✅ SQL: Get last 30 days revenue from vendor_earnings
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const recentBookings = vendorBookings.filter((b: any) => 
-      new Date(b.createdAt) >= thirtyDaysAgo && b.status === 'completed'
-    );
+    const { data: monthlyEarnings } = await dbClient
+      .from('vendor_earnings')
+      .select('amount')
+      .eq('vendor_id', vendorId)
+      .gte('created_at', thirtyDaysAgo.toISOString());
+    
+    const monthlyRevenue = (monthlyEarnings || []).reduce((sum: number, e: any) => sum + (parseFloat(e.amount) || 0), 0);
+    
+    // ✅ SQL: Count total completed bookings
+    const { count: totalBookings } = await dbClient
+      .from('bookings')
+      .select('*', { count: 'exact', head: true })
+      .eq('vendor_id', vendorId)
+      .eq('status', 'completed');
 
-    const monthlyRevenue = recentBookings.reduce((sum: number, b: any) => sum + (b.totalAmount || 0), 0);
-    const totalBookings = vendorBookings.filter((b: any) => b.status === 'completed').length;
-
-    // Get vendor rating
-    const vendor = await kv.get(`vendor:${vendorId}`) || {};
-    const rating = vendor.rating || 0;
-    const reviews = vendor.totalReviews || 0;
+    // ✅ SQL: Get vendor rating and reviews from reviews table
+    const { data: reviewsData } = await dbClient
+      .from('reviews')
+      .select('rating')
+      .eq('vendor_id', vendorId);
+    
+    const reviews = reviewsData?.length || 0;
+    const rating = reviews > 0 
+      ? (reviewsData || []).reduce((sum: number, r: any) => sum + (parseFloat(r.rating) || 0), 0) / reviews
+      : 0;
 
     return {
       monthlyRevenue,
-      totalBookings,
+      totalBookings: totalBookings || 0,
       rating,
       reviews
     };
@@ -272,6 +314,7 @@ export function tierSystemIntegration(app: Hono, kv: any) {
 
   /**
    * Upgrade vendor tier
+   * ✅ SQL: Updates vendors table with new tier and commission rate
    */
   async function upgradeTier(vendorId: string, newTierId: string): Promise<VendorTier> {
     const tierData = await getVendorTier(vendorId);
@@ -285,51 +328,65 @@ export function tierSystemIntegration(app: Hono, kv: any) {
       throw new Error('Cannot downgrade or upgrade to same tier');
     }
 
-    // Update tier
-    tierData.currentTier = newTierId;
-    tierData.tierLevel = newTier.level;
-    tierData.commissionRate = newTier.commissionRate;
-    tierData.upgradedAt = new Date().toISOString();
-
-    await kv.set(`vendor:${vendorId}:tier`, tierData);
-
-    // Log tier change
-    await kv.set(`tier:upgrade:${Date.now()}`, {
-      vendorId,
-      fromTier: tierData.currentTier,
-      toTier: newTierId,
-      timestamp: new Date().toISOString()
+    const vendorsRepo = getVendorsRepository();
+    const dbClient = getDbClient();
+    
+    // ✅ SQL: Update vendor tier and commission rate
+    await vendorsRepo.update(vendorId, {
+      tier: newTier.name, // Capitalize first letter to match DB constraint
+      commission_percentage: newTier.commissionRate
     });
+
+    // ✅ SQL: Log tier change in platform_settings (or create tier_upgrade_logs table if needed)
+    await dbClient
+      .from('platform_settings')
+      .insert({
+        setting_key: `tier:upgrade:${Date.now()}`,
+        setting_value: {
+          vendorId,
+          fromTier: tierData.currentTier,
+          toTier: newTierId,
+          timestamp: new Date().toISOString()
+        },
+        setting_type: 'object'
+      });
 
     console.log(`🏆 Vendor ${vendorId} upgraded to ${newTier.name}`);
 
-    return tierData;
+    // Return updated tier data
+    return await getVendorTier(vendorId);
   }
 
   /**
    * Track commission for booking
+   * ✅ SQL: Commission tracking is handled by vendor_earnings table
+   * This function is kept for backward compatibility but stats are calculated from SQL
    */
   async function trackCommission(vendorId: string, bookingId: string, amount: number) {
     const tierData = await getVendorTier(vendorId);
     const commission = calculateCommission(amount, tierData.currentTier);
 
-    // Update lifetime stats
-    tierData.lifetime.totalRevenue += amount;
-    tierData.lifetime.totalBookings += 1;
-    tierData.lifetime.totalCommissionPaid += commission;
+    // ✅ SQL: Commission tracking is done in vendor_earnings table
+    // Lifetime stats are calculated from SQL in getVendorTier()
+    // No need to update KV - stats are read from SQL
 
-    await kv.set(`vendor:${vendorId}:tier`, tierData);
-
-    // Log commission
-    await kv.set(`commission:${bookingId}`, {
-      vendorId,
-      bookingId,
-      amount,
-      tier: tierData.currentTier,
-      commissionRate: tierData.commissionRate,
-      commission,
-      timestamp: new Date().toISOString()
-    });
+    // ✅ SQL: Log commission in platform_settings (or use vendor_earnings table)
+    const dbClient = getDbClient();
+    await dbClient
+      .from('platform_settings')
+      .insert({
+        setting_key: `commission:${bookingId}`,
+        setting_value: {
+          vendorId,
+          bookingId,
+          amount,
+          tier: tierData.currentTier,
+          commissionRate: tierData.commissionRate,
+          commission,
+          timestamp: new Date().toISOString()
+        },
+        setting_type: 'object'
+      });
 
     return { commission, tierData };
   }
@@ -450,11 +507,14 @@ export function tierSystemIntegration(app: Hono, kv: any) {
       const metrics = await getVendorMetrics(vendorId);
       const upgradeCheck = await checkTierUpgradeEligibility(vendorId);
 
-      // Get commission history
-      const commissions = await kv.getByPrefix(`commission:`) || [];
-      const vendorCommissions = commissions
-        .map((item: any) => item.value || item)
-        .filter((c: any) => c.vendorId === vendorId);
+      // ✅ SQL: Get commission history from vendor_earnings
+      const dbClient = getDbClient();
+      const { data: vendorCommissions } = await dbClient
+        .from('vendor_earnings')
+        .select('*')
+        .eq('vendor_id', vendorId)
+        .order('created_at', { ascending: false })
+        .limit(10);
 
       const analytics = {
         currentTier: {
@@ -466,7 +526,13 @@ export function tierSystemIntegration(app: Hono, kv: any) {
         },
         lifetime: tierData.lifetime,
         currentMonth: metrics,
-        commissionHistory: vendorCommissions.slice(0, 10),
+        commissionHistory: (vendorCommissions || []).map((e: any) => ({
+          bookingId: e.booking_id,
+          amount: e.amount,
+          commission: e.commission_amount,
+          commissionRate: e.commission_rate,
+          timestamp: e.created_at
+        })),
         nextTier: upgradeCheck.eligible ? {
           id: upgradeCheck.nextTier,
           name: TIER_CONFIGS[upgradeCheck.nextTier!].name,
@@ -485,22 +551,50 @@ export function tierSystemIntegration(app: Hono, kv: any) {
   /**
    * GET /admin/tier/analytics
    * Get platform-wide tier analytics
+   * ✅ SQL: Uses vendors table for tier distribution
    */
   app.get(`${BASE_PATH}/admin/tier/analytics`, async (c) => {
     try {
-      const tierDataList = await kv.getByPrefix('vendor:') || [];
+      const dbClient = getDbClient();
+      const vendorsRepo = getVendorsRepository();
+      
+      // ✅ SQL: Get all vendors with tier distribution
+      const { data: vendors } = await dbClient
+        .from('vendors')
+        .select('id, tier, commission_percentage')
+        .eq('is_active', true);
+      
+      // ✅ SQL: Get total commission and revenue from vendor_earnings
+      const { data: earnings } = await dbClient
+        .from('vendor_earnings')
+        .select('amount, commission_amount');
+      
+      const totalCommission = (earnings || []).reduce((sum: number, e: any) => sum + (parseFloat(e.commission_amount) || 0), 0);
+      const totalRevenue = (earnings || []).reduce((sum: number, e: any) => sum + (parseFloat(e.amount) || 0), 0);
+      
+      const byTier = {
+        bronze: 0,
+        silver: 0,
+        gold: 0,
+        platinum: 0
+      };
+      
+      (vendors || []).forEach((v: any) => {
+        const tier = (v.tier || 'Bronze').toLowerCase();
+        if (byTier[tier as keyof typeof byTier] !== undefined) {
+          byTier[tier as keyof typeof byTier]++;
+        }
+      });
+      
+      const totalCommissionRates = (vendors || []).reduce((sum: number, v: any) => sum + (parseFloat(v.commission_percentage) || 0), 0);
+      const averageCommissionRate = vendors && vendors.length > 0 ? totalCommissionRates / vendors.length : 0;
       
       const analytics = {
-        totalVendors: 0,
-        byTier: {
-          bronze: 0,
-          silver: 0,
-          gold: 0,
-          platinum: 0
-        },
-        totalCommission: 0,
-        totalRevenue: 0,
-        averageCommissionRate: 0
+        totalVendors: vendors?.length || 0,
+        byTier,
+        totalCommission,
+        totalRevenue,
+        averageCommissionRate
       };
 
       tierDataList.forEach((item: any) => {

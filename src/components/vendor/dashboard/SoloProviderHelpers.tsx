@@ -3,8 +3,8 @@
  * Consolidated file containing all helper components for solo provider dashboard
  */
 
-import { useState } from 'react';
-import { MapPin, Plus, X, Clock, User, Calendar, Phone, CheckCircle, XCircle } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { MapPin, Plus, X, Clock, User, Calendar, Phone, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import { Card } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { Badge } from '../../ui/badge';
@@ -21,21 +21,138 @@ const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd5
 // SERVICE AREA CONFIG MODAL
 // ============================================
 export function ServiceAreaConfigModal({ centerId, currentServiceArea, onClose, onSave }: any) {
-  const [areaType, setAreaType] = useState(currentServiceArea?.type || 'RADIUS');
+  const [areaType, setAreaType] = useState<'RADIUS' | 'SPECIFIC_AREAS'>(
+    currentServiceArea?.type || 'SPECIFIC_AREAS'
+  );
   const [radiusKm, setRadiusKm] = useState(currentServiceArea?.radiusKm || 10);
-  const [areas, setAreas] = useState<string[]>(currentServiceArea?.areas || []);
-  const [newArea, setNewArea] = useState('');
+  const [areas, setAreas] = useState<Array<{name: string, placeId?: string, lat?: number, lng?: number}>>(
+    currentServiceArea?.areas?.map((a: any) => typeof a === 'string' ? { name: a } : a) || []
+  );
+  const [searchQuery, setSearchQuery] = useState('');
+  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // Search for places using Google Places API
+  const searchPlaces = async (input: string) => {
+    if (input.length < 3) {
+      setSuggestions([]);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const response = await fetch(
+        `${API_BASE}/places/autocomplete?input=${encodeURIComponent(input)}&types=(cities)|(regions)`,
+        {
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`
+          }
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        setSuggestions(data.predictions || []);
+        setShowSuggestions(true);
+      }
+    } catch (error) {
+      console.error('Places search error:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Debounced search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (searchQuery) {
+        searchPlaces(searchQuery);
+      } else {
+        setSuggestions([]);
+        setShowSuggestions(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Get place details and add to areas
+  const selectPlace = async (prediction: any) => {
+    try {
+      setLoading(true);
+      const response = await fetch(
+        `${API_BASE}/places/details?placeId=${prediction.place_id}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${publicAnonKey}`
+          }
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        const place = data.place;
+        
+        // Extract area name (prefer locality or sublocality, fallback to formatted address)
+        const areaName = place.addressComponents?.locality || 
+                        place.addressComponents?.sublocality || 
+                        place.addressComponents?.neighborhood ||
+                        prediction.description.split(',')[0] ||
+                        prediction.description;
+
+        const newArea = {
+          name: areaName,
+          placeId: prediction.place_id,
+          lat: place.location?.lat,
+          lng: place.location?.lng,
+          fullAddress: place.formattedAddress
+        };
+
+        // Check if area already exists
+        if (!areas.some(a => a.placeId === newArea.placeId || a.name.toLowerCase() === newArea.name.toLowerCase())) {
+          setAreas([...areas, newArea]);
+        } else {
+          toast.error('This area is already added');
+        }
+        
+        setSearchQuery('');
+        setShowSuggestions(false);
+      }
+    } catch (error) {
+      console.error('Place details error:', error);
+      toast.error('Failed to get place details');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const removeArea = (index: number) => {
+    setAreas(areas.filter((_, i) => i !== index));
+  };
+
   const handleSave = async () => {
+    // Validate: Only one type should be used
+    if (areaType === 'RADIUS' && areas.length > 0) {
+      toast.error('Please choose either Radius OR Specific Areas, not both');
+      return;
+    }
+    if (areaType === 'SPECIFIC_AREAS' && areas.length === 0) {
+      toast.error('Please add at least one area');
+      return;
+    }
+
     setSaving(true);
     try {
       const serviceArea = {
         type: areaType,
         displayText: areaType === 'RADIUS' 
           ? `Within ${radiusKm} km radius`
-          : `Serves ${areas.join(', ')}`,
-        center: { lat: 0, lng: 0 },
+          : `Serves ${areas.map(a => a.name).join(', ')}`,
+        center: areas.length > 0 && areas[0].lat && areas[0].lng 
+          ? { lat: areas[0].lat, lng: areas[0].lng }
+          : { lat: 0, lng: 0 },
         radiusKm: areaType === 'RADIUS' ? radiusKm : undefined,
         areas: areaType === 'SPECIFIC_AREAS' ? areas : undefined
       };
@@ -53,10 +170,12 @@ export function ServiceAreaConfigModal({ centerId, currentServiceArea, onClose, 
         toast.success('Service area updated!');
         onSave();
       } else {
-        throw new Error('Failed to update');
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to update');
       }
-    } catch (error) {
-      toast.error('Failed to update service area');
+    } catch (error: any) {
+      console.error('Service area update error:', error);
+      toast.error(error.message || 'Failed to update service area');
     } finally {
       setSaving(false);
     }
@@ -64,7 +183,7 @@ export function ServiceAreaConfigModal({ centerId, currentServiceArea, onClose, 
 
   return (
     <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Configure Service Area</DialogTitle>
         </DialogHeader>
@@ -72,13 +191,21 @@ export function ServiceAreaConfigModal({ centerId, currentServiceArea, onClose, 
           <div className="grid grid-cols-2 gap-3">
             <Button
               variant={areaType === 'RADIUS' ? 'default' : 'outline'}
-              onClick={() => setAreaType('RADIUS')}
+              onClick={() => {
+                setAreaType('RADIUS');
+                setAreas([]); // Clear areas when switching to radius
+              }}
+              className={areaType === 'RADIUS' ? 'bg-orange-600' : ''}
             >
               Radius Based
             </Button>
             <Button
               variant={areaType === 'SPECIFIC_AREAS' ? 'default' : 'outline'}
-              onClick={() => setAreaType('SPECIFIC_AREAS')}
+              onClick={() => {
+                setAreaType('SPECIFIC_AREAS');
+                setRadiusKm(10); // Reset radius when switching to areas
+              }}
+              className={areaType === 'SPECIFIC_AREAS' ? 'bg-orange-600' : ''}
             >
               Specific Areas
             </Button>
@@ -93,47 +220,87 @@ export function ServiceAreaConfigModal({ centerId, currentServiceArea, onClose, 
                 onChange={(e) => setRadiusKm(parseInt(e.target.value) || 10)}
                 min={1}
                 max={50}
+                className="mt-1"
               />
+              <p className="text-xs text-gray-500 mt-1">
+                Service will be available within {radiusKm} km radius from your location
+              </p>
             </div>
           ) : (
             <div>
-              <Label>Areas You Serve</Label>
-              <div className="flex flex-wrap gap-2 mb-3">
-                {areas.map((area, idx) => (
-                  <Badge key={idx} variant="secondary">
-                    {area}
-                    <X className="w-3 h-3 ml-1 cursor-pointer" onClick={() => setAreas(areas.filter((_, i) => i !== idx))} />
-                  </Badge>
-                ))}
-              </div>
-              <div className="flex gap-2">
+              <Label>Areas You Serve (Search and Add Multiple Areas)</Label>
+              <div className="relative mt-1">
                 <Input
-                  value={newArea}
-                  onChange={(e) => setNewArea(e.target.value)}
-                  placeholder="Enter area name"
-                  onKeyPress={(e) => {
-                    if (e.key === 'Enter' && newArea.trim()) {
-                      setAreas([...areas, newArea.trim()]);
-                      setNewArea('');
-                    }
-                  }}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search for area, city, or locality..."
+                  onFocus={() => searchQuery && setShowSuggestions(true)}
                 />
-                <Button onClick={() => {
-                  if (newArea.trim()) {
-                    setAreas([...areas, newArea.trim()]);
-                    setNewArea('');
-                  }
-                }}>
-                  <Plus className="w-4 h-4" />
-                </Button>
+                {loading && (
+                  <div className="absolute right-3 top-3">
+                    <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                  </div>
+                )}
+                
+                {/* Suggestions Dropdown */}
+                {showSuggestions && suggestions.length > 0 && (
+                  <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                    {suggestions.map((prediction, idx) => (
+                      <div
+                        key={prediction.place_id || idx}
+                        className="px-4 py-2 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                        onClick={() => selectPlace(prediction)}
+                      >
+                        <div className="flex items-start gap-2">
+                          <MapPin className="w-4 h-4 text-orange-600 mt-0.5 flex-shrink-0" />
+                          <div className="flex-1">
+                            <p className="text-sm font-medium text-gray-900">
+                              {prediction.structured_formatting?.main_text || prediction.description}
+                            </p>
+                            {prediction.structured_formatting?.secondary_text && (
+                              <p className="text-xs text-gray-500">
+                                {prediction.structured_formatting.secondary_text}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
+
+              {/* Selected Areas */}
+              {areas.length > 0 && (
+                <div className="mt-3">
+                  <Label className="mb-2 block">Selected Areas ({areas.length})</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {areas.map((area, idx) => (
+                      <Badge key={idx} variant="secondary" className="px-3 py-1.5">
+                        <MapPin className="w-3 h-3 mr-1 inline" />
+                        {area.name}
+                        <X 
+                          className="w-3 h-3 ml-2 cursor-pointer hover:text-red-600" 
+                          onClick={() => removeArea(idx)} 
+                        />
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {areas.length === 0 && (
+                <p className="text-xs text-gray-500 mt-2">
+                  Search and add areas you serve. You can add multiple areas.
+                </p>
+              )}
             </div>
           )}
 
-          <div className="flex gap-3 pt-4">
+          <div className="flex gap-3 pt-4 border-t">
             <Button variant="outline" onClick={onClose} className="flex-1">Cancel</Button>
             <Button onClick={handleSave} className="flex-1 bg-orange-600" disabled={saving}>
-              {saving ? 'Saving...' : 'Save'}
+              {saving ? 'Saving...' : 'Save Service Area'}
             </Button>
           </div>
         </div>

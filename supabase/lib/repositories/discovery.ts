@@ -312,15 +312,16 @@ export class DiscoveryRepository {
         continue;
       }
 
-      // Calculate distance if location provided
+      // ✅ Calculate distance if location provided (using centralized distance calculation)
       if (customerLat && customerLon && vendor.location.latitude && vendor.location.longitude) {
-        const distance = this.calculateDistance(
+        const distance = calculateDistance(
           customerLat,
           customerLon,
           vendor.location.latitude,
           vendor.location.longitude
         );
 
+        // Filter by max distance if provided
         if (maxDistance && distance > maxDistance) {
           continue;
         }
@@ -456,9 +457,9 @@ export class DiscoveryRepository {
           }
         }
 
-        // Calculate distance if location provided
+        // ✅ Calculate distance if location provided (using centralized distance calculation)
         if (customerLat && customerLon && vendor.location.latitude && vendor.location.longitude) {
-          const distance = this.calculateDistance(
+          const distance = calculateDistance(
             customerLat,
             customerLon,
             vendor.location.latitude,

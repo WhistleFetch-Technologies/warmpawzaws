@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Plus,
   Trash2,
@@ -104,6 +104,7 @@ export function EnhancedOnboardingFormBuilder() {
   const [form, setForm] = useState<OnboardingForm | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const justSavedRef = useRef(false); // Prevent reload immediately after save
   
   // Modal states
   const [showFieldModal, setShowFieldModal] = useState(false);
@@ -144,6 +145,13 @@ export function EnhancedOnboardingFormBuilder() {
   }, []);
 
   useEffect(() => {
+    // Don't reload if we just saved (prevents race condition)
+    if (justSavedRef.current) {
+      console.log('[USE EFFECT] Skipping reload - form was just saved');
+      justSavedRef.current = false;
+      return;
+    }
+    
     if (selectedRole) {
       fetchForm(selectedRole);
     }
@@ -161,24 +169,36 @@ export function EnhancedOnboardingFormBuilder() {
       if (response.ok) {
         const data = await response.json();
         console.log('[FETCH ROLES] ✅ Data received:', data);
+        console.log('[FETCH ROLES] Roles array:', data.roles);
+        console.log('[FETCH ROLES] Roles count:', data.roles?.length || 0);
+        
+        // ✅ FIX: Handle both response formats: { roles: [...] } and { success: true, roles: [...] }
+        const rolesArray = data.roles || data.data?.roles || [];
+        console.log('[FETCH ROLES] Processing roles array:', rolesArray.length);
         
         // Deduplicate roles by ID
         const uniqueRolesMap = new Map();
-        (data.roles || []).forEach((role: Role) => {
-          if (!uniqueRolesMap.has(role.id)) {
-             uniqueRolesMap.set(role.id, role);
+        rolesArray.forEach((role: Role) => {
+          if (role && role.id) {
+            if (!uniqueRolesMap.has(role.id)) {
+               uniqueRolesMap.set(role.id, role);
+            }
           }
         });
         const uniqueRoles = Array.from(uniqueRolesMap.values());
+        console.log('[FETCH ROLES] Unique roles after deduplication:', uniqueRoles.length);
         
         setRoles(uniqueRoles);
         if (uniqueRoles.length > 0 && !selectedRole) {
           setSelectedRole(uniqueRoles[0].id);
+        } else if (uniqueRoles.length === 0) {
+          console.warn('[FETCH ROLES] ⚠️ No roles found in response');
+          toast.warning('No roles configured. Please seed initial roles.');
         }
       } else {
         const errorText = await response.text();
-        console.error('[FETCH ROLES] ❌ Error response:', errorText);
-        toast.error(`Failed to load roles: ${response.status}`);
+        console.error('[FETCH ROLES] ❌ Error response:', response.status, errorText);
+        toast.error(`Failed to load roles: ${response.status} ${response.statusText}`);
       }
     } catch (error) {
       console.error('[FETCH ROLES] ❌ Exception:', error);
@@ -190,9 +210,14 @@ export function EnhancedOnboardingFormBuilder() {
     try {
       setLoading(true);
       
-      console.log('[FETCH FORM] Fetching from:', `${API_BASE}/admin/onboarding-forms/${roleId}`);
-      const response = await fetch(`${API_BASE}/admin/onboarding-forms/${roleId}`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+      // ✅ CRITICAL: Add cache-busting to ensure latest version
+      const timestamp = Date.now();
+      console.log('[FETCH FORM] Fetching from:', `${API_BASE}/admin/onboarding-forms/${roleId}?t=${timestamp}&v=latest`);
+      const response = await fetch(`${API_BASE}/admin/onboarding-forms/${roleId}?t=${timestamp}&v=latest`, {
+        headers: { 
+          'Authorization': `Bearer ${publicAnonKey}`
+          // ✅ Removed cache-control headers to avoid CORS issues - using query params for cache-busting instead
+        }
       });
 
       console.log('[FETCH FORM] Response status:', response.status);
@@ -200,6 +225,16 @@ export function EnhancedOnboardingFormBuilder() {
       if (response.ok) {
         const data = await response.json();
         console.log('[FETCH FORM] ✅ Data received:', data);
+        console.log('[FETCH FORM] 📋 Version:', data.form?.version || data.version, 'Status:', data.form?.status);
+        
+        // ✅ CRITICAL: Verify version is present
+        if (data.form && (!data.form.version || typeof data.form.version !== 'number')) {
+          console.error('[FETCH FORM] ⚠️ WARNING: Form version is missing or invalid!', {
+            version: data.form.version,
+            version_type: typeof data.form.version
+          });
+          data.form.version = data.form.version || data.version || 1;
+        }
         
         // If new form, add default sections
         if (data.isNew) {
@@ -242,10 +277,41 @@ export function EnhancedOnboardingFormBuilder() {
   };
 
   const saveForm = async (status?: 'draft' | 'active') => {
-    if (!form) return;
+    console.log('[SAVE FORM] 🔵 Function called', { status, hasForm: !!form, selectedRole, saving, formSections: form?.sections?.length });
+    
+    if (!form) {
+      console.error('[SAVE FORM] ❌ No form to save');
+      toast.error('No form loaded');
+      return;
+    }
+
+    if (!selectedRole) {
+      console.error('[SAVE FORM] ❌ No role selected');
+      toast.error('Please select a role first');
+      return;
+    }
 
     try {
+      console.log('[SAVE FORM] 🚀 Starting save...', {
+        roleId: selectedRole,
+        status: status || form.status,
+        sectionsCount: form.sections?.length || 0,
+        totalFields: form.sections?.reduce((sum, s) => sum + (s.fields?.length || 0), 0) || 0
+      });
+      
       setSaving(true);
+      
+      const payload = {
+        sections: form.sections,
+        status: status || form.status,
+        notes: form.notes,
+        adminName: 'Admin' // TODO: Get from session
+      };
+      
+      console.log('[SAVE FORM] 📤 Sending payload:', {
+        url: `${API_BASE}/admin/onboarding-forms/${selectedRole}`,
+        payload: JSON.stringify(payload, null, 2)
+      });
       
       const response = await fetch(`${API_BASE}/admin/onboarding-forms/${selectedRole}`, {
         method: 'POST',
@@ -253,29 +319,52 @@ export function EnhancedOnboardingFormBuilder() {
           'Authorization': `Bearer ${publicAnonKey}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          sections: form.sections,
-          status: status || form.status,
-          notes: form.notes,
-          adminName: 'Admin' // TODO: Get from session
-        })
+        body: JSON.stringify(payload)
       });
+
+      console.log('[SAVE FORM] 📥 Response status:', response.status);
+      console.log('[SAVE FORM] 📥 Response ok:', response.ok);
 
       if (response.ok) {
         const data = await response.json();
-        setForm(data.form);
-        toast.success(data.message || 'Form saved successfully');
+        console.log('[SAVE FORM] ✅ Success response:', data);
+        console.log('[SAVE FORM] ✅ Saved form ID:', data.form?.id);
+        console.log('[SAVE FORM] ✅ Saved form version:', data.form?.version);
+        console.log('[SAVE FORM] ✅ Saved sections count:', data.form?.sections?.length);
+        console.log('[SAVE FORM] ✅ Saved sections:', JSON.stringify(data.form?.sections, null, 2));
         
-        // Reload form to get updated document sections
-        await fetchForm(selectedRole);
+        // ✅ FIX: Use the saved form directly from the response
+        // DO NOT reload from database - this was causing the form to revert
+        // The backend returns the exact form that was saved
+        if (data.form) {
+          setForm(data.form);
+          toast.success(data.message || 'Form saved successfully');
+          console.log('[SAVE FORM] ✅ Form state updated from POST response');
+          
+          // Set flag to prevent useEffect from reloading
+          justSavedRef.current = true;
+        } else {
+          console.error('[SAVE FORM] ❌ No form in response:', data);
+          toast.error('Form saved but response missing form data');
+        }
+        
+        // ❌ REMOVED: Automatic reload was causing form to revert
+        // The POST response already contains the complete saved form
       } else {
-        throw new Error('Failed to save form');
+        const errorText = await response.text();
+        console.error('[SAVE FORM] ❌ Error response:', {
+          status: response.status,
+          statusText: response.statusText,
+          body: errorText
+        });
+        throw new Error(`Failed to save form: ${response.status} ${response.statusText}`);
       }
     } catch (error) {
-      console.error('[SAVE FORM] Error:', error);
-      toast.error('Failed to save form');
+      console.error('[SAVE FORM] ❌ Exception:', error);
+      toast.error(`Failed to save form: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setSaving(false);
+      console.log('[SAVE FORM] 🏁 Save operation completed');
     }
   };
 
@@ -542,7 +631,12 @@ export function EnhancedOnboardingFormBuilder() {
         
         <div className="flex gap-2">
           <Button
-            onClick={() => saveForm('draft')}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              console.log('[BUTTON CLICK] Save Draft clicked', { form: !!form, saving, selectedRole });
+              saveForm('draft');
+            }}
             disabled={saving || !form}
             variant="outline"
             className="border-gray-300"
@@ -551,7 +645,12 @@ export function EnhancedOnboardingFormBuilder() {
             Save Draft
           </Button>
           <Button
-            onClick={() => saveForm('active')}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              console.log('[BUTTON CLICK] Publish Form clicked', { form: !!form, saving, selectedRole });
+              saveForm('active');
+            }}
             disabled={saving || !form}
             className="bg-[#FF8C42] hover:bg-[#FF7A29]"
           >

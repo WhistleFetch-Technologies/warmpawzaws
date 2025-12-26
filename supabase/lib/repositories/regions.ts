@@ -78,14 +78,24 @@ export function getRegionsRepository() {
     /**
      * Create a new region
      */
-    async create(regionData: Partial<Region>): Promise<Region> {
+    async create(regionData: Partial<Region> & { country_code?: string; currency_code?: string; currency_symbol?: string; timezone?: string }): Promise<Region> {
+      // ✅ Extract config data and map to actual columns
+      const config = regionData.region_config || {};
+      const currency = config.currency || {};
+      const localization = config.localization || {};
+      
       const { data, error } = await client
         .from('regions')
         .insert({
+          id: regionData.code || regionData.id, // Use code as id
           name: regionData.name!,
           code: regionData.code!,
-          country: regionData.country || 'India',
-          region_config: regionData.region_config || {},
+          country_code: regionData.country_code || 'IND',
+          currency_code: regionData.currency_code || currency.code || 'INR',
+          currency_symbol: regionData.currency_symbol || currency.symbol || '₹',
+          timezone: regionData.timezone || localization.timezone || 'Asia/Kolkata',
+          business_hours: config.business || {},
+          tax_config: { taxRate: config.business?.taxRate || 0, taxName: config.business?.taxName || 'GST' },
           is_active: regionData.is_active ?? true,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
@@ -94,7 +104,11 @@ export function getRegionsRepository() {
         .single();
 
       if (error) throw error;
-      return data;
+      // ✅ Reconstruct region with config for backward compatibility
+      return {
+        ...data,
+        region_config: regionData.region_config || {},
+      } as Region;
     },
 
     /**

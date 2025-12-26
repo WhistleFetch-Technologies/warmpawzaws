@@ -1,5 +1,5 @@
-import { Hono } from "npm:hono";
-import { createClient } from "npm:@supabase/supabase-js@2.39.3";
+import { Hono } from "npm:hono@4";
+import { createClient } from "jsr:@supabase/supabase-js@2";
 import { BedrockRuntimeClient, InvokeModelCommand } from "npm:@aws-sdk/client-bedrock-runtime";
 import { NodeHttpHandler } from "npm:@smithy/node-http-handler";
 import { getPlatformSettingsRepository } from "../../lib/repositories/platform-settings.ts";
@@ -7,6 +7,8 @@ import { getVendorsRepository } from "../../lib/repositories/vendors.ts";
 import { getCustomersRepository } from "../../lib/repositories/customers.ts";
 import { getSupportTicketsRepository } from "../../lib/repositories/support-tickets.ts";
 import { getNotificationsRepository } from "../../lib/repositories/notifications.ts";
+import { getBookingsRepository } from "../../lib/repositories/bookings.ts";
+import { getOrdersRepository } from "../../lib/repositories/orders.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
 const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -752,11 +754,14 @@ export function registerAICRMRoutes(app: Hono) {
   });
 
   // Agent Actions (Refund, Partial Refund, Escalate, etc.)
+  // ✅ MIGRATED TO SQL: Uses SupportTicketsRepository
   app.post("/make-server-3dd53475/crm/action", async (c) => {
     try {
       const { ticketId, action, amount, reason, note, assignTo } = await c.req.json();
       
-      const ticket = await kv.get(`ticket:${ticketId}`);
+      // ✅ SQL: Find ticket by ticket_id
+      const ticketsRepo = getSupportTicketsRepository();
+      const ticket = await ticketsRepo.findByTicketId(ticketId);
       if (!ticket) return c.json({ error: "Ticket not found" }, 404);
       
       const actionMsg = {
@@ -769,46 +774,55 @@ export function registerAICRMRoutes(app: Hono) {
         metadata: { amount, reason, note, assignTo }
       };
 
+      let updateData: any = {
+        internalNotes: `${ticket.internalNotes || ''}\n[${new Date().toISOString()}] ${action.toUpperCase()}: ${reason || note || ''}`
+      };
+
       switch (action) {
         case 'refund':
           actionMsg.content = `Full refund of ₹${amount} processed. ${reason || ''}`;
-          ticket.status = 'resolved';
-          ticket.resolvedAt = new Date().toISOString();
+          updateData.status = 'resolved';
+          updateData.resolvedAt = new Date().toISOString();
+          updateData.resolvedBy = 'system';
           break;
         case 'partial_refund':
           actionMsg.content = `Partial refund of ₹${amount} processed. ${reason || ''}`;
-          ticket.status = 'in_progress';
+          updateData.status = 'in_progress';
           break;
         case 'escalate':
           actionMsg.content = `Ticket escalated. ${reason || ''}`;
-          ticket.status = 'escalated';
-          ticket.priority = 'high';
+          updateData.status = 'escalated';
+          updateData.priority = 'high';
           break;
         case 'resolve':
           actionMsg.content = `Ticket marked as resolved. ${reason || ''}`;
-          ticket.status = 'resolved';
-          ticket.resolvedAt = new Date().toISOString();
+          updateData.status = 'resolved';
+          updateData.resolvedAt = new Date().toISOString();
+          updateData.resolvedBy = 'system';
           break;
         case 'reopen':
           actionMsg.content = `Ticket reopened. ${reason || ''}`;
-          ticket.status = 'open';
+          updateData.status = 'open';
+          updateData.resolvedAt = null;
+          updateData.resolvedBy = null;
           break;
         case 'assign':
           actionMsg.content = `Ticket assigned to ${assignTo}.`;
-          ticket.assignedTo = assignTo;
-          ticket.assignedAgent = assignTo;
+          updateData.assignedTo = assignTo;
+          updateData.assignedAt = new Date().toISOString();
           break;
         case 'add_note':
           actionMsg.content = `Note added: ${note}`;
           break;
       }
 
-      ticket.messages = [...(ticket.messages || []), actionMsg];
-      ticket.updatedAt = new Date().toISOString();
+      // ✅ SQL: Update ticket
+      await ticketsRepo.updateTicket(ticket.id, updateData);
       
-      await kv.set(`ticket:${ticketId}`, ticket);
+      // Fetch updated ticket for response
+      const updatedTicket = await ticketsRepo.findByTicketId(ticketId);
       
-      return c.json({ success: true, message: 'Action completed successfully', ticket });
+      return c.json({ success: true, message: 'Action completed successfully', ticket: updatedTicket });
     } catch (error) {
       console.error('Action error:', error);
       return c.json({ error: String(error) }, 500);
@@ -816,43 +830,47 @@ export function registerAICRMRoutes(app: Hono) {
   });
 
   // Get Customer Context
+  // ✅ MIGRATED TO SQL: Uses CustomersRepository, OrdersRepository, BookingsRepository
   app.get("/make-server-3dd53475/crm/customer/:customerId/context", async (c) => {
     try {
       const customerId = c.req.param('customerId');
       
-      // Fetch customer data
-      const customer = await kv.get(`customer:${customerId}`);
+      // ✅ SQL: Fetch customer data
+      const customersRepo = getCustomersRepository();
+      const customer = await customersRepo.findById(customerId);
       
-      // Fetch orders
-      const orders = await kv.getByPrefix(`order:customer:${customerId}:`) || [];
-      const recentOrders = orders
-        .slice(0, 5)
-        .map((o: any) => ({
-          id: o.id || o.orderId,
-          date: o.createdAt || o.orderDate,
-          amount: o.totalAmount || o.amount || 0,
-          status: o.status || 'unknown'
-        }));
+      if (!customer) {
+        return c.json({ error: "Customer not found" }, 404);
+      }
+      
+      // ✅ SQL: Fetch orders
+      const ordersRepo = getOrdersRepository();
+      const orders = await ordersRepo.findByCustomer(customerId, { limit: 5 });
+      const recentOrders = orders.map((o: any) => ({
+        id: o.id,
+        date: o.created_at,
+        amount: o.total_amount || 0,
+        status: o.order_status || 'unknown'
+      }));
 
-      // Fetch bookings
-      const bookings = await kv.getByPrefix(`booking:customer:${customerId}:`) || [];
-      const recentBookings = bookings
-        .slice(0, 5)
-        .map((b: any) => ({
-          id: b.id || b.bookingId,
-          date: b.createdAt || b.bookingDate,
-          service: b.serviceName || b.serviceType || 'Service',
-          status: b.status || 'unknown'
-        }));
+      // ✅ SQL: Fetch bookings
+      const bookingsRepo = getBookingsRepository();
+      const bookings = await bookingsRepo.findByCustomer(customerId, { limit: 5 });
+      const recentBookings = bookings.map((b: any) => ({
+        id: b.id,
+        date: b.created_at || b.booking_date,
+        service: b.service_type || 'Service',
+        status: b.status || 'unknown'
+      }));
 
       const context = {
         id: customerId,
-        name: customer?.name || customer?.fullName,
-        phone: customer?.phone || customer?.phoneNumber,
-        email: customer?.email,
+        name: customer.full_name || customer.name,
+        phone: customer.phone,
+        email: customer.email,
         totalOrders: orders.length,
-        totalSpent: orders.reduce((sum: number, o: any) => sum + (o.totalAmount || o.amount || 0), 0),
-        lastOrderDate: orders[0]?.createdAt || orders[0]?.orderDate,
+        totalSpent: orders.reduce((sum: number, o: any) => sum + (o.total_amount || 0), 0),
+        lastOrderDate: orders[0]?.created_at,
         recentOrders,
         recentBookings
       };
@@ -1134,14 +1152,15 @@ export function registerAICRMRoutes(app: Hono) {
         );
       }
 
-      // Update ticket
-      ticket.assignedTo = assignedAgent.id;
-      ticket.assignedAgent = assignedAgent.name;
-      ticket.status = 'in_progress';
-      await kv.set(`ticket:${ticketId}`, ticket);
+      // ✅ SQL: Update ticket
+      await ticketsRepo.updateTicket(ticket.id, {
+        assignedTo: assignedAgent.id,
+        assignedAt: new Date().toISOString(),
+        status: 'in_progress'
+      });
 
-      // Send notification to agent
-      await sendTicketNotification(kv, {
+      // ✅ SQL: Send notification to agent (removed kv parameter)
+      await sendTicketNotification({
         ticketId,
         type: 'ticket_assigned',
         agentId: assignedAgent.id,

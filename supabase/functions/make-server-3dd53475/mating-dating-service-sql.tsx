@@ -38,6 +38,7 @@ import { generateId } from "./database-schema.tsx";
 export function registerMatingDatingServiceSQL(app: Hono) {
   console.log('✅ Registering Mating & Dating Service (SQL-only)...');
 
+  const BASE = "/make-server-3dd53475";
   const datingRepo = getDatingRepository();
   const client = getDbClient();
 

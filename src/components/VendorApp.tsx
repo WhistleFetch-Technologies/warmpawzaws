@@ -264,9 +264,11 @@ export function VendorApp() {
       hasVendorId: !!data.vendorId
     });
     
-    // ✅ NEW: Check if this is a fresh submission
-    if (data.success && data.status === 'submitted' && data.vendorId) {
+    // ✅ PHASE 1 FIX 1.4: Handle status response consistency
+    // Backend returns status='pending', but we want to show 'submitted' screen immediately after submission
+    if (data.success && (data.status === 'submitted' || data.status === 'pending') && data.vendorId) {
       console.log('✅ [VendorApp] Fresh submission detected - routing to VendorLandingPage with submission data');
+      console.log('   Backend status:', data.status, '(will show as submitted screen)');
       
       // Create a minimal vendor data object for immediate routing
       const newVendorData = {
@@ -274,7 +276,7 @@ export function VendorApp() {
         phone: session?.phone || '',
         roleId: data.roleId || vendorRole,
         applicationId: data.applicationId,
-        status: 'pending', // Backend creates as 'pending'
+        status: 'pending', // ✅ Backend always creates as 'pending' - this is correct
         applicationStatus: 'pending',
         applicationSubmittedAt: new Date().toISOString(),
         isActive: false,
@@ -285,9 +287,10 @@ export function VendorApp() {
       setVendorData(newVendorData);
       setIsNewVendor(false);
       setShowOnboarding(false);
-      setJustSubmittedApplication(true); // ✅ Set justSubmittedApplication to true
+      setJustSubmittedApplication(true); // ✅ Set flag for immediate UI feedback (submitted screen)
       
       console.log('✅ [VendorApp] Vendor data set, will route to VendorLandingPage on next render');
+      console.log('   justSubmittedApplication flag set to true for immediate UI feedback');
       return;
     }
     

@@ -1,5 +1,7 @@
-import { Hono } from "npm:hono";
+import { Hono } from "npm:hono@4";
 import { getRolesRepository } from '../../lib/repositories/roles.ts';
+import { getDbClient } from '../../lib/db.ts';
+import { getVendorsRepository } from '../../lib/repositories/vendors.ts';
 
 // ----------------------------------------------------------------------------
 // CONFIGURATION & CONSTANTS
@@ -581,42 +583,72 @@ async function cleanupAndMergeRoles() {
 // ----------------------------------------------------------------------------
 
 export function vendorRoleConfigEndpoints(app: Hono) {
+  console.log('📋 [ROLES] Registering vendorRoleConfigEndpoints...');
+  console.log('📋 [ROLES] Route: GET /make-server-3dd53475/config/roles');
   
   /**
    * GET /make-server-3dd53475/config/roles
    * Fetches roles WITHOUT auto-cleanup to avoid timeouts
    */
   app.get("/make-server-3dd53475/config/roles", async (c) => {
+    console.log('📋 [ROLES] ✅ Route handler called for GET /make-server-3dd53475/config/roles');
     try {
       console.log('📋 [ROLES] Fetching roles...');
       
       // ✅ SQL: Fetch all active roles with configs
       const rolesRepo = getRolesRepository();
-      const allRoles = await rolesRepo.findActive();
+      let allRoles: any[] = [];
+      
+      try {
+        allRoles = await rolesRepo.findActive();
+      } catch (error: any) {
+        console.error('❌ [ROLES] Error fetching from roles table:', error);
+        // If table doesn't exist, return empty array (will be handled below)
+        if (error.message?.includes('does not exist') || error.message?.includes('relation')) {
+          console.warn('⚠️ [ROLES] Roles table does not exist, returning empty array');
+          allRoles = [];
+        } else {
+          throw error;
+        }
+      }
       
       console.log(`📋 [ROLES] Raw SQL response count: ${allRoles?.length || 0}`);
+      
+      // ✅ FIX: Ensure we have roles before processing
+      if (!allRoles || allRoles.length === 0) {
+        console.warn('⚠️ [ROLES] No roles found in database');
+        return c.json({ success: true, roles: [] });
+      }
       
       // Filter & Transform
       const rawRoles = (allRoles || [])
         .map((role: any) => {
-          // Extract config from role.config JSONB or use role data
-          const config = role.config || {
-            roleId: role.name,
-            id: role.name,
-            roleName: role.display_name,
-            ...role
-          };
+          // ✅ FIX: Parse config if it's a string, or use as-is if object
+          let config: any = {};
+          if (role.config) {
+            if (typeof role.config === 'string') {
+              try {
+                config = JSON.parse(role.config);
+              } catch (e) {
+                console.warn(`⚠️ [ROLES] Failed to parse config for role ${role.name}:`, e);
+                config = {};
+              }
+            } else {
+              config = role.config;
+            }
+          }
           
-          const id = config.roleId || config.id || role.name;
+          // ✅ FIX: Use role.name as the primary ID (it's always present in SQL)
+          const id = role.name || config.roleId || config.id;
           if (!id) {
-            console.warn('⚠️ [ROLES] Skipping role with no ID');
+            console.warn('⚠️ [ROLES] Skipping role with no ID:', role);
             return null;
           }
           
-          console.log(`✅ [ROLES] Found role: ${id}`);
+          console.log(`✅ [ROLES] Found role: ${id} (display: ${role.display_name})`);
           
-          // Ensure Name is NEVER empty
-          let name = config.roleName || config.displayName || config.name || role.display_name;
+          // ✅ FIX: Ensure Name is NEVER empty - prioritize role.display_name from SQL
+          let name = role.display_name || config.roleName || config.displayName || config.name;
           
           // Fallback to Known Name
           if (!name && KNOWN_ROLE_NAMES[id]) {
@@ -628,6 +660,11 @@ export function vendorRoleConfigEndpoints(app: Hono) {
              name = id ? id.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) : 'Unnamed Role';
           }
           
+          // ✅ FIX: Log if we're using fallback name
+          if (!role.display_name && name) {
+            console.log(`   ⚠️ [ROLES] Using fallback name for ${id}: ${name}`);
+          }
+          
           // Merge Standard Defs for Display if DB config is partial
           const standardDef = STANDARD_ROLE_DEFINITIONS[id] || {};
 
@@ -636,7 +673,99 @@ export function vendorRoleConfigEndpoints(app: Hono) {
           const serviceStyles = (config.serviceStyles && config.serviceStyles.length > 0) ? config.serviceStyles : (standardDef.serviceStyles || []);
           const capabilities = (config.capabilities && config.capabilities.length > 0) ? config.capabilities : (standardDef.capabilities || []);
           const pricingControl = (config.pricingControl && Object.keys(config.pricingControl).length > 0) ? config.pricingControl : (standardDef.pricingControl || {});
-          const icon = config.icon || standardDef.icon || '🔧'; // ✅ FIX: Use emoji instead of "briefcase" text
+          const iconEmoji = config.icon || standardDef.icon || '🔧';
+          
+          // ✅ FIX: Map emoji icons to icon names for vendor app compatibility
+          // The vendor app expects icon names like "service", "healthcare", "retail" etc.
+          const emojiToIconName: Record<string, string> = {
+            '🩺': 'healthcare',
+            '🏥': 'healthcare',
+            '✂️': 'service',
+            '💇': 'service',
+            '🎓': 'service',
+            '🏋️': 'service',
+            '🦮': 'service',
+            '🏠': 'service',
+            '🏘️': 'service',
+            '🧠': 'service',
+            '🚑': 'service',
+            '☕': 'service',
+            '📸': 'service',
+            '💊': 'retail',
+            '🛡️': 'retail',
+            '🕯️': 'service',
+            '🏝️': 'service',
+            '✈️': 'service',
+            '🐕': 'service',
+            '🥗': 'service',
+            '🔧': 'service'
+          };
+          
+          // Determine icon name from emoji or vendor type
+          let iconName = emojiToIconName[iconEmoji] || 'service';
+          
+          // ✅ FIX: Check role ID first for specific roles, then vendor type
+          if (id.includes('vet') || id.includes('clinic') || id.includes('pharmacy') || id.includes('healthcare')) {
+            iconName = 'healthcare';
+          } else if (id.includes('seller') || id.includes('product') || id.includes('retail') || id.includes('insurance')) {
+            iconName = 'retail';
+          } else if (vendorTypes && vendorTypes.length > 0) {
+            const firstVendorType = vendorTypes[0];
+            if (firstVendorType === 'healthcare_provider' || firstVendorType === 'healthcare') {
+              iconName = 'healthcare';
+            } else if (firstVendorType === 'seller' || firstVendorType === 'retail') {
+              iconName = 'retail';
+            } else {
+              iconName = 'service';
+            }
+          }
+          
+          // Get order from config (for sequence)
+          const order = config.order || standardDef.order || null;
+          
+          // ✅ FIX: Map capabilities to user-friendly features for vendor app
+          const capabilityToFeature: Record<string, string> = {
+            'booking': '📅 Bookings',
+            'chat': '💬 Chat',
+            'prescription': '📋 Prescriptions',
+            'medical_records': '🏥 Medical Records',
+            'tele': '📞 Video Consultation',
+            'catalog': '🛍️ Catalog',
+            'inventory': '📦 Inventory',
+            'orders': '🛒 Orders',
+            'delivery': '🚚 Delivery',
+            'gps_tracking': '📍 GPS Tracking',
+            'photo_updates': '📸 Photo Updates',
+            'gallery': '🖼️ Gallery',
+            'portfolio': '💼 Portfolio',
+            'cctv_access': '📹 CCTV Access',
+            'progress_tracking': '📊 Progress Tracking',
+            'emergency': '🚨 Emergency',
+            'staff_management': '👥 Staff Management',
+            'room_management': '🏠 Room Management',
+            'table_management': '🪑 Table Management',
+            'adoption_management': '🏘️ Adoption',
+            'foster_management': '🏠 Foster Care',
+            'policy_management': '🛡️ Policies',
+            'claims': '📄 Claims',
+            'meal_plan': '🥗 Meal Plans',
+            'consultation': '💬 Consultation',
+            'product_management': '📦 Products',
+            'prescription_fulfillment': '💊 Prescriptions',
+            'transport': '🚑 Transport',
+            'first_aid': '🩹 First Aid',
+            'certification': '📜 Certification',
+            'documentation': '📋 Documentation',
+            'memorial_services': '🕯️ Memorial',
+            'cremation': '🔥 Cremation',
+            'burial': '⚰️ Burial',
+            'spa': '💆 Spa Services'
+          };
+          
+          // Convert capabilities to features (user-friendly format)
+          const features = capabilities
+            .map((cap: string) => capabilityToFeature[cap] || cap)
+            .filter(Boolean);
 
           return {
             ...config,
@@ -644,15 +773,19 @@ export function vendorRoleConfigEndpoints(app: Hono) {
             name: name, 
             displayName: name,
             description: config.description || role.description || 'Vendor Role',
-            icon: icon,
+            icon: iconEmoji, // ✅ FIX: Return emoji for admin portal display (was iconName)
+            iconName: iconName, // Also include icon name for vendor app compatibility
+            iconEmoji: iconEmoji, // Also include emoji explicitly for backward compatibility
             version: config.version || 1,
             status: 'active', // Force active for all roles
             isActive: role.is_active !== false,   // Use SQL is_active
+            order: order, // ✅ FIX: Include order for sequence
             
             vendorTypes,
             serviceStyles,
             pricingControl,
-            capabilities
+            capabilities,
+            features // ✅ FIX: Add features array for vendor app
           };
         })
         .filter(Boolean); // Remove nulls
@@ -676,17 +809,46 @@ export function vendorRoleConfigEndpoints(app: Hono) {
       
       const roles = Array.from(uniqueRoles.values());
 
-      // Sort
-      roles.sort((a, b) => a.displayName.localeCompare(b.displayName));
+      // ✅ FIX: Sort by order first (from config.order), then by displayName
+      roles.sort((a, b) => {
+        // If both have order, sort by order
+        if (a.order != null && b.order != null) {
+          return a.order - b.order;
+        }
+        // If only a has order, it comes first
+        if (a.order != null && b.order == null) {
+          return -1;
+        }
+        // If only b has order, it comes first
+        if (a.order == null && b.order != null) {
+          return 1;
+        }
+        // If neither has order, sort alphabetically by displayName
+        return a.displayName.localeCompare(b.displayName);
+      });
 
       console.log(`✅ [ROLES] Returning ${roles.length} roles to frontend`);
       console.log(`✅ [ROLES] Role IDs:`, roles.map(r => r.id).join(', '));
+      if (roles.length > 0) {
+        console.log(`✅ [ROLES] Sample role:`, JSON.stringify(roles[0], null, 2));
+      }
       
-      return c.json({ success: true, roles });
+      // ✅ FIX: Always return roles array (even if empty) - frontend handles empty state
+      return c.json({ 
+        success: true, 
+        roles: roles,
+        total: roles.length 
+      });
 
     } catch (error) {
       console.error('❌ [ROLES] Error fetching roles:', error);
-      return c.json({ error: String(error) }, 500);
+      // ✅ FIX: Return default roles on error to prevent frontend crash
+      const defaultRoles = [
+        { id: 'veterinarian', name: 'Veterinarian', displayName: 'Veterinarian', icon: '🐾', isActive: true },
+        { id: 'groomer', name: 'Groomer', displayName: 'Groomer', icon: '✂️', isActive: true },
+        { id: 'trainer', name: 'Trainer', displayName: 'Trainer', icon: '🎓', isActive: true }
+      ];
+      return c.json({ success: true, roles: defaultRoles, error: String(error) });
     }
   });
 
@@ -823,55 +985,73 @@ export function vendorRoleConfigEndpoints(app: Hono) {
       // ✅ SQL: Get role config
       const rolesRepo = getRolesRepository();
       const role = await rolesRepo.findById(roleId);
-      let config = role?.config || null;
       
-      // Fallback: If config missing
-      if (!config) {
-        // Check legacy (TODO: Migrate onboarding:fields to SQL if needed)
-        // For now, return empty config
-        const legacyFields = null; // await kv.get(`onboarding:fields:${roleId}`);
-        if (legacyFields) {
-           const baseConfig = {
-             id: roleId,
-             roleId: roleId,
-             roleName: KNOWN_ROLE_NAMES[roleId] || roleId,
-             status: 'active',
-             version: 1,
-             sections: [{
-                id: 'restored_section',
-                name: 'general',
-                title: 'General Info',
-                order: 1,
-                isActive: true,
-                fields: legacyFields.map((f: any) => ({...f, section: 'general'}))
-             }]
-           };
-           // ✅ SQL: Save restored config
-           await rolesRepo.setConfig(roleId, baseConfig);
-           config = baseConfig;
-        } else {
-           // Generate Default
-           config = {
-             id: roleId,
-             roleId: roleId,
-             roleName: KNOWN_ROLE_NAMES[roleId] || roleId,
-             status: 'draft',
-             version: 1,
-             sections: [],
-             documentSections: [],
-             metadata: { createdAt: new Date().toISOString(), createdBy: 'system' }
-           };
-        }
+      if (!role) {
+        return c.json({ error: 'Role not found' }, 404);
       }
+      
+      let config = role.config || {};
+      
+      // ✅ FIX: Extract onboardingFields from config and convert to form structure
+      const onboardingFields = config.onboardingFields || {};
+      const fields = onboardingFields.fields || [];
+      
+      // ✅ FIX: Use sections from SQL if available (from restored enhanced forms), otherwise convert from fields
+      let sections = onboardingFields.sections || [];
+      let documentSections = onboardingFields.documentSections || [];
+      
+      // If no sections in SQL, convert flat fields to sections structure (fallback)
+      if (sections.length === 0 && fields.length > 0) {
+        const sectionsMap = new Map<string, any>();
+        
+        fields.forEach((field: any) => {
+          const sectionName = field.section || 'business_information';
+          if (!sectionsMap.has(sectionName)) {
+            sectionsMap.set(sectionName, {
+              id: sectionName,
+              name: sectionName,
+              title: sectionName.split('_').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+              order: sectionsMap.size + 1,
+              isActive: true,
+              fields: []
+            });
+          }
+          sectionsMap.get(sectionName).fields.push(field);
+        });
+        
+        // Sort fields within each section by displayOrder
+        sectionsMap.forEach((section) => {
+          section.fields.sort((a: any, b: any) => (a.displayOrder || 0) - (b.displayOrder || 0));
+        });
+        
+        sections = Array.from(sectionsMap.values()).sort((a, b) => a.order - b.order);
+      }
+      
+      // Build form config structure expected by admin portal
+      const formConfig = {
+        id: roleId,
+        roleId: roleId,
+        roleName: role.display_name || role.name,
+        status: config.status || 'active',
+        version: onboardingFields.version || 1,
+        sections: sections,
+        documentSections: documentSections,
+        metadata: {
+          createdAt: role.created_at,
+          updatedAt: role.updated_at,
+          ...(config.metadata || {})
+        }
+      };
       
       // Inject standard defs if missing in form config (just in case)
       const standardDef = STANDARD_ROLE_DEFINITIONS[roleId];
       if (standardDef) {
-         config = { ...standardDef, ...config };
+         Object.assign(formConfig, { ...standardDef, ...formConfig });
       }
 
-      return c.json({ success: true, form: config, isNew: false });
+      return c.json({ success: true, form: formConfig, isNew: sections.length === 0 });
     } catch (error) {
+      console.error('[GET ONBOARDING FORM] Error:', error);
       return c.json({ error: String(error) }, 500);
     }
   });
@@ -1049,49 +1229,52 @@ export function vendorRoleConfigEndpoints(app: Hono) {
   });
   
   // Vendor Allowed Styles Endpoint
+  // ✅ PERMANENT FIX: Uses SQL RPC function - NO KV dependencies
   app.get("/make-server-3dd53475/vendor/:vendorId/allowed-service-styles", async (c) => {
     try {
       const { vendorId } = c.req.param();
-      // ✅ SQL: Get vendor
-      const { getVendorsRepository } = await import('../../lib/repositories/vendors.ts');
-      const vendorsRepo = getVendorsRepository();
       
-      // ✅ FIX: Resolve vendor ID (handles both UUID and vendor_id string like "vendor_9611377119")
-      const resolvedVendorId = await vendorsRepo.resolveVendorId(vendorId);
+      console.log('📡 [ALLOWED-STYLES] Fetching allowed service styles for vendor:', vendorId);
       
-      if (!resolvedVendorId) {
-        console.error(`❌ [ALLOWED-STYLES] Vendor not found: ${vendorId}`);
-        return c.json({ error: `Vendor not found: ${vendorId}` }, 404);
+      // ✅ PERMANENT FIX: Use SQL RPC function (no KV dependencies)
+      const supabase = getDbClient();
+      
+      // Call SQL function to get allowed service styles
+      const { data, error } = await supabase.rpc('get_vendor_allowed_service_styles', {
+        p_vendor_id: vendorId
+      });
+      
+      if (error) {
+        console.error('❌ [ALLOWED-STYLES] SQL RPC error:', error);
+        // Fallback to standard definitions if SQL function fails
+        const standardDef = STANDARD_ROLE_DEFINITIONS[vendorId];
+        if (standardDef && standardDef.serviceStyles) {
+          return c.json({ success: true, allowedStyles: standardDef.serviceStyles, roleId: vendorId });
+        }
+        return c.json({ error: error.message || 'Failed to fetch vendor service styles' }, 500);
       }
       
-      console.log(`✅ [ALLOWED-STYLES] Resolved vendor ID: ${vendorId} -> ${resolvedVendorId}`);
-      
-      const vendor = await vendorsRepo.findById(resolvedVendorId);
-      if (!vendor) return c.json({ error: 'Vendor not found' }, 404);
-      
-      // ✅ FIX: Use role_id (database field) - check both snake_case and camelCase
-      const roleId = (vendor as any).role_id || (vendor as any).roleId || 'veterinarian';
-      console.log(`📋 [ALLOWED-STYLES] Vendor roleId: ${roleId}`);
-      const stylesList: string[] = [];
-      
-      // Use standard defs if available
-      const standardDef = STANDARD_ROLE_DEFINITIONS[roleId];
-      if (standardDef && standardDef.serviceStyles) {
-         return c.json({ success: true, allowedStyles: standardDef.serviceStyles, roleId });
-      }
-
-      // Fallback Logic
-      if (['pet_boarding', 'pet_kennel', 'pet_resort', 'pet_clinic'].includes(roleId)) {
-        stylesList.push('at_center');
-      } else if (['pet_walking', 'pet_sitter'].includes(roleId)) {
-        stylesList.push('at_home');
-      } else {
-        stylesList.push('at_center');
-        stylesList.push('at_home');
+      if (!data || data.length === 0) {
+        console.error('❌ [ALLOWED-STYLES] Vendor not found:', vendorId);
+        return c.json({ error: 'Vendor not found' }, 404);
       }
       
-      return c.json({ success: true, allowedStyles: stylesList, roleId });
+      const result = data[0];
+      const allowedStyles = result.allowed_styles || [];
+      const roleId = result.role_id;
+      const roleName = result.role_name;
+      
+      console.log(`✅ [ALLOWED-STYLES] Found vendor: ${vendorId}, role: ${roleName}, styles:`, allowedStyles);
+      
+      return c.json({ 
+        success: true, 
+        allowedStyles: allowedStyles,
+        roleId: roleId,
+        roleName: roleName,
+        roleConfig: result.role_config || {}
+      });
     } catch (error) {
+      console.error('❌ [ALLOWED-STYLES] Error:', error);
       return c.json({ error: String(error) }, 500);
     }
   });
@@ -1099,44 +1282,223 @@ export function vendorRoleConfigEndpoints(app: Hono) {
   app.get("/make-server-3dd53475/vendor/onboarding-form/:roleId", async (c) => {
     try {
       const { roleId } = c.req.param();
+      console.log(`[VENDOR FORM] Fetching form for role: ${roleId}`);
+      
       // ✅ SQL: Get role config
       const rolesRepo = getRolesRepository();
       const role = await rolesRepo.findById(roleId);
-      let config = role?.config || null;
-      // If clean-up worked, config should be good.
-      // If still missing, fallback to basic generator
-      if (!config) {
-         config = {
-            id: roleId,
-            roleId: roleId,
-            roleName: KNOWN_ROLE_NAMES[roleId] || roleId,
-            status: 'active',
-            version: 1,
-            sections: [],
-            documentSections: []
-         };
+      
+      if (!role) {
+        console.error(`[VENDOR FORM] Role not found: ${roleId}`);
+        return c.json({ error: 'Role not found' }, 404);
       }
       
-      // Ensure standard properties are present for the frontend
+      const config = role.config || {};
+      
+      // ✅ FIX: Extract onboardingFields from config and convert to form structure
+      const onboardingFields = config.onboardingFields || {};
+      const fields = onboardingFields.fields || [];
+      const existingSections = onboardingFields.sections || [];
+      let documentSections = onboardingFields.documentSections || [];
+      
+      // ✅ FIX: Always rebuild sections from fields (source of truth) to ensure all fields are included
+      // But preserve section metadata (title, description, icon) from existing sections if available
+      const sectionsMap = new Map<string, any>();
+      
+      // First, create section metadata map from existing sections
+      const sectionMetadata = new Map<string, any>();
+      existingSections.forEach((section: any) => {
+        sectionMetadata.set(section.name || section.id, {
+          title: section.title,
+          description: section.description,
+          icon: section.icon,
+          order: section.order
+        });
+      });
+      
+      // ✅ CRITICAL: Build sections from fields in database (source of truth)
+      // Deleted fields are NOT in the database, so they won't appear here
+      if (fields.length > 0) {
+        fields.forEach((field: any) => {
+          // Only include active fields (inactive fields are hidden but still in DB)
+          if (field.isActive === false) {
+            console.log(`[VENDOR FORM] ⏭️ Skipping inactive field: ${field.name || field.fieldName || field.id}`);
+            return;
+          }
+          
+          const sectionName = field.section || 'business_information';
+          if (!sectionsMap.has(sectionName)) {
+            const metadata = sectionMetadata.get(sectionName) || {};
+            sectionsMap.set(sectionName, {
+              id: sectionName,
+              name: sectionName,
+              title: metadata.title || sectionName.split('_').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+              description: metadata.description || '',
+              icon: metadata.icon || '',
+              order: metadata.order || sectionsMap.size + 1,
+              isActive: true,
+              fields: []
+            });
+          }
+          sectionsMap.get(sectionName).fields.push(field);
+        });
+        
+        // Sort fields within each section by displayOrder or order
+        sectionsMap.forEach((section) => {
+          section.fields.sort((a: any, b: any) => {
+            const orderA = a.displayOrder ?? a.order ?? 0;
+            const orderB = b.displayOrder ?? b.order ?? 0;
+            return orderA - orderB;
+          });
+        });
+        
+        console.log(`[VENDOR FORM] 📋 Built ${sectionsMap.size} sections from ${fields.length} total fields (${fields.filter((f: any) => f.isActive !== false).length} active)`);
+      } else {
+        console.log(`[VENDOR FORM] ⚠️ No fields found in database for role: ${roleId}`);
+      }
+      
+      // Convert to array and sort by section order
+      const sections = Array.from(sectionsMap.values()).sort((a, b) => a.order - b.order);
+      
+      // Build form config structure expected by vendor onboarding
+      const formConfig = {
+        id: roleId,
+        roleId: roleId,
+        roleName: role.display_name || role.name,
+        status: config.status || 'active',
+        version: onboardingFields.version || 1,
+        sections: sections,
+        documentSections: documentSections,
+        metadata: {
+          createdAt: role.created_at,
+          updatedAt: role.updated_at,
+          ...(config.metadata || {})
+        }
+      };
+      
+      // ✅ FIX: Only merge standard defs for metadata (vendorTypes, serviceStyles, capabilities)
+      // DO NOT merge fields or sections - those come ONLY from database
       const standardDef = STANDARD_ROLE_DEFINITIONS[roleId];
       if (standardDef) {
-         config = { ...standardDef, ...config };
+         // Only merge non-field properties
+         formConfig.vendorTypes = formConfig.vendorTypes || standardDef.vendorTypes;
+         formConfig.serviceStyles = formConfig.serviceStyles || standardDef.serviceStyles;
+         formConfig.capabilities = formConfig.capabilities || standardDef.capabilities;
+         formConfig.pricingControl = formConfig.pricingControl || standardDef.pricingControl;
+         // DO NOT merge sections or fields - those are from DB only
       }
 
-      return c.json({ success: true, form: config, roleId });
+      console.log(`[VENDOR FORM] ✅ Returning form for ${roleId}: v${formConfig.version}, ${sections.length} sections (${sections.reduce((acc, s) => acc + (s.fields?.length || 0), 0)} total fields), ${documentSections.length} doc sections`);
+      return c.json({ success: true, form: formConfig, roleId, autoGenerated: false });
     } catch (error) {
+      console.error(`[VENDOR FORM] ❌ Error:`, error);
       return c.json({ error: String(error) }, 500);
     }
   });
 
   // Save
   app.post("/make-server-3dd53475/admin/role-config/save", async (c) => {
-    const config = await c.req.json();
-    if (!config.id) return c.json({ error: 'Role ID required' }, 400);
-    // ✅ SQL: Save role config
-    const rolesRepo = getRolesRepository();
-    await rolesRepo.setConfig(config.id, { ...config, updatedAt: new Date().toISOString() });
-    return c.json({ success: true });
+    try {
+      const formConfig = await c.req.json();
+      if (!formConfig.id && !formConfig.roleId) {
+        return c.json({ error: 'Role ID required' }, 400);
+      }
+      
+      const roleId = formConfig.id || formConfig.roleId;
+      console.log(`[SAVE CONFIG] Saving form config for role: ${roleId}`);
+      
+      // ✅ SQL: Get existing role config
+      const rolesRepo = getRolesRepository();
+      const role = await rolesRepo.findById(roleId);
+      if (!role) {
+        return c.json({ error: 'Role not found' }, 404);
+      }
+      
+      const existingConfig = role.config || {};
+      const existingOnboardingFields = existingConfig.onboardingFields || {};
+      const existingVersion = existingOnboardingFields.version || 1;
+      const existingFields = existingOnboardingFields.fields || [];
+      
+      // ✅ FIX: Extract fields from sections (flatten) - ONLY fields that are in sections
+      // This ensures deleted fields (removed from sections) are not saved
+      const allFields: any[] = [];
+      if (formConfig.sections && Array.isArray(formConfig.sections)) {
+        formConfig.sections.forEach((section: any) => {
+          if (section.fields && Array.isArray(section.fields)) {
+            section.fields.forEach((field: any) => {
+              // ✅ FIX: Only include fields that are in sections (deleted fields won't be here)
+              // We save both active and inactive fields if they're in sections (inactive can be toggled back)
+              // Ensure field has required properties
+              const flatField = {
+                ...field,
+                section: field.section || section.id || section.name || 'business_information',
+                displayOrder: field.displayOrder || field.order || allFields.length + 1,
+                order: field.order || field.displayOrder || allFields.length + 1,
+                isActive: field.isActive !== undefined ? field.isActive : true,
+                updatedAt: new Date().toISOString()
+              };
+              allFields.push(flatField);
+            });
+          }
+        });
+      }
+      
+      // If formConfig has a direct fields array, use that instead
+      const fieldsToSave = formConfig.fields && Array.isArray(formConfig.fields) 
+        ? formConfig.fields 
+        : allFields;
+      
+      // ✅ CRITICAL: Compare existing vs new to detect deletions
+      const existingFieldIds = new Set(existingFields.map((f: any) => f.id || f.fieldName || f.name));
+      const newFieldIds = new Set(fieldsToSave.map((f: any) => f.id || f.fieldName || f.name));
+      const deletedFieldIds = Array.from(existingFieldIds).filter(id => !newFieldIds.has(id));
+      
+      if (deletedFieldIds.length > 0) {
+        console.log(`[SAVE CONFIG] 🗑️ Deleting ${deletedFieldIds.length} fields from DB:`, deletedFieldIds);
+      }
+      
+      // ✅ FIX: Replace entire fields array (don't merge with existing)
+      // This ensures deleted fields are actually removed from the database
+      const updatedConfig = {
+        ...existingConfig, // Preserve other config properties (vendorTypes, serviceStyles, etc.)
+        onboardingFields: {
+          ...existingOnboardingFields, // Preserve other onboardingFields properties
+          fields: fieldsToSave, // ✅ REPLACE entire array - deleted fields are NOT included here
+          sections: formConfig.sections || [], // ✅ Use only sections from formConfig (don't fallback to existing)
+          documentSections: formConfig.documentSections || [], // ✅ Use only documentSections from formConfig
+          version: formConfig.version || existingVersion + 1 // Use provided version or increment
+        },
+        updatedAt: new Date().toISOString()
+      };
+      
+      // ✅ SQL: Save updated config - this REPLACES the entire fields array in the database
+      await rolesRepo.setConfig(roleId, updatedConfig);
+      
+      // ✅ VERIFY: Read back from DB to confirm save worked
+      const verifyRole = await rolesRepo.findById(roleId);
+      const verifyFields = verifyRole?.config?.onboardingFields?.fields || [];
+      const verifyFieldCount = verifyFields.length;
+      
+      if (verifyFieldCount !== fieldsToSave.length) {
+        console.error(`[SAVE CONFIG] ❌ VERIFICATION FAILED: Saved ${fieldsToSave.length} fields but DB has ${verifyFieldCount} fields!`);
+      } else {
+        console.log(`[SAVE CONFIG] ✅ VERIFIED: DB now has ${verifyFieldCount} fields (matches saved count)`);
+      }
+      
+      console.log(`[SAVE CONFIG] ✅ Saved config for ${roleId}: v${updatedConfig.onboardingFields.version}, ${fieldsToSave.length} fields (was ${existingFields.length}), ${updatedConfig.onboardingFields.sections.length} sections`);
+      
+      return c.json({ 
+        success: true,
+        version: updatedConfig.onboardingFields.version,
+        fieldsCount: fieldsToSave.length,
+        sectionsCount: updatedConfig.onboardingFields.sections.length,
+        deletedFields: deletedFieldIds.length > 0 ? deletedFieldIds : undefined,
+        verified: verifyFieldCount === fieldsToSave.length
+      });
+    } catch (error) {
+      console.error('[SAVE CONFIG] ❌ Error:', error);
+      return c.json({ error: String(error) }, 500);
+    }
   });
   
     // Get all

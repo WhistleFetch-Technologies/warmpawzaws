@@ -25,7 +25,7 @@
  * ============================================================================
  */
 
-import { Hono } from "npm:hono";
+import { Hono } from "npm:hono@4";
 import type { Customer, Pet, Booking, ChatMessage, Review, Notification } from "./database-schema.tsx";
 import { sendSuccess, sendError } from "./response-utils.ts";
 import { normalizePhone, isValidIndianMobile } from "./phone-utils.tsx";
@@ -47,6 +47,15 @@ export function registerCustomerRoutes(app: Hono) {
   // ============================================
   // OTP & AUTHENTICATION
   // ============================================
+
+  // ✅ CORS: Explicit OPTIONS handler for OTP endpoints
+  app.options("/make-server-3dd53475/otp/*", async (c) => {
+    c.header('Access-Control-Allow-Origin', '*');
+    c.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+    c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept');
+    c.header('Access-Control-Max-Age', '86400');
+    return c.text('', 204);
+  });
 
   // Generate OTP
   app.post("/make-server-3dd53475/otp/generate", async (c) => {
@@ -90,10 +99,16 @@ export function registerCustomerRoutes(app: Hono) {
       
       // TODO: Send SMS via provider (Twilio, MSG91, etc.)
       
-      return sendSuccess(c, {}, 'OTP sent successfully');
-    } catch (error) {
+      return sendSuccess(c, {
+        message: 'OTP sent successfully',
+        ...(UAT_MODE ? { otp: finalOTP, uatMode: true } : {})
+      }, 'OTP sent successfully');
+    } catch (error: any) {
       console.error('❌ [OTP-GENERATE] Error:', error);
-      return sendError(c, `OTP generation failed: ${String(error)}`, 500);
+      const errorMessage = error?.message || String(error) || 'Unknown error';
+      const errorStack = error?.stack || '';
+      console.error('❌ [OTP-GENERATE] Error details:', { errorMessage, errorStack });
+      return sendError(c, `OTP generation failed: ${errorMessage}`, 500);
     }
   });
 
@@ -349,9 +364,12 @@ export function registerCustomerRoutes(app: Hono) {
         customer: customerResponse,
         sessionToken
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ [OTP-VERIFY] Error:', error);
-      return sendError(c, `OTP verification failed: ${String(error)}`, 500);
+      const errorMessage = error?.message || String(error) || 'Unknown error';
+      const errorStack = error?.stack || '';
+      console.error('❌ [OTP-VERIFY] Error details:', { errorMessage, errorStack });
+      return sendError(c, `OTP verification failed: ${errorMessage}`, 500);
     }
   });
 

@@ -28,7 +28,8 @@ import { getRefundsRepository } from "../../lib/repositories/refunds.ts";
 import { getPayoutsRepository } from "../../lib/repositories/payouts.ts";
 import { getVendorsRepository } from "../../lib/repositories/vendors.ts";
 import { getCustomersRepository } from "../../lib/repositories/customers.ts";
-import { withTransaction } from "../../lib/db.ts";
+import { getDbClient } from "../../lib/db.ts";
+import { withTransaction, TransactionError } from "../../lib/utils/transaction-helper.ts";
 
 /**
  * SQL-ONLY Payment Endpoints
@@ -269,23 +270,28 @@ export function paymentEndpoints(app: Hono) {
         return sendError(c, 'Invalid payment signature', 400);
       }
       
-      // ✅ SQL: Update payment status to completed
-      const updatedPayment = await getPaymentsRepository().complete(
-        paymentId,
-        razorpayPaymentId
-      );
+      // ✅ TRANSACTIONAL: Update payment and booking atomically
+      const updatedPayment = await withTransaction(async (client) => {
+        // ✅ SQL: Update payment status to completed
+        const updated = await getPaymentsRepository().complete(
+          paymentId,
+          razorpayPaymentId
+        );
 
-      // ✅ SQL: Update booking status if booking exists
-      if (payment.booking_id) {
-        const booking = await getBookingsRepository().findById(payment.booking_id);
-        if (booking) {
-          await getBookingsRepository().update(payment.booking_id, {
-            payment_status: 'paid',
-            payment_id: paymentId,
-            status: 'confirmed',
-          });
+        // ✅ SQL: Update booking status if booking exists (atomic with payment update)
+        if (payment.booking_id) {
+          const booking = await getBookingsRepository().findById(payment.booking_id);
+          if (booking) {
+            await getBookingsRepository().update(payment.booking_id, {
+              payment_status: 'paid',
+              payment_id: paymentId,
+              status: 'confirmed',
+            });
+          }
         }
-      }
+        
+        return updated;
+      });
 
       // ✅ SQL: Get customer and vendor for notifications
       const customer = await getCustomersRepository().findById(payment.customer_id);
@@ -336,6 +342,13 @@ export function paymentEndpoints(app: Hono) {
 
     } catch (error) {
       console.error('Payment verification error:', error);
+      
+      // Handle transaction errors with context
+      if (error instanceof TransactionError) {
+        console.error('❌ [TRANSACTION] Payment verification transaction failed:', error.getDetailedMessage());
+        return sendError(c, `Payment verification failed: ${error.message}`, 500);
+      }
+      
       return sendError(c, error, 500);
     }
   });
@@ -366,59 +379,69 @@ export function paymentEndpoints(app: Hono) {
       const platformCommission = (amount * commissionRate) / 100;
       const vendorAmount = amount - platformCommission;
 
-      // ✅ SQL: Create payment record
-      const payment = await getPaymentsRepository().create({
-        booking_id: bookingId,
-        customer_id: customerId,
-        vendor_id: vendorId,
-        amount,
-        payment_method: paymentMethod,
-      });
-
-      // ✅ SQL: Complete payment
-      const completedPayment = await getPaymentsRepository().complete(payment.id);
-
-      // ✅ SQL: Update booking payment status
-      if (bookingId) {
-        await getBookingsRepository().update(bookingId, {
-          payment_status: 'paid',
-          payment_id: payment.id,
+      // ✅ TRANSACTIONAL: Create payment, complete it, update booking, and update revenue atomically
+      const { payment, completedPayment } = await withTransaction(async (client) => {
+        // ✅ SQL: Create payment record
+        const payment = await getPaymentsRepository().create({
+          booking_id: bookingId,
+          customer_id: customerId,
+          vendor_id: vendorId,
+          amount,
+          payment_method: paymentMethod,
         });
-      }
 
-      // ✅ SQL: Update platform revenue (via repository or direct update)
-      // TODO: Create platform_revenue repository or update directly
-      const client = getDbClient();
-      const today = new Date().toISOString().split('T')[0];
-      const { data: existing } = await client
-        .from('platform_revenue')
-        .select('*')
-        .eq('revenue_date', today)
-        .maybeSingle();
-      
-      if (existing) {
-        await client
-          .from('platform_revenue')
-          .update({
-            total_revenue: (existing.total_revenue || 0) + amount,
-            commission_revenue: (existing.commission_revenue || 0) + platformCommission,
-          })
-          .eq('id', existing.id);
-      } else {
-        await client
-          .from('platform_revenue')
-          .insert({
-            revenue_date: today,
-            total_revenue: amount,
-            commission_revenue: platformCommission,
-            transaction_fees: 0,
+        // ✅ SQL: Complete payment
+        const completedPayment = await getPaymentsRepository().complete(payment.id);
+
+        // ✅ SQL: Update booking payment status (atomic with payment)
+        if (bookingId) {
+          await getBookingsRepository().update(bookingId, {
+            payment_status: 'paid',
+            payment_id: payment.id,
           });
-      }
+        }
+
+        // ✅ SQL: Update platform revenue (atomic with payment)
+        const today = new Date().toISOString().split('T')[0];
+        const { data: existing } = await client
+          .from('platform_revenue')
+          .select('*')
+          .eq('revenue_date', today)
+          .maybeSingle();
+        
+        if (existing) {
+          await client
+            .from('platform_revenue')
+            .update({
+              total_revenue: (existing.total_revenue || 0) + amount,
+              commission_revenue: (existing.commission_revenue || 0) + platformCommission,
+            })
+            .eq('id', existing.id);
+        } else {
+          await client
+            .from('platform_revenue')
+            .insert({
+              revenue_date: today,
+              total_revenue: amount,
+              commission_revenue: platformCommission,
+              transaction_fees: 0,
+            });
+        }
+        
+        return { payment, completedPayment };
+      });
 
       console.log(`✅ Payment processed: ${payment.id}`);
       return sendSuccess(c, { paymentId: payment.id, payment: completedPayment });
     } catch (error) {
       console.error('Error processing payment:', error);
+      
+      // Handle transaction errors with context
+      if (error instanceof TransactionError) {
+        console.error('❌ [TRANSACTION] Payment processing transaction failed:', error.getDetailedMessage());
+        return sendError(c, `Payment processing failed: ${error.message}`, 500);
+      }
+      
       return sendError(c, error, 500);
     }
   });
@@ -471,35 +494,47 @@ export function paymentEndpoints(app: Hono) {
 
       const refundAmount = amount || payment.amount;
 
-      // ✅ SQL: Create refund record
-      const refund = await getRefundsRepository().create({
-        payment_id: paymentId,
-        booking_id: payment.booking_id || undefined,
-        customer_id: payment.customer_id,
-        vendor_id: payment.vendor_id || undefined,
-        refund_amount: refundAmount,
-        refund_reason: reason || 'Customer request',
-      });
+      // ✅ TRANSACTIONAL: Create refund, update payment, update booking atomically
+      const { refund, completedRefund } = await withTransaction(async (client) => {
+        // ✅ SQL: Create refund record
+        const refund = await getRefundsRepository().create({
+          payment_id: paymentId,
+          booking_id: payment.booking_id || undefined,
+          customer_id: payment.customer_id,
+          vendor_id: payment.vendor_id || undefined,
+          refund_amount: refundAmount,
+          refund_reason: reason || 'Customer request',
+        });
 
-      // ✅ SQL: Update payment status
-      await getPaymentsRepository().update(paymentId, {
-        payment_status: 'refunded',
-      });
-
-      // ✅ SQL: Update booking if exists
-      if (payment.booking_id) {
-        await getBookingsRepository().update(payment.booking_id, {
+        // ✅ SQL: Update payment status (atomic with refund)
+        await getPaymentsRepository().update(paymentId, {
           payment_status: 'refunded',
         });
-      }
 
-      // ✅ SQL: Complete refund
-      const completedRefund = await getRefundsRepository().complete(refund.id);
+        // ✅ SQL: Update booking if exists (atomic with refund)
+        if (payment.booking_id) {
+          await getBookingsRepository().update(payment.booking_id, {
+            payment_status: 'refunded',
+          });
+        }
+
+        // ✅ SQL: Complete refund
+        const completedRefund = await getRefundsRepository().complete(refund.id);
+        
+        return { refund, completedRefund };
+      });
 
       console.log(`✅ Refund processed: ${refund.id}`);
       return sendSuccess(c, { refundId: refund.id, refund: completedRefund });
     } catch (error) {
       console.error('Error processing refund:', error);
+      
+      // Handle transaction errors with context
+      if (error instanceof TransactionError) {
+        console.error('❌ [TRANSACTION] Refund processing transaction failed:', error.getDetailedMessage());
+        return sendError(c, `Refund processing failed: ${error.message}`, 500);
+      }
+      
       return sendError(c, error, 500);
     }
   });

@@ -64,5 +64,9 @@
     server: {
       port: 3000,
       open: true,
+      hmr: {
+        port: 3000,
+        clientPort: 3000,
+      },
     },
   });
