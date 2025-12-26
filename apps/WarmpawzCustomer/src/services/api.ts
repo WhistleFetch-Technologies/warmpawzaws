@@ -128,3 +128,60 @@ export const CustomerApi = {
   verifyOtp: (phone: string, otp: string) => ApiService.post('/otp/verify', { phone, otp }),
 };
 
+// ✅ NEW: Booking OTP API (SQL-migrated endpoints)
+export const BookingOtpApi = {
+  generateOtp: (bookingId: string, sessionNumber?: number, action?: 'start' | 'end') => 
+    ApiService.post(`/bookings/${bookingId}/generate-otp`, { sessionNumber: sessionNumber || 1, action: action || 'start' }),
+  verifyOtp: (bookingId: string, otp: string, sessionNumber?: number, action?: 'start' | 'end') => 
+    ApiService.post(`/bookings/${bookingId}/verify-otp`, { otp, sessionNumber: sessionNumber || 1, action: action || 'start' }),
+};
+
+// ✅ NEW: Rescheduling API (SQL-migrated endpoints)
+export const ReschedulingApi = {
+  getPolicy: (serviceType: string) => ApiService.get(`/booking/rescheduling-policy/${serviceType}`),
+  updatePolicy: (serviceType: string, policy: any) => 
+    ApiService.put(`/booking/rescheduling-policy/${serviceType}`, policy),
+  getRescheduleOptions: (bookingId: string) => 
+    ApiService.get(`/booking/${bookingId}/reschedule-options`),
+  requestReschedule: (bookingId: string, requestedDate: string, reason?: string) => 
+    ApiService.post(`/booking/${bookingId}/reschedule`, { requestedDate, reason }),
+  confirmReschedule: (bookingId: string, rescheduleId: string) => 
+    ApiService.post(`/booking/${bookingId}/reschedule/confirm`, { rescheduleId }),
+};
+
+// ✅ NEW: Staff Discovery API (SQL-migrated endpoints)
+export const StaffDiscoveryApi = {
+  discoverStaff: (params: {
+    roleId: string;
+    serviceStyle: 'at_home' | 'at_center' | 'tele';
+    latitude?: number;
+    longitude?: number;
+    maxDistance?: number;
+    serviceId?: string;
+  }) => {
+    const query = new URLSearchParams({
+      roleId: params.roleId,
+      serviceStyle: params.serviceStyle,
+      ...(params.latitude && { latitude: params.latitude.toString() }),
+      ...(params.longitude && { longitude: params.longitude.toString() }),
+      ...(params.maxDistance && { maxDistance: params.maxDistance.toString() }),
+      ...(params.serviceId && { serviceId: params.serviceId }),
+    });
+    return ApiService.get(`/customer/discover-staff?${query}`);
+  },
+  discoverStaffByVendor: (vendorId: string) => 
+    ApiService.get(`/customer/discover-staff-by-vendor?vendorId=${vendorId}`),
+};
+
+// ✅ NEW: Search API enhancements (SQL-migrated endpoints)
+export const SearchApi = {
+  searchVendors: (params: any) => ApiService.post('/search/vendors', params),
+  searchVendorsNearby: (params: any) => ApiService.post('/search/vendors/nearby', params),
+  getTopRatedVendors: (limit?: number) => 
+    ApiService.get(`/search/vendors/top-rated${limit ? `?limit=${limit}` : ''}`),
+  searchServices: (query?: string) => 
+    ApiService.get(`/search/services${query ? `?query=${query}` : ''}`),
+  getFeaturedVendors: () => ApiService.get('/search/vendors/featured'),
+  getCategories: () => ApiService.get('/search/categories'),
+};
+
