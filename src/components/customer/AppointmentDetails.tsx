@@ -43,8 +43,9 @@ export function AppointmentDetails({ bookingId, customerPhone, onBack, onCancel,
       setLoading(true);
       setError(null);
 
+      // ✅ FIX: Use SQL-migrated appointment endpoint
       const response = await fetch(
-        `${API_BASE}/customer/bookings/${bookingId}`,
+        `${API_BASE}/appointment/${bookingId}`,
         {
           headers: { Authorization: `Bearer ${publicAnonKey}` }
         }

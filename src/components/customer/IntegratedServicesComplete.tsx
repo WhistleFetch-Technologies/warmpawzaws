@@ -149,28 +149,14 @@ export function IntegratedServicesComplete({
   };
 
   const handleProviderSelect = async (provider: ServiceProvider) => {
-    // Check availability before proceeding
-    try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/integrated-services/${provider.providerId}/availability`,
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data.data?.availability?.isAvailable) {
-          // Proceed with booking
-          console.log('Provider available, proceeding to booking:', provider);
-          // TODO: Navigate to booking flow
-        } else {
-          alert(`Service not available: ${data.data?.availability?.reason}`);
-        }
-      }
-    } catch (error) {
-      console.error('Error checking availability:', error);
-      alert('Unable to check availability. Please try again.');
+    // ✅ FIX: Availability is already included in the provider list from /integrated-services/available
+    // The provider object already contains availability info, so we can proceed directly
+    if (provider.isAvailable) {
+      // Proceed with booking
+      console.log('Provider available, proceeding to booking:', provider);
+      // TODO: Navigate to booking flow
+    } else {
+      alert('This service provider is currently unavailable. Please try another provider.');
     }
   };
 

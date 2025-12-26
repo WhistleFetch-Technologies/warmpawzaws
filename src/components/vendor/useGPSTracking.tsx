@@ -146,19 +146,19 @@ export function useGPSTracking(options: UseGPSTrackingOptions): UseGPSTrackingRe
 
       setCurrentLocation(initialLocation);
 
-      // Start tracking session on server
-      const response = await fetch(`${API_BASE}/gps/tracking/start`, {
+      // ✅ FIX: Use Batch 14 SQL-migrated GPS tracking start endpoint
+      const response = await fetch(`${API_BASE}/bookings/${bookingId}/start-tracking`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${publicAnonKey}`
         },
         body: JSON.stringify({
-          sessionId: bookingId,
-          walkerId: vendorId,
-          initialLocation: {
-            lat: initialLocation.lat,
-            lng: initialLocation.lng
+          location: {
+            latitude: initialLocation.lat,
+            longitude: initialLocation.lng,
+            timestamp: initialLocation.timestamp,
+            accuracy: initialLocation.accuracy
           }
         })
       });
@@ -207,8 +207,8 @@ export function useGPSTracking(options: UseGPSTrackingOptions): UseGPSTrackingRe
         updateTimerRef.current = null;
       }
 
-      // Stop tracking session on server
-      const response = await fetch(`${API_BASE}/gps/tracking/${bookingId}/stop`, {
+      // ✅ FIX: Use Batch 14 SQL-migrated GPS tracking stop endpoint
+      const response = await fetch(`${API_BASE}/bookings/${bookingId}/stop-tracking`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -283,17 +283,21 @@ export function useGPSTracking(options: UseGPSTrackingOptions): UseGPSTrackingRe
    */
   const updateLocationOnServer = async (location: LocationPoint) => {
     try {
-      await fetch(`${API_BASE}/gps/tracking/${bookingId}/update`, {
+      // ✅ FIX: Use Batch 14 SQL-migrated GPS tracking endpoint
+      await fetch(`${API_BASE}/bookings/${bookingId}/update-location`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${publicAnonKey}`
         },
         body: JSON.stringify({
-          lat: location.lat,
-          lng: location.lng,
-          speed: location.speed,
-          heading: location.heading
+          location: {
+            latitude: location.lat,
+            longitude: location.lng,
+            timestamp: location.timestamp,
+            accuracy: location.accuracy
+          },
+          sessionNumber: options.sessionNumber || 1
         })
       });
     } catch (err) {

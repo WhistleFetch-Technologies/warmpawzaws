@@ -456,5 +456,7 @@ app.post('/make-server-3dd53475/vendor/cctv/:vendorId/log-access', async (c) => 
   }
 });
 
+// Export as named export to match import
+export { app as cctvAccessEndpointsSQL };
 export default app;
 

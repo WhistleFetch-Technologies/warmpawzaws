@@ -241,5 +241,7 @@ app.post('/make-server-3dd53475/assignments/auto-assign-home-service', async (c)
   }
 });
 
+// Export as named export to match import
+export { app as homeServiceAutoAssignmentSQL };
 export default app;
 

@@ -564,5 +564,7 @@ app.get('/make-server-3dd53475/tier/config', async (c) => {
   });
 });
 
+// Export as named export to match import
+export { app as tierUpgradeAutomationSQL };
 export default app;
 

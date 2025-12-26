@@ -79,8 +79,9 @@ export function LiveGPSTracking({
     try {
       setIsRefreshing(true);
       
+      // ✅ FIX: Use Batch 14 SQL-migrated GPS live location endpoint
       const response = await fetch(
-        `${API_BASE}/tracking/location/${bookingId}`,
+        `${API_BASE}/bookings/${bookingId}/live-location`,
         {
           headers: {
             'Authorization': `Bearer ${publicAnonKey}`

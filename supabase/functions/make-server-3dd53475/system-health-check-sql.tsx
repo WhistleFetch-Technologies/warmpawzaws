@@ -467,5 +467,7 @@ function generateRecommendations(results: HealthCheckResult[]): string[] {
   return recommendations;
 }
 
+// Export as named export to match import
+export { app as systemHealthCheckSQL };
 export default app;
 

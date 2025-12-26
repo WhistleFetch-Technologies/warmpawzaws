@@ -213,5 +213,7 @@ app.post('/make-server-3dd53475/bookings/:bookingId/verify-otp', async (c) => {
   }
 });
 
+// Export as named export to match import
+export { app as standardizedOtpEndpointsSQL };
 export default app;
 

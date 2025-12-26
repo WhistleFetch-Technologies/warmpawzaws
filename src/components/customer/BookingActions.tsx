@@ -62,8 +62,10 @@ export function BookingActions({ booking, phone, onSuccess }: BookingActionsProp
 
     setLoading(true);
     try {
+      // ✅ FIX: Use SQL-migrated reschedule endpoint
+      const requestedDate = `${rescheduleData.newDate}T${rescheduleData.newTimeSlot}`;
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/bookings/${booking.id}/reschedule`,
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/booking/${booking.id}/reschedule`,
         {
           method: 'POST',
           headers: {
@@ -71,10 +73,8 @@ export function BookingActions({ booking, phone, onSuccess }: BookingActionsProp
             'Authorization': `Bearer ${publicAnonKey}`
           },
           body: JSON.stringify({
-            newDate: rescheduleData.newDate,
-            newTimeSlot: rescheduleData.newTimeSlot,
-            reason: rescheduleData.reason,
-            phone
+            requestedDate,
+            reason: rescheduleData.reason
           })
         }
       );
@@ -104,8 +104,9 @@ export function BookingActions({ booking, phone, onSuccess }: BookingActionsProp
 
     setLoading(true);
     try {
+      // ✅ FIX: Use SQL-migrated appointment cancel endpoint
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/bookings/${booking.id}/cancel`,
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/appointment/${booking.id}/cancel`,
         {
           method: 'POST',
           headers: {
@@ -113,8 +114,7 @@ export function BookingActions({ booking, phone, onSuccess }: BookingActionsProp
             'Authorization': `Bearer ${publicAnonKey}`
           },
           body: JSON.stringify({
-            reason: cancellationReason,
-            phone
+            reason: cancellationReason
           })
         }
       );

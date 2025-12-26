@@ -44,6 +44,7 @@ export function MedicalHistoryModal({ petId, bookingId, petName, vendorId, onClo
 
       console.log('[MEDICAL UI] Requesting history for appointment:', bookingId);
 
+      // ✅ FIX: Use Batch 8 SQL-migrated medical history endpoint (already correct path)
       const response = await fetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/appointments/${bookingId}/medical-records`,
         {

@@ -44,8 +44,9 @@ export function PreviousProvidersCarousel({
       if (serviceType) params.append('serviceType', serviceType);
       if (customerId) params.append('customerId', customerId);
 
+      // ✅ FIX: Use Batch 8 SQL-migrated previous providers endpoint
       const response = await fetch(
-        `${BASE_URL}/home-services/providers/previous?${params}`,
+        `${BASE_URL}/home-services/providers/previous/${customerId}${serviceType ? `?serviceType=${serviceType}` : ''}`,
         {
           headers: { 'Authorization': `Bearer ${publicAnonKey}` }
         }

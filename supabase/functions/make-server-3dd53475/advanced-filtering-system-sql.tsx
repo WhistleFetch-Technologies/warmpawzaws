@@ -366,5 +366,7 @@ app.get('/make-server-3dd53475/customer/:customerId/search-history', async (c) =
   }
 });
 
+// Export as named export to match import
+export { app as advancedFilteringSystemSQL };
 export default app;
 

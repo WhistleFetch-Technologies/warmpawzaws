@@ -132,8 +132,9 @@ export function WalletPage({ customerPhone, customerId }: WalletPageProps) {
   const loadWalletData = async () => {
     try {
       setLoading(true);
+      // ✅ FIX: Use Batch 14 SQL-migrated wallet endpoint with customerId
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/wallet/${customerPhone}`,
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/${customerId}/wallet`,
         {
           headers: {
             'Authorization': `Bearer ${publicAnonKey}`,
@@ -194,8 +195,7 @@ export function WalletPage({ customerPhone, customerId }: WalletPageProps) {
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            amount,
-            customerPhone
+            amount
           })
         }
       );
