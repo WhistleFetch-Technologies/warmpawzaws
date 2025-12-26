@@ -446,3 +446,78 @@ export const bankVerificationApi = {
     apiCall('/payment/bank-account/penny-drop', { method: 'POST', body: { vendorId, accountNumber, ifscCode } }),
   getVendorBankAccount: (vendorId: string) => apiCall(`/payment/bank-account/${vendorId}`),
 };
+
+// ✅ NEW: Independent Vendor System API (Batch 15 SQL-migrated endpoints)
+export const independentVendorApi = {
+  onboardIndependent: (vendorData: any) => 
+    apiCall('/integrated-services/vendor/onboard-independent', { method: 'POST', body: vendorData }),
+  getVendor: (vendorId: string) => apiCall(`/integrated-services/vendor/independent/${vendorId}`),
+  updateVendor: (vendorId: string, updates: any) => 
+    apiCall(`/integrated-services/vendor/independent/${vendorId}`, { method: 'PUT', body: updates }),
+  listVendors: (filters?: { type?: string; status?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.type) params.append('type', filters.type);
+    if (filters?.status) params.append('status', filters.status);
+    return apiCall(`/integrated-services/vendor/independent/list?${params}`);
+  },
+  configureService: (config: any) => 
+    apiCall('/integrated-services/vendor/service-config', { method: 'POST', body: config }),
+  approveVendor: (vendorId: string, approve: boolean) => 
+    apiCall(`/integrated-services/vendor/independent/${vendorId}/approve`, { method: 'POST', body: { approve } }),
+};
+
+// ✅ NEW: Dating Chat API (Batch 15 SQL-migrated endpoints)
+export const datingChatApi = {
+  sendMessage: (matchId: string, senderId: string, message: string, messageType?: string, attachmentUrl?: string) => 
+    apiCall(`/dating/chat/${matchId}/message`, { method: 'POST', body: { senderId, message, messageType, attachmentUrl } }),
+  getMessages: (matchId: string, limit?: number, offset?: number) => {
+    const params = new URLSearchParams();
+    if (limit) params.append('limit', limit.toString());
+    if (offset) params.append('offset', offset.toString());
+    return apiCall(`/dating/chat/${matchId}/messages?${params}`);
+  },
+  markAsRead: (matchId: string, messageId: string) => 
+    apiCall(`/dating/chat/${matchId}/messages/${messageId}/read`, { method: 'POST' }),
+  uploadMedia: (matchId: string, fileData: any) => 
+    apiCall(`/dating/chat/${matchId}/upload-media`, { method: 'POST', body: fileData }),
+  getUnreadCount: (matchId: string) => apiCall(`/dating/chat/${matchId}/unread-count`),
+};
+
+// ✅ NEW: Tier Commission API (Batch 15 SQL-migrated endpoints)
+export const tierCommissionApi = {
+  calculateCommission: (bookingId: string) => apiCall(`/payment/commission/calculate/${bookingId}`),
+  applyCommission: (bookingId: string, commissionData: any) => 
+    apiCall('/payment/commission/apply', { method: 'POST', body: { bookingId, ...commissionData } }),
+  getTierCommission: (tierId: string) => apiCall(`/payment/commission/tier/${tierId}`),
+  updateTierCommission: (tierId: string, updates: any) => 
+    apiCall(`/payment/commission/tier/${tierId}/update`, { method: 'PUT', body: updates }),
+  listTiers: () => apiCall('/payment/commission/tiers/list'),
+};
+
+// ✅ NEW: Memorial Services API (Batch 15 SQL-migrated endpoints)
+export const memorialServicesApi = {
+  getServices: (vendorId: string, status?: string) => {
+    const query = status ? `?status=${status}` : '';
+    return apiCall(`/vendor/memorial/${vendorId}/services${query}`);
+  },
+  getService: (vendorId: string, serviceId: string) => 
+    apiCall(`/vendor/memorial/${vendorId}/services/${serviceId}`),
+  createService: (vendorId: string, serviceData: any) => 
+    apiCall(`/vendor/memorial/${vendorId}/services`, { method: 'POST', body: serviceData }),
+  updateService: (vendorId: string, serviceId: string, updates: any) => 
+    apiCall(`/vendor/memorial/${vendorId}/services/${serviceId}`, { method: 'PUT', body: updates }),
+  updateServiceStatus: (vendorId: string, serviceId: string, status: string) => 
+    apiCall(`/vendor/memorial/${vendorId}/services/${serviceId}/status`, { method: 'POST', body: { status } }),
+  getTributes: (vendorId: string) => apiCall(`/vendor/memorial/${vendorId}/tributes`),
+  createTribute: (vendorId: string, tributeData: any) => 
+    apiCall(`/vendor/memorial/${vendorId}/tributes`, { method: 'POST', body: tributeData }),
+  getProducts: (vendorId: string) => apiCall(`/vendor/memorial/${vendorId}/products`),
+  createProduct: (vendorId: string, productData: any) => 
+    apiCall(`/vendor/memorial/${vendorId}/products`, { method: 'POST', body: productData }),
+};
+
+// ✅ NEW: Staff Service Style Setup API (Batch 15 SQL-migrated endpoints - Admin only)
+export const staffServiceStyleSetupApi = {
+  setupServiceStyles: () => apiCall('/admin/setup-staff-service-styles', { method: 'POST' }),
+  getSetupStatus: () => apiCall('/admin/staff-style-status'),
+};

@@ -48,6 +48,8 @@ import { cctvAccessEndpointsSQL } from './cctv-access-endpoints-sql.tsx'; // ✅
 import { homeServiceAutoAssignmentSQL } from './home-service-auto-assignment-sql.tsx'; // ✅ SQL-only: Home service auto-assignment (11 KV ops removed)
 import { registerPetSuggestionSystem } from './pet-suggestion-system-sql.tsx'; // ✅ SQL-only: Pet suggestion system (12 KV ops removed)
 import { advancedFilteringSystemSQL } from './advanced-filtering-system-sql.tsx'; // ✅ SQL-only: Advanced filtering (15 KV ops removed)
+import { staffSpecializationEndpoints } from './staff-specialization-system-sql.tsx'; // ✅ SQL-only: Staff specialization system (7 KV ops removed - Batch 10 Phase 1)
+import universalStaffProblemSearchSQL from './universal-staff-problem-search-sql.tsx'; // ✅ SQL-only: Universal staff problem search (7 KV ops removed - Batch 10 Phase 1)
 import { tierUpgradeAutomationSQL } from './tier-upgrade-automation-sql.tsx'; // ✅ SQL-only: Tier upgrade automation (14 KV ops removed)
 // ✅ NEW: Batch 14 SQL-only endpoints
 import { systemHealthCheckSQL } from './system-health-check-sql.tsx'; // ✅ SQL-only: System health check (14 KV ops removed)
@@ -65,18 +67,24 @@ import { reportBuilderEndpoints } from './report-builder-endpoints-sql.tsx'; // 
 import { registerAnalyticsDashboardSprint2SQL } from './analytics-dashboard-sprint2-sql.tsx'; // ✅ SQL-only: Analytics dashboard sprint 2 (Batch 9, 26 KV ops removed)
 import { tierUpgradeEndpoints } from './tier-upgrade-endpoints-sql.tsx'; // ✅ SQL-only: Tier upgrade endpoints (Batch 9, 17 KV ops removed)
 import { registerVideoCallEndpoints } from './video-call-endpoints-sql.tsx'; // ✅ SQL-only: Video call endpoints (Batch 9, 18 KV ops removed)
-import { registerAWSChimeVideoEndpointsSQL } from './aws-chime-video-integration-sql.tsx'; // ✅ SQL-only: AWS Chime video (Batch 15, 12 KV ops removed)
-import { registerAWSChimeChatEndpoints } from './aws-chime-chat-integration-sql.tsx'; // ✅ SQL-only: AWS Chime chat (Batch 15, 12 KV ops removed)
+import { registerAWSChimeVideoEndpointsSQL } from './aws-chime-video-integration-sql.tsx'; // ✅ SQL-only: AWS Chime video (Batch 9, 12 KV ops removed)
+import { registerAWSChimeChatEndpoints } from './aws-chime-chat-integration-sql.tsx'; // ✅ SQL-only: AWS Chime chat (Batch 9, 12 KV ops removed)
 import dynamicOnboardingFieldsSQL from './dynamic-onboarding-fields-sql.tsx'; // ✅ SQL-only: Dynamic onboarding fields (Batch 9, 8 KV ops removed)
-// ✅ NEW: Batch 15 SQL-only endpoints (additional ones)
-import { independentVendorSystemEndpointsSQL } from './independent-vendor-system-sql.tsx'; // ✅ SQL-only: Independent vendor system (Batch 15, 12 KV ops removed)
-import { datingChatEndpointsSQL } from './dating-chat-endpoints-sql.tsx'; // ✅ SQL-only: Dating chat (Batch 15, 12 KV ops removed)
-import { tierCommissionIntegrationEndpointsSQL } from './tier-commission-integration-sql.tsx'; // ✅ SQL-only: Tier commission (Batch 15, 11 KV ops removed)
-import { staffServiceStyleSetupEndpointsSQL } from './staff-service-style-setup-sql.tsx'; // ✅ SQL-only: Staff service style setup (Batch 15, 11 KV ops removed)
-import { memorialEndpointsSQL } from './memorial-endpoints-sql.tsx'; // ✅ SQL-only: Memorial endpoints (Batch 15, 11 KV ops removed)
 import { registerBookingLifecycleEndpoints } from './booking-lifecycle-sql.tsx'; // ✅ SQL-only: Booking lifecycle (Batch 9, 9 KV ops removed)
 import serviceComparisonSystemSQL from './service-comparison-system-sql.tsx'; // ✅ SQL-only: Service comparison system (Batch 9, 9 KV ops removed)
 import { registerVendorProfileUpdateEndpoints } from './vendor-profile-update-sql.tsx'; // ✅ SQL-only: Vendor profile update (Batch 9, 5 KV ops removed)
+// ✅ NEW: Batch 10 SQL-only endpoints
+import { initializeRoleService } from './role-service-sql.tsx'; // ✅ SQL-only: Role service (Batch 10, 7 KV ops removed)
+import { staffSpecializationEndpointsSQL } from './staff-specialization-system-sql.tsx'; // ✅ SQL-only: Staff specialization system (Batch 10, 7 KV ops removed)
+import { universalStaffProblemSearchEndpointsSQL } from './universal-staff-problem-search-sql.tsx'; // ✅ SQL-only: Universal staff problem search (Batch 10, 7 KV ops removed)
+// ✅ NEW: Batch 15 SQL-only endpoints (additional ones)
+import { independentVendorSystemEndpointsSQL } from './independent-vendor-system-sql.tsx'; // ✅ SQL-only: Independent vendor system (Batch 15, 12 KV ops removed)
+import { registerDatingChatEndpointsSQL } from './dating-chat-endpoints-sql.tsx'; // ✅ SQL-only: Dating chat (Batch 15, 12 KV ops removed)
+import scheduledTeleBookingSQL from './scheduled-tele-booking-sql.tsx'; // ✅ SQL-only: Scheduled tele booking (9 KV ops removed)
+import { integratedServicesManagerEndpointsSQL } from './integrated-services-manager-sql.tsx'; // ✅ SQL-only: Integrated services manager (9 KV ops removed)
+import { tierCommissionIntegrationEndpointsSQL } from './tier-commission-integration-sql.tsx'; // ✅ SQL-only: Tier commission (Batch 15, 11 KV ops removed)
+import { staffServiceStyleSetupEndpointsSQL } from './staff-service-style-setup-sql.tsx'; // ✅ SQL-only: Staff service style setup (Batch 15, 11 KV ops removed)
+import memorialEndpointsSQL from './memorial-endpoints-sql.tsx'; // ✅ SQL-only: Memorial endpoints (Batch 15, 11 KV ops removed)
 // ✅ NEW: Batch 16 SQL-only endpoints
 import integratedServicesCompleteSQL from './integrated-services-complete-sql.tsx'; // ✅ SQL-only: Integrated services (11 KV ops removed)
 import { updateProviderLocationIndex, findProvidersNearby } from './geospatial-index-sql.tsx'; // ✅ SQL-only: Geospatial indexing (11 KV ops removed)
@@ -354,6 +362,56 @@ try {
   console.error('❌ Error registering vendor profile update:', error);
 }
 
+// ✅ NEW: Batch 15 SQL-only endpoint registrations (additional ones)
+try {
+  console.log('✅ Registering independent vendor system (SQL-only)...');
+  independentVendorSystemEndpointsSQL(app);
+} catch (error) {
+  console.error('❌ Error registering independent vendor system:', error);
+}
+
+try {
+  console.log('✅ Registering dating chat endpoints (SQL-only)...');
+  registerDatingChatEndpointsSQL(app);
+} catch (error) {
+  console.error('❌ Error registering dating chat endpoints:', error);
+}
+
+try {
+  console.log('✅ Registering scheduled tele booking endpoints (SQL-only)...');
+  app.route('/make-server-3dd53475', scheduledTeleBookingSQL);
+} catch (error) {
+  console.error('❌ Error registering scheduled tele booking endpoints:', error);
+}
+
+try {
+  console.log('✅ Registering integrated services manager endpoints (SQL-only)...');
+  integratedServicesManagerEndpointsSQL(app);
+} catch (error) {
+  console.error('❌ Error registering integrated services manager endpoints:', error);
+}
+
+try {
+  console.log('✅ Registering tier commission integration (SQL-only)...');
+  tierCommissionIntegrationEndpointsSQL(app);
+} catch (error) {
+  console.error('❌ Error registering tier commission integration:', error);
+}
+
+try {
+  console.log('✅ Registering staff service style setup (SQL-only)...');
+  staffServiceStyleSetupEndpointsSQL(app);
+} catch (error) {
+  console.error('❌ Error registering staff service style setup:', error);
+}
+
+try {
+  console.log('✅ Registering memorial endpoints (SQL-only)...');
+  app.route('/make-server-3dd53475', memorialEndpointsSQL);
+} catch (error) {
+  console.error('❌ Error registering memorial endpoints:', error);
+}
+
 // ✅ NEW: Batch 16 SQL-only endpoint registrations
 try {
   console.log('✅ Registering integrated services complete (SQL-only)...');
@@ -402,6 +460,71 @@ try {
   app.route('/make-server-3dd53475', automatedBankVerificationSQL);
 } catch (error) {
   console.error('❌ Error registering automated bank verification:', error);
+}
+
+// ✅ NEW: Batch 17 SQL-only endpoint registrations
+try {
+  console.log('✅ Registering booking validation endpoints (SQL-only)...');
+  app.route('/make-server-3dd53475', bookingValidationEndpointsSQL);
+} catch (error) {
+  console.error('❌ Error registering booking validation endpoints:', error);
+}
+
+try {
+  console.log('✅ Registering cancellation policy endpoints (SQL-only)...');
+  cancellationPolicyEndpoints(app);
+} catch (error) {
+  console.error('❌ Error registering cancellation policy endpoints:', error);
+}
+
+try {
+  console.log('✅ Registering slot availability endpoints (SQL-only)...');
+  app.route('/make-server-3dd53475', slotAvailabilityEndpointsSQL);
+} catch (error) {
+  console.error('❌ Error registering slot availability endpoints:', error);
+}
+
+try {
+  console.log('✅ Registering nutritionist food integration (SQL-only)...');
+  nutritionistFoodIntegrationEndpoints(app);
+} catch (error) {
+  console.error('❌ Error registering nutritionist food integration:', error);
+}
+
+try {
+  console.log('✅ Registering refund policy engine (SQL-only)...');
+  refundPolicyEndpoints(app);
+} catch (error) {
+  console.error('❌ Error registering refund policy engine:', error);
+}
+
+try {
+  console.log('✅ Registering scheduled tele booking (SQL-only)...');
+  app.route('/make-server-3dd53475', scheduledTeleBookingSQL);
+} catch (error) {
+  console.error('❌ Error registering scheduled tele booking:', error);
+}
+
+try {
+  console.log('✅ Registering integrated services manager (SQL-only)...');
+  integratedServicesManagerEndpoints(app);
+} catch (error) {
+  console.error('❌ Error registering integrated services manager:', error);
+}
+
+// ✅ NEW: Batch 10 Phase 1 SQL-only endpoints
+try {
+  console.log('✅ Registering staff specialization system (SQL-only)...');
+  staffSpecializationEndpoints(app);
+} catch (error) {
+  console.error('❌ Error registering staff specialization system:', error);
+}
+
+try {
+  console.log('✅ Registering universal staff problem search (SQL-only)...');
+  app.route('/make-server-3dd53475', universalStaffProblemSearchSQL);
+} catch (error) {
+  console.error('❌ Error registering universal staff problem search:', error);
 }
 
 // Health endpoint (simple, no dependencies)
