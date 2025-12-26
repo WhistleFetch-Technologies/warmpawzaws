@@ -55,15 +55,14 @@ export function RescheduleBooking({ bookingId, onSuccess, onCancel }: Reschedule
 
     setSubmitting(true);
     try {
-      const response = await fetch(`${API_BASE}/bookings/${bookingId}/reschedule`, {
+      const response = await fetch(`${API_BASE}/booking/${bookingId}/reschedule`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${publicAnonKey}`
         },
         body: JSON.stringify({
-          newDate: selectedSlot.date,
-          newTimeSlot: selectedSlot.timeSlot,
+          requestedDate: `${selectedSlot.date}T${selectedSlot.timeSlot}`,
           reason
         })
       });

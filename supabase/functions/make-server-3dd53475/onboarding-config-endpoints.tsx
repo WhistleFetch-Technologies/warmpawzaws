@@ -243,7 +243,7 @@ export function onboardingConfigEndpoints(app: Hono) {
           pincode: formData.pincode || '',
           landmark: formData.landmark || ''
         },
-        status: 'pending_approval', // Use valid status value
+        status: 'pending', // Use valid status value (check constraint allows: pending, approved, rejected, active, inactive)
         approval_status: 'pending',
         is_active: false,
         submitted_at: new Date().toISOString(),
