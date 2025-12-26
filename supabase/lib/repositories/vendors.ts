@@ -114,6 +114,7 @@ export interface UpdateVendorInput {
   approved_at?: string;
   approved_by?: string;
   rejection_reason?: string; // ✅ PHASE 4 FIX 4.2: Add rejection_reason field
+  metadata?: any; // ✅ JSONB metadata field for storing additional data
 }
 
 // ============================================================================

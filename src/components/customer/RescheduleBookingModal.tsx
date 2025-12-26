@@ -40,14 +40,22 @@ export function RescheduleBookingModal({
   const loadAvailableSlots = async (date: string) => {
     try {
       setLoadingSlots(true);
+      // ✅ FIX: Use SQL-migrated reschedule options endpoint
       const response = await fetch(
-        `${API_BASE}/bookings/${bookingId}/available-slots?date=${date}`,
+        `${API_BASE}/booking/${bookingId}/reschedule-options`,
         { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
       );
 
       if (response.ok) {
         const data = await response.json();
-        setAvailableSlots(data.slots || []);
+        // Filter slots for selected date and map to expected format
+        const dateSlots = (data.slots || []).filter((slot: any) => 
+          slot.date === date || slot.scheduledDate === date
+        ).map((slot: any) => ({
+          time: slot.timeSlot || slot.time || slot.scheduledTime,
+          available: slot.available !== false,
+        }));
+        setAvailableSlots(dateSlots);
       } else {
         toast.error('Failed to load available slots');
       }
@@ -67,8 +75,10 @@ export function RescheduleBookingModal({
     try {
       setLoading(true);
 
+      // ✅ FIX: Use SQL-migrated reschedule endpoint
+      const requestedDate = `${selectedDate.toISOString().split('T')[0]}T${selectedSlot}`;
       const response = await fetch(
-        `${API_BASE}/bookings/${bookingId}/reschedule`,
+        `${API_BASE}/booking/${bookingId}/reschedule`,
         {
           method: 'POST',
           headers: {
@@ -76,9 +86,7 @@ export function RescheduleBookingModal({
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            userId: 'customer_id', // TODO: Get from context
-            newDate: selectedDate.toISOString().split('T')[0],
-            newTime: selectedSlot,
+            requestedDate,
             reason
           })
         }

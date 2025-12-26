@@ -59,7 +59,8 @@ export function VendorCCTVAccess({ vendorId, vendorData, onBack }: VendorCCTVAcc
   const fetchCameras = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_BASE}/vendor/cctv/${vendorId}/cameras`, {
+      // ✅ FIX: Use Batch 13 SQL-migrated CCTV endpoint
+      const response = await fetch(`${API_BASE}/vendor/cctv/${vendorId}`, {
         headers: { 'Authorization': `Bearer ${publicAnonKey}` }
       });
 

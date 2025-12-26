@@ -68,10 +68,19 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine 
   const [activeFilter, setActiveFilter] = useState<'all' | 'upcoming' | 'completed'>('all');
   const [showOTP, setShowOTP] = useState<string | null>(null);
   const [copiedOTP, setCopiedOTP] = useState<string | null>(null);
+  const [customerId, setCustomerId] = useState<string | null>(null);
+
+  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
 
   useEffect(() => {
-    loadBookings();
+    resolveCustomerId();
   }, [phone]);
+
+  useEffect(() => {
+    if (customerId) {
+      loadBookings();
+    }
+  }, [customerId]);
 
   useEffect(() => {
     if (initialBookingId && bookings.length > 0) {
@@ -82,11 +91,33 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine 
     }
   }, [initialBookingId, bookings]);
 
+  const resolveCustomerId = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/customer-by-phone/${phone}`, {
+        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setCustomerId(data.customerId || phone);
+      } else {
+        // Fallback to phone if resolution fails
+        setCustomerId(phone);
+      }
+    } catch (error) {
+      console.error('Error resolving customerId:', error);
+      // Fallback to phone
+      setCustomerId(phone);
+    }
+  };
+
   const loadBookings = async () => {
+    if (!customerId) return;
+    
     try {
       setLoading(true);
+      // ✅ FIX: Use SQL-migrated appointment endpoint
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/${phone}/bookings`,
+        `${API_BASE}/appointments/customer/${customerId}`,
         {
           headers: { 'Authorization': `Bearer ${publicAnonKey}` }
         }
@@ -94,7 +125,37 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine 
 
       if (response.ok) {
         const result = await response.json();
-        setBookings(result.bookings || []);
+        // Map appointments to bookings format for compatibility
+        const mappedBookings = (result.appointments || []).map((apt: any) => ({
+          bookingId: apt.id || apt.appointmentId,
+          serviceType: apt.serviceType || apt.service_type,
+          serviceName: apt.serviceName || apt.service_name,
+          vendorId: apt.vendorId || apt.vendor_id,
+          vendorName: apt.vendorName || apt.vendor_name,
+          staffId: apt.staffId || apt.staff_id,
+          staffName: apt.staffName || apt.staff_name,
+          petId: apt.petId || apt.pet_id,
+          petName: apt.petName || apt.pet_name,
+          customerPhone: phone,
+          serviceStyle: apt.serviceStyle || apt.service_style,
+          bookingDate: apt.scheduledDate || apt.scheduled_date || apt.bookingDate,
+          bookingTime: apt.scheduledTime || apt.scheduled_time || apt.bookingTime,
+          duration: apt.duration || 60,
+          price: apt.price || apt.totalAmount || 0,
+          status: apt.status || 'pending',
+          completionOTP: apt.completionOTP,
+          isPackage: apt.isPackage || false,
+          packageDetails: apt.packageDetails,
+          occurrences: apt.occurrences,
+          createdAt: apt.createdAt || apt.created_at,
+          specialInstructions: apt.specialInstructions || apt.special_instructions,
+          requiresStartOTP: apt.requiresStartOTP,
+          startOTP: apt.startOTP,
+          startTime: apt.startTime,
+          endTime: apt.endTime,
+          actualDuration: apt.actualDuration,
+        }));
+        setBookings(mappedBookings);
       }
     } catch (error) {
       console.error('Error loading bookings:', error);

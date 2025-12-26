@@ -44,16 +44,26 @@ export function BookingDetailsComplete({
       setLoading(true);
       setError(null);
 
+      // ✅ FIX: Use SQL-migrated appointment endpoint
       const response = await fetch(
-        `${API_BASE}/bookings/${bookingId}?userId=${customerId}&userType=customer`,
+        `${API_BASE}/appointment/${bookingId}`,
         { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
       );
 
       if (!response.ok) throw new Error('Failed to load booking');
 
       const data = await response.json();
-      setBooking(data.booking);
-      setVendor(data.vendor);
+      // Map appointment data to booking format for component compatibility
+      const appointment = data.appointment || data;
+      setBooking({
+        ...appointment,
+        id: appointment.id || appointment.appointmentId || bookingId,
+        bookingId: appointment.id || appointment.appointmentId || bookingId,
+        vendor: data.vendor || appointment.vendor,
+        staff: data.staff || appointment.staff,
+        customer: data.customer || appointment.customer,
+      });
+      setVendor(data.vendor || appointment.vendor);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load booking');
     } finally {

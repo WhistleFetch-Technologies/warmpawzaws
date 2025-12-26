@@ -143,20 +143,36 @@ app.get("/make-server-3dd53475/admin/vendors/stats", async (c) => {
 // ============================================
 
 // Get all pending vendor applications with filters
+// Support both paths for compatibility
 app.get("/make-server-3dd53475/applications/pending", async (c) => {
+  return handleGetPendingApplications(c);
+});
+
+app.get("/make-server-3dd53475/admin/vendors/applications", async (c) => {
+  return handleGetPendingApplications(c);
+});
+
+async function handleGetPendingApplications(c: any) {
   try {
+    const status = c.req.query('status') || 'pending';
+    const roleId = c.req.query('roleId');
     const category = c.req.query('category') || 'all';
     const priority = c.req.query('priority') || 'all';
     
-    console.log('📋 Fetching pending applications with filters:', { category, priority });
+    console.log('📋 Fetching pending applications with filters:', { status, roleId, category, priority });
     
     // ✅ SQL: Get pending vendors using repository
     const vendorsRepo = getVendorsRepository();
-    let pendingVendors = await vendorsRepo.findByStatus('pending');
+    let pendingVendors = await vendorsRepo.findByStatus(status);
     
-    // Also include 'pending_approval' status if it exists
-    const pendingApprovalVendors = await vendorsRepo.findByStatus('pending_approval');
-    pendingVendors = [...pendingVendors, ...pendingApprovalVendors];
+    // Filter by roleId if provided
+    if (roleId) {
+      pendingVendors = pendingVendors.filter(v => 
+        v.vendor_type === roleId || 
+        v.role_id === roleId ||
+        (v.metadata as any)?.application?.roleId === roleId
+      );
+    }
     
     console.log(`⏳ Pending vendors found: ${pendingVendors.length}`);
     
@@ -226,7 +242,7 @@ app.get("/make-server-3dd53475/applications/pending", async (c) => {
     console.error('Error fetching pending applications:', error);
     return c.json({ error: String(error) }, 500);
   }
-});
+}
 
 // Get single vendor application details
 app.get("/make-server-3dd53475/applications/:vendorId", async (c) => {
@@ -295,7 +311,19 @@ app.post("/make-server-3dd53475/admin/vendor/application/:vendorId/approve", asy
     
     const result = await withTransaction(async (client) => {
       // ✅ SQL: Approve vendor using repository
-      const updatedVendor = await vendorsRepo.approve(resolvedId, adminId || 'system');
+      // ✅ FIX: adminId must be UUID or null - use system UUID or null if invalid
+      let validAdminId: string | null = null;
+      if (adminId) {
+        // Check if adminId is a valid UUID format
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (uuidRegex.test(adminId)) {
+          validAdminId = adminId;
+        } else {
+          // If not a UUID, use null (system approval)
+          console.warn(`[APPROVE] adminId "${adminId}" is not a valid UUID, using null (system approval)`);
+        }
+      }
+      const updatedVendor = await vendorsRepo.approve(resolvedId, validAdminId || null);
       
       // ✅ FIX: AUTO-CREATE STAFF FOR INDIVIDUAL VENDORS (if needed)
       // This logic can be enhanced based on vendor type
@@ -461,9 +489,20 @@ app.post("/make-server-3dd53475/admin/vendor/application/:vendorId/request-clari
     const notificationsRepo = getNotificationsRepository();
     
     const result = await withTransaction(async (client) => {
-      // Update vendor status
+      // Update vendor - keep status as pending (status field limited to 20 chars)
+      // Store clarification info in metadata JSONB column
+      const currentMetadata = vendor.metadata || {};
+      const updatedMetadata = {
+        ...currentMetadata,
+        clarification_requested: true,
+        clarification_notes: notes || clarificationNotes || '',
+        clarification_requested_at: new Date().toISOString(),
+        clarification_requested_by: adminName || 'admin'
+      };
+      
       const updatedVendor = await vendorsRepo.update(resolvedId, {
-        status: 'clarification_requested'
+        status: 'pending',
+        metadata: updatedMetadata
       });
       
       // Create notification

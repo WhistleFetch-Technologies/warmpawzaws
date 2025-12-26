@@ -132,3 +132,20 @@ export const VendorApi = {
   generateOtp: (phone: string) => ApiService.post('/otp/generate', { phone }),
   verifyOtp: (phone: string, otp: string) => ApiService.post('/otp/verify', { phone, otp }),
 };
+
+// ✅ NEW: Staff Schedule API (SQL-migrated endpoints)
+export const StaffScheduleApi = {
+  getBreaks: (staffId: string) => ApiService.get(`/staff/${staffId}/breaks`),
+  createBreak: (staffId: string, breakData: any) => 
+    ApiService.post(`/staff/${staffId}/breaks`, breakData),
+  updateBreak: (staffId: string, breakId: string, breakData: any) => 
+    ApiService.put(`/staff/${staffId}/breaks/${breakId}`, breakData),
+  deleteBreak: (staffId: string, breakId: string) => 
+    ApiService.delete(`/staff/${staffId}/breaks/${breakId}`),
+  getPreferences: (staffId: string) => ApiService.get(`/staff/${staffId}/preferences`),
+  updatePreferences: (staffId: string, preferences: any) => 
+    ApiService.put(`/staff/${staffId}/preferences`, preferences),
+  getHolidays: (staffId: string) => ApiService.get(`/staff/${staffId}/holidays`),
+  createHoliday: (staffId: string, holidayData: any) => 
+    ApiService.post(`/staff/${staffId}/holidays`, holidayData),
+};

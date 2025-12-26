@@ -248,8 +248,9 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
       console.log('📬 [CUSTOMER-HOME] Notification received:', notification);
       if (notification.type === 'chat_message' && notification.bookingId) {
         try {
+          // ✅ FIX: Use SQL-migrated appointment endpoint
           const response = await fetch(
-            `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/booking/${notification.bookingId}`,
+            `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/appointment/${notification.bookingId}`,
             { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
           );
           if (response.ok) {

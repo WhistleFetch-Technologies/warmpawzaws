@@ -60,7 +60,8 @@ export function LiveGPSTracker({
    */
   const fetchTrackingData = async () => {
     try {
-      const response = await fetch(`${API_BASE}/session/${bookingId}/tracking`, {
+      // ✅ FIX: Use Batch 14 SQL-migrated GPS route endpoint
+      const response = await fetch(`${API_BASE}/bookings/${bookingId}/route`, {
         headers: {
           'Authorization': `Bearer ${publicAnonKey}`
         }

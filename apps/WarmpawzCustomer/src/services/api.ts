@@ -128,6 +128,16 @@ export const CustomerApi = {
   verifyOtp: (phone: string, otp: string) => ApiService.post('/otp/verify', { phone, otp }),
 };
 
+// ✅ NEW: Appointment API (SQL-migrated endpoints)
+export const AppointmentApi = {
+  getAppointments: (customerId: string) => ApiService.get(`/appointments/customer/${customerId}`),
+  getAppointment: (appointmentId: string) => ApiService.get(`/appointment/${appointmentId}`),
+  cancelAppointment: (appointmentId: string, reason?: string) => 
+    ApiService.post(`/appointment/${appointmentId}/cancel`, { reason }),
+  rescheduleAppointment: (appointmentId: string, newDate: string, newTime: string, reason?: string) =>
+    ApiService.post(`/appointment/${appointmentId}/reschedule`, { newDate, newTimeSlot: newTime, reason }),
+};
+
 // ✅ NEW: Booking OTP API (SQL-migrated endpoints)
 export const BookingOtpApi = {
   generateOtp: (bookingId: string, sessionNumber?: number, action?: 'start' | 'end') => 
@@ -183,5 +193,173 @@ export const SearchApi = {
     ApiService.get(`/search/services${query ? `?query=${query}` : ''}`),
   getFeaturedVendors: () => ApiService.get('/search/vendors/featured'),
   getCategories: () => ApiService.get('/search/categories'),
+};
+
+// ✅ NEW: Wallet API (Batch 14 SQL-migrated endpoints)
+export const WalletApi = {
+  getWallet: (customerId: string) => ApiService.get(`/customer/${customerId}/wallet`),
+  getTopupOffers: (customerId: string) => ApiService.get(`/customer/${customerId}/wallet/topup-offers`),
+  initiateTopup: (customerId: string, amount: number, bonusOffer?: any) => 
+    ApiService.post(`/customer/${customerId}/wallet/topup/initiate`, { amount, bonusOffer }),
+  verifyTopup: (customerId: string, paymentId: string, orderId: string, signature: string) => 
+    ApiService.post(`/customer/${customerId}/wallet/topup/verify`, { paymentId, orderId, signature }),
+  getTransactions: (customerId: string, params?: { limit?: number; offset?: number; type?: string }) => {
+    const query = params ? new URLSearchParams(Object.entries(params).map(([k,v]) => [k, String(v)])).toString() : '';
+    return ApiService.get(`/customer/${customerId}/wallet/transactions${query ? `?${query}` : ''}`);
+  },
+};
+
+// ✅ NEW: GPS Tracking API (Batch 14 SQL-migrated endpoints)
+export const GPSTrackingApi = {
+  startTracking: (bookingId: string) => ApiService.post(`/bookings/${bookingId}/start-tracking`),
+  stopTracking: (bookingId: string) => ApiService.post(`/bookings/${bookingId}/stop-tracking`),
+  updateLocation: (bookingId: string, location: { latitude: number; longitude: number; timestamp?: string; accuracy?: number }, sessionNumber?: number) => 
+    ApiService.post(`/bookings/${bookingId}/update-location`, { location, sessionNumber }),
+  getLiveLocation: (bookingId: string) => ApiService.get(`/bookings/${bookingId}/live-location`),
+  getRoute: (bookingId: string) => ApiService.get(`/bookings/${bookingId}/route`),
+};
+
+// ✅ NEW: Nutritionist API (Batch 14 SQL-migrated endpoints)
+export const NutritionistApi = {
+  getMenu: (nutritionistId: string) => ApiService.get(`/nutritionist/${nutritionistId}/menu`),
+  addMealItem: (nutritionistId: string, mealData: any) => 
+    ApiService.post('/nutritionist/meals/item', { nutritionistId, ...mealData }),
+  placeOrder: (orderData: any) => ApiService.post('/nutritionist/meals/order', orderData),
+  assignDelivery: (orderId: string, deliveryPartnerId: string) => 
+    ApiService.post(`/nutritionist/orders/${orderId}/assign-delivery`, { deliveryPartnerId }),
+  trackOrder: (orderId: string) => ApiService.get(`/nutritionist/orders/${orderId}/track`),
+  updateOrderStatus: (orderId: string, status: string) => 
+    ApiService.put(`/nutritionist/orders/${orderId}/status`, { status }),
+};
+
+// ✅ NEW: Previous Providers API (Batch 8 SQL-migrated endpoints)
+export const PreviousProvidersApi = {
+  getPreviousProviders: (customerId: string, serviceType?: string) => {
+    const query = serviceType ? `?serviceType=${serviceType}` : '';
+    return ApiService.get(`/home-services/providers/previous/${customerId}${query}`);
+  },
+  addFavorite: (customerId: string, providerId: string) => 
+    ApiService.post('/home-services/providers/favorite', { customerId, providerId }),
+  removeFavorite: (customerId: string, providerId: string) => 
+    ApiService.delete(`/home-services/providers/favorite/${customerId}/${providerId}`),
+  getServiceHistory: (customerId: string) => 
+    ApiService.get(`/home-services/providers/previous/${customerId}/history`),
+};
+
+// ✅ NEW: Nutritionist Diet Plans API (Batch 8 SQL-migrated endpoints)
+export const NutritionistDietPlanApi = {
+  createDietPlan: (planData: any) => ApiService.post('/nutritionist/diet-plan/create', planData),
+  getDietPlansByCustomer: (customerId: string) => 
+    ApiService.get(`/nutritionist/customer/${customerId}/diet-plans`),
+  getDietPlan: (planId: string) => ApiService.get(`/nutritionist/diet-plan/${planId}`),
+  updateDietPlan: (planId: string, updates: any) => 
+    ApiService.put(`/nutritionist/diet-plan/${planId}`, updates),
+};
+
+// ✅ NEW: Medical History API (Batch 8 SQL-migrated endpoints)
+export const MedicalHistoryApi = {
+  getMedicalRecords: (appointmentId: string, headers?: { 'X-User-Id': string; 'X-User-Role': string }) => 
+    ApiService.get(`/appointments/${appointmentId}/medical-records`, { headers }),
+  uploadDocument: (appointmentId: string, fileData: any, headers?: { 'X-User-Id': string; 'X-User-Role': string }) => 
+    ApiService.post(`/appointments/${appointmentId}/medical-records/upload`, fileData, { headers }),
+  addVetSummary: (appointmentId: string, summary: any, headers?: { 'X-User-Id': string; 'X-User-Role': string }) => 
+    ApiService.post(`/appointments/${appointmentId}/vet-summary`, summary, { headers }),
+  getPrescriptions: (appointmentId: string) => 
+    ApiService.get(`/appointments/${appointmentId}/prescriptions`),
+};
+
+// ✅ NEW: Integrated Services API (Batch 16 SQL-migrated endpoints)
+export const IntegratedServicesApi = {
+  getAvailableServices: (bookingId?: string, serviceType?: string, location?: { lat: number; lng: number }) => {
+    const params = new URLSearchParams();
+    if (bookingId) params.append('bookingId', bookingId);
+    if (serviceType) params.append('serviceType', serviceType);
+    if (location) {
+      params.append('lat', location.lat.toString());
+      params.append('lng', location.lng.toString());
+    }
+    return ApiService.get(`/integrated-services/available?${params}`);
+  },
+  getVendors: (type: string, lat?: number, lng?: number, radius?: number) => {
+    const params = new URLSearchParams({ type });
+    if (lat) params.append('lat', lat.toString());
+    if (lng) params.append('lng', lng.toString());
+    if (radius) params.append('radius', radius.toString());
+    return ApiService.get(`/integrated-services/vendors?${params}`);
+  },
+  selectService: (bookingId: string, serviceType: string, vendorId: string) => 
+    ApiService.post('/integrated-services/select', { bookingId, serviceType, vendorId }),
+  getBookingServices: (bookingId: string) => 
+    ApiService.get(`/integrated-services/booking/${bookingId}`),
+  updateServiceStatus: (serviceId: string, status: string) => 
+    ApiService.put(`/integrated-services/${serviceId}/status`, { status }),
+};
+
+// ✅ NEW: Advanced Search API (Batch 16 SQL-migrated endpoints)
+export const AdvancedSearchApi = {
+  universalSearch: (query: string, type?: string, limit?: number) => 
+    ApiService.post('/advanced-search/universal', { query, type, limit: limit || 20 }),
+  vendorSearch: (query: string, location?: { lat: number; lng: number }, radius?: number) => 
+    ApiService.post('/advanced-search/vendors', { query, location, radius }),
+};
+
+// ✅ NEW: Vendor Analytics API (Batch 16 SQL-migrated endpoints)
+export const VendorAnalyticsApi = {
+  getAnalytics: (vendorId: string, period?: 'day' | 'week' | 'month' | 'year' | 'all') => {
+    const query = period ? `?period=${period}` : '';
+    return ApiService.get(`/vendor/${vendorId}/analytics${query}`);
+  },
+};
+
+// ✅ NEW: Search Analytics API (Batch 16 SQL-migrated endpoints)
+export const SearchAnalyticsApi = {
+  trackQuery: (query: string, userId: string, results: { count: number }) => 
+    ApiService.post('/search/analytics/track', { query, userId, results }),
+  trackClick: (eventId: string, clicked: string, timeToClick?: number) => 
+    ApiService.post('/search/analytics/click', { eventId, clicked, timeToClick }),
+  trackConversion: (eventId: string, conversionType: string, value?: number) => 
+    ApiService.post('/search/analytics/convert', { eventId, conversionType, value }),
+  getPopular: (limit?: number, days?: number) => {
+    const params = new URLSearchParams();
+    if (limit) params.append('limit', limit.toString());
+    if (days) params.append('days', days.toString());
+    return ApiService.get(`/search/analytics/popular?${params}`);
+  },
+};
+
+// ✅ NEW: Health Problems API (Batch 16 SQL-migrated endpoints)
+export const HealthProblemsApi = {
+  getAll: (status?: string) => {
+    const query = status ? `?status=${status}` : '';
+    return ApiService.get(`/health-problems${query}`);
+  },
+  getById: (id: string) => ApiService.get(`/health-problems/${id}`),
+  create: (data: { name: string; displayName: string; icon?: string }) => 
+    ApiService.post('/admin/health-problems', data),
+  update: (id: string, data: any) => ApiService.put(`/admin/health-problems/${id}`, data),
+  delete: (id: string) => ApiService.delete(`/admin/health-problems/${id}`),
+};
+
+// ✅ NEW: Elasticsearch Proxy API (Batch 16 SQL-migrated endpoints)
+export const ElasticsearchProxyApi = {
+  search: (query: string, type?: string) => {
+    const params = new URLSearchParams({ q: query });
+    if (type) params.append('type', type);
+    return ApiService.get(`/search/elastic?${params}`);
+  },
+  autocomplete: (query: string) => ApiService.get(`/search/autocomplete?q=${query}`),
+  reindex: () => ApiService.post('/search/index'),
+};
+
+// ✅ NEW: Bank Verification API (Batch 16 SQL-migrated endpoints)
+export const BankVerificationApi = {
+  verifyRazorpay: (vendorId: string, accountNumber: string, ifscCode: string, accountHolderName: string) => 
+    ApiService.post('/payment/bank-account/verify-razorpay', { vendorId, accountNumber, ifscCode, accountHolderName }),
+  getVerificationStatus: (accountId: string) => 
+    ApiService.get(`/payment/bank-account/verification-status/${accountId}`),
+  pennyDrop: (vendorId: string, accountNumber: string, ifscCode: string) => 
+    ApiService.post('/payment/bank-account/penny-drop', { vendorId, accountNumber, ifscCode }),
+  getVendorBankAccount: (vendorId: string) => 
+    ApiService.get(`/payment/bank-account/${vendorId}`),
 };
 

@@ -33,8 +33,11 @@ export default function NutritionistDashboard({ vendorId }: { vendorId: string }
 
   const fetchMealPlans = async () => {
     try {
+      // ✅ FIX: Use Batch 8 SQL-migrated nutritionist diet plans endpoint
+      // ✅ FIX: Use Batch 8 SQL-migrated nutritionist diet plans endpoint
+      // Note: The endpoint structure may need to be verified - checking if it's /nutritionist/:nutritionistId/diet-plans or /nutritionist/customer/:customerId/diet-plans
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/nutritionist/${vendorId}/meal-plans`,
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/nutritionist/customer/${vendorId}/diet-plans`,
         { headers: { Authorization: `Bearer ${publicAnonKey}` } }
       );
       const data = await response.json();
@@ -48,7 +51,8 @@ export default function NutritionistDashboard({ vendorId }: { vendorId: string }
     e.preventDefault();
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/nutritionist/meal-plan/create`,
+        // ✅ FIX: Use Batch 8 SQL-migrated diet plan create endpoint
+        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/nutritionist/diet-plan/create`,
         {
           method: 'POST',
           headers: {

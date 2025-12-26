@@ -63,8 +63,9 @@ export function CancelBookingModal({
     try {
       setLoading(true);
 
+      // ✅ FIX: Use SQL-migrated appointment cancel endpoint
       const response = await fetch(
-        `${API_BASE}/bookings/${bookingId}/cancel`,
+        `${API_BASE}/appointment/${bookingId}/cancel`,
         {
           method: 'POST',
           headers: {
@@ -72,8 +73,6 @@ export function CancelBookingModal({
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            userId: customerId,
-            userType: 'customer',
             reason
           })
         }

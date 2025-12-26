@@ -415,5 +415,7 @@ app.get('/make-server-3dd53475/appointments/customer/:customerId', async (c) => 
   }
 });
 
+// Export as named export to match import
+export { app as appointmentLifecycleEndpointsSQL };
 export default app;
 
