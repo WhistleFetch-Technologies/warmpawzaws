@@ -221,16 +221,19 @@ export function onboardingConfigEndpoints(app: Hono) {
       });
       
       // ✅ SQL: Create vendor with application metadata
-      // ✅ FIX: vendors table has address as JSONB, not separate city/state/pincode columns
-      // ✅ FIX: role_id must be UUID from roles table, not the string roleId
+      // ✅ FIX: vendors table structure:
+      //   - role_id FK references vendor_roles table (VARCHAR), not roles table (UUID)
+      //   - Since vet_clinic may not exist in vendor_roles, leave role_id NULL (it's nullable)
+      //   - Use vendor_type to store the role information
+      //   - address is JSONB
       const vendorProfile: any = {
         vendor_id: vendorId, // Use the generated vendor ID
         phone: cleanPhone,
         email: formData.businessEmail || formData.email || email,
         business_name: formData.businessName || '',
         full_name: formData.ownerName || formData.fullName || formData.businessName || '',
-        ...(role?.id && { role_id: role.id }), // Only set if role exists and has UUID id
-        vendor_type: roleId, // Keep original roleId string for vendor_type
+        // role_id: Leave NULL - FK references vendor_roles, not roles. Use vendor_type instead.
+        vendor_type: roleId, // Store role information here
         service_category: serviceCategory,
         address: {
           line1: formData.addressLine1 || formData.address || '',
@@ -240,7 +243,7 @@ export function onboardingConfigEndpoints(app: Hono) {
           pincode: formData.pincode || '',
           landmark: formData.landmark || ''
         },
-        status: 'pending', // Use 'pending' as it's a valid status value
+        status: 'pending_approval', // Use valid status value
         approval_status: 'pending',
         is_active: false,
         submitted_at: new Date().toISOString(),
