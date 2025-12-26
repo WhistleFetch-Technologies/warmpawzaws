@@ -77,11 +77,25 @@ import { registerVendorProfileUpdateEndpoints } from './vendor-profile-update-sq
 import { initializeRoleService } from './role-service-sql.tsx'; // ✅ SQL-only: Role service (Batch 10, 7 KV ops removed)
 import { staffSpecializationEndpointsSQL } from './staff-specialization-system-sql.tsx'; // ✅ SQL-only: Staff specialization system (Batch 10, 7 KV ops removed)
 import { universalStaffProblemSearchEndpointsSQL } from './universal-staff-problem-search-sql.tsx'; // ✅ SQL-only: Universal staff problem search (Batch 10, 7 KV ops removed)
+import homeServicesEnhancedSQL from './home-services-enhanced-sql.tsx'; // ✅ SQL-only: Home services enhanced (Batch 10, 5 KV ops removed)
+import { unifiedServiceDiscoveryEndpointsSQL } from './unified-service-discovery-sql.tsx'; // ✅ SQL-only: Unified service discovery (Batch 10 Phase 2, 4 KV ops removed)
+import vendorBankValidationSQL from './vendor-bank-validation-sql.tsx'; // ✅ SQL-only: Vendor bank validation (Batch 10 Phase 2, 4 KV ops removed)
+import { registerLogisticsEndpoints } from './logistics-adapter-sql.tsx'; // ✅ SQL-only: Logistics adapter (Batch 10 Phase 2, 4 KV ops removed)
+// ✅ NEW: Batch 10 Phase 3 SQL-only endpoints
+import { registerAnalyticsIngestion } from './analytics-events-sql.tsx'; // ✅ SQL-only: Analytics events (Batch 10 Phase 3, 4 KV ops removed)
+import scheduleSettingsEndpointsSQL from './schedule-settings-endpoints-sql.tsx'; // ✅ SQL-only: Schedule settings (Batch 10 Phase 3, 3 KV ops removed)
+import { radarLocationSystemEndpoints } from './radar-location-system-sql.tsx'; // ✅ SQL-only: Radar location system (Batch 10 Phase 3, 3 KV ops removed)
+import { registerVendorCatalogAPI } from './vendor-catalog-api-sql.tsx'; // ✅ SQL-only: Vendor catalog API (Batch 10 Phase 3, 3 KV ops removed)
+import { registerLogisticsRoutingEndpointsSQL } from './logistics-routing-engine-sql.tsx'; // ✅ SQL-only: Logistics routing engine (Batch 10 Phase 3, 6 KV ops removed)
+import enhancedProblemDiscoverySQL from './enhanced-problem-discovery-sql.tsx'; // ✅ SQL-only: Enhanced problem discovery (Batch 10 Phase 3, 4 KV ops removed)
+// ✅ NEW: Batch 11 SQL-only endpoints
+import { settlementTierSystemEndpoints } from './settlement-tier-system-enhanced-sql.tsx'; // ✅ SQL-only: Settlement tier system enhanced (Batch 11, 7 KV ops removed)
 // ✅ NEW: Batch 15 SQL-only endpoints (additional ones)
 import { independentVendorSystemEndpointsSQL } from './independent-vendor-system-sql.tsx'; // ✅ SQL-only: Independent vendor system (Batch 15, 12 KV ops removed)
 import { registerDatingChatEndpointsSQL } from './dating-chat-endpoints-sql.tsx'; // ✅ SQL-only: Dating chat (Batch 15, 12 KV ops removed)
 import scheduledTeleBookingSQL from './scheduled-tele-booking-sql.tsx'; // ✅ SQL-only: Scheduled tele booking (9 KV ops removed)
 import { integratedServicesManagerEndpointsSQL } from './integrated-services-manager-sql.tsx'; // ✅ SQL-only: Integrated services manager (9 KV ops removed)
+import { razorpayMarketplaceSettlementSQL } from './razorpay-marketplace-settlement-sql.tsx'; // ✅ SQL-only: Razorpay marketplace settlement (Batch 9, 6 KV ops removed)
 import { tierCommissionIntegrationEndpointsSQL } from './tier-commission-integration-sql.tsx'; // ✅ SQL-only: Tier commission (Batch 15, 11 KV ops removed)
 import { staffServiceStyleSetupEndpointsSQL } from './staff-service-style-setup-sql.tsx'; // ✅ SQL-only: Staff service style setup (Batch 15, 11 KV ops removed)
 import memorialEndpointsSQL from './memorial-endpoints-sql.tsx'; // ✅ SQL-only: Memorial endpoints (Batch 15, 11 KV ops removed)
@@ -96,6 +110,12 @@ import searchAnalyticsAPISQL from './search-analytics-api-sql.tsx'; // ✅ SQL-o
 import healthProblemEndpointsSQL from './health-problem-endpoints-sql.tsx'; // ✅ SQL-only: Health problem endpoints (10 KV ops removed)
 import elasticsearchProxySQL from './elasticsearch-proxy-sql.tsx'; // ✅ SQL-only: Elasticsearch proxy (10 KV ops removed)
 import automatedBankVerificationSQL from './automated-bank-verification-sql.tsx'; // ✅ SQL-only: Automated bank verification (10 KV ops removed)
+// ✅ NEW: Batch 17 SQL-only endpoints
+import bookingValidationEndpointsSQL from './booking-validation-endpoints-sql.tsx'; // ✅ SQL-only: Booking validation (Batch 17, 8 KV ops removed)
+import { cancellationPolicyEndpoints } from './cancellation-policy-endpoints-sql.tsx'; // ✅ SQL-only: Cancellation policy (Batch 17, 8 KV ops removed)
+import slotAvailabilityEndpointsSQL from './slot-availability-endpoints-sql.tsx'; // ✅ SQL-only: Slot availability (Batch 17, 8 KV ops removed)
+import { nutritionistFoodIntegrationEndpoints } from './nutritionist-food-integration-sql.tsx'; // ✅ SQL-only: Nutritionist food integration (Batch 17, 7 KV ops removed)
+import { refundPolicyEndpoints } from './refund-policy-engine-enhanced-sql.tsx'; // ✅ SQL-only: Refund policy engine (Batch 17, 7 KV ops removed)
 
 // Create Hono app instance
 const app = new Hono();
@@ -243,12 +263,7 @@ try {
   console.error('❌ Error registering universal staff search:', error);
 }
 
-try {
-  console.log('✅ Registering nutritionist food delivery (SQL-only)...');
-  nutritionistFoodDeliveryEndpointsSQL(app);
-} catch (error) {
-  console.error('❌ Error registering nutritionist food delivery:', error);
-}
+// Removed duplicate registration of nutritionistFoodDeliveryEndpointsSQL (already registered above)
 
 try {
   console.log('✅ Registering previous providers (SQL-only)...');
@@ -498,18 +513,15 @@ try {
   console.error('❌ Error registering refund policy engine:', error);
 }
 
-try {
-  console.log('✅ Registering scheduled tele booking (SQL-only)...');
-  app.route('/make-server-3dd53475', scheduledTeleBookingSQL);
-} catch (error) {
-  console.error('❌ Error registering scheduled tele booking:', error);
-}
+// Removed duplicate registration of scheduledTeleBookingSQL (already registered above)
+
+// Removed duplicate registration of integratedServicesManagerEndpointsSQL (already registered above)
 
 try {
-  console.log('✅ Registering integrated services manager (SQL-only)...');
-  integratedServicesManagerEndpoints(app);
+  console.log('✅ Registering Razorpay marketplace settlement (SQL-only)...');
+  razorpayMarketplaceSettlementSQL(app);
 } catch (error) {
-  console.error('❌ Error registering integrated services manager:', error);
+  console.error('❌ Error registering Razorpay marketplace settlement:', error);
 }
 
 // ✅ NEW: Batch 10 Phase 1 SQL-only endpoints
@@ -525,6 +537,78 @@ try {
   app.route('/make-server-3dd53475', universalStaffProblemSearchSQL);
 } catch (error) {
   console.error('❌ Error registering universal staff problem search:', error);
+}
+
+// ✅ NEW: Batch 10 Phase 2 SQL-only endpoints
+try {
+  console.log('✅ Registering unified service discovery (SQL-only)...');
+  unifiedServiceDiscoveryEndpoints(app);
+} catch (error) {
+  console.error('❌ Error registering unified service discovery:', error);
+}
+
+try {
+  console.log('✅ Registering vendor bank validation (SQL-only)...');
+  app.route('/make-server-3dd53475', vendorBankValidationSQL);
+} catch (error) {
+  console.error('❌ Error registering vendor bank validation:', error);
+}
+
+try {
+  console.log('✅ Registering logistics adapter (SQL-only)...');
+  registerLogisticsEndpoints(app);
+} catch (error) {
+  console.error('❌ Error registering logistics adapter:', error);
+}
+
+// ✅ NEW: Batch 10 Phase 3 SQL-only endpoints
+try {
+  console.log('✅ Registering analytics ingestion (SQL-only)...');
+  registerAnalyticsIngestion(app);
+} catch (error) {
+  console.error('❌ Error registering analytics ingestion:', error);
+}
+
+try {
+  console.log('✅ Registering schedule settings endpoints (SQL-only)...');
+  app.route('/make-server-3dd53475', scheduleSettingsEndpointsSQL);
+} catch (error) {
+  console.error('❌ Error registering schedule settings endpoints:', error);
+}
+
+try {
+  console.log('✅ Registering radar location system (SQL-only)...');
+  radarLocationSystemEndpoints(app);
+} catch (error) {
+  console.error('❌ Error registering radar location system:', error);
+}
+
+try {
+  console.log('✅ Registering vendor catalog API (SQL-only)...');
+  registerVendorCatalogAPI(app);
+} catch (error) {
+  console.error('❌ Error registering vendor catalog API:', error);
+}
+
+try {
+  console.log('✅ Registering logistics routing engine (SQL-only)...');
+  registerLogisticsRoutingEndpointsSQL(app);
+} catch (error) {
+  console.error('❌ Error registering logistics routing engine:', error);
+}
+
+try {
+  console.log('✅ Registering enhanced problem discovery (SQL-only)...');
+  app.route('/make-server-3dd53475', enhancedProblemDiscoverySQL);
+} catch (error) {
+  console.error('❌ Error registering enhanced problem discovery:', error);
+}
+
+try {
+  console.log('✅ Registering settlement tier system enhanced (SQL-only)...');
+  settlementTierSystemEndpoints(app);
+} catch (error) {
+  console.error('❌ Error registering settlement tier system enhanced:', error);
 }
 
 // Health endpoint (simple, no dependencies)
