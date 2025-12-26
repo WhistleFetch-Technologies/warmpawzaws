@@ -445,4 +445,5 @@ app.get('/make-server-3dd53475/customer/:customerId/wallet/transactions', async 
   }
 });
 
+export { app as customerWalletTopupSQL };
 export default app;

@@ -324,8 +324,10 @@ export function regionEndpoints(app: Hono) {
           }, 400);
         }
         
-        // Check if region already exists
+        // ✅ FIX: Declare regionsRepo once at the top
         const regionsRepo = getRegionsRepo();
+        
+        // Check if region already exists
         const existing = await regionsRepo.findByCode(regionId);
         if (existing) {
           return c.json({
@@ -358,8 +360,7 @@ export function regionEndpoints(app: Hono) {
           };
         }
         
-        // Save region
-        const regionsRepo = getRegionsRepo();
+        // Save region (reuse regionsRepo declared above)
         const created = await regionsRepo.create(regionData);
         
         return c.json({
@@ -392,6 +393,7 @@ export function regionEndpoints(app: Hono) {
         const regionId = c.req.param('regionId');
         const updates = await c.req.json();
         
+        // ✅ FIX: Declare regionsRepo once at the top
         const regionsRepo = getRegionsRepo();
         const existing = await regionsRepo.findByCode(regionId);
         if (!existing) {
@@ -420,7 +422,7 @@ export function regionEndpoints(app: Hono) {
           sqlUpdates.is_active = updates.isActive;
         }
         
-        const regionsRepo = getRegionsRepo();
+        // Update region (reuse regionsRepo declared above)
         const updated = await regionsRepo.update(regionId, sqlUpdates);
         
         return c.json({
@@ -609,7 +611,7 @@ export function regionEndpoints(app: Hono) {
           
           const code = regionCode || regionId;
           
-          // Check if exists
+          // ✅ FIX: Declare regionsRepo once per iteration
           const regionsRepo = getRegionsRepo();
           const existing = await regionsRepo.findByCode(code);
           
@@ -622,8 +624,7 @@ export function regionEndpoints(app: Hono) {
             continue;
           }
           
-          // Create region
-          const regionsRepo = getRegionsRepo();
+          // Create region (reuse regionsRepo declared above)
           const newRegion = await regionsRepo.create({
             name: regionName || regionData.name || code,
             code: code,
@@ -684,9 +685,9 @@ export function regionEndpoints(app: Hono) {
             // ✅ FIX: Use templateId as regionId if template.regionId doesn't exist
             const regionId = template.regionId || templateId; // e.g. 'india', 'singapore'
             
-            // Check if exists
+            // ✅ FIX: Declare regionsRepo once per iteration
             const regionsRepo = getRegionsRepo();
-        const existing = await regionsRepo.findByCode(regionId);
+            const existing = await regionsRepo.findByCode(regionId);
             
             if (existing) {
               results.push({ regionId, status: 'skipped', message: 'Already exists' });
@@ -708,9 +709,8 @@ export function regionEndpoints(app: Hono) {
             const currency = template.currency || {};
             const localization = template.localization || {};
             
-            // Create from template
-            const regionsRepo = getRegionsRepo();
-          const newRegion = await regionsRepo.create({
+            // Create from template (reuse regionsRepo declared above)
+            const newRegion = await regionsRepo.create({
               id: regionId, // Use regionId as id
               name: template.regionName || templateId,
               code: regionId,
