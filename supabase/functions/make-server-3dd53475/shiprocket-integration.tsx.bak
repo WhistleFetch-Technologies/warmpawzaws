@@ -4,7 +4,7 @@
  */
 
 import { Hono } from 'npm:hono';
-// ✅ MIGRATED: KV import removed - using SQL repositories only
+import * as kv from './kv_store.tsx';
 
 // Shiprocket credentials from environment
 const SHIPROCKET_EMAIL = Deno.env.get('SHIPROCKET_EMAIL') || '';

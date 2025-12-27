@@ -41,44 +41,35 @@ export function TierManagement({ vendorId }: { vendorId: string }) {
     try {
       setLoading(true);
       
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/tier`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
-      );
+      // ✅ Updated: Use API client instead of direct fetch
+      const result = await settlementTierSystemApi.getVendorTier(vendorId);
+      
+      // Transform API response to UI model
+      // Assuming API returns { currentTier, stats: { totalEarnings, ... }, ... }
+      const currentTierKey = result.currentTier?.id || result.currentTier || 'SILVER';
+      const currentConfig = result.currentTier; // Configuration of current tier
 
-      if (response.ok) {
-        const result = await response.json();
-        
-        // Transform API response to UI model
-        // Assuming API returns { currentTier, totalGMV, config: { ... } }
-        const currentTierKey = result.currentTier || 'SILVER';
-        const currentConfig = result.config; // Configuration of current tier
-
-        // Mock getting full configs if not returned (in real app, fetch /admin/tier-system/config)
-        // Here we can infer next tier requirements
-        let nextTierKey = '';
-        let nextTierGMV = 0;
-        
-        if (currentTierKey === 'SILVER') {
-            nextTierKey = 'GOLD';
-            nextTierGMV = 50000;
-        } else if (currentTierKey === 'GOLD') {
-            nextTierKey = 'PLATINUM';
-            nextTierGMV = 200000;
-        }
-
-        setData({
-            currentTier: currentTierKey,
-            totalGMV: result.totalGMV || 0,
-            commissionRate: currentConfig?.commissionRate || 15,
-            benefits: currentConfig?.benefits || [],
-            nextTier: nextTierKey,
-            gmvRequiredForNext: nextTierGMV
-        });
-
-      } else {
-        toast.error('Failed to load tier data');
+      // Mock getting full configs if not returned (in real app, fetch /admin/tier-system/config)
+      // Here we can infer next tier requirements
+      let nextTierKey = '';
+      let nextTierGMV = 0;
+      
+      if (currentTierKey === 'SILVER' || currentTierKey === 'basic') {
+          nextTierKey = 'GOLD';
+          nextTierGMV = 50000;
+      } else if (currentTierKey === 'GOLD' || currentTierKey === 'premium') {
+          nextTierKey = 'PLATINUM';
+          nextTierGMV = 200000;
       }
+
+      setData({
+          currentTier: currentTierKey,
+          totalGMV: result.stats?.totalEarnings || 0,
+          commissionRate: currentConfig?.commissionRate || 15,
+          benefits: currentConfig?.features || [],
+          nextTier: nextTierKey,
+          gmvRequiredForNext: nextTierGMV
+      });
     } catch (error) {
       console.error(error);
       toast.error('Error loading tier info');

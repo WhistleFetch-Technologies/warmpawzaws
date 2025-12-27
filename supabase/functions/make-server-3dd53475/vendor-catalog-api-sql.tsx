@@ -1,23 +1,37 @@
 /**
+ * ============================================================================
  * VENDOR CATALOG API - SQL-ONLY VERSION
+ * ============================================================================
  * 
- * ✅ MIGRATED TO SQL: All KV operations replaced with SQL queries
+ * ✅ SQL-ONLY: Removed all KV usage, using SQL repositories only
  * 
  * Fetches services from admin-created catalog
- * Reads from service_catalog table (where admin creates services through the UI)
+ * This file contains the corrected endpoint that reads from SQL tables
+ * where admin actually creates services through the UI
  * 
- * Date: 2025-01-27
- * Migration: KV to SQL (3 KV operations → 0)
- * Endpoints: 3
+ * DATA STRUCTURE:
+ * - Category has: vendorType ("boarding", "veterinary", "walking", "cafe", etc.)
+ * - Category has: serviceStyle ("at-home", "at-center")
+ * - Service has: serviceType ("at-home", "at-center")
+ * - Service does NOT have applicableRoles (inherited from category.vendorType)
+ * 
+ * CHANGES:
+ * - Removed `kv` imports
+ * - Replaced `kv.get('catalog:categories')` with SQL queries
+ * - Uses `platform_settings` table with `setting_key = 'catalog:categories'`
+ * - Or uses `services` table with category relationships
+ * 
+ * Date: 2025-01-28
+ * Migration: Batch 10 Phase 3 - KV to SQL (3 KV operations removed)
+ * ============================================================================
  */
 
 import type { Hono } from "npm:hono@4.6.14";
-import { getDbClient } from "../../lib/db.ts";
-import { getServicesRepository } from "../../lib/repositories/services.ts";
+import { getDbClient } from '../../lib/db.ts';
 
-export function registerVendorCatalogAPISQL(app: Hono) {
-  const db = getDbClient();
-  const servicesRepo = getServicesRepository();
+const db = getDbClient();
+
+export function registerVendorCatalogAPI(app: Hono) {
   
   /**
    * Map vendor type (from category) to role ID (from vendor app)
@@ -51,7 +65,7 @@ export function registerVendorCatalogAPISQL(app: Hono) {
   
   /**
    * Get services for a specific role and optional service style
-   * ✅ READS FROM service_catalog table (where admin creates services via UI)
+   * ✅ READS FROM SQL (platform_settings or services table)
    */
   app.get("/make-server-3dd53475/service-catalog/role/:roleId", async (c) => {
     try {
@@ -62,52 +76,78 @@ export function registerVendorCatalogAPISQL(app: Hono) {
       console.log(`   Role ID: ${roleId}`);
       console.log(`   Service Style Filter: ${serviceStyle || 'all'}`);
       
-      // ✅ SQL: Read from service_catalog table
-      const { data: catalogServices, error } = await db
-        .from('service_catalog')
-        .select('*')
-        .eq('status', 'active')
-        .eq('publish_status', 'published');
+      // ✅ SQL: Read from platform_settings (where admin creates services)
+      const { data: catalogData } = await db
+        .from('platform_settings')
+        .select('setting_value')
+        .eq('setting_key', 'catalog:categories')
+        .maybeSingle();
       
-      if (error) throw error;
+      const categories = catalogData?.setting_value || [];
       
-      console.log(`   Total services in catalog: ${catalogServices?.length || 0}`);
+      console.log(`   Total categories in catalog: ${categories.length}`);
       
       // Get vendor types for this role
       const vendorTypes = roleToVendorTypeMap[roleId] || [];
       console.log(`   Looking for vendor types: [${vendorTypes.join(', ')}]`);
       
-      // Filter services by role and service style
+      // Flatten and filter services
       const allServices: any[] = [];
       
-      (catalogServices || []).forEach((service: any) => {
-        // Check if service's applicable_roles includes this role
-        const applicableRoles = service.applicable_roles || [];
-        const matchesRole = applicableRoles.includes(roleId) || 
-                           (service.category_name && vendorTypes.includes(service.category_name.toLowerCase()));
+      categories.forEach((category: any) => {
+        const categoryVendorType = category.vendorType;
+        const categoryServiceStyle = category.serviceStyle;
         
-        if (!matchesRole) {
-          return; // Skip this service
+        console.log(`   Category "${category.name}": vendorType="${categoryVendorType}", serviceStyle="${categoryServiceStyle}"`);
+        
+        // Check if this category matches the requested role
+        const categoryMatchesRole = vendorTypes.includes(categoryVendorType);
+        
+        if (!categoryMatchesRole) {
+          console.log(`      ❌ Category vendor type "${categoryVendorType}" doesn't match role "${roleId}"`);
+          return; // Skip this category
         }
         
-        // Filter by serviceStyle if provided
-        const serviceStyleNormalized = serviceStyle?.replace('_', '-');
-        const serviceTypeNormalized = service.service_style?.replace('_', '-');
+        console.log(`      ✅ Category matches role!`);
         
-        if (serviceStyle && serviceTypeNormalized !== serviceStyleNormalized) {
-          return; // Skip this service
+        // Process subcategories and services
+        if (category.subCategories && Array.isArray(category.subCategories)) {
+          category.subCategories.forEach((subCategory: any) => {
+            if (subCategory.services && Array.isArray(subCategory.services)) {
+              console.log(`         SubCategory "${subCategory.name}" has ${subCategory.services.length} services`);
+              
+              subCategory.services.forEach((service: any) => {
+                // Filter by serviceStyle if provided
+                // Map "at-home" to "at_home" for consistency
+                const normalizedServiceStyle = serviceStyle?.replace('_', '-');
+                const serviceTypeNormalized = service.serviceType?.replace('_', '-');
+                
+                if (serviceStyle && serviceTypeNormalized !== normalizedServiceStyle) {
+                  console.log(`            ⚠️ Service "${service.name}" type="${service.serviceType}" doesn't match filter="${serviceStyle}"`);
+                  return; // Skip this service
+                }
+                
+                console.log(`            ✅ Adding service "${service.name}"`);
+                
+                // Add service with inherited category info
+                allServices.push({
+                  ...service,
+                  // Inherited from category
+                  vendorType: categoryVendorType,
+                  categoryServiceStyle: categoryServiceStyle,
+                  // Category/subcategory info
+                  categoryId: category.id,
+                  categoryName: category.name,
+                  subCategoryId: subCategory.id,
+                  subCategoryName: subCategory.name,
+                  // Normalize field names
+                  serviceStyle: service.serviceType, // Map serviceType to serviceStyle
+                  applicableRoles: [roleId] // Add for compatibility
+                });
+              });
+            }
+          });
         }
-        
-        console.log(`            ✅ Adding service "${service.service_name}"`);
-        
-        // Add service
-        allServices.push({
-          ...service,
-          // Normalize field names
-          serviceStyle: service.service_style,
-          applicableRoles: applicableRoles,
-          vendorType: service.category_name?.toLowerCase()
-        });
       });
       
       console.log(`   Total services found: ${allServices.length}`);
@@ -115,6 +155,13 @@ export function registerVendorCatalogAPISQL(app: Hono) {
       // If no services found
       if (allServices.length === 0) {
         console.log(`   ❌ NO SERVICES FOUND!`);
+        
+        // Debug info
+        const availableVendorTypes = categories
+          .map((c: any) => c.vendorType)
+          .filter(Boolean);
+        
+        console.log(`   Available vendor types in catalog: [${[...new Set(availableVendorTypes)].join(', ')}]`);
         
         return c.json({ 
           success: true,
@@ -130,27 +177,27 @@ export function registerVendorCatalogAPISQL(app: Hono) {
       const formattedServices = allServices.map((service: any) => ({
         id: service.id,
         catalogId: service.id,
-        serviceName: service.service_name,
-        name: service.service_name,
-        code: service.service_code,
+        serviceName: service.name,
+        name: service.name,
+        code: service.code,
         description: service.description || '',
-        basePrice: parseFloat(service.base_price || '0'),
-        duration: service.duration_minutes || '',
-        serviceStyle: service.service_style,
-        serviceType: service.service_style,
-        applicableRoles: service.applicable_roles || [],
-        vendorType: service.category_name?.toLowerCase(),
-        categoryId: service.category_id,
-        categoryName: service.category_name,
-        subCategoryId: service.sub_category_id,
-        subCategoryName: service.sub_category_name,
+        basePrice: service.basePrice || 0,
+        duration: service.duration || '',
+        serviceStyle: service.serviceStyle, // Already normalized
+        serviceType: service.serviceType, // Keep original too
+        applicableRoles: service.applicableRoles,
+        vendorType: service.vendorType,
+        categoryId: service.categoryId,
+        categoryName: service.categoryName,
+        subCategoryId: service.subCategoryId,
+        subCategoryName: service.subCategoryName,
         status: service.status,
-        gstRate: (service.metadata as any)?.gst_rate,
-        gstInclusion: (service.metadata as any)?.gst_inclusion,
-        showFinalPrice: (service.metadata as any)?.show_final_price,
-        isPackage: (service.metadata as any)?.is_package || false,
-        packageDetails: (service.metadata as any)?.package_details,
-        subscriptionConfig: (service.metadata as any)?.subscription_config
+        gstRate: service.gstRate,
+        gstInclusion: service.gstInclusion,
+        showFinalPrice: service.showFinalPrice,
+        isPackage: service.isPackage || false,
+        packageDetails: service.packageDetails,
+        subscriptionConfig: service.subscriptionConfig
       }));
       
       console.log(`   ✅ Returning ${formattedServices.length} services`);
@@ -180,51 +227,63 @@ export function registerVendorCatalogAPISQL(app: Hono) {
    */
   app.get("/make-server-3dd53475/service-catalog/debug", async (c) => {
     try {
-      // ✅ SQL: Get all services from service_catalog
-      const { data: services, error } = await db
-        .from('service_catalog')
-        .select('*');
+      // ✅ SQL: Get catalog from platform_settings
+      const { data: catalogData } = await db
+        .from('platform_settings')
+        .select('setting_value')
+        .eq('setting_key', 'catalog:categories')
+        .maybeSingle();
       
-      if (error) throw error;
+      const categories = catalogData?.setting_value || [];
       
       // Flatten services
-      const allServices: any[] = services || [];
+      const allServices: any[] = [];
       const vendorTypes = new Set<string>();
       
-      allServices.forEach((service: any) => {
-        if (service.category_name) {
-          vendorTypes.add(service.category_name.toLowerCase());
+      categories.forEach((category: any) => {
+        if (category.vendorType) vendorTypes.add(category.vendorType);
+        
+        if (category.subCategories && Array.isArray(category.subCategories)) {
+          category.subCategories.forEach((subCategory: any) => {
+            if (subCategory.services && Array.isArray(subCategory.services)) {
+              allServices.push(...subCategory.services.map((s: any) => ({
+                ...s,
+                vendorType: category.vendorType,
+                categoryName: category.name
+              })));
+            }
+          });
         }
       });
       
       const stats = {
         totalServices: allServices.length,
-        totalCategories: new Set(allServices.map(s => s.category_name)).size,
+        totalCategories: categories.length,
         byServiceType: {
-          'at-home': allServices.filter((s: any) => s.service_style === 'at-home' || s.service_style === 'at_home').length,
-          'at-center': allServices.filter((s: any) => s.service_style === 'at-center' || s.service_style === 'at_center').length,
-          'tele': allServices.filter((s: any) => s.service_style === 'tele').length
+          'at-home': allServices.filter((s: any) => s.serviceType === 'at-home').length,
+          'at-center': allServices.filter((s: any) => s.serviceType === 'at-center').length,
+          'tele': allServices.filter((s: any) => s.serviceType === 'tele').length
         },
         byVendorType: {} as any,
         availableVendorTypes: Array.from(vendorTypes),
         sampleServices: allServices.slice(0, 5).map((s: any) => ({
-          name: s.service_name,
-          serviceType: s.service_style,
-          vendorType: s.category_name?.toLowerCase(),
-          category: s.category_name,
-          price: parseFloat(s.base_price || '0')
+          name: s.name,
+          serviceType: s.serviceType,
+          vendorType: s.vendorType,
+          category: s.categoryName,
+          price: s.basePrice
         }))
       };
       
       // Count by vendor type
       Array.from(vendorTypes).forEach((vt: string) => {
-        stats.byVendorType[vt] = allServices.filter((s: any) => s.category_name?.toLowerCase() === vt).length;
+        stats.byVendorType[vt] = allServices.filter((s: any) => s.vendorType === vt).length;
       });
       
       return c.json({
         success: true,
         catalogStatus: allServices.length > 0 ? 'has_services' : 'empty',
-        dataSource: 'service_catalog',
+        dataSource: 'platform_settings:catalog:categories',
         stats
       });
     } catch (error) {
@@ -238,21 +297,27 @@ export function registerVendorCatalogAPISQL(app: Hono) {
    */
   app.get("/make-server-3dd53475/service-catalog/raw-dump", async (c) => {
     try {
-      // ✅ SQL: Get all services from service_catalog
-      const { data: services, error } = await db
-        .from('service_catalog')
-        .select('*')
-        .limit(100); // Limit for performance
+      // ✅ SQL: Get catalog from platform_settings
+      const { data: catalogData } = await db
+        .from('platform_settings')
+        .select('setting_value')
+        .eq('setting_key', 'catalog:categories')
+        .maybeSingle();
       
-      if (error) throw error;
+      const categories = catalogData?.setting_value || [];
       
       console.log('\n🔍 ===== RAW CATALOG DUMP =====');
-      console.log(`Total services: ${services?.length || 0}`);
+      console.log(`Total categories: ${categories.length}`);
+      
+      // Show first category structure
+      if (categories.length > 0) {
+        console.log('First category structure:', JSON.stringify(categories[0], null, 2));
+      }
       
       return c.json({
         success: true,
-        rawServices: services || [],
-        totalServices: services?.length || 0
+        rawCategories: categories,
+        totalCategories: categories.length
       });
     } catch (error) {
       console.error('Error dumping catalog:', error);
@@ -260,6 +325,5 @@ export function registerVendorCatalogAPISQL(app: Hono) {
     }
   });
 
-  console.log('✅ Vendor catalog API registered (SQL-only)');
+  console.log('✅ Vendor Catalog API endpoints (SQL-only) registered');
 }
-

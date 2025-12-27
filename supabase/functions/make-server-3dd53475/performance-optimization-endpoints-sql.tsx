@@ -1,29 +1,16 @@
 /**
  * ============================================================================
- * PERFORMANCE OPTIMIZATION ENDPOINTS - SQL-ONLY VERSION
+ * PERFORMANCE OPTIMIZATION ENDPOINTS - SQL VERSION
  * ============================================================================
  * 
- * REFACTORED: Removed all KV usage, using SQL repositories only
+ * Caching layer, query optimization, and performance monitoring
+ * Replaces: cache_stats, cache_*, performance_metrics, vendor_*, service_* KV keys
  * 
- * Features:
- * - Caching layer using SQL cache_tokens table
- * - Query optimization helpers
- * - Response compression
- * - Performance monitoring using SQL
- * - Health checks using SQL
- * 
- * CHANGES:
- * - Removed `kv` import
- * - Replaced all `kv.get()`, `kv.set()`, `kv.del()`, `kv.getByPrefix()` with SQL queries
- * - Uses `cache_tokens` table for cache data
- * - Uses `cache_stats` table for cache statistics
- * - Uses `performance_metrics` table (or JSONB in configurations) for metrics
- * - Uses `health_checks` table for health check data
- * - Uses SQL repositories for vendors and services
+ * RULES:
+ * ❌ NO KV imports allowed
+ * ✅ All operations use SQL only
  * 
  * Date: 2025-01-27
- * Migration: Agent-3 - KV to SQL (Batch 5)
- * KV Operations Removed: 25
  * ============================================================================
  */
 
@@ -32,15 +19,7 @@ import { getDbClient } from '../../lib/db.ts';
 import { getVendorsRepository } from '../../lib/repositories/vendors.ts';
 import { getServicesRepository } from '../../lib/repositories/services.ts';
 
-const app = new Hono();
-
-// ==========================================
-// CACHING LAYER
-// ==========================================
-
-/**
- * Cache configuration for different data types
- */
+// Cache configuration for different data types
 const CACHE_TTL = {
   vendorCatalog: 300, // 5 minutes
   serviceDiscovery: 600, // 10 minutes
@@ -50,64 +29,72 @@ const CACHE_TTL = {
   analytics: 180 // 3 minutes
 };
 
-/**
- * GET /cache/stats - Get cache statistics
- */
-app.get('/cache/stats', async (c) => {
+export function performanceOptimizationEndpointsSQL(app: Hono) {
+  const db = getDbClient();
+  const vendorsRepo = getVendorsRepository();
+  const servicesRepo = getServicesRepository();
+
+  /**
+   * GET /cache/stats - Get cache statistics
+   */
+  app.get('/make-server-3dd53475/cache/stats', async (c) => {
   try {
-    // ✅ SQL: Get cache stats from cache_stats table
     const db = getDbClient();
     const today = new Date().toISOString().split('T')[0];
     
-    const { data: stats } = await db
+    // ✅ SQL: Get cache stats from database
+    const { data: stats, error } = await db
       .from('cache_stats')
       .select('*')
       .eq('stat_date', today)
-      .maybeSingle();
+      .single();
+    
+    if (error && error.code !== 'PGRST116') { // PGRST116 = not found
+      console.error('Error fetching cache stats:', error);
+    }
     
     const cacheStats = stats || {
       hits: 0,
       misses: 0,
       evictions: 0,
-      hitRate: 0,
-      totalKeys: 0,
-      lastReset: new Date().toISOString()
+      stat_date: today
     };
     
-    // Calculate hit rate
-    const total = cacheStats.hits + cacheStats.misses;
-    cacheStats.hitRate = total > 0 ? cacheStats.hits / total : 0;
+    const hitRate = (cacheStats.hits + cacheStats.misses) > 0
+      ? cacheStats.hits / (cacheStats.hits + cacheStats.misses)
+      : 0;
     
-    // Get total cache keys count
-    const { count } = await db
-      .from('cache_tokens')
-      .select('*', { count: 'exact', head: true })
-      .gt('expires_at', new Date().toISOString());
-    
-    cacheStats.totalKeys = count || 0;
-
-    return c.json({ success: true, stats: cacheStats });
+    return c.json({ 
+      success: true, 
+      stats: {
+        hits: cacheStats.hits,
+        misses: cacheStats.misses,
+        hitRate: hitRate,
+        totalKeys: 0, // Can be calculated from cache_tokens if needed
+        lastReset: cacheStats.created_at || new Date().toISOString()
+      }
+    });
   } catch (error) {
     return c.json({ success: false, error: 'Failed to fetch cache stats' }, 500);
   }
 });
 
-/**
- * POST /cache/clear - Clear specific cache keys or all cache
- */
-app.post('/cache/clear', async (c) => {
+  /**
+   * POST /cache/clear - Clear specific cache keys or all cache
+   */
+  app.post('/make-server-3dd53475/cache/clear', async (c) => {
   try {
     const { pattern } = await c.req.json();
     const db = getDbClient();
 
     if (pattern) {
       // ✅ SQL: Clear cache keys matching pattern
-      const { data: keys } = await db
+      const { data: cacheEntries } = await db
         .from('cache_tokens')
         .select('cache_key')
         .like('cache_key', `%${pattern}%`);
       
-      if (keys && keys.length > 0) {
+      if (cacheEntries && cacheEntries.length > 0) {
         await db
           .from('cache_tokens')
           .delete()
@@ -116,10 +103,10 @@ app.post('/cache/clear', async (c) => {
       
       return c.json({ 
         success: true, 
-        message: `Cleared ${keys?.length || 0} cache keys matching pattern: ${pattern}` 
+        message: `Cleared ${cacheEntries?.length || 0} cache keys matching pattern: ${pattern}` 
       });
     } else {
-      // ✅ SQL: Reset cache stats
+      // Reset cache stats
       const today = new Date().toISOString().split('T')[0];
       await db
         .from('cache_stats')
@@ -127,7 +114,8 @@ app.post('/cache/clear', async (c) => {
           stat_date: today,
           hits: 0,
           misses: 0,
-          evictions: 0
+          evictions: 0,
+          created_at: new Date().toISOString()
         }, {
           onConflict: 'stat_date'
         });
@@ -139,10 +127,10 @@ app.post('/cache/clear', async (c) => {
   }
 });
 
-/**
- * GET /cache/vendor-catalog/:vendorId - Get cached vendor catalog
- */
-app.get('/cache/vendor-catalog/:vendorId', async (c) => {
+  /**
+   * GET /cache/vendor-catalog/:vendorId - Get cached vendor catalog
+   */
+  app.get('/make-server-3dd53475/cache/vendor-catalog/:vendorId', async (c) => {
   try {
     const vendorId = c.req.param('vendorId');
     const cacheKey = `cache_vendor_catalog_${vendorId}`;
@@ -154,8 +142,8 @@ app.get('/cache/vendor-catalog/:vendorId', async (c) => {
       .select('*')
       .eq('cache_key', cacheKey)
       .gt('expires_at', new Date().toISOString())
-      .maybeSingle();
-
+      .single();
+    
     if (cached) {
       await incrementCacheHit(db);
       const cacheData = JSON.parse(cached.cache_value);
@@ -170,7 +158,7 @@ app.get('/cache/vendor-catalog/:vendorId', async (c) => {
     // Cache miss - fetch from source
     await incrementCacheMiss(db);
     
-    // ✅ SQL: Get vendor services from services table
+    // ✅ SQL: Get vendor services from database
     const servicesRepo = getServicesRepository();
     const vendorServices = await servicesRepo.findByVendor(vendorId);
     
@@ -186,7 +174,8 @@ app.get('/cache/vendor-catalog/:vendorId', async (c) => {
       .upsert({
         cache_key: cacheKey,
         cache_value: JSON.stringify(cacheData),
-        expires_at: expiresAt.toISOString()
+        expires_at: expiresAt.toISOString(),
+        created_at: new Date().toISOString()
       }, {
         onConflict: 'cache_key'
       });
@@ -207,18 +196,18 @@ async function incrementCacheHit(db: any) {
     .from('cache_stats')
     .select('*')
     .eq('stat_date', today)
-    .maybeSingle();
+    .single();
   
-  const hits = (stats?.hits || 0) + 1;
-  const misses = stats?.misses || 0;
+  const currentStats = stats || { hits: 0, misses: 0, evictions: 0 };
   
   await db
     .from('cache_stats')
     .upsert({
       stat_date: today,
-      hits: hits,
-      misses: misses,
-      evictions: stats?.evictions || 0
+      hits: (currentStats.hits || 0) + 1,
+      misses: currentStats.misses || 0,
+      evictions: currentStats.evictions || 0,
+      created_at: stats?.created_at || new Date().toISOString()
     }, {
       onConflict: 'stat_date'
     });
@@ -230,18 +219,18 @@ async function incrementCacheMiss(db: any) {
     .from('cache_stats')
     .select('*')
     .eq('stat_date', today)
-    .maybeSingle();
+    .single();
   
-  const hits = stats?.hits || 0;
-  const misses = (stats?.misses || 0) + 1;
+  const currentStats = stats || { hits: 0, misses: 0, evictions: 0 };
   
   await db
     .from('cache_stats')
     .upsert({
       stat_date: today,
-      hits: hits,
-      misses: misses,
-      evictions: stats?.evictions || 0
+      hits: currentStats.hits || 0,
+      misses: (currentStats.misses || 0) + 1,
+      evictions: currentStats.evictions || 0,
+      created_at: stats?.created_at || new Date().toISOString()
     }, {
       onConflict: 'stat_date'
     });
@@ -251,10 +240,10 @@ async function incrementCacheMiss(db: any) {
 // QUERY OPTIMIZATION
 // ==========================================
 
-/**
- * GET /optimize/popular-services - Get popular services with caching
- */
-app.get('/optimize/popular-services', async (c) => {
+  /**
+   * GET /optimize/popular-services - Get popular services with caching
+   */
+  app.get('/make-server-3dd53475/optimize/popular-services', async (c) => {
   try {
     const cacheKey = 'cache_popular_services';
     const db = getDbClient();
@@ -265,7 +254,7 @@ app.get('/optimize/popular-services', async (c) => {
       .select('*')
       .eq('cache_key', cacheKey)
       .gt('expires_at', new Date().toISOString())
-      .maybeSingle();
+      .single();
 
     if (cached) {
       const cacheData = JSON.parse(cached.cache_value);
@@ -278,14 +267,9 @@ app.get('/optimize/popular-services', async (c) => {
       }
     }
 
-    // ✅ SQL: Fetch popular services from services table
+    // ✅ SQL: Fetch popular services from database
     const servicesRepo = getServicesRepository();
-    const db = getDbClient();
-    const { data: allServices } = await db
-      .from('services')
-      .select('*')
-      .eq('is_active', true)
-      .limit(1000);
+    const allServices = await servicesRepo.findAll();
     
     // Simple popularity calculation (in real implementation, use booking count)
     const popularServices = allServices
@@ -303,7 +287,8 @@ app.get('/optimize/popular-services', async (c) => {
       .upsert({
         cache_key: cacheKey,
         cache_value: JSON.stringify(cacheData),
-        expires_at: expiresAt.toISOString()
+        expires_at: expiresAt.toISOString(),
+        created_at: new Date().toISOString()
       }, {
         onConflict: 'cache_key'
       });
@@ -318,10 +303,10 @@ app.get('/optimize/popular-services', async (c) => {
   }
 });
 
-/**
- * GET /optimize/vendor-search - Optimized vendor search with pagination
- */
-app.get('/optimize/vendor-search', async (c) => {
+  /**
+   * GET /optimize/vendor-search - Optimized vendor search with pagination
+   */
+  app.get('/make-server-3dd53475/optimize/vendor-search', async (c) => {
   try {
     const { 
       query, 
@@ -344,7 +329,7 @@ app.get('/optimize/vendor-search', async (c) => {
       .select('*')
       .eq('cache_key', cacheKey)
       .gt('expires_at', new Date().toISOString())
-      .maybeSingle();
+      .single();
 
     if (cached) {
       const cacheData = JSON.parse(cached.cache_value);
@@ -358,10 +343,10 @@ app.get('/optimize/vendor-search', async (c) => {
       }
     }
 
-    // ✅ SQL: Fetch vendors from vendors table
+    // ✅ SQL: Fetch vendors from database
     const vendorsRepo = getVendorsRepository();
-    let vendors = await vendorsRepo.findAllActive();
-
+    let vendors = await vendorsRepo.findAll();
+    
     // Filter by query
     if (query) {
       vendors = vendors.filter((v: any) => 
@@ -371,7 +356,7 @@ app.get('/optimize/vendor-search', async (c) => {
 
     // Filter by category
     if (category) {
-      vendors = vendors.filter((v: any) => v.category === category);
+      vendors = vendors.filter((v: any) => v.role_id === category);
     }
 
     // Pagination
@@ -389,14 +374,14 @@ app.get('/optimize/vendor-search', async (c) => {
       timestamp: new Date().toISOString()
     };
 
-    // ✅ SQL: Store in cache
     const expiresAt = new Date(Date.now() + CACHE_TTL.serviceDiscovery * 1000);
     await db
       .from('cache_tokens')
       .upsert({
         cache_key: cacheKey,
         cache_value: JSON.stringify(result),
-        expires_at: expiresAt.toISOString()
+        expires_at: expiresAt.toISOString(),
+        created_at: new Date().toISOString()
       }, {
         onConflict: 'cache_key'
       });
@@ -416,51 +401,70 @@ app.get('/optimize/vendor-search', async (c) => {
 // PERFORMANCE MONITORING
 // ==========================================
 
-/**
- * GET /performance/metrics - Get performance metrics
- */
-app.get('/performance/metrics', async (c) => {
+  /**
+   * GET /performance/metrics - Get performance metrics
+   */
+  app.get('/make-server-3dd53475/performance/metrics', async (c) => {
   try {
-    // ✅ SQL: Get performance metrics from configurations table
     const db = getDbClient();
-    const { data: config } = await db
-      .from('configurations')
-      .select('value')
-      .eq('key', 'performance_metrics')
-      .maybeSingle();
     
-    const metrics = config?.value || {
-      apiResponseTimes: [],
-      databaseQueryTimes: [],
-      errorRates: [],
-      requestCounts: [],
-      lastUpdated: new Date().toISOString()
-    };
-
-    // Calculate averages
-    const avgApiResponse = calculateAverage(metrics.apiResponseTimes);
-    const avgDbQuery = calculateAverage(metrics.databaseQueryTimes);
-    const avgErrorRate = calculateAverage(metrics.errorRates);
+    // ✅ SQL: Get performance metrics from database
+    const { data: metrics } = await db
+      .from('performance_metrics')
+      .select('*')
+      .order('recorded_at', { ascending: false })
+      .limit(1000);
+    
+    if (!metrics || metrics.length === 0) {
+      return c.json({
+        success: true,
+        metrics: {
+          apiResponseTime: { average: 0, p50: 0, p95: 0, p99: 0 },
+          databaseQueryTime: { average: 0, p50: 0, p95: 0 },
+          errorRate: 0,
+          requestsPerMinute: 0,
+          lastUpdated: new Date().toISOString()
+        }
+      });
+    }
+    
+    // Group metrics by type
+    const apiResponseTimes = metrics
+      .filter(m => m.metric_type === 'apiResponse')
+      .map(m => ({ value: Number(m.metric_value), timestamp: m.recorded_at }));
+    const dbQueryTimes = metrics
+      .filter(m => m.metric_type === 'dbQuery')
+      .map(m => ({ value: Number(m.metric_value), timestamp: m.recorded_at }));
+    const errorRates = metrics
+      .filter(m => m.metric_type === 'error')
+      .map(m => ({ value: Number(m.metric_value), timestamp: m.recorded_at }));
+    const requestCounts = metrics
+      .filter(m => m.metric_type === 'request')
+      .map(m => ({ value: Number(m.metric_value), timestamp: m.recorded_at }));
+    
+    const avgApiResponse = calculateAverage(apiResponseTimes);
+    const avgDbQuery = calculateAverage(dbQueryTimes);
+    const avgErrorRate = calculateAverage(errorRates);
 
     return c.json({
       success: true,
       metrics: {
         apiResponseTime: {
           average: avgApiResponse,
-          p50: calculatePercentile(metrics.apiResponseTimes, 50),
-          p95: calculatePercentile(metrics.apiResponseTimes, 95),
-          p99: calculatePercentile(metrics.apiResponseTimes, 99)
+          p50: calculatePercentile(apiResponseTimes, 50),
+          p95: calculatePercentile(apiResponseTimes, 95),
+          p99: calculatePercentile(apiResponseTimes, 99)
         },
         databaseQueryTime: {
           average: avgDbQuery,
-          p50: calculatePercentile(metrics.databaseQueryTimes, 50),
-          p95: calculatePercentile(metrics.databaseQueryTimes, 95)
+          p50: calculatePercentile(dbQueryTimes, 50),
+          p95: calculatePercentile(dbQueryTimes, 95)
         },
         errorRate: avgErrorRate,
-        requestsPerMinute: metrics.requestCounts.length > 0 
-          ? metrics.requestCounts[metrics.requestCounts.length - 1] 
+        requestsPerMinute: requestCounts.length > 0 
+          ? requestCounts[requestCounts.length - 1].value 
           : 0,
-        lastUpdated: metrics.lastUpdated
+        lastUpdated: metrics[0]?.recorded_at || new Date().toISOString()
       }
     });
   } catch (error) {
@@ -468,67 +472,38 @@ app.get('/performance/metrics', async (c) => {
   }
 });
 
-/**
- * POST /performance/track - Track performance metric
- */
-app.post('/performance/track', async (c) => {
+  /**
+   * POST /performance/track - Track performance metric
+   */
+  app.post('/make-server-3dd53475/performance/track', async (c) => {
   try {
     const { type, value, timestamp } = await c.req.json();
     const db = getDbClient();
 
-    // ✅ SQL: Get existing metrics
-    const { data: config } = await db
-      .from('configurations')
-      .select('value')
-      .eq('key', 'performance_metrics')
-      .maybeSingle();
-    
-    const metrics = config?.value || {
-      apiResponseTimes: [],
-      databaseQueryTimes: [],
-      errorRates: [],
-      requestCounts: []
-    };
-
-    // Add metric (keep last 1000 entries)
-    switch (type) {
-      case 'apiResponse':
-        metrics.apiResponseTimes.push({ value, timestamp });
-        if (metrics.apiResponseTimes.length > 1000) {
-          metrics.apiResponseTimes = metrics.apiResponseTimes.slice(-1000);
-        }
-        break;
-      case 'dbQuery':
-        metrics.databaseQueryTimes.push({ value, timestamp });
-        if (metrics.databaseQueryTimes.length > 1000) {
-          metrics.databaseQueryTimes = metrics.databaseQueryTimes.slice(-1000);
-        }
-        break;
-      case 'error':
-        metrics.errorRates.push({ value, timestamp });
-        if (metrics.errorRates.length > 1000) {
-          metrics.errorRates = metrics.errorRates.slice(-1000);
-        }
-        break;
-      case 'request':
-        metrics.requestCounts.push({ value, timestamp });
-        if (metrics.requestCounts.length > 1000) {
-          metrics.requestCounts = metrics.requestCounts.slice(-1000);
-        }
-        break;
-    }
-
-    metrics.lastUpdated = new Date().toISOString();
-    
-    // ✅ SQL: Update metrics
+    // ✅ SQL: Store performance metric
     await db
-      .from('configurations')
-      .upsert({
-        key: 'performance_metrics',
-        value: metrics
-      }, {
-        onConflict: 'key'
+      .from('performance_metrics')
+      .insert({
+        metric_name: `${type}_${Date.now()}`,
+        metric_value: value,
+        metric_type: type,
+        recorded_at: timestamp || new Date().toISOString()
       });
+
+    // Keep only last 1000 entries per type (cleanup old entries)
+    const { data: allMetrics } = await db
+      .from('performance_metrics')
+      .select('id')
+      .eq('metric_type', type)
+      .order('recorded_at', { ascending: false });
+    
+    if (allMetrics && allMetrics.length > 1000) {
+      const idsToDelete = allMetrics.slice(1000).map(m => m.id);
+      await db
+        .from('performance_metrics')
+        .delete()
+        .in('id', idsToDelete);
+    }
 
     return c.json({ success: true, message: 'Metric tracked' });
   } catch (error) {
@@ -553,10 +528,10 @@ function calculatePercentile(data: any[], percentile: number): number {
 // HEALTH CHECKS
 // ==========================================
 
-/**
- * GET /health - Basic health check
- */
-app.get('/health', async (c) => {
+  /**
+   * GET /health - Basic health check
+   */
+  app.get('/make-server-3dd53475/health', async (c) => {
   return c.json({
     success: true,
     status: 'healthy',
@@ -566,29 +541,21 @@ app.get('/health', async (c) => {
   });
 });
 
-/**
- * GET /health/detailed - Detailed health check
- */
-app.get('/health/detailed', async (c) => {
+  /**
+   * GET /health/detailed - Detailed health check
+   */
+  app.get('/make-server-3dd53475/health/detailed', async (c) => {
   try {
+    const db = getDbClient();
+    
     const checks = {
-      database: await checkDatabaseHealth(),
-      cache: await checkCacheHealth(),
+      database: await checkDatabaseHealth(db),
+      cache: await checkCacheHealth(db),
       memory: checkMemoryHealth(),
       api: true
     };
 
     const allHealthy = Object.values(checks).every(check => check === true);
-
-    // ✅ SQL: Log health check
-    const db = getDbClient();
-    await db
-      .from('health_checks')
-      .insert({
-        check_type: 'detailed',
-        status: allHealthy ? 'healthy' : 'degraded',
-        details: checks
-      });
 
     return c.json({
       success: true,
@@ -606,9 +573,9 @@ app.get('/health/detailed', async (c) => {
   }
 });
 
-async function checkDatabaseHealth(): Promise<boolean> {
+async function checkDatabaseHealth(db: any): Promise<boolean> {
   try {
-    const db = getDbClient();
+    // Simple query to check database connectivity
     await db.from('health_checks').select('id').limit(1);
     return true;
   } catch {
@@ -616,10 +583,12 @@ async function checkDatabaseHealth(): Promise<boolean> {
   }
 }
 
-async function checkCacheHealth(): Promise<boolean> {
+async function checkCacheHealth(db: any): Promise<boolean> {
   try {
-    const db = getDbClient();
-    await db.from('cache_stats').select('id').limit(1);
+    const { data } = await db
+      .from('cache_stats')
+      .select('id')
+      .limit(1);
     return true;
   } catch {
     return false;
@@ -636,10 +605,10 @@ function checkMemoryHealth(): boolean {
 // BATCH OPERATIONS
 // ==========================================
 
-/**
- * POST /batch/vendors - Batch fetch vendors
- */
-app.post('/batch/vendors', async (c) => {
+  /**
+   * POST /batch/vendors - Batch fetch vendors
+   */
+  app.post('/make-server-3dd53475/batch/vendors', async (c) => {
   try {
     const { vendorIds } = await c.req.json();
 
@@ -647,21 +616,20 @@ app.post('/batch/vendors', async (c) => {
       return c.json({ success: false, error: 'Invalid vendorIds array' }, 400);
     }
 
-    // ✅ SQL: Batch fetch vendors with caching
-    const vendorsRepo = getVendorsRepository();
     const db = getDbClient();
+    const vendorsRepo = getVendorsRepository();
     
+    // ✅ SQL: Batch fetch vendors
     const vendors = await Promise.all(
       vendorIds.map(async (id) => {
+        // Check cache first
         const cacheKey = `cache_vendor_${id}`;
-        
-        // Check cache
         const { data: cached } = await db
           .from('cache_tokens')
           .select('*')
           .eq('cache_key', cacheKey)
           .gt('expires_at', new Date().toISOString())
-          .maybeSingle();
+          .single();
         
         if (cached) {
           return JSON.parse(cached.cache_value);
@@ -670,14 +638,15 @@ app.post('/batch/vendors', async (c) => {
         // Fetch from database
         const vendor = await vendorsRepo.findById(id);
         if (vendor) {
-          // Store in cache
-          const expiresAt = new Date(Date.now() + CACHE_TTL.userSession * 1000);
+          // Cache it
+          const expiresAt = new Date(Date.now() + CACHE_TTL.vendorCatalog * 1000);
           await db
             .from('cache_tokens')
             .upsert({
               cache_key: cacheKey,
               cache_value: JSON.stringify(vendor),
-              expires_at: expiresAt.toISOString()
+              expires_at: expiresAt.toISOString(),
+              created_at: new Date().toISOString()
             }, {
               onConflict: 'cache_key'
             });
@@ -696,10 +665,10 @@ app.post('/batch/vendors', async (c) => {
   }
 });
 
-/**
- * POST /batch/services - Batch fetch services
- */
-app.post('/batch/services', async (c) => {
+  /**
+   * POST /batch/services - Batch fetch services
+   */
+  app.post('/make-server-3dd53475/batch/services', async (c) => {
   try {
     const { serviceIds } = await c.req.json();
 
@@ -723,5 +692,5 @@ app.post('/batch/services', async (c) => {
   }
 });
 
-export default app;
-
+  console.log('✅ Performance optimization endpoints registered (SQL-only)');
+}

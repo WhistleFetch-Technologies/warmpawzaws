@@ -149,3 +149,112 @@ export const StaffScheduleApi = {
   createHoliday: (staffId: string, holidayData: any) => 
     ApiService.post(`/staff/${staffId}/holidays`, holidayData),
 };
+
+// ✅ NEW: Vendor Booking Actions API (Batch 9 SQL-migrated endpoints)
+export const VendorBookingActionsApi = {
+  completeBooking: (vendorId: string, bookingId: string) => 
+    ApiService.post(`/vendor/${vendorId}/bookings/${bookingId}/complete`, {}),
+  startSession: (vendorId: string, bookingId: string) => 
+    ApiService.post(`/vendor/${vendorId}/bookings/${bookingId}/start-session`, {}),
+  endSession: (vendorId: string, bookingId: string) => 
+    ApiService.post(`/vendor/${vendorId}/bookings/${bookingId}/end-session`, {}),
+};
+
+// ✅ NEW: Appointment Detail API (Batch 9 SQL-migrated endpoints)
+export const AppointmentDetailApi = {
+  getBookingDetails: (bookingId: string) => 
+    ApiService.get(`/vendor/bookings/${bookingId}/details`),
+  uploadPrescription: (prescriptionData: any) => 
+    ApiService.post('/vendor/prescription/upload', prescriptionData),
+  getPrescription: (bookingId: string, actorId?: string) => {
+    const query = actorId ? `?actor_id=${actorId}` : '';
+    return ApiService.get(`/vendor/prescription/${bookingId}${query}`);
+  },
+  logActivity: (bookingId: string, type: string, description: string, actor: string, actorName: string) => 
+    ApiService.post('/booking-activity/log', { bookingId, type, description, actor, actorName }),
+};
+
+// ✅ NEW: Call API (Batch 9 SQL-migrated endpoints)
+export const CallApi = {
+  initiateCall: (bookingId: string, callType: 'video' | 'voice', initiatedBy: string) => 
+    ApiService.post('/call/initiate', { bookingId, callType, initiatedBy }),
+  answerCall: (callId: string) => ApiService.post(`/call/${callId}/answer`, {}),
+  endCall: (callId: string) => ApiService.post(`/call/${callId}/end`, {}),
+  rejectCall: (callId: string) => ApiService.post(`/call/${callId}/reject`, {}),
+  getCall: (callId: string) => ApiService.get(`/call/${callId}`),
+  getCallHistory: (bookingId: string) => ApiService.get(`/call/booking/${bookingId}/history`),
+  getVendorCallHistory: (vendorId: string) => ApiService.get(`/call/vendor/${vendorId}/history`),
+};
+
+// ✅ NEW: Slot Availability API (Batch 17 SQL-migrated endpoints)
+export const SlotAvailabilityApi = {
+  getVendorAvailability: (vendorId: string, date: string) => 
+    ApiService.get(`/vendor/${vendorId}/availability/${date}`),
+};
+
+// ✅ NEW: Booking Validation API (Batch 17 SQL-migrated endpoints)
+export const BookingValidationApi = {
+  validateBooking: (data: { staffId: string; serviceId: string; serviceType: string; customerLocation?: any }) => 
+    ApiService.post('/booking/validate', data),
+  getBookingEligibility: (staffId: string) => 
+    ApiService.get(`/staff/${staffId}/booking-eligibility`),
+};
+
+// ✅ NEW: Integrated Services Manager API (Batch 17 SQL-migrated endpoints)
+export const IntegratedServicesManagerApi = {
+  registerProvider: (providerData: any) => 
+    ApiService.post('/integrated-services/register-provider', providerData),
+  getAvailableProviders: (lat: number, lng: number, type?: string, maxDistance?: number) => {
+    const params = new URLSearchParams({ lat: lat.toString(), lng: lng.toString() });
+    if (type) params.append('type', type);
+    if (maxDistance) params.append('maxDistance', maxDistance.toString());
+    return ApiService.get(`/integrated-services/available?${params}`);
+  },
+};
+
+// ✅ NEW: Logistics Routing Engine API (Batch 10 SQL-migrated endpoints)
+export const LogisticsRoutingEngineApi = {
+  routeOrder: (orderData: any) => 
+    ApiService.post('/logistics/route-order', orderData),
+  createShipment: (order: any, partnerId: string) => 
+    ApiService.post('/logistics/create-shipment', { order, partnerId }),
+  trackShipment: (trackingId: string) => 
+    ApiService.get(`/logistics/track/${trackingId}`),
+  getDeliveryRules: () => ApiService.get('/logistics/delivery-rules'),
+  updateDeliveryRules: (rules: any) => 
+    ApiService.post('/logistics/delivery-rules', rules),
+};
+
+// ✅ NEW: Analytics Events API (Batch 10 SQL-migrated endpoints)
+export const AnalyticsEventsApi = {
+  trackEvents: (events: any[]) => 
+    ApiService.post('/analytics/track', { events }),
+};
+
+// ✅ NEW: Schedule Settings API (Batch 10 SQL-migrated endpoints - Admin)
+export const ScheduleSettingsApi = {
+  getScheduleSettings: () => ApiService.get('/admin/schedule-settings'),
+  updateScheduleSettings: (settings: any) => 
+    ApiService.post('/admin/schedule-settings', settings),
+  getPublicScheduleSettings: () => ApiService.get('/schedule-settings/public'),
+};
+
+// ✅ NEW: Vendor Catalog API (Batch 10 SQL-migrated endpoints)
+export const VendorCatalogApi = {
+  getCatalogByRole: (roleId: string) => 
+    ApiService.get(`/service-catalog/role/${roleId}`),
+  getCatalogDebug: () => ApiService.get('/service-catalog/debug'),
+  getCatalogRawDump: () => ApiService.get('/service-catalog/raw-dump'),
+};
+
+// ✅ NEW: Settlement Tier System API (Batch 11 SQL-migrated endpoints)
+export const SettlementTierSystemApi = {
+  getVendorTier: (vendorId: string) => 
+    ApiService.get(`/vendor/${vendorId}/tier`),
+  upgradeVendorTier: (vendorId: string, targetTierId: string) => 
+    ApiService.post(`/vendor/${vendorId}/tier/upgrade`, { targetTierId }),
+  processSettlement: (vendorId: string, amount: number) => 
+    ApiService.post('/settlement/process', { vendorId, amount }),
+  verifyBankAccount: (vendorId: string, accountDetails: any) => 
+    ApiService.post('/bank-account/verify', { vendorId, accountDetails }),
+};

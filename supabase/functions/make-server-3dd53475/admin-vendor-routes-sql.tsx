@@ -35,6 +35,43 @@ export function registerAdminVendorRoutes(app: Hono) {
 // VENDOR ADMINISTRATION - OVERVIEW & STATS
 // ============================================
 
+/**
+ * GET /admin/vendors/all
+ * Get all vendors regardless of status
+ */
+app.get("/make-server-3dd53475/admin/vendors/all", async (c) => {
+  try {
+    console.log('========================================');
+    console.log('📋 ADMIN: Loading all vendors...');
+    console.log('========================================');
+    
+    // ✅ SQL: Get all vendors using repository
+    const vendorsRepo = getVendorsRepository();
+    const vendors = await vendorsRepo.findAll();
+    
+    console.log(`📦 Vendor records from SQL: ${vendors?.length || 0}`);
+    
+    // ✅ SQL: Filter out rejected and deleted vendors
+    const activeVendors = vendors?.filter((v: any) => 
+      v.status !== 'rejected' && v.status !== 'deleted' && !v.is_deleted
+    ) || [];
+    
+    console.log(`✅ Filtered active vendor records: ${activeVendors.length}`);
+    
+    return c.json({
+      success: true,
+      vendors: activeVendors,
+      total: activeVendors.length
+    });
+  } catch (error) {
+    console.error('❌ Error fetching all vendors:', error);
+    return c.json({ 
+      success: false,
+      error: error instanceof Error ? error.message : String(error) 
+    }, 500);
+  }
+});
+
 // Get vendor statistics and overview
 app.get("/make-server-3dd53475/admin/vendors/stats", async (c) => {
   try {

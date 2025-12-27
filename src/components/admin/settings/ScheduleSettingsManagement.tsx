@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, Save, Clock, Calendar, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { scheduleSettingsApi } from '../../../utils/api/client';
 
 interface ScheduleSettingsManagementProps {
   onBack: () => void;
@@ -20,17 +21,8 @@ export function ScheduleSettingsManagement({ onBack }: ScheduleSettingsManagemen
   const loadSettings = async () => {
     try {
       setLoading(true);
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/schedule-settings`,
-        {
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-
-      const data = await response.json();
+      // ✅ Updated: Use API client instead of direct fetch
+      const data = await scheduleSettingsApi.getScheduleSettings();
       if (data.success) {
         setSettings(data.settings);
       }
@@ -47,19 +39,8 @@ export function ScheduleSettingsManagement({ onBack }: ScheduleSettingsManagemen
       setSaving(true);
       setSaveMessage(null);
 
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/schedule-settings`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(settings)
-        }
-      );
-
-      const data = await response.json();
+      // ✅ Updated: Use API client instead of direct fetch
+      const data = await scheduleSettingsApi.updateScheduleSettings(settings);
       if (data.success) {
         setSaveMessage({ type: 'success', message: 'Schedule settings saved successfully!' });
         setTimeout(() => setSaveMessage(null), 3000);

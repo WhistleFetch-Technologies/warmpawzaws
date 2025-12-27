@@ -335,22 +335,21 @@ export const nutritionistDietPlanApi = {
 // ✅ NEW: Medical History API (Batch 8 SQL-migrated endpoints)
 export const medicalHistoryApi = {
   getMedicalRecords: (appointmentId: string, userId?: string, userRole?: string) => {
-    const headers: Record<string, string> = {};
-    if (userId) headers['X-User-Id'] = userId;
-    if (userRole) headers['X-User-Role'] = userRole;
-    return apiCall(`/appointments/${appointmentId}/medical-records`, { headers });
+    // Note: userId and userRole should be passed in body if needed, or as query params
+    const query = userId ? `?userId=${userId}&userRole=${userRole || ''}` : '';
+    return apiCall(`/appointments/${appointmentId}/medical-records${query}`);
   },
   uploadDocument: (appointmentId: string, fileData: any, userId?: string, userRole?: string) => {
-    const headers: Record<string, string> = {};
-    if (userId) headers['X-User-Id'] = userId;
-    if (userRole) headers['X-User-Role'] = userRole;
-    return apiCall(`/appointments/${appointmentId}/medical-records/upload`, { method: 'POST', body: fileData, headers });
+    return apiCall(`/appointments/${appointmentId}/medical-records/upload`, { 
+      method: 'POST', 
+      body: { ...fileData, userId, userRole } 
+    });
   },
   addVetSummary: (appointmentId: string, summary: any, userId?: string, userRole?: string) => {
-    const headers: Record<string, string> = {};
-    if (userId) headers['X-User-Id'] = userId;
-    if (userRole) headers['X-User-Role'] = userRole;
-    return apiCall(`/appointments/${appointmentId}/vet-summary`, { method: 'POST', body: summary, headers });
+    return apiCall(`/appointments/${appointmentId}/vet-summary`, { 
+      method: 'POST', 
+      body: { ...summary, userId, userRole } 
+    });
   },
   getPrescriptions: (appointmentId: string) => apiCall(`/appointments/${appointmentId}/prescriptions`),
 };
@@ -520,4 +519,252 @@ export const memorialServicesApi = {
 export const staffServiceStyleSetupApi = {
   setupServiceStyles: () => apiCall('/admin/setup-staff-service-styles', { method: 'POST' }),
   getSetupStatus: () => apiCall('/admin/staff-style-status'),
+};
+
+// ✅ NEW: Vendor Settings Rules API (Batch 9 SQL-migrated endpoints - Admin only)
+export const vendorSettingsRulesApi = {
+  getAllRules: () => apiCall('/admin/vendor-settings-rules'),
+  getBookingRules: () => apiCall('/admin/vendor-settings/booking-rules'),
+  createBookingRule: (rule: any) => 
+    apiCall('/admin/vendor-settings/booking-rules', { method: 'POST', body: rule }),
+  updateBookingRule: (ruleId: string, rule: any) => 
+    apiCall(`/admin/vendor-settings/booking-rules/${ruleId}`, { method: 'PUT', body: rule }),
+  deleteBookingRule: (ruleId: string) => 
+    apiCall(`/admin/vendor-settings/booking-rules/${ruleId}`, { method: 'DELETE' }),
+  getPaymentRules: () => apiCall('/admin/vendor-settings/payment-rules'),
+  createPaymentRule: (rule: any) => 
+    apiCall('/admin/vendor-settings/payment-rules', { method: 'POST', body: rule }),
+  updatePaymentRule: (ruleId: string, rule: any) => 
+    apiCall(`/admin/vendor-settings/payment-rules/${ruleId}`, { method: 'PUT', body: rule }),
+  deletePaymentRule: (ruleId: string) => 
+    apiCall(`/admin/vendor-settings/payment-rules/${ruleId}`, { method: 'DELETE' }),
+  getRefundTiers: () => apiCall('/admin/vendor-settings/refund-tiers'),
+  createRefundTier: (tier: any) => 
+    apiCall('/admin/vendor-settings/refund-tiers', { method: 'POST', body: tier }),
+  updateRefundTier: (tierId: string, tier: any) => 
+    apiCall(`/admin/vendor-settings/refund-tiers/${tierId}`, { method: 'PUT', body: tier }),
+  deleteRefundTier: (tierId: string) => 
+    apiCall(`/admin/vendor-settings/refund-tiers/${tierId}`, { method: 'DELETE' }),
+};
+
+// ✅ NEW: Vendor Utils API (Batch 9 SQL-migrated endpoints)
+export const vendorUtilsApi = {
+  getStats: (vendorId: string) => apiCall(`/vendor/${vendorId}/utils/stats`),
+  getAnalytics: (vendorId: string) => apiCall(`/vendor/${vendorId}/utils/analytics`),
+  updateStatus: (vendorId: string, status: string, reason?: string) => 
+    apiCall(`/vendor/${vendorId}/utils/update-status`, { method: 'POST', body: { status, reason } }),
+  getVerificationStatus: (vendorId: string) => 
+    apiCall(`/vendor/${vendorId}/utils/verification-status`),
+};
+
+// ✅ NEW: Vendor Management API (Batch 9 SQL-migrated endpoints)
+export const vendorManagementApi = {
+  checkUnique: (mobile?: string, email?: string, excludeVendorId?: string) => 
+    apiCall('/vendor/check-unique', { method: 'POST', body: { mobile, email, excludeVendorId } }),
+  getStatusById: (vendorId: string) => apiCall(`/vendor/status-by-id/${vendorId}`),
+  updateStatus: (vendorId: string, status: string, adminId: string, adminName: string, notes?: string) => 
+    apiCall('/admin/vendor/status/update', { method: 'POST', body: { vendorId, status, adminId, adminName, notes } }),
+  bulkApprove: (vendorIds: string[], adminId: string, adminName: string, notes?: string) => 
+    apiCall('/admin/vendor/status/bulk-approve', { method: 'POST', body: { vendorIds, adminId, adminName, notes } }),
+  bulkReject: (vendorIds: string[], adminId: string, adminName: string, reason: string, notes?: string) => 
+    apiCall('/admin/vendor/status/bulk-reject', { method: 'POST', body: { vendorIds, adminId, adminName, reason, notes } }),
+  lookup: (mobile?: string, email?: string) => 
+    apiCall('/vendor/lookup', { method: 'POST', body: { mobile, email } }),
+  getByType: (vendorType: string) => apiCall(`/vendors/by-type/${vendorType}`),
+  getStatistics: () => apiCall('/admin/vendor/statistics'),
+};
+
+// ✅ NEW: Appointment Reminder API (Batch 9 SQL-migrated endpoints)
+export const appointmentReminderApi = {
+  setPreferences: (customerId: string, preferences: any) => 
+    apiCall(`/customer/${customerId}/reminder-preferences`, { method: 'POST', body: preferences }),
+  getPreferences: (customerId: string) => 
+    apiCall(`/customer/${customerId}/reminder-preferences`),
+  scheduleReminders: (bookingId: string, reminderConfig?: any) => 
+    apiCall(`/bookings/${bookingId}/schedule-reminders`, { method: 'POST', body: reminderConfig || {} }),
+  getReminders: (bookingId: string) => apiCall(`/bookings/${bookingId}/reminders`),
+  cancelReminder: (reminderId: string) => 
+    apiCall(`/reminders/${reminderId}/cancel`, { method: 'DELETE' }),
+  sendReminderNow: (reminderId: string) => 
+    apiCall(`/reminders/${reminderId}/send-now`, { method: 'POST' }),
+  getReminderHistory: (customerId: string, limit?: number) => {
+    const params = limit ? `?limit=${limit}` : '';
+    return apiCall(`/customer/${customerId}/reminder-history${params}`);
+  },
+};
+
+// ✅ NEW: Call API (Batch 9 SQL-migrated endpoints)
+export const callApi = {
+  initiateCall: (bookingId: string, callType: 'video' | 'voice', initiatedBy: string) => 
+    apiCall('/call/initiate', { method: 'POST', body: { bookingId, callType, initiatedBy } }),
+  answerCall: (callId: string) => apiCall(`/call/${callId}/answer`, { method: 'POST' }),
+  endCall: (callId: string) => apiCall(`/call/${callId}/end`, { method: 'POST' }),
+  rejectCall: (callId: string) => apiCall(`/call/${callId}/reject`, { method: 'POST' }),
+  getCall: (callId: string) => apiCall(`/call/${callId}`),
+  getCallHistory: (bookingId: string) => apiCall(`/call/booking/${bookingId}/history`),
+  getCustomerCallHistory: (customerPhone: string) => 
+    apiCall(`/call/customer/${customerPhone}/history`),
+  getVendorCallHistory: (vendorId: string) => apiCall(`/call/vendor/${vendorId}/history`),
+};
+
+// ✅ NEW: Appointment Detail API (Batch 9 SQL-migrated endpoints)
+export const appointmentDetailApi = {
+  getBookingDetails: (bookingId: string) => 
+    apiCall(`/vendor/bookings/${bookingId}/details`),
+  uploadPrescription: (prescriptionData: any) => 
+    apiCall('/vendor/prescription/upload', { method: 'POST', body: prescriptionData }),
+  getPrescription: (bookingId: string, actorId?: string) => {
+    const query = actorId ? `?actor_id=${actorId}` : '';
+    return apiCall(`/vendor/prescription/${bookingId}${query}`);
+  },
+  logActivity: (bookingId: string, type: string, description: string, actor: string, actorName: string) => 
+    apiCall('/booking-activity/log', { method: 'POST', body: { bookingId, type, description, actor, actorName } }),
+};
+
+// ✅ NEW: Vendor Booking Actions API (Batch 9 SQL-migrated endpoints)
+export const vendorBookingActionsApi = {
+  completeBooking: (vendorId: string, bookingId: string) => 
+    apiCall(`/vendor/${vendorId}/bookings/${bookingId}/complete`, { method: 'POST' }),
+  startSession: (vendorId: string, bookingId: string) => 
+    apiCall(`/vendor/${vendorId}/bookings/${bookingId}/start-session`, { method: 'POST' }),
+  endSession: (vendorId: string, bookingId: string) => 
+    apiCall(`/vendor/${vendorId}/bookings/${bookingId}/end-session`, { method: 'POST' }),
+};
+
+// ✅ NEW: Booking Validation API (Batch 17 SQL-migrated endpoints)
+export const bookingValidationApi = {
+  validateBooking: (data: { staffId: string; serviceId: string; serviceType: string; customerLocation?: any }) => 
+    apiCall('/booking/validate', { method: 'POST', body: data }),
+  getBookingEligibility: (staffId: string) => 
+    apiCall(`/staff/${staffId}/booking-eligibility`),
+};
+
+// ✅ NEW: Cancellation Policy API (Batch 17 SQL-migrated endpoints - Admin only)
+export const cancellationPolicyApi = {
+  getAllPolicies: () => apiCall('/admin/finance/cancellation-policies'),
+  getPolicy: (policyId: string) => 
+    apiCall(`/admin/finance/cancellation-policies/${policyId}`),
+  createPolicy: (policy: any) => 
+    apiCall('/admin/finance/cancellation-policies', { method: 'POST', body: policy }),
+  updatePolicy: (policyId: string, policy: any) => 
+    apiCall(`/admin/finance/cancellation-policies/${policyId}`, { method: 'PUT', body: policy }),
+  deletePolicy: (policyId: string) => 
+    apiCall(`/admin/finance/cancellation-policies/${policyId}`, { method: 'DELETE' }),
+};
+
+// ✅ NEW: Slot Availability API (Batch 17 SQL-migrated endpoints)
+export const slotAvailabilityApi = {
+  getVendorAvailability: (vendorId: string, date: string) => 
+    apiCall(`/vendor/${vendorId}/availability/${date}`),
+};
+
+// ✅ NEW: Refund Policy Engine API (Batch 17 SQL-migrated endpoints)
+export const refundPolicyEngineApi = {
+  getRefundEstimate: (bookingId: string) => 
+    apiCall(`/refunds/estimate/${bookingId}`),
+  requestRefund: (bookingId: string, reason?: string, refundMethod?: string) => 
+    apiCall('/refunds/request', { method: 'POST', body: { bookingId, reason, refundMethod } }),
+};
+
+// ✅ NEW: Scheduled Tele Booking API (Batch 17 SQL-migrated endpoints)
+export const scheduledTeleBookingApi = {
+  getScheduledAvailability: (serviceId: string, date: string) => {
+    const query = `?serviceId=${serviceId}&date=${date}`;
+    return apiCall(`/tele/scheduled-availability${query}`);
+  },
+  createScheduledTeleBooking: (bookingData: any) => 
+    apiCall('/bookings/scheduled-tele', { method: 'POST', body: bookingData }),
+};
+
+// ✅ NEW: Integrated Services Manager API (Batch 17 SQL-migrated endpoints)
+export const integratedServicesManagerApi = {
+  registerProvider: (providerData: any) => 
+    apiCall('/integrated-services/register-provider', { method: 'POST', body: providerData }),
+  getAvailableProviders: (lat: number, lng: number, type?: string, maxDistance?: number) => {
+    const params = new URLSearchParams({ lat: lat.toString(), lng: lng.toString() });
+    if (type) params.append('type', type);
+    if (maxDistance) params.append('maxDistance', maxDistance.toString());
+    return apiCall(`/integrated-services/available?${params}`);
+  },
+  requestService: (requestData: any) => 
+    apiCall('/integrated-services/request', { method: 'POST', body: requestData }),
+};
+
+// ✅ NEW: Nutritionist Food Integration API (Batch 17 SQL-migrated endpoints)
+export const nutritionistFoodIntegrationApi = {
+  convertDietPlanToOrder: (planId: string, orderData: any) => 
+    apiCall(`/nutritionist/diet-plan/${planId}/convert-to-order`, { method: 'POST', body: orderData }),
+  getDietPlanOrders: (planId: string) => 
+    apiCall(`/nutritionist/diet-plan/${planId}/orders`),
+};
+
+// ✅ NEW: Logistics Routing Engine API (Batch 10 SQL-migrated endpoints)
+export const logisticsRoutingEngineApi = {
+  routeOrder: (orderData: any) => 
+    apiCall('/logistics/route-order', { method: 'POST', body: orderData }),
+  createShipment: (order: any, partnerId: string) => 
+    apiCall('/logistics/create-shipment', { method: 'POST', body: { order, partnerId } }),
+  trackShipment: (trackingId: string) => 
+    apiCall(`/logistics/track/${trackingId}`),
+  getDeliveryRules: () => apiCall('/logistics/delivery-rules'),
+  updateDeliveryRules: (rules: any) => 
+    apiCall('/logistics/delivery-rules', { method: 'POST', body: rules }),
+  testRouting: (orderData: any) => 
+    apiCall('/logistics/test-routing', { method: 'POST', body: orderData }),
+};
+
+// ✅ NEW: Enhanced Problem Discovery API (Batch 10 SQL-migrated endpoints)
+export const enhancedProblemDiscoveryApi = {
+  discoverByProblem: (roleId: string, problemId: string) => 
+    apiCall(`/customer/discover-by-problem-v2/${roleId}/${problemId}`),
+};
+
+// ✅ NEW: Analytics Events API (Batch 10 SQL-migrated endpoints)
+export const analyticsEventsApi = {
+  trackEvents: (events: any[]) => 
+    apiCall('/analytics/track', { method: 'POST', body: { events } }),
+};
+
+// ✅ NEW: Schedule Settings API (Batch 10 SQL-migrated endpoints - Admin)
+export const scheduleSettingsApi = {
+  getScheduleSettings: () => apiCall('/admin/schedule-settings'),
+  updateScheduleSettings: (settings: any) => 
+    apiCall('/admin/schedule-settings', { method: 'POST', body: settings }),
+  getPublicScheduleSettings: () => apiCall('/schedule-settings/public'),
+};
+
+// ✅ NEW: Radar Location System API (Batch 10 SQL-migrated endpoints)
+export const radarLocationSystemApi = {
+  getProvidersRadar: (lat: number, lng: number, radius?: number) => {
+    const params = new URLSearchParams({ lat: lat.toString(), lng: lng.toString() });
+    if (radius) params.append('radius', radius.toString());
+    return apiCall(`/home-services/providers/radar?${params}`);
+  },
+  calculateCommuteTime: (from: any, to: any) => 
+    apiCall('/home-services/calculate-commute-time', { method: 'POST', body: { from, to } }),
+  getNearbyProviders: (lat: number, lng: number, maxDistance?: number) => {
+    const params = new URLSearchParams({ lat: lat.toString(), lng: lng.toString() });
+    if (maxDistance) params.append('maxDistance', maxDistance.toString());
+    return apiCall(`/home-services/providers/nearby?${params}`);
+  },
+};
+
+// ✅ NEW: Vendor Catalog API (Batch 10 SQL-migrated endpoints)
+export const vendorCatalogApi = {
+  getCatalogByRole: (roleId: string) => 
+    apiCall(`/service-catalog/role/${roleId}`),
+  getCatalogDebug: () => apiCall('/service-catalog/debug'),
+  getCatalogRawDump: () => apiCall('/service-catalog/raw-dump'),
+};
+
+// ✅ NEW: Settlement Tier System API (Batch 11 SQL-migrated endpoints)
+export const settlementTierSystemApi = {
+  getVendorTier: (vendorId: string) => 
+    apiCall(`/vendor/${vendorId}/tier`),
+  upgradeVendorTier: (vendorId: string, targetTierId: string) => 
+    apiCall(`/vendor/${vendorId}/tier/upgrade`, { method: 'POST', body: { targetTierId } }),
+  processSettlement: (vendorId: string, amount: number) => 
+    apiCall('/settlement/process', { method: 'POST', body: { vendorId, amount } }),
+  verifyBankAccount: (vendorId: string, accountDetails: any) => 
+    apiCall('/bank-account/verify', { method: 'POST', body: { vendorId, accountDetails } }),
 };

@@ -153,9 +153,22 @@ app.put("/customer/:customerId/cart/:itemId", async (c) => {
     const { customerId, itemId } = c.req.param();
     const { quantity } = await c.req.json();
     
-    const cartItems = await kv.get(`cart:${customerId}`) || [];
+    // ✅ SQL: Resolve customer ID
+    const customersRepo = getCustomersRepository();
+    let customer = await customersRepo.findById(customerId);
+    if (!customer) {
+      customer = await customersRepo.findByPhone(customerId);
+    }
+    if (!customer) {
+      return c.json({ error: 'Customer not found' }, 404);
+    }
     
-    const itemIndex = cartItems.findIndex((item: any) => item.itemId === itemId);
+    // ✅ SQL: Get cart
+    const cartsRepo = getCartsRepository();
+    const cart = await cartsRepo.findOrCreate(customer.id);
+    
+    const items = cart.items || [];
+    const itemIndex = items.findIndex((item: any) => item.itemId === itemId || item.productId === itemId || item.serviceId === itemId);
     
     if (itemIndex === -1) {
       return c.json({ error: 'Item not found in cart' }, 404);
@@ -163,19 +176,31 @@ app.put("/customer/:customerId/cart/:itemId", async (c) => {
     
     if (quantity <= 0) {
       // Remove item
-      cartItems.splice(itemIndex, 1);
+      items.splice(itemIndex, 1);
     } else {
       // Update quantity
-      cartItems[itemIndex].quantity = quantity;
-      cartItems[itemIndex].updatedAt = new Date().toISOString();
+      items[itemIndex].quantity = quantity;
+      items[itemIndex].updatedAt = new Date().toISOString();
     }
     
-    await kv.set(`cart:${customerId}`, cartItems);
+    // Recalculate totals
+    const subtotal = items.reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0);
+    const tax = subtotal * 0.18; // 18% GST
+    const total = subtotal + tax;
+    
+    // ✅ SQL: Update cart
+    await cartsRepo.update(customer.id, {
+      items,
+      subtotal,
+      tax,
+      gst: tax,
+      total
+    });
     
     return c.json({ 
       success: true, 
-      cartItems,
-      totalItems: cartItems.length 
+      cartItems: items,
+      totalItems: items.length 
     });
   } catch (error) {
     console.log('Update cart error:', error);
@@ -188,10 +213,36 @@ app.delete("/customer/:customerId/cart/:itemId", async (c) => {
   try {
     const { customerId, itemId } = c.req.param();
     
-    const cartItems = await kv.get(`cart:${customerId}`) || [];
-    const updatedCartItems = cartItems.filter((item: any) => item.itemId !== itemId);
+    // ✅ SQL: Resolve customer ID
+    const customersRepo = getCustomersRepository();
+    let customer = await customersRepo.findById(customerId);
+    if (!customer) {
+      customer = await customersRepo.findByPhone(customerId);
+    }
+    if (!customer) {
+      return c.json({ error: 'Customer not found' }, 404);
+    }
     
-    await kv.set(`cart:${customerId}`, updatedCartItems);
+    // ✅ SQL: Get cart
+    const cartsRepo = getCartsRepository();
+    const cart = await cartsRepo.findOrCreate(customer.id);
+    
+    const items = cart.items || [];
+    const updatedCartItems = items.filter((item: any) => item.itemId !== itemId && item.productId !== itemId && item.serviceId !== itemId);
+    
+    // Recalculate totals
+    const subtotal = updatedCartItems.reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0);
+    const tax = subtotal * 0.18; // 18% GST
+    const total = subtotal + tax;
+    
+    // ✅ SQL: Update cart
+    await cartsRepo.update(customer.id, {
+      items: updatedCartItems,
+      subtotal,
+      tax,
+      gst: tax,
+      total
+    });
     
     return c.json({ 
       success: true,
@@ -209,7 +260,25 @@ app.delete("/customer/:customerId/cart", async (c) => {
   try {
     const { customerId } = c.req.param();
     
-    await kv.set(`cart:${customerId}`, []);
+    // ✅ SQL: Resolve customer ID
+    const customersRepo = getCustomersRepository();
+    let customer = await customersRepo.findById(customerId);
+    if (!customer) {
+      customer = await customersRepo.findByPhone(customerId);
+    }
+    if (!customer) {
+      return c.json({ error: 'Customer not found' }, 404);
+    }
+    
+    // ✅ SQL: Clear cart
+    const cartsRepo = getCartsRepository();
+    await cartsRepo.update(customer.id, {
+      items: [],
+      subtotal: 0,
+      tax: 0,
+      gst: 0,
+      total: 0
+    });
     
     return c.json({ success: true, cartItems: [], totalItems: 0 });
   } catch (error) {
