@@ -25,7 +25,7 @@ import {
   validateAvailabilitySlot, 
   detectConflicts,
   validateConditionalFields 
-} from './staff-availability-validation.tsx';
+} from './staff-availability-validation-sql.tsx'; // ✅ SQL-only version
 
 const app = new Hono();
 

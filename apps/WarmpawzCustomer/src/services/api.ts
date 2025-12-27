@@ -448,3 +448,115 @@ export const StaffServiceStyleSetupApi = {
   getSetupStatus: () => ApiService.get('/admin/staff-style-status'),
 };
 
+// ✅ NEW: Appointment Reminder API (Batch 9 SQL-migrated endpoints)
+export const AppointmentReminderApi = {
+  setPreferences: (customerId: string, preferences: any) => 
+    ApiService.post(`/customer/${customerId}/reminder-preferences`, preferences),
+  getPreferences: (customerId: string) => 
+    ApiService.get(`/customer/${customerId}/reminder-preferences`),
+  scheduleReminders: (bookingId: string, reminderConfig?: any) => 
+    ApiService.post(`/bookings/${bookingId}/schedule-reminders`, reminderConfig || {}),
+  getReminders: (bookingId: string) => 
+    ApiService.get(`/bookings/${bookingId}/reminders`),
+  cancelReminder: (reminderId: string) => 
+    ApiService.delete(`/reminders/${reminderId}/cancel`),
+  sendReminderNow: (reminderId: string) => 
+    ApiService.post(`/reminders/${reminderId}/send-now`),
+  getReminderHistory: (customerId: string, limit?: number) => {
+    const params = limit ? `?limit=${limit}` : '';
+    return ApiService.get(`/customer/${customerId}/reminder-history${params}`);
+  },
+};
+
+// ✅ NEW: Call API (Batch 9 SQL-migrated endpoints)
+export const CallApi = {
+  initiateCall: (bookingId: string, callType: 'video' | 'voice', initiatedBy: string) => 
+    ApiService.post('/call/initiate', { bookingId, callType, initiatedBy }),
+  answerCall: (callId: string) => ApiService.post(`/call/${callId}/answer`),
+  endCall: (callId: string) => ApiService.post(`/call/${callId}/end`),
+  rejectCall: (callId: string) => ApiService.post(`/call/${callId}/reject`),
+  getCall: (callId: string) => ApiService.get(`/call/${callId}`),
+  getCallHistory: (bookingId: string) => ApiService.get(`/call/booking/${bookingId}/history`),
+  getCustomerCallHistory: (customerPhone: string) => 
+    ApiService.get(`/call/customer/${customerPhone}/history`),
+  getVendorCallHistory: (vendorId: string) => ApiService.get(`/call/vendor/${vendorId}/history`),
+};
+
+// ✅ NEW: Booking Validation API (Batch 17 SQL-migrated endpoints)
+export const BookingValidationApi = {
+  validateBooking: (data: { staffId: string; serviceId: string; serviceType: string; customerLocation?: any }) => 
+    ApiService.post('/booking/validate', data),
+  getBookingEligibility: (staffId: string) => 
+    ApiService.get(`/staff/${staffId}/booking-eligibility`),
+};
+
+// ✅ NEW: Slot Availability API (Batch 17 SQL-migrated endpoints)
+export const SlotAvailabilityApi = {
+  getVendorAvailability: (vendorId: string, date: string) => 
+    ApiService.get(`/vendor/${vendorId}/availability/${date}`),
+};
+
+// ✅ NEW: Refund Policy Engine API (Batch 17 SQL-migrated endpoints)
+export const RefundPolicyEngineApi = {
+  getRefundEstimate: (bookingId: string) => 
+    ApiService.get(`/refunds/estimate/${bookingId}`),
+  requestRefund: (bookingId: string, reason?: string, refundMethod?: string) => 
+    ApiService.post('/refunds/request', { bookingId, reason, refundMethod }),
+};
+
+// ✅ NEW: Scheduled Tele Booking API (Batch 17 SQL-migrated endpoints)
+export const ScheduledTeleBookingApi = {
+  getScheduledAvailability: (serviceId: string, date: string) => 
+    ApiService.get(`/tele/scheduled-availability?serviceId=${serviceId}&date=${date}`),
+  createScheduledTeleBooking: (bookingData: any) => 
+    ApiService.post('/bookings/scheduled-tele', bookingData),
+};
+
+// ✅ NEW: Integrated Services Manager API (Batch 17 SQL-migrated endpoints)
+export const IntegratedServicesManagerApi = {
+  getAvailableProviders: (lat: number, lng: number, type?: string, maxDistance?: number) => {
+    const params = new URLSearchParams({ lat: lat.toString(), lng: lng.toString() });
+    if (type) params.append('type', type);
+    if (maxDistance) params.append('maxDistance', maxDistance.toString());
+    return ApiService.get(`/integrated-services/available?${params}`);
+  },
+  requestService: (requestData: any) => 
+    ApiService.post('/integrated-services/request', requestData),
+};
+
+// ✅ NEW: Nutritionist Food Integration API (Batch 17 SQL-migrated endpoints)
+export const NutritionistFoodIntegrationApi = {
+  convertDietPlanToOrder: (planId: string, orderData: any) => 
+    ApiService.post(`/nutritionist/diet-plan/${planId}/convert-to-order`, orderData),
+  getDietPlanOrders: (planId: string) => 
+    ApiService.get(`/nutritionist/diet-plan/${planId}/orders`),
+};
+
+// ✅ NEW: Enhanced Problem Discovery API (Batch 10 SQL-migrated endpoints)
+export const EnhancedProblemDiscoveryApi = {
+  discoverByProblem: (roleId: string, problemId: string) => 
+    ApiService.get(`/customer/discover-by-problem-v2/${roleId}/${problemId}`),
+};
+
+// ✅ NEW: Analytics Events API (Batch 10 SQL-migrated endpoints)
+export const AnalyticsEventsApi = {
+  trackEvents: (events: any[]) => 
+    ApiService.post('/analytics/track', { events }),
+};
+
+// ✅ NEW: Radar Location System API (Batch 10 SQL-migrated endpoints)
+export const RadarLocationSystemApi = {
+  getProvidersRadar: (lat: number, lng: number, radius?: number) => {
+    const params = new URLSearchParams({ lat: lat.toString(), lng: lng.toString() });
+    if (radius) params.append('radius', radius.toString());
+    return ApiService.get(`/home-services/providers/radar?${params}`);
+  },
+  calculateCommuteTime: (from: any, to: any) => 
+    ApiService.post('/home-services/calculate-commute-time', { from, to }),
+  getNearbyProviders: (lat: number, lng: number, maxDistance?: number) => {
+    const params = new URLSearchParams({ lat: lat.toString(), lng: lng.toString() });
+    if (maxDistance) params.append('maxDistance', maxDistance.toString());
+    return ApiService.get(`/home-services/providers/nearby?${params}`);
+  },
+};
+

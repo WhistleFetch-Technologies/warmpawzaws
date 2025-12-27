@@ -1,38 +1,42 @@
 /**
  * ============================================================================
- * MARKETPLACE SETTLEMENT AUTOMATION - SQL-ONLY VERSION
+ * MARKETPLACE SETTLEMENT AUTOMATION - SQL VERSION
  * ============================================================================
  * 
- * REFACTORED: Removed all KV usage, using SQL repositories only
+ * Automated settlement processing via Razorpay
+ * Replaces: settlement_*, vendor_settlements_*, pending_settlements, settlement_schedule_* KV keys
  * 
- * Phase 7C: Payment & Settlement - Rule 15 Implementation
- * 
- * Features:
- * - Automated settlement processing via Razorpay
- * - Marketplace mode payouts
- * - Commission deduction
- * - Settlement scheduling
- * 
- * CHANGES:
- * - Removed `kv` parameter from function signature
- * - Replaced all `kv.get()`, `kv.set()` with SQL repository calls
- * - Uses `SettlementsRepository` and `settlement_schedules` table
+ * RULES:
+ * ❌ NO KV imports allowed
+ * ✅ All operations use SQL only
  * 
  * Date: 2025-01-27
- * Migration: Agent-3 - KV to SQL (Batch 10)
- * KV Operations Removed: 14
  * ============================================================================
  */
 
 import { Hono } from "npm:hono";
 import { sendSuccess, sendError } from "./response-utils.ts";
-import { getSettlementsRepository } from '../../lib/repositories/settlements.ts';
-import { getDbClient } from '../../lib/db.ts';
+import { getDbClient } from "../../lib/db.ts";
 
-export function marketplaceSettlementAutomationEndpoints(app: Hono) {
+interface MarketplaceSettlement {
+  settlementId: string;
+  vendorId: string;
+  bookingId: string;
+  amount: number;
+  commission: number;
+  netAmount: number;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  razorpayPayoutId?: string;
+  scheduledAt: string;
+  processedAt?: string;
+  failureReason?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export function marketplaceSettlementAutomationEndpointsSQL(app: Hono) {
   const BASE_PATH = "/make-server-3dd53475";
   const db = getDbClient();
-  const settlementsRepo = getSettlementsRepository();
 
   // ========================================
   // PROCESS SETTLEMENT (RAZORPAY)
@@ -50,31 +54,53 @@ export function marketplaceSettlementAutomationEndpoints(app: Hono) {
         return sendError(c, 'Required fields missing', 400);
       }
 
+      const settlementId = `settle_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
       const commissionAmount = commission || (amount * 0.15); // Default 15% commission
       const netAmount = amount - commissionAmount;
 
-      // ✅ SQL: Create settlement
-      const settlement = await settlementsRepo.create({
-        vendor_id: vendorId,
-        booking_id: bookingId,
-        settlement_amount: amount,
-        commission_amount: commissionAmount,
-        vendor_amount: netAmount,
-        settlement_date: new Date().toISOString().split('T')[0],
-      });
+      const scheduledAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // Schedule for next day
 
-      console.log(`✅ Settlement created: ${settlement.id} for vendor ${vendorId} - ₹${netAmount}`);
+      // ✅ SQL: Create settlement in database
+      const { data: settlement, error } = await db
+        .from('settlements')
+        .insert({
+          id: settlementId, // Use custom ID
+          vendor_id: vendorId,
+          total_amount: amount,
+          commission_amount: commissionAmount,
+          net_amount: netAmount,
+          settlement_status: 'pending',
+          settlement_period_start: new Date().toISOString().split('T')[0],
+          settlement_period_end: scheduledAt.toISOString().split('T')[0],
+          payment_ids: [bookingId], // Store bookingId as payment_id for now
+          created_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error creating settlement:', error);
+        return sendError(c, `Failed to create settlement: ${error.message}`, 500);
+      }
+
+      // ✅ SQL: Add to pending settlements (using pending_payouts table structure or a flag)
+      // For now, settlements with status 'pending' are considered pending
+      
+      console.log(`✅ Settlement created: ${settlementId} for vendor ${vendorId} - ₹${netAmount}`);
 
       return sendSuccess(c, { 
         settlement: {
-          settlementId: settlement.id,
-          vendorId: settlement.vendor_id,
-          bookingId: settlement.booking_id,
-          amount: settlement.settlement_amount,
-          commission: settlement.commission_amount,
-          netAmount: settlement.vendor_amount,
-          status: settlement.settlement_status,
-          createdAt: settlement.created_at,
+          settlementId,
+          vendorId,
+          bookingId,
+          amount,
+          commission: commissionAmount,
+          netAmount,
+          status: 'pending',
+          scheduledAt: scheduledAt.toISOString(),
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
         }
       }, 'Settlement created successfully');
     } catch (error) {
@@ -88,7 +114,7 @@ export function marketplaceSettlementAutomationEndpoints(app: Hono) {
   // ========================================
   app.get(`${BASE_PATH}/payment/settlement/pending`, async (c) => {
     try {
-      // ✅ SQL: Get all pending settlements
+      // ✅ SQL: Get pending settlements
       const { data: settlements, error } = await db
         .from('settlements')
         .select('*')
@@ -96,23 +122,26 @@ export function marketplaceSettlementAutomationEndpoints(app: Hono) {
         .order('created_at', { ascending: false });
 
       if (error) {
-        throw error;
+        console.error('Error fetching pending settlements:', error);
+        return sendError(c, 'Failed to fetch pending settlements', 500);
       }
 
-      const mappedSettlements = (settlements || []).map(s => ({
+      const formattedSettlements = (settlements || []).map((s: any) => ({
         settlementId: s.id,
         vendorId: s.vendor_id,
-        bookingId: s.booking_id,
-        amount: s.total_amount,
-        commission: s.commission_amount,
-        netAmount: s.net_amount,
+        bookingId: s.payment_ids?.[0] || null,
+        amount: Number(s.total_amount),
+        commission: Number(s.commission_amount),
+        netAmount: Number(s.net_amount),
         status: s.settlement_status,
+        scheduledAt: s.settlement_period_end,
         createdAt: s.created_at,
+        updatedAt: s.updated_at || s.created_at
       }));
 
       return sendSuccess(c, { 
-        settlements: mappedSettlements, 
-        count: mappedSettlements.length 
+        settlements: formattedSettlements, 
+        count: formattedSettlements.length 
       });
     } catch (error) {
       console.error('Error getting pending settlements:', error);
@@ -127,25 +156,36 @@ export function marketplaceSettlementAutomationEndpoints(app: Hono) {
     try {
       const vendorId = c.req.param('vendorId');
 
-      // ✅ SQL: Get all settlements for vendor
-      const settlements = await settlementsRepo.findByVendor(vendorId);
+      // ✅ SQL: Get vendor settlements
+      const { data: settlements, error } = await db
+        .from('settlements')
+        .select('*')
+        .eq('vendor_id', vendorId)
+        .order('created_at', { ascending: false });
 
-      const mappedSettlements = settlements.map(s => ({
+      if (error) {
+        console.error('Error fetching vendor settlements:', error);
+        return sendError(c, 'Failed to fetch vendor settlements', 500);
+      }
+
+      const formattedSettlements = (settlements || []).map((s: any) => ({
         settlementId: s.id,
         vendorId: s.vendor_id,
-        bookingId: s.booking_id,
-        amount: s.settlement_amount,
-        commission: s.commission_amount,
-        netAmount: s.vendor_amount,
+        bookingId: s.payment_ids?.[0] || null,
+        amount: Number(s.total_amount),
+        commission: Number(s.commission_amount),
+        netAmount: Number(s.net_amount),
         status: s.settlement_status,
-        razorpayPayoutId: s.razorpay_settlement_id,
-        createdAt: s.created_at,
+        razorpayPayoutId: s.payout_id,
+        scheduledAt: s.settlement_period_end,
         processedAt: s.processed_at,
+        createdAt: s.created_at,
+        updatedAt: s.updated_at || s.created_at
       }));
 
       return sendSuccess(c, { 
-        settlements: mappedSettlements, 
-        count: mappedSettlements.length 
+        settlements: formattedSettlements, 
+        count: formattedSettlements.length 
       });
     } catch (error) {
       console.error('Error getting vendor settlements:', error);
@@ -162,19 +202,42 @@ export function marketplaceSettlementAutomationEndpoints(app: Hono) {
       const { status, razorpayPayoutId, failureReason } = await c.req.json();
 
       // ✅ SQL: Get settlement
-      const settlement = await settlementsRepo.findById(settlementId);
+      const { data: settlement, error: fetchError } = await db
+        .from('settlements')
+        .select('*')
+        .eq('id', settlementId)
+        .single();
 
-      if (!settlement) {
+      if (fetchError || !settlement) {
         return sendError(c, 'Settlement not found', 404);
       }
 
-      // ✅ SQL: Update settlement
-      const updatedSettlement = await settlementsRepo.update(settlementId, {
+      // ✅ SQL: Update settlement status
+      const updateData: any = {
         settlement_status: status,
-        razorpay_settlement_id: razorpayPayoutId,
-        failure_reason: failureReason,
-        processed_at: (status === 'completed' || status === 'failed') ? new Date().toISOString() : undefined,
-      });
+        updated_at: new Date().toISOString()
+      };
+
+      if (status === 'completed' || status === 'failed') {
+        updateData.processed_at = new Date().toISOString();
+      }
+
+      if (razorpayPayoutId) {
+        // Link to payout if provided
+        updateData.payout_id = razorpayPayoutId;
+      }
+
+      const { data: updatedSettlement, error: updateError } = await db
+        .from('settlements')
+        .update(updateData)
+        .eq('id', settlementId)
+        .select()
+        .single();
+
+      if (updateError) {
+        console.error('Error updating settlement:', updateError);
+        return sendError(c, 'Failed to update settlement', 500);
+      }
 
       console.log(`✅ Settlement status updated: ${settlementId} - ${status}`);
 
@@ -182,14 +245,17 @@ export function marketplaceSettlementAutomationEndpoints(app: Hono) {
         settlement: {
           settlementId: updatedSettlement.id,
           vendorId: updatedSettlement.vendor_id,
-          bookingId: updatedSettlement.booking_id,
-          amount: updatedSettlement.settlement_amount,
-          commission: updatedSettlement.commission_amount,
-          netAmount: updatedSettlement.vendor_amount,
+          bookingId: updatedSettlement.payment_ids?.[0] || null,
+          amount: Number(updatedSettlement.total_amount),
+          commission: Number(updatedSettlement.commission_amount),
+          netAmount: Number(updatedSettlement.net_amount),
           status: updatedSettlement.settlement_status,
-          razorpayPayoutId: updatedSettlement.razorpay_settlement_id,
-          createdAt: updatedSettlement.created_at,
+          razorpayPayoutId: updatedSettlement.payout_id,
+          scheduledAt: updatedSettlement.settlement_period_end,
           processedAt: updatedSettlement.processed_at,
+          failureReason: failureReason,
+          createdAt: updatedSettlement.created_at,
+          updatedAt: updatedSettlement.updated_at
         }
       }, 'Settlement status updated successfully');
     } catch (error) {
@@ -221,33 +287,33 @@ export function marketplaceSettlementAutomationEndpoints(app: Hono) {
         .from('settlement_schedules')
         .select('*')
         .eq('vendor_id', vendorId)
-        .maybeSingle();
+        .single();
 
-      let schedule;
-      if (existingSchedule) {
-        // Update existing schedule
-        const { data: updated } = await db
-          .from('settlement_schedules')
-          .update({
-            schedule_type: frequency,
-            is_active: true,
-          })
-          .eq('id', existingSchedule.id)
-          .select()
-          .single();
-        schedule = updated;
-      } else {
-        // Create new schedule
-        const { data: created } = await db
-          .from('settlement_schedules')
-          .insert({
-            vendor_id: vendorId,
-            schedule_type: frequency,
-            is_active: true,
-          })
-          .select()
-          .single();
-        schedule = created;
+      const scheduleData: any = {
+        vendor_id: vendorId,
+        schedule_type: frequency,
+        is_active: true,
+        created_at: existingSchedule?.created_at || new Date().toISOString()
+      };
+
+      // Set day based on frequency
+      if (frequency === 'weekly') {
+        scheduleData.day_of_week = new Date().getDay();
+      } else if (frequency === 'monthly') {
+        scheduleData.day_of_month = new Date().getDate();
+      }
+
+      const { data: schedule, error } = await db
+        .from('settlement_schedules')
+        .upsert(scheduleData, {
+          onConflict: 'vendor_id'
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error creating settlement schedule:', error);
+        return sendError(c, 'Failed to create settlement schedule', 500);
       }
 
       console.log(`✅ Auto-settlement scheduled for vendor ${vendorId}: ${frequency}`);
@@ -256,8 +322,9 @@ export function marketplaceSettlementAutomationEndpoints(app: Hono) {
         schedule: {
           vendorId: schedule.vendor_id,
           frequency: schedule.schedule_type,
+          nextSettlementDate,
           isActive: schedule.is_active,
-          createdAt: schedule.created_at,
+          createdAt: schedule.created_at
         }
       }, 'Auto-settlement scheduled successfully');
     } catch (error) {

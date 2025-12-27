@@ -6,7 +6,7 @@
  */
 
 import { Hono } from 'npm:hono';
-// ✅ MIGRATED: KV import removed - using SQL repositories only
+import * as kv from './kv_store.tsx';
 import { getRazorpayCredentials, getRazorpayApiBase, getRazorpayAuthHeader } from './razorpay-credentials-helper.tsx';
 
 const RAZORPAY_API_BASE = 'https://api.razorpay.com/v1';

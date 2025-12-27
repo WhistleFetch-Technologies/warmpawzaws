@@ -37,14 +37,9 @@ export function SettlementDashboardEnhanced({ vendorId }: { vendorId: string }) 
   const loadData = async () => {
     try {
       setLoading(true);
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/tier`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
-      );
-      if (response.ok) {
-        const resData = await response.json();
-        setData(resData);
-      }
+      // ✅ Updated: Use API client instead of direct fetch
+      const resData = await settlementTierSystemApi.getVendorTier(vendorId);
+      setData(resData);
     } catch (error) {
       console.error(error);
       toast.error('Failed to load settlement data');
@@ -58,27 +53,13 @@ export function SettlementDashboardEnhanced({ vendorId }: { vendorId: string }) 
 
     try {
         setProcessingPayout(true);
-        const response = await fetch(
-            `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/settlement/process`,
-            {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${publicAnonKey}`
-                },
-                body: JSON.stringify({
-                    vendorId,
-                    amount: data.stats.pendingSettlement
-                })
-            }
-        );
-
-        if (response.ok) {
+        // ✅ Updated: Use API client instead of direct fetch
+        const result = await settlementTierSystemApi.processSettlement(vendorId, data.stats.pendingSettlement);
+        if (result.success) {
             toast.success('Payout processed successfully!');
             loadData();
         } else {
-            const err = await response.json();
-            toast.error(err.error || 'Payout failed');
+            toast.error(result.error || 'Payout failed');
         }
     } catch (error) {
         toast.error('Error processing payout');
@@ -89,22 +70,13 @@ export function SettlementDashboardEnhanced({ vendorId }: { vendorId: string }) 
 
   const handleUpgrade = async (targetTierId: string) => {
       try {
-          const response = await fetch(
-            `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/tier/upgrade`,
-            {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${publicAnonKey}`
-                },
-                body: JSON.stringify({ targetTierId })
-            }
-          );
-          if (response.ok) {
+          // ✅ Updated: Use API client instead of direct fetch
+          const result = await settlementTierSystemApi.upgradeVendorTier(vendorId, targetTierId);
+          if (result.success) {
               toast.success('Tier upgraded successfully!');
               loadData();
           } else {
-              toast.error('Upgrade failed');
+              toast.error(result.error || 'Upgrade failed');
           }
       } catch (error) {
           toast.error('Error upgrading tier');

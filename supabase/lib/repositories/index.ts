@@ -36,8 +36,6 @@ export { getServicesRepository } from "./services.ts";
 export { getStaffRepository } from "./staff.ts";
 export { getOrdersRepository } from "./orders.ts";
 export { getProductsRepository } from "./products.ts";
-export { getRefundsRepository } from "./refunds.ts";
-export { getRefundsRepository } from "./refunds.ts";
 export { getPayoutsRepository } from "./payouts.ts";
 export { getNotificationsRepository } from "./notifications.ts";
 export { getOtpRepository } from "./otp.ts";
@@ -128,4 +126,6 @@ export * from "./performance-monitoring.ts";
 export { getPerformanceMonitoringRepository } from "./performance-monitoring.ts";
 export * from "./optimization-tasks.ts";
 export { getOptimizationTasksRepository } from "./optimization-tasks.ts";
+export * from "./scheduling.ts";
+export { getSchedulingRepository } from "./scheduling.ts";
 

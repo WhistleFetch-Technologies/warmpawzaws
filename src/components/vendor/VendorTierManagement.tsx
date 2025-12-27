@@ -3,6 +3,7 @@ import { Button } from '../ui/button';
 import { TrendingUp, Award, Crown, Star, ArrowUp, ChevronRight, Info } from 'lucide-react';
 import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { settlementTierSystemApi } from '../../utils/api/client';
 
 interface TierConfig {
   id: string;
@@ -41,16 +42,9 @@ export function VendorTierManagement({ vendorId, vendorName }: VendorTierManagem
   const loadTierData = async () => {
     try {
       setLoading(true);
-
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/tier`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        setTierData(data);
-      }
+      // ✅ Updated: Use API client instead of direct fetch
+      const data = await settlementTierSystemApi.getVendorTier(vendorId);
+      setTierData(data);
     } catch (error) {
       console.error('Error loading tier data:', error);
       toast.error('Failed to load tier information');
@@ -98,27 +92,15 @@ export function VendorTierManagement({ vendorId, vendorName }: VendorTierManagem
     }
 
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/tier/upgrade`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
-          },
-          body: JSON.stringify({ tierId: tierData.upgrade.nextTier })
-        }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
+      // ✅ Updated: Use API client instead of direct fetch
+      const data = await settlementTierSystemApi.upgradeVendorTier(vendorId, tierData.upgrade.nextTier);
+      if (data.success) {
         toast.success(data.message || 'Tier upgraded successfully!');
         setShowUpgradeModal(false);
         loadTierData();
         loadAnalytics();
       } else {
-        const error = await response.json();
-        toast.error(error.error || 'Failed to upgrade tier');
+        toast.error(data.error || 'Failed to upgrade tier');
       }
     } catch (error) {
       console.error('Error upgrading tier:', error);
