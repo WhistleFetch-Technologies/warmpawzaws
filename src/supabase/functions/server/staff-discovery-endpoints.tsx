@@ -4,8 +4,15 @@
  * Filters based on staff's enabled service styles (at_home, at_center, tele)
  */
 
-import { Hono } from 'npm:hono@4';
-import * as kv from './kv_store.tsx';
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from 'hono';
+import {
+  getStaffRepository,
+  getVendorsRepository,
+  getVendorServicesRepository,
+  getStaffSettingsRepository
+} from '../../../supabase/lib/repositories/index';
+import { getDbClient } from '../../../supabase/lib/db';
 
 // Helper function to calculate distance between two coordinates
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -60,42 +67,51 @@ export function staffDiscoveryEndpoints(app: Hono) {
       const customerLat = latitude ? parseFloat(latitude) : null;
       const customerLng = longitude ? parseFloat(longitude) : null;
       
-      // Get all staff
-      const allStaff = await kv.getByPrefix('staff:staff_');
+      // ✅ SQL: Get all staff
+      const staffRepo = getStaffRepository();
+      const allStaff = await staffRepo.findAll();
       console.log(`   Found ${allStaff.length} total staff members`);
       
       const eligibleStaff: any[] = [];
       
       for (const staff of allStaff) {
         // Filter by role
-        if (staff.roleType !== roleId) {
+        if ((staff.role_type || staff.roleType) !== roleId) {
           continue;
         }
         
         // Must be active and approved
-        if (!staff.isActive || staff.status !== 'active') {
+        if ((staff.is_active === false || staff.isActive === false) || (staff.status !== 'active' && staff.status !== 'approved')) {
           continue;
         }
         
-        // Get vendor details
-        const vendor = await kv.get(`vendor:${staff.vendorId}`);
-        if (!vendor || vendor.applicationStatus !== 'approved') {
+        // ✅ SQL: Get vendor details
+        const vendorsRepo = getVendorsRepository();
+        const vendorId = staff.vendor_id || staff.vendorId;
+        const vendor = vendorId ? await vendorsRepo.findById(vendorId) : null;
+        if (!vendor || (vendor.application_status !== 'approved' && vendor.status !== 'approved')) {
           continue;
         }
         
-        // Get style preferences
-        const preferences = await kv.get(`staff:${staff.id}:style_preferences`);
+        // ✅ SQL: Get style preferences
+        const staffSettingsRepo = getStaffSettingsRepository();
+        const preferences = await staffSettingsRepo.findByStaff(staff.id);
         
-        // ✅ FALLBACK: Check if staff has services with this style even if preferences aren't set
-        const staffServices = await kv.getByPrefix(`staff:${staff.id}:service:`);
-        const hasServicesWithStyle = staffServices.some((s: any) => s.serviceStyle === serviceStyle && s.isActive);
+        // ✅ SQL: Get staff services
+        const vendorServicesRepo = getVendorServicesRepository();
+        const staffServices = await vendorServicesRepo.findByStaff(staff.id);
+        const hasServicesWithStyle = staffServices.some((s: any) => (s.service_style || s.serviceStyle) === serviceStyle && (s.is_active !== false && s.isActive !== false));
         
-        if (!preferences) {
-          // If no preferences but has services with this style, auto-create preferences
-          if (hasServicesWithStyle) {
-            console.log(`   🔧 Staff ${staff.id} has ${serviceStyle} services but no preferences, auto-enabling...`);
-            const newPreferences = {
-              staffId: staff.id,
+        // Get style config from preferences (if stored as JSONB)
+        const stylePreferences = preferences?.style_preferences || preferences;
+        const styleConfig = stylePreferences?.[serviceStyle];
+        
+        if (!preferences && hasServicesWithStyle) {
+          // ✅ SQL: Auto-create preferences if staff has services with this style
+          console.log(`   🔧 Staff ${staff.id} has ${serviceStyle} services but no preferences, auto-enabling...`);
+          const newPreferences = {
+            staff_id: staff.id,
+            style_preferences: {
               at_center: { enabled: serviceStyle === 'at_center', available: serviceStyle === 'at_center' },
               at_home: { 
                 enabled: serviceStyle === 'at_home', 
@@ -111,20 +127,17 @@ export function staffDiscoveryEndpoints(app: Hono) {
                 maxSessionDuration: 30,
                 acceptInstantBooking: false
               },
-              autoAcceptBookings: false,
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString()
-            };
-            await kv.set(`staff:${staff.id}:style_preferences`, newPreferences);
-            // Continue with the auto-created preferences
-          } else {
-            console.log(`   ⚠️  Staff ${staff.id} has no style preferences and no ${serviceStyle} services, skipping`);
-            continue;
-          }
+              autoAcceptBookings: false
+            },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          };
+          await staffSettingsRepo.create(newPreferences);
+          // Use the newly created preferences
+        } else if (!preferences && !hasServicesWithStyle) {
+          console.log(`   ⚠️  Staff ${staff.id} has no style preferences and no ${serviceStyle} services, skipping`);
+          continue;
         }
-        
-        // Re-fetch preferences if we just created them
-        const styleConfig = (preferences || await kv.get(`staff:${staff.id}:style_preferences`))?.[serviceStyle];
         
         // Check if staff has enabled this service style OR has active services with this style
         if (!styleConfig && !hasServicesWithStyle) {
@@ -132,15 +145,20 @@ export function staffDiscoveryEndpoints(app: Hono) {
           continue;
         }
         
-        // If style is not enabled but they have services, auto-enable it
+        // ✅ SQL: If style is not enabled but they have services, auto-enable it
         if (hasServicesWithStyle && styleConfig && (!styleConfig.enabled || !styleConfig.available)) {
           console.log(`   🔧 Staff ${staff.id} has ${serviceStyle} services but style disabled, auto-enabling...`);
-          const updatedPreferences = await kv.get(`staff:${staff.id}:style_preferences`);
-          if (updatedPreferences && updatedPreferences[serviceStyle]) {
-            updatedPreferences[serviceStyle].enabled = true;
-            updatedPreferences[serviceStyle].available = true;
-            updatedPreferences.updatedAt = new Date().toISOString();
-            await kv.set(`staff:${staff.id}:style_preferences`, updatedPreferences);
+          const currentSettings = await staffSettingsRepo.findByStaff(staff.id);
+          if (currentSettings) {
+            const updatedPreferences = currentSettings.style_preferences || {};
+            if (updatedPreferences[serviceStyle]) {
+              updatedPreferences[serviceStyle].enabled = true;
+              updatedPreferences[serviceStyle].available = true;
+              await staffSettingsRepo.update(currentSettings.id || staff.id, {
+                style_preferences: updatedPreferences,
+                updated_at: new Date().toISOString()
+              });
+            }
           }
         } else if (!hasServicesWithStyle && (!styleConfig || !styleConfig.enabled || !styleConfig.available)) {
           console.log(`   ⚠️  Staff ${staff.id} (${staff.fullName}) has ${serviceStyle} disabled and no services`);
@@ -152,13 +170,13 @@ export function staffDiscoveryEndpoints(app: Hono) {
         // For home services, check distance (if customer provided location)
         if (serviceStyle === 'at_home' && customerLat && customerLng) {
           // Check if staff has location
-          if (!staff.lastKnownLocation && !vendor.location) {
+          if (!staff.last_known_location && !staff.lastKnownLocation && !vendor.location) {
             console.log(`   ⚠️  Staff ${staff.id} has no location set, but including anyway`);
             // Still include this staff, just without distance info
           } else {
             // Use staff location or vendor location
-            const staffLat = staff.lastKnownLocation?.latitude || vendor.location?.latitude;
-            const staffLng = staff.lastKnownLocation?.longitude || vendor.location?.longitude;
+            const staffLat = staff.last_known_location?.latitude || staff.lastKnownLocation?.latitude || vendor.location?.latitude;
+            const staffLng = staff.last_known_location?.longitude || staff.lastKnownLocation?.longitude || vendor.location?.longitude;
           
             if (!staffLat || !staffLng) {
               console.log(`   ⚠️  Staff ${staff.id} location incomplete`);
@@ -206,24 +224,24 @@ export function staffDiscoveryEndpoints(app: Hono) {
           // Staff details
           id: staff.id,
           staffId: staff.id,
-          fullName: staff.fullName,
-          photo: staff.photo,
+          fullName: staff.full_name || staff.fullName,
+          photo: staff.photo_url || staff.photo,
           phone: staff.phone,
           email: staff.email,
           
           // Role
-          roleType: staff.roleType,
-          roleName: staff.roleName,
+          roleType: staff.role_type || staff.roleType,
+          roleName: staff.role_name || staff.roleName,
           specializations: staff.specializations || [],
           
           // Ratings
           rating: staff.rating || 4.5,
-          reviewCount: staff.reviewCount || 0,
-          completedBookings: staff.completedBookings || 0,
+          reviewCount: staff.review_count || staff.reviewCount || 0,
+          completedBookings: staff.completed_bookings || staff.completedBookings || 0,
           
           // Vendor
-          vendorId: staff.vendorId,
-          vendorName: vendor.businessName || vendor.fullName,
+          vendorId: staff.vendor_id || staff.vendorId,
+          vendorName: vendor.business_name || vendor.businessName || vendor.full_name || vendor.fullName,
           vendorLocation: vendor.location,
           
           // Service style
@@ -235,10 +253,10 @@ export function staffDiscoveryEndpoints(app: Hono) {
           
           // Services
           services: activeServices.map((s: any) => ({
-            serviceId: s.serviceId,
-            serviceName: s.serviceName,
-            categoryName: s.categoryName,
-            subCategoryName: s.subCategoryName,
+            serviceId: s.service_id || s.serviceId,
+            serviceName: s.service_name || s.serviceName,
+            categoryName: s.category_name || s.categoryName,
+            subCategoryName: s.sub_category_name || s.subCategoryName,
             price: s.price,
             duration: s.duration,
             description: s.description
@@ -246,12 +264,12 @@ export function staffDiscoveryEndpoints(app: Hono) {
           servicesCount: activeServices.length,
           
           // Availability
-          isActive: staff.isActive,
-          isOnline: staff.isOnline || false,
+          isActive: staff.is_active !== false && staff.isActive !== false,
+          isOnline: staff.is_online || staff.isOnline || false,
           
           // Metadata
-          createdAt: staff.createdAt,
-          experienceYears: staff.experienceYears
+          createdAt: staff.created_at || staff.createdAt,
+          experienceYears: staff.experience_years || staff.experienceYears
         };
         
         eligibleStaff.push(enrichedStaff);
@@ -323,37 +341,46 @@ export function staffDiscoveryEndpoints(app: Hono) {
       const customerLat = latitude ? parseFloat(latitude) : null;
       const customerLng = longitude ? parseFloat(longitude) : null;
       
-      // Get vendor
-      const vendor = await kv.get(`vendor:${vendorId}`);
+      // ✅ SQL: Get vendor
+      const vendorsRepo = getVendorsRepository();
+      const vendor = await vendorsRepo.findById(vendorId);
       if (!vendor) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
       
-      // Get all staff for this vendor
-      const allStaff = await kv.getByPrefix(`staff:staff_`);
-      const vendorStaff = allStaff.filter((s: any) => s.vendorId === vendorId && s.isActive);
+      // ✅ SQL: Get all staff for this vendor
+      const staffRepo = getStaffRepository();
+      const allStaff = await staffRepo.findByVendor(vendorId);
+      const vendorStaff = allStaff.filter((s: any) => (s.is_active !== false && s.isActive !== false));
       
       console.log(`   Found ${vendorStaff.length} staff for vendor ${vendorId}`);
       
       const eligibleStaff: any[] = [];
       
       for (const staff of vendorStaff) {
+        // ✅ SQL: Get preferences and services
+        const staffSettingsRepo = getStaffSettingsRepository();
+        const preferences = await staffSettingsRepo.findByStaff(staff.id);
+        const vendorServicesRepo = getVendorServicesRepository();
+        const staffServices = await vendorServicesRepo.findByStaff(staff.id);
+        
         // If service style filter is provided
         if (serviceStyle) {
-          const preferences = await kv.get(`staff:${staff.id}:style_preferences`);
+          const stylePreferences = preferences?.style_preferences || preferences;
+          const styleConfig = stylePreferences?.[serviceStyle];
           
-          if (!preferences || !preferences[serviceStyle]?.enabled) {
+          if (!styleConfig?.enabled) {
             continue;
           }
           
           // For home services, check distance
           if (serviceStyle === 'at_home' && customerLat && customerLng) {
-            const staffLat = staff.lastKnownLocation?.latitude || vendor.location?.latitude;
-            const staffLng = staff.lastKnownLocation?.longitude || vendor.location?.longitude;
+            const staffLat = staff.last_known_location?.latitude || staff.lastKnownLocation?.latitude || vendor.location?.latitude;
+            const staffLng = staff.last_known_location?.longitude || staff.lastKnownLocation?.longitude || vendor.location?.longitude;
             
             if (staffLat && staffLng) {
               const distance = calculateDistance(customerLat, customerLng, staffLat, staffLng);
-              const staffMaxDistance = preferences[serviceStyle]?.maxDistance || 10;
+              const staffMaxDistance = styleConfig?.maxDistance || 10;
               
               if (distance > staffMaxDistance) {
                 continue;
@@ -364,12 +391,7 @@ export function staffDiscoveryEndpoints(app: Hono) {
           }
         }
         
-        // Get services
-        const staffServices = await kv.getByPrefix(`staff:${staff.id}:service:`);
-        const activeServices = staffServices.filter((s: any) => s.isActive);
-        
-        // Get preferences
-        const preferences = await kv.get(`staff:${staff.id}:style_preferences`);
+        const activeServices = staffServices.filter((s: any) => (s.is_active !== false && s.isActive !== false));
         
         eligibleStaff.push({
           id: staff.id,

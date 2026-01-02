@@ -22,7 +22,7 @@
 import { Hono } from 'npm:hono';
 import { getDbClient } from '../../lib/db.ts';
 import { createShiprocketOrder, getAvailableCouriers as getShiprocketCouriers } from './shiprocket-integration.tsx';
-import { createDelhiveryShipment, checkDelhiveryServiceability } from './delhivery-integration.tsx';
+import { createDelhiveryShipment, checkDelhiveryServiceability } from './delhivery-integration-sql.tsx'; // ✅ FIXED: Updated to SQL version
 
 // Delivery rule types
 export interface DeliveryRule {

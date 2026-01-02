@@ -17,7 +17,7 @@
  * Part of: Practo Parity Implementation - Task 1.4
  */
 
-import * as kv from './kv_store.tsx';
+import * as kv from './kv_store';
 
 // ============================================
 // TYPES & INTERFACES
@@ -199,8 +199,19 @@ export async function getNextAvailableSlot(
         continue;
       }
       
-      // Get availability for this day
-      const dayAvailability = await kv.get(`doctor:${doctorId}:availability:${dateString}`);
+      // ✅ SQL: Get availability for this day from staff_availability table
+      const db = getDbClient();
+      const { data: dayAvailabilityData } = await db
+        .from('staff_availability')
+        .select('*')
+        .eq('staff_id', doctorId)
+        .eq('date', dateString)
+        .single();
+      
+      const dayAvailability = dayAvailabilityData ? {
+        slots: dayAvailabilityData.slots || [],
+        breaks: dayAvailabilityData.breaks || []
+      } : null;
       
       if (!dayAvailability || !dayAvailability.slots) {
         console.log(`  ⚠️ No availability data for ${dateString}`);
@@ -270,8 +281,19 @@ export async function getAvailabilityCalendar(
       const holiday = await getHolidayForDate(doctorId, dateString);
       const isHoliday = holiday !== null;
       
-      // Get availability
-      const dayAvailability = await kv.get(`doctor:${doctorId}:availability:${dateString}`);
+      // ✅ SQL: Get availability from staff_availability table
+      const db = getDbClient();
+      const { data: dayAvailabilityData } = await db
+        .from('staff_availability')
+        .select('*')
+        .eq('staff_id', doctorId)
+        .eq('date', dateString)
+        .single();
+      
+      const dayAvailability = dayAvailabilityData ? {
+        slots: dayAvailabilityData.slots || [],
+        breaks: dayAvailabilityData.breaks || []
+      } : null;
       const slots = dayAvailability?.slots || [];
       const breaks = dayAvailability?.breaks || [];
       
@@ -319,7 +341,14 @@ async function isDateHoliday(doctorId: string, dateString: string): Promise<bool
  */
 async function getHolidayForDate(doctorId: string, dateString: string): Promise<Holiday | null> {
   try {
-    const holidays = await kv.get(`doctor:${doctorId}:holidays`) || [];
+    // ✅ SQL: Get holidays from staff_holidays table
+    const db = getDbClient();
+    const { data: holidaysData } = await db
+      .from('staff_holidays')
+      .select('*')
+      .eq('staff_id', doctorId);
+    
+    const holidays = holidaysData || [];
     const dayNumber = getDayNumber(dateString);
     
     // Check for exact date match
@@ -346,7 +375,15 @@ export async function getAvailabilityPreferences(
   doctorId: string
 ): Promise<AvailabilityPreferences> {
   try {
-    const prefs = await kv.get(`doctor:${doctorId}:preferences`);
+    // ✅ SQL: Get preferences from staff_settings or vendor_settings
+    const db = getDbClient();
+    const { data: prefsData } = await db
+      .from('staff_settings')
+      .select('availability_preferences')
+      .eq('staff_id', doctorId)
+      .single();
+    
+    const prefs = prefsData?.availability_preferences || null;
     
     // Return defaults if no preferences set
     return {
@@ -372,7 +409,16 @@ export async function getAvailabilityPreferences(
  */
 export async function getDoctorBreaks(doctorId: string): Promise<Break[]> {
   try {
-    const breaks = await kv.get(`doctor:${doctorId}:breaks`) || [];
+    // ✅ SQL: Get breaks from staff_availability table (breaks field)
+    const db = getDbClient();
+    const { data: availabilityData } = await db
+      .from('staff_availability')
+      .select('breaks')
+      .eq('staff_id', doctorId)
+      .eq('date', dateString)
+      .single();
+    
+    const breaks = availabilityData?.breaks || [];
     return breaks;
   } catch (error) {
     console.error(`❌ [AVAILABILITY] Error getting breaks:`, error);
@@ -431,12 +477,20 @@ export async function calculateSlotUtilization(
     
     for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
       const dateString = d.toISOString().split('T')[0];
-      const dayAvailability = await kv.get(`doctor:${doctorId}:availability:${dateString}`);
+      // ✅ SQL: Get availability from staff_availability table
+      const db = getDbClient();
+      const { data: dayAvailabilityData } = await db
+        .from('staff_availability')
+        .select('slots')
+        .eq('staff_id', doctorId)
+        .eq('date', dateString)
+        .single();
       
-      if (dayAvailability?.slots) {
-        totalSlots += dayAvailability.slots.length;
-        bookedSlots += dayAvailability.slots.filter((s: TimeSlot) => s.status === 'booked').length;
-        availableSlots += dayAvailability.slots.filter((s: TimeSlot) => s.status === 'available').length;
+      if (dayAvailabilityData?.slots) {
+        const slots = dayAvailabilityData.slots || [];
+        totalSlots += slots.length;
+        bookedSlots += slots.filter((s: TimeSlot) => s.status === 'booked').length;
+        availableSlots += slots.filter((s: TimeSlot) => s.status === 'available').length;
       }
     }
     

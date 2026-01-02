@@ -3,9 +3,9 @@
  * NO KV STORE - All data from SQL
  */
 
-import { Hono } from 'npm:hono';
-import { getDbClient } from '../../../supabase/lib/db.ts';
-import { getSchedulingRepository } from '../../../supabase/lib/repositories/scheduling.ts';
+import { Hono } from 'hono';
+import { getDbClient } from '../../../supabase/lib/db';
+import { getSchedulingRepository } from '../../../supabase/lib/repositories/scheduling';
 
 export function staffAvailabilityRoutesSQL(app: Hono) {
   

@@ -9,9 +9,9 @@ import { Users, Check } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Badge } from '../ui/badge';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { projectId } from '../../utils/supabase/info';
-import { authenticatedFetch } from '../../utils/supabase/auth-helpers';
+import { authenticatedFetch } from '../../utils/session-manager';
 
 interface ServiceStaffAssignmentButtonProps {
   serviceId: string;
@@ -34,23 +34,26 @@ export function ServiceStaffAssignmentButton({
   const loadStaff = async () => {
     try {
       setLoading(true);
-      const response = await authenticatedFetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/staff`,
-        { method: 'GET' }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/staff`
       );
-
-      if (response.ok) {
-        const data = await response.json();
+      
+      if (data.success) {
         setStaffList(data.staff || []);
         
         // Load current assignments
-        const serviceResponse = await authenticatedFetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/services/${serviceId}/staff`,
-          { method: 'GET' }
+        const serviceData = await apiCallJson<any>(
+          `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/services/${serviceId}/staff`
         );
         
-        if (serviceResponse.ok) {
-          const serviceData = await serviceResponse.json();
+        if (serviceData.success) {
           setSelectedStaff(serviceData.assignedStaffIds || []);
         }
       }
@@ -78,24 +81,31 @@ export function ServiceStaffAssignmentButton({
   const handleSave = async () => {
     try {
       setLoading(true);
-      const response = await authenticatedFetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/services/${serviceId}/staff`,
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/services/${serviceId}/staff`,
         {
           method: 'PUT',
           body: JSON.stringify({ staffIds: selectedStaff })
         }
       );
 
-      if (response.ok) {
+      if (data.success) {
         toast.success('Staff assigned successfully');
         setOpen(false);
         onSuccess?.();
       } else {
-        throw new Error('Failed to assign staff');
+        throw new Error(data.error || data.message || 'Failed to assign staff');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error assigning staff:', error);
-      toast.error('Failed to assign staff');
+      toast.error(error?.message || 'Failed to assign staff');
     } finally {
       setLoading(false);
     }

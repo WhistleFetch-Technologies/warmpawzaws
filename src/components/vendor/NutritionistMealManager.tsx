@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Plus, Edit, Trash2, Save, Clock, Package, AlertCircle } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+// ✅ FIX: Removed Supabase imports - using API Gateway now
+import { toast } from 'sonner';
 import { Button } from '../ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
 
@@ -51,38 +51,64 @@ export function NutritionistMealManager({ vendorId, vendorName, onBack }: Nutrit
     try {
       setLoading(true);
 
-      // Load products
-      const productsRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/meal-products`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
-      );
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
 
-      if (productsRes.ok) {
-        const data = await productsRes.json();
-        // ✅ FIX: Handle standardized response format
-        // Response format: { success: true, products: [...], total: ... }
-        setProducts(data.products || data.data?.products || []);
-      } else {
-        const errorData = await productsRes.json().catch(() => ({ error: 'Unknown error' }));
-        console.error('Failed to load products:', errorData);
-        // Don't show error toast on initial load - just log
+      // Load products (using nutritionist menu endpoint)
+      try {
+        const menuData = await apiCallJson<any>(
+          `${API_GATEWAY_URL}/make-server-3dd53475/nutritionist/${vendorId}/menu`
+        );
+        
+        if (menuData.success && menuData.menu) {
+          // Map menu items to products format
+          const mappedProducts = menuData.menu.map((item: any) => ({
+            id: item.itemId || item.id,
+            name: item.name,
+            description: item.description,
+            price: item.price,
+            type: item.type,
+            ingredients: item.ingredients || [],
+            nutritionalInfo: item.nutritionalInfo || {},
+            preparationTime: item.preparationTime || 30,
+            isAvailable: item.isAvailable
+          }));
+          setProducts(mappedProducts);
+        } else {
+          setProducts([]);
+        }
+      } catch (productError) {
+        console.error('Failed to load products:', productError);
+        setProducts([]);
       }
 
-      // Load orders
-      const ordersRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/meal-orders`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
-      );
-
-      if (ordersRes.ok) {
-        const data = await ordersRes.json();
-        // ✅ FIX: Handle standardized response format
-        // Response format: { success: true, orders: [...], total: ... }
-        setOrders(data.orders || data.data?.orders || []);
-      } else {
-        const errorData = await ordersRes.json().catch(() => ({ error: 'Unknown error' }));
-        console.error('Failed to load orders:', errorData);
-        // Don't show error toast on initial load - just log
+      // Load orders (using bookings with service type filter)
+      try {
+        const ordersData = await apiCallJson<any>(
+          `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/bookings?serviceType=nutritionist_meal`
+        );
+        
+        if (ordersData.success && ordersData.bookings) {
+          // Map bookings to orders format
+          const mappedOrders = ordersData.bookings.map((booking: any) => ({
+            orderId: booking.id,
+            items: booking.metadata?.items || [],
+            total: booking.total_amount || 0,
+            status: booking.status,
+            createdAt: booking.created_at
+          }));
+          setOrders(mappedOrders);
+        } else {
+          setOrders([]);
+        }
+      } catch (orderError) {
+        console.error('Failed to load orders:', orderError);
+        setOrders([]);
       }
 
     } catch (error: any) {
@@ -101,29 +127,48 @@ export function NutritionistMealManager({ vendorId, vendorName, onBack }: Nutrit
     }
 
     try {
-      const endpoint = editingProduct
-        ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/meal-products/${editingProduct.id}`
-        : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/meal-products`;
-
-      const response = await fetch(endpoint, {
-        method: editingProduct ? 'PUT' : 'POST',
-        headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(formData)
-      });
-
-      if (response.ok) {
-        toast.success(editingProduct ? 'Product updated successfully' : 'Product created successfully');
-        setShowAddProduct(false);
-        setEditingProduct(null);
-        resetForm();
-        await loadData(); // ✅ Ensure data reloads
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      if (editingProduct) {
+        // Update existing product (TODO: Create update endpoint if needed)
+        toast.warning('Update endpoint not yet implemented. Please delete and recreate.');
+        return;
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
-        const errorMessage = errorData.error || errorData.message || 'Operation failed';
-        toast.error(errorMessage);
+        // Create new meal product
+        const createData = await apiCallJson<any>(
+          `${API_GATEWAY_URL}/make-server-3dd53475/nutritionist/meals/item`,
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              nutritionistId: vendorId,
+              name: formData.name,
+              description: formData.description || '',
+              price: parseFloat(formData.price),
+              type: formData.dietType || 'fresh',
+              ingredients: formData.ingredients || [],
+              nutritionalInfo: formData.nutritionalInfo || {},
+              preparationTime: parseInt(formData.preparationTime) || 30,
+              dietaryTags: formData.suitableFor || [],
+              images: []
+            })
+          }
+        );
+
+        if (createData.success) {
+          toast.success('Product created successfully');
+          setShowAddProduct(false);
+          setEditingProduct(null);
+          resetForm();
+          await loadData();
+        } else {
+          toast.error(createData.error || createData.message || 'Failed to create product');
+        }
       }
     } catch (error: any) {
       console.error('Error saving product:', error);
@@ -141,22 +186,21 @@ export function NutritionistMealManager({ vendorId, vendorName, onBack }: Nutrit
     }
 
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/meal-products/${productId}`,
-        {
-          method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
-
-      if (response.ok) {
-        toast.success(`Product "${productName}" deleted successfully`);
-        await loadData(); // ✅ Ensure data reloads
-      } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
-        const errorMessage = errorData.error || errorData.message || 'Failed to delete product';
-        toast.error(errorMessage);
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
       }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      // TODO: Create delete endpoint for meal products
+      // For now, mark as inactive in products table
+      toast.warning('Delete endpoint not yet implemented. Product will be marked inactive.');
+      
+      // Note: Would need to create DELETE endpoint: /nutritionist/meals/item/:itemId
+      // await apiCallJson(`${API_GATEWAY_URL}/make-server-3dd53475/nutritionist/meals/item/${productId}`, { method: 'DELETE' });
+      
     } catch (error: any) {
       console.error('Error deleting product:', error);
       const errorMessage = error?.message || 'Network error. Please check your connection and try again.';

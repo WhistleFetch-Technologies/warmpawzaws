@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
-import { Button } from '../ui/button';
+import { WarmpawzButton } from '../shared/design-system/WarmpawzButton';
 import { 
   ChevronLeft, Clock, MapPin, Calendar, Check, X, Copy,
   AlertCircle, RefreshCw, Eye, EyeOff, Package, ChevronRight
 } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { copyTextToClipboard } from '../../utils/shareUtils';
+import { ListSkeleton } from '../ui/skeletons';
 
 import { BookingDetailModal } from './BookingDetailModal';
 
@@ -219,13 +220,29 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine 
       {/* Header */}
       <div className="sticky top-0 bg-white border-b border-gray-200 z-10">
         <div className="flex items-center justify-between p-4 max-w-[430px] mx-auto">
-          <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg">
+          <WarmpawzButton
+            variant="icon"
+            onClick={onBack}
+            aria-label="Go back"
+            style={{ 
+              padding: '0.5rem',
+              background: 'transparent'
+            }}
+          >
             <ChevronLeft className="w-5 h-5" />
-          </button>
+          </WarmpawzButton>
           <h1 className="font-semibold">My Bookings</h1>
-          <button onClick={loadBookings} className="p-2 hover:bg-gray-100 rounded-lg">
+          <WarmpawzButton
+            variant="icon"
+            onClick={loadBookings}
+            aria-label="Refresh bookings"
+            style={{ 
+              padding: '0.5rem',
+              background: 'transparent'
+            }}
+          >
             <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
-          </button>
+          </WarmpawzButton>
         </div>
 
         {/* Filter Tabs */}
@@ -235,17 +252,22 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine 
             { id: 'upcoming', label: 'Upcoming' },
             { id: 'completed', label: 'Completed' }
           ].map((tab) => (
-            <button
+            <WarmpawzButton
               key={tab.id}
+              variant={activeFilter === tab.id ? 'solid' : 'outlined'}
               onClick={() => setActiveFilter(tab.id as any)}
-              className={`flex-1 py-2 px-4 rounded-lg text-sm transition-colors ${
-                activeFilter === tab.id
-                  ? 'bg-[#FF8C42] text-white'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
+              fullWidth
+              style={{
+                flex: 1,
+                padding: '0.5rem 1rem',
+                fontSize: '0.875rem',
+                ...(activeFilter === tab.id
+                  ? { background: '#FF8C42', color: 'white' }
+                  : { background: '#F3F4F6', color: '#4B5563' })
+              }}
             >
               {tab.label}
-            </button>
+            </WarmpawzButton>
           ))}
         </div>
       </div>
@@ -253,9 +275,7 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine 
       {/* Bookings List */}
       <div className="max-w-[430px] mx-auto p-4 space-y-3 pb-20">
         {loading ? (
-          <div className="flex justify-center items-center py-20">
-            <RefreshCw className="w-8 h-8 text-[#FF8C42] animate-spin" />
-          </div>
+          <ListSkeleton count={5} showAvatar={false} />
         ) : filteredBookings.length === 0 ? (
           <div className="text-center py-20">
             <AlertCircle className="w-12 h-12 text-gray-300 mx-auto mb-3" />

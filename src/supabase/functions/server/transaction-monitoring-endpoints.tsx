@@ -1,5 +1,10 @@
-import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from 'hono';
+import { 
+  getCustomersRepository,
+  getVendorsRepository
+} from '../../../supabase/lib/repositories/index';
+import { getDbClient } from '../../../supabase/lib/db';
 
 export function transactionMonitoringEndpoints(app: Hono) {
   
@@ -92,19 +97,21 @@ export function transactionMonitoringEndpoints(app: Hono) {
           let customer = 'Unknown';
           let vendor = 'Unknown';
           
-          // Try to get customer info
-          if (payment.customerId) {
-            const customerData = await kv.get(`customer:${payment.customerId}`);
+          // ✅ SQL: Try to get customer info
+          if (payment.customerId || payment.customer_id) {
+            const customersRepo = getCustomersRepository();
+            const customerData = await customersRepo.findById(payment.customerId || payment.customer_id);
             if (customerData) {
-              customer = customerData.fullName || customerData.name || customerData.phone || 'Unknown';
+              customer = customerData.full_name || customerData.name || customerData.phone || 'Unknown';
             }
           }
           
-          // Try to get vendor info
-          if (payment.vendorId) {
-            const vendorData = await kv.get(`vendor:${payment.vendorId}`);
+          // ✅ SQL: Try to get vendor info
+          if (payment.vendorId || payment.vendor_id) {
+            const vendorsRepo = getVendorsRepository();
+            const vendorData = await vendorsRepo.findById(payment.vendorId || payment.vendor_id);
             if (vendorData) {
-              vendor = vendorData.businessName || vendorData.fullName || 'Unknown';
+              vendor = vendorData.business_name || vendorData.full_name || 'Unknown';
             }
           }
           
@@ -204,7 +211,14 @@ export function transactionMonitoringEndpoints(app: Hono) {
     try {
       const { txnId } = c.req.param();
       
-      const payment = await kv.get(`payment:${txnId}`);
+      // ✅ SQL: Get payment from payments table
+      const db = getDbClient();
+      const { data: payment } = await db
+        .from('payments')
+        .select('*')
+        .eq('id', txnId)
+        .single();
+      
       if (!payment) {
         return c.json({ error: 'Transaction not found' }, 404);
       }
@@ -213,12 +227,16 @@ export function transactionMonitoringEndpoints(app: Hono) {
         return c.json({ error: 'Only failed transactions can be retried' }, 400);
       }
       
-      // Mark for retry
-      payment.status = 'pending';
-      payment.retryAttempts = (payment.retryAttempts || 0) + 1;
-      payment.lastRetryAt = new Date().toISOString();
-      
-      await kv.set(`payment:${txnId}`, payment);
+      // ✅ SQL: Mark for retry
+      await db
+        .from('payments')
+        .update({
+          status: 'pending',
+          retry_attempts: (payment.retry_attempts || 0) + 1,
+          last_retry_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', txnId);
       
       // TODO: Trigger actual payment retry with Razorpay
       
@@ -402,31 +420,44 @@ export function transactionMonitoringEndpoints(app: Hono) {
     };
   }
   
+  // ✅ SQL: Get payments in date range from payments table
   async function getPaymentsInRange(start: string, end: string): Promise<any[]> {
-    const allPayments = await kv.getByPrefix('payment:');
-    return allPayments.filter((p: any) => {
-      if (!p.id || p.id.includes(':') || typeof p !== 'object') return false;
-      const paymentDate = p.createdAt || p.paidAt;
-      return paymentDate >= start && paymentDate <= end;
-    });
+    const db = getDbClient();
+    const { data: payments } = await db
+      .from('payments')
+      .select('*')
+      .gte('created_at', start)
+      .lte('created_at', end)
+      .order('created_at', { ascending: false });
+    
+    return payments || [];
   }
   
+  // ✅ SQL: Get refunds in date range from refunds table
   async function getRefundsInRange(start: string, end: string): Promise<any[]> {
-    const allRefunds = await kv.getByPrefix('refund:');
-    return allRefunds.filter((r: any) => {
-      if (!r.id || r.id.includes(':') || typeof r !== 'object') return false;
-      const refundDate = r.createdAt;
-      return refundDate >= start && refundDate <= end;
-    });
+    const db = getDbClient();
+    const { data: refunds } = await db
+      .from('refunds')
+      .select('*')
+      .gte('created_at', start)
+      .lte('created_at', end)
+      .order('created_at', { ascending: false });
+    
+    return refunds || [];
   }
   
+  // ✅ SQL: Get payouts in date range from settlements table
   async function getPayoutsInRange(start: string, end: string): Promise<any[]> {
-    const allPayouts = await kv.getByPrefix('payout:');
-    return allPayouts.filter((p: any) => {
-      if (!p.id || p.id.includes(':') || typeof p !== 'object') return false;
-      const payoutDate = p.completedAt || p.createdAt;
-      return payoutDate >= start && payoutDate <= end;
-    });
+    const db = getDbClient();
+    const { data: payouts } = await db
+      .from('settlements')
+      .select('*')
+      .gte('settled_at', start)
+      .lte('settled_at', end)
+      .eq('status', 'settled')
+      .order('settled_at', { ascending: false });
+    
+    return payouts || [];
   }
   
   console.log('✅ Transaction monitoring endpoints registered');

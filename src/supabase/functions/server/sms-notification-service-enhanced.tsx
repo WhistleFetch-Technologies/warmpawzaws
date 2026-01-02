@@ -1,5 +1,11 @@
-import { Hono } from "npm:hono";
-import { sendSuccess, sendError } from "./response-utils.ts";
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from "hono";
+import { sendSuccess, sendError } from "./response-utils";
+import {
+  getPlatformSettingsRepository,
+  getNotificationsRepository
+} from '../../../supabase/lib/repositories/index';
+import { getDbClient } from '../../../supabase/lib/db';
 
 /**
  * 📱 ENHANCED SMS NOTIFICATION SERVICE
@@ -40,7 +46,7 @@ interface SMSNotification {
 // SHARED NOTIFICATION TRIGGER (Exported)
 // ============================================
 
-export async function triggerBookingNotification(kv: any, event: string, data: any) {
+export async function triggerBookingNotification(event: string, data: any) {
   try {
     console.log(`🔔 Triggering Notification for event: ${event}`);
     const { booking, customer, vendor, staff } = data;
@@ -68,9 +74,16 @@ export async function triggerBookingNotification(kv: any, event: string, data: a
         // In a real app, we'd call the internal sendSMS function or enqueue a job
         console.log(`📨 [SMS] To: ${to} | Msg: ${message}`);
         
-        // Persist notification log
-        const notifId = `sms_log_${Date.now()}`;
-        await kv.set(`sms_log:${notifId}`, { to, message, event, status: 'sent', createdAt: new Date().toISOString() });
+        // ✅ SQL: Persist notification log
+        const notificationsRepo = getNotificationsRepository();
+        await notificationsRepo.create({
+          to,
+          message,
+          event,
+          status: 'sent',
+          notification_type: 'sms',
+          created_at: new Date().toISOString()
+        });
     }
 
   } catch (error) {
@@ -78,7 +91,7 @@ export async function triggerBookingNotification(kv: any, event: string, data: a
   }
 }
 
-export function smsNotificationServiceEnhanced(app: Hono, kv: any) {
+export function smsNotificationServiceEnhanced(app: Hono) {
   const BASE_PATH = "/make-server-3dd53475";
 
   // SMS Templates for all events
@@ -220,9 +233,9 @@ export function smsNotificationServiceEnhanced(app: Hono, kv: any) {
     try {
       console.log(`📱 Sending SMS to ${to}: ${message}`);
 
-      // Get SMS provider configuration from platform settings
-      const platformSettings = await kv.get('platform_settings') || {};
-      const smsConfig = platformSettings.sms || { provider: 'mock' };
+      // ✅ SQL: Get SMS provider configuration from platform settings
+      const platformSettingsRepo = getPlatformSettingsRepository();
+      const smsConfig = await platformSettingsRepo.getSmsSettings() || { provider: 'mock' };
 
       // Send based on provider
       if (smsConfig.provider === 'twilio') {
@@ -243,12 +256,31 @@ export function smsNotificationServiceEnhanced(app: Hono, kv: any) {
         setTimeout(async () => {
           notification.status = 'delivered';
           notification.deliveredAt = new Date().toISOString();
-          await kv.set(`sms:${smsId}`, notification);
+          // ✅ SQL: Update notification status
+          const notificationsRepo = getNotificationsRepository();
+          await notificationsRepo.update(smsId, {
+            status: 'delivered',
+            delivered_at: notification.deliveredAt
+          });
         }, 2000);
       }
 
-      // Save notification
-      await kv.set(`sms:${smsId}`, notification);
+      // ✅ SQL: Save notification
+      const notificationsRepo = getNotificationsRepository();
+      await notificationsRepo.create({
+        id: smsId,
+        to,
+        message,
+        event,
+        status: notification.status,
+        provider: notification.provider,
+        provider_id: notification.providerId,
+        sent_at: notification.sentAt,
+        delivered_at: notification.deliveredAt,
+        error: notification.error,
+        notification_type: 'sms',
+        created_at: notification.createdAt
+      });
 
       // Track analytics
       await trackSMSAnalytics(event, 'sent');
@@ -260,7 +292,12 @@ export function smsNotificationServiceEnhanced(app: Hono, kv: any) {
       console.error('❌ SMS send failed:', error);
       notification.status = 'failed';
       notification.error = error.message;
-      await kv.set(`sms:${smsId}`, notification);
+      // ✅ SQL: Update notification with error
+      const notificationsRepo = getNotificationsRepository();
+      await notificationsRepo.update(smsId, {
+        status: 'failed',
+        error: error.message
+      });
       
       // Track failure
       await trackSMSAnalytics(event, 'failed');
@@ -319,21 +356,46 @@ export function smsNotificationServiceEnhanced(app: Hono, kv: any) {
    * Track SMS analytics
    */
   async function trackSMSAnalytics(event: string, status: string) {
+    // ✅ SQL: Track SMS analytics
+    const db = getDbClient();
     const today = new Date().toISOString().split('T')[0];
-    const key = `sms:analytics:${today}`;
     
-    const analytics = await kv.get(key) || {
-      date: today,
-      byEvent: {},
-      byStatus: {},
-      total: 0
-    };
-
-    analytics.byEvent[event] = (analytics.byEvent[event] || 0) + 1;
-    analytics.byStatus[status] = (analytics.byStatus[status] || 0) + 1;
-    analytics.total++;
-
-    await kv.set(key, analytics);
+    // Get or create analytics record for today
+    const { data: existing } = await db
+      .from('notification_analytics')
+      .select('*')
+      .eq('date', today)
+      .eq('notification_type', 'sms')
+      .single();
+    
+    if (existing) {
+      const byEvent = existing.by_event || {};
+      const byStatus = existing.by_status || {};
+      byEvent[event] = (byEvent[event] || 0) + 1;
+      byStatus[status] = (byStatus[status] || 0) + 1;
+      
+      await db
+        .from('notification_analytics')
+        .update({
+          by_event: byEvent,
+          by_status: byStatus,
+          total: (existing.total || 0) + 1,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', existing.id);
+    } else {
+      await db
+        .from('notification_analytics')
+        .insert({
+          date: today,
+          notification_type: 'sms',
+          by_event: { [event]: 1 },
+          by_status: { [status]: 1 },
+          total: 1,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
+    }
   }
 
   /**
@@ -415,7 +477,9 @@ export function smsNotificationServiceEnhanced(app: Hono, kv: any) {
     try {
       const { smsId } = c.req.param();
 
-      const notification = await kv.get(`sms:${smsId}`);
+      // ✅ SQL: Get notification
+      const notificationsRepo = getNotificationsRepository();
+      const notification = await notificationsRepo.findById(smsId);
       
       if (!notification) {
         return sendError(c, 'SMS not found', 404);
@@ -440,35 +504,46 @@ export function smsNotificationServiceEnhanced(app: Hono, kv: any) {
       const start = startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
       const end = endDate || new Date().toISOString().split('T')[0];
 
-      // Fetch analytics for date range
-      const analyticsData = await kv.getByPrefix('sms:analytics:') || [];
+      // ✅ SQL: Fetch analytics for date range
+      const db = getDbClient();
+      const { data: analyticsData } = await db
+        .from('notification_analytics')
+        .select('*')
+        .eq('notification_type', 'sms')
+        .gte('date', start)
+        .lte('date', end)
+        .order('date', { ascending: true });
       
-      const filtered = analyticsData
-        .map((item: any) => item.value || item)
-        .filter((a: any) => a.date >= start && a.date <= end);
+      const filtered = analyticsData || [];
 
       // Aggregate
       const aggregated = {
         total: 0,
         byEvent: {} as Record<string, number>,
         byStatus: {} as Record<string, number>,
-        dates: filtered.map((a: any) => ({
-          date: a.date,
-          total: a.total,
-          byEvent: a.byEvent,
-          byStatus: a.byStatus
-        }))
+        dates: []
       };
 
       filtered.forEach((a: any) => {
-        aggregated.total += a.total;
+        aggregated.total += a.total || 0;
         
-        Object.entries(a.byEvent).forEach(([event, count]: [string, any]) => {
+        const byEvent = a.by_event || a.byEvent || {};
+        Object.entries(byEvent).forEach(([event, count]: [string, any]) => {
           aggregated.byEvent[event] = (aggregated.byEvent[event] || 0) + count;
         });
         
-        Object.entries(a.byStatus).forEach(([status, count]: [string, any]) => {
+        const byStatus = a.by_status || a.byStatus || {};
+        Object.entries(byStatus).forEach(([status, count]: [string, any]) => {
           aggregated.byStatus[status] = (aggregated.byStatus[status] || 0) + count;
+        });
+      });
+      
+      filtered.forEach((a: any) => {
+        aggregated.dates.push({
+          date: a.date,
+          total: a.total || 0,
+          byEvent: a.by_event || a.byEvent || {},
+          byStatus: a.by_status || a.byStatus || {}
         });
       });
 
@@ -501,18 +576,15 @@ export function smsNotificationServiceEnhanced(app: Hono, kv: any) {
     try {
       const { provider, accountSid, authToken, fromNumber, region } = await c.req.json();
 
-      const platformSettings = await kv.get('platform_settings') || {};
-      
-      platformSettings.sms = {
+      // ✅ SQL: Update SMS configuration in platform settings
+      const platformSettingsRepo = getPlatformSettingsRepository();
+      await platformSettingsRepo.updateSmsSettings({
         provider, // 'twilio' | 'aws_sns' | 'mock'
         accountSid,
         authToken,
         fromNumber,
-        region,
-        updatedAt: new Date().toISOString()
-      };
-
-      await kv.set('platform_settings', platformSettings);
+        region
+      });
 
       return sendSuccess(c, { message: 'SMS provider configured successfully' });
 

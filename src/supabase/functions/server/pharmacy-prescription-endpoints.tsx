@@ -1,5 +1,5 @@
-import { Hono } from "npm:hono";
-import { sendSuccess, sendError } from "./response-utils.ts";
+import { Hono } from "hono";
+import { sendSuccess, sendError } from "./response-utils";
 
 /**
  * 📋 PHARMACY PRESCRIPTION VERIFICATION ENDPOINTS

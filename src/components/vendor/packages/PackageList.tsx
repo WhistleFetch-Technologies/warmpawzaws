@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import { Package, Plus, Edit, Trash2, TrendingUp, Clock, CheckCircle, XCircle, AlertCircle, ArrowLeft } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Badge } from '../../ui/badge';
@@ -42,21 +43,23 @@ export function PackageList({
   const loadPackages = async () => {
     try {
       setLoading(true);
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/packages`,
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/packages`
       );
 
-      if (response.ok) {
-        const data = await response.json();
-        // ✅ FIX: Handle standardized response format
-        // Response format: { success: true, packages: [...], total: ... }
+      // ✅ FIX: Handle standardized response format
+      // Response format: { success: true, packages: [...], total: ... }
+      if (data.success) {
         setPackages(data.packages || data.data?.packages || []);
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-        console.error('Failed to load packages:', errorData);
+        console.error('Failed to load packages:', data.error || data.message);
         // Don't show error toast on initial load - just log
       }
     } catch (error: any) {
@@ -76,21 +79,24 @@ export function PackageList({
     }
 
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/packages/${packageId}`,
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/packages/${packageId}`,
         {
-          method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          method: 'DELETE'
         }
       );
 
-      if (response.ok) {
+      if (data.success) {
         toast.success(`Package "${packageName}" deleted successfully`);
         await loadPackages(); // ✅ Ensure packages reload
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
-        const errorMessage = errorData.error || errorData.message || 'Failed to delete package';
-        toast.error(errorMessage);
+        toast.error(data.error || data.message || 'Failed to delete package');
       }
     } catch (error: any) {
       console.error('Error deleting package:', error);

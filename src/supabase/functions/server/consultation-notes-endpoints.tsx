@@ -1,5 +1,9 @@
-import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from 'hono';
+import { 
+  getBookingsRepository
+} from '../../../supabase/lib/repositories/index';
+import { getDbClient } from '../../../supabase/lib/db';
 
 export function consultationNotesEndpoints(app: Hono) {
   
@@ -17,31 +21,45 @@ export function consultationNotesEndpoints(app: Hono) {
         return c.json({ error: 'Missing required fields' }, 400);
       }
       
-      const booking = await kv.get(`booking:${bookingId}`);
+      // ✅ SQL: Get booking using repository
+      const bookingsRepo = getBookingsRepository();
+      const booking = await bookingsRepo.findById(bookingId);
       if (!booking) {
         return c.json({ error: 'Booking not found' }, 404);
       }
       
-      // Create note object
+      // ✅ SQL: Create note in consultation_notes table
+      const db = getDbClient();
       const noteId = `note_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+      
+      const { data: noteData, error: insertError } = await db
+        .from('consultation_notes')
+        .insert({
+          id: noteId,
+          booking_id: bookingId,
+          content: notes,
+          author_id: authorId,
+          author_type: authorType, // 'vendor' or 'staff'
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+      
+      if (insertError) {
+        console.error('Error saving consultation note:', insertError);
+        return c.json({ error: 'Failed to save note' }, 500);
+      }
+      
       const note = {
-        id: noteId,
-        bookingId,
-        content: notes,
-        authorId,
-        authorType, // 'vendor' or 'staff'
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        id: noteData.id,
+        bookingId: noteData.booking_id,
+        content: noteData.content,
+        authorId: noteData.author_id,
+        authorType: noteData.author_type,
+        createdAt: noteData.created_at,
+        updatedAt: noteData.updated_at
       };
-      
-      // Save note
-      await kv.set(`consultation_note:${noteId}`, note);
-      
-      // Add to booking's notes list
-      const bookingNotesKey = `booking:${bookingId}:notes`;
-      const bookingNotes = await kv.get(bookingNotesKey) || [];
-      bookingNotes.push(noteId);
-      await kv.set(bookingNotesKey, bookingNotes);
       
       console.log(`✅ [CONSULTATION-NOTES] Note saved: ${noteId}`);
       
@@ -65,16 +83,28 @@ export function consultationNotesEndpoints(app: Hono) {
     try {
       const { bookingId } = c.req.param();
       
-      const bookingNotesKey = `booking:${bookingId}:notes`;
-      const noteIds = await kv.get(bookingNotesKey) || [];
+      // ✅ SQL: Get all notes for booking from consultation_notes table
+      const db = getDbClient();
+      const { data: notesData, error } = await db
+        .from('consultation_notes')
+        .select('*')
+        .eq('booking_id', bookingId)
+        .order('created_at', { ascending: false });
       
-      const notes = [];
-      for (const noteId of noteIds) {
-        const note = await kv.get(`consultation_note:${noteId}`);
-        if (note) {
-          notes.push(note);
-        }
+      if (error) {
+        console.error('Error fetching consultation notes:', error);
+        return c.json({ error: 'Failed to fetch notes' }, 500);
       }
+      
+      const notes = (notesData || []).map((note: any) => ({
+        id: note.id,
+        bookingId: note.booking_id,
+        content: note.content,
+        authorId: note.author_id,
+        authorType: note.author_type,
+        createdAt: note.created_at,
+        updatedAt: note.updated_at
+      }));
       
       return c.json({
         success: true,

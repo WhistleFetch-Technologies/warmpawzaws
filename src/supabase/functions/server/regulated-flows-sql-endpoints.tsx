@@ -4,9 +4,9 @@
  * Medical records, prescriptions, medicine orders, diagnostics, reports
  */
 
-import { Hono } from 'npm:hono';
-import { getRegulatedFlowsService } from '../../../supabase/lib/services/regulated-flows-service.ts';
-import { getRegulatedFlowsRepository } from '../../../supabase/lib/repositories/regulated-flows.ts';
+import { Hono } from 'hono';
+import { getRegulatedFlowsService } from '../../../supabase/lib/services/regulated-flows-service';
+import { getRegulatedFlowsRepository } from '../../../supabase/lib/repositories/regulated-flows';
 
 export function registerRegulatedFlowsSQLEndpoints(app: Hono) {
   // ============================================

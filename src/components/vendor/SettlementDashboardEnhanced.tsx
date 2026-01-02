@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../ui/card';
 import { Badge } from '../ui/badge';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { TrendingUp, DollarSign, Crown, ArrowUpRight, Building2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { settlementTierSystemApi } from '../../utils/api/client';
 
 interface VendorTier {
   id: string;
@@ -37,12 +38,25 @@ export function SettlementDashboardEnhanced({ vendorId }: { vendorId: string }) 
   const loadData = async () => {
     try {
       setLoading(true);
-      // ✅ Updated: Use API client instead of direct fetch
-      const resData = await settlementTierSystemApi.getVendorTier(vendorId);
-      setData(resData);
-    } catch (error) {
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const resData = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/tier/${vendorId}`
+      );
+      
+      if (resData.success) {
+        setData(resData);
+      } else {
+        throw new Error(resData.error || resData.message || 'Failed to load data');
+      }
+    } catch (error: any) {
       console.error(error);
-      toast.error('Failed to load settlement data');
+      toast.error(error?.message || 'Failed to load settlement data');
     } finally {
       setLoading(false);
     }

@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { VendorApi } from '../../services/api';
+import { GradientBackground, BrandedCard, StatusIcon } from '../../components/branded';
 
 interface VendorOnboardingScreenProps {
   phone: string;
@@ -268,36 +269,40 @@ export function VendorOnboardingScreen({
   const currentSectionData = sections[currentSection];
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <View style={styles.header}>
-          {onBack && (
-            <TouchableOpacity onPress={onBack} style={styles.backButton}>
-              <Text style={styles.backButtonText}>← Back</Text>
-            </TouchableOpacity>
-          )}
-          <Text style={styles.title}>
-            {roleName || 'Vendor'} Onboarding
-          </Text>
-          {sections.length > 1 && (
-            <Text style={styles.progressText}>
-              Section {currentSection + 1} of {sections.length}
+    <GradientBackground variant="peach">
+      <SafeAreaView style={styles.container}>
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          <View style={styles.header}>
+            {onBack && (
+              <TouchableOpacity onPress={onBack} style={styles.backButton}>
+                <Text style={styles.backButtonText}>← Back</Text>
+              </TouchableOpacity>
+            )}
+            <View style={styles.iconContainer}>
+              <StatusIcon icon="info" size={100} />
+            </View>
+            <Text style={styles.title}>
+              {currentSectionData?.title || roleName || 'Vendor'} Information
             </Text>
-          )}
-        </View>
+            {sections.length > 1 && (
+              <Text style={styles.progressText}>
+                Section {currentSection + 1} of {sections.length}
+              </Text>
+            )}
+          </View>
 
-        {currentSectionData && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>{currentSectionData.title}</Text>
-            {currentSectionData.description && (
-              <Text style={styles.sectionDescription}>{currentSectionData.description}</Text>
+          <BrandedCard>
+            {currentSectionData && (
+              <View style={styles.section}>
+                {currentSectionData.description && (
+                  <Text style={styles.sectionDescription}>{currentSectionData.description}</Text>
+                )}
+
+                {currentSectionData.fields?.map((field: any) => renderField(field))}
+              </View>
             )}
 
-            {currentSectionData.fields?.map((field: any) => renderField(field))}
-          </View>
-        )}
-
-        <View style={styles.navigationContainer}>
+            <View style={styles.navigationContainer}>
           {currentSection > 0 && (
             <TouchableOpacity
               style={styles.navButton}
@@ -327,19 +332,21 @@ export function VendorOnboardingScreen({
               )}
             </TouchableOpacity>
           )}
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+            </View>
+          </BrandedCard>
+        </ScrollView>
+      </SafeAreaView>
+    </GradientBackground>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   scrollContent: {
     flexGrow: 1,
+    paddingTop: spacing.xl,
     paddingBottom: spacing.xl,
   },
   loadingContainer: {

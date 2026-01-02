@@ -8,7 +8,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '../../ui/tabs';
 import { useAdminIntegrations } from '../../../hooks/useAdminIntegrations';
 import { Cloud, Database, MessageSquare, Search, Map, Loader2, CheckCircle2, AlertCircle, Wifi, Key, Shield, Video, Bot, Brain, Radio, Globe, Server, Zap, Edit3, Save, X, Lock } from 'lucide-react';
 import { Badge } from '../../ui/badge';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { Alert, AlertDescription } from '../../ui/alert';
 
 export function CloudIntegrations() {

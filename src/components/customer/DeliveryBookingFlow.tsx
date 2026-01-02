@@ -48,7 +48,8 @@ declare global {
   }
 }
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
+import { WarmpawzButton } from '../shared/design-system/WarmpawzButton';
 
 interface DeliveryBookingFlowProps {
   serviceType: 'pharmacy' | 'products' | 'meals';
@@ -1509,13 +1510,19 @@ export function DeliveryBookingFlow({
 
         {/* Fixed Bottom Button */}
         <div className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white border-t border-gray-200 p-4">
-          <button
+          <WarmpawzButton
+            variant="solid"
             onClick={handlePayment}
             disabled={processingPayment || loading}
-            className="w-full py-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            fullWidth
+            style={{
+              padding: '0.75rem',
+              fontSize: '1rem',
+              fontWeight: 500
+            }}
           >
             {processingPayment ? 'Processing Payment...' : loading ? 'Placing Order...' : `Pay ₹${totals.total}`}
-          </button>
+          </WarmpawzButton>
         </div>
       </div>
     );

@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Switch } from '../../ui/switch';
 import { ArrowLeft, Save, RotateCcw, Clock, Package, AlertCircle } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 interface BookingSettings {
   advanceBookingWindowDays: number;

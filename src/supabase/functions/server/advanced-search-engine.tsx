@@ -20,12 +20,18 @@
  * Part of: Elasticsearch Integration Phase 1
  */
 
-import Fuse from 'npm:fuse.js@7.0.0';
-import { Hono } from 'npm:hono';
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import Fuse from 'fuse.js@7.0.0';
+import { Hono } from 'hono';
+import {
+  getVendorsRepository,
+  getProductsRepository,
+  getStaffRepository
+} from '../../../supabase/lib/repositories/index';
 
 const BASE_PATH = '/make-server-3dd53475';
 
-export function advancedSearchEngine(app: Hono, kv: any) {
+export function advancedSearchEngine(app: Hono) {
   
   // ============================================
   // SEARCH CONFIGURATION
@@ -118,9 +124,10 @@ export function advancedSearchEngine(app: Hono, kv: any) {
         services: []
       };
 
-      // Search vendors
-      const allVendors = await kv.getByPrefix('vendor:vendor_');
-      const activeVendors = allVendors.filter((v: any) => v.status === 'approved' && v.isActive);
+      // ✅ SQL: Search vendors
+      const vendorsRepo = getVendorsRepository();
+      const allVendors = await vendorsRepo.findAll();
+      const activeVendors = allVendors.filter((v: any) => (v.status === 'approved' || v.application_status === 'approved') && v.is_active);
       
       if (activeVendors.length > 0) {
         const vendorFuse = new Fuse(activeVendors, vendorSearchConfig);
@@ -132,8 +139,9 @@ export function advancedSearchEngine(app: Hono, kv: any) {
         }));
       }
 
-      // Search products
-      const allProducts = await kv.getByPrefix('product:prod_');
+      // ✅ SQL: Search products
+      const productsRepo = getProductsRepository();
+      const allProducts = await productsRepo.findAll();
       const activeProducts = allProducts.filter((p: any) => p.status === 'active');
       
       if (activeProducts.length > 0) {
@@ -146,9 +154,10 @@ export function advancedSearchEngine(app: Hono, kv: any) {
         }));
       }
 
-      // Search staff
-      const allStaff = await kv.getByPrefix('staff:staff_');
-      const activeStaff = allStaff.filter((s: any) => s.isActive !== false);
+      // ✅ SQL: Search staff
+      const staffRepo = getStaffRepository();
+      const allStaff = await staffRepo.findAll();
+      const activeStaff = allStaff.filter((s: any) => s.is_active !== false);
       
       if (activeStaff.length > 0) {
         const staffFuse = new Fuse(activeStaff, staffSearchConfig);
@@ -210,25 +219,28 @@ export function advancedSearchEngine(app: Hono, kv: any) {
           const searchStaff = !type || type === 'staff' || type === 'all';
           const searchProducts = !type || type === 'product' || type === 'all';
           
-          // 1. Vendors
+          // ✅ SQL: 1. Vendors
           if (searchVendors) {
-             const vendors = await kv.getByPrefix('vendor:vendor_');
-             const fuse = new Fuse(vendors.filter((v:any) => v.status === 'approved'), vendorSearchConfig);
+             const vendorsRepo = getVendorsRepository();
+             const vendors = await vendorsRepo.findAll();
+             const fuse = new Fuse(vendors.filter((v:any) => (v.status === 'approved' || v.application_status === 'approved')), vendorSearchConfig);
              const matches = fuse.search(searchTerm);
              results.push(...matches.map((m: any) => ({ ...m.item, _score: m.score, _type: 'vendor' })));
           }
           
-          // 2. Staff
+          // ✅ SQL: 2. Staff
           if (searchStaff) {
-             const staff = await kv.getByPrefix('staff:staff_');
+             const staffRepo = getStaffRepository();
+             const staff = await staffRepo.findAll();
              const fuse = new Fuse(staff, staffSearchConfig);
              const matches = fuse.search(searchTerm);
              results.push(...matches.map((m: any) => ({ ...m.item, _score: m.score, _type: 'staff' })));
           }
           
-          // 3. Products
+          // ✅ SQL: 3. Products
           if (searchProducts) {
-             const products = await kv.getByPrefix('product:prod_');
+             const productsRepo = getProductsRepository();
+             const products = await productsRepo.findAll();
              const fuse = new Fuse(products.filter((p:any) => p.status === 'active'), productSearchConfig);
              const matches = fuse.search(searchTerm);
              results.push(...matches.map((m: any) => ({ ...m.item, _score: m.score, _type: 'product' })));
@@ -285,9 +297,10 @@ export function advancedSearchEngine(app: Hono, kv: any) {
         limit = 50
       } = await c.req.json();
 
-      // Get all approved vendors
-      let vendors = await kv.getByPrefix('vendor:vendor_');
-      vendors = vendors.filter((v: any) => v.status === 'approved' && v.isActive);
+      // ✅ SQL: Get all approved vendors
+      const vendorsRepo = getVendorsRepository();
+      let vendors = await vendorsRepo.findAll();
+      vendors = vendors.filter((v: any) => (v.status === 'approved' || v.application_status === 'approved') && v.is_active);
 
       // Apply basic filters first (faster)
       if (serviceType) {
@@ -433,8 +446,9 @@ export function advancedSearchEngine(app: Hono, kv: any) {
         limit = 50
       } = await c.req.json();
 
-      // Get all active products
-      let products = await kv.getByPrefix('product:prod_');
+      // ✅ SQL: Get all active products
+      const productsRepo = getProductsRepository();
+      let products = await productsRepo.findAll();
       products = products.filter((p: any) => p.status === 'active');
 
       // Apply filters
@@ -545,9 +559,10 @@ export function advancedSearchEngine(app: Hono, kv: any) {
         limit = 50
       } = await c.req.json();
 
-      // Get all active staff
-      let staff = await kv.getByPrefix('staff:staff_');
-      staff = staff.filter((s: any) => s.isActive !== false);
+      // ✅ SQL: Get all active staff
+      const staffRepo = getStaffRepository();
+      let staff = await staffRepo.findAll();
+      staff = staff.filter((s: any) => s.is_active !== false);
 
       // Apply filters
       if (specialization) {
@@ -645,10 +660,11 @@ export function advancedSearchEngine(app: Hono, kv: any) {
 
       const suggestions: any[] = [];
 
-      // Vendor suggestions
+      // ✅ SQL: Vendor suggestions
       if (type === 'all' || type === 'vendors') {
-        const vendors = await kv.getByPrefix('vendor:vendor_');
-        const activeVendors = vendors.filter((v: any) => v.status === 'approved' && v.isActive);
+        const vendorsRepo = getVendorsRepository();
+        const vendors = await vendorsRepo.findAll();
+        const activeVendors = vendors.filter((v: any) => (v.status === 'approved' || v.application_status === 'approved') && v.is_active);
         
         const vendorMatches = activeVendors
           .filter((v: any) => 
@@ -666,9 +682,10 @@ export function advancedSearchEngine(app: Hono, kv: any) {
         suggestions.push(...vendorMatches);
       }
 
-      // Product suggestions
+      // ✅ SQL: Product suggestions
       if (type === 'all' || type === 'products') {
-        const products = await kv.getByPrefix('product:prod_');
+        const productsRepo = getProductsRepository();
+        const products = await productsRepo.findAll();
         const activeProducts = products.filter((p: any) => p.status === 'active');
         
         const productMatches = activeProducts

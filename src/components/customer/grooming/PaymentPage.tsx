@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Button } from '../../ui/button';
+import { WarmpawzButton } from '../../shared/design-system/WarmpawzButton';
 import { Card } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import { 
@@ -14,7 +14,7 @@ import {
   Loader2
 } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 interface PaymentPageProps {
   bookingData: {
@@ -375,13 +375,21 @@ export function PaymentPage({ bookingData, phone, onBack, onPaymentSuccess }: Pa
     <div className="min-h-screen bg-gray-50 max-w-md mx-auto pb-32">
       {/* Header */}
       <div className="bg-gradient-to-br from-[#FF8C42] to-[#FF7029] text-white px-6 pt-8 pb-6 sticky top-0 z-10">
-        <button 
+        <WarmpawzButton
+          variant="outlined"
           onClick={onBack}
-          className="mb-4 flex items-center gap-2 text-white/90 hover:text-white"
+          icon={ArrowLeft}
+          iconPosition="left"
+          aria-label="Go back"
+          style={{
+            marginBottom: '1rem',
+            color: 'rgba(255, 255, 255, 0.9)',
+            border: 'none',
+            background: 'transparent'
+          }}
         >
-          <ArrowLeft className="w-5 h-5" />
-          <span>Back</span>
-        </button>
+          Back
+        </WarmpawzButton>
         
         <h1 className="text-2xl font-bold mb-2">Payment</h1>
         <p className="text-white/80 text-sm">Review and pay securely</p>
@@ -541,8 +549,9 @@ export function PaymentPage({ bookingData, phone, onBack, onPaymentSuccess }: Pa
             </div>
             <div className="space-y-2">
               {activePromotions.map((promo) => (
-                <button
+                <WarmpawzButton
                   key={promo.id}
+                  variant={appliedPromotion?.id === promo.id ? 'solid' : 'outlined'}
                   onClick={() => {
                     if (appliedPromotion?.id === promo.id) {
                       setAppliedPromotion(null);
@@ -551,11 +560,15 @@ export function PaymentPage({ bookingData, phone, onBack, onPaymentSuccess }: Pa
                       toast.success(`Promotion "${promo.title}" applied!`);
                     }
                   }}
-                  className={`w-full text-left p-3 rounded-lg border transition-all ${
-                    appliedPromotion?.id === promo.id
-                      ? 'border-purple-500 bg-purple-50'
-                      : 'border-gray-200 hover:border-purple-300'
-                  }`}
+                  fullWidth
+                  style={{
+                    textAlign: 'left',
+                    padding: '0.75rem',
+                    ...(appliedPromotion?.id === promo.id
+                      ? { borderColor: '#9333EA', background: '#FAF5FF' }
+                      : { borderColor: '#E5E7EB' })
+                  }}
+                  aria-label={`${appliedPromotion?.id === promo.id ? 'Remove' : 'Apply'} promotion ${promo.title}`}
                 >
                   <div className="flex items-center justify-between">
                     <div>
@@ -569,7 +582,7 @@ export function PaymentPage({ bookingData, phone, onBack, onPaymentSuccess }: Pa
                       <Check className="w-5 h-5 text-purple-600" />
                     )}
                   </div>
-                </button>
+                </WarmpawzButton>
               ))}
             </div>
           </Card>
@@ -590,12 +603,20 @@ export function PaymentPage({ bookingData, phone, onBack, onPaymentSuccess }: Pa
                   {appliedCoupon.discount}% off applied
                 </p>
               </div>
-              <button 
+              <WarmpawzButton
+                variant="outlined"
                 onClick={() => setAppliedCoupon(null)}
-                className="text-sm text-red-600 hover:text-red-700"
+                aria-label="Remove coupon"
+                style={{
+                  fontSize: '0.875rem',
+                  color: '#DC2626',
+                  border: 'none',
+                  background: 'transparent',
+                  padding: 0
+                }}
               >
                 Remove
-              </button>
+              </WarmpawzButton>
             </div>
           ) : (
             <div className="flex gap-2">
@@ -606,14 +627,17 @@ export function PaymentPage({ bookingData, phone, onBack, onPaymentSuccess }: Pa
                 placeholder="Enter coupon code"
                 className="flex-1 px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
               />
-              <Button
-                variant="outline"
+              <WarmpawzButton
+                variant="outlined"
                 onClick={handleApplyCoupon}
                 disabled={!couponCode}
-                className="border-[#FF8C42] text-[#FF8C42] hover:bg-orange-50"
+                style={{
+                  borderColor: '#FF8C42',
+                  color: '#FF8C42'
+                }}
               >
                 Apply
-              </Button>
+              </WarmpawzButton>
             </div>
           )}
           
@@ -622,13 +646,21 @@ export function PaymentPage({ bookingData, phone, onBack, onPaymentSuccess }: Pa
             <p className="text-xs text-gray-500">Suggested for you:</p>
             <div className="flex flex-wrap gap-2">
               {['FIRST20', 'SAVE10', 'GROOM50'].map((code) => (
-                <button
+                <WarmpawzButton
                   key={code}
+                  variant="outlined"
                   onClick={() => setCouponCode(code)}
-                  className="text-xs px-3 py-1.5 bg-orange-50 text-[#FF8C42] rounded-full border border-orange-200 hover:bg-orange-100"
+                  aria-label={`Apply coupon code ${code}`}
+                  style={{
+                    fontSize: '0.75rem',
+                    padding: '0.375rem 0.75rem',
+                    background: '#FFF7ED',
+                    color: '#FF8C42',
+                    borderColor: '#FED7AA'
+                  }}
                 >
                   {code}
-                </button>
+                </WarmpawzButton>
               ))}
             </div>
           </div>
@@ -677,18 +709,20 @@ export function PaymentPage({ bookingData, phone, onBack, onPaymentSuccess }: Pa
           <span className="text-gray-600">Total Payable</span>
           <span className="text-2xl font-bold text-[#FF8C42]">₹{finalAmount.toFixed(2)}</span>
         </div>
-        <Button
-          className="w-full bg-[#FF8C42] text-white hover:bg-[#FF7029]"
+        <WarmpawzButton
+          variant="solid"
           onClick={handlePayment}
           disabled={loading}
+          fullWidth
+          icon={loading ? Loader2 : undefined}
+          iconPosition="left"
+          style={{
+            background: '#FF8C42',
+            color: 'white'
+          }}
         >
-          {loading ? (
-            <>
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              Processing...
-            </>
-          ) : 'Pay Securely'}
-        </Button>
+          {loading ? 'Processing...' : 'Pay Securely'}
+        </WarmpawzButton>
         <p className="text-xs text-gray-500 text-center mt-2">
           Secured by Razorpay • 256-bit encryption
         </p>

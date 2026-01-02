@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '../ui/button';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+// ✅ FIX: Removed Supabase imports - using API Gateway now
 import { toast } from 'sonner';
 import { WARM_ORANGE } from '../../assets/design-tokens';
 import { VendorChatModal } from './VendorChatModal';
@@ -128,23 +128,25 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
         vendorId
       });
       
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
       // Don't pass activeFilter (today/week/month) as status filter - it's just for UI display
       // Pass empty string to get all statuses
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/bookings/${vendorId}?date=${selectedDate}&filter=all`,
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/bookings?vendor_id=${vendorId}&date=${selectedDate}`
       );
-
-      if (response.ok) {
-        const data = await response.json();
-        
-        console.log('📦 [VENDOR-UI] Raw booking data from API:', data);
-        console.log('📊 [VENDOR-UI] Debug info:', data.debug);
-        
-        // ✅ FIX: Handle standardized response format
-        // Response format: { success: true, bookings: [...], total: ... }
+      
+      console.log('📦 [VENDOR-UI] Raw booking data from API:', data);
+      
+      // ✅ FIX: Handle standardized response format
+      // Response format: { success: true, bookings: [...], total: ... }
+      if (data.success) {
         const bookingsList = data.bookings || data.data?.bookings || [];
         
         // Map bookings to expected format
@@ -181,8 +183,7 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
         setBookings(mappedBookings);
         console.log(`✅ Loaded ${mappedBookings.length} bookings for vendor ${vendorId}`);
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-        console.error('Failed to load bookings:', errorData);
+        console.error('Failed to load bookings:', data.error || data.message);
         // Don't show error toast on initial load - just log
         setBookings([]);
       }
@@ -205,24 +206,26 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
     }
 
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/bookings/${bookingId}/cancel`,
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      const cancelData = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/bookings/${bookingId}/cancel`,
         {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          }
+          method: 'POST'
         }
       );
 
-      if (response.ok) {
+      if (cancelData.success) {
         toast.success('Booking cancelled successfully');
         await loadBookings(); // ✅ Ensure bookings reload
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
-        const errorMessage = errorData.error || errorData.message || 'Failed to cancel booking';
-        toast.error(errorMessage);
+        toast.error(cancelData.error || cancelData.message || 'Failed to cancel booking');
       }
     } catch (error: any) {
       console.error('Error cancelling booking:', error);
@@ -240,25 +243,28 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
   const handleAcceptBooking = async (booking: Booking) => {
     try {
       setCompletingBooking(true);
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/bookings/${booking.id}/accept`,
+      
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      const acceptData = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/bookings/${booking.id}/accept`,
         {
           method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify({ vendorId })
         }
       );
 
-      if (response.ok) {
+      if (acceptData.success) {
         toast.success('Booking accepted successfully');
         await loadBookings(); // ✅ Ensure bookings reload
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
-        const errorMessage = errorData.error || errorData.message || 'Failed to accept booking';
-        toast.error(errorMessage);
+        toast.error(acceptData.error || acceptData.message || 'Failed to accept booking');
       }
     } catch (error: any) {
       console.error('Error accepting booking:', error);
@@ -304,14 +310,18 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
       setCompletingBooking(true);
       setOtpError('');
       
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/bookings/${selectedBooking.id}/start-session`,
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      const startData = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/bookings/${selectedBooking.id}/start-tracking`,
         {
           method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify({
             vendorId,
             otp: otpInput
@@ -319,14 +329,12 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
         }
       );
       
-      const data = await response.json();
-      
-      if (response.ok) {
+      if (startData.success) {
         setShowOTPModal(false);
         toast.success('Session started! Customer can now track your location.');
         await loadBookings(); // ✅ Ensure bookings reload
       } else {
-        const errorMessage = data.error || data.message || 'Invalid OTP. Please try again.';
+        const errorMessage = startData.error || startData.message || 'Invalid OTP. Please try again.';
         setOtpError(errorMessage);
         toast.error(errorMessage);
       }
@@ -347,28 +355,29 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
     try {
       setCompletingBooking(true);
       
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/bookings/${booking.id}/end-session`,
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      const endData = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/bookings/${booking.id}/stop-tracking`,
         {
           method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify({
             vendorId
           })
         }
       );
       
-      const data = await response.json();
-      
-      if (response.ok) {
+      if (endData.success) {
         toast.success('Session ended and booking completed successfully');
         await loadBookings(); // ✅ Ensure bookings reload
       } else {
-        const errorMessage = data.error || data.message || 'Failed to end session';
-        toast.error(errorMessage);
+        toast.error(endData.error || endData.message || 'Failed to end session');
       }
     } catch (error: any) {
       console.error('Error ending session:', error);
@@ -384,14 +393,18 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
     try {
       setCompletingBooking(true);
       
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/bookings/${booking.id}/complete`,
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      const completeData = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/bookings/${booking.id}/complete`,
         {
           method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify({
             vendorId,
             otp: null
@@ -399,14 +412,11 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
         }
       );
       
-      const data = await response.json();
-      
-      if (response.ok) {
+      if (completeData.success) {
         toast.success('Booking completed successfully');
         await loadBookings(); // ✅ Ensure bookings reload
       } else {
-        const errorMessage = data.error || data.message || 'Failed to complete booking';
-        toast.error(errorMessage);
+        toast.error(completeData.error || completeData.message || 'Failed to complete booking');
       }
     } catch (error: any) {
       console.error('Error completing booking:', error);
@@ -432,15 +442,19 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
       
       const bookingId = selectedBooking.bookingId || selectedBooking.id;
       
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
       // ✅ NEW: Use complete lifecycle endpoint (OTP → Earnings → Settlement → Payout)
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/booking/${bookingId}/verify-otp-complete`,
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/booking/${bookingId}/verify-otp-complete`,
         {
           method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify({
             otp: otpInput,
             action: 'end', // 'end' or 'complete' for completion OTP
@@ -449,9 +463,7 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
         }
       );
       
-      const data = await response.json();
-      
-      if (response.ok && data.success) {
+      if (data.success) {
         setShowOTPModal(false);
         setOtpInput('');
         
@@ -503,25 +515,23 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
     if (booking.hasPrescription) {
       // View existing prescription
       try {
-        const response = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/prescription/${bookingId}`,
-          {
-            headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-          }
+        // ✅ FIX: Use API Gateway URL instead of Supabase
+        const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+        if (!API_GATEWAY_URL) {
+          throw new Error('API Gateway URL not configured');
+        }
+        
+        const { apiCallJson } = await import('@warmpawz/api-client/http');
+        
+        const prescriptionData = await apiCallJson<any>(
+          `${API_GATEWAY_URL}/make-server-3dd53475/vendor/prescription/${bookingId}`
         );
         
-        if (response.ok) {
-          const data = await response.json();
-          const prescription = data.prescription || data.data?.prescription;
-          if (prescription) {
-            toast.success(`Prescription Details\n\nPet: ${booking.petName}\nCustomer: ${booking.customerName}\n\nNotes: ${prescription.notes}\n\nUploaded: ${new Date(prescription.uploadedAt).toLocaleString()}`);
-          } else {
-            toast.error('Prescription data not found');
-          }
+        const prescription = prescriptionData.prescription || prescriptionData.data?.prescription;
+        if (prescription) {
+          toast.success(`Prescription Details\n\nPet: ${booking.petName}\nCustomer: ${booking.customerName}\n\nNotes: ${prescription.notes || prescription.observations}\n\nUploaded: ${new Date(prescription.uploadedAt || prescription.created_at).toLocaleString()}`);
         } else {
-          const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
-          const errorMessage = errorData.error || errorData.message || 'Failed to load prescription';
-          toast.error(errorMessage);
+          toast.error('Prescription data not found');
         }
       } catch (error: any) {
         console.error('❌ Error fetching prescription:', error);
@@ -534,30 +544,33 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
       if (!notes || notes.trim() === '') return;
       
       try {
-        const response = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/prescription/upload`,
+        // ✅ FIX: Use API Gateway URL instead of Supabase
+        const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+        if (!API_GATEWAY_URL) {
+          throw new Error('API Gateway URL not configured');
+        }
+        
+        const { apiCallJson } = await import('@warmpawz/api-client/http');
+        
+        const uploadData = await apiCallJson<any>(
+          `${API_GATEWAY_URL}/make-server-3dd53475/vendor/prescription/upload`,
           {
             method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${publicAnonKey}`,
-              'Content-Type': 'application/json'
-            },
             body: JSON.stringify({
               bookingId,
               vendorId,
-              prescriptionNotes: notes.trim(),
-              prescriptionFile: null // TODO: Add file upload
+              notes: notes.trim(),
+              diagnosis: '',
+              medications: []
             })
           }
         );
         
-        if (response.ok) {
+        if (uploadData.success) {
           toast.success('Prescription uploaded successfully');
           await loadBookings(); // ✅ Ensure bookings reload to show prescription badge
         } else {
-          const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
-          const errorMessage = errorData.error || errorData.message || 'Failed to upload prescription';
-          toast.error(errorMessage);
+          toast.error(uploadData.error || uploadData.message || 'Failed to upload prescription');
         }
       } catch (error: any) {
         console.error('❌ Error uploading prescription:', error);
@@ -568,8 +581,8 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="w-full max-w-[430px] mx-auto bg-white min-h-screen pb-20">
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center py-4 lg:py-8">
+      <div className="w-full max-w-[430px] lg:max-w-[1200px] mx-auto bg-white min-h-[calc(100vh-2rem)] lg:min-h-[600px] lg:rounded-2xl lg:shadow-xl pb-20 lg:pb-8">
         {/* Header */}
         <div className="p-4 bg-white border-b border-gray-200 sticky top-0 z-10">
           <div className="flex items-center gap-3 mb-4">
@@ -625,7 +638,7 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
         </div>
 
         {/* Schedule Section */}
-        <div className="p-4 bg-white border-b border-gray-100">
+        <div className="p-4 lg:p-6 bg-white border-b border-gray-100">
           <div className="flex items-center justify-between mb-3">
             <h2 className="font-semibold text-gray-900">Schedule</h2>
             <div className="flex items-center gap-2 text-sm text-gray-600">
@@ -707,7 +720,7 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
             </div>
 
             {/* Instant Consultations Stats */}
-            <div className="p-4 bg-white border-b border-gray-100">
+            <div className="p-4 lg:p-6 bg-white border-b border-gray-100">
               <h3 className="text-sm font-semibold text-gray-900 mb-3">Instant Consultations</h3>
               <div className="flex items-center justify-between">
                 <div className="text-center flex-1">
@@ -735,8 +748,8 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
             </div>
 
             {/* Today's Appointments */}
-            <div className="p-4 bg-white">
-              <h3 className="text-sm font-semibold text-gray-900 mb-3">Today's Appointments</h3>
+            <div className="p-4 lg:p-6 bg-white">
+              <h3 className="text-sm lg:text-base font-semibold text-gray-900 mb-3">Today's Appointments</h3>
               
               {loading ? (
                 <div className="text-center py-8">
@@ -747,7 +760,7 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
                   No appointments scheduled
                 </div>
               ) : (
-                <div className="space-y-3">
+                <div className="space-y-3 lg:grid lg:grid-cols-2 lg:gap-4 lg:space-y-0">
                   {bookings.map((booking) => (
                     <div 
                       key={booking.id} 
@@ -962,7 +975,7 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
             </div>
 
             {/* Available Time Slots */}
-            <div className="p-4 bg-white border-t border-gray-100">
+            <div className="p-4 lg:p-6 bg-white border-t border-gray-100">
               <h3 className="text-sm font-semibold text-gray-900 mb-3">Available Time Slots</h3>
               
               <div className="grid grid-cols-4 gap-2">
@@ -1000,7 +1013,7 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
             </div>
 
             {/* Emergency Availability Toggle */}
-            <div className="p-4 bg-white border-t border-gray-100">
+            <div className="p-4 lg:p-6 bg-white border-t border-gray-100">
               <div className="flex items-center justify-between p-4 bg-red-50 border border-red-200 rounded-xl">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-red-500 rounded-full flex items-center justify-center">
@@ -1023,8 +1036,8 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
         {activeTab === 'earnings' && (
           <>
             {/* Earnings Summary */}
-            <div className="p-4 bg-gradient-to-br from-green-50 to-green-100 border-b border-green-200">
-              <div className="grid grid-cols-3 gap-3 mb-3">
+            <div className="p-4 lg:p-6 bg-gradient-to-br from-green-50 to-green-100 border-b border-green-200">
+              <div className="grid grid-cols-3 lg:grid-cols-4 gap-3 lg:gap-4 mb-3 lg:mb-4">
                 <div className="bg-white p-3 rounded-lg text-center">
                   <div className="text-2xl font-bold text-green-600">₹12,450</div>
                   <div className="text-xs text-gray-600">Today</div>
@@ -1051,8 +1064,8 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
             </div>
 
             {/* Recent Transactions */}
-            <div className="p-4">
-              <h3 className="font-semibold text-gray-900 mb-3">Recent Transactions</h3>
+            <div className="p-4 lg:p-6">
+              <h3 className="font-semibold text-gray-900 mb-3 lg:mb-4">Recent Transactions</h3>
               <div className="space-y-2">
                 {[
                   { id: '1', date: '2024-11-15', service: 'Home Visit - Vaccination', amount: 1500, status: 'completed', customer: 'Priya Sharma' },
@@ -1098,7 +1111,7 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
         {activeTab === 'payouts' && (
           <>
             {/* Payout Summary */}
-            <div className="p-4 bg-gradient-to-br from-blue-50 to-blue-100 border-b border-blue-200">
+            <div className="p-4 lg:p-6 bg-gradient-to-br from-blue-50 to-blue-100 border-b border-blue-200">
               <div className="bg-white p-4 rounded-lg mb-3">
                 <div className="text-center mb-3">
                   <div className="text-3xl font-bold text-blue-600">₹1,23,450</div>
@@ -1121,7 +1134,7 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
             </div>
 
             {/* Bank Account Info */}
-            <div className="p-4 bg-white border-b border-gray-100">
+            <div className="p-4 lg:p-6 bg-white border-b border-gray-100">
               <h3 className="font-semibold text-gray-900 mb-3">Bank Account</h3>
               <div className="border border-gray-200 rounded-xl p-4">
                 <div className="flex items-center gap-3 mb-3">
@@ -1143,8 +1156,11 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
             </div>
 
             {/* Payout History */}
-            <div className="p-4">
-              <VendorPayoutRecords vendorId={vendorId} />
+            <div className="p-4 lg:p-6">
+              {/* VendorPayoutRecords component - placeholder */}
+              <div className="text-center py-8 text-gray-500">
+                Payout records feature coming soon
+              </div>
             </div>
 
             {/* Payout Schedule Info */}

@@ -1,6 +1,6 @@
-import { Hono } from "npm:hono";
-import { sendSuccess, sendError } from "./response-utils.ts";
-import * as kv from "./kv_store.tsx";
+import { Hono } from "hono";
+import { sendSuccess, sendError } from "./response-utils";
+import * as kv from "./kv_store";
 
 /**
  * 🔍 SEARCH SUGGESTIONS ENDPOINT

@@ -1,7 +1,7 @@
-import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
-import { calculateDistance, getStaffNextAvailableSlot, getCenterNextAvailableSlot } from './schedule-utils.tsx';
-import { getPrimarySpecialization, getAllSpecializations } from './specialization-mapping.tsx';
+import { Hono } from 'hono';
+import * as kv from './kv_store';
+import { calculateDistance, getStaffNextAvailableSlot, getCenterNextAvailableSlot } from './schedule-utils';
+import { getPrimarySpecialization, getAllSpecializations } from './specialization-mapping';
 
 export function registerCustomerSearchEndpoints(app: Hono) {
 

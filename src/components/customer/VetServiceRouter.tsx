@@ -17,7 +17,7 @@ import { ProblemGridSelector } from './ProblemGridSelector'; // ✅ NEW: Problem
 import { VendorDiscoveryByProblem } from './VendorDiscoveryByProblem'; // ✅ NEW: Vendor discovery
 import { BookingFlowDispatcher, determineServiceStyle } from './BookingFlowDispatcher'; // ✅ MIGRATION: Use unified dispatcher
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 type ViewType = 
   | 'landing'

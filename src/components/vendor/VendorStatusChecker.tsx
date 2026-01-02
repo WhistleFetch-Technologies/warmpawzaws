@@ -5,7 +5,8 @@
 
 import { useEffect, useState } from 'react';
 import { CheckCircle, XCircle, Clock, AlertCircle, RefreshCw } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+// ✅ FIX: Removed Supabase imports - using API Gateway now
+import { Skeleton } from '../ui/skeleton';
 
 interface VendorStatusResponse {
   status: 'pending' | 'approved' | 'rejected' | 'more_info_required' | 'resubmitted' | 'not_found';
@@ -55,32 +56,27 @@ export function VendorStatusChecker({
 
       console.log('🔍 Checking vendor status for phone:', phone);
       
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/status/${phone}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
-          }
-        }
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const data: VendorStatusResponse = await apiCallJson<VendorStatusResponse>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/status/${phone}`
       );
+      
+      console.log('✅ Status response:', data);
+      setStatus(data);
+      onStatusChecked(data);
 
-      if (response.ok) {
-        const data: VendorStatusResponse = await response.json();
-        console.log('✅ Status response:', data);
-        setStatus(data);
-        onStatusChecked(data);
-
-        // Auto-navigate based on status
-        if (data.status === 'approved' && data.canAccessDashboard) {
-          // Vendor approved - navigate to dashboard
-          setTimeout(() => {
-            onNavigateToDashboard?.();
-          }, 2000);
-        }
-      } else {
-        const errorText = await response.text();
-        console.error('❌ Failed to check status:', errorText);
-        setError('Failed to check application status');
+      // Auto-navigate based on status
+      if (data.status === 'approved' && data.canAccessDashboard) {
+        // Vendor approved - navigate to dashboard
+        setTimeout(() => {
+          onNavigateToDashboard?.();
+        }, 2000);
       }
     } catch (err) {
       console.error('Error checking status:', err);
@@ -93,10 +89,27 @@ export function VendorStatusChecker({
   if (loading) {
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-2xl p-8 max-w-md mx-4 text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-4 border-[#FF8C42] border-t-transparent mx-auto mb-4"></div>
-          <h3 className="text-xl mb-2">Checking Application Status</h3>
-          <p className="text-sm text-gray-600">Please wait...</p>
+        <div className="bg-white rounded-2xl p-8 max-w-md mx-4 w-full">
+          {/* Icon Skeleton */}
+          <div className="w-16 h-16 bg-gray-200 rounded-full mx-auto mb-4 animate-pulse"></div>
+          
+          {/* Title Skeleton */}
+          <Skeleton className="h-6 w-48 mx-auto mb-2" />
+          
+          {/* Content Skeleton */}
+          <div className="space-y-3 mt-4">
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-3/4 mx-auto" />
+            <Skeleton className="h-4 w-1/2 mx-auto" />
+          </div>
+          
+          {/* Info Box Skeleton */}
+          <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 mt-6 space-y-2">
+            <Skeleton className="h-4 w-32" />
+            <Skeleton className="h-3 w-full" />
+            <Skeleton className="h-3 w-5/6" />
+            <Skeleton className="h-3 w-4/6" />
+          </div>
         </div>
       </div>
     );

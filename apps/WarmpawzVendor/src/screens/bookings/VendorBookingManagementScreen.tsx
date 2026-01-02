@@ -17,16 +17,18 @@ import {
   RefreshControl,
 } from 'react-native';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
-import { VendorApi } from '../../services/api';
+import { VendorApi, StaffApi } from '../../services/api';
 
 interface VendorBookingManagementScreenProps {
-  vendorId: string;
+  vendorId?: string;
+  staffId?: string;
   onBack?: () => void;
   onSelectBooking?: (bookingId: string) => void;
 }
 
 export function VendorBookingManagementScreen({
   vendorId,
+  staffId,
   onBack,
   onSelectBooking,
 }: VendorBookingManagementScreenProps) {
@@ -34,29 +36,51 @@ export function VendorBookingManagementScreen({
   const [refreshing, setRefreshing] = useState(false);
   const [bookings, setBookings] = useState<any[]>([]);
   const [filter, setFilter] = useState<'all' | 'pending' | 'confirmed' | 'completed' | 'cancelled'>('all');
+  const isStaff = !!staffId;
 
   useEffect(() => {
     loadBookings();
-  }, [vendorId, filter]);
+  }, [vendorId, staffId, filter]);
 
   const loadBookings = async () => {
     try {
       setLoading(true);
-      const response = await VendorApi.getBookings(vendorId);
-      const bookingsData = Array.isArray(response) ? response : response.bookings || [];
       
-      let filtered = bookingsData;
-      if (filter !== 'all') {
-        filtered = bookingsData.filter((b: any) => {
-          if (filter === 'pending') return b.status === 'pending';
-          if (filter === 'confirmed') return b.status === 'confirmed' || b.status === 'in_progress';
-          if (filter === 'completed') return b.status === 'completed';
-          if (filter === 'cancelled') return b.status === 'cancelled' || b.status === 'cancelled_by_vendor';
-          return true;
-        });
+      // If staff, load staff appointments instead of vendor bookings
+      if (isStaff && staffId) {
+        const response = await StaffApi.getAppointments(staffId);
+        const appointments = response.appointments || [];
+        
+        let filtered = appointments;
+        if (filter !== 'all') {
+          filtered = appointments.filter((b: any) => {
+            if (filter === 'pending') return b.status === 'pending';
+            if (filter === 'confirmed') return b.status === 'confirmed' || b.status === 'in_progress';
+            if (filter === 'completed') return b.status === 'completed';
+            if (filter === 'cancelled') return b.status === 'cancelled' || b.status === 'cancelled_by_vendor';
+            return true;
+          });
+        }
+        
+        setBookings(filtered);
+      } else if (vendorId) {
+        // Vendor: load all bookings
+        const response = await VendorApi.getBookings(vendorId);
+        const bookingsData = Array.isArray(response) ? response : response.bookings || [];
+        
+        let filtered = bookingsData;
+        if (filter !== 'all') {
+          filtered = bookingsData.filter((b: any) => {
+            if (filter === 'pending') return b.status === 'pending';
+            if (filter === 'confirmed') return b.status === 'confirmed' || b.status === 'in_progress';
+            if (filter === 'completed') return b.status === 'completed';
+            if (filter === 'cancelled') return b.status === 'cancelled' || b.status === 'cancelled_by_vendor';
+            return true;
+          });
+        }
+        
+        setBookings(filtered);
       }
-      
-      setBookings(filtered);
     } catch (error) {
       console.error('Error loading bookings:', error);
     } finally {
@@ -71,6 +95,14 @@ export function VendorBookingManagementScreen({
   };
 
   const handleAccept = async (bookingId: string) => {
+    // Staff cannot accept bookings
+    if (isStaff) {
+      Alert.alert('Permission Denied', 'Staff members cannot accept bookings. Please contact the vendor.');
+      return;
+    }
+    
+    if (!vendorId) return;
+    
     try {
       await VendorApi.acceptBooking(bookingId, vendorId);
       Alert.alert('Success', 'Booking accepted successfully!');
@@ -81,6 +113,14 @@ export function VendorBookingManagementScreen({
   };
 
   const handleReject = async (bookingId: string, reason?: string) => {
+    // Staff cannot reject bookings
+    if (isStaff) {
+      Alert.alert('Permission Denied', 'Staff members cannot reject bookings. Please contact the vendor.');
+      return;
+    }
+    
+    if (!vendorId) return;
+    
     Alert.prompt(
       'Reject Booking',
       'Please provide a reason for rejection:',
@@ -150,7 +190,7 @@ export function VendorBookingManagementScreen({
         <Text style={styles.amount}>₹{item.amount}</Text>
       )}
 
-      {item.status === 'pending' && (
+      {item.status === 'pending' && !isStaff && (
         <View style={styles.actions}>
           <TouchableOpacity
             style={[styles.actionButton, styles.acceptButton]}
@@ -167,14 +207,16 @@ export function VendorBookingManagementScreen({
         </View>
       )}
 
-      {onSelectBooking && (
-        <TouchableOpacity
-          style={styles.viewButton}
-          onPress={() => onSelectBooking(item.id)}
-        >
-          <Text style={styles.viewButtonText}>View Details →</Text>
-        </TouchableOpacity>
-      )}
+      <TouchableOpacity
+        style={styles.viewButton}
+        onPress={() => {
+          if (onSelectBooking) {
+            onSelectBooking(item.id);
+          }
+        }}
+      >
+        <Text style={styles.viewButtonText}>View Details →</Text>
+      </TouchableOpacity>
     </View>
   );
 

@@ -1,7 +1,14 @@
-import { Hono } from "npm:hono";
-import { sendSuccess, sendError } from "./response-utils.ts";
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from "hono";
+import { sendSuccess, sendError } from "./response-utils";
+import { 
+  getVendorTiersRepository,
+  getBankAccountsRepository,
+  getPlatformSettingsRepository,
+  getDbClient
+} from '../../../supabase/lib/repositories/index';
 
-export function marketplacePaymentEndpoints(app: Hono, kv: any) {
+export function marketplacePaymentEndpoints(app: Hono) {
 
   // ============================================
   // TIER MANAGEMENT (ADMIN)
@@ -13,7 +20,9 @@ export function marketplacePaymentEndpoints(app: Hono, kv: any) {
    */
   app.get("/make-server-3dd53475/payments/tiers", async (c) => {
     try {
-      const tiers = await kv.get('payment:tiers') || [];
+      // ✅ SQL: Get tiers from vendor_tiers table
+      const tiersRepo = getVendorTiersRepository();
+      const tiers = await tiersRepo.findAllActive();
       return sendSuccess(c, { tiers });
     } catch (error) {
       return sendError(c, error, 500);
@@ -28,36 +37,30 @@ export function marketplacePaymentEndpoints(app: Hono, kv: any) {
     try {
       const body = await c.req.json();
 
-      const { data: tier, error } = await client
-        .from('vendor_tiers')
-        .insert({
-          tier_name: body.name || body.tier_name,
-          tier_level: body.tier_level || body.tierLevel || 1,
-          display_name: body.displayName || body.display_name || body.name,
-          description: body.description || null,
-          commission_rate: body.commissionRate || body.commission_rate || 15,
-          payout_period_days: body.payoutPeriodDays || body.payout_period_days || 7,
-          monthly_cost: body.monthlyCost || body.monthly_cost || 0,
-          yearly_cost: body.yearlyCost || body.yearly_cost || 0,
-          six_month_cost: body.sixMonthCost || body.six_month_cost || null,
-          six_month_discount_percentage: body.sixMonthDiscountPercentage || body.six_month_discount_percentage || 0,
-          twelve_month_cost: body.twelveMonthCost || body.twelve_month_cost || null,
-          twelve_month_discount_percentage: body.twelveMonthDiscountPercentage || body.twelve_month_discount_percentage || 0,
-          allow_split_payment: body.allowSplitPayment || body.allow_split_payment || false,
-          split_payment_installments: body.splitPaymentInstallments || body.split_payment_installments || 3,
-          split_payment_interval_days: body.splitPaymentIntervalDays || body.split_payment_interval_days || 30,
-          features: body.features || [],
-          applicable_roles: body.roles || body.applicable_roles || [],
-          is_default: body.isDefault || body.is_default || false,
-          is_active: body.isActive !== false && body.is_active !== false,
-          is_free_tier: body.isFreeTier || body.is_free_tier || false
-        })
-        .select()
-        .single();
-
-      if (error) {
-        throw error;
-      }
+      // ✅ SQL: Create tier using VendorTiersRepository
+      const tiersRepo = getVendorTiersRepository();
+      const tier = await tiersRepo.create({
+        tier_name: body.name || body.tier_name,
+        tier_level: body.tier_level || body.tierLevel || 1,
+        display_name: body.displayName || body.display_name || body.name,
+        description: body.description || null,
+        commission_rate: body.commissionRate || body.commission_rate || 15,
+        payout_period_days: body.payoutPeriodDays || body.payout_period_days || 7,
+        monthly_cost: body.monthlyCost || body.monthly_cost || 0,
+        yearly_cost: body.yearlyCost || body.yearly_cost || 0,
+        six_month_cost: body.sixMonthCost || body.six_month_cost || null,
+        six_month_discount_percentage: body.sixMonthDiscountPercentage || body.six_month_discount_percentage || 0,
+        twelve_month_cost: body.twelveMonthCost || body.twelve_month_cost || null,
+        twelve_month_discount_percentage: body.twelveMonthDiscountPercentage || body.twelve_month_discount_percentage || 0,
+        allow_split_payment: body.allowSplitPayment || body.allow_split_payment || false,
+        split_payment_installments: body.splitPaymentInstallments || body.split_payment_installments || 3,
+        split_payment_interval_days: body.splitPaymentIntervalDays || body.split_payment_interval_days || 30,
+        features: body.features || [],
+        applicable_roles: body.roles || body.applicable_roles || [],
+        is_default: body.isDefault || body.is_default || false,
+        is_active: body.isActive !== false && body.is_active !== false,
+        is_free_tier: body.isFreeTier || body.is_free_tier || false
+      });
 
       return sendSuccess(c, { tier });
     } catch (error) {
@@ -99,20 +102,14 @@ export function marketplacePaymentEndpoints(app: Hono, kv: any) {
       if (updates.isActive !== undefined) updateData.is_active = updates.isActive;
       if (updates.isFreeTier !== undefined) updateData.is_free_tier = updates.isFreeTier;
 
-      const { data: tier, error } = await client
-        .from('vendor_tiers')
-        .update(updateData)
-        .eq('id', tierId)
-        .select()
-        .single();
-
-      if (error) {
-        if (error.code === 'PGRST116') {
-          return sendError(c, 'Tier not found', 404);
-        }
-        throw error;
+      // ✅ SQL: Update tier using VendorTiersRepository
+      const tiersRepo = getVendorTiersRepository();
+      const existingTier = await tiersRepo.findById(tierId);
+      if (!existingTier) {
+        return sendError(c, 'Tier not found', 404);
       }
 
+      const tier = await tiersRepo.update(tierId, updateData);
       return sendSuccess(c, { tier });
     } catch (error) {
       return sendError(c, error, 500);
@@ -126,10 +123,9 @@ export function marketplacePaymentEndpoints(app: Hono, kv: any) {
   app.delete("/make-server-3dd53475/admin/payments/tiers/:tierId", async (c) => {
     try {
       const { tierId } = c.req.param();
-      const tiers = await kv.get('payment:tiers') || [];
-      const filteredTiers = tiers.filter((t: any) => t.id !== tierId);
-      
-      await kv.set('payment:tiers', filteredTiers);
+      // ✅ SQL: Soft delete tier (set is_active = false) using VendorTiersRepository
+      const tiersRepo = getVendorTiersRepository();
+      await tiersRepo.update(tierId, { is_active: false });
       return sendSuccess(c, { success: true });
     } catch (error) {
       return sendError(c, error, 500);
@@ -208,64 +204,30 @@ export function marketplacePaymentEndpoints(app: Hono, kv: any) {
         }
       ];
 
-      const { data: tiers, error } = await client
-        .from('vendor_tiers')
-        .upsert(defaultTiers, {
-          onConflict: 'tier_name',
-          ignoreDuplicates: false
-        })
-        .select();
-
-      if (error) {
-        throw error;
+      // ✅ SQL: Upsert default tiers using VendorTiersRepository
+      const tiersRepo = getVendorTiersRepository();
+      const db = getDbClient();
+      const createdTiers = [];
+      
+      for (const tierData of defaultTiers) {
+        // Check if tier exists
+        const existing = await tiersRepo.findByName(tierData.tier_name);
+        if (existing) {
+          // Update existing tier
+          const updated = await tiersRepo.update(existing.id, tierData);
+          createdTiers.push(updated);
+        } else {
+          // Create new tier
+          const created = await tiersRepo.create(tierData);
+          createdTiers.push(created);
+        }
       }
 
-      return sendSuccess(c, { tiers: tiers || defaultTiers });
+      return sendSuccess(c, { tiers: createdTiers });
     } catch (error) {
       return sendError(c, error, 500);
     }
   });
-          name: 'Tier 1',
-          displayName: 'Basic Tier',
-          description: 'Standard commission for new vendors',
-          commissionRate: 15,
-          payoutPeriod: 3, // T+3
-          monthlyCost: 0,
-          yearlyCost: 0,
-          features: ['Basic Analytics', 'Standard Support'],
-          isDefault: true,
-          isActive: true
-        },
-        {
-          id: 'tier_2',
-          name: 'Tier 2',
-          displayName: 'Professional Tier',
-          description: 'Lower commission and faster payouts',
-          commissionRate: 10,
-          payoutPeriod: 2, // T+2
-          monthlyCost: 999,
-          yearlyCost: 9999,
-          features: ['Advanced Analytics', 'Priority Support', 'Marketing Tools'],
-          isDefault: false,
-          isActive: true
-        },
-        {
-          id: 'tier_3',
-          name: 'Tier 3',
-          displayName: 'Enterprise Tier',
-          description: 'Lowest commission and instant payouts',
-          commissionRate: 5,
-          payoutPeriod: 0, // T+0
-          monthlyCost: 2999,
-          yearlyCost: 29990,
-          features: ['Dedicated Manager', 'API Access', 'White Labeling'],
-          isDefault: false,
-          isActive: true
-        }
-      ];
-      
-      await kv.set('payment:tiers', defaultTiers);
-      return sendSuccess(c, { tiers: defaultTiers });
     } catch (error) {
       return sendError(c, error, 500);
     }
@@ -282,8 +244,11 @@ export function marketplacePaymentEndpoints(app: Hono, kv: any) {
   app.get("/make-server-3dd53475/vendor/:vendorId/bank-details", async (c) => {
     try {
       const { vendorId } = c.req.param();
-      const bankDetails = await kv.get(`vendor:${vendorId}:bank_details`);
-      return sendSuccess(c, { bankDetails });
+      // ✅ SQL: Get bank details from vendor_bank_details table
+      const bankAccountsRepo = getBankAccountsRepository();
+      const bankAccounts = await bankAccountsRepo.findByVendor(vendorId);
+      const primaryAccount = bankAccounts.find(acc => acc.is_primary) || bankAccounts[0] || null;
+      return sendSuccess(c, { bankDetails: primaryAccount });
     } catch (error) {
       return sendError(c, error, 500);
     }
@@ -303,11 +268,35 @@ export function marketplacePaymentEndpoints(app: Hono, kv: any) {
         return sendError(c, 'Invalid IFSC Code', 400);
       }
 
-      await kv.set(`vendor:${vendorId}:bank_details`, {
-        ...details,
-        status: 'verified', // Auto-verify for demo
-        updatedAt: new Date().toISOString()
-      });
+      // ✅ SQL: Update or create bank account in vendor_bank_details table
+      const bankAccountsRepo = getBankAccountsRepository();
+      const existingAccounts = await bankAccountsRepo.findByVendor(vendorId);
+      const primaryAccount = existingAccounts.find(acc => acc.is_primary);
+      
+      if (primaryAccount) {
+        // Update existing primary account
+        await bankAccountsRepo.update(primaryAccount.id, {
+          account_holder_name: details.accountHolderName || details.account_holder_name,
+          account_number: details.accountNumber || details.account_number,
+          ifsc_code: details.ifsc || details.ifsc_code,
+          bank_name: details.bankName || details.bank_name,
+          branch_name: details.branchName || details.branch_name,
+          account_type: details.accountType || details.account_type || 'savings',
+          verification_status: 'verified'
+        });
+      } else {
+        // Create new primary account
+        await bankAccountsRepo.create({
+          vendor_id: vendorId,
+          account_holder_name: details.accountHolderName || details.account_holder_name,
+          account_number: details.accountNumber || details.account_number,
+          ifsc_code: details.ifsc || details.ifsc_code,
+          bank_name: details.bankName || details.bank_name,
+          branch_name: details.branchName || details.branch_name,
+          account_type: details.accountType || details.account_type || 'savings',
+          is_primary: true
+        });
+      }
       
       return sendSuccess(c, { success: true });
     } catch (error) {
@@ -406,7 +395,15 @@ export function marketplacePaymentEndpoints(app: Hono, kv: any) {
    */
   app.get("/make-server-3dd53475/admin/payments/refund-rules", async (c) => {
     try {
-      const rules = await kv.get('payment:refund_rules') || {
+      // ✅ SQL: Get refund rules from platform_settings table
+      const db = getDbClient();
+      const { data: settings } = await db
+        .from('platform_settings')
+        .select('*')
+        .eq('setting_key', 'refund_rules')
+        .single();
+      
+      const rules = settings?.setting_value || {
         enabled: true,
         schedule: [
           { hours: 48, refundPercent: 90, description: 'Full refund > 48h' },
@@ -429,7 +426,17 @@ export function marketplacePaymentEndpoints(app: Hono, kv: any) {
   app.put("/make-server-3dd53475/admin/payments/refund-rules", async (c) => {
     try {
       const rules = await c.req.json();
-      await kv.set('payment:refund_rules', rules);
+      // ✅ SQL: Update refund rules in platform_settings table
+      const db = getDbClient();
+      await db
+        .from('platform_settings')
+        .upsert({
+          setting_key: 'refund_rules',
+          setting_value: rules,
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'setting_key'
+        });
       return sendSuccess(c, { success: true });
     } catch (error) {
       return sendError(c, error, 500);
@@ -489,7 +496,21 @@ export function marketplacePaymentEndpoints(app: Hono, kv: any) {
         customerId
       };
 
-      await kv.set(`razorpay_order:${orderId}`, order);
+      // ✅ SQL: Store Razorpay order in payments table (as pending payment)
+      const db = getDbClient();
+      await db
+        .from('payments')
+        .insert({
+          id: orderId,
+          customer_id: customerId,
+          vendor_id: vendorId || null,
+          amount: amount / 100, // Razorpay stores in paise, convert to rupees
+          currency: currency || 'INR',
+          payment_method: 'razorpay',
+          payment_status: 'pending',
+          razorpay_order_id: orderId,
+          metadata: order
+        });
 
       return sendSuccess(c, order);
     } catch (error) {

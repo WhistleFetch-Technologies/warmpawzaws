@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Package, Plus, Edit, Trash } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+// ✅ FIX: Removed Supabase imports - using API Gateway now
+import { toast } from 'sonner';
 
 /**
  * 🍽️ FOOD DELIVERY VENDOR MANAGEMENT
@@ -27,79 +28,159 @@ export default function FoodDeliveryManagement({ vendorId }: { vendorId: string 
 
   const fetchMenu = async () => {
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/food-delivery/menu/${vendorId}`,
-        { headers: { Authorization: `Bearer ${publicAnonKey}` } }
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      const menuData = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/nutritionist/${vendorId}/menu`
       );
-      const data = await response.json();
-      if (data.success) setMenuItems(data.data.menu || []);
+      
+      if (menuData.success && menuData.menu) {
+        // Map backend format to frontend format
+        const mappedMenu = menuData.menu.map((item: any) => ({
+          itemId: item.itemId || item.id,
+          itemName: item.name,
+          description: item.description,
+          category: item.type || 'dog_food',
+          price: item.price,
+          isAvailable: item.isAvailable,
+          preparationTime: item.preparationTime || 15
+        }));
+        setMenuItems(mappedMenu);
+      } else {
+        setMenuItems([]);
+      }
     } catch (error) {
-      console.error('Error:', error);
+      console.error('Error fetching menu:', error);
+      toast.error('Failed to load menu');
+      setMenuItems([]);
     }
   };
 
   const fetchOrders = async () => {
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/food-orders`,
-        { headers: { Authorization: `Bearer ${publicAnonKey}` } }
-      );
-      const data = await response.json();
-      if (data.success) setOrders(data.data.orders || []);
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      // Note: Orders endpoint may need to be created - using bookings for now
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      // TODO: Create dedicated food orders endpoint or use bookings with service_type filter
+      // For now, using bookings as placeholder
+      try {
+        const ordersData = await apiCallJson<any>(
+          `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/bookings?serviceType=food_delivery`
+        );
+        
+        if (ordersData.success && ordersData.bookings) {
+          // Map bookings to orders format
+          const mappedOrders = ordersData.bookings.map((booking: any) => ({
+            orderId: booking.id,
+            items: booking.metadata?.items || [],
+            grandTotal: booking.total_amount || 0,
+            status: booking.status,
+            createdAt: booking.created_at
+          }));
+          setOrders(mappedOrders);
+        } else {
+          setOrders([]);
+        }
+      } catch (orderError) {
+        console.warn('Food orders endpoint not available, using empty list');
+        setOrders([]);
+      }
     } catch (error) {
-      console.error('Error:', error);
+      console.error('Error fetching orders:', error);
+      setOrders([]);
     }
   };
 
   const addMenuItem = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/food-delivery/menu/item/create`,
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      const createData = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/nutritionist/meals/item`,
         {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`,
-          },
           body: JSON.stringify({
-            vendorId,
-            ...itemForm,
+            nutritionistId: vendorId,
+            name: itemForm.itemName,
+            description: itemForm.description,
             price: parseFloat(itemForm.price),
+            type: itemForm.category,
             preparationTime: parseInt(itemForm.preparationTime),
             nutritionalInfo: { calories: 0, protein: 0, fat: 0, carbs: 0 },
             ingredients: [],
-          }),
+            dietaryTags: [],
+            images: []
+          })
         }
       );
 
-      const data = await response.json();
-      if (data.success) {
-        alert('Menu item added!');
+      if (createData.success) {
+        toast.success('Menu item added!');
         setShowAddItem(false);
+        setItemForm({
+          itemName: '',
+          description: '',
+          category: 'dog_food',
+          price: '',
+          preparationTime: '15',
+        });
         fetchMenu();
+      } else {
+        toast.error(createData.error || createData.message || 'Failed to add menu item');
       }
-    } catch (error) {
-      console.error('Error:', error);
+    } catch (error: any) {
+      console.error('Error adding menu item:', error);
+      toast.error(error?.message || 'Failed to add menu item');
     }
   };
 
   const updateOrderStatus = async (orderId: string, status: string) => {
     try {
-      await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/food-delivery/order/${orderId}/status`,
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      // Update booking status (food orders are stored as bookings)
+      const updateData = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/bookings/${orderId}/status`,
         {
           method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`,
-          },
-          body: JSON.stringify({ status }),
+          body: JSON.stringify({ status })
         }
       );
-      fetchOrders();
-    } catch (error) {
-      console.error('Error:', error);
+      
+      if (updateData.success) {
+        toast.success('Order status updated');
+        fetchOrders();
+      } else {
+        toast.error(updateData.error || updateData.message || 'Failed to update order status');
+      }
+    } catch (error: any) {
+      console.error('Error updating order status:', error);
+      toast.error(error?.message || 'Failed to update order status');
     }
   };
 

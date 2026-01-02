@@ -9,8 +9,13 @@
  * - Seamless booking flow
  */
 
-import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from 'hono';
+import { getDbClient } from '../../../supabase/lib/db';
+import {
+  getVendorsRepository,
+  getBookingsRepository
+} from '../../../supabase/lib/repositories/index';
 
 const app = new Hono();
 
@@ -31,67 +36,69 @@ app.get('/integrated-services/available', async (c) => {
       diagnostics: []
     };
     
-    // Get all integrated service vendors
-    const allVendors = await kv.getByPrefix('vendor_') || [];
+    // ✅ SQL: Get all integrated service vendors
+    const vendorsRepo = getVendorsRepository();
+    const allVendors = await vendorsRepo.findAll();
     
     // Filter by service type
     const ambulanceVendors = allVendors.filter((v: any) => 
-      v.serviceType === 'ambulance' && v.isActive
+      (v.service_type === 'ambulance' || v.category === 'ambulance') && v.is_active
     );
     const pharmacyVendors = allVendors.filter((v: any) => 
-      v.serviceType === 'pharmacy' && v.isActive
+      (v.service_type === 'pharmacy' || v.category === 'pharmacy') && v.is_active
     );
     const diagnosticsVendors = allVendors.filter((v: any) => 
-      v.serviceType === 'diagnostics' && v.isActive
+      (v.service_type === 'diagnostics' || v.category === 'diagnostics') && v.is_active
     );
     
-    // If booking provided, get booking location
+    // ✅ SQL: If booking provided, get booking location
     let bookingLocation: any = null;
     if (bookingId) {
-      const booking = await kv.get(`booking_${bookingId}`);
-      bookingLocation = booking?.serviceLocation || booking?.customerAddress;
+      const bookingsRepo = getBookingsRepository();
+      const booking = await bookingsRepo.findById(bookingId);
+      bookingLocation = booking?.service_location || booking?.customer_address;
     }
     
     // Build ambulance services list
     services.ambulance = ambulanceVendors.map((v: any) => ({
-      id: v.vendorId,
-      name: v.businessName,
+      id: v.id || v.vendorId,
+      name: v.business_name || v.businessName,
       type: 'ambulance',
-      isIndependent: !v.clinicId,
-      clinicId: v.clinicId,
+      isIndependent: !v.clinic_id,
+      clinicId: v.clinic_id || v.clinicId,
       services: v.services || [],
-      pricing: v.ambulancePricing || {},
-      availability: v.availability24x7 || false,
-      location: v.location,
+      pricing: v.ambulance_pricing || v.ambulancePricing || {},
+      availability: v.availability_24x7 || v.availability24x7 || false,
+      location: v.latitude && v.longitude ? { lat: v.latitude, lng: v.longitude } : v.location,
       rating: v.rating || 0,
-      responseTime: v.avgResponseTime || '15-30 mins'
+      responseTime: v.avg_response_time || v.avgResponseTime || '15-30 mins'
     }));
     
     // Build pharmacy services list
     services.medicine_delivery = pharmacyVendors.map((v: any) => ({
-      id: v.vendorId,
-      name: v.businessName,
+      id: v.id || v.vendorId,
+      name: v.business_name || v.businessName,
       type: 'pharmacy',
-      isIndependent: !v.clinicId,
-      clinicId: v.clinicId,
+      isIndependent: !v.clinic_id,
+      clinicId: v.clinic_id || v.clinicId,
       services: ['prescription_medicine', 'otc_medicine', 'pet_supplies'],
-      deliveryTime: v.avgDeliveryTime || '1-2 hours',
-      location: v.location,
+      deliveryTime: v.avg_delivery_time || v.avgDeliveryTime || '1-2 hours',
+      location: v.latitude && v.longitude ? { lat: v.latitude, lng: v.longitude } : v.location,
       rating: v.rating || 0,
       acceptsPrescription: true
     }));
     
     // Build diagnostics services list
     services.diagnostics = diagnosticsVendors.map((v: any) => ({
-      id: v.vendorId,
-      name: v.businessName,
+      id: v.id || v.vendorId,
+      name: v.business_name || v.businessName,
       type: 'diagnostics',
-      isIndependent: !v.clinicId,
-      clinicId: v.clinicId,
-      services: v.diagnosticServices || [],
-      homeSampleCollection: v.homeSampleCollection || false,
-      reportDeliveryTime: v.reportDeliveryTime || '24-48 hours',
-      location: v.location,
+      isIndependent: !v.clinic_id,
+      clinicId: v.clinic_id || v.clinicId,
+      services: v.diagnostic_services || v.diagnosticServices || [],
+      homeSampleCollection: v.home_sample_collection || v.homeSampleCollection || false,
+      reportDeliveryTime: v.report_delivery_time || v.reportDeliveryTime || '24-48 hours',
+      location: v.latitude && v.longitude ? { lat: v.latitude, lng: v.longitude } : v.location,
       rating: v.rating || 0
     }));
     
@@ -124,10 +131,12 @@ app.get('/integrated-services/vendors', async (c) => {
       return c.json({ success: false, error: 'type is required' }, 400);
     }
     
-    const allVendors = await kv.getByPrefix('vendor_') || [];
+    // ✅ SQL: Get all vendors
+    const vendorsRepo = getVendorsRepository();
+    const allVendors = await vendorsRepo.findAll();
     
     let vendors = allVendors.filter((v: any) => 
-      v.serviceType === type && v.isActive
+      (v.service_type === type || v.category === type) && v.is_active
     );
     
     // If location provided, calculate distance
@@ -138,13 +147,16 @@ app.get('/integrated-services/vendors', async (c) => {
       
       vendors = vendors
         .map((v: any) => {
-          if (!v.location?.lat || !v.location?.lng) return null;
+          const lat = v.latitude || v.location?.lat;
+          const lng = v.longitude || v.location?.lng;
+          
+          if (!lat || !lng) return null;
           
           const distance = calculateDistance(
             customerLat,
             customerLng,
-            v.location.lat,
-            v.location.lng
+            lat,
+            lng
           );
           
           return distance <= searchRadius ? { ...v, distance } : null;
@@ -182,42 +194,48 @@ app.post('/integrated-services/select', async (c) => {
       }, 400);
     }
     
-    // Get booking
-    const booking = await kv.get(`booking_${bookingId}`);
+    // ✅ SQL: Get booking
+    const bookingsRepo = getBookingsRepository();
+    const booking = await bookingsRepo.findById(bookingId);
+    
     if (!booking) {
       return c.json({ success: false, error: 'Booking not found' }, 404);
     }
     
-    // Get vendor
-    const vendor = await kv.get(`vendor_${vendorId}`);
+    // ✅ SQL: Get vendor
+    const vendorsRepo = getVendorsRepository();
+    const vendor = await vendorsRepo.findById(vendorId);
+    
     if (!vendor) {
       return c.json({ success: false, error: 'Vendor not found' }, 404);
     }
     
-    // Create integrated service record
+    // ✅ SQL: Create integrated service record in integrated_services table
+    const db = getDbClient();
     const integratedServiceId = `integrated_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    const integratedService = {
-      id: integratedServiceId,
-      bookingId,
-      serviceType,
-      vendorId,
-      vendorName: vendor.businessName,
-      isIndependent: !vendor.clinicId,
-      clinicId: vendor.clinicId,
-      serviceDetails: serviceDetails || {},
-      status: 'requested', // requested -> confirmed -> in_progress -> completed
-      requestedAt: new Date().toISOString(),
-      completedAt: null
-    };
     
-    await kv.set(`integrated_service_${integratedServiceId}`, integratedService);
+    const { data: integratedService } = await db
+      .from('integrated_services')
+      .insert({
+        id: integratedServiceId,
+        booking_id: bookingId,
+        service_type: serviceType,
+        vendor_id: vendorId,
+        vendor_name: vendor.business_name || vendor.businessName,
+        is_independent: !vendor.clinic_id,
+        clinic_id: vendor.clinic_id || null,
+        service_details: serviceDetails || {},
+        status: 'requested',
+        requested_at: new Date().toISOString()
+      })
+      .select()
+      .single();
     
-    // Update booking with integrated service
-    if (!booking.integratedServices) {
-      booking.integratedServices = [];
-    }
-    booking.integratedServices.push(integratedServiceId);
-    await kv.set(`booking_${bookingId}`, booking);
+    // ✅ SQL: Update booking with integrated service
+    const currentIntegratedServices = booking.integrated_services || booking.integratedServices || [];
+    await bookingsRepo.update(bookingId, {
+      integrated_services: [...currentIntegratedServices, integratedServiceId]
+    });
     
     return c.json({
       success: true,
@@ -236,16 +254,22 @@ app.get('/integrated-services/booking/:bookingId', async (c) => {
   try {
     const bookingId = c.req.param('bookingId');
     
-    const booking = await kv.get(`booking_${bookingId}`);
+    // ✅ SQL: Get booking
+    const bookingsRepo = getBookingsRepository();
+    const booking = await bookingsRepo.findById(bookingId);
+    
     if (!booking) {
       return c.json({ success: false, error: 'Booking not found' }, 404);
     }
     
-    const integratedServiceIds = booking.integratedServices || [];
+    const integratedServiceIds = booking.integrated_services || booking.integratedServices || [];
     
-    const services = await Promise.all(
-      integratedServiceIds.map((id: string) => kv.get(`integrated_service_${id}`))
-    );
+    // ✅ SQL: Get integrated services
+    const db = getDbClient();
+    const { data: services } = await db
+      .from('integrated_services')
+      .select('*')
+      .in('id', integratedServiceIds);
     
     return c.json({
       success: true,
@@ -274,24 +298,42 @@ app.put('/integrated-services/:serviceId/status', async (c) => {
       return c.json({ success: false, error: 'Invalid status' }, 400);
     }
     
-    const service = await kv.get(`integrated_service_${serviceId}`);
+    // ✅ SQL: Get and update integrated service
+    const db = getDbClient();
+    const { data: service } = await db
+      .from('integrated_services')
+      .select('*')
+      .eq('id', serviceId)
+      .single();
+    
     if (!service) {
       return c.json({ success: false, error: 'Integrated service not found' }, 404);
     }
     
-    service.status = status;
-    service.notes = notes;
-    service.updatedAt = new Date().toISOString();
+    const updateData: any = {
+      status,
+      updated_at: new Date().toISOString()
+    };
     
+    if (notes !== undefined) updateData.notes = notes;
     if (status === 'completed') {
-      service.completedAt = new Date().toISOString();
+      updateData.completed_at = new Date().toISOString();
     }
     
-    await kv.set(`integrated_service_${serviceId}`, service);
+    await db
+      .from('integrated_services')
+      .update(updateData)
+      .eq('id', serviceId);
+    
+    const { data: updatedService } = await db
+      .from('integrated_services')
+      .select('*')
+      .eq('id', serviceId)
+      .single();
     
     return c.json({
       success: true,
-      service
+      service: updatedService
     });
   } catch (error) {
     console.error('Failed to update service status:', error);

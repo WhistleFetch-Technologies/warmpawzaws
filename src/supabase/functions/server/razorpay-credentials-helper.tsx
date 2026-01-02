@@ -7,7 +7,8 @@
  * This ensures single source of truth for payment gateway configuration
  */
 
-import * as kv from "./kv_store.tsx";
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { getPlatformSettingsRepository } from '../../../supabase/lib/repositories/index';
 
 /**
  * Get Razorpay credentials from platform settings
@@ -19,27 +20,22 @@ export async function getRazorpayCredentials(): Promise<{
   enabled: boolean;
 }> {
   try {
-    // 1. Try to get from platform settings (admin portal) - PRIMARY SOURCE
-    // Check multiple possible KV keys for compatibility
-    const paymentGatewaySettings = await kv.get('platform:settings:payment_gateway') ||
-                                   await kv.get('admin:settings:payment_gateway') ||
-                                   await kv.get('admin:settings:payment');
+    // ✅ SQL: Get from platform settings (admin portal) - PRIMARY SOURCE
+    const platformSettingsRepo = getPlatformSettingsRepository();
+    const paymentGatewaySettings = await platformSettingsRepo.getPaymentGatewaySettings();
     
     if (paymentGatewaySettings?.razorpay) {
       // Support multiple field name variations
-      const keyId = paymentGatewaySettings.razorpay.key_id || 
-                   paymentGatewaySettings.razorpay.keyId || 
-                   paymentGatewaySettings.razorpay.apiKey;
-      const keySecret = paymentGatewaySettings.razorpay.key_secret || 
-                       paymentGatewaySettings.razorpay.keySecret || 
-                       paymentGatewaySettings.razorpay.apiSecret;
+      const razorpayConfig = paymentGatewaySettings.razorpay;
+      const keyId = razorpayConfig.key_id || razorpayConfig.keyId || razorpayConfig.apiKey;
+      const keySecret = razorpayConfig.key_secret || razorpayConfig.keySecret || razorpayConfig.apiSecret;
       
       if (keyId && keySecret) {
         console.log('✅ [RAZORPAY-CREDS] Using credentials from platform settings');
         return {
           keyId,
           keySecret,
-          enabled: paymentGatewaySettings.razorpay.enabled !== false
+          enabled: razorpayConfig.enabled !== false
         };
       }
     }

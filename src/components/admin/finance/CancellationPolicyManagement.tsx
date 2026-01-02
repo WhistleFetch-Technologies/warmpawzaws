@@ -29,7 +29,7 @@ import {
 } from '../../ui/table';
 import { Plus, Edit2, Trash2, FileCheck, Search, RefreshCw, Clock, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { Checkbox } from '../../ui/checkbox';
 
 interface CancellationPolicy {

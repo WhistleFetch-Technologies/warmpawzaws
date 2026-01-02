@@ -5,9 +5,9 @@
  * Reuses the exact same logic across all roles
  */
 
-import { Hono } from 'npm:hono';
-import { getDiscoveryService } from '../../../supabase/lib/services/discovery-service.ts';
-import { findProblemById, getProblemGridByRole } from './problem-grid-catalog.tsx';
+import { Hono } from 'hono';
+import { getDiscoveryService } from '../../../supabase/lib/services/discovery-service';
+import { findProblemById, getProblemGridByRole } from './problem-grid-catalog';
 
 export function registerUniversalDiscovery(app: Hono) {
   /**

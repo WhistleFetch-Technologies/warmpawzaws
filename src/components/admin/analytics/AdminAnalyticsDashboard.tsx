@@ -17,7 +17,7 @@ import { useAnalyticsData } from './hooks/useAnalyticsData';
 import { Badge } from '../../ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../ui/table';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 interface AnalyticsDashboardProps {
   onBack: () => void;

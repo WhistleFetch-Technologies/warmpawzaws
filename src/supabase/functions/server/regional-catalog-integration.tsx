@@ -1,5 +1,5 @@
-import { Hono } from 'npm:hono@4';
-import type { Region } from './region-types.tsx';
+import { Hono } from 'hono';
+import type { Region } from './region-types';
 
 /**
  * REGIONAL CATALOG INTEGRATION

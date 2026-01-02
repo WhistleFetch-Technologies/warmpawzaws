@@ -1,8 +1,10 @@
 /**
- * 🌍 GEOSPATIAL INDEXING SYSTEM (Simulated for KV Store)
+ * 🌍 GEOSPATIAL INDEXING SYSTEM - SQL MIGRATION
  * 
- * Provides "Enterprise Grade" location-based search without a geospatial DB.
- * Uses a Grid-based indexing strategy (Geohash-like).
+ * ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+ * 
+ * Provides location-based search using PostgreSQL.
+ * Uses a Grid-based indexing strategy (Geohash-like) stored in SQL.
  * 
  * Grid Size: Approx 5km x 5km cells.
  * Lat/Lng are rounded to 2 decimal places (approx 1.1km precision) for bucketing.
@@ -37,80 +39,152 @@ export function getAdjacentGridKeys(lat: number, lng: number): string[] {
 
 /**
  * Update the location index for a provider
+ * ✅ SQL: Uses geospatial_index and provider_locations tables
  */
-export async function updateProviderLocationIndex(kv: any, providerId: string, lat: number, lng: number, type: string) {
-    // 1. Remove from old index if exists
-    const oldLocation = await kv.get(`provider_loc:${providerId}`);
-    if (oldLocation) {
-        const oldKey = getGeoGridKey(oldLocation.lat, oldLocation.lng);
-        const oldIndex = await kv.get(oldKey) || [];
-        const filtered = oldIndex.filter((id: string) => id !== providerId);
-        await kv.set(oldKey, filtered);
-    }
-
-    // 2. Add to new index
-    const newKey = getGeoGridKey(lat, lng);
-    const newIndex = await kv.get(newKey) || [];
-    if (!newIndex.includes(providerId)) {
-        newIndex.push(providerId);
-        await kv.set(newKey, newIndex);
-    }
-
-    // 3. Update provider's stored location reference
-    await kv.set(`provider_loc:${providerId}`, { lat, lng, type, updatedAt: new Date().toISOString() });
+export async function updateProviderLocationIndex(db: any, providerId: string, lat: number, lng: number, type: string) {
+    // ✅ SQL: 1. Remove from old index if exists
+    const { data: oldLocation } = await db
+        .from('provider_locations')
+        .select('*')
+        .eq('provider_id', providerId)
+        .single();
     
-    // 4. Update Type-Specific Index (e.g., 'ambulance', 'lab')
-    // We maintain a list of ALL providers of a certain type for fallback
-    const typeIndex = await kv.get(`provider_type_index:${type}`) || [];
-    if (!typeIndex.includes(providerId)) {
-        typeIndex.push(providerId);
-        await kv.set(`provider_type_index:${type}`, typeIndex);
+    if (oldLocation) {
+        const oldKey = getGeoGridKey(oldLocation.latitude, oldLocation.longitude);
+        // Remove from old grid index
+        await db
+            .from('geospatial_index')
+            .update({
+                provider_ids: db.raw('array_remove(provider_ids, ?)', [providerId]),
+                updated_at: new Date().toISOString()
+            })
+            .eq('grid_key', oldKey);
+    }
+
+    // ✅ SQL: 2. Add to new index
+    const newKey = getGeoGridKey(lat, lng);
+    const { data: existingGrid } = await db
+        .from('geospatial_index')
+        .select('*')
+        .eq('grid_key', newKey)
+        .single();
+    
+    if (existingGrid) {
+        const providerIds = existingGrid.provider_ids || [];
+        if (!providerIds.includes(providerId)) {
+            providerIds.push(providerId);
+            await db
+                .from('geospatial_index')
+                .update({
+                    provider_ids: providerIds,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('grid_key', newKey);
+        }
+    } else {
+        await db
+            .from('geospatial_index')
+            .insert({
+                grid_key: newKey,
+                provider_ids: [providerId],
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            });
+    }
+
+    // ✅ SQL: 3. Update provider's stored location reference
+    await db
+        .from('provider_locations')
+        .upsert({
+            provider_id: providerId,
+            latitude: lat,
+            longitude: lng,
+            provider_type: type,
+            updated_at: new Date().toISOString()
+        }, {
+            onConflict: 'provider_id'
+        });
+    
+    // ✅ SQL: 4. Update Type-Specific Index (provider_types table)
+    const { data: typeIndex } = await db
+        .from('provider_types')
+        .select('*')
+        .eq('provider_type', type)
+        .single();
+    
+    if (typeIndex) {
+        const providerIds = typeIndex.provider_ids || [];
+        if (!providerIds.includes(providerId)) {
+            providerIds.push(providerId);
+            await db
+                .from('provider_types')
+                .update({
+                    provider_ids: providerIds,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('provider_type', type);
+        }
+    } else {
+        await db
+            .from('provider_types')
+            .insert({
+                provider_type: type,
+                provider_ids: [providerId],
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            });
     }
 }
 
 /**
  * Find providers near a location
+ * ✅ SQL: Uses geospatial_index and provider_locations tables
  * @param radiusKm (Approximate, used to determine grid span)
  */
-export async function findProvidersNearby(kv: any, lat: number, lng: number, type: string, radiusKm: number = 20) {
-    // 1. Determine grids to search
-    // For simplicity, we search the 3x3 grid around the user (approx 30x30km area coverage)
+export async function findProvidersNearby(db: any, lat: number, lng: number, type: string, radiusKm: number = 20) {
+    // ✅ SQL: 1. Determine grids to search
     const gridKeys = getAdjacentGridKeys(lat, lng);
     
-    // 2. Fetch all IDs from these grids
+    // ✅ SQL: 2. Fetch all IDs from these grids
+    const { data: gridIndexes } = await db
+        .from('geospatial_index')
+        .select('*')
+        .in('grid_key', gridKeys);
+    
     const providerIds = new Set<string>();
-    
-    // Parallel fetch for speed
-    // Note: In Deno KV, we might need to loop. 
-    // Assuming `kv` wrapper has basic get.
-    
-    for (const key of gridKeys) {
-        const ids = await kv.get(key) || [];
+    for (const grid of gridIndexes || []) {
+        const ids = grid.provider_ids || [];
         ids.forEach((id: string) => providerIds.add(id));
     }
 
-    // 3. Fetch Provider Details & Filter by Type and Exact Distance
-    const results = [];
+    // ✅ SQL: 3. Fetch Provider Locations & Filter by Type and Exact Distance
     const providers = Array.from(providerIds);
+    if (providers.length === 0) return [];
     
-    for (const pid of providers) {
-        const loc = await kv.get(`provider_loc:${pid}`);
-        if (!loc) continue;
-
-        // Check Type
-        if (loc.type !== type) continue;
-
+    const { data: locations } = await db
+        .from('provider_locations')
+        .select('*')
+        .in('provider_id', providers)
+        .eq('provider_type', type);
+    
+    const results = [];
+    for (const loc of locations || []) {
         // Calculate Distance (Haversine Formula)
-        const dist = calculateDistance(lat, lng, loc.lat, loc.lng);
+        const dist = calculateDistance(lat, lng, loc.latitude, loc.longitude);
         
         if (dist <= radiusKm) {
-            // Fetch full details
-            const details = await kv.get(`vendor:${pid}`) || await kv.get(`independent_provider:${pid}`);
-            if (details) {
+            // ✅ SQL: Fetch full vendor/provider details
+            const { data: vendor } = await db
+                .from('vendors')
+                .select('*')
+                .eq('id', loc.provider_id)
+                .single();
+            
+            if (vendor) {
                 results.push({
-                    ...details,
+                    ...vendor,
                     distance: dist,
-                    location: { lat: loc.lat, lng: loc.lng }
+                    location: { lat: loc.latitude, lng: loc.longitude }
                 });
             }
         }

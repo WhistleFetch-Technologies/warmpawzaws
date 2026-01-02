@@ -1,6 +1,9 @@
-import { Hono } from "npm:hono";
-import * as kv from "./kv_store.tsx";
-import { sendSuccess, sendError } from "./response-utils.ts";
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+// ✅ LAMBDA COMPATIBILITY: Node.js compatible imports
+import { Hono } from "hono";
+import { sendSuccess, sendError } from "./response-utils";
+import { getDbClient } from '../../../supabase/lib/db';
+import { getPlatformSettingsRepository } from '../../../supabase/lib/repositories/index';
 
 /**
  * DATING CHAT ENDPOINTS
@@ -22,19 +25,29 @@ export function registerDatingChatEndpoints(app: Hono) {
         return sendError(c, 'Missing required fields: senderId, message', 400);
       }
 
-      // Get match
-      const match = await kv.get(`dating_match:${matchId}`);
+      // ✅ SQL: Get match
+      const db = getDbClient();
+      const { data: match } = await db
+        .from('dating_matches')
+        .select('*')
+        .eq('id', matchId)
+        .single();
+      
       if (!match) {
         return sendError(c, 'Match not found', 404);
       }
 
       // Verify sender is part of this match
-      if (match.profile1UserId !== senderId && match.profile2UserId !== senderId) {
+      const profile1UserId = match.profile1_user_id || match.profile1UserId;
+      const profile2UserId = match.profile2_user_id || match.profile2UserId;
+      const chatUnlocked = match.chat_unlocked !== false && match.chatUnlocked !== false;
+      
+      if (profile1UserId !== senderId && profile2UserId !== senderId) {
         return sendError(c, 'Unauthorized', 403);
       }
 
       // Check if chat is unlocked
-      if (!match.chatUnlocked) {
+      if (!chatUnlocked) {
         return sendError(c, 'Chat is locked. Subscription required.', 402);
       }
 
@@ -52,21 +65,40 @@ export function registerDatingChatEndpoints(app: Hono) {
         readBy: []
       };
 
-      // Store message
-      const messagesKey = `dating_chat:${matchId}:messages`;
-      const messages = await kv.get(messagesKey) || [];
-      messages.push(chatMessage);
-      await kv.set(messagesKey, messages);
+      // ✅ SQL: Store message
+      await db
+        .from('dating_chat_messages')
+        .insert({
+          id: messageId,
+          match_id: matchId,
+          sender_id: senderId,
+          message,
+          message_type: messageType,
+          attachment_url: attachmentUrl || null,
+          timestamp: new Date().toISOString(),
+          read: false,
+          read_by: []
+        });
 
-      // Update match last message timestamp
-      match.lastMessageAt = new Date().toISOString();
-      match.lastMessage = message.substring(0, 50); // Preview
-      await kv.set(`dating_match:${matchId}`, match);
+      // ✅ SQL: Update match last message timestamp
+      const lastMessageAt = new Date().toISOString();
+      const lastMessage = message.substring(0, 50); // Preview
+      await db
+        .from('dating_matches')
+        .update({
+          last_message_at: lastMessageAt,
+          last_message: lastMessage,
+          updated_at: lastMessageAt
+        })
+        .eq('id', matchId);
 
       // If using AWS Chime, send via Chime SDK Messaging
-      if (match.chatChannelArn && match.chatChannelArn.startsWith('chime:')) {
+      const chatChannelArn = match.chat_channel_arn || match.chatChannelArn;
+      if (chatChannelArn && chatChannelArn.startsWith('chime:')) {
         try {
-          const awsSettings = await kv.get('admin:settings:aws');
+          // ✅ SQL: Get AWS settings
+          const platformSettingsRepo = getPlatformSettingsRepository();
+          const awsSettings = await platformSettingsRepo.getAWSSettings();
           if (awsSettings?.chime?.enabled) {
             // In production, use AWS Chime SDK Messaging API
             // For now, message is stored in KV and can be synced to Chime
@@ -95,33 +127,35 @@ export function registerDatingChatEndpoints(app: Hono) {
       const limit = parseInt(c.req.query('limit') || '50');
       const before = c.req.query('before'); // Message ID to fetch messages before
 
-      // Get match
-      const match = await kv.get(`dating_match:${matchId}`);
+      // ✅ SQL: Get match
+      const db = getDbClient();
+      const { data: match } = await db
+        .from('dating_matches')
+        .select('*')
+        .eq('id', matchId)
+        .single();
+      
       if (!match) {
         return sendError(c, 'Match not found', 404);
       }
 
-      // Get messages
-      const messagesKey = `dating_chat:${matchId}:messages`;
-      let messages = await kv.get(messagesKey) || [];
-
-      // Sort by timestamp (newest first)
-      messages.sort((a: any, b: any) => 
-        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-      );
-
-      // Pagination
+      // ✅ SQL: Get messages
+      let query = db
+        .from('dating_chat_messages')
+        .select('*')
+        .eq('match_id', matchId);
+      
       if (before) {
-        const beforeIndex = messages.findIndex((m: any) => m.id === before);
-        if (beforeIndex >= 0) {
-          messages = messages.slice(beforeIndex + 1, beforeIndex + 1 + limit);
-        } else {
-          messages = messages.slice(0, limit);
-        }
-      } else {
-        messages = messages.slice(0, limit);
+        query = query.lt('id', before);
       }
+      
+      const { data: messagesData } = await query
+        .order('timestamp', { ascending: false })
+        .limit(limit);
+      
+      let messages = messagesData || [];
 
+      // Messages are already sorted and paginated by SQL query
       // Reverse to show oldest first
       messages.reverse();
 
@@ -145,18 +179,34 @@ export function registerDatingChatEndpoints(app: Hono) {
       const { matchId, messageId } = c.req.param();
       const { userId } = await c.req.json();
 
-      const messagesKey = `dating_chat:${matchId}:messages`;
-      const messages = await kv.get(messagesKey) || [];
+      // ✅ SQL: Get and update message
+      const db = getDbClient();
+      const { data: message } = await db
+        .from('dating_chat_messages')
+        .select('*')
+        .eq('id', messageId)
+        .eq('match_id', matchId)
+        .single();
       
-      const message = messages.find((m: any) => m.id === messageId);
       if (message) {
-        if (!message.readBy) message.readBy = [];
-        if (!message.readBy.includes(userId)) {
-          message.readBy.push(userId);
+        const readBy = message.read_by || message.readBy || [];
+        let updatedReadBy = [...readBy];
+        if (!updatedReadBy.includes(userId)) {
+          updatedReadBy.push(userId);
         }
-        message.read = message.readBy.length === 2; // Read by both participants
+        const isRead = updatedReadBy.length === 2; // Read by both participants
         
-        await kv.set(messagesKey, messages);
+        await db
+          .from('dating_chat_messages')
+          .update({
+            read: isRead,
+            read_by: updatedReadBy,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', messageId);
+        
+        message.read = isRead;
+        message.readBy = updatedReadBy;
       }
 
       return sendSuccess(c, { message }, 'Message marked as read');
@@ -181,26 +231,36 @@ export function registerDatingChatEndpoints(app: Hono) {
         return sendError(c, 'Missing required fields: file, senderId', 400);
       }
 
-      // Get match
-      const match = await kv.get(`dating_match:${matchId}`);
+      // ✅ SQL: Get match
+      const db = getDbClient();
+      const { data: match } = await db
+        .from('dating_matches')
+        .select('*')
+        .eq('id', matchId)
+        .single();
+      
       if (!match) {
         return sendError(c, 'Match not found', 404);
       }
 
       // Verify sender
-      if (match.profile1UserId !== senderId && match.profile2UserId !== senderId) {
+      const profile1UserId = match.profile1_user_id || match.profile1UserId;
+      const profile2UserId = match.profile2_user_id || match.profile2UserId;
+      
+      if (profile1UserId !== senderId && profile2UserId !== senderId) {
         return sendError(c, 'Unauthorized', 403);
       }
 
-      // Upload to S3
-      const awsSettings = await kv.get('admin:settings:aws') || {};
-      const s3Config = awsSettings.s3 || {};
+      // ✅ SQL: Upload to S3 (get AWS settings)
+      const platformSettingsRepo = getPlatformSettingsRepository();
+      const awsSettings = await platformSettingsRepo.getAWSSettings();
+      const s3Config = awsSettings?.s3 || {};
 
       if (!s3Config.enabled || !s3Config.bucket) {
         return sendError(c, 'S3 not configured', 500);
       }
 
-      const { S3Client, PutObjectCommand } = await import("npm:@aws-sdk/client-s3@3");
+      const { S3Client, PutObjectCommand } = await import("@aws-sdk/client-s3");
       const s3Client = new S3Client({
         region: s3Config.region || 'ap-south-1',
         credentials: {
@@ -252,12 +312,18 @@ export function registerDatingChatEndpoints(app: Hono) {
         return sendError(c, 'userId query parameter required', 400);
       }
 
-      const messagesKey = `dating_chat:${matchId}:messages`;
-      const messages = await kv.get(messagesKey) || [];
+      // ✅ SQL: Get unread messages
+      const db = getDbClient();
+      const { data: messages } = await db
+        .from('dating_chat_messages')
+        .select('*')
+        .eq('match_id', matchId);
 
-      const unreadCount = messages.filter((m: any) => 
-        m.senderId !== userId && (!m.readBy || !m.readBy.includes(userId))
-      ).length;
+      const unreadCount = messages?.filter((m: any) => {
+        const senderId = m.sender_id || m.senderId;
+        const readBy = m.read_by || m.readBy || [];
+        return senderId !== userId && !readBy.includes(userId);
+      }).length || 0;
 
       return sendSuccess(c, { unreadCount });
     } catch (error) {

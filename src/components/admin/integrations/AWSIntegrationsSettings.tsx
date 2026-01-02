@@ -12,7 +12,7 @@ import { Button } from '../../ui/button';
 import { Switch } from '../../ui/switch';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../../ui/tabs';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import {
   Cloud, Database, MessageSquare, Map, Loader2, CheckCircle2, 
   AlertCircle, Key, Shield, Video, Brain, Lock, Unlock, Save, X,

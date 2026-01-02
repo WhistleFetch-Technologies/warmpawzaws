@@ -11,9 +11,15 @@
  * Status: ⚠️ 40% → ✅ 90%
  */
 
-import { Hono } from 'npm:hono';
-import { cors } from 'npm:hono/cors';
-import * as kv from './kv_store.tsx';
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from 'hono';
+import { cors } from "hono/cors";
+import { 
+  getCentresRepository,
+  getVendorServicesRepository,
+  getVendorsRepository,
+  getRolesRepository
+} from '../../../supabase/lib/repositories/index';
 
 const app = new Hono();
 app.use('*', cors());
@@ -85,8 +91,10 @@ app.post('/services/publish', async (c) => {
       // Validate centres exist
       const invalidCentres = [];
       for (const centreId of centres) {
-        const centreData = await kv.get(`centre:${centreId}`);
-        if (!centreData || !centreData.value) {
+        // ✅ SQL: Check centre exists from centres table
+        const centresRepo = getCentresRepository();
+        const centreData = await centresRepo.findById(centreId);
+        if (!centreData) {
           invalidCentres.push(centreId);
         }
       }
@@ -130,7 +138,27 @@ app.post('/services/publish', async (c) => {
           status: 'active'
         };
 
-        await kv.set(`service:centre:${centreServiceId}`, centreService);
+        // ✅ SQL: Save centre service to vendor_services table
+        const vendorServicesRepo = getVendorServicesRepository();
+        await vendorServicesRepo.create({
+          id: centreServiceId,
+          vendor_id: vendorId,
+          service_id: serviceId,
+          service_name: serviceName,
+          service_style: serviceStyle,
+          category: category,
+          base_price: basePrice,
+          price_override: priceOverride || null,
+          centre_id: centreId,
+          is_enabled: true,
+          metadata: {
+            publishLevel: 'centre',
+            customPackageEnabled: customPackageEnabled || false,
+            gpsRequired: finalGpsRequired,
+            gpsTracking: finalGpsTracking
+          },
+          created_at: new Date().toISOString()
+        });
         publishedServiceIds.push(centreServiceId);
 
         console.log(`✅ Published service to centre ${centreId}: ${centreServiceId}`);
@@ -171,7 +199,25 @@ app.post('/services/publish', async (c) => {
         status: 'active'
       };
 
-      await kv.set(`service:vendor:${vendorServiceId}`, vendorService);
+      // ✅ SQL: Save vendor service to vendor_services table
+      const vendorServicesRepo = getVendorServicesRepository();
+      await vendorServicesRepo.create({
+        id: vendorServiceId,
+        vendor_id: vendorId,
+        service_id: serviceId,
+        service_name: serviceName,
+        service_style: serviceStyle,
+        category: category,
+        base_price: basePrice,
+        is_enabled: true,
+        metadata: {
+          publishLevel: 'vendor',
+          customPackageEnabled: false,
+          gpsRequired: finalGpsRequired,
+          gpsTracking: finalGpsTracking
+        },
+        created_at: new Date().toISOString()
+      });
 
       console.log(`✅ Published service at vendor level: ${vendorServiceId}`);
 
@@ -234,13 +280,18 @@ app.post('/vendor/:vendorId/services/publish', async (c) => {
 
     // ✅ Custom Package Logic
     if (body.publishLevel === 'centre') {
-      const vendor = await kv.get(`vendor:${vendorId}`);
-      if (!vendor || !vendor.value) {
+      // ✅ SQL: Get vendor from vendors table
+      const vendorsRepo = getVendorsRepository();
+      const vendor = await vendorsRepo.findById(vendorId);
+      if (!vendor) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
 
-      const vendorData = vendor.value;
-      const hasCentres = vendorData.centres && vendorData.centres.length > 0;
+      const vendorData = vendor;
+      // ✅ SQL: Check if vendor has centres from centres table
+      const centresRepo = getCentresRepository();
+      const centres = await centresRepo.findByVendor(vendorId);
+      const hasCentres = centres && centres.length > 0;
 
       if (!hasCentres) {
         return c.json({
@@ -285,19 +336,21 @@ app.get('/services/:serviceId/publish-info', async (c) => {
   try {
     const serviceId = c.req.param('serviceId');
 
-    // Check vendor-level
-    const vendorServices = await kv.getByPrefix(`service:vendor:${serviceId}`);
+    // ✅ SQL: Check vendor-level from vendor_services table
+    const vendorServicesRepo = getVendorServicesRepository();
+    const vendorServices = await vendorServicesRepo.findByService(serviceId);
+    const vendorLevelServices = vendorServices.filter(s => !s.centre_id);
     
-    // Check centre-level
-    const centreServices = await kv.getByPrefix(`service:centre:${serviceId}`);
+    // ✅ SQL: Check centre-level (same table, filtered by centre_id)
+    const centreLevelServices = vendorServices.filter(s => s.centre_id);
 
     const publishInfo = {
       serviceId,
-      publishedAtVendorLevel: vendorServices.length > 0,
-      publishedAtCentreLevel: centreServices.length > 0,
-      vendorPublications: vendorServices.map(s => s.value),
-      centrePublications: centreServices.map(s => s.value),
-      totalPublications: vendorServices.length + centreServices.length
+      publishedAtVendorLevel: vendorLevelServices.length > 0,
+      publishedAtCentreLevel: centreLevelServices.length > 0,
+      vendorPublications: vendorLevelServices,
+      centrePublications: centreLevelServices,
+      totalPublications: vendorServices.length
     };
 
     return c.json({
@@ -314,20 +367,23 @@ app.get('/services/:serviceId/publish-info', async (c) => {
 /**
  * Helper: Get role configuration
  */
+// ✅ SQL: Get role configuration from roles table
 async function getRoleConfiguration(vendorId: string) {
   try {
-    const vendorData = await kv.get(`vendor:${vendorId}`);
-    if (!vendorData || !vendorData.value) return null;
+    // ✅ SQL: Get vendor from vendors table
+    const vendorsRepo = getVendorsRepository();
+    const vendor = await vendorsRepo.findById(vendorId);
+    if (!vendor) return null;
 
-    const vendor = vendorData.value;
-    const roleId = vendor.roleId;
-
+    const roleId = vendor.role_id;
     if (!roleId) return null;
 
-    const roleData = await kv.get(`role:${roleId}`);
-    if (!roleData || !roleData.value) return null;
+    // ✅ SQL: Get role from roles table
+    const rolesRepo = getRolesRepository();
+    const role = await rolesRepo.findById(roleId);
+    if (!role) return null;
 
-    return roleData.value;
+    return role;
 
   } catch (error) {
     console.error('Error getting role configuration:', error);

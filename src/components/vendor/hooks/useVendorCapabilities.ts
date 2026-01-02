@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 export interface VendorCapabilities {
   // Core
@@ -248,11 +247,20 @@ export function useVendorCapabilities(roleId?: string) {
       try {
         console.log('🔌 [CAPABILITIES] Fetching role config for:', roleId);
         
+        // ✅ FIX: Use API Gateway URL instead of Supabase
+        const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+        
+        if (!API_GATEWAY_URL) {
+          console.warn('⚠️ [CAPABILITIES] NEXT_PUBLIC_API_GATEWAY_URL not set, falling back to hardcoded capabilities');
+          throw new Error('API Gateway URL not configured');
+        }
+        
         const response = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/config/roles`,
+          `${API_GATEWAY_URL}/make-server-3dd53475/config/roles`,
           {
+            method: 'GET',
             headers: {
-              'Authorization': `Bearer ${publicAnonKey}`
+              'Content-Type': 'application/json',
             }
           }
         );

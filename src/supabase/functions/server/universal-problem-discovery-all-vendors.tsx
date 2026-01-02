@@ -6,9 +6,9 @@
  * ╚═══════════════════════════════════════════════════════════════════════════╝
  */
 
-import { Hono } from 'npm:hono';
-import { getDiscoveryService } from '../../../supabase/lib/services/discovery-service.ts';
-import { findProblemById, getProblemGridByRole } from './problem-grid-catalog.tsx';
+import { Hono } from 'hono';
+import { getDiscoveryService } from '../../../supabase/lib/services/discovery-service';
+import { findProblemById, getProblemGridByRole } from './problem-grid-catalog';
 
 const app = new Hono();
 

@@ -1,5 +1,5 @@
-import { Hono } from "npm:hono";
-import { sendSuccess, sendError } from "./response-utils.ts";
+import { Hono } from "hono";
+import { sendSuccess, sendError } from "./response-utils";
 
 /**
  * WARMPAWZ NOTIFICATION SYSTEM
@@ -91,7 +91,7 @@ export type NotificationCategory =
   | 'system';
 
 // ✅ MIGRATED TO SQL: Uses NotificationsRepository instead of KV
-import { getNotificationsRepository } from '../../../supabase/lib/repositories/notifications.ts';
+import { getNotificationsRepository } from '../../../supabase/lib/repositories/notifications';
 
 export const createNotificationHelper = async (notification: Omit<Notification, 'id' | 'createdAt' | 'status'>) => {
     const notificationsRepo = getNotificationsRepository();

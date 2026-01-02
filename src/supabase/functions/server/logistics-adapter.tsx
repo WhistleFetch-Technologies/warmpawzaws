@@ -1,6 +1,8 @@
-import { Hono } from "npm:hono";
-import * as kv from "./kv_store.tsx";
-import { sendSuccess, sendError } from "./response-utils.ts";
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from "hono";
+import { sendSuccess, sendError } from "./response-utils";
+import { getPlatformSettingsRepository } from '../../../supabase/lib/repositories/index';
+import { getDbClient } from '../../../supabase/lib/db';
 
 /**
  * Logistics Adapter (Shiprocket)
@@ -13,16 +15,31 @@ export function registerLogisticsEndpoints(app: Hono) {
    * Auto-refreshes if missing or expired (handled by catching 401 downstream)
    */
   async function getShiprocketToken() {
-      // 1. Check Cache
-      const cachedToken = await kv.get('cache:shiprocket:token');
-      if (cachedToken) return cachedToken;
+      const db = getDbClient();
+      
+      // ✅ SQL: 1. Check Cache in logistics_token_cache table
+      try {
+        const { data: cachedToken } = await db
+          .from('logistics_token_cache')
+          .select('token, expires_at')
+          .eq('partner_id', 'shiprocket')
+          .gt('expires_at', new Date().toISOString())
+          .single();
+        
+        if (cachedToken?.token) {
+          return cachedToken.token;
+        }
+      } catch (error) {
+        // Cache miss or table doesn't exist, continue to fetch
+      }
 
-      // 2. Get Credentials
-      const partners = await kv.get('admin:settings:logistics_partners') || [];
+      // ✅ SQL: 2. Get Credentials from platform settings
+      const platformSettingsRepo = getPlatformSettingsRepository();
+      const partners = await platformSettingsRepo.getLogisticsPartners();
       
       // Look for Shiprocket OR the specific user email provided
       const shiprocket = partners.find((p: any) => 
-          (p.id === 'shiprocket' && p.enabled) || 
+          (p.partner_id === 'shiprocket' && p.enabled) || 
           (p.email === 'ketan.hirani@gmail.com')
       );
 
@@ -51,10 +68,22 @@ export function registerLogisticsEndpoints(app: Hono) {
           const data = await resp.json();
           const token = data.token;
           
-          // Cache for 9 days (expires in 10 usually)
-          // KV doesn't support TTL natively in this simple wrapper, so we just store it.
-          // We rely on re-login if 401 happens.
-          await kv.set('cache:shiprocket:token', token);
+          // ✅ SQL: Cache token in logistics_token_cache table for 9 days
+          try {
+            const expiresAt = new Date();
+            expiresAt.setDate(expiresAt.getDate() + 9); // 9 days from now
+            
+            await db
+              .from('logistics_token_cache')
+              .upsert({
+                partner_id: 'shiprocket',
+                token: token,
+                expires_at: expiresAt.toISOString(),
+                updated_at: new Date().toISOString()
+              });
+          } catch (error) {
+            console.warn('Failed to cache Shiprocket token, will re-authenticate on next request');
+          }
           
           return token;
       } catch (e) {
@@ -93,8 +122,15 @@ export function registerLogisticsEndpoints(app: Hono) {
               });
 
               if (resp.status === 401) {
-                  // Token expired, clear cache
-                  await kv.del('cache:shiprocket:token');
+                  // ✅ SQL: Token expired, clear cache
+                  try {
+                    await db
+                      .from('logistics_token_cache')
+                      .delete()
+                      .eq('partner_id', 'shiprocket');
+                  } catch (error) {
+                    // Ignore cache clear errors
+                  }
                   // Retry once? For now, just fallthrough to mock.
                   throw new Error('Token Expired');
               }

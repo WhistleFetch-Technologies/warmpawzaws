@@ -1,5 +1,8 @@
-import { Hono } from "npm:hono";
-import { sendSuccess, sendError } from "./response-utils.ts";
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from "hono";
+import { sendSuccess, sendError } from "./response-utils";
+import { getBookingsRepository } from '../../../supabase/lib/repositories/index';
+import { getDbClient } from '../../../supabase/lib/db';
 
 /**
  * ⏰ TIME WINDOW SUBSCRIPTION SYSTEM
@@ -40,7 +43,7 @@ interface TimeWindow {
   endHour: number;
 }
 
-export function timeWindowSubscriptionEndpoints(app: Hono, kv: any) {
+export function timeWindowSubscriptionEndpoints(app: Hono) {
   const BASE_PATH = "/make-server-3dd53475";
 
   // Time window definitions
@@ -79,8 +82,9 @@ export function timeWindowSubscriptionEndpoints(app: Hono, kv: any) {
         return sendError(c, `Invalid time window. Must be one of: ${validWindows.join(', ')}`, 400);
       }
 
-      // Get booking details
-      const booking = await kv.get(`booking:${bookingId}`);
+      // ✅ SQL: Get booking details using repository
+      const bookingsRepo = getBookingsRepository();
+      const booking = await bookingsRepo.findById(bookingId);
       if (!booking) {
         return sendError(c, 'Booking not found', 404);
       }
@@ -107,26 +111,50 @@ export function timeWindowSubscriptionEndpoints(app: Hono, kv: any) {
         updatedAt: new Date().toISOString(),
       };
 
-      // Save subscription
-      await kv.set(`time_window_subscription_${subscriptionId}`, subscription);
-
-      // Link to booking
-      booking.subscriptionId = subscriptionId;
-      booking.isSubscription = true;
-      booking.timeWindow = timeWindow;
-      await kv.set(`booking:${bookingId}`, booking);
-
-      // Add to customer's subscription list
-      const customerSubs = await kv.get(`customer_time_window_subs_${customerId}`) || [];
-      customerSubs.push(subscriptionId);
-      await kv.set(`customer_time_window_subs_${customerId}`, customerSubs);
-
-      // Add to provider's subscription list
-      if (providerId) {
-        const providerSubs = await kv.get(`provider_time_window_subs_${providerId}`) || [];
-        providerSubs.push(subscriptionId);
-        await kv.set(`provider_time_window_subs_${providerId}`, providerSubs);
+      // ✅ SQL: Save subscription to time_window_subscriptions table (if exists) or bookings.metadata
+      const db = getDbClient();
+      try {
+        // Try to insert into time_window_subscriptions table if it exists
+        await db.from('time_window_subscriptions').insert({
+          id: subscriptionId,
+          subscription_id: subscriptionId,
+          booking_id: bookingId,
+          customer_id: customerId,
+          provider_id: providerId,
+          service_type: serviceType,
+          time_window: timeWindow,
+          recurring_schedule: subscription.recurringSchedule,
+          start_date: subscription.startDate,
+          end_date: subscription.endDate,
+          status: subscription.status,
+          sessions_completed: subscription.sessionsCompleted,
+          total_sessions: subscription.totalSessions,
+          created_at: subscription.createdAt,
+          updated_at: subscription.updatedAt
+        });
+      } catch (error) {
+        // If table doesn't exist, store in bookings.metadata
+        console.warn('time_window_subscriptions table not found, storing in bookings.metadata');
+        await bookingsRepo.update(bookingId, {
+          metadata: {
+            ...(booking.metadata || {}),
+            subscriptionId,
+            isSubscription: true,
+            timeWindow,
+            subscription
+          }
+        });
       }
+
+      // ✅ SQL: Update booking with subscription info
+      await bookingsRepo.update(bookingId, {
+        metadata: {
+          ...(booking.metadata || {}),
+          subscriptionId,
+          isSubscription: true,
+          timeWindow
+        }
+      });
 
       console.log(`✅ Time window subscription created: ${subscriptionId}`);
 

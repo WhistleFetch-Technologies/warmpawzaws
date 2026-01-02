@@ -18,7 +18,7 @@ import {
   Image,
 } from 'react-native';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
-import { API_BASE_URL, publicAnonKey } from '../../config/supabase';
+import { API_BASE_URL } from '../../config/aws';
 
 interface CustomerUserProfileScreenProps {
   phone: string;
@@ -196,7 +196,6 @@ export function CustomerUserProfileScreen({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${publicAnonKey}`,
         },
         body: JSON.stringify({
           phone: profile.phone,

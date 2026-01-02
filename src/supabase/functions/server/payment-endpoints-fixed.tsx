@@ -15,15 +15,17 @@
  * ============================================================================
  */
 
-import { Hono } from "npm:hono";
-import { sendSuccess, sendError } from "./response-utils.ts";
-import { createRazorpayOrder, verifyRazorpaySignature } from "./razorpay-integration.tsx";
-import { createNotificationHelper } from "./notification-system.tsx";
-import { getDbClient } from "../../lib/db.ts";
-import { calculateCommission } from "../../lib/services/commission-calculator.ts";
-import { calculateGST, validateGSTAmount } from "../../lib/services/gst-calculator.ts";
-import { debitWallet, creditWallet, validateWalletBalance } from "../../lib/services/wallet-service.ts";
-import { v4 as uuidv4 } from "npm:uuid@10";
+import { Hono } from "hono";
+import { sendSuccess, sendError } from "./response-utils";
+// ✅ Lambda Compatibility: Removed Deno.env.get() references
+import { createRazorpayOrder, verifyRazorpaySignature } from "./razorpay-integration";
+import { getRazorpayCredentials } from './razorpay-credentials-helper';
+import { createNotificationHelper } from "./notification-system";
+import { getDbClient } from "../../lib/db";
+import { calculateCommission } from "../../lib/services/commission-calculator";
+import { calculateGST, validateGSTAmount } from "../../lib/services/gst-calculator";
+import { debitWallet, creditWallet, validateWalletBalance } from "../../lib/services/wallet-service";
+import { v4 as uuidv4 } from "uuid";
 
 export function paymentEndpoints(app: Hono) {
   const client = getDbClient();
@@ -204,7 +206,7 @@ export function paymentEndpoints(app: Hono) {
         orderId: razorpayOrder.id,
         amount: validatedAmount,
         currency: 'INR',
-        key: Deno.env.get('RAZORPAY_KEY_ID')
+        key: (await getRazorpayCredentials()).keyId // ✅ Lambda: Get from PlatformSettingsRepository
       });
     } catch (error) {
       console.error('Payment initiation error:', error);

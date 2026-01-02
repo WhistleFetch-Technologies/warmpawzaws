@@ -3,10 +3,10 @@
  * NO KV STORE - All data from SQL
  */
 
-import { Hono } from 'npm:hono';
-import { getDbClient } from '../../../supabase/lib/db.ts';
-import { calculateDistance } from '../../../supabase/lib/utils/schedule-utils-sql.ts';
-import { getDiscoveryService } from '../../../supabase/lib/services/discovery-service.ts';
+import { Hono } from 'hono';
+import { getDbClient } from '../../../supabase/lib/db';
+import { calculateDistance } from '../../../supabase/lib/utils/schedule-utils-sql';
+import { getDiscoveryService } from '../../../supabase/lib/services/discovery-service';
 
 export function staffDiscoveryEndpointsSQL(app: Hono) {
   

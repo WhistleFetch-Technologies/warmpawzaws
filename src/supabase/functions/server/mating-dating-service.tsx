@@ -1,7 +1,7 @@
-import { Hono } from "npm:hono";
-import * as kv from "./kv_store.tsx";
-import { sendSuccess, sendError } from "./response-utils.ts";
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from "npm:@aws-sdk/client-s3@3";
+import { Hono } from "hono";
+import * as kv from "./kv_store";
+import { sendSuccess, sendError } from "./response-utils";
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 
 /**
  * MATING & DATING SERVICE

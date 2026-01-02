@@ -1,5 +1,5 @@
-import { Hono } from 'npm:hono@4';
-import { getStandardFieldsForRole, INDIAN_BANKS } from './common-onboarding-fields.tsx';
+import { Hono } from 'hono';
+import { getStandardFieldsForRole, INDIAN_BANKS } from './common-onboarding-fields';
 
 export function roleConfigEndpoints(app: Hono, kvStore: any) {
   

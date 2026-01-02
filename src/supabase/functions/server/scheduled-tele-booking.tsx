@@ -4,9 +4,16 @@
  * Implements calendar-based booking with pre-assigned consultant
  */
 
-import { Hono } from 'npm:hono';
-import { cors } from 'npm:hono/cors';
-import * as kv from './kv_store.tsx';
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from 'hono';
+import { cors } from "hono/cors";
+import {
+  getVendorServicesRepository,
+  getStaffRepository,
+  getStaffAvailabilityRepository,
+  getBookingsRepository,
+  getDbClient
+} from '../../../supabase/lib/repositories/index';
 
 const app = new Hono();
 app.use('*', cors());
@@ -29,30 +36,30 @@ app.get('/tele/scheduled-availability', async (c) => {
     const requestedDate = new Date(date);
     const dayOfWeek = requestedDate.getDay();
 
-    // Get staff who offer this service
-    const serviceData = await kv.get(`service:${serviceId}`);
-    if (!serviceData || !serviceData.value) {
+    // ✅ SQL: Get service and assigned staff from vendor_services table
+    const servicesRepo = getVendorServicesRepository();
+    const service = await servicesRepo.findById(serviceId);
+    if (!service) {
       return c.json({ error: 'Service not found' }, 404);
     }
 
-    const service = serviceData.value;
-    const staffIds = service.assignedStaffIds || [];
+    const staffIds = service.assigned_staff_ids || [];
 
     const availability = [];
 
-    // Load availability for each staff member
+    // ✅ SQL: Load availability for each staff member
+    const staffRepo = getStaffRepository();
+    const availabilityRepo = getStaffAvailabilityRepository();
+    
     for (const staffId of staffIds) {
-      const staffProfile = await kv.get(`staff:${staffId}:profile`);
-      if (!staffProfile || !staffProfile.value) continue;
+      const profile = await staffRepo.findById(staffId);
+      if (!profile) continue;
 
-      const profile = staffProfile.value;
-
-      // Get availability slots for this day
-      const slotsData = await kv.getByPrefix(`staff:${staffId}:availability:`);
-      const daySlots = slotsData
-        .filter((item: any) => item.value && item.value.dayOfWeek === dayOfWeek && item.value.isActive)
-        .filter((item: any) => item.value.hasTeleServices || item.value.allowedServiceIds?.includes(serviceId))
-        .map((item: any) => item.value);
+      // ✅ SQL: Get availability slots for this day from staff_availability table
+      const allSlots = await availabilityRepo.findByStaff(staffId);
+      const daySlots = allSlots
+        .filter((slot: any) => slot.day_of_week === dayOfWeek && slot.is_active)
+        .filter((slot: any) => slot.has_tele_services || slot.allowed_service_ids?.includes(serviceId));
 
       if (daySlots.length === 0) continue;
 
@@ -61,12 +68,12 @@ app.get('/tele/scheduled-availability', async (c) => {
 
       availability.push({
         staffId,
-        staffName: profile.fullName,
+        staffName: profile.full_name || profile.name,
         staffPhoto: profile.photo,
         specialization: profile.specialization || 'Veterinarian',
         rating: profile.rating || 4.5,
-        reviewCount: profile.reviewCount || 0,
-        experience: profile.experience || 0,
+        reviewCount: profile.review_count || 0,
+        experience: profile.experience_years || 0,
         languages: profile.languages || ['English'],
         slots: timeSlots
       });
@@ -118,11 +125,18 @@ app.post('/bookings/scheduled-tele', async (c) => {
       return c.json({ error: 'Missing required fields' }, 400);
     }
 
-    // Check slot availability
-    const slotKey = `booking:slot:${slotId}:${scheduledDate}`;
-    const existingBooking = await kv.get(slotKey);
+    // ✅ SQL: Check slot availability in bookings table
+    const bookingsRepo = getBookingsRepository();
+    const db = getDbClient();
+    const { data: existingBookings } = await db
+      .from('bookings')
+      .select('id')
+      .eq('assigned_staff_id', staffId)
+      .eq('booking_date', scheduledDate)
+      .eq('booking_time', scheduledTime)
+      .in('status', ['confirmed', 'in_progress']);
     
-    if (existingBooking && existingBooking.value) {
+    if (existingBookings && existingBookings.length > 0) {
       // Slot already booked - return 409 conflict
       const suggestedSlots = await findAlternativeSlots(staffId, scheduledDate);
       
@@ -131,60 +145,37 @@ app.post('/bookings/scheduled-tele', async (c) => {
         message: 'This slot was just booked by another customer',
         conflictDetails: {
           slotId,
-          bookedAt: existingBooking.value.bookedAt,
           staffId
         },
         suggestedSlots
       }, 409);
     }
 
-    // Create booking
-    const bookingId = `booking_scheduled_tele_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-    
-    const booking = {
-      id: bookingId,
-      type: 'scheduled_tele',
-      customerId,
-      petId,
-      serviceId,
-      serviceName,
-      bookingType: 'scheduled_tele',
+    // ✅ SQL: Create booking in bookings table
+    const bookingsRepo = getBookingsRepository();
+    const booking = await bookingsRepo.create({
+      customer_id: customerId,
+      pet_id: petId || null,
+      service_id: serviceId,
+      vendor_id: null, // Will be derived from service
+      booking_type: 'scheduled_tele',
       status: 'confirmed',
-      
-      // Pre-assigned consultant
-      assignedStaffId: staffId,
-      assignedStaffName: staffName,
-      assignmentMethod: 'scheduled',
-      assignedAt: new Date().toISOString(),
-      
-      scheduledDate,
-      scheduledTime,
-      scheduledEndTime: calculateEndTime(scheduledTime, duration),
-      duration,
-      
-      amount,
+      assigned_staff_id: staffId,
+      booking_date: scheduledDate,
+      booking_time: scheduledTime,
+      duration_minutes: duration,
+      total_amount: amount,
       currency: 'INR',
-      paymentStatus: 'pending',
-      
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-
-    // Reserve the slot
-    await kv.set(slotKey, {
-      bookingId,
-      customerId,
-      bookedAt: new Date().toISOString()
+      payment_status: 'pending'
     });
-
-    // Save booking
-    await kv.set(`booking:${bookingId}`, booking);
+    
+    const bookingId = booking.id;
 
     console.log(`✅ Created scheduled tele booking: ${bookingId} with pre-assigned staff: ${staffId}`);
 
-    // Get staff details for response
-    const staffData = await kv.get(`staff:${staffId}:profile`);
-    const staffProfile = staffData?.value || {};
+    // ✅ SQL: Get staff details for response
+    const staffRepo = getStaffRepository();
+    const staffProfile = await staffRepo.findById(staffId) || {};
 
     return c.json({
       success: true,
@@ -193,7 +184,7 @@ app.post('/bookings/scheduled-tele', async (c) => {
       booking: {
         ...booking,
         assignedStaffPhoto: staffProfile.photo,
-        assignedStaffSpecialization: staffProfile.specialization
+        assignedStaffSpecialization: staffProfile.specialization || 'Veterinarian'
       },
       paymentRequired: true,
       paymentUrl: `https://payment.warmpawz.com/checkout/${bookingId}`
@@ -222,10 +213,17 @@ async function generateTimeSlots(daySlots: any[], staffId: string, date: string)
       const slotEndTime = formatTime(time + duration);
       const slotId = `slot_${window.dayOfWeek}_${slotStartTime.replace(':', '')}`;
 
-      // Check if slot is already booked
-      const slotKey = `booking:slot:${slotId}:${date}`;
-      const existingBooking = await kv.get(slotKey);
-      const available = !existingBooking || !existingBooking.value;
+      // ✅ SQL: Check if slot is already booked in bookings table
+      const db = getDbClient();
+      const { data: existingBookings } = await db
+        .from('bookings')
+        .select('id')
+        .eq('assigned_staff_id', staffId)
+        .eq('booking_date', date)
+        .eq('booking_time', slotStartTime)
+        .in('status', ['confirmed', 'in_progress']);
+      
+      const available = !existingBookings || existingBookings.length === 0;
 
       slots.push({
         slotId,
@@ -250,10 +248,11 @@ async function findAlternativeSlots(staffId: string, date: string) {
     const requestedDate = new Date(date);
     const dayOfWeek = requestedDate.getDay();
 
-    const slotsData = await kv.getByPrefix(`staff:${staffId}:availability:`);
-    const daySlots = slotsData
-      .filter((item: any) => item.value && item.value.dayOfWeek === dayOfWeek && item.value.isActive)
-      .map((item: any) => item.value);
+    // ✅ SQL: Get availability slots from staff_availability table
+    const availabilityRepo = getStaffAvailabilityRepository();
+    const allSlots = await availabilityRepo.findByStaff(staffId);
+    const daySlots = allSlots
+      .filter((slot: any) => slot.day_of_week === dayOfWeek && slot.is_active);
 
     const timeSlots = await generateTimeSlots(daySlots, staffId, date);
     

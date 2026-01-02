@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Button } from '../ui/button';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { WarmpawzButton } from '../shared/design-system/WarmpawzButton';
 
 interface VendorApprovalSuccessProps {

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { X, CheckCircle, XCircle, AlertTriangle, FileText, User, Calendar, Pill, Search, Filter } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 interface PrescriptionVerificationProps {
   vendorId: string;

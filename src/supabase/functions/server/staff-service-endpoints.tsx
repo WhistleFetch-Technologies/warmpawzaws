@@ -3,7 +3,7 @@
  * Handles staff service assignment, custom service creation, and location management
  */
 
-import { Hono } from 'npm:hono@4';
+import { Hono } from 'hono';
 
 export function staffServiceEndpoints(app: Hono, kvStore: any) {
   

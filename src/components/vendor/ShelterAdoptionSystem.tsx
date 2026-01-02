@@ -12,7 +12,7 @@ import {
   AlertCircle, Shield, Camera, Trash2, DollarSign, Award
 } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 interface AdoptablePet {
   id: string;
@@ -130,43 +130,43 @@ export function ShelterAdoptionSystem({ vendorId }: { vendorId: string }) {
     try {
       setLoading(true);
       
-      // Load pets - using correct endpoint
-      const petsResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/adoption/listings`,
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
 
-      if (petsResponse.ok) {
-        const petsData = await petsResponse.json();
-        // ✅ FIX: Handle standardized response format
-        // Response format: { success: true, listings: [...], total: ... }
-        setPets(petsData.listings || petsData.pets || petsData.data?.listings || petsData.data?.pets || []);
-      } else {
-        const errorData = await petsResponse.json().catch(() => ({ error: 'Unknown error' }));
-        console.error('Failed to load pets:', errorData);
-        // Don't show error toast on initial load - just log
+      // Load pets - using correct endpoint
+      try {
+        const petsData = await apiCallJson<any>(
+          `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/adoption/listings`
+        );
+
+        if (petsData.success) {
+          setPets(petsData.listings || petsData.pets || petsData.data?.listings || petsData.data?.pets || []);
+        } else {
+          console.error('Failed to load pets:', petsData.error || petsData.message);
+        }
+      } catch (error: any) {
+        console.error('Error loading pets:', error);
       }
 
       // Load applications - using correct endpoint
-      const appsResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/adoption/applications`,
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
+      try {
+        const appsData = await apiCallJson<any>(
+          `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/adoption/applications`
+        );
 
-      if (appsResponse.ok) {
-        const appsData = await appsResponse.json();
-        // ✅ FIX Bug 1: Handle standardized response format
-        // Response format: { success: true, applications: [...], total: ... }
-        setApplications(appsData.applications || appsData.data?.applications || []);
-      } else {
-        const errorData = await appsResponse.json().catch(() => ({ error: 'Unknown error' }));
-        console.error('Failed to load applications:', errorData);
-        // Don't show error toast on initial load - just log
-        setApplications([]); // ✅ FIX Bug 1: Set empty array on error
+        if (appsData.success) {
+          setApplications(appsData.applications || appsData.data?.applications || []);
+        } else {
+          console.error('Failed to load applications:', appsData.error || appsData.message);
+          setApplications([]);
+        }
+      } catch (error: any) {
+        console.error('Error loading applications:', error);
+        setApplications([]);
       }
     } catch (error) {
       console.error('Error loading adoption data:', error);
@@ -215,84 +215,72 @@ export function ShelterAdoptionSystem({ vendorId }: { vendorId: string }) {
 
   const addPet = async () => {
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/adoption/listings`,
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/adoption/listings`,
         {
           method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify(newPet)
         }
       );
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          toast.success('Pet added successfully!');
-          await loadData();
-          setShowAddPetModal(false);
-          // Reset form
-          setNewPet({
-            name: '',
-            species: 'dog',
-            breed: '',
-            age: '',
-            gender: 'male',
-            description: '',
-            vaccinated: false,
-            neutered: false,
-            adoptionFee: 0
-          });
-        } else {
-          const errorMessage = data.error || data.message || 'Failed to add pet';
-          toast.error(errorMessage);
-        }
+      if (data.success) {
+        toast.success('Pet added successfully!');
+        await loadData();
+        setShowAddPetModal(false);
+        // Reset form
+        setNewPet({
+          name: '',
+          species: 'dog',
+          breed: '',
+          age: '',
+          gender: 'male',
+          description: '',
+          vaccinated: false,
+          neutered: false,
+          adoptionFee: 0
+        });
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
-        const errorMessage = errorData.error || errorData.message || 'Failed to add pet';
-        toast.error(errorMessage);
+        toast.error(data.error || data.message || 'Failed to add pet');
       }
     } catch (error: any) {
       console.error('Error adding pet:', error);
-      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
-      toast.error(errorMessage);
+      toast.error(error?.message || 'Network error. Please check your connection and try again.');
     }
   };
 
   const updatePetStatus = async (petId: string, status: string) => {
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/adoption/listings/${petId}`,
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/adoption/listings/${petId}`,
         {
           method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify({ status })
         }
       );
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          toast.success('Pet status updated successfully');
-          await loadData();
-        } else {
-          const errorMessage = data.error || data.message || 'Failed to update pet status';
-          toast.error(errorMessage);
-        }
+      if (data.success) {
+        toast.success('Pet status updated successfully');
+        await loadData();
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
-        const errorMessage = errorData.error || errorData.message || 'Failed to update pet status';
-        toast.error(errorMessage);
+        toast.error(data.error || data.message || 'Failed to update pet status');
       }
     } catch (error: any) {
       console.error('Error updating pet status:', error);
-      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
-      toast.error(errorMessage);
+      toast.error(error?.message || 'Network error. Please check your connection and try again.');
     }
   };
 
@@ -301,50 +289,44 @@ export function ShelterAdoptionSystem({ vendorId }: { vendorId: string }) {
     if (!selectedPet) return;
 
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/adoption/listings/${selectedPet.id}`,
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/adoption/listings/${selectedPet.id}`,
         {
           method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify(newPet)
         }
       );
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          toast.success('Pet updated successfully!');
-          await loadData();
-          setShowEditPetModal(false);
-          setSelectedPet(null);
-          // Reset form
-          setNewPet({
-            name: '',
-            species: 'dog',
-            breed: '',
-            age: '',
-            gender: 'male',
-            description: '',
-            vaccinated: false,
-            neutered: false,
-            adoptionFee: 0
-          });
-        } else {
-          const errorMessage = data.error || data.message || 'Failed to update pet';
-          toast.error(errorMessage);
-        }
+      if (data.success) {
+        toast.success('Pet updated successfully!');
+        await loadData();
+        setShowEditPetModal(false);
+        setSelectedPet(null);
+        // Reset form
+        setNewPet({
+          name: '',
+          species: 'dog',
+          breed: '',
+          age: '',
+          gender: 'male',
+          description: '',
+          vaccinated: false,
+          neutered: false,
+          adoptionFee: 0
+        });
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
-        const errorMessage = errorData.error || errorData.message || 'Failed to update pet';
-        toast.error(errorMessage);
+        toast.error(data.error || data.message || 'Failed to update pet');
       }
     } catch (error: any) {
       console.error('Error updating pet:', error);
-      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
-      toast.error(errorMessage);
+      toast.error(error?.message || 'Network error. Please check your connection and try again.');
     }
   };
 
@@ -358,65 +340,55 @@ export function ShelterAdoptionSystem({ vendorId }: { vendorId: string }) {
     }
 
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/adoption/listings/${petId}`,
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/adoption/listings/${petId}`,
         {
-          method: 'DELETE',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
-          }
+          method: 'DELETE'
         }
       );
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          toast.success(`Pet "${petName}" deleted successfully`);
-          await loadData();
-        } else {
-          const errorMessage = data.error || data.message || 'Failed to delete pet';
-          toast.error(errorMessage);
-        }
+      if (data.success) {
+        toast.success(`Pet "${petName}" deleted successfully`);
+        await loadData();
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
-        const errorMessage = errorData.error || errorData.message || 'Failed to delete pet';
-        toast.error(errorMessage);
+        toast.error(data.error || data.message || 'Failed to delete pet');
       }
     } catch (error: any) {
       console.error('Error deleting pet:', error);
-      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
-      toast.error(errorMessage);
+      toast.error(error?.message || 'Network error. Please check your connection and try again.');
     }
   };
 
   const reviewApplication = async (applicationId: string, approved: boolean, notes?: string) => {
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/adoption/applications/${applicationId}/review`,
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/adoption/applications/${applicationId}/review`,
         {
           method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify({ approved, notes })
         }
       );
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          toast.success(approved ? 'Application approved!' : 'Application rejected');
-          await loadData();
-          setShowApplicationModal(false);
-        } else {
-          const errorMessage = data.error || data.message || 'Failed to review application';
-          toast.error(errorMessage);
-        }
+      if (data.success) {
+        toast.success(approved ? 'Application approved!' : 'Application rejected');
+        await loadData();
+        setShowApplicationModal(false);
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
-        const errorMessage = errorData.error || errorData.message || 'Failed to review application';
-        toast.error(errorMessage);
+        toast.error(data.error || data.message || 'Failed to review application');
       }
     } catch (error: any) {
       console.error('Error reviewing application:', error);

@@ -15,13 +15,13 @@
  * ============================================================================
  */
 
-import { Hono } from "npm:hono";
-import { sendSuccess, sendError } from "./response-utils.ts";
-import { getBookingsRepository } from "../../lib/repositories/bookings.ts";
-import { getVendorsRepository } from "../../lib/repositories/vendors.ts";
-import { getPayoutsRepository } from "../../lib/repositories/payouts.ts";
-import { getPaymentsRepository } from "../../lib/repositories/payments.ts";
-import { withTransaction, getDbClient } from "../../lib/db.ts";
+import { Hono } from "hono";
+import { sendSuccess, sendError } from "./response-utils";
+import { getBookingsRepository } from "../../lib/repositories/bookings";
+import { getVendorsRepository } from "../../lib/repositories/vendors";
+import { getPayoutsRepository } from "../../lib/repositories/payouts";
+import { getPaymentsRepository } from "../../lib/repositories/payments";
+import { withTransaction, getDbClient } from "../../lib/db";
 
 export function registerSettlementAutomationSQL(app: Hono) {
   const BASE = '/make-server-3dd53475';

@@ -266,7 +266,7 @@ app.post(`${BASE_PATH}/advanced-search/vendors`, async (c) => {
       description: v.description || '',
       services: v.metadata?.services || [],
       specializations: v.specializations || [],
-      serviceStyle: v.metadata?.serviceStyle || 'both',
+      serviceStyle: v.metadata?.serviceStyle || v.service_style || 'at_center', // Standard default (Technical Standards 10.1)
       rating: v.rating || 0,
       priceRange: v.price_range,
       location: {
@@ -282,7 +282,12 @@ app.post(`${BASE_PATH}/advanced-search/vendors`, async (c) => {
     }
 
     if (serviceStyle) {
-      vendors = vendors.filter((v: any) => v.serviceStyle === serviceStyle || v.serviceStyle === 'both');
+      // Filter by service style (Technical Standards 10.1)
+      // Note: Legacy 'both' support kept for backward compatibility until data migration
+      vendors = vendors.filter((v: any) => 
+        v.serviceStyle === serviceStyle || 
+        v.serviceStyle === 'both' // Legacy support - to be removed after data migration
+      );
     }
 
     if (minRating > 0) {

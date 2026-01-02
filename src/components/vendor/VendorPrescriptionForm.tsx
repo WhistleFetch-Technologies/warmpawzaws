@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { X, Plus, Trash2, AlertCircle, Save, Calendar } from 'lucide-react';
 import { Button } from '../ui/button';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+// ✅ FIX: Removed Supabase imports - using API Gateway now
+import { toast } from 'sonner';
 
 interface VendorPrescriptionFormProps {
   bookingId: string;
@@ -89,69 +90,79 @@ export function VendorPrescriptionForm({
       setLoading(true);
       setError('');
 
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
       // Fetch prescription by booking ID (standard endpoint)
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/prescription/booking/${bookingId}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
+      try {
+        const result = await apiCallJson<any>(
+          `${API_GATEWAY_URL}/make-server-3dd53475/vendor/prescription/booking/${bookingId}`
+        );
+        
+        if (result.success && result.prescription) {
+          const prescription = result.prescription;
+          
+          // ✅ ENHANCEMENT: Check if prescription can be edited (not immutable)
+          if (prescription.is_immutable || (prescription.status && prescription.status !== 'draft')) {
+            const { toast } = await import('sonner');
+            toast.warning('This prescription cannot be edited. It has been finalized for compliance. Please create a new prescription if changes are needed.');
+            setError('This prescription is immutable and cannot be edited. Medical records are finalized for compliance.');
+            setLoading(false);
+            return;
           }
-        }
-      );
+          
+          // Pre-populate form fields
+          setDiagnosis(prescription.diagnosis || '');
+          setObservations(prescription.observations || '');
+          setGeneralNotes(prescription.generalNotes || prescription.notes || '');
+          setRecommendations(prescription.recommendations || '');
+          setNextFollowUpDate(prescription.nextFollowUpDate || prescription.followUpDate || '');
+          setFollowUpReason(prescription.followUpReason || '');
 
-      if (!response.ok) {
+          // Medications
+          if (prescription.medications && Array.isArray(prescription.medications)) {
+            setMedications(prescription.medications);
+          }
+
+          // Products Used
+          if (prescription.productsUsed && Array.isArray(prescription.productsUsed)) {
+            setProductsUsed(prescription.productsUsed);
+          }
+
+          // Tests Recommended
+          if (prescription.testsRecommended && Array.isArray(prescription.testsRecommended)) {
+            setTestsRecommended(prescription.testsRecommended);
+          }
+
+          // Vitals
+          if (prescription.vitals) {
+            setWeight(prescription.vitals.weight?.toString() || '');
+            setTemperature(prescription.vitals.temperature?.toString() || '');
+            setHeartRate(prescription.vitals.heartRate?.toString() || '');
+            setRespiratoryRate(prescription.vitals.respiratoryRate?.toString() || '');
+            setBloodPressure(prescription.vitals.bloodPressure || '');
+            setVitalNotes(prescription.vitals.notes || '');
+          }
+
+          console.log('✅ [PRESCRIPTION] Loaded existing prescription data:', prescription.id);
+        } else {
+          // No prescription found - this is OK for new prescriptions
+          console.log('ℹ️ [PRESCRIPTION] No existing prescription found - will create new');
+        }
+      } catch (err: any) {
         // No prescription found - this is OK for new prescriptions
         console.log('ℹ️ [PRESCRIPTION] No existing prescription found - will create new');
+      } finally {
         setLoading(false);
-        return;
-      }
-
-      const result = await response.json();
-      
-      if (result.success && result.prescription) {
-        const prescription = result.prescription;
-        
-        // Pre-populate form fields
-        setDiagnosis(prescription.diagnosis || '');
-        setObservations(prescription.observations || '');
-        setGeneralNotes(prescription.generalNotes || prescription.notes || '');
-        setRecommendations(prescription.recommendations || '');
-        setNextFollowUpDate(prescription.nextFollowUpDate || prescription.followUpDate || '');
-        setFollowUpReason(prescription.followUpReason || '');
-
-        // Medications
-        if (prescription.medications && Array.isArray(prescription.medications)) {
-          setMedications(prescription.medications);
-        }
-
-        // Products Used
-        if (prescription.productsUsed && Array.isArray(prescription.productsUsed)) {
-          setProductsUsed(prescription.productsUsed);
-        }
-
-        // Tests Recommended
-        if (prescription.testsRecommended && Array.isArray(prescription.testsRecommended)) {
-          setTestsRecommended(prescription.testsRecommended);
-        }
-
-        // Vitals
-        if (prescription.vitals) {
-          setWeight(prescription.vitals.weight?.toString() || '');
-          setTemperature(prescription.vitals.temperature?.toString() || '');
-          setHeartRate(prescription.vitals.heartRate?.toString() || '');
-          setRespiratoryRate(prescription.vitals.respiratoryRate?.toString() || '');
-          setBloodPressure(prescription.vitals.bloodPressure || '');
-          setVitalNotes(prescription.vitals.notes || '');
-        }
-
-        console.log('✅ [PRESCRIPTION] Loaded existing prescription data:', prescription.id);
       }
     } catch (err: any) {
       console.error('❌ [PRESCRIPTION] Error loading prescription:', err);
       const errorMessage = err?.message || 'Failed to load prescription data';
       setError(errorMessage);
-    } finally {
       setLoading(false);
     }
   };
@@ -254,24 +265,28 @@ export function VendorPrescriptionForm({
 
       console.log('📝 [VENDOR-PRESCRIPTION] Submitting:', prescriptionData);
 
-      // ✅ ENHANCEMENT: Use PUT for updates, POST for creates
-      // First, check if prescription exists by trying to fetch it
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      // ✅ ENHANCEMENT: Check if prescription exists by trying to fetch it
       let prescriptionIdToUpdate = existingPrescriptionId;
+      let existingPrescription = null;
       
       // If we don't have prescription ID but are in edit mode, try to fetch it
       if (!prescriptionIdToUpdate && isEditMode) {
         try {
-          const checkResponse = await fetch(
-            `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/prescription/booking/${bookingId}`,
-            {
-              headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-            }
+          const checkData = await apiCallJson<any>(
+            `${API_GATEWAY_URL}/make-server-3dd53475/vendor/prescription/${bookingId}`
           );
-          if (checkResponse.ok) {
-            const checkResult = await checkResponse.json();
-            if (checkResult.success && checkResult.prescription?.id) {
-              prescriptionIdToUpdate = checkResult.prescription.id;
-            }
+          
+          if (checkData.success && checkData.prescription?.id) {
+            prescriptionIdToUpdate = checkData.prescription.id;
+            existingPrescription = checkData.prescription;
           }
         } catch (err) {
           console.log('⚠️ [PRESCRIPTION] Could not fetch prescription ID, will create new');
@@ -279,27 +294,22 @@ export function VendorPrescriptionForm({
       }
       
       const isUpdate = !!prescriptionIdToUpdate;
-      const endpoint = isUpdate
-        ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/prescription/update/${prescriptionIdToUpdate}`
-        : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/prescription/create`;
       
-      const method = isUpdate ? 'PUT' : 'POST';
+      // Use the prescription upload endpoint (creates new or updates if exists)
+      const result = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/prescription/upload`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            ...prescriptionData,
+            prescriptionId: prescriptionIdToUpdate || undefined // Include ID if updating
+          })
+        }
+      );
 
-      const response = await fetch(endpoint, {
-        method,
-        headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(prescriptionData)
-      });
-
-      const result = await response.json();
-
-      if (response.ok && result.success) {
-        const { toast } = await import('sonner@2.0.3');
+      if (result.success) {
         if (isUpdate) {
-          console.log('✅ [VENDOR-PRESCRIPTION] Updated:', existingPrescriptionId);
+          console.log('✅ [VENDOR-PRESCRIPTION] Updated:', prescriptionIdToUpdate);
           toast.success('Prescription updated successfully');
         } else {
           console.log('✅ [VENDOR-PRESCRIPTION] Created:', result.prescriptionId);
@@ -308,8 +318,17 @@ export function VendorPrescriptionForm({
         onSuccess();
       } else {
         console.error('❌ [VENDOR-PRESCRIPTION] Error:', result.error);
-        const errorMessage = result.error || result.message || `Failed to ${isUpdate ? 'update' : 'save'} prescription`;
-        setError(errorMessage);
+        
+        // ✅ ENHANCEMENT: Better error handling for immutable prescriptions
+        if (result.isImmutable || result.error?.includes('immutable')) {
+          const errorMessage = 'This prescription cannot be updated. It has been finalized for compliance. Please create a new prescription if changes are needed.';
+          setError(errorMessage);
+          toast.error('Prescription is immutable and cannot be edited');
+        } else {
+          const errorMessage = result.error || result.message || `Failed to ${isUpdate ? 'update' : 'save'} prescription`;
+          setError(errorMessage);
+          toast.error(errorMessage);
+        }
         setSaving(false);
       }
     } catch (err: any) {

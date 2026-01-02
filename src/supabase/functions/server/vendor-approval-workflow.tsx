@@ -3,10 +3,10 @@
  * Handles complete vendor application lifecycle with proper state management
  */
 
-import { Hono } from "npm:hono";
-import * as kvStore from './kv_store.tsx';
-import { determineServiceCategory } from "./service-category-mapping.tsx";
-import { normalizePhone, createVendorId, phonesMatch } from "./phone-utils.tsx";
+import { Hono } from "hono";
+import * as kvStore from './kv_store';
+import { determineServiceCategory } from "./service-category-mapping";
+import { normalizePhone, createVendorId, phonesMatch } from "./phone-utils";
 
 export function vendorApprovalWorkflowEndpoints(app: Hono, kvStore: any) {
   

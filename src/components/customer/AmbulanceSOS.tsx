@@ -3,7 +3,7 @@ import { ArrowLeft, Phone, Siren, MapPin, Clock, ShieldAlert } from 'lucide-reac
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 interface AmbulanceSOSProps {
   phone: string;

@@ -1,6 +1,12 @@
-import { Hono } from "npm:hono";
-import * as kv from "./kv_store.tsx";
-import { sendSuccess, sendError } from "./response-utils.ts";
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from "hono";
+import { sendSuccess, sendError } from "./response-utils";
+import {
+  getStaffRepository,
+  getVendorsRepository,
+  getPetsRepository
+} from '../../../supabase/lib/repositories/index';
+import { getDbClient } from '../../../supabase/lib/db';
 
 /**
  * 🥗 NUTRITIONIST DIET PLAN ENDPOINTS
@@ -50,7 +56,7 @@ interface DietPlan {
   updatedAt: string;
 }
 
-export function nutritionistDietPlanEndpoints(app: Hono, kv: any) {
+export function nutritionistDietPlanEndpoints(app: Hono) {
   const BASE_PATH = "/make-server-3dd53475";
 
   /**
@@ -77,10 +83,17 @@ export function nutritionistDietPlanEndpoints(app: Hono, kv: any) {
         return sendError(c, 'Missing required fields', 400);
       }
 
-      // Get Nutritionist details
-      const nutritionist = await kv.get(`staff:${nutritionistId}`) || await kv.get(`vendor:${nutritionistId}`);
-      // Get Pet details
-      const pet = await kv.get(`pet:${petId}`); // Assuming pet key format
+      // ✅ SQL: Get Nutritionist details
+      const staffRepo = getStaffRepository();
+      const vendorsRepo = getVendorsRepository();
+      let nutritionist = await staffRepo.findById(nutritionistId);
+      if (!nutritionist) {
+        nutritionist = await vendorsRepo.findById(nutritionistId);
+      }
+      
+      // ✅ SQL: Get Pet details
+      const petsRepo = getPetsRepository();
+      const pet = await petsRepo.findById(petId);
 
       const planId = `DIET-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
       
@@ -105,17 +118,27 @@ export function nutritionistDietPlanEndpoints(app: Hono, kv: any) {
         updatedAt: new Date().toISOString()
       };
 
-      await kv.set(`diet_plan:${planId}`, dietPlan);
-
-      // Link to Customer
-      const customerPlans = await kv.get(`customer:${customerId}:diet_plans`) || [];
-      customerPlans.unshift(planId);
-      await kv.set(`customer:${customerId}:diet_plans`, customerPlans);
-
-      // Link to Nutritionist
-      const nutritionistPlans = await kv.get(`nutritionist:${nutritionistId}:diet_plans`) || [];
-      nutritionistPlans.unshift(planId);
-      await kv.set(`nutritionist:${nutritionistId}:diet_plans`, nutritionistPlans);
+      // ✅ SQL: Store diet plan
+      const db = getDbClient();
+      await db.from('diet_plans').insert({
+        id: planId,
+        nutritionist_id: nutritionistId,
+        nutritionist_name: nutritionist?.name || nutritionist?.business_name || nutritionist?.businessName || 'Expert Nutritionist',
+        customer_id: customerId,
+        pet_id: petId,
+        pet_name: pet?.name || 'Pet',
+        title: title || `Diet Plan for ${pet?.name || 'Pet'}`,
+        start_date: startDate || new Date().toISOString(),
+        end_date: endDate || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        goals: goals || [],
+        weekly_schedule: weeklySchedule,
+        general_guidelines: generalGuidelines || [],
+        avoid_list: avoidList || [],
+        status: 'active',
+        pdf_url: `https://warmpawz-docs.s3.amazonaws.com/diet-plans/${planId}.pdf`,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
 
       console.log(`🥗 Diet plan created: ${planId} for ${petId}`);
 
@@ -134,15 +157,36 @@ export function nutritionistDietPlanEndpoints(app: Hono, kv: any) {
   app.get(`${BASE_PATH}/nutritionist/customer/:customerId/diet-plans`, async (c) => {
     try {
       const { customerId } = c.req.param();
-      const planIds = await kv.get(`customer:${customerId}:diet_plans`) || [];
-      
-      const plans = [];
-      for (const id of planIds) {
-        const plan = await kv.get(`diet_plan:${id}`);
-        if (plan) plans.push(plan);
-      }
+      // ✅ SQL: Get diet plans for customer
+      const db = getDbClient();
+      const { data: plans } = await db
+        .from('diet_plans')
+        .select('*')
+        .eq('customer_id', customerId)
+        .order('created_at', { ascending: false });
 
-      return sendSuccess(c, { plans, count: plans.length });
+      // Map to expected format
+      const mappedPlans = (plans || []).map((p: any) => ({
+        planId: p.id,
+        nutritionistId: p.nutritionist_id,
+        nutritionistName: p.nutritionist_name,
+        customerId: p.customer_id,
+        petId: p.pet_id,
+        petName: p.pet_name,
+        title: p.title,
+        startDate: p.start_date,
+        endDate: p.end_date,
+        goals: p.goals,
+        weeklySchedule: p.weekly_schedule,
+        generalGuidelines: p.general_guidelines,
+        avoidList: p.avoid_list,
+        status: p.status,
+        pdfUrl: p.pdf_url,
+        createdAt: p.created_at,
+        updatedAt: p.updated_at
+      }));
+      
+      return sendSuccess(c, { plans: mappedPlans, count: mappedPlans.length });
     } catch (error) {
       console.error('❌ Error fetching diet plans:', error);
       return sendError(c, error, 500);
@@ -156,9 +200,36 @@ export function nutritionistDietPlanEndpoints(app: Hono, kv: any) {
   app.get(`${BASE_PATH}/nutritionist/diet-plan/:planId`, async (c) => {
     try {
       const { planId } = c.req.param();
-      const plan = await kv.get(`diet_plan:${planId}`);
+      // ✅ SQL: Get diet plan (already replaced above in previous endpoint, this was duplicate)
+      const db = getDbClient();
+      const { data: planData } = await db
+        .from('diet_plans')
+        .select('*')
+        .eq('id', planId)
+        .single();
       
-      if (!plan) return sendError(c, 'Diet plan not found', 404);
+      if (!planData) return sendError(c, 'Diet plan not found', 404);
+      
+      // Map to expected format
+      const plan = {
+        planId: planData.id,
+        nutritionistId: planData.nutritionist_id,
+        nutritionistName: planData.nutritionist_name,
+        customerId: planData.customer_id,
+        petId: planData.pet_id,
+        petName: planData.pet_name,
+        title: planData.title,
+        startDate: planData.start_date,
+        endDate: planData.end_date,
+        goals: planData.goals,
+        weeklySchedule: planData.weekly_schedule,
+        generalGuidelines: planData.general_guidelines,
+        avoidList: planData.avoid_list,
+        status: planData.status,
+        pdfUrl: planData.pdf_url,
+        createdAt: planData.created_at,
+        updatedAt: planData.updated_at
+      };
 
       return sendSuccess(c, { plan });
     } catch (error) {
@@ -175,16 +246,49 @@ export function nutritionistDietPlanEndpoints(app: Hono, kv: any) {
       const { planId } = c.req.param();
       const updates = await c.req.json();
       
-      const plan = await kv.get(`diet_plan:${planId}`);
-      if (!plan) return sendError(c, 'Diet plan not found', 404);
+      // ✅ SQL: Update diet plan
+      const db = getDbClient();
+      const { data: existingPlan } = await db
+        .from('diet_plans')
+        .select('*')
+        .eq('id', planId)
+        .single();
+      
+      if (!existingPlan) return sendError(c, 'Diet plan not found', 404);
 
+      await db.from('diet_plans')
+        .update({
+          ...updates,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', planId);
+      
+      const { data: updatedPlanData } = await db
+        .from('diet_plans')
+        .select('*')
+        .eq('id', planId)
+        .single();
+      
+      // Map to expected format
       const updatedPlan = {
-        ...plan,
-        ...updates,
-        updatedAt: new Date().toISOString()
+        planId: updatedPlanData.id,
+        nutritionistId: updatedPlanData.nutritionist_id,
+        nutritionistName: updatedPlanData.nutritionist_name,
+        customerId: updatedPlanData.customer_id,
+        petId: updatedPlanData.pet_id,
+        petName: updatedPlanData.pet_name,
+        title: updatedPlanData.title,
+        startDate: updatedPlanData.start_date,
+        endDate: updatedPlanData.end_date,
+        goals: updatedPlanData.goals,
+        weeklySchedule: updatedPlanData.weekly_schedule,
+        generalGuidelines: updatedPlanData.general_guidelines,
+        avoidList: updatedPlanData.avoid_list,
+        status: updatedPlanData.status,
+        pdfUrl: updatedPlanData.pdf_url,
+        createdAt: updatedPlanData.created_at,
+        updatedAt: updatedPlanData.updated_at
       };
-
-      await kv.set(`diet_plan:${planId}`, updatedPlan);
       
       return sendSuccess(c, { plan: updatedPlan }, 'Diet plan updated');
     } catch (error) {

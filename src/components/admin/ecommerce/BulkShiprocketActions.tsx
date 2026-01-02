@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Button } from '../../ui/button';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { Package, Truck, Printer, RefreshCw } from 'lucide-react';
 
 interface BulkShiprocketActionsProps {

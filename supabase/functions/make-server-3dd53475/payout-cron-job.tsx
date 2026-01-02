@@ -22,7 +22,7 @@ import { getBankAccountsRepository } from "../../lib/repositories/bank-accounts.
 import { getDbClient } from "../../lib/db.ts";
 import { sendSuccess, sendError } from "./response-utils.ts";
 import { createRazorpayPayout } from "./razorpay-marketplace-payout.tsx";
-import { createNotificationHelper } from "./notification-system.tsx";
+import { createNotificationHelper } from "./notification-system-refactored.tsx"; // ✅ FIXED: Updated to SQL version
 // ✅ Note: Razorpay credentials now fetched from platform settings via createRazorpayPayout
 
 export function registerPayoutCronJob(app: Hono) {

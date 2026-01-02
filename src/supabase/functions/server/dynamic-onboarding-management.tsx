@@ -1,5 +1,5 @@
-import { Hono } from 'npm:hono@4';
-import * as kv from './kv_store.tsx';
+import { Hono } from 'hono';
+import { getRolesRepository } from '../../../../supabase/lib/repositories/roles';
 
 /**
  * ========================================
@@ -33,36 +33,42 @@ app.post("/make-server-3dd53475/admin/onboarding-fields/sync", async (c) => {
   try {
     console.log(`[SYNC FIELDS] Starting onboarding field sync...`);
     
-    // 1. Get all roles
-    const rolesList = await kv.get('admin:roles:list') || [];
-    const results = [];
+    // ✅ SQL: Get all roles from repository
+    const rolesRepo = getRolesRepository();
+    const rolesList = await rolesRepo.findAll();
+    const results: any[] = [];
 
     for (const roleItem of rolesList) {
-      const roleId = roleItem.id;
+      const roleId = roleItem.id || roleItem.name;
       
-      // 2. Fetch Role Config (Source of Truth)
-      const roleConfig = await kv.get(`role:config:${roleId}`);
+      // ✅ SQL: Fetch Role Config from SQL (Source of Truth)
+      const role = await rolesRepo.findById(roleId);
       
-      if (!roleConfig) {
+      if (!role || !role.config) {
         results.push({ roleId, status: 'skipped', reason: 'No Role Config' });
         continue;
       }
 
       // 3. Generate Fields from Role Config
       // This converts the "Unified Schema" (Sections) into "Onboarding Designer" (Flat Fields)
-      const newFields = await generateDefaultFieldsFromRole(roleConfig, roleId);
+      const newFields = await generateDefaultFieldsFromRole(role.config, roleId);
       
       if (newFields.length === 0) {
          results.push({ roleId, status: 'skipped', reason: 'No Fields Generated' });
          continue;
       }
 
-      // 4. Overwrite Onboarding Fields KV
-      await kv.set(`onboarding:fields:${roleId}`, newFields);
-      
-      // 5. Update Version (Sync with Role Config Version or bump)
-      const configVersion = roleConfig.onboardingFields?.version || 3;
-      await kv.set(`onboarding:version:${roleId}`, configVersion);
+      // ✅ SQL: Update onboarding fields in role.config.onboardingFields.fields
+      const configVersion = role.config.onboardingFields?.version || 3;
+      const updatedConfig = {
+        ...role.config,
+        onboardingFields: {
+          ...role.config.onboardingFields,
+          fields: newFields,
+          version: configVersion
+        }
+      };
+      await rolesRepo.setConfig(roleId, updatedConfig);
 
       results.push({ 
         roleId, 
@@ -155,26 +161,37 @@ app.get("/make-server-3dd53475/admin/onboarding-fields/:roleId", async (c) => {
     
     console.log(`[ONBOARDING FIELDS] Fetching fields for role: ${roleId}`);
 
-    // Get role configuration
-    const role = await kv.get(`role:config:${roleId}`);
+    // ✅ SQL: Get role from repository
+    const rolesRepo = getRolesRepository();
+    const role = await rolesRepo.findById(roleId);
     if (!role) {
       return c.json({ error: 'Role not found' }, 404);
     }
 
-    // Get custom onboarding fields configuration
-    const customFields = await kv.get(`onboarding:fields:${roleId}`) || [];
+    // ✅ SQL: Get custom onboarding fields from role.config
+    const customFields = role.config?.onboardingFields?.fields || [];
 
     // If no custom fields exist, create default structure from role config
     if (customFields.length === 0) {
       console.log(`[ONBOARDING FIELDS] No custom fields found, using role defaults`);
       
-      const defaultFields = await generateDefaultFieldsFromRole(role, roleId);
-      await kv.set(`onboarding:fields:${roleId}`, defaultFields);
+      const defaultFields = await generateDefaultFieldsFromRole(role.config || {}, roleId);
+      
+      // ✅ SQL: Save default fields to role.config
+      const updatedConfig = {
+        ...role.config,
+        onboardingFields: {
+          ...role.config?.onboardingFields,
+          fields: defaultFields,
+          version: role.config?.onboardingFields?.version || 1
+        }
+      };
+      await rolesRepo.setConfig(roleId, updatedConfig);
       
       return c.json({
         success: true,
         roleId,
-        roleName: role.name,
+        roleName: role.display_name || role.name,
         fields: defaultFields,
         sections: getSectionsFromFields(defaultFields),
         version: 1
@@ -189,7 +206,7 @@ app.get("/make-server-3dd53475/admin/onboarding-fields/:roleId", async (c) => {
     return c.json({
       success: true,
       roleId,
-      roleName: role.name,
+      roleName: role.display_name || role.name,
       fields: customFields,
       sections,
       version: await getFormVersion(roleId)
@@ -212,14 +229,15 @@ app.post("/make-server-3dd53475/admin/onboarding-fields/:roleId", async (c) => {
 
     console.log(`[CREATE FIELD] Adding field to role: ${roleId}`, fieldData);
 
-    // Validate role exists
-    const role = await kv.get(`role:config:${roleId}`);
+    // ✅ SQL: Validate role exists
+    const rolesRepo = getRolesRepository();
+    const role = await rolesRepo.findById(roleId);
     if (!role) {
       return c.json({ error: 'Role not found' }, 404);
     }
 
-    // Get existing fields
-    const existingFields: OnboardingField[] = await kv.get(`onboarding:fields:${roleId}`) || [];
+    // ✅ SQL: Get existing fields from role.config
+    const existingFields: OnboardingField[] = role.config?.onboardingFields?.fields || [];
 
     // Generate unique field ID
     const fieldId = `field_${Date.now()}_${Math.random().toString(36).substring(7)}`;
@@ -253,8 +271,15 @@ app.post("/make-server-3dd53475/admin/onboarding-fields/:roleId", async (c) => {
     // Sort by display order
     existingFields.sort((a, b) => a.displayOrder - b.displayOrder);
 
-    // Save updated fields
-    await kv.set(`onboarding:fields:${roleId}`, existingFields);
+    // ✅ SQL: Save updated fields to role.config
+    const updatedConfig = {
+      ...role.config,
+      onboardingFields: {
+        ...role.config?.onboardingFields,
+        fields: existingFields
+      }
+    };
+    await rolesRepo.setConfig(roleId, updatedConfig);
 
     // Increment version
     await incrementFormVersion(roleId);
@@ -284,7 +309,14 @@ app.put("/make-server-3dd53475/admin/onboarding-fields/:roleId/:fieldId", async 
 
     console.log(`[UPDATE FIELD] Updating field ${fieldId} in role ${roleId}`);
 
-    const fields: OnboardingField[] = await kv.get(`onboarding:fields:${roleId}`) || [];
+    // ✅ SQL: Get role and existing fields
+    const rolesRepo = getRolesRepository();
+    const role = await rolesRepo.findById(roleId);
+    if (!role) {
+      return c.json({ error: 'Role not found' }, 404);
+    }
+
+    const fields: OnboardingField[] = role.config?.onboardingFields?.fields || [];
     const fieldIndex = fields.findIndex(f => f.id === fieldId);
 
     if (fieldIndex === -1) {
@@ -298,8 +330,15 @@ app.put("/make-server-3dd53475/admin/onboarding-fields/:roleId/:fieldId", async 
       updatedAt: new Date().toISOString()
     };
 
-    // Save updated fields
-    await kv.set(`onboarding:fields:${roleId}`, fields);
+    // ✅ SQL: Save updated fields to role.config
+    const updatedConfig = {
+      ...role.config,
+      onboardingFields: {
+        ...role.config?.onboardingFields,
+        fields
+      }
+    };
+    await rolesRepo.setConfig(roleId, updatedConfig);
 
     // Increment version
     await incrementFormVersion(roleId);
@@ -328,15 +367,29 @@ app.delete("/make-server-3dd53475/admin/onboarding-fields/:roleId/:fieldId", asy
 
     console.log(`[DELETE FIELD] Deleting field ${fieldId} from role ${roleId}`);
 
-    const fields: OnboardingField[] = await kv.get(`onboarding:fields:${roleId}`) || [];
+    // ✅ SQL: Get role and existing fields
+    const rolesRepo = getRolesRepository();
+    const role = await rolesRepo.findById(roleId);
+    if (!role) {
+      return c.json({ error: 'Role not found' }, 404);
+    }
+
+    const fields: OnboardingField[] = role.config?.onboardingFields?.fields || [];
     const filteredFields = fields.filter(f => f.id !== fieldId);
 
     if (fields.length === filteredFields.length) {
       return c.json({ error: 'Field not found' }, 404);
     }
 
-    // Save updated fields
-    await kv.set(`onboarding:fields:${roleId}`, filteredFields);
+    // ✅ SQL: Save updated fields to role.config
+    const updatedConfig = {
+      ...role.config,
+      onboardingFields: {
+        ...role.config?.onboardingFields,
+        fields: filteredFields
+      }
+    };
+    await rolesRepo.setConfig(roleId, updatedConfig);
 
     // Increment version
     await incrementFormVersion(roleId);
@@ -365,7 +418,14 @@ app.put("/make-server-3dd53475/admin/onboarding-fields/:roleId/reorder", async (
 
     console.log(`[REORDER FIELDS] Reordering fields for role: ${roleId}`);
 
-    const fields: OnboardingField[] = await kv.get(`onboarding:fields:${roleId}`) || [];
+    // ✅ SQL: Get role and existing fields
+    const rolesRepo = getRolesRepository();
+    const role = await rolesRepo.findById(roleId);
+    if (!role) {
+      return c.json({ error: 'Role not found' }, 404);
+    }
+
+    const fields: OnboardingField[] = role.config?.onboardingFields?.fields || [];
 
     // Update display orders
     fieldOrders.forEach((order: any) => {
@@ -379,8 +439,15 @@ app.put("/make-server-3dd53475/admin/onboarding-fields/:roleId/reorder", async (
     // Sort by display order
     fields.sort((a, b) => a.displayOrder - b.displayOrder);
 
-    // Save updated fields
-    await kv.set(`onboarding:fields:${roleId}`, fields);
+    // ✅ SQL: Save updated fields to role.config
+    const updatedConfig = {
+      ...role.config,
+      onboardingFields: {
+        ...role.config?.onboardingFields,
+        fields
+      }
+    };
+    await rolesRepo.setConfig(roleId, updatedConfig);
 
     // Increment version
     await incrementFormVersion(roleId);
@@ -411,22 +478,32 @@ app.get("/make-server-3dd53475/onboarding-form/:roleId", async (c) => {
 
     console.log(`[ONBOARDING FORM] Fetching form for role: ${roleId}`);
 
-    // Get role configuration
-    const role = await kv.get(`role:config:${roleId}`);
+    // ✅ SQL: Get role from repository
+    const rolesRepo = getRolesRepository();
+    const role = await rolesRepo.findById(roleId);
     if (!role) {
       return c.json({ error: 'Role not found' }, 404);
     }
 
-    // Get active onboarding fields
-    const allFields: OnboardingField[] = await kv.get(`onboarding:fields:${roleId}`) || [];
+    // ✅ SQL: Get active onboarding fields from role.config
+    const allFields: OnboardingField[] = role.config?.onboardingFields?.fields || [];
     let activeFields = allFields.filter(f => f.isActive);
 
     // If no fields found, try to generate from role config (Auto-Healing)
     if (activeFields.length === 0) {
       console.log(`[ONBOARDING FORM] No dynamic fields found, attempting to generate from role config...`);
-      const defaultFields = await generateDefaultFieldsFromRole(role, roleId);
+      const defaultFields = await generateDefaultFieldsFromRole(role.config || {}, roleId);
       if (defaultFields.length > 0) {
-        await kv.set(`onboarding:fields:${roleId}`, defaultFields);
+        // ✅ SQL: Save default fields to role.config
+        const updatedConfig = {
+          ...role.config,
+          onboardingFields: {
+            ...role.config?.onboardingFields,
+            fields: defaultFields,
+            version: role.config?.onboardingFields?.version || 1
+          }
+        };
+        await rolesRepo.setConfig(roleId, updatedConfig);
         activeFields = defaultFields.filter(f => f.isActive);
         console.log(`[ONBOARDING FORM] ✅ Auto-generated ${activeFields.length} fields`);
       }
@@ -438,7 +515,7 @@ app.get("/make-server-3dd53475/onboarding-form/:roleId", async (c) => {
     return c.json({
       success: true,
       roleId,
-      roleName: role.name,
+      roleName: role.display_name || role.name,
       fields: activeFields,
       sections,
       version: await getFormVersion(roleId)
@@ -561,13 +638,29 @@ function formatTitle(str: string) {
 }
 
 async function getFormVersion(roleId: string): Promise<number> {
-  const version = await kv.get(`onboarding:version:${roleId}`);
-  return version || 1;
+  // ✅ SQL: Get version from role.config.onboardingFields.version
+  const rolesRepo = getRolesRepository();
+  const role = await rolesRepo.findById(roleId);
+  return role?.config?.onboardingFields?.version || 1;
 }
 
 async function incrementFormVersion(roleId: string) {
-  const version = await getFormVersion(roleId);
-  await kv.set(`onboarding:version:${roleId}`, version + 1);
+  // ✅ SQL: Increment version in role.config.onboardingFields.version
+  const rolesRepo = getRolesRepository();
+  const role = await rolesRepo.findById(roleId);
+  if (!role) {
+    throw new Error(`Role not found: ${roleId}`);
+  }
+  
+  const currentVersion = role.config?.onboardingFields?.version || 1;
+  const updatedConfig = {
+    ...role.config,
+    onboardingFields: {
+      ...role.config?.onboardingFields,
+      version: currentVersion + 1
+    }
+  };
+  await rolesRepo.setConfig(roleId, updatedConfig);
 }
 
 export function registerDynamicOnboarding(mainApp: Hono) {

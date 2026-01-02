@@ -3,10 +3,10 @@
  * Uses Razorpay Route for automatic settlement to vendor bank accounts
  */
 
-import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
-import { createRazorpayTransfer, createLinkedAccount } from './razorpay-integration.tsx';
-import { sendSuccess, sendError } from './response-utils.ts';
+import { Hono } from 'hono';
+import * as kv from './kv_store';
+import { createRazorpayTransfer, createLinkedAccount } from './razorpay-integration';
+import { sendSuccess, sendError } from './response-utils';
 
 // Payout configuration
 const PAYOUT_THRESHOLD = 1000; // Minimum ₹1000 for payout

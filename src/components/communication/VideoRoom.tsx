@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Button } from '../ui/button';
 import { Mic, MicOff, Video, VideoOff, PhoneOff, MessageSquare, Users, Settings, Share2 } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 interface VideoRoomProps {
   channelId: string;

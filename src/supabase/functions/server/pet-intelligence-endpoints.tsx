@@ -1,5 +1,11 @@
-import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from 'hono';
+import {
+  getPetsRepository,
+  getCustomersRepository,
+  getBookingsRepository,
+  getOrdersRepository
+} from '../../../supabase/lib/repositories/index';
 
 export function petIntelligenceEndpoints(app: Hono) {
   
@@ -9,7 +15,9 @@ export function petIntelligenceEndpoints(app: Hono) {
    */
   app.get("/make-server-3dd53475/admin/pets/stats", async (c) => {
     try {
-      const pets = await kv.getByPrefix('pet:');
+      // ✅ SQL: Get all pets
+      const petsRepo = getPetsRepository();
+      const pets = await petsRepo.findAll();
       const validPets = pets.filter((p: any) => p.id && !p.id.includes(':'));
       
       const dogCount = validPets.filter((p: any) => p.species?.toLowerCase() === 'dog').length;
@@ -92,7 +100,9 @@ export function petIntelligenceEndpoints(app: Hono) {
    */
   app.get("/make-server-3dd53475/admin/pets/all", async (c) => {
     try {
-      const pets = await kv.getByPrefix('pet:');
+      // ✅ SQL: Get all pets
+      const petsRepo = getPetsRepository();
+      const pets = await petsRepo.findAll();
       const validPets = pets.filter((p: any) => p.id && !p.id.includes(':'));
       
       // Enrich with owner information
@@ -100,7 +110,9 @@ export function petIntelligenceEndpoints(app: Hono) {
         validPets.map(async (pet: any) => {
           let ownerName = 'Unknown';
           if (pet.ownerId) {
-            const customer = await kv.get(`customer:${pet.ownerId}`);
+            // ✅ SQL: Get customer
+            const customersRepo = getCustomersRepository();
+            const customer = await customersRepo.findById(pet.owner_id || pet.ownerId);
             if (customer) {
               ownerName = customer.fullName || customer.name || customer.phone;
             }
@@ -126,10 +138,14 @@ export function petIntelligenceEndpoints(app: Hono) {
    */
   app.get("/make-server-3dd53475/admin/pets/breed-insights", async (c) => {
     try {
-      const pets = await kv.getByPrefix('pet:');
+      // ✅ SQL: Get all pets
+      const petsRepo = getPetsRepository();
+      const pets = await petsRepo.findAll();
       const validPets = pets.filter((p: any) => p.id && !p.id.includes(':'));
       
-      const bookings = await kv.getByPrefix('booking:');
+      // ✅ SQL: Get all bookings
+      const bookingsRepo = getBookingsRepository();
+      const bookings = await bookingsRepo.findAll();
       const validBookings = bookings.filter((b: any) => b.id && !b.id.includes(':'));
       
       // Group pets by breed
@@ -204,7 +220,9 @@ export function petIntelligenceEndpoints(app: Hono) {
     try {
       const { petId } = c.req.param();
       
-      const pet = await kv.get(`pet:${petId}`);
+      // ✅ SQL: Get pet
+      const petsRepo = getPetsRepository();
+      const pet = await petsRepo.findById(petId);
       if (!pet) {
         return c.json({ error: 'Pet not found' }, 404);
       }
@@ -212,17 +230,23 @@ export function petIntelligenceEndpoints(app: Hono) {
       // Get owner information
       let owner = null;
       if (pet.ownerId) {
-        owner = await kv.get(`customer:${pet.ownerId}`);
+        // ✅ SQL: Get owner
+        const customersRepo = getCustomersRepository();
+        owner = await customersRepo.findById(pet.owner_id || pet.ownerId);
       }
       
       // Get booking history
-      const bookings = await kv.getByPrefix('booking:');
+      // ✅ SQL: Get all bookings
+      const bookingsRepo = getBookingsRepository();
+      const bookings = await bookingsRepo.findAll();
       const petBookings = bookings.filter((b: any) => 
         b.id && !b.id.includes(':') && b.petId === petId
       );
       
       // Get orders (for pet products)
-      const orders = await kv.getByPrefix('order:');
+      // ✅ SQL: Get orders
+      const ordersRepo = getOrdersRepository();
+      const orders = await ordersRepo.findAll();
       const petOrders = orders.filter((o: any) => 
         o.id && !o.id.includes(':') && o.petId === petId
       );
@@ -258,7 +282,9 @@ export function petIntelligenceEndpoints(app: Hono) {
       const species = c.req.query('species') || '';
       const breed = c.req.query('breed') || '';
       
-      const pets = await kv.getByPrefix('pet:');
+      // ✅ SQL: Get all pets
+      const petsRepo = getPetsRepository();
+      const pets = await petsRepo.findAll();
       let validPets = pets.filter((p: any) => p.id && !p.id.includes(':'));
       
       // Apply filters
@@ -294,7 +320,9 @@ export function petIntelligenceEndpoints(app: Hono) {
    */
   app.get("/make-server-3dd53475/admin/pets/health-analytics", async (c) => {
     try {
-      const pets = await kv.getByPrefix('pet:');
+      // ✅ SQL: Get all pets
+      const petsRepo = getPetsRepository();
+      const pets = await petsRepo.findAll();
       const validPets = pets.filter((p: any) => p.id && !p.id.includes(':'));
       
       // Vaccination coverage
@@ -368,7 +396,9 @@ export function petIntelligenceEndpoints(app: Hono) {
     try {
       const { petId } = await c.req.json();
       
-      const pet = await kv.get(`pet:${petId}`);
+      // ✅ SQL: Get pet
+      const petsRepo = getPetsRepository();
+      const pet = await petsRepo.findById(petId);
       if (!pet) {
         return c.json({ error: 'Pet not found' }, 404);
       }

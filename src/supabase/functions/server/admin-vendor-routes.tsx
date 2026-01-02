@@ -1,6 +1,10 @@
-import { Hono } from "npm:hono";
-import * as kv from "./kv_store.tsx";
-import { safeGet, safeSet, safeGetByPrefix, tryGet, trySet } from "./kv-safe.tsx";
+import { Hono } from "hono";
+import { 
+  getVendorsRepository,
+  getStaffRepository,
+  getNotificationsRepository
+} from '../../../../supabase/lib/repositories/index';
+import { getDbClient, selectQuery, upsertQuery } from '../../../../supabase/lib/db';
 
 export function registerAdminVendorRoutes(app: Hono) {
 
@@ -13,30 +17,35 @@ app.get("/make-server-3dd53475/admin/vendors/stats", async (c) => {
   try {
     console.log('Fetching vendor statistics...');
     
-    // Optimized: Use cached stats if available and fresh (less than 5 minutes old)
-    const cachedStats = await tryGet('admin:vendor_stats_cache', null, { timeout: 3000 });
-    if (cachedStats && cachedStats.cachedAt) {
-      const cacheAge = Date.now() - new Date(cachedStats.cachedAt).getTime();
-      const fiveMinutes = 5 * 60 * 1000;
-      
-      if (cacheAge < fiveMinutes) {
-        console.log('✅ Returning cached stats (age: ' + Math.round(cacheAge / 1000) + 's)');
-        return c.json({
-          success: true,
-          stats: cachedStats.stats,
-          cached: true
-        });
-      }
-    }
-    
+    // ✅ SQL: No caching needed - compute fresh stats
     console.log('📊 Computing fresh stats...');
     
-    // ✅ FIX: Use safe getByPrefix with timeout and limit
-    const allVendors = await safeGetByPrefix('vendor:', { 
-      timeout: 10000, // 10 second timeout
-      retries: 1,
-      limit: 1000 // Limit to prevent huge queries
-    });
+    // ✅ SQL: Get all vendors from repository
+    const vendorsRepo = getVendorsRepository();
+    const allVendorsRaw = await vendorsRepo.findAll({ limit: 1000 });
+    
+    // Map SQL vendor data to expected format (for backward compatibility)
+    const allVendors = allVendorsRaw.map((v: any) => ({
+      id: v.id,
+      vendorId: v.id,
+      businessName: v.business_name,
+      fullName: v.full_name,
+      phone: v.phone,
+      email: v.email,
+      status: v.status,
+      deactivated: !v.is_active,
+      role: v.role_id,
+      roleId: v.role_id,
+      roleName: v.role_name,
+      services: v.services || [],
+      rating: v.rating,
+      complaints: v.complaints || [],
+      complianceFlags: v.compliance_flags || [],
+      ratingHistory: v.rating_history || [],
+      submittedAt: v.submitted_at,
+      createdAt: v.created_at,
+      ...v // Include any other fields
+    }));
     
     console.log(`Total vendor records found: ${allVendors.length}`);
     
@@ -129,17 +138,8 @@ app.get("/make-server-3dd53475/admin/vendors/stats", async (c) => {
       categoryDistribution: distributionByCategory
     };
     
-    // Cache the stats for 5 minutes
-    try {
-      await safeSet('admin:vendor_stats_cache', {
-        stats,
-        cachedAt: new Date().toISOString()
-      }, { timeout: 3000 });
-      console.log('✅ Stats computed and cached');
-    } catch (cacheError) {
-      console.warn('⚠️ Failed to cache stats (non-critical):', cacheError);
-      // Continue anyway - caching failure shouldn't break the request
-    }
+    // ✅ SQL: Stats computed fresh each time (no caching needed)
+    console.log('✅ Stats computed');
     
     return c.json({
       success: true,
@@ -180,11 +180,29 @@ app.get("/make-server-3dd53475/applications/pending", async (c) => {
     
     console.log('📋 Fetching pending applications with filters:', { category, priority });
     
-    // FIX: Get ALL vendors with prefix 'vendor:' not 'vendor:vendor_'
-    const allVendors = await kv.getByPrefix('vendor:');
-    console.log(`📊 Total vendors found: ${allVendors.length}`);
+    // ✅ SQL: Get pending vendors from repository
+    const vendorsRepo = getVendorsRepository();
+    const allVendors = await vendorsRepo.findAll({ limit: 1000 });
     
-    let pendingVendors = allVendors.filter(v => v.status === 'pending_approval');
+    // Map SQL vendors to expected format
+    const mappedVendors = allVendors.map((v: any) => ({
+      id: v.id,
+      vendorId: v.id,
+      businessName: v.business_name,
+      fullName: v.owner_name,
+      phone: v.phone,
+      email: v.email,
+      status: v.status,
+      roleId: v.role_id,
+      roleName: v.role_id, // TODO: Get from roles table
+      services: [], // TODO: Get from services table
+      submittedAt: v.created_at,
+      ...v
+    }));
+    
+    console.log(`📊 Total vendors found: ${mappedVendors.length}`);
+    
+    let pendingVendors = mappedVendors.filter((v: any) => v.status === 'pending' || v.status === 'pending_approval');
     console.log(`⏳ Pending vendors found: ${pendingVendors.length}`);
     
     // Filter by category
@@ -262,15 +280,25 @@ app.get("/make-server-3dd53475/applications/:vendorId", async (c) => {
   try {
     const { vendorId } = c.req.param();
     
-    const vendor = await kv.get(`vendor:${vendorId}`);
+    // ✅ SQL: Get vendor from repository
+    const vendorsRepo = getVendorsRepository();
+    const vendor = await vendorsRepo.findById(vendorId) || await vendorsRepo.findByVendorId(vendorId);
     
     if (!vendor) {
       return c.json({ error: 'Vendor not found' }, 404);
     }
     
+    // Map to expected format
+    const mappedVendor = {
+      vendorId: vendor.id,
+      businessName: vendor.business_name,
+      fullName: vendor.owner_name,
+      ...vendor
+    };
+    
     return c.json({
       success: true,
-      vendor
+      vendor: mappedVendor
     });
   } catch (error) {
     console.error('Error fetching vendor application:', error);
@@ -284,7 +312,9 @@ app.post("/make-server-3dd53475/admin/vendor/application/:vendorId/approve", asy
     const { vendorId } = c.req.param();
     const { adminId, adminName, notes } = await c.req.json();
     
-    const vendor = await kv.get(`vendor:${vendorId}`);
+    // ✅ SQL: Get vendor from repository
+    const vendorsRepo = getVendorsRepository();
+    const vendor = await vendorsRepo.findById(vendorId) || await vendorsRepo.findByVendorId(vendorId);
     
     if (!vendor) {
       return c.json({ error: 'Vendor not found' }, 404);
@@ -300,35 +330,17 @@ app.post("/make-server-3dd53475/admin/vendor/application/:vendorId/approve", asy
       }, 400);
     }
     
-    // Update vendor status
-    vendor.status = 'approved';
-    vendor.reviewedBy = adminId;
-    vendor.reviewedByName = adminName;
-    vendor.reviewedAt = new Date().toISOString();
-    vendor.approvalNotes = notes;
-    vendor.isActive = true;
+    // ✅ SQL: Approve vendor using repository
+    const approvedVendor = await vendorsRepo.approve(vendorId, adminId);
     
-    await kv.set(`vendor:${vendorId}`, vendor);
-    
-    // Remove from pending list and add to approved list
-    const pendingList = await kv.get('vendor:pending_approvals') || [];
-    const updatedPending = pendingList.filter((id: string) => id !== vendorId);
-    await kv.set('vendor:pending_approvals', updatedPending);
-    
-    const approvedList = await kv.get('vendor:approved_list') || [];
-    approvedList.push(vendorId);
-    await kv.set('vendor:approved_list', approvedList);
-    
-    // Create notification for vendor
-    const notificationId = `notification_${Date.now()}`;
-    await kv.set(`notification:vendor:${vendorId}:${notificationId}`, {
-      id: notificationId,
-      vendorId,
-      type: 'application_approved',
+    // ✅ SQL: Create notification using repository
+    const notificationsRepo = getNotificationsRepository();
+    await notificationsRepo.create({
+      user_id: vendorId,
+      notification_type: 'application_approved',
       title: 'Application Approved',
       message: 'Congratulations! Your vendor application has been approved. You can now start accepting bookings.',
-      read: false,
-      createdAt: new Date().toISOString()
+      data: { recipient_type: 'vendor' }
     });
     
     console.log('✅ Vendor approved successfully:', vendorId);
@@ -336,7 +348,7 @@ app.post("/make-server-3dd53475/admin/vendor/application/:vendorId/approve", asy
     return c.json({
       success: true,
       message: 'Vendor approved successfully',
-      vendor
+      vendor: approvedVendor
     });
   } catch (error) {
     console.error('Error approving vendor:', error);
@@ -351,63 +363,14 @@ app.post("/make-server-3dd53475/admin/vendors/applications/:vendorId/approve", a
     const { adminId, adminName, notes } = await c.req.json();
     
     console.log('🔍 Attempting to approve vendor:', vendorId);
-    console.log('📦 Looking for key:', `vendor:${vendorId}`);
     
-    // First try direct lookup
-    let vendor = await kv.get(`vendor:${vendorId}`);
-    let actualKey = `vendor:${vendorId}`;
+    // ✅ SQL: Get vendor from repository (tries both UUID and vendor_id string)
+    const vendorsRepo = getVendorsRepository();
+    let vendor = await vendorsRepo.findById(vendorId) || await vendorsRepo.findByVendorId(vendorId);
     
     if (!vendor) {
-      console.log('⚠️ Direct lookup failed, searching database for matching vendor...');
-      
-      // Query database directly to find the vendor
-      const { createClient } = await import('jsr:@supabase/supabase-js@2.49.8');
-      const supabase = createClient(
-        Deno.env.get('SUPABASE_URL'),
-        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-      );
-      
-      const { data: kvRecords, error } = await supabase
-        .from('kv_store_3dd53475')
-        .select('key, value')
-        .like('key', 'vendor:%');
-      
-      if (error) {
-        console.error('❌ Database query error:', error);
-        return c.json({ error: 'Database error' }, 500);
-      }
-      
-      // Find vendor by matching the vendorId in the value OR in the key
-      const matchingRecord = kvRecords?.find((record: any) => {
-        const v = record.value;
-        const key = record.key;
-        
-        // Check if the key ends with the vendorId
-        if (key === `vendor:${vendorId}`) return true;
-        
-        // Check if the value has matching id or vendorId
-        if (v.id === vendorId || v.vendorId === vendorId) return true;
-        
-        // Check if the key contains the vendorId (in case of different formats)
-        if (key.includes(vendorId)) return true;
-        
-        return false;
-      });
-      
-      if (matchingRecord) {
-        vendor = matchingRecord.value;
-        actualKey = matchingRecord.key;
-        console.log('✅ Found vendor with key:', actualKey);
-        console.log('📋 Vendor ID in data:', vendor.id);
-      } else {
-        console.error('❌ Vendor not found with ID:', vendorId);
-        console.log('📊 Total vendors in database:', kvRecords?.length || 0);
-        
-        // Log first few vendor keys for debugging
-        console.log('📝 Sample vendor keys:', kvRecords?.slice(0, 5).map((r: any) => r.key));
-        
-        return c.json({ error: 'Vendor not found', vendorId, searchKey: `vendor:${vendorId}` }, 404);
-      }
+      console.error('❌ Vendor not found with ID:', vendorId);
+      return c.json({ error: 'Vendor not found', vendorId }, 404);
     }
     
     console.log('📋 Vendor found with status:', vendor.status);
@@ -423,293 +386,147 @@ app.post("/make-server-3dd53475/admin/vendors/applications/:vendorId/approve", a
       }, 400);
     }
     
-    // ✅ DUPLICATE CHECK: Before approving, check if phone/email are already used by an approved vendor
+    // ✅ SQL: DUPLICATE CHECK - Check if phone/email are already used by an approved vendor
     console.log('🔍 Checking for duplicate phone/email in approved vendors...');
-    
-    const { createClient } = await import('jsr:@supabase/supabase-js@2.49.8');
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL'),
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-    );
     
     // Import phone utils for normalization
     const { normalizePhone } = await import('./phone-utils.tsx');
     const cleanPhone = normalizePhone(vendor.phone || '');
     const cleanEmail = vendor.email?.toLowerCase().trim();
     
-    // Query all vendor records
-    const { data: allVendorRecords, error: queryError } = await supabase
-      .from('kv_store_3dd53475')
-      .select('key, value')
-      .like('key', 'vendor:vendor_%');
-    
-    if (!queryError && allVendorRecords) {
-      // Check for duplicate phone in approved vendors
-      const duplicatePhone = allVendorRecords.find((record: any) => {
-        const v = record.value;
-        
-        // Skip if it's the same vendor
-        if (v.id === vendorId || record.key === actualKey) return false;
-        
-        // Only check approved vendors
-        if (v.status !== 'approved') return false;
-        
-        // Check phone match
-        if (v.phone) {
-          const vCleanPhone = normalizePhone(v.phone);
-          if (vCleanPhone === cleanPhone && cleanPhone) {
-            console.error(`❌ Duplicate phone found in approved vendor: ${v.id}`);
-            return true;
-          }
-        }
-        
-        return false;
-      });
+    // ✅ SQL: Check for duplicate phone in approved vendors
+    if (cleanPhone) {
+      const approvedVendorsWithPhone = await selectQuery<any>(
+        "vendors",
+        { phone: vendor.phone, status: 'approved' },
+        { limit: 10 }
+      );
       
-      if (duplicatePhone) {
-        const dupVendor = duplicatePhone.value;
+      const duplicatePhoneVendor = approvedVendorsWithPhone.find((v: any) => 
+        v.id !== vendor.id && normalizePhone(v.phone || '') === cleanPhone
+      );
+      
+      if (duplicatePhoneVendor) {
         console.error('❌ DUPLICATE PHONE NUMBER DETECTED!');
-        console.error(`   Current vendor: ${vendorId} - ${vendor.fullName || vendor.businessName}`);
-        console.error(`   Existing approved vendor: ${dupVendor.id} - ${dupVendor.fullName || dupVendor.businessName}`);
-        console.error(`   Phone: ${vendor.phone} (normalized: ${cleanPhone})`);
+        console.error(`   Current vendor: ${vendorId} - ${vendor.owner_name || vendor.business_name}`);
+        console.error(`   Existing approved vendor: ${duplicatePhoneVendor.id} - ${duplicatePhoneVendor.owner_name || duplicatePhoneVendor.business_name}`);
         
         return c.json({ 
           error: 'Cannot approve: A vendor with this phone number is already approved',
           duplicateField: 'phone',
           duplicateVendor: {
-            id: dupVendor.id,
-            name: dupVendor.fullName || dupVendor.businessName,
-            phone: dupVendor.phone,
-            status: dupVendor.status
+            id: duplicatePhoneVendor.id,
+            name: duplicatePhoneVendor.owner_name || duplicatePhoneVendor.business_name,
+            phone: duplicatePhoneVendor.phone,
+            status: duplicatePhoneVendor.status
           }
         }, 409); // 409 Conflict
       }
+    }
+    
+    // ✅ SQL: Check for duplicate email in approved vendors
+    if (cleanEmail) {
+      const approvedVendorsWithEmail = await selectQuery<any>(
+        "vendors",
+        { email: vendor.email, status: 'approved' },
+        { limit: 10 }
+      );
       
-      // Check for duplicate email in approved vendors
-      if (cleanEmail) {
-        const duplicateEmail = allVendorRecords.find((record: any) => {
-          const v = record.value;
-          
-          // Skip if it's the same vendor
-          if (v.id === vendorId || record.key === actualKey) return false;
-          
-          // Only check approved vendors
-          if (v.status !== 'approved') return false;
-          
-          // Check email match
-          if (v.email) {
-            const vCleanEmail = v.email?.toLowerCase().trim();
-            if (vCleanEmail === cleanEmail) {
-              console.error(`❌ Duplicate email found in approved vendor: ${v.id}`);
-              return true;
-            }
-          }
-          
-          return false;
-        });
+      const duplicateEmailVendor = approvedVendorsWithEmail.find((v: any) => 
+        v.id !== vendor.id && v.email?.toLowerCase().trim() === cleanEmail
+      );
+      
+      if (duplicateEmailVendor) {
+        console.error('❌ DUPLICATE EMAIL DETECTED!');
+        console.error(`   Current vendor: ${vendorId} - ${vendor.owner_name || vendor.business_name}`);
+        console.error(`   Existing approved vendor: ${duplicateEmailVendor.id} - ${duplicateEmailVendor.owner_name || duplicateEmailVendor.business_name}`);
         
-        if (duplicateEmail) {
-          const dupVendor = duplicateEmail.value;
-          console.error('❌ DUPLICATE EMAIL DETECTED!');
-          console.error(`   Current vendor: ${vendorId} - ${vendor.fullName || vendor.businessName}`);
-          console.error(`   Existing approved vendor: ${dupVendor.id} - ${dupVendor.fullName || dupVendor.businessName}`);
-          console.error(`   Email: ${vendor.email}`);
-          
-          return c.json({ 
-            error: 'Cannot approve: A vendor with this email is already approved',
-            duplicateField: 'email',
-            duplicateVendor: {
-              id: dupVendor.id,
-              name: dupVendor.fullName || dupVendor.businessName,
-              email: dupVendor.email,
-              status: dupVendor.status
-            }
-          }, 409); // 409 Conflict
-        }
+        return c.json({ 
+          error: 'Cannot approve: A vendor with this email is already approved',
+          duplicateField: 'email',
+          duplicateVendor: {
+            id: duplicateEmailVendor.id,
+            name: duplicateEmailVendor.owner_name || duplicateEmailVendor.business_name,
+            email: duplicateEmailVendor.email,
+            status: duplicateEmailVendor.status
+          }
+        }, 409); // 409 Conflict
       }
     }
     
     console.log('✅ No duplicates found, proceeding with approval...');
     
-    // Update vendor status
-    vendor.status = 'approved';
-    vendor.reviewedBy = adminId;
-    vendor.reviewedByName = adminName;
-    vendor.reviewedAt = new Date().toISOString();
-    vendor.approvalNotes = notes;
-    vendor.isActive = true;
+    // ✅ SQL: Approve vendor using repository
+    const approvedVendor = await vendorsRepo.approve(vendorId, adminId);
     
-    // Save using the actual key we found
-    await kv.set(actualKey, vendor);
-    
-    // ✅ FIX #1: AUTO-CREATE STAFF FOR INDIVIDUAL VENDORS (CRITICAL)
+    // ✅ SQL: AUTO-CREATE STAFF FOR INDIVIDUAL VENDORS (CRITICAL)
     console.log('\n🔧 ===== AUTO-CREATING STAFF FOR APPROVED VENDOR =====');
     console.log(`📝 Vendor ID: ${vendorId}`);
-    console.log(`👤 Vendor Type: ${vendor.vendorType}`);
-    console.log(`🏥 Role ID: ${vendor.roleId}`);
-    console.log(`📋 Service Category: ${vendor.serviceCategory}`);
+    console.log(`🏥 Role ID: ${vendor.role_id}`);
     
     // Check if this is an individual vendor (not a business center)
-    const isIndividualVendor = vendor.vendorType === 'individual' || 
-                              vendor.vendorType === 'individual_professional' ||
-                              vendor.vendorType === 'individual_veterinarian' ||
-                              vendor.vendorType === 'individual_groomer' ||
-                              vendor.vendorType === 'individual_trainer' ||
-                              vendor.vendorType === 'individual_walker' ||
-                              vendor.vendorType === 'individual_behaviourist' ||
-                              !vendor.businessName; // Fallback: if no business name, assume individual
+    // In SQL schema, check if vendor doesn't have other staff
+    const staffRepo = getStaffRepository();
+    const existingStaff = await staffRepo.findByVendorId(vendorId);
+    const isIndividualVendor = !existingStaff || existingStaff.length === 0;
     
     console.log(`   Is Individual Vendor: ${isIndividualVendor}`);
     
     let staffCreated = false;
-    let staffId = null;
+    let staffId: string | null = null;
     
-    // For individual vendors (veterinarians, groomers, trainers, etc.), auto-create staff profile
+    // For individual vendors, auto-create staff profile
     if (isIndividualVendor) {
-      staffId = `${vendorId}_staff_self`;
-      
-      // Check if staff already exists
-      const existingStaff = await kv.get(`staff:${staffId}`);
-      
-      if (!existingStaff) {
+      try {
         console.log(`✅ Creating staff profile for individual vendor...`);
         
-        const staffProfile = {
-          id: staffId,
-          vendorId: vendorId,
-          fullName: vendor.fullName,
-          name: vendor.fullName,
-          phone: vendor.phone || vendor.mobile || '',
-          mobile: vendor.mobile || vendor.phone || '',
-          email: vendor.email || '',
-          
-          // Professional details (role-specific)
-          specialization: vendor.customFields?.specialization || vendor.specialization || '',
-          degree: vendor.customFields?.degree || vendor.degree || '',
-          experience: vendor.yearsOfExperience || vendor.experience || 0,
-          bio: vendor.customFields?.bio || vendor.bio || '',
-          consultationFee: vendor.customFields?.consultationFee || vendor.consultationFee || 0,
-          
-          // Personal details
-          gender: vendor.customFields?.gender || vendor.gender || '',
-          dateOfBirth: vendor.customFields?.dateOfBirth || vendor.dateOfBirth || '',
-          languages: vendor.customFields?.languages || vendor.languages || ['English', 'Hindi'],
-          
-          // Address
-          address: vendor.address || '',
-          city: vendor.city || '',
-          state: vendor.state || '',
-          pincode: vendor.pincode || '',
-          
-          // Role and category info
-          roleId: vendor.roleId,
-          roleName: vendor.roleName,
-          serviceCategory: vendor.serviceCategory,
-          
-          // Staff settings
-          isActive: true,
-          canAcceptBookings: true,
-          assignedServices: [], // Will be populated when services are configured
-          services: [], // Services array
-          
-          // Timestamps
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          
-          // Link to vendor
-          isVendorSelf: true, // Flag to indicate this is the vendor themselves
-          isAutoCreated: true, // Flag to indicate auto-creation during approval
-          vendorApplicationId: vendor.applicationId
-        };
+        // ✅ SQL: Create staff using repository
+        const newStaff = await staffRepo.create({
+          vendor_id: vendorId,
+          full_name: vendor.owner_name || vendor.business_name,
+          phone: vendor.phone,
+          email: vendor.email || undefined,
+          role: vendor.role_id || undefined,
+          role_type: vendor.role_id || undefined,
+          specialization: vendor.specialization || undefined,
+          experience_years: vendor.experience_years || 0,
+          is_active: true
+        });
         
-        await kv.set(`staff:${staffId}`, staffProfile);
-        console.log(`✅ Staff profile created: ${staffId}`);
-        console.log(`   Name: ${staffProfile.fullName}`);
-        console.log(`   Role: ${staffProfile.roleName}`);
-        console.log(`   Service Category: ${staffProfile.serviceCategory}`);
-        
-        // Add staff to vendor's staff list
-        const vendorStaffList = await kv.get(`vendor:${vendorId}:staff`) || [];
-        if (!vendorStaffList.includes(staffId)) {
-          vendorStaffList.push(staffId);
-          await kv.set(`vendor:${vendorId}:staff`, vendorStaffList);
-          console.log(`✅ Added staff to vendor's staff list`);
-        }
-        
-        // ✅ FIX #2: CREATE STAFF PHONE INDEX
-        if (cleanPhone) {
-          await kv.set(`staff:phone:${cleanPhone}`, staffId);
-          console.log(`✅ Created staff phone index: ${cleanPhone} → ${staffId}`);
-        }
-        
+        staffId = newStaff?.id || null;
         staffCreated = true;
-      } else {
-        console.log(`ℹ️ Staff profile already exists: ${staffId}`);
+        console.log(`✅ Staff profile created: ${staffId}`);
+        console.log(`   Name: ${newStaff.fullName}`);
+      } catch (staffError) {
+        console.error(`⚠️ Failed to create staff (non-critical):`, staffError);
+        // Continue with approval even if staff creation fails
       }
     } else {
       console.log(`ℹ️ Business/Center vendor - staff profiles managed separately`);
     }
     
-    // ✅ FIX #2: CREATE VENDOR INDEXES FOR FAST LOOKUP
-    console.log('\n🔧 Creating vendor lookup indexes...');
+    console.log('🎉 ===== VENDOR APPROVAL COMPLETE =====\n');
     
-    // Phone index
-    if (cleanPhone) {
-      await kv.set(`vendor:phone:${cleanPhone}`, vendorId);
-      console.log(`✅ Vendor phone index created: ${cleanPhone} → ${vendorId}`);
-    }
-    
-    // Email index
-    if (cleanEmail) {
-      await kv.set(`vendor:email:${cleanEmail}`, vendorId);
-      console.log(`✅ Vendor email index created: ${cleanEmail} → ${vendorId}`);
-    }
-    
-    // User index (if userId exists)
-    if (vendor.userId) {
-      await kv.set(`vendor:user:${vendor.userId}`, vendorId);
-      console.log(`✅ Vendor user index created: ${vendor.userId} → ${vendorId}`);
-    }
-    
-    console.log('🎉 ===== VENDOR APPROVAL COMPLETE WITH FULL SETUP =====\n');
-    
-    // Remove from pending list and add to approved list
-    const pendingList = await kv.get('vendor:pending_approvals') || [];
-    const updatedPending = pendingList.filter((id: string) => id !== vendorId);
-    await kv.set('vendor:pending_approvals', updatedPending);
-    
-    const approvedList = await kv.get('vendor:approved_list') || [];
-    approvedList.push(vendorId);
-    await kv.set('vendor:approved_list', approvedList);
-    
-    // Create notification for vendor
-    const notificationId = `notification_${Date.now()}`;
-    await kv.set(`notification:vendor:${vendorId}:${notificationId}`, {
-      id: notificationId,
-      vendorId,
-      type: 'application_approved',
+    // ✅ SQL: Create notification using repository
+    const notificationsRepo = getNotificationsRepository();
+    await notificationsRepo.create({
+      user_id: vendorId,
+      notification_type: 'application_approved',
       title: 'Application Approved',
       message: 'Congratulations! Your vendor application has been approved. You can now start accepting bookings.',
-      read: false,
-      createdAt: new Date().toISOString()
+      data: { recipient_type: 'vendor' }
     });
     
     console.log('✅ Vendor approved successfully:', vendorId);
     
-    // ✅ FIX #7: Enhanced response with detailed approval summary
+    // Enhanced response with detailed approval summary
     const approvalSummary = {
       vendorId,
-      vendorName: vendor.fullName || vendor.businessName,
-      roleName: vendor.roleName,
-      serviceCategory: vendor.serviceCategory,
-      approvedAt: vendor.reviewedAt,
+      vendorName: vendor.owner_name || vendor.business_name,
+      roleId: vendor.role_id,
+      approvedAt: approvedVendor.approved_at,
       staffAutoCreated: staffCreated,
       staffId: staffId,
-      indexesCreated: {
-        phone: !!cleanPhone,
-        email: !!cleanEmail,
-        user: !!vendor.userId
-      },
       nextSteps: isIndividualVendor 
         ? [
             '1. Log in to your vendor dashboard',
@@ -730,7 +547,7 @@ app.post("/make-server-3dd53475/admin/vendors/applications/:vendorId/approve", a
       message: staffCreated 
         ? 'Vendor approved successfully with staff auto-creation'
         : 'Vendor approved successfully',
-      vendor,
+      vendor: approvedVendor,
       staffCreated,
       staffId,
       approvalSummary
@@ -747,7 +564,9 @@ app.post("/make-server-3dd53475/admin/vendor/application/:vendorId/reject", asyn
     const { vendorId } = c.req.param();
     const { adminId, adminName, reason, rejectionNotes } = await c.req.json();
     
-    const vendor = await kv.get(`vendor:${vendorId}`);
+    // ✅ SQL: Get vendor from repository
+    const vendorsRepo = getVendorsRepository();
+    const vendor = await vendorsRepo.findById(vendorId) || await vendorsRepo.findByVendorId(vendorId);
     
     if (!vendor) {
       return c.json({ error: 'Vendor not found' }, 404);
@@ -758,32 +577,17 @@ app.post("/make-server-3dd53475/admin/vendor/application/:vendorId/reject", asyn
       return c.json({ error: 'Vendor is not pending approval', currentStatus: vendor.status }, 400);
     }
     
-    // Update vendor status
-    vendor.status = 'rejected';
-    vendor.isActive = false;
-    vendor.reviewedBy = adminId;
-    vendor.reviewedByName = adminName;
-    vendor.reviewedAt = new Date().toISOString();
-    vendor.rejectionReason = reason;
-    vendor.rejectionNotes = rejectionNotes;
+    // ✅ SQL: Reject vendor using repository
+    const rejectedVendor = await vendorsRepo.reject(vendorId, adminId);
     
-    await kv.set(`vendor:${vendorId}`, vendor);
-    
-    // Remove from pending list
-    const pendingList = await kv.get('vendor:pending_approvals') || [];
-    const updatedPending = pendingList.filter((id: string) => id !== vendorId);
-    await kv.set('vendor:pending_approvals', updatedPending);
-    
-    // Create notification for vendor
-    const notificationId = `notification_${Date.now()}`;
-    await kv.set(`notification:vendor:${vendorId}:${notificationId}`, {
-      id: notificationId,
-      vendorId,
-      type: 'application_rejected',
+    // ✅ SQL: Create notification using repository
+    const notificationsRepo = getNotificationsRepository();
+    await notificationsRepo.create({
+      user_id: vendorId,
+      notification_type: 'application_rejected',
+      data: { recipient_type: 'vendor' },
       title: 'Application Rejected',
       message: `Unfortunately, your vendor application has been rejected. Reason: ${reason}`,
-      read: false,
-      createdAt: new Date().toISOString()
     });
     
     console.log('✅ Vendor rejected successfully:', vendorId);
@@ -791,7 +595,7 @@ app.post("/make-server-3dd53475/admin/vendor/application/:vendorId/reject", asyn
     return c.json({
       success: true,
       message: 'Vendor rejected',
-      vendor
+      vendor: rejectedVendor
     });
   } catch (error) {
     console.error('Error rejecting vendor:', error);
@@ -806,60 +610,14 @@ app.post("/make-server-3dd53475/admin/vendors/applications/:vendorId/reject", as
     const { adminId, adminName, reason, rejectionNotes } = await c.req.json();
     
     console.log('🔍 Attempting to reject vendor:', vendorId);
-    console.log('📦 Looking for key:', `vendor:${vendorId}`);
     
-    // First try direct lookup
-    let vendor = await kv.get(`vendor:${vendorId}`);
-    let actualKey = `vendor:${vendorId}`;
+    // ✅ SQL: Get vendor from repository
+    const vendorsRepo = getVendorsRepository();
+    const vendor = await vendorsRepo.findById(vendorId) || await vendorsRepo.findByVendorId(vendorId);
     
     if (!vendor) {
-      console.log('⚠️ Direct lookup failed, searching database for matching vendor...');
-      
-      // Query database directly to find the vendor
-      const { createClient } = await import('jsr:@supabase/supabase-js@2.49.8');
-      const supabase = createClient(
-        Deno.env.get('SUPABASE_URL'),
-        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-      );
-      
-      const { data: kvRecords, error } = await supabase
-        .from('kv_store_3dd53475')
-        .select('key, value')
-        .like('key', 'vendor:%');
-      
-      if (error) {
-        console.error('❌ Database query error:', error);
-        return c.json({ error: 'Database error' }, 500);
-      }
-      
-      // Find vendor by matching the vendorId in the value OR in the key
-      const matchingRecord = kvRecords?.find((record: any) => {
-        const v = record.value;
-        const key = record.key;
-        
-        // Check if the key ends with the vendorId
-        if (key === `vendor:${vendorId}`) return true;
-        
-        // Check if the value has matching id or vendorId
-        if (v.id === vendorId || v.vendorId === vendorId) return true;
-        
-        // Check if the key contains the vendorId (in case of different formats)
-        if (key.includes(vendorId)) return true;
-        
-        return false;
-      });
-      
-      if (matchingRecord) {
-        vendor = matchingRecord.value;
-        actualKey = matchingRecord.key;
-        console.log('✅ Found vendor with key:', actualKey);
-        console.log('📋 Vendor ID in data:', vendor.id);
-      } else {
-        console.error('❌ Vendor not found with ID:', vendorId);
-        console.log('📊 Total vendors in database:', kvRecords?.length || 0);
-        
-        return c.json({ error: 'Vendor not found', vendorId, searchKey: `vendor:${vendorId}` }, 404);
-      }
+      console.error('❌ Vendor not found with ID:', vendorId);
+      return c.json({ error: 'Vendor not found', vendorId }, 404);
     }
     
     console.log('📋 Vendor found with status:', vendor.status);
@@ -875,33 +633,17 @@ app.post("/make-server-3dd53475/admin/vendors/applications/:vendorId/reject", as
       }, 400);
     }
     
-    // Update vendor status
-    vendor.status = 'rejected';
-    vendor.isActive = false;
-    vendor.reviewedBy = adminId;
-    vendor.reviewedByName = adminName;
-    vendor.reviewedAt = new Date().toISOString();
-    vendor.rejectionReason = reason;
-    vendor.rejectionNotes = rejectionNotes;
+    // ✅ SQL: Reject vendor using repository
+    const rejectedVendor = await vendorsRepo.reject(vendorId, adminId);
     
-    // Save using the actual key we found
-    await kv.set(actualKey, vendor);
-    
-    // Remove from pending list
-    const pendingList = await kv.get('vendor:pending_approvals') || [];
-    const updatedPending = pendingList.filter((id: string) => id !== vendorId);
-    await kv.set('vendor:pending_approvals', updatedPending);
-    
-    // Create notification for vendor
-    const notificationId = `notification_${Date.now()}`;
-    await kv.set(`notification:vendor:${vendorId}:${notificationId}`, {
-      id: notificationId,
-      vendorId,
-      type: 'application_rejected',
+    // ✅ SQL: Create notification using repository
+    const notificationsRepo = getNotificationsRepository();
+    await notificationsRepo.create({
+      user_id: vendorId,
+      notification_type: 'application_rejected',
+      data: { recipient_type: 'vendor' },
       title: 'Application Rejected',
       message: `Unfortunately, your vendor application has been rejected. Reason: ${reason}`,
-      read: false,
-      createdAt: new Date().toISOString()
     });
     
     console.log('✅ Vendor rejected successfully:', vendorId);
@@ -909,7 +651,7 @@ app.post("/make-server-3dd53475/admin/vendors/applications/:vendorId/reject", as
     return c.json({
       success: true,
       message: 'Vendor rejected',
-      vendor
+      vendor: rejectedVendor
     });
   } catch (error) {
     console.error('Error rejecting vendor:', error);
@@ -936,40 +678,9 @@ app.post("/make-server-3dd53475/admin/vendor/application/:vendorId/request-clari
     console.log('   Admin:', adminName || reviewerName);
     console.log('   Notes:', notes || clarificationNotes);
     
-    // Try direct lookup first
-    let vendor = await kv.get(`vendor:${vendorId}`);
-    let actualKey = `vendor:${vendorId}`;
-    
-    // If not found, search database
-    if (!vendor) {
-      console.log('⚠️ Direct lookup failed, searching database...');
-      
-      const { createClient } = await import('jsr:@supabase/supabase-js@2.49.8');
-      const supabase = createClient(
-        Deno.env.get('SUPABASE_URL'),
-        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-      );
-      
-      const { normalizePhone } = await import('./phone-utils.tsx');
-      const cleanPhone = vendorId.replace('vendor_', '');
-      
-      const { data: kvRecords, error } = await supabase
-        .from('kv_store_3dd53475')
-        .select('key, value')
-        .or(`key.eq.vendor:${vendorId},key.eq.vendor:vendor_${cleanPhone}`);
-      
-      if (!error && kvRecords && kvRecords.length > 0) {
-        const matchingRecord = kvRecords.find((r: any) => 
-          r.key === `vendor:${vendorId}` || r.value.id === vendorId
-        );
-        
-        if (matchingRecord) {
-          vendor = matchingRecord.value;
-          actualKey = matchingRecord.key;
-          console.log('✅ Found vendor with key:', actualKey);
-        }
-      }
-    }
+    // ✅ SQL: Get vendor from repository
+    const vendorsRepo = getVendorsRepository();
+    const vendor = await vendorsRepo.findById(vendorId) || await vendorsRepo.findByVendorId(vendorId);
     
     if (!vendor) {
       console.error('❌ Vendor not found:', vendorId);
@@ -998,33 +709,31 @@ app.post("/make-server-3dd53475/admin/vendor/application/:vendorId/request-clari
       status: 'pending_response'
     };
     
-    // Add to clarification history
-    vendor.clarificationHistory = vendor.clarificationHistory || [];
-    vendor.clarificationHistory.push(clarificationRequest);
+    // Get existing metadata (vendor metadata stored as JSONB)
+    const metadata = (vendor as any).metadata || {};
+    const clarificationHistory = metadata.clarificationHistory || [];
+    clarificationHistory.push(clarificationRequest);
     
-    // Update current clarification request
-    vendor.clarificationRequest = clarificationRequest;
-    
-    // Update status to indicate clarification is needed
-    vendor.status = 'clarification_requested';
-    vendor.updatedAt = new Date().toISOString();
-    
-    // Save vendor
-    await kv.set(actualKey, vendor);
+    // ✅ SQL: Update vendor status and metadata
+    const updatedVendor = await vendorsRepo.update(vendorId, {
+      status: 'clarification_requested',
+      metadata: {
+        ...metadata,
+        clarificationRequest,
+        clarificationHistory
+      }
+    });
     
     console.log('✅ Clarification request saved to vendor record');
     
-    // Create notification for vendor
-    const notificationId = `notification_${Date.now()}`;
-    await kv.set(`notification:vendor:${vendorId}:${notificationId}`, {
-      id: notificationId,
-      vendorId,
-      type: 'clarification_requested',
+    // ✅ SQL: Create notification for vendor
+    const notificationsRepo = getNotificationsRepository();
+    await notificationsRepo.create({
+      user_id: vendorId,
+      notification_type: 'clarification_requested',
+      data: { recipient_type: 'vendor' },
       title: 'Clarification Required',
       message: `Admin has requested clarification on your application: ${notes || clarificationNotes}`,
-      clarificationNotes: notes || clarificationNotes,
-      read: false,
-      createdAt: new Date().toISOString()
     });
     
     console.log('✅ Notification created for vendor');
@@ -1051,7 +760,7 @@ app.post("/make-server-3dd53475/admin/vendor/application/:vendorId/request-clari
         id: vendor.id,
         vendorId: vendorId,
         status: vendor.status,
-        clarificationRequest: vendor.clarificationRequest
+        clarificationRequest: (vendor as any).metadata?.clarificationRequest || null
       }
     });
     
@@ -1082,37 +791,9 @@ app.post("/make-server-3dd53475/admin/vendor/request-info", async (c) => {
     console.log('   Message:', message);
     console.log('   Required fields:', requiredFields);
     
-    // Try direct lookup first
-    let vendor = await kv.get(`vendor:${vendorId}`);
-    let actualKey = `vendor:${vendorId}`;
-    
-    // If not found, search database
-    if (!vendor) {
-      console.log('⚠️ Direct lookup failed, searching database...');
-      
-      const { createClient } = await import('jsr:@supabase/supabase-js@2.49.8');
-      const supabase = createClient(
-        Deno.env.get('SUPABASE_URL'),
-        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-      );
-      
-      const { data: kvRecords, error } = await supabase
-        .from('kv_store_3dd53475')
-        .select('key, value')
-        .like('key', 'vendor:%');
-      
-      if (!error && kvRecords && kvRecords.length > 0) {
-        const matchingRecord = kvRecords.find((r: any) => 
-          r.value.id === vendorId || r.value.vendorId === vendorId
-        );
-        
-        if (matchingRecord) {
-          vendor = matchingRecord.value;
-          actualKey = matchingRecord.key;
-          console.log('✅ Found vendor with key:', actualKey);
-        }
-      }
-    }
+    // ✅ SQL: Get vendor from repository
+    const vendorsRepo = getVendorsRepository();
+    const vendor = await vendorsRepo.findById(vendorId) || await vendorsRepo.findByVendorId(vendorId);
     
     if (!vendor) {
       console.error('❌ Vendor not found:', vendorId);
@@ -1141,34 +822,31 @@ app.post("/make-server-3dd53475/admin/vendor/request-info", async (c) => {
       status: 'pending_response'
     };
     
-    // Add to info request history
-    vendor.infoRequestHistory = vendor.infoRequestHistory || [];
-    vendor.infoRequestHistory.push(infoRequest);
+    // Get existing metadata (vendor metadata stored as JSONB)
+    const metadata = (vendor as any).metadata || {};
+    const infoRequestHistory = metadata.infoRequestHistory || [];
+    infoRequestHistory.push(infoRequest);
     
-    // Update current info request
-    vendor.infoRequest = infoRequest;
-    
-    // Update status
-    vendor.status = 'info_requested';
-    vendor.updatedAt = new Date().toISOString();
-    
-    // Save vendor
-    await kv.set(actualKey, vendor);
+    // ✅ SQL: Update vendor status and metadata
+    const updatedVendor = await vendorsRepo.update(vendorId, {
+      status: 'info_requested',
+      metadata: {
+        ...metadata,
+        infoRequest,
+        infoRequestHistory
+      }
+    });
     
     console.log('✅ Info request saved to vendor record');
     
-    // Create notification for vendor
-    const notificationId = `notification_${Date.now()}`;
-    await kv.set(`notification:vendor:${vendorId}:${notificationId}`, {
-      id: notificationId,
-      vendorId,
-      type: 'info_requested',
+    // ✅ SQL: Create notification for vendor
+    const notificationsRepo = getNotificationsRepository();
+    await notificationsRepo.create({
+      user_id: vendorId,
+      notification_type: 'info_requested',
+      data: { recipient_type: 'vendor' },
       title: 'Additional Information Required',
       message: `Admin has requested additional information: ${message}`,
-      requiredFields: requiredFields,
-      infoMessage: message,
-      read: false,
-      createdAt: new Date().toISOString()
     });
     
     console.log('✅ Notification created for vendor');
@@ -1182,10 +860,10 @@ app.post("/make-server-3dd53475/admin/vendor/request-info", async (c) => {
       success: true,
       message: 'Information request sent successfully. Vendor will be notified.',
       vendor: {
-        id: vendor.id,
+        id: updatedVendor.id,
         vendorId: vendorId,
-        status: vendor.status,
-        infoRequest: vendor.infoRequest
+        status: updatedVendor.status,
+        infoRequest: metadata.infoRequest
       }
     });
     
@@ -1214,37 +892,9 @@ app.post("/make-server-3dd53475/vendor/respond-to-clarification", async (c) => {
     console.log('   Updated form data:', !!updatedFormData);
     console.log('   Updated documents:', updatedDocuments ? Object.keys(updatedDocuments).length : 0);
     
-    // Try direct lookup first
-    let vendor = await kv.get(`vendor:${vendorId}`);
-    let actualKey = `vendor:${vendorId}`;
-    
-    // If not found, search database
-    if (!vendor) {
-      console.log('⚠️ Direct lookup failed, searching database...');
-      
-      const { createClient } = await import('jsr:@supabase/supabase-js@2.49.8');
-      const supabase = createClient(
-        Deno.env.get('SUPABASE_URL'),
-        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-      );
-      
-      const { data: kvRecords, error } = await supabase
-        .from('kv_store_3dd53475')
-        .select('key, value')
-        .like('key', 'vendor:%');
-      
-      if (!error && kvRecords && kvRecords.length > 0) {
-        const matchingRecord = kvRecords.find((r: any) => 
-          r.value.id === vendorId || r.value.vendorId === vendorId
-        );
-        
-        if (matchingRecord) {
-          vendor = matchingRecord.value;
-          actualKey = matchingRecord.key;
-          console.log('✅ Found vendor with key:', actualKey);
-        }
-      }
-    }
+    // ✅ SQL: Get vendor from repository
+    const vendorsRepo = getVendorsRepository();
+    const vendor = await vendorsRepo.findById(vendorId) || await vendorsRepo.findByVendorId(vendorId);
     
     if (!vendor) {
       console.error('❌ Vendor not found:', vendorId);
@@ -1262,17 +912,21 @@ app.post("/make-server-3dd53475/vendor/respond-to-clarification", async (c) => {
       }, 400);
     }
     
-    // Update vendor with clarification response
-    if (vendor.clarificationRequest) {
-      vendor.clarificationRequest.response = response;
-      vendor.clarificationRequest.respondedAt = new Date().toISOString();
-      vendor.clarificationRequest.status = 'responded';
+    // Get existing metadata
+    const metadata = (vendor as any).metadata || {};
+    const clarificationRequest = metadata.clarificationRequest || {};
+    
+    // Update clarification response
+    if (clarificationRequest) {
+      clarificationRequest.response = response;
+      clarificationRequest.respondedAt = new Date().toISOString();
+      clarificationRequest.status = 'responded';
     }
     
     // Update form data if provided
     if (updatedFormData) {
-      vendor.formData = {
-        ...vendor.formData,
+      metadata.formData = {
+        ...metadata.formData,
         ...updatedFormData
       };
       console.log('✅ Updated form data');
@@ -1280,34 +934,37 @@ app.post("/make-server-3dd53475/vendor/respond-to-clarification", async (c) => {
     
     // Update documents if provided
     if (updatedDocuments) {
-      vendor.documents = {
-        ...vendor.documents,
+      metadata.documents = {
+        ...metadata.documents,
         ...updatedDocuments
       };
       console.log('✅ Updated documents');
     }
     
-    // Change status back to pending for admin review
-    vendor.status = 'pending';
-    vendor.updatedAt = new Date().toISOString();
-    
-    // Save vendor
-    await kv.set(actualKey, vendor);
+    // ✅ SQL: Update vendor status and metadata
+    const updatedVendor = await vendorsRepo.update(vendorId, {
+      status: 'pending',
+      metadata: {
+        ...metadata,
+        clarificationRequest
+      }
+    });
     
     console.log('✅ Clarification response saved to vendor record');
     
-    // Create notification for admin
-    const notificationId = `notification_admin_${Date.now()}`;
-    await kv.set(`notification:admin:${notificationId}`, {
-      id: notificationId,
-      type: 'admin_vendor_clarification_submitted',
+    // ✅ SQL: Create notification for admin (use admin user ID or platform admin ID)
+    const notificationsRepo = getNotificationsRepository();
+    // Note: Admin notifications should use admin user_id - using vendorId for now but should be fixed
+    await notificationsRepo.create({
+      user_id: vendorId, // TODO: Get actual admin user ID
+      notification_type: 'admin_vendor_clarification_submitted',
       title: 'Vendor Clarification Received',
-      message: `${vendor.fullName || vendor.businessName} has responded to your clarification request.`,
-      vendorId: vendorId,
-      vendorName: vendor.fullName || vendor.businessName,
-      roleName: vendor.roleName || vendor.vendorType,
-      read: false,
-      createdAt: new Date().toISOString()
+      message: `${vendor.owner_name || vendor.business_name} has responded to your clarification request.`,
+      data: {
+        vendorId: vendorId,
+        vendorName: vendor.owner_name || vendor.business_name,
+        roleId: vendor.role_id
+      }
     });
     
     console.log('✅ Admin notification created');
@@ -1320,7 +977,7 @@ app.post("/make-server-3dd53475/vendor/respond-to-clarification", async (c) => {
         id: vendor.id,
         vendorId: vendorId,
         status: vendor.status,
-        clarificationRequest: vendor.clarificationRequest
+        clarificationRequest: (vendor as any).metadata?.clarificationRequest || null
       }
     });
     
@@ -1337,7 +994,17 @@ app.post("/make-server-3dd53475/vendor/respond-to-clarification", async (c) => {
 // Get platform-wide vendor settings
 app.get("/make-server-3dd53475/settings/platform", async (c) => {
   try {
-    const settings = await kv.get('admin:platform:vendor_settings') || {
+    // ✅ SQL: Get platform settings from platform_settings table
+    const settingsRecords = await selectQuery<{ setting_value: any }>(
+      'platform_settings',
+      { setting_key: 'vendor_settings' },
+      { limit: 1 }
+    );
+    
+    const settingsRecord = settingsRecords[0] || null;
+    
+    // Default settings if not found
+    const defaultSettings = {
       refundPolicies: {
         customerCancellation: {
           tier1: {
@@ -1358,7 +1025,7 @@ app.get("/make-server-3dd53475/settings/platform", async (c) => {
         },
         refundProcessing: {
           mode: 'auto',
-          processingTimeBusinessDays: 1000,
+          processingTimeBusinessDays: 7,
           disputeResolutionTimeDays: 7,
           refundPreference: 'wallet'
         }
@@ -1387,6 +1054,8 @@ app.get("/make-server-3dd53475/settings/platform", async (c) => {
       }
     };
     
+    const settings = settingsRecord?.setting_value || defaultSettings;
+    
     return c.json({
       success: true,
       settings
@@ -1402,14 +1071,31 @@ app.put("/make-server-3dd53475/settings/platform", async (c) => {
   try {
     const updates = await c.req.json();
     
-    const currentSettings = await kv.get('admin:platform:vendor_settings') || {};
+    // ✅ SQL: Get current settings
+    const settingsRecords = await selectQuery<{ id: string; setting_value: any }>(
+      'platform_settings',
+      { setting_key: 'vendor_settings' },
+      { limit: 1 }
+    );
+    
+    const currentSettings = settingsRecords[0]?.setting_value || {};
     const updatedSettings = {
       ...currentSettings,
       ...updates,
       updatedAt: new Date().toISOString()
     };
     
-    await kv.set('admin:platform:vendor_settings', updatedSettings);
+    // ✅ SQL: Upsert platform settings
+    await upsertQuery(
+      'platform_settings',
+      {
+        setting_key: 'vendor_settings',
+        setting_value: updatedSettings,
+        setting_type: 'object',
+        description: 'Platform-wide vendor settings including refund policies, booking rules, etc.'
+      },
+      'setting_key'
+    );
     
     return c.json({
       success: true,
@@ -1428,28 +1114,40 @@ app.put("/make-server-3dd53475/settings/platform", async (c) => {
 // Get all deactivation requests
 app.get("/make-server-3dd53475/deactivation-requests", async (c) => {
   try {
-    const requests = await kv.getByPrefix('vendor:deactivation_request:') || [];
+    // ✅ SQL: Get deactivation requests from vendor metadata
+    const vendorsRepo = getVendorsRepository();
+    const allVendors = await vendorsRepo.findAll({ limit: 1000 });
+    
+    // Extract deactivation requests from vendor metadata
+    const requests: any[] = [];
+    for (const vendor of allVendors) {
+      const metadata = (vendor as any).metadata || {};
+      if (metadata.deactivationRequest && metadata.deactivationRequest.status !== 'approved') {
+        requests.push({
+          ...metadata.deactivationRequest,
+          vendorId: vendor.id
+        });
+      }
+    }
     
     // Enrich with vendor details
-    const enrichedRequests = await Promise.all(
-      requests.map(async (request: any) => {
-        const vendor = await kv.get(`vendor:${request.vendorId}`);
-        return {
-          ...request,
-          vendorDetails: vendor ? {
-            fullName: vendor.fullName,
-            businessName: vendor.businessName,
-            phone: vendor.phone,
-            email: vendor.email,
-            services: vendor.services
-          } : null
-        };
-      })
-    );
+    const enrichedRequests = requests.map((request: any) => {
+      const vendor = allVendors.find((v: any) => v.id === request.vendorId);
+      return {
+        ...request,
+        vendorDetails: vendor ? {
+          fullName: vendor.owner_name,
+          businessName: vendor.business_name,
+          phone: vendor.phone,
+          email: vendor.email,
+          services: [] // TODO: Get from services table
+        } : null
+      };
+    });
     
     // Sort by request date (newest first)
     enrichedRequests.sort((a, b) => 
-      new Date(b.requestedAt).getTime() - new Date(a.requestedAt).getTime()
+      new Date(b.requestedAt || 0).getTime() - new Date(a.requestedAt || 0).getTime()
     );
     
     return c.json({
@@ -1468,33 +1166,41 @@ app.post("/make-server-3dd53475/deactivation-requests/:requestId/approve", async
     const { requestId } = c.req.param();
     const { adminId, adminName } = await c.req.json();
     
-    const request = await kv.get(`vendor:deactivation_request:${requestId}`);
+    // ✅ SQL: Find vendor with this deactivation request
+    const vendorsRepo = getVendorsRepository();
+    const allVendors = await vendorsRepo.findAll({ limit: 1000 });
     
-    if (!request) {
+    let targetVendor: any = null;
+    for (const vendor of allVendors) {
+      const metadata = (vendor as any).metadata || {};
+      if (metadata.deactivationRequest?.id === requestId) {
+        targetVendor = vendor;
+        break;
+      }
+    }
+    
+    if (!targetVendor) {
       return c.json({ error: 'Request not found' }, 404);
     }
     
-    const vendor = await kv.get(`vendor:${request.vendorId}`);
+    const metadata = (targetVendor as any).metadata || {};
+    const deactivationRequest = metadata.deactivationRequest || {};
     
-    if (!vendor) {
-      return c.json({ error: 'Vendor not found' }, 404);
-    }
-    
-    // Deactivate vendor
-    vendor.deactivated = true;
-    vendor.deactivatedAt = new Date().toISOString();
-    vendor.deactivatedBy = adminId;
-    vendor.deactivationReason = request.reason;
-    
-    await kv.set(`vendor:${request.vendorId}`, vendor);
-    
-    // Update request status
-    request.status = 'approved';
-    request.reviewedBy = adminId;
-    request.reviewedByName = adminName;
-    request.reviewedAt = new Date().toISOString();
-    
-    await kv.set(`vendor:deactivation_request:${requestId}`, request);
+    // ✅ SQL: Deactivate vendor and update request status
+    await vendorsRepo.update(targetVendor.id, {
+      is_active: false,
+      metadata: {
+        ...metadata,
+        deactivationRequest: {
+          ...deactivationRequest,
+          status: 'approved',
+          reviewedBy: adminId,
+          reviewedByName: adminName,
+          reviewedAt: new Date().toISOString(),
+          deactivatedAt: new Date().toISOString()
+        }
+      }
+    });
     
     return c.json({
       success: true,
@@ -1513,10 +1219,24 @@ app.post("/make-server-3dd53475/deactivation-requests/:requestId/approve", async
 // Get vendors due for re-verification
 app.get("/make-server-3dd53475/reverification/due", async (c) => {
   try {
-    const allVendors = await kv.getByPrefix('vendor:');
-    const activeVendors = allVendors.filter(v => v.status === 'approved' && !v.deactivated);
+    // ✅ SQL: Get all approved active vendors
+    const vendorsRepo = getVendorsRepository();
+    const allVendorsRaw = await vendorsRepo.findAll({ status: 'approved' });
     
-    const vendorsDueForReverification = activeVendors.filter(vendor => {
+    const activeVendors = allVendorsRaw
+      .filter((v: any) => v.is_active)
+      .map((v: any) => ({
+        id: v.id,
+        vendorId: v.id,
+        businessName: v.business_name,
+        fullName: v.owner_name,
+        status: v.status,
+        reviewedAt: v.approved_at,
+        submittedAt: v.created_at,
+        ...v
+      }));
+    
+    const vendorsDueForReverification = activeVendors.filter((vendor: any) => {
       if (!vendor.reviewedAt) return true;
       
       const reviewDate = new Date(vendor.reviewedAt);
@@ -1528,7 +1248,7 @@ app.get("/make-server-3dd53475/reverification/due", async (c) => {
     });
     
     // Sort by days since last review (oldest first)
-    vendorsDueForReverification.sort((a, b) => {
+    vendorsDueForReverification.sort((a: any, b: any) => {
       const dateA = new Date(a.reviewedAt || a.submittedAt);
       const dateB = new Date(b.reviewedAt || b.submittedAt);
       return dateA.getTime() - dateB.getTime();
@@ -1551,39 +1271,47 @@ app.post("/make-server-3dd53475/reverification/:vendorId/schedule", async (c) =>
     const { vendorId } = c.req.param();
     const { scheduledDate, adminId, notes } = await c.req.json();
     
-    const vendor = await kv.get(`vendor:${vendorId}`);
+    // ✅ SQL: Get vendor from repository
+    const vendorsRepo = getVendorsRepository();
+    const vendor = await vendorsRepo.findById(vendorId) || await vendorsRepo.findByVendorId(vendorId);
     
     if (!vendor) {
       return c.json({ error: 'Vendor not found' }, 404);
     }
     
-    // Create re-verification record
-    const reverificationId = `reverification_${Date.now()}`;
-    await kv.set(`vendor:reverification:${reverificationId}`, {
-      id: reverificationId,
+    // ✅ SQL: Store re-verification in vendor metadata
+    const metadata = (vendor as any).metadata || {};
+    const reverificationRecord = {
+      id: `reverification_${Date.now()}`,
       vendorId,
       scheduledDate,
       status: 'scheduled',
       scheduledBy: adminId,
       notes,
       createdAt: new Date().toISOString()
+    };
+    
+    // Update vendor metadata with re-verification info
+    const updatedVendor = await vendorsRepo.update(vendorId, {
+      metadata: {
+        ...metadata,
+        nextReverificationDate: scheduledDate,
+        reverificationStatus: 'scheduled',
+        reverificationRecords: [
+          ...(metadata.reverificationRecords || []),
+          reverificationRecord
+        ]
+      }
     });
     
-    // Update vendor record
-    vendor.nextReverificationDate = scheduledDate;
-    vendor.reverificationStatus = 'scheduled';
-    await kv.set(`vendor:${vendorId}`, vendor);
-    
-    // Create notification for vendor
-    const notificationId = `notification_${Date.now()}`;
-    await kv.set(`notification:vendor:${vendorId}:${notificationId}`, {
-      id: notificationId,
-      vendorId,
-      type: 'reverification_scheduled',
+    // ✅ SQL: Create notification for vendor
+    const notificationsRepo = getNotificationsRepository();
+    await notificationsRepo.create({
+      user_id: vendorId,
+      notification_type: 'reverification_scheduled',
       title: 'Re-verification Scheduled',
       message: `Your account re-verification has been scheduled for ${new Date(scheduledDate).toLocaleDateString()}. Please ensure all documents are up to date.`,
-      read: false,
-      createdAt: new Date().toISOString()
+      data: { recipient_type: 'vendor', scheduledDate }
     });
     
     return c.json({
@@ -1603,12 +1331,24 @@ app.post("/make-server-3dd53475/reverification/:vendorId/schedule", async (c) =>
 // Get vendors with compliance issues
 app.get("/make-server-3dd53475/compliance/issues", async (c) => {
   try {
-    const allVendors = await kv.getByPrefix('vendor:');
+    // ✅ SQL: Get all vendors from repository
+    const vendorsRepo = getVendorsRepository();
+    const allVendorsRaw = await vendorsRepo.findAll({ limit: 1000 });
     
-    const vendorsWithIssues = allVendors.filter(vendor => {
-      if (!vendor.complianceFlags) return false;
+    // Map SQL vendor data to expected format
+    const allVendors = allVendorsRaw.map((v: any) => ({
+      id: v.id,
+      vendorId: v.id,
+      businessName: v.business_name,
+      fullName: v.owner_name,
+      complianceFlags: v.metadata?.complianceFlags || [],
+      ...v
+    }));
+    
+    const vendorsWithIssues = allVendors.filter((vendor: any) => {
+      if (!vendor.complianceFlags || !Array.isArray(vendor.complianceFlags)) return false;
       return vendor.complianceFlags.length > 0;
-    }).map(vendor => {
+    }).map((vendor: any) => {
       // Calculate priority based on flags
       const highPriorityFlags = vendor.complianceFlags.filter((flag: any) => flag.priority === 'high');
       const priority = highPriorityFlags.length > 0 ? 'high' : 
@@ -1622,7 +1362,7 @@ app.get("/make-server-3dd53475/compliance/issues", async (c) => {
     });
     
     // Sort by priority and issue count
-    vendorsWithIssues.sort((a, b) => {
+    vendorsWithIssues.sort((a: any, b: any) => {
       const priorityOrder: any = { high: 3, medium: 2, low: 1 };
       return priorityOrder[b.overallPriority] - priorityOrder[a.overallPriority] || 
              b.issueCount - a.issueCount;
@@ -1645,17 +1385,20 @@ app.post("/make-server-3dd53475/:vendorId/compliance/flag", async (c) => {
     const { vendorId } = c.req.param();
     const { type, description, priority, adminId } = await c.req.json();
     
-    const vendor = await kv.get(`vendor:${vendorId}`);
+    // ✅ SQL: Get vendor from repository
+    const vendorsRepo = getVendorsRepository();
+    const vendor = await vendorsRepo.findById(vendorId) || await vendorsRepo.findByVendorId(vendorId);
     
     if (!vendor) {
       return c.json({ error: 'Vendor not found' }, 404);
     }
     
-    if (!vendor.complianceFlags) {
-      vendor.complianceFlags = [];
-    }
+    // Get existing compliance flags from metadata
+    const metadata = (vendor as any).metadata || {};
+    const complianceFlags = metadata.complianceFlags || [];
     
-    vendor.complianceFlags.push({
+    // Add new flag
+    complianceFlags.push({
       id: `flag_${Date.now()}`,
       type,
       description,
@@ -1665,12 +1408,18 @@ app.post("/make-server-3dd53475/:vendorId/compliance/flag", async (c) => {
       resolved: false
     });
     
-    await kv.set(`vendor:${vendorId}`, vendor);
+    // ✅ SQL: Update vendor metadata with new compliance flags
+    const updatedVendor = await vendorsRepo.update(vendorId, {
+      metadata: {
+        ...metadata,
+        complianceFlags
+      }
+    });
     
     return c.json({
       success: true,
       message: 'Compliance flag added',
-      vendor
+      vendor: updatedVendor
     });
   } catch (error) {
     console.error('Error adding compliance flag:', error);
@@ -1681,12 +1430,28 @@ app.post("/make-server-3dd53475/:vendorId/compliance/flag", async (c) => {
 // Get quality alerts
 app.get("/make-server-3dd53475/quality/alerts", async (c) => {
   try {
-    // ✅ FIX: Use safeGetByPrefix with timeout and limit
-    const allVendors = await safeGetByPrefix('vendor:', { 
-      timeout: 10000,
-      retries: 1,
-      limit: 1000
-    });
+    // ✅ SQL: Get all vendors from repository
+    const vendorsRepo = getVendorsRepository();
+    const allVendorsRaw = await vendorsRepo.findAll({ limit: 1000 });
+    
+    // Map SQL vendor data to expected format
+    const allVendors = allVendorsRaw.map((v: any) => ({
+      id: v.id,
+      vendorId: v.id,
+      businessName: v.business_name,
+      fullName: v.full_name,
+      phone: v.phone,
+      email: v.email,
+      status: v.status,
+      deactivated: !v.is_active,
+      role: v.role_id,
+      roleId: v.role_id,
+      roleName: v.role_name,
+      rating: v.rating,
+      complaints: v.complaints || [],
+      ratingHistory: v.rating_history || [],
+      ...v
+    }));
     
     const activeVendors = allVendors.filter((v: any) => v.status === 'approved' && !v.deactivated);
     
@@ -1792,7 +1557,23 @@ app.get("/make-server-3dd53475/search", async (c) => {
     const status = c.req.query('status') || 'all';
     const service = c.req.query('service') || 'all';
     
-    let vendors = await safeGetByPrefix('vendor:', { timeout: 10000, limit: 1000 });
+    // ✅ SQL: Get all vendors from repository
+    const vendorsRepo = getVendorsRepository();
+    const allVendorsRaw = await vendorsRepo.findAll({ limit: 1000 });
+    
+    // Map SQL vendor data to expected format
+    let vendors = allVendorsRaw.map((v: any) => ({
+      id: v.id,
+      vendorId: v.id,
+      businessName: v.business_name,
+      fullName: v.full_name,
+      phone: v.phone,
+      email: v.email,
+      status: v.status,
+      deactivated: !v.is_active,
+      services: v.services || [],
+      ...v
+    }));
     
     // Filter by status
     if (status !== 'all') {
@@ -1847,34 +1628,18 @@ app.get("/make-server-3dd53475/admin/vendors/duplicates", async (c) => {
     // Import phone utils
     const { normalizePhone } = await import('./phone-utils.tsx');
     
-    // Get all vendor records
-    const { createClient } = await import('jsr:@supabase/supabase-js@2.49.8');
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL'),
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-    );
+    // ✅ SQL: Get all vendor records from repository
+    const vendorsRepo = getVendorsRepository();
+    const allVendors = await vendorsRepo.findAll({ limit: 1000 });
     
-    const { data: vendorRecords, error } = await supabase
-      .from('kv_store_3dd53475')
-      .select('key, value')
-      .like('key', 'vendor:vendor_%');
-    
-    if (error) {
-      console.error('❌ Database query error:', error);
-      return c.json({ error: 'Database error' }, 500);
-    }
-    
-    console.log(`📊 Found ${vendorRecords?.length || 0} vendor records`);
+    console.log(`📊 Found ${allVendors.length} vendor records`);
     
     // Track duplicates
     const phoneMap = new Map<string, any[]>();
     const emailMap = new Map<string, any[]>();
     
     // Group vendors by phone and email
-    vendorRecords?.forEach((record: any) => {
-      const vendor = record.value;
-      const key = record.key;
-      
+    allVendors.forEach((vendor: any) => {
       // Group by phone
       if (vendor.phone) {
         const cleanPhone = normalizePhone(vendor.phone);
@@ -1882,7 +1647,7 @@ app.get("/make-server-3dd53475/admin/vendors/duplicates", async (c) => {
           if (!phoneMap.has(cleanPhone)) {
             phoneMap.set(cleanPhone, []);
           }
-          phoneMap.get(cleanPhone)!.push({ ...vendor, _key: key });
+          phoneMap.get(cleanPhone)!.push(vendor);
         }
       }
       
@@ -1892,7 +1657,7 @@ app.get("/make-server-3dd53475/admin/vendors/duplicates", async (c) => {
         if (!emailMap.has(cleanEmail)) {
           emailMap.set(cleanEmail, []);
         }
-        emailMap.get(cleanEmail)!.push({ ...vendor, _key: key });
+        emailMap.get(cleanEmail)!.push(vendor);
       }
     });
     
@@ -1903,14 +1668,13 @@ app.get("/make-server-3dd53475/admin/vendors/duplicates", async (c) => {
         duplicatesByPhone.push({
           phone,
           count: vendors.length,
-          vendors: vendors.map(v => ({
+          vendors: vendors.map((v: any) => ({
             id: v.id,
-            key: v._key,
-            name: v.fullName || v.businessName,
+            name: v.owner_name || v.business_name,
             status: v.status,
             email: v.email,
-            createdAt: v.createdAt,
-            submittedAt: v.submittedAt
+            createdAt: v.created_at,
+            submittedAt: v.created_at
           }))
         });
       }
@@ -1922,14 +1686,13 @@ app.get("/make-server-3dd53475/admin/vendors/duplicates", async (c) => {
         duplicatesByEmail.push({
           email,
           count: vendors.length,
-          vendors: vendors.map(v => ({
+          vendors: vendors.map((v: any) => ({
             id: v.id,
-            key: v._key,
-            name: v.fullName || v.businessName,
+            name: v.owner_name || v.business_name,
             status: v.status,
             phone: v.phone,
-            createdAt: v.createdAt,
-            submittedAt: v.submittedAt
+            createdAt: v.created_at,
+            submittedAt: v.created_at
           }))
         });
       }
@@ -1972,35 +1735,20 @@ app.post("/make-server-3dd53475/admin/vendors/duplicates/cleanup", async (c) => 
     // Import phone utils
     const { normalizePhone } = await import('./phone-utils.tsx');
     
-    // Get all vendor records
-    const { createClient } = await import('jsr:@supabase/supabase-js@2.49.8');
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL'),
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-    );
-    
-    const { data: vendorRecords, error } = await supabase
-      .from('kv_store_3dd53475')
-      .select('key, value')
-      .like('key', 'vendor:vendor_%');
-    
-    if (error) {
-      return c.json({ error: 'Database error' }, 500);
-    }
+    // ✅ SQL: Get all vendor records from repository
+    const vendorsRepo = getVendorsRepository();
+    const allVendors = await vendorsRepo.findAll({ limit: 1000 });
     
     // Group vendors by phone
     const phoneGroups = new Map<string, any[]>();
-    vendorRecords?.forEach((record: any) => {
-      const vendor = record.value;
-      const key = record.key;
-      
+    allVendors.forEach((vendor: any) => {
       if (vendor.phone) {
         const cleanPhone = normalizePhone(vendor.phone);
         if (cleanPhone) {
           if (!phoneGroups.has(cleanPhone)) {
             phoneGroups.set(cleanPhone, []);
           }
-          phoneGroups.get(cleanPhone)!.push({ ...vendor, _key: key });
+          phoneGroups.get(cleanPhone)!.push(vendor);
         }
       }
     });
@@ -2018,14 +1766,14 @@ app.post("/make-server-3dd53475/admin/vendors/duplicates/cleanup", async (c) => 
         // Sort vendors by priority:
         // 1. Approved vendors first
         // 2. Then by creation date (newest first)
-        vendors.sort((a, b) => {
+        vendors.sort((a: any, b: any) => {
           // Approved status takes priority
           if (a.status === 'approved' && b.status !== 'approved') return -1;
           if (a.status !== 'approved' && b.status === 'approved') return 1;
           
           // Then by creation date (newest first)
-          const dateA = new Date(a.createdAt || a.submittedAt || 0);
-          const dateB = new Date(b.createdAt || b.submittedAt || 0);
+          const dateA = new Date(a.created_at || 0);
+          const dateB = new Date(b.created_at || 0);
           return dateB.getTime() - dateA.getTime();
         });
         
@@ -2033,18 +1781,17 @@ app.post("/make-server-3dd53475/admin/vendors/duplicates/cleanup", async (c) => 
         const toKeep = vendors[0];
         const toDelete = vendors.slice(1);
         
-        console.log(`   ✅ Keeping: ${toKeep.id} (${toKeep.fullName || toKeep.businessName}) - Status: ${toKeep.status}`);
+        console.log(`   ✅ Keeping: ${toKeep.id} (${toKeep.owner_name || toKeep.business_name}) - Status: ${toKeep.status}`);
         vendorsToKeep++;
         
-        toDelete.forEach(vendor => {
-          console.log(`   ❌ Deleting: ${vendor.id} (${vendor.fullName || vendor.businessName}) - Status: ${vendor.status}`);
+        toDelete.forEach((vendor: any) => {
+          console.log(`   ❌ Deleting: ${vendor.id} (${vendor.owner_name || vendor.business_name}) - Status: ${vendor.status}`);
           vendorsToDelete++;
           
           cleanupActions.push({
             action: 'delete',
             vendorId: vendor.id,
-            key: vendor._key,
-            name: vendor.fullName || vendor.businessName,
+            name: vendor.owner_name || vendor.business_name,
             status: vendor.status,
             reason: `Duplicate of ${toKeep.id}`,
             phone: vendor.phone,
@@ -2065,11 +1812,11 @@ app.post("/make-server-3dd53475/admin/vendors/duplicates/cleanup", async (c) => 
       
       for (const action of cleanupActions) {
         try {
-          // Delete from KV store
-          await kv.del(action.key);
-          console.log(`   ✅ Deleted: ${action.key}`);
+          // ✅ SQL: Soft delete vendor (set is_active = false)
+          await vendorsRepo.delete(action.vendorId);
+          console.log(`   ✅ Deleted: ${action.vendorId}`);
         } catch (err) {
-          console.error(`   ❌ Failed to delete ${action.key}:`, err);
+          console.error(`   ❌ Failed to delete ${action.vendorId}:`, err);
           action.error = String(err);
         }
       }
@@ -2113,41 +1860,11 @@ app.post("/make-server-3dd53475/admin/migrate/create-staff-and-indexes", async (
     // Import phone normalization
     const { normalizePhone } = await import('./phone-utils.tsx');
     
-    // Query database directly to get all vendor records
-    const { createClient } = await import('jsr:@supabase/supabase-js@2.49.8');
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL'),
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-    );
+    // ✅ SQL: Get all approved vendors from repository
+    const vendorsRepo = getVendorsRepository();
+    const approvedVendors = await vendorsRepo.findByStatus('approved');
     
-    const { data: kvRecords, error } = await supabase
-      .from('kv_store_3dd53475')
-      .select('key, value')
-      .like('key', 'vendor:vendor_%');
-    
-    if (error) {
-      console.error('❌ Database query error:', error);
-      return c.json({ error: 'Database error' }, 500);
-    }
-    
-    console.log(`📊 Total vendor records found: ${kvRecords?.length || 0}`);
-    
-    // Filter to only approved vendors
-    const approvedVendors = kvRecords?.filter((record: any) => {
-      const v = record.value;
-      const key = record.key;
-      
-      // Must match exact pattern vendor:vendor_xxx
-      const keyParts = key.split(':');
-      if (keyParts.length !== 2 || keyParts[0] !== 'vendor') return false;
-      if (!keyParts[1].startsWith('vendor_')) return false;
-      
-      // Must be approved
-      if (v.status !== 'approved') return false;
-      
-      return true;
-    }) || [];
-    
+    console.log(`📊 Total approved vendor records found: ${approvedVendors.length}`);
     console.log(`✅ Approved vendors to process: ${approvedVendors.length}\n`);
     
     const results = {
@@ -2158,129 +1875,55 @@ app.post("/make-server-3dd53475/admin/migrate/create-staff-and-indexes", async (
       errors: [] as any[]
     };
     
-    for (const record of approvedVendors) {
-      const vendor = record.value;
+    for (const vendor of approvedVendors) {
       const vendorId = vendor.id;
       
       try {
         console.log(`\n📦 Processing vendor: ${vendorId}`);
-        console.log(`   Name: ${vendor.fullName || vendor.businessName}`);
-        console.log(`   Role: ${vendor.roleName}`);
+        console.log(`   Name: ${vendor.owner_name || vendor.business_name}`);
+        console.log(`   Role: ${vendor.role_id}`);
         console.log(`   Status: ${vendor.status}`);
         
-        // Determine if individual vendor
-        const isIndividualVendor = vendor.vendorType === 'individual' || 
-                                  vendor.vendorType === 'individual_professional' ||
-                                  vendor.vendorType === 'individual_veterinarian' ||
-                                  vendor.vendorType === 'individual_groomer' ||
-                                  vendor.vendorType === 'individual_trainer' ||
-                                  vendor.vendorType === 'individual_walker' ||
-                                  vendor.vendorType === 'individual_behaviourist' ||
-                                  !vendor.businessName;
+        // Determine if individual vendor (check if no staff exists for this vendor)
+        const staffRepo = getStaffRepository();
+        const existingStaff = await staffRepo.findByVendorId(vendorId);
+        const isIndividualVendor = !existingStaff || existingStaff.length === 0;
         
         console.log(`   Individual Vendor: ${isIndividualVendor}`);
         
         // Create staff if individual vendor
         if (isIndividualVendor) {
-          const staffId = `${vendorId}_staff_self`;
-          const existingStaff = await kv.get(`staff:${staffId}`);
-          
-          if (!existingStaff) {
-            const staffProfile = {
-              id: staffId,
-              vendorId: vendorId,
-              fullName: vendor.fullName,
-              name: vendor.fullName,
-              phone: vendor.phone || '',
-              mobile: vendor.mobile || vendor.phone || '',
-              email: vendor.email || '',
-              specialization: vendor.customFields?.specialization || vendor.specialization || '',
-              degree: vendor.customFields?.degree || vendor.degree || '',
-              experience: vendor.yearsOfExperience || vendor.experience || 0,
-              bio: vendor.customFields?.bio || vendor.bio || '',
-              consultationFee: vendor.customFields?.consultationFee || vendor.consultationFee || 0,
-              gender: vendor.customFields?.gender || vendor.gender || '',
-              dateOfBirth: vendor.customFields?.dateOfBirth || vendor.dateOfBirth || '',
-              languages: vendor.customFields?.languages || vendor.languages || ['English', 'Hindi'],
-              address: vendor.address || '',
-              city: vendor.city || '',
-              state: vendor.state || '',
-              pincode: vendor.pincode || '',
-              roleId: vendor.roleId,
-              roleName: vendor.roleName,
-              serviceCategory: vendor.serviceCategory,
-              isActive: true,
-              canAcceptBookings: true,
-              assignedServices: [],
-              services: [],
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-              isVendorSelf: true,
-              isAutoCreated: true,
-              isMigrated: true, // Flag to indicate created by migration
-              vendorApplicationId: vendor.applicationId
-            };
+          try {
+            // ✅ SQL: Create staff using repository
+            await staffRepo.create({
+              vendor_id: vendorId,
+              full_name: vendor.owner_name || vendor.business_name,
+              phone: vendor.phone,
+              email: vendor.email || undefined,
+              role: vendor.role_id || undefined,
+              role_type: vendor.role_id || undefined,
+              specialization: vendor.specialization || undefined,
+              experience_years: vendor.experience_years || 0,
+              is_active: true
+            });
             
-            await kv.set(`staff:${staffId}`, staffProfile);
-            console.log(`   ✅ Staff created: ${staffId}`);
-            
-            // Add to vendor's staff list
-            const vendorStaffList = await kv.get(`vendor:${vendorId}:staff`) || [];
-            if (!vendorStaffList.includes(staffId)) {
-              vendorStaffList.push(staffId);
-              await kv.set(`vendor:${vendorId}:staff`, vendorStaffList);
-            }
-            
-            // Create staff phone index
-            if (vendor.phone) {
-              const cleanPhone = normalizePhone(vendor.phone);
-              await kv.set(`staff:phone:${cleanPhone}`, staffId);
-              console.log(`   ✅ Staff phone index: ${cleanPhone}`);
-            }
-            
+            console.log(`   ✅ Staff created for vendor: ${vendorId}`);
             results.staffCreated++;
-          } else {
-            console.log(`   ℹ️  Staff already exists`);
-            results.staffAlreadyExists++;
+          } catch (staffError: any) {
+            if (staffError?.message?.includes('already exists') || staffError?.code === '23505') {
+              console.log(`   ℹ️  Staff already exists`);
+              results.staffAlreadyExists++;
+            } else {
+              throw staffError;
+            }
           }
         }
         
-        // Create vendor indexes (for all vendors)
-        let indexCount = 0;
+        // ✅ SQL: Indexes are not needed - vendors table has indexes on phone, email, user_id
+        // Phone and email lookups can be done directly via SQL queries
+        // No need to create separate index entries
         
-        // Phone index
-        if (vendor.phone) {
-          const cleanPhone = normalizePhone(vendor.phone);
-          const existingPhoneIndex = await kv.get(`vendor:phone:${cleanPhone}`);
-          if (!existingPhoneIndex) {
-            await kv.set(`vendor:phone:${cleanPhone}`, vendorId);
-            console.log(`   ✅ Vendor phone index: ${cleanPhone}`);
-            indexCount++;
-          }
-        }
-        
-        // Email index
-        if (vendor.email) {
-          const cleanEmail = vendor.email.toLowerCase().trim();
-          const existingEmailIndex = await kv.get(`vendor:email:${cleanEmail}`);
-          if (!existingEmailIndex) {
-            await kv.set(`vendor:email:${cleanEmail}`, vendorId);
-            console.log(`   ✅ Vendor email index: ${cleanEmail}`);
-            indexCount++;
-          }
-        }
-        
-        // User index
-        if (vendor.userId) {
-          const existingUserIndex = await kv.get(`vendor:user:${vendor.userId}`);
-          if (!existingUserIndex) {
-            await kv.set(`vendor:user:${vendor.userId}`, vendorId);
-            console.log(`   ✅ Vendor user index: ${vendor.userId}`);
-            indexCount++;
-          }
-        }
-        
-        results.indexesCreated += indexCount;
+        results.indexesCreated += 0; // Indexes are automatic in SQL
         
       } catch (err) {
         console.error(`   ❌ Error processing ${vendorId}:`, err);

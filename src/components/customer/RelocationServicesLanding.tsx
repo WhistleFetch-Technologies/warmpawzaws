@@ -4,7 +4,7 @@ import { Button } from '../ui/button';
 import { Card } from '../ui/card';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { UniversalVendorCard } from './UniversalVendorCard';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 interface RelocationServicesLandingProps {
   onBack: () => void;

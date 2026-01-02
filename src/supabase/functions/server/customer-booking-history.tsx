@@ -1,6 +1,13 @@
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
 // Customer booking history endpoints
-import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
+import { Hono } from 'hono';
+import {
+  getBookingsRepository,
+  getVendorsRepository,
+  getPrescriptionsRepository,
+  getCustomersRepository,
+  getDbClient
+} from '../../../supabase/lib/repositories/index';
 
 export function registerCustomerBookingHistory(app: Hono) {
 
@@ -15,13 +22,11 @@ app.get("/make-server-3dd53475/customer/bookings/history/:phone", async (c) => {
     
     console.log(`📚 [BOOKING-HISTORY] Fetching bookings for customer: ${cleanPhone}`);
     
-    // Get customer's booking list
-    const customerBookingsKey = `customer:bookings:${cleanPhone}`;
-    const bookingIds = await kv.get(customerBookingsKey) || [];
+    // ✅ SQL: Get customer and their bookings from bookings table
+    const customersRepo = getCustomersRepository();
+    const customer = await customersRepo.findByPhone(cleanPhone);
     
-    console.log(`   Found ${bookingIds.length} booking IDs`);
-    
-    if (bookingIds.length === 0) {
+    if (!customer) {
       return c.json({
         success: true,
         bookings: [],
@@ -30,19 +35,15 @@ app.get("/make-server-3dd53475/customer/bookings/history/:phone", async (c) => {
       });
     }
     
-    // Fetch all booking details
-    const bookings = [];
-    for (const bookingId of bookingIds) {
-      const booking = await kv.get(`booking:${bookingId}`);
-      if (booking) {
-        bookings.push(booking);
-      }
-    }
+    const bookingsRepo = getBookingsRepository();
+    const bookings = await bookingsRepo.findByCustomer(customer.id);
     
-    // Sort by date (newest first)
+    console.log(`   Found ${bookings.length} bookings`);
+    
+    // Sort by date (newest first) - already sorted by repository if needed
     bookings.sort((a, b) => {
-      const dateA = new Date(a.createdAt || a.scheduledDate).getTime();
-      const dateB = new Date(b.createdAt || b.scheduledDate).getTime();
+      const dateA = new Date(a.created_at || a.booking_date).getTime();
+      const dateB = new Date(b.created_at || b.booking_date).getTime();
       return dateB - dateA;
     });
     
@@ -81,11 +82,11 @@ app.get("/make-server-3dd53475/customer/bookings/follow-up-eligible/:phone", asy
     
     console.log(`🔄 [FOLLOW-UP-ELIGIBLE] Checking follow-up eligible bookings for: ${cleanPhone}`);
     
-    // Get customer's booking list
-    const customerBookingsKey = `customer:bookings:${cleanPhone}`;
-    const bookingIds = await kv.get(customerBookingsKey) || [];
+    // ✅ SQL: Get customer and their bookings from bookings table
+    const customersRepo = getCustomersRepository();
+    const customer = await customersRepo.findByPhone(cleanPhone);
     
-    if (bookingIds.length === 0) {
+    if (!customer) {
       return c.json({
         success: true,
         bookings: [],
@@ -93,19 +94,21 @@ app.get("/make-server-3dd53475/customer/bookings/follow-up-eligible/:phone", asy
       });
     }
     
+    const bookingsRepo = getBookingsRepository();
+    const allBookings = await bookingsRepo.findByCustomer(customer.id);
+    
     // Fetch all bookings and filter for eligible ones
     const eligibleBookings = [];
     const now = new Date();
     
-    for (const bookingId of bookingIds) {
-      const booking = await kv.get(`booking:${bookingId}`);
+    for (const booking of allBookings) {
       
       if (!booking || booking.status !== 'completed') {
         continue;
       }
       
       // Check if within 7-day window
-      const completedDate = booking.otpVerifiedAt || booking.completedAt;
+      const completedDate = booking.completed_at || booking.otp_verified_at;
       if (!completedDate) {
         continue;
       }
@@ -117,22 +120,30 @@ app.get("/make-server-3dd53475/customer/bookings/follow-up-eligible/:phone", asy
         continue;
       }
       
-      // Check if follow-up already booked
-      const existingFollowup = await kv.get(`booking:${bookingId}:followup`);
+      // ✅ SQL: Check if follow-up already booked in bookings table
+      const db = getDbClient();
+      const { data: existingFollowup } = await db
+        .from('bookings')
+        .select('id')
+        .eq('customer_id', booking.customer_id)
+        .eq('follow_up_booking_id', booking.id)
+        .single();
+      
       if (existingFollowup) {
         continue;
       }
       
-      // Fetch vendor details to get vendor phone
-      const vendor = await kv.get(`vendor:${booking.vendorId}`);
+      // ✅ SQL: Fetch vendor details to get vendor phone
+      const vendorsRepo = getVendorsRepository();
+      const vendor = await vendorsRepo.findById(booking.vendor_id || '');
       
       // Try to get vendor phone from vendor object first
-      let vendorPhone = vendor?.phone || vendor?.mobile || vendor?.phoneNumber || vendor?.contactNumber || null;
+      let vendorPhone = vendor?.phone || vendor?.mobile || vendor?.contact_number || null;
       
       // Always try to extract phone from vendorId as fallback
-      if (!vendorPhone && booking.vendorId) {
-        if (booking.vendorId.startsWith('vendor_')) {
-          const phoneFromId = booking.vendorId.replace('vendor_', '');
+      if (!vendorPhone && booking.vendor_id) {
+        if (booking.vendor_id.startsWith('vendor_')) {
+          const phoneFromId = booking.vendor_id.replace('vendor_', '');
           // Remove any non-digit characters just in case
           const digitsOnly = phoneFromId.replace(/\D/g, '');
           if (digitsOnly.length === 10) {
@@ -144,47 +155,47 @@ app.get("/make-server-3dd53475/customer/bookings/follow-up-eligible/:phone", asy
       
       // Debug logging
       console.log(`📋 [FOLLOW-UP] Processing booking: ${booking.id}`);
-      console.log(`   Vendor ID: ${booking.vendorId}`);
+      console.log(`   Vendor ID: ${booking.vendor_id}`);
       console.log(`   Vendor found in DB: ${!!vendor}`);
       console.log(`   Final vendor phone: ${vendorPhone || 'NULL'}`);
       
       if (!vendorPhone) {
         console.log(`❌ No vendor phone available for booking:`, {
           bookingId: booking.id,
-          vendorId: booking.vendorId,
-          vendorName: booking.vendorName,
+          vendorId: booking.vendor_id,
+          vendorName: booking.vendor_name,
           vendorObjectKeys: vendor ? Object.keys(vendor) : 'vendor_not_found'
         });
       }
       
-      // Check for prescription
-      const prescriptionId = booking.prescriptionId || null;
+      // ✅ SQL: Check for prescription from prescriptions table
+      const prescriptionsRepo = getPrescriptionsRepository();
       let prescription = null;
-      if (prescriptionId) {
-        prescription = await kv.get(`prescription:${prescriptionId}`);
+      if (booking.prescription_id) {
+        prescription = await prescriptionsRepo.findById(booking.prescription_id);
       }
       
       eligibleBookings.push({
         bookingId: booking.id,
-        serviceName: booking.serviceName,
-        serviceType: booking.serviceType,
-        serviceStyle: booking.serviceStyle || booking.serviceType,
-        vendorId: booking.vendorId,
-        vendorName: booking.vendorName,
+        serviceName: booking.service_name || booking.serviceName,
+        serviceType: booking.service_type || booking.serviceType,
+        serviceStyle: booking.service_style || booking.serviceStyle || booking.service_type,
+        vendorId: booking.vendor_id || booking.vendorId,
+        vendorName: booking.vendor_name || booking.vendorName,
         vendorPhone: vendorPhone,
-        customerPhone: booking.customerPhone,
-        customerName: booking.customerName,
-        petId: booking.petId,
-        petName: booking.petName,
-        scheduledDate: booking.scheduledDate || booking.bookingDate,
-        scheduledTime: booking.scheduledTime || booking.bookingTime,
+        customerPhone: booking.customer_phone || booking.customerPhone,
+        customerName: booking.customer_name || booking.customerName,
+        petId: booking.pet_id || booking.petId,
+        petName: booking.pet_name || booking.petName,
+        scheduledDate: booking.booking_date || booking.scheduledDate,
+        scheduledTime: booking.booking_time || booking.scheduledTime,
         completedAt: completedDate,
         completedDate: completedDate,
         daysAgo: daysSinceCompletion,
         daysRemaining: 7 - daysSinceCompletion,
         hasPrescription: !!prescription,
-        prescriptionUrl: prescription?.prescriptionUrl || null,
-        prescriptionId: prescriptionId,
+        prescriptionUrl: prescription?.prescription_file_url || prescription?.prescriptionUrl || null,
+        prescriptionId: booking.prescription_id || null,
         prescriptionNotes: prescription?.notes || null
       });
     }
@@ -219,13 +230,11 @@ app.get("/make-server-3dd53475/customer/bookings/pet/:phone/:petId", async (c) =
     
     console.log(`🐾 [PET-BOOKING-HISTORY] Fetching bookings for pet: ${petId}`);
     
-    // Get customer's booking list
-    const customerBookingsKey = `customer:bookings:${cleanPhone}`;
-    const bookingIds = await kv.get(customerBookingsKey) || [];
+    // ✅ SQL: Get customer and their bookings filtered by pet from bookings table
+    const customersRepo = getCustomersRepository();
+    const customer = await customersRepo.findByPhone(cleanPhone);
     
-    console.log(`   Found ${bookingIds.length} total customer bookings`);
-    
-    if (bookingIds.length === 0) {
+    if (!customer) {
       return c.json({
         success: true,
         bookings: [],
@@ -234,19 +243,20 @@ app.get("/make-server-3dd53475/customer/bookings/pet/:phone/:petId", async (c) =
       });
     }
     
-    // Fetch booking details and filter by petId
-    const petBookings = [];
-    for (const bookingId of bookingIds) {
-      const booking = await kv.get(`booking:${bookingId}`);
-      if (booking && booking.petId === petId) {
-        petBookings.push(booking);
-      }
-    }
+    const bookingsRepo = getBookingsRepository();
+    const allBookings = await bookingsRepo.findByCustomer(customer.id);
+    
+    // Filter by petId
+    const petBookings = allBookings.filter(booking => 
+      (booking.pet_id || booking.petId) === petId
+    );
+    
+    console.log(`   Found ${petBookings.length} bookings for pet ${petId}`);
     
     // Sort by date (newest first)
     petBookings.sort((a, b) => {
-      const dateA = new Date(a.createdAt || a.scheduledDate).getTime();
-      const dateB = new Date(b.createdAt || b.scheduledDate).getTime();
+      const dateA = new Date(a.created_at || a.booking_date).getTime();
+      const dateB = new Date(b.created_at || b.booking_date).getTime();
       return dateB - dateA;
     });
     
@@ -284,14 +294,16 @@ app.get("/make-server-3dd53475/customer/bookings/:bookingId", async (c) => {
     
     console.log(`🔍 [BOOKING-DETAIL] Fetching booking: ${bookingId}`);
     
-    const booking = await kv.get(`booking:${bookingId}`);
+    // ✅ SQL: Get booking from bookings table
+    const bookingsRepo = getBookingsRepository();
+    const booking = await bookingsRepo.findById(bookingId);
     
     if (!booking) {
       console.log(`❌ Booking not found: ${bookingId}`);
       return c.json({ error: 'Booking not found' }, 404);
     }
     
-    console.log(`✅ [BOOKING-DETAIL] Found booking: ${booking.serviceName}`);
+    console.log(`✅ [BOOKING-DETAIL] Found booking: ${booking.service_name || booking.serviceName}`);
     
     return c.json({
       success: true,

@@ -1,5 +1,7 @@
-import { Hono } from "npm:hono";
-import * as kv from "./kv_store.tsx";
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from "hono";
+import { getDbClient } from '../../../supabase/lib/db';
+import { getPromotionsRepository } from '../../../supabase/lib/repositories/index';
 
 const app = new Hono();
 
@@ -7,31 +9,28 @@ const app = new Hono();
 // 1. PROMOTIONS & MARKETING API
 // ==========================================
 
-// GET All Promotions (Admin)
+// ✅ SQL: GET All Promotions (Admin)
 app.get("/marketing/promotions", async (c) => {
   try {
-    const promotions = await kv.get("marketing:promotions") || [];
+    const promotionsRepo = getPromotionsRepository();
+    const promotions = await promotionsRepo.findAll();
     return c.json({ success: true, promotions });
   } catch (error) {
     return c.json({ success: false, error: String(error) }, 500);
   }
 });
 
-// CREATE Promotion (Admin)
+// ✅ SQL: CREATE Promotion (Admin)
 app.post("/marketing/promotions", async (c) => {
   try {
     const body = await c.req.json();
-    const promotions = await kv.get("marketing:promotions") || [];
+    const promotionsRepo = getPromotionsRepository();
     
-    const newPromotion = {
-      id: `promo_${Date.now()}`,
-      createdAt: new Date().toISOString(),
-      isActive: true,
-      ...body
-    };
-    
-    promotions.unshift(newPromotion);
-    await kv.set("marketing:promotions", promotions);
+    const newPromotion = await promotionsRepo.create({
+      ...body,
+      is_active: true,
+      created_at: new Date().toISOString()
+    });
     
     return c.json({ success: true, promotion: newPromotion });
   } catch (error) {
@@ -39,35 +38,36 @@ app.post("/marketing/promotions", async (c) => {
   }
 });
 
-// UPDATE Promotion (Admin)
+// ✅ SQL: UPDATE Promotion (Admin)
 app.put("/marketing/promotions/:id", async (c) => {
   try {
     const id = c.req.param("id");
     const body = await c.req.json();
-    const promotions = await kv.get("marketing:promotions") || [];
+    const promotionsRepo = getPromotionsRepository();
     
-    const index = promotions.findIndex((p: any) => p.id === id);
-    if (index === -1) {
+    const existing = await promotionsRepo.findById(id);
+    if (!existing) {
       return c.json({ success: false, error: "Promotion not found" }, 404);
     }
     
-    promotions[index] = { ...promotions[index], ...body, updatedAt: new Date().toISOString() };
-    await kv.set("marketing:promotions", promotions);
+    const updated = await promotionsRepo.update(id, {
+      ...body,
+      updated_at: new Date().toISOString()
+    });
     
-    return c.json({ success: true, promotion: promotions[index] });
+    return c.json({ success: true, promotion: updated });
   } catch (error) {
     return c.json({ success: false, error: String(error) }, 500);
   }
 });
 
-// DELETE Promotion (Admin)
+// ✅ SQL: DELETE Promotion (Admin)
 app.delete("/marketing/promotions/:id", async (c) => {
   try {
     const id = c.req.param("id");
-    let promotions = await kv.get("marketing:promotions") || [];
+    const promotionsRepo = getPromotionsRepository();
     
-    promotions = promotions.filter((p: any) => p.id !== id);
-    await kv.set("marketing:promotions", promotions);
+    await promotionsRepo.delete(id);
     
     return c.json({ success: true, message: "Deleted successfully" });
   } catch (error) {
@@ -84,11 +84,13 @@ app.get("/customer/marketing/promotions", async (c) => {
     const lat = c.req.query("lat");
     const lon = c.req.query("lon");
     
-    const allPromotions = await kv.get("marketing:promotions") || [];
+    // ✅ SQL: Get all active promotions
+    const promotionsRepo = getPromotionsRepository();
+    const allPromotions = await promotionsRepo.findAll();
     
     // Filter logic
     const filtered = allPromotions.filter((p: any) => {
-      if (!p.isActive) return false;
+      if (!p.is_active && !p.isActive) return false;
       
       // Role Filter
       if (p.serviceCategory && p.serviceCategory !== 'all' && p.serviceCategory !== roleId) return false;
@@ -128,11 +130,20 @@ const DEFAULT_UI_CONFIG = {
   ]
 };
 
-// GET UI Config (Customer/Admin)
+// ✅ SQL: GET UI Config (Customer/Admin)
 app.get("/config/ui/dashboard", async (c) => {
   try {
     const roleId = c.req.query("roleId");
-    const storedConfig = await kv.get("config:ui:dashboard") || DEFAULT_UI_CONFIG;
+    const db = getDbClient();
+    
+    // Get UI config from platform_settings
+    const { data: settings } = await db
+      .from('platform_settings')
+      .select('*')
+      .eq('key', 'ui_dashboard_config')
+      .single();
+    
+    const storedConfig = settings?.value || DEFAULT_UI_CONFIG;
     
     if (roleId) {
       return c.json({ success: true, config: storedConfig[roleId] || [] });
@@ -144,7 +155,7 @@ app.get("/config/ui/dashboard", async (c) => {
   }
 });
 
-// UPDATE UI Config (Admin)
+// ✅ SQL: UPDATE UI Config (Admin)
 app.put("/config/ui/dashboard", async (c) => {
   try {
     const body = await c.req.json(); // Expects { roleId, config: [] }
@@ -154,10 +165,28 @@ app.put("/config/ui/dashboard", async (c) => {
       return c.json({ success: false, error: "Invalid input" }, 400);
     }
     
-    const currentConfig = await kv.get("config:ui:dashboard") || DEFAULT_UI_CONFIG;
+    const db = getDbClient();
+    
+    // Get current config
+    const { data: existing } = await db
+      .from('platform_settings')
+      .select('*')
+      .eq('key', 'ui_dashboard_config')
+      .single();
+    
+    const currentConfig = existing?.value || DEFAULT_UI_CONFIG;
     currentConfig[roleId] = config;
     
-    await kv.set("config:ui:dashboard", currentConfig);
+    // Upsert UI config
+    await db
+      .from('platform_settings')
+      .upsert({
+        key: 'ui_dashboard_config',
+        value: currentConfig,
+        updated_at: new Date().toISOString()
+      }, {
+        onConflict: 'key'
+      });
     
     return c.json({ success: true, config: currentConfig });
   } catch (error) {

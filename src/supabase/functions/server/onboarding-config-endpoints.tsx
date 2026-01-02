@@ -1,8 +1,9 @@
-import { Hono } from 'npm:hono@4';
-import { getStandardFieldsForRole, INDIAN_BANKS } from './common-onboarding-fields.tsx';
-import { createClient } from 'jsr:@supabase/supabase-js@2';
-import { normalizePhone, createVendorId } from './phone-utils.tsx';
-import { determineServiceCategory } from './service-category-mapping.tsx';
+// ✅ S3 MIGRATION: Supabase Storage replaced with AWS S3
+import { Hono } from 'hono';
+import { getStandardFieldsForRole, INDIAN_BANKS } from './common-onboarding-fields';
+import { getS3Helper, uploadToS3 } from '../../../supabase/lib/storage/s3-helper';
+import { normalizePhone, createVendorId } from './phone-utils';
+import { determineServiceCategory } from './service-category-mapping';
 
 /**
  * Onboarding Configuration Management Endpoints
@@ -10,10 +11,7 @@ import { determineServiceCategory } from './service-category-mapping.tsx';
  */
 export function onboardingConfigEndpoints(app: Hono, kv: any) {
   
-  // Initialize Supabase client for document upload
-  const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
-  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
-  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  // S3 storage is configured via PlatformSettingsRepository
   
   /**
    * Get onboarding configuration for a role
@@ -586,59 +584,40 @@ export function onboardingConfigEndpoints(app: Hono, kv: any) {
     try {
       const { vendorId, documentType, file, fileName, fileData } = await c.req.json();
 
-      const bucketName = 'make-3dd53475-vendor-documents';
-      
-      // Ensure bucket exists
-      const { data: buckets } = await supabase.storage.listBuckets();
-      const bucketExists = buckets?.some(bucket => bucket.name === bucketName);
-      
-      if (!bucketExists) {
-        const { error: bucketError } = await supabase.storage.createBucket(bucketName, {
-          public: false,
-          fileSizeLimit: 10485760, // 10MB
-          allowedMimeTypes: ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf']
-        });
-        
-        // Ignore "already exists" error (409)
-        if (bucketError && bucketError.statusCode !== '409' && !bucketError.message?.includes('already exists')) {
-          console.error('❌ Error creating bucket:', bucketError);
-          // Continue anyway - bucket might exist from race condition
-        }
-      }
+      // ✅ S3: Upload document to S3
+      const s3 = getS3Helper();
+      const s3Key = `vendor-documents/${vendorId}/${documentType}/${fileName}`;
 
-      // Convert base64 to blob if needed
-      let fileBuffer;
+      // Convert base64 to buffer if needed
+      let fileBuffer: Uint8Array | Buffer;
+      let contentType = file?.type || 'image/jpeg';
+      
       if (fileData) {
         // Base64 data
         const base64Data = fileData.split(',')[1] || fileData;
         fileBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+      } else if (file) {
+        // File object
+        const arrayBuffer = await (file as File).arrayBuffer();
+        fileBuffer = new Uint8Array(arrayBuffer);
+        contentType = (file as File).type || contentType;
+      } else {
+        return c.json({ error: 'No file data provided' }, 400);
       }
 
-      // Upload file
-      const filePath = `${vendorId}/${documentType}/${fileName}`;
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from(bucketName)
-        .upload(filePath, fileBuffer, {
-          contentType: file?.type || 'image/jpeg',
-          upsert: true
-        });
+      // Upload to S3
+      const uploadResult = await s3.uploadFile(s3Key, fileBuffer, {
+        contentType,
+        acl: 'private',
+      });
 
-      if (uploadError) {
-        console.error('Upload error:', uploadError);
-        return c.json({ error: uploadError.message }, 500);
-      }
-
-      // Create signed URL (valid for 1 year)
-      const { data: signedUrlData } = await supabase.storage
-        .from(bucketName)
-        .createSignedUrl(filePath, 31536000); // 1 year in seconds
-
-      console.log(`✅ Document uploaded: ${filePath}`);
+      console.log(`✅ Document uploaded: ${s3Key}`);
       
       return c.json({ 
         success: true, 
-        path: filePath,
-        url: signedUrlData?.signedUrl
+        path: s3Key,
+        key: s3Key,
+        url: uploadResult.signedUrl || uploadResult.url
       });
     } catch (error) {
       console.error('Error uploading document:', error);
@@ -654,19 +633,20 @@ export function onboardingConfigEndpoints(app: Hono, kv: any) {
     try {
       const { vendorId, documentType, fileName } = c.req.param();
       
-      const bucketName = 'make-3dd53475-vendor-documents';
-      const filePath = `${vendorId}/${documentType}/${fileName}`;
+      const s3Key = `vendor-documents/${vendorId}/${documentType}/${fileName}`;
 
-      // Create signed URL (valid for 1 hour)
-      const { data: signedUrlData, error } = await supabase.storage
-        .from(bucketName)
-        .createSignedUrl(filePath, 3600); // 1 hour
-
-      if (error) {
-        return c.json({ error: error.message }, 404);
+      // ✅ S3: Check if file exists and generate signed URL
+      const s3 = getS3Helper();
+      const fileExists = await s3.fileExists(s3Key);
+      
+      if (!fileExists) {
+        return c.json({ error: 'Document not found' }, 404);
       }
 
-      return c.json({ url: signedUrlData?.signedUrl });
+      // Generate signed URL (valid for 1 hour)
+      const signedUrl = await s3.getSignedUrl(s3Key, 3600);
+
+      return c.json({ url: signedUrl });
     } catch (error) {
       console.error('Error getting document URL:', error);
       return c.json({ error: String(error) }, 500);

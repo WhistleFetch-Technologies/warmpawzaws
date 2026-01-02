@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
 import { Badge } from '../ui/badge';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { MessageCircle, Send, X, Paperclip, FileText, Video, Phone, Clock } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';

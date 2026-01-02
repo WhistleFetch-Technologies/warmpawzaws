@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { LoadingState, ErrorState, EmptyState } from '../ui/states';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -7,6 +8,7 @@ import { Card } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { Star, MapPin, Clock, ArrowLeft } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { ServiceStyleFilter } from './ServiceStyleFilter'; // ✅ INTEGRATION: Add ServiceStyleFilter component
 
 interface Service {
   id: string;
@@ -44,7 +46,7 @@ export function CustomerServicesPage({ onBack, onNavigate, initialFilters }: Cus
   
   // Filters
   const [category, setCategory] = useState(initialFilters?.category || '');
-  const [serviceStyle, setServiceStyle] = useState<'at_home' | 'at_center' | 'tele' | 'all'>('all');
+  const [serviceStyle, setServiceStyle] = useState<'at_home' | 'at_center' | 'tele' | 'delivery' | 'package' | 'all'>('all');
   const [roleId, setRoleId] = useState(initialFilters?.roleId || '');
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -166,17 +168,15 @@ export function CustomerServicesPage({ onBack, onNavigate, initialFilters }: Cus
               </SelectContent>
             </Select>
             
-            <Select value={serviceStyle} onValueChange={(v: any) => setServiceStyle(v)}>
-              <SelectTrigger className="w-[140px]">
-                <SelectValue placeholder="Style" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Styles</SelectItem>
-                <SelectItem value="at_home">At Home</SelectItem>
-                <SelectItem value="at_center">At Center</SelectItem>
-                <SelectItem value="tele">Teleconsultation</SelectItem>
-              </SelectContent>
-            </Select>
+            {/* ✅ INTEGRATION: Replace Select with ServiceStyleFilter component */}
+            <div className="w-full md:w-auto">
+              <ServiceStyleFilter
+                selectedStyle={serviceStyle}
+                onStyleChange={(style) => setServiceStyle(style)}
+                availableStyles={['at_center', 'at_home', 'tele', 'delivery', 'package']}
+                className="w-full"
+              />
+            </div>
             
             <Button
               variant={location ? "default" : "outline"}

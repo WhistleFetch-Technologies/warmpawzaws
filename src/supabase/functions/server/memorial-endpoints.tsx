@@ -3,8 +3,9 @@
  * Handles pet memorial services, cremation, and remembrance options
  */
 
-import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from 'hono';
+import { getDbClient } from '../../../supabase/lib/db';
 
 const app = new Hono();
 
@@ -88,15 +89,18 @@ app.get('/:vendorId/services', async (c) => {
     const vendorId = c.req.param('vendorId');
     const { status } = c.req.query();
     
-    let services = await kv.getByPrefix<MemorialService>(`memorial:service:${vendorId}:`);
+    // ✅ SQL: Get memorial services
+    const db = getDbClient();
+    let query = db
+      .from('memorial_services')
+      .select('*')
+      .eq('vendor_id', vendorId);
     
-    // Filter by status if specified
     if (status) {
-      services = services.filter(s => s.status === status);
+      query = query.eq('status', status);
     }
     
-    // Sort by date (most recent first)
-    services.sort((a, b) => new Date(b.scheduledDate).getTime() - new Date(a.scheduledDate).getTime());
+    const { data: services } = await query.order('scheduled_date', { ascending: false });
     
     return c.json({
       success: true,
@@ -122,7 +126,14 @@ app.get('/:vendorId/services/:serviceId', async (c) => {
   try {
     const { vendorId, serviceId } = c.req.param();
     
-    const service = await kv.get<MemorialService>(`memorial:service:${vendorId}:${serviceId}`);
+    // ✅ SQL: Get memorial service
+    const db = getDbClient();
+    const { data: service } = await db
+      .from('memorial_services')
+      .select('*')
+      .eq('vendor_id', vendorId)
+      .eq('id', serviceId)
+      .single();
     
     if (!service) {
       return c.json({ 
@@ -183,7 +194,35 @@ app.post('/:vendorId/services', async (c) => {
       updatedAt: now
     };
     
-    await kv.set(`memorial:service:${vendorId}:${serviceId}`, service);
+    // ✅ SQL: Create memorial service
+    const db = getDbClient();
+    await db
+      .from('memorial_services')
+      .insert({
+        id: serviceId,
+        vendor_id: vendorId,
+        customer_id: body.customerId,
+        customer_name: body.customerName,
+        pet_id: body.petId,
+        pet_name: body.petName,
+        pet_type: body.petType,
+        pet_breed: body.petBreed,
+        service_type: body.serviceType,
+        package_name: body.packageName,
+        package_description: body.packageDescription,
+        price: body.price,
+        cremation_type: body.cremationType,
+        ashes_return: body.ashesReturn || false,
+        urn_type: body.urnType,
+        ceremonies_included: body.ceremoniesIncluded || [],
+        memorial_items: body.memorialItems || [],
+        status: 'scheduled',
+        scheduled_date: body.scheduledDate,
+        notes: body.notes,
+        special_requests: body.specialRequests,
+        created_at: now,
+        updated_at: now
+      });
     
     return c.json({
       success: true,
@@ -209,7 +248,14 @@ app.put('/:vendorId/services/:serviceId', async (c) => {
     const { vendorId, serviceId } = c.req.param();
     const body = await c.req.json();
     
-    const existing = await kv.get<MemorialService>(`memorial:service:${vendorId}:${serviceId}`);
+    // ✅ SQL: Get and update memorial service
+    const db = getDbClient();
+    const { data: existing } = await db
+      .from('memorial_services')
+      .select('*')
+      .eq('vendor_id', vendorId)
+      .eq('id', serviceId)
+      .single();
     
     if (!existing) {
       return c.json({ 
@@ -218,15 +264,43 @@ app.put('/:vendorId/services/:serviceId', async (c) => {
       }, 404);
     }
     
-    const updated: MemorialService = {
-      ...existing,
-      ...body,
-      id: serviceId,
-      vendorId,
-      updatedAt: new Date().toISOString()
+    const updateData: any = {
+      updated_at: new Date().toISOString()
     };
     
-    await kv.set(`memorial:service:${vendorId}:${serviceId}`, updated);
+    // Map body fields to SQL columns
+    if (body.customerId) updateData.customer_id = body.customerId;
+    if (body.customerName) updateData.customer_name = body.customerName;
+    if (body.petId) updateData.pet_id = body.petId;
+    if (body.petName) updateData.pet_name = body.petName;
+    if (body.petType) updateData.pet_type = body.petType;
+    if (body.petBreed) updateData.pet_breed = body.petBreed;
+    if (body.serviceType) updateData.service_type = body.serviceType;
+    if (body.packageName) updateData.package_name = body.packageName;
+    if (body.packageDescription) updateData.package_description = body.packageDescription;
+    if (body.price !== undefined) updateData.price = body.price;
+    if (body.cremationType) updateData.cremation_type = body.cremationType;
+    if (body.ashesReturn !== undefined) updateData.ashes_return = body.ashesReturn;
+    if (body.urnType) updateData.urn_type = body.urnType;
+    if (body.ceremoniesIncluded) updateData.ceremonies_included = body.ceremoniesIncluded;
+    if (body.memorialItems) updateData.memorial_items = body.memorialItems;
+    if (body.status) updateData.status = body.status;
+    if (body.scheduledDate) updateData.scheduled_date = body.scheduledDate;
+    if (body.completedDate) updateData.completed_date = body.completedDate;
+    if (body.notes !== undefined) updateData.notes = body.notes;
+    if (body.specialRequests) updateData.special_requests = body.specialRequests;
+    
+    await db
+      .from('memorial_services')
+      .update(updateData)
+      .eq('id', serviceId)
+      .eq('vendor_id', vendorId);
+    
+    const { data: updated } = await db
+      .from('memorial_services')
+      .select('*')
+      .eq('id', serviceId)
+      .single();
     
     return c.json({
       success: true,
@@ -252,7 +326,14 @@ app.post('/:vendorId/services/:serviceId/status', async (c) => {
     const { vendorId, serviceId } = c.req.param();
     const { status } = await c.req.json();
     
-    const service = await kv.get<MemorialService>(`memorial:service:${vendorId}:${serviceId}`);
+    // ✅ SQL: Get memorial service
+    const db = getDbClient();
+    const { data: service } = await db
+      .from('memorial_services')
+      .select('*')
+      .eq('vendor_id', vendorId)
+      .eq('id', serviceId)
+      .single();
     
     if (!service) {
       return c.json({ 
@@ -262,14 +343,21 @@ app.post('/:vendorId/services/:serviceId/status', async (c) => {
     }
     
     const now = new Date().toISOString();
-    const updated: MemorialService = {
-      ...service,
-      status,
-      completedDate: status === 'completed' ? now : service.completedDate,
-      updatedAt: now
-    };
+    await db
+      .from('memorial_services')
+      .update({
+        status,
+        completed_date: status === 'completed' ? now : service.completed_date,
+        updated_at: now
+      })
+      .eq('id', serviceId)
+      .eq('vendor_id', vendorId);
     
-    await kv.set(`memorial:service:${vendorId}:${serviceId}`, updated);
+    const { data: updated } = await db
+      .from('memorial_services')
+      .select('*')
+      .eq('id', serviceId)
+      .single();
     
     return c.json({
       success: true,
@@ -295,15 +383,18 @@ app.get('/:vendorId/tributes', async (c) => {
     const vendorId = c.req.param('vendorId');
     const { isPublic } = c.req.query();
     
-    let tributes = await kv.getByPrefix<MemorialTribute>(`memorial:tribute:${vendorId}:`);
+    // ✅ SQL: Get memorial tributes
+    const db = getDbClient();
+    let query = db
+      .from('memorial_tributes')
+      .select('*')
+      .eq('vendor_id', vendorId);
     
-    // Filter by public status if specified
     if (isPublic !== undefined) {
-      tributes = tributes.filter(t => t.isPublic === (isPublic === 'true'));
+      query = query.eq('is_public', isPublic === 'true');
     }
     
-    // Sort by date (most recent first)
-    tributes.sort((a, b) => new Date(b.dateOfPassing).getTime() - new Date(a.dateOfPassing).getTime());
+    const { data: tributes } = await query.order('date_of_passing', { ascending: false });
     
     return c.json({
       success: true,
@@ -348,7 +439,25 @@ app.post('/:vendorId/tributes', async (c) => {
       updatedAt: now
     };
     
-    await kv.set(`memorial:tribute:${vendorId}:${tributeId}`, tribute);
+    // ✅ SQL: Create memorial tribute
+    const db = getDbClient();
+    await db
+      .from('memorial_tributes')
+      .insert({
+        id: tributeId,
+        vendor_id: vendorId,
+        service_id: body.serviceId,
+        pet_name: body.petName,
+        pet_image: body.petImage,
+        date_of_birth: body.dateOfBirth,
+        date_of_passing: body.dateOfPassing,
+        epitaph: body.epitaph,
+        memories: body.memories || [],
+        photos: body.photos || [],
+        is_public: body.isPublic || false,
+        created_at: now,
+        updated_at: now
+      });
     
     return c.json({
       success: true,
@@ -374,15 +483,18 @@ app.get('/:vendorId/products', async (c) => {
     const vendorId = c.req.param('vendorId');
     const { type } = c.req.query();
     
-    let products = await kv.getByPrefix<MemorialProduct>(`memorial:product:${vendorId}:`);
+    // ✅ SQL: Get memorial products
+    const db = getDbClient();
+    let query = db
+      .from('memorial_products')
+      .select('*')
+      .eq('vendor_id', vendorId);
     
-    // Filter by type if specified
     if (type) {
-      products = products.filter(p => p.type === type);
+      query = query.eq('type', type);
     }
     
-    // Sort by name
-    products.sort((a, b) => a.name.localeCompare(b.name));
+    const { data: products } = await query.order('name', { ascending: true });
     
     return c.json({
       success: true,
@@ -429,7 +541,26 @@ app.post('/:vendorId/products', async (c) => {
       updatedAt: now
     };
     
-    await kv.set(`memorial:product:${vendorId}:${productId}`, product);
+    // ✅ SQL: Create memorial product
+    const db = getDbClient();
+    await db
+      .from('memorial_products')
+      .insert({
+        id: productId,
+        vendor_id: vendorId,
+        name: body.name,
+        type: body.type,
+        description: body.description,
+        material: body.material,
+        size: body.size,
+        images: body.images || [],
+        price: body.price,
+        in_stock: body.inStock !== false,
+        customizable: body.customizable || false,
+        customization_options: body.customizationOptions,
+        created_at: now,
+        updated_at: now
+      });
     
     return c.json({
       success: true,

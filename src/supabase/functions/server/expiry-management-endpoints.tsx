@@ -3,8 +3,8 @@
  * Handles product expiry tracking, alerts, and batch management for pharmacies and stores
  */
 
-import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
+import { Hono } from 'hono';
+import * as kv from './kv_store';
 
 const app = new Hono();
 

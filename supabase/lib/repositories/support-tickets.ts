@@ -213,6 +213,13 @@ export class SupportTicketsRepository {
       if (updates.attachments !== undefined) updateData.attachments = updates.attachments;
       if (updates.internalNotes !== undefined) updateData.internal_notes = updates.internalNotes;
 
+      // Support for messages array stored in internal_notes JSONB
+      // Messages are stored as: { messages: [{ id, sender, content, timestamp, role, ... }] }
+      if ((updates as any).messages !== undefined) {
+        const existingNotes = updateData.internal_notes ? JSON.parse(updateData.internal_notes) : {};
+        updateData.internal_notes = JSON.stringify({ ...existingNotes, messages: (updates as any).messages });
+      }
+
       updateData.updated_at = new Date().toISOString();
 
       const { data, error } = await this.client
@@ -279,6 +286,17 @@ export class SupportTicketsRepository {
    * Map database row to SupportTicket
    */
   private mapTicketFromDb(row: any): SupportTicket {
+    // Parse messages from internal_notes JSONB if present
+    let messages: any[] = [];
+    if (row.internal_notes) {
+      try {
+        const notes = typeof row.internal_notes === 'string' ? JSON.parse(row.internal_notes) : row.internal_notes;
+        messages = notes.messages || [];
+      } catch (e) {
+        // If parsing fails, assume no messages
+      }
+    }
+
     return {
       id: row.id,
       ticketId: row.ticket_id,
@@ -303,8 +321,39 @@ export class SupportTicketsRepository {
       attachments: row.attachments || [],
       internalNotes: row.internal_notes || undefined,
       createdAt: row.created_at,
-      updatedAt: row.updated_at
-    };
+      updatedAt: row.updated_at,
+      // Add messages as a computed property for backward compatibility
+      ...(messages.length > 0 ? { messages } : {})
+    } as any;
+  }
+
+  /**
+   * Add message to ticket (stored in internal_notes JSONB)
+   */
+  async addMessage(ticketId: string, message: {
+    id: string;
+    sender: string;
+    content: string;
+    timestamp: string;
+    role: 'customer' | 'agent' | 'system';
+    action?: string;
+    metadata?: any;
+  }): Promise<void> {
+    const ticket = await this.getTicketById(ticketId);
+    if (!ticket) {
+      throw new Error('Ticket not found');
+    }
+
+    const notes = typeof ticket.internalNotes === 'string' 
+      ? JSON.parse(ticket.internalNotes || '{}') 
+      : (ticket.internalNotes || {});
+    
+    const messages = notes.messages || [];
+    messages.push(message);
+
+    await this.updateTicket(ticketId, {
+      internalNotes: JSON.stringify({ ...notes, messages })
+    } as any);
   }
 }
 

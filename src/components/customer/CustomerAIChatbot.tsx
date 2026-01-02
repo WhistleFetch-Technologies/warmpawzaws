@@ -5,7 +5,7 @@ import {
   ShoppingBag, Stethoscope, Calendar, HelpCircle, Zap 
 } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
 import { Badge } from '../ui/badge';
 

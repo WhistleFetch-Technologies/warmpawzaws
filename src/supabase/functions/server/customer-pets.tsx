@@ -1,5 +1,9 @@
-import { Hono } from "npm:hono@4";
-import * as kv from "./kv_store.tsx";
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from "hono";
+import { 
+  getCustomersRepository,
+  getPetsRepository
+} from "../../../supabase/lib/repositories/index";
 
 const customerPetsRoutes = new Hono();
 
@@ -14,21 +18,21 @@ customerPetsRoutes.get("/:phone", async (c) => {
 
     console.log(`\n📞 [GET-PETS] Fetching pets for phone: ${cleanPhone}`);
 
-    // Get customer ID from phone
-    const customerId = await kv.get(`customer:phone:${cleanPhone}`);
+    // ✅ SQL: Get customer by phone using repository
+    const customersRepo = getCustomersRepository();
+    const customer = await customersRepo.findByPhone(cleanPhone);
     
-    if (!customerId) {
+    if (!customer) {
       console.log(`❌ [GET-PETS] Customer not found for phone: ${cleanPhone}`);
       return c.json({ pets: [], message: "Customer not found" });
     }
 
+    const customerId = customer.id;
     console.log(`✅ [GET-PETS] Found customer ID: ${customerId}`);
 
-    // Get all pets for this customer
-    const allPets = await kv.getByPrefix("pet:");
-    const customerPets = allPets.filter((pet: any) => {
-      return pet.ownerId === customerId || pet.ownerPhone === cleanPhone;
-    });
+    // ✅ SQL: Get pets for this customer using repository
+    const petsRepo = getPetsRepository();
+    const customerPets = await petsRepo.findByCustomer(customerId);
 
     console.log(`✅ [GET-PETS] Found ${customerPets.length} pets for customer`);
 

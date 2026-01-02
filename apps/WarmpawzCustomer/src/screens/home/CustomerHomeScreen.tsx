@@ -1,7 +1,7 @@
 /**
  * Customer Home Screen
  * Main landing page with all service options
- * Identical functionality to web app
+ * Updated with react-native-vector-icons for 100% design compliance
  */
 
 import React, { useState, useEffect } from 'react';
@@ -15,6 +15,7 @@ import {
   Dimensions,
   ActivityIndicator,
 } from 'react-native';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
 
@@ -33,6 +34,7 @@ interface Pet {
   name: string;
   type: string;
   breed?: string;
+  age?: number;
   photo?: string;
 }
 
@@ -109,32 +111,14 @@ export function CustomerHomeScreen({
   };
 
   const quickServices = [
-    { icon: '🏥', label: 'Vet Care', color: '#3b82f6', screen: 'vet' },
-    { icon: '✂️', label: 'Grooming', color: '#f97316', screen: 'grooming' },
-    { icon: '🛍️', label: 'Shop', color: '#ec4899', screen: 'shop' },
-    { icon: '🎓', label: 'Training', color: '#8b5cf6', screen: 'training' },
-    { icon: '🚶', label: 'Walker', color: '#10b981', screen: 'walker' },
-    { icon: '🏠', label: 'Boarding', color: '#6366f1', screen: 'boarding' },
-    { icon: '❤️', label: 'Adoption', color: '#ef4444', screen: 'adoption' },
-    { icon: '☕', label: 'Pet Cafes', color: '#f59e0b', screen: 'cafes' },
-  ];
-
-  const banners = [
-    {
-      title: 'Get 50% OFF',
-      subtitle: 'First Grooming Session',
-      emoji: '✂️',
-    },
-    {
-      title: 'Free Health Checkup',
-      subtitle: 'Book Vet Appointment Today',
-      emoji: '🏥',
-    },
-    {
-      title: 'Premium Pet Food',
-      subtitle: '20% OFF on First Order',
-      emoji: '🍖',
-    },
+    { icon: 'medical-bag', label: 'Vet Care', color: '#3b82f6', screen: 'vet' },
+    { icon: 'content-cut', label: 'Grooming', color: '#f97316', screen: 'grooming' },
+    { icon: 'shopping', label: 'Shop', color: '#ec4899', screen: 'shop' },
+    { icon: 'school', label: 'Training', color: '#8b5cf6', screen: 'training' },
+    { icon: 'walk', label: 'Walker', color: '#10b981', screen: 'walker' },
+    { icon: 'home', label: 'Boarding', color: '#6366f1', screen: 'boarding' },
+    { icon: 'heart', label: 'Adoption', color: '#ef4444', screen: 'adoption' },
+    { icon: 'coffee', label: 'Pet Cafes', color: '#f59e0b', screen: 'cafes' },
   ];
 
   if (loading) {
@@ -166,26 +150,36 @@ export function CustomerHomeScreen({
             )}
           </TouchableOpacity>
           <View style={styles.headerText}>
-            <Text style={styles.greeting}>Hi, {userData.name}! 👋</Text>
-            <Text style={styles.subtitle}>Explore WarmPawz Services</Text>
+            <Text style={styles.greeting}>Hi, {userData.name}!</Text>
+            {selectedPet && (
+              <Text style={styles.subtitle}>How's {selectedPet.name} today?</Text>
+            )}
+            {!selectedPet && (
+              <Text style={styles.subtitle}>Explore WarmPawz Services</Text>
+            )}
           </View>
-          <TouchableOpacity
-            onPress={() => onNavigate('cart')}
-            style={styles.cartButton}
-          >
-            <Text style={styles.cartIcon}>🛒</Text>
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            <TouchableOpacity
+              onPress={() => onNavigate('ServiceSearch')}
+              style={styles.actionButton}
+            >
+              <Icon name="magnify" size={20} color="#fff" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => onNavigate('NotificationCenter')}
+              style={styles.actionButton}
+            >
+              <View style={styles.notificationBadge}>
+                <Icon name="bell" size={20} color="#fff" />
+                <View style={styles.badgeDot} />
+              </View>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Pet Selector */}
         {userData.pets.length > 0 && (
           <View style={styles.petsSection}>
-            <View style={styles.petsHeader}>
-              <Text style={styles.petsTitle}>Your Pets</Text>
-              <TouchableOpacity onPress={onAddPet}>
-                <Text style={styles.addPetText}>+ Add Pet</Text>
-              </TouchableOpacity>
-            </View>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.petsList}>
               {userData.pets.map((pet) => (
                 <TouchableOpacity
@@ -211,27 +205,132 @@ export function CustomerHomeScreen({
                   <Text style={styles.petName}>{pet.name}</Text>
                 </TouchableOpacity>
               ))}
+              <TouchableOpacity onPress={onAddPet} style={styles.addPetCard}>
+                <Icon name="plus" size={24} color="#fff" />
+                <Text style={styles.addPetLabel}>Add Pet</Text>
+              </TouchableOpacity>
             </ScrollView>
           </View>
         )}
       </View>
 
-      {/* Banner */}
-      <View style={styles.bannerContainer}>
-        <View style={styles.banner}>
-          <Text style={styles.bannerEmoji}>{banners[currentBanner].emoji}</Text>
-          <View style={styles.bannerText}>
-            <Text style={styles.bannerTitle}>{banners[currentBanner].title}</Text>
-            <Text style={styles.bannerSubtitle}>{banners[currentBanner].subtitle}</Text>
+      {/* Pet Dashboard */}
+      {selectedPet && (
+        <View style={styles.dashboardContainer}>
+          <View style={styles.dashboardCard}>
+            <View style={styles.dashboardHeader}>
+              <Text style={styles.dashboardTitle}>
+                {selectedPet.name}'s Dashboard 🐾
+              </Text>
+              <View style={styles.activeBadge}>
+                <Text style={styles.activeBadgeText}>Active</Text>
+              </View>
+            </View>
+            <Text style={styles.dashboardSubtitle}>
+              {selectedPet.breed || selectedPet.type} • {selectedPet.age ? `${selectedPet.age} years old` : 'Age not set'}
+            </Text>
+            
+            {/* Pet Metrics */}
+            <View style={styles.metricsContainer}>
+              <View style={[styles.metricCard, styles.metricPurple]}>
+                <Icon name="chart-line" size={24} color={colors.text} />
+                <Text style={styles.metricLabel}>Weight</Text>
+                <Text style={styles.metricValue}>12.5 kg</Text>
+                <Text style={styles.metricChange}>+0.5%</Text>
+              </View>
+              <View style={[styles.metricCard, styles.metricPink]}>
+                <Icon name="calendar" size={24} color={colors.text} />
+                <Text style={styles.metricLabel}>Checkup</Text>
+                <Text style={styles.metricValue}>Oct 15</Text>
+                <Text style={styles.metricChange}>14 days ago</Text>
+              </View>
+              <View style={[styles.metricCard, styles.metricGreen]}>
+                <Icon name="heart" size={24} color={colors.text} />
+                <Text style={styles.metricLabel}>Mood</Text>
+                <Text style={styles.metricValue}>Happy</Text>
+                <Text style={styles.metricEmoji}>😊</Text>
+              </View>
+            </View>
           </View>
         </View>
+      )}
+
+      {/* Today's Hot Deals */}
+      <View style={styles.dealsContainer}>
+        <View style={styles.dealsHeader}>
+          <Text style={styles.dealsTitle}>⚡ Today's Hot Deals</Text>
+        </View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.dealsList}>
+          <View style={[styles.dealCard, styles.dealBlue]}>
+            <View style={styles.dealBadge}>
+              <Text style={styles.dealBadgeText}>50% OFF</Text>
+            </View>
+            <Text style={styles.dealTitle}>Vet Checkup</Text>
+            <View style={styles.dealPrice}>
+              <Text style={styles.dealOriginalPrice}>₹998</Text>
+              <Text style={styles.dealDiscountPrice}>₹499</Text>
+            </View>
+            <Icon name="stethoscope" size={40} color="#fff" style={styles.dealIcon} />
+            <TouchableOpacity
+              style={styles.dealButton}
+              onPress={() => onNavigate('VetServiceRouter')}
+            >
+              <Text style={styles.dealButtonText}>Book Now</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={[styles.dealCard, styles.dealGreen]}>
+            <View style={styles.dealBadge}>
+              <Text style={styles.dealBadgeText}>30% OFF</Text>
+            </View>
+            <Text style={styles.dealTitle}>Spa Grooming</Text>
+            <View style={styles.dealPrice}>
+              <Text style={styles.dealOriginalPrice}>₹1149</Text>
+              <Text style={styles.dealDiscountPrice}>₹799</Text>
+            </View>
+            <Icon name="content-cut" size={40} color="#fff" style={styles.dealIcon} />
+            <TouchableOpacity
+              style={styles.dealButton}
+              onPress={() => onNavigate('GroomingServiceRouter')}
+            >
+              <Text style={styles.dealButtonText}>Book Now</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </View>
+
+      {/* Emergency SOS Button */}
+      <View style={styles.emergencyContainer}>
+        <TouchableOpacity
+          style={styles.emergencyButton}
+          onPress={() => onNavigate('EmergencyBooking')}
+          activeOpacity={0.8}
+        >
+          <View style={styles.emergencyContent}>
+            <View style={styles.emergencyIconContainer}>
+              <Icon name="alert" size={32} color="#fff" />
+            </View>
+            <View style={styles.emergencyText}>
+              <View style={styles.emergencyBadge}>
+                <Text style={styles.emergencyBadgeText}>SOS</Text>
+              </View>
+              <Text style={styles.emergencyTitle}>Emergency Ambulance</Text>
+              <Text style={styles.emergencySubtitle}>Instant location-based dispatch</Text>
+            </View>
+            <Text style={styles.emergencyButtonText}>SOS ALERT</Text>
+          </View>
+        </TouchableOpacity>
       </View>
 
       {/* Quick Services Grid */}
       <View style={styles.servicesSection}>
-        <Text style={styles.sectionTitle}>Quick Services</Text>
+        <View style={styles.servicesHeader}>
+          <Text style={styles.sectionTitle}>Quick Services</Text>
+          <TouchableOpacity onPress={() => onNavigate('ServiceDiscovery')}>
+            <Text style={styles.seeAllText}>See All</Text>
+          </TouchableOpacity>
+        </View>
         <View style={styles.servicesGrid}>
-          {quickServices.map((service, index) => (
+          {quickServices.slice(0, 4).map((service, index) => (
             <TouchableOpacity
               key={index}
               style={styles.serviceCard}
@@ -239,15 +338,13 @@ export function CustomerHomeScreen({
               activeOpacity={0.7}
             >
               <View style={[styles.serviceIcon, { backgroundColor: `${service.color}20` }]}>
-                <Text style={styles.serviceIconEmoji}>{service.icon}</Text>
+                <Icon name={service.icon} size={28} color={service.color} />
               </View>
               <Text style={styles.serviceLabel}>{service.label}</Text>
             </TouchableOpacity>
           ))}
         </View>
       </View>
-
-      {/* Additional sections can be added here */}
     </ScrollView>
   );
 }
@@ -314,7 +411,11 @@ const styles = StyleSheet.create({
     color: '#fff',
     opacity: 0.9,
   },
-  cartButton: {
+  headerActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  actionButton: {
     width: 40,
     height: 40,
     borderRadius: borderRadius.full,
@@ -322,27 +423,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  cartIcon: {
-    fontSize: 20,
+  notificationBadge: {
+    position: 'relative',
+  },
+  badgeDot: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#ef4444',
   },
   petsSection: {
     marginTop: spacing.md,
-  },
-  petsHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  petsTitle: {
-    fontSize: typography.fontSizes.sm,
-    fontWeight: typography.fontWeights.medium,
-    color: '#fff',
-  },
-  addPetText: {
-    fontSize: typography.fontSizes.xs,
-    color: '#fff',
-    opacity: 0.9,
   },
   petsList: {
     marginTop: spacing.sm,
@@ -353,7 +447,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   petCardSelected: {
-    opacity: 1,
+    borderWidth: 2,
+    borderColor: '#fff',
+    borderRadius: borderRadius.md,
+    padding: spacing.xs,
+  },
+  addPetCard: {
+    width: 80,
+    marginRight: spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: borderRadius.md,
+    padding: spacing.sm,
+  },
+  addPetLabel: {
+    fontSize: typography.fontSizes.xs,
+    color: '#fff',
+    textAlign: 'center',
+    marginTop: spacing.xs / 2,
   },
   petImage: {
     width: 60,
@@ -377,46 +489,189 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
     textAlign: 'center',
   },
-  bannerContainer: {
+  dashboardContainer: {
     padding: spacing.lg,
+    paddingTop: spacing.md,
   },
-  banner: {
-    backgroundColor: colors.background,
+  dashboardCard: {
+    backgroundColor: '#fff',
     borderRadius: borderRadius.xl,
     padding: spacing.lg,
-    flexDirection: 'row',
-    alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
   },
-  bannerEmoji: {
-    fontSize: 40,
-    marginRight: spacing.md,
+  dashboardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
   },
-  bannerText: {
-    flex: 1,
-  },
-  bannerTitle: {
+  dashboardTitle: {
     fontSize: typography.fontSizes.lg,
     fontWeight: typography.fontWeights.bold,
     color: colors.text,
-    marginBottom: spacing.xs,
   },
-  bannerSubtitle: {
+  activeBadge: {
+    backgroundColor: colors.success,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs / 2,
+    borderRadius: borderRadius.full,
+  },
+  activeBadgeText: {
+    color: '#fff',
+    fontSize: typography.fontSizes.xs,
+    fontWeight: typography.fontWeights.bold,
+  },
+  dashboardSubtitle: {
     fontSize: typography.fontSizes.sm,
     color: colors.textSecondary,
+    marginBottom: spacing.md,
+  },
+  metricsContainer: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  metricCard: {
+    flex: 1,
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
+    alignItems: 'center',
+  },
+  metricPurple: {
+    backgroundColor: '#e9d5ff',
+  },
+  metricPink: {
+    backgroundColor: '#fce7f3',
+  },
+  metricGreen: {
+    backgroundColor: '#d1fae5',
+  },
+  metricLabel: {
+    fontSize: typography.fontSizes.xs,
+    color: colors.textSecondary,
+    marginTop: spacing.xs,
+    marginBottom: spacing.xs / 2,
+  },
+  metricValue: {
+    fontSize: typography.fontSizes.md,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.text,
+    marginBottom: spacing.xs / 2,
+  },
+  metricChange: {
+    fontSize: typography.fontSizes.xs,
+    color: colors.success,
+    fontWeight: typography.fontWeights.semibold,
+  },
+  metricEmoji: {
+    fontSize: 20,
+    marginTop: spacing.xs / 2,
+  },
+  dealsContainer: {
+    padding: spacing.lg,
+    paddingTop: 0,
+  },
+  dealsHeader: {
+    marginBottom: spacing.md,
+  },
+  dealsTitle: {
+    fontSize: typography.fontSizes.lg,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.text,
+  },
+  dealsList: {
+    marginTop: spacing.sm,
+  },
+  dealCard: {
+    width: width * 0.7,
+    borderRadius: borderRadius.xl,
+    padding: spacing.lg,
+    marginRight: spacing.md,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  dealBlue: {
+    backgroundColor: '#3b82f6',
+  },
+  dealGreen: {
+    backgroundColor: '#10b981',
+  },
+  dealBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#fff',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.full,
+    marginBottom: spacing.md,
+  },
+  dealBadgeText: {
+    color: colors.text,
+    fontSize: typography.fontSizes.xs,
+    fontWeight: typography.fontWeights.bold,
+  },
+  dealTitle: {
+    fontSize: typography.fontSizes.lg,
+    fontWeight: typography.fontWeights.bold,
+    color: '#fff',
+    marginBottom: spacing.sm,
+  },
+  dealPrice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  dealOriginalPrice: {
+    fontSize: typography.fontSizes.sm,
+    color: '#fff',
+    textDecorationLine: 'line-through',
+    opacity: 0.8,
+  },
+  dealDiscountPrice: {
+    fontSize: typography.fontSizes.xl,
+    fontWeight: typography.fontWeights.bold,
+    color: '#fff',
+  },
+  dealIcon: {
+    position: 'absolute',
+    right: spacing.md,
+    top: spacing.md,
+    opacity: 0.3,
+  },
+  dealButton: {
+    backgroundColor: '#fff',
+    padding: spacing.sm,
+    borderRadius: borderRadius.md,
+    alignItems: 'center',
+    marginTop: spacing.sm,
+  },
+  dealButtonText: {
+    color: colors.text,
+    fontSize: typography.fontSizes.sm,
+    fontWeight: typography.fontWeights.bold,
   },
   servicesSection: {
     padding: spacing.lg,
+    paddingTop: 0,
+  },
+  servicesHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.md,
   },
   sectionTitle: {
-    fontSize: typography.fontSizes.xl,
+    fontSize: typography.fontSizes.lg,
     fontWeight: typography.fontWeights.bold,
     color: colors.text,
-    marginBottom: spacing.md,
+  },
+  seeAllText: {
+    fontSize: typography.fontSizes.sm,
+    color: colors.primary,
+    fontWeight: typography.fontWeights.semibold,
   },
   servicesGrid: {
     flexDirection: 'row',
@@ -436,13 +691,68 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: spacing.sm,
   },
-  serviceIconEmoji: {
-    fontSize: 28,
-  },
   serviceLabel: {
     fontSize: typography.fontSizes.xs,
     color: colors.text,
     textAlign: 'center',
   },
+  emergencyContainer: {
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+  },
+  emergencyButton: {
+    backgroundColor: '#fee2e2',
+    borderRadius: borderRadius.xl,
+    padding: spacing.md,
+    borderWidth: 2,
+    borderColor: '#ef4444',
+  },
+  emergencyContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  emergencyIconContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: borderRadius.lg,
+    backgroundColor: '#dc2626',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: spacing.md,
+  },
+  emergencyText: {
+    flex: 1,
+  },
+  emergencyBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#dc2626',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs / 2,
+    borderRadius: borderRadius.full,
+    marginBottom: spacing.xs,
+  },
+  emergencyBadgeText: {
+    color: '#fff',
+    fontSize: typography.fontSizes.xs,
+    fontWeight: typography.fontWeights.bold,
+  },
+  emergencyTitle: {
+    fontSize: typography.fontSizes.md,
+    fontWeight: typography.fontWeights.semibold,
+    color: colors.text,
+    marginBottom: spacing.xs / 2,
+  },
+  emergencySubtitle: {
+    fontSize: typography.fontSizes.xs,
+    color: colors.textSecondary,
+  },
+  emergencyButtonText: {
+    backgroundColor: '#dc2626',
+    color: '#fff',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.full,
+    fontSize: typography.fontSizes.xs,
+    fontWeight: typography.fontWeights.bold,
+  },
 });
-

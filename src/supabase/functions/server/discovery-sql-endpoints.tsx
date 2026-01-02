@@ -3,9 +3,9 @@
  * NO KV STORE - All data from SQL
  */
 
-import { Hono } from 'npm:hono';
-import { getDiscoveryService } from '../../../supabase/lib/services/discovery-service.ts';
-import { getDiscoveryRepository } from '../../../supabase/lib/repositories/discovery.ts';
+import { Hono } from 'hono';
+import { getDiscoveryService } from '../../../supabase/lib/services/discovery-service';
+import { getDiscoveryRepository } from '../../../supabase/lib/repositories/discovery';
 
 export function registerDiscoverySQLEndpoints(app: Hono) {
   /**

@@ -1,5 +1,5 @@
-import { Hono } from "npm:hono";
-import { sendSuccess, sendError } from "./response-utils.ts";
+import { Hono } from "hono";
+import { sendSuccess, sendError } from "./response-utils";
 
 /**
  * 🔍 UNIFIED SERVICE DISCOVERY
@@ -26,7 +26,10 @@ interface ServiceDiscovery {
   services: string[];
 }
 
-export function unifiedServiceDiscoveryEndpoints(app: Hono, kv: any) {
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { getVendorsRepository } from '../../../supabase/lib/repositories/index';
+
+export function unifiedServiceDiscoveryEndpoints(app: Hono) {
   const BASE_PATH = "/make-server-3dd53475";
 
   // Helper: Calculate distance
@@ -72,12 +75,31 @@ export function unifiedServiceDiscoveryEndpoints(app: Hono, kv: any) {
         return sendError(c, `Invalid type. Must be one of: ${validTypes.join(', ')}`, 400);
       }
 
-      // Get all independent vendors
-      const vendorsData = await kv.getByPrefix('independent_vendor_');
+      // ✅ SQL: Get all independent vendors using repository
+      const vendorsRepo = getVendorsRepository();
+      const allVendors = await vendorsRepo.findAll({});
       
-      let vendors = vendorsData
-        .map((item: any) => item.value || item)
-        .filter((v: any) => v.isApproved && v.isActive);
+      const independentVendorTypes = ['ambulance', 'pharmacy', 'diagnostics'];
+      let vendors = allVendors
+        .filter((v: any) => 
+          v.status === 'approved' && 
+          v.is_active && 
+          independentVendorTypes.includes(v.role_id || v.category)
+        )
+        .map((v: any) => ({
+          vendorId: v.id,
+          vendorName: v.business_name,
+          vendorType: v.role_id || v.category,
+          location: v.latitude && v.longitude ? {
+            lat: v.latitude,
+            lng: v.longitude,
+            address: v.address
+          } : null,
+          isApproved: v.status === 'approved',
+          isActive: v.is_active,
+          rating: v.rating || 0,
+          services: []
+        }));
 
       // Filter by type if not 'all'
       if (type !== 'all') {
@@ -126,12 +148,31 @@ export function unifiedServiceDiscoveryEndpoints(app: Hono, kv: any) {
         return sendError(c, 'lat and lng are required', 400);
       }
 
-      // Get all independent vendors
-      const vendorsData = await kv.getByPrefix('independent_vendor_');
+      // ✅ SQL: Get all independent vendors using repository
+      const vendorsRepo = getVendorsRepository();
+      const allVendors = await vendorsRepo.findAll({});
       
-      let vendors = vendorsData
-        .map((item: any) => item.value || item)
-        .filter((v: any) => v.isApproved && v.isActive);
+      const independentVendorTypes = ['ambulance', 'pharmacy', 'diagnostics'];
+      let vendors = allVendors
+        .filter((v: any) => 
+          v.status === 'approved' && 
+          v.is_active && 
+          independentVendorTypes.includes(v.role_id || v.category)
+        )
+        .map((v: any) => ({
+          vendorId: v.id,
+          vendorName: v.business_name,
+          vendorType: v.role_id || v.category,
+          location: v.latitude && v.longitude ? {
+            lat: v.latitude,
+            lng: v.longitude,
+            address: v.address
+          } : null,
+          isApproved: v.status === 'approved',
+          isActive: v.is_active,
+          rating: v.rating || 0,
+          services: []
+        }));
 
       // Filter by type if specified
       if (type) {
@@ -201,12 +242,31 @@ export function unifiedServiceDiscoveryEndpoints(app: Hono, kv: any) {
         filters,
       } = await c.req.json();
 
-      // Get all independent vendors
-      const vendorsData = await kv.getByPrefix('independent_vendor_');
+      // ✅ SQL: Get all independent vendors using repository
+      const vendorsRepo = getVendorsRepository();
+      const allVendors = await vendorsRepo.findAll({});
       
-      let vendors = vendorsData
-        .map((item: any) => item.value || item)
-        .filter((v: any) => v.isApproved && v.isActive);
+      const independentVendorTypes = ['ambulance', 'pharmacy', 'diagnostics'];
+      let vendors = allVendors
+        .filter((v: any) => 
+          v.status === 'approved' && 
+          v.is_active && 
+          independentVendorTypes.includes(v.role_id || v.category)
+        )
+        .map((v: any) => ({
+          vendorId: v.id,
+          vendorName: v.business_name,
+          vendorType: v.role_id || v.category,
+          location: v.latitude && v.longitude ? {
+            lat: v.latitude,
+            lng: v.longitude,
+            address: v.address
+          } : null,
+          isApproved: v.status === 'approved',
+          isActive: v.is_active,
+          rating: v.rating || 0,
+          services: []
+        }));
 
       // Filter by service type
       if (serviceType) {
@@ -316,11 +376,29 @@ export function unifiedServiceDiscoveryEndpoints(app: Hono, kv: any) {
       // Extract vendor ID from service ID
       const vendorId = serviceId.replace('service_', '');
 
-      const vendor = await kv.get(`independent_vendor_${vendorId}`);
+      // ✅ SQL: Get vendor using repository
+      const vendorsRepo = getVendorsRepository();
+      const vendorData = await vendorsRepo.findById(vendorId);
 
-      if (!vendor) {
+      if (!vendorData) {
         return sendError(c, 'Service not found', 404);
       }
+      
+      const vendor = {
+        vendorId: vendorData.id,
+        vendorName: vendorData.business_name,
+        vendorType: vendorData.role_id || vendorData.category,
+        location: vendorData.latitude && vendorData.longitude ? {
+          lat: vendorData.latitude,
+          lng: vendorData.longitude,
+          address: vendorData.address
+        } : null,
+        isActive: vendorData.is_active,
+        isApproved: vendorData.status === 'approved',
+        services: [],
+        operatingHours: vendorData.operating_hours,
+        rating: vendorData.rating || 0
+      };
 
       const serviceDetails = {
         serviceId,

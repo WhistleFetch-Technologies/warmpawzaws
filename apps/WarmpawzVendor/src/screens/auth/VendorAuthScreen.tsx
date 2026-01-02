@@ -16,9 +16,11 @@ import {
   Platform,
   ScrollView,
   Alert,
+  Linking,
 } from 'react-native';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { VendorApi, ApiService } from '../../services/api';
+import { GradientBackground, BrandedCard, WarmPawzLogo } from '../../components/branded';
 
 interface VendorAuthScreenProps {
   onAuthSuccess: (session: any) => void;
@@ -140,131 +142,213 @@ export function VendorAuthScreen({ onAuthSuccess }: VendorAuthScreenProps) {
     }
   };
 
+  const handleResendCode = async () => {
+    await handleSendCode();
+  };
+
+  const handleChangePhone = () => {
+    setShowOtpScreen(false);
+    setOtpCode('');
+    setError('');
+  };
+
   // OTP Verification Screen
   if (showOtpScreen) {
+    const formattedPhone = phoneNumber.length === 10 
+      ? `+91 ${phoneNumber.slice(0, 5)} ${phoneNumber.slice(5)}`
+      : phoneNumber;
+
     return (
-      <KeyboardAvoidingView
-        style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
-        <ScrollView contentContainerStyle={styles.scrollContent}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => {
-              setShowOtpScreen(false);
-              setOtpCode('');
-              setError('');
-            }}
-          >
-            <Text style={styles.backButtonText}>← Back</Text>
-          </TouchableOpacity>
+      <GradientBackground variant="orange">
+        <KeyboardAvoidingView
+          style={styles.container}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <ScrollView contentContainerStyle={styles.otpScrollContent} showsVerticalScrollIndicator={false}>
+            <View style={styles.otpTopSection}>
+              <TouchableOpacity
+                style={styles.backButton}
+                onPress={handleChangePhone}
+              >
+                <Text style={styles.backButtonText}>← Change phone number</Text>
+              </TouchableOpacity>
 
-          <View style={styles.logoContainer}>
-            <View style={styles.logo}>
-              <Text style={styles.logoText}>🐾</Text>
+              <WarmPawzLogo size="large" showText={false} />
+              <Text style={styles.otpTitle}>Verify Your Number</Text>
             </View>
-          </View>
 
-          <Text style={styles.title}>Enter Verification Code</Text>
-          <Text style={styles.subtitle}>
-            We sent a code to {phoneNumber}
-          </Text>
+            <BrandedCard>
+              <Text style={styles.otpSubtitle}>
+                Enter the OTP sent to
+              </Text>
+              <Text style={styles.phoneNumberText}>{formattedPhone}</Text>
 
-          {error ? (
-            <View style={styles.errorContainer}>
-              <Text style={styles.errorText}>{error}</Text>
-            </View>
-          ) : null}
+              {error ? (
+                <View style={styles.errorContainer}>
+                  <Text style={styles.errorText}>{error}</Text>
+                </View>
+              ) : null}
 
-          <TextInput
-            style={styles.otpInput}
-            placeholder="Enter 6-digit code"
-            value={otpCode}
-            onChangeText={setOtpCode}
-            keyboardType="number-pad"
-            maxLength={6}
-            autoFocus
-          />
+              <View style={styles.otpInputContainer}>
+                <Text style={styles.otpLabel}>Verification Code</Text>
+                <TextInput
+                  style={styles.otpInput}
+                  placeholder="Enter 6-digit code"
+                  value={otpCode}
+                  onChangeText={setOtpCode}
+                  keyboardType="number-pad"
+                  maxLength={6}
+                  autoFocus
+                />
+              </View>
 
-          <TouchableOpacity
-            style={[styles.button, (loading || otpCode.length !== 6) && styles.buttonDisabled]}
-            onPress={handleVerifyOtp}
-            disabled={loading || otpCode.length !== 6}
-          >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.buttonText}>Verify</Text>
-            )}
-          </TouchableOpacity>
-        </ScrollView>
-      </KeyboardAvoidingView>
+              <TouchableOpacity
+                style={[styles.button, (loading || otpCode.length !== 6) && styles.buttonDisabled]}
+                onPress={handleVerifyOtp}
+                disabled={loading || otpCode.length !== 6}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.buttonText}>Verify & Continue</Text>
+                )}
+              </TouchableOpacity>
+
+              <View style={styles.otpLinksContainer}>
+                <TouchableOpacity onPress={handleResendCode}>
+                  <Text style={styles.linkText}>Resend Code</Text>
+                </TouchableOpacity>
+                <Text style={styles.linkSeparator}> • </Text>
+                <TouchableOpacity onPress={() => Linking.openURL('https://warmpawz.com/help')}>
+                  <Text style={styles.linkText}>Trouble with verification? Get Help</Text>
+                </TouchableOpacity>
+              </View>
+            </BrandedCard>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </GradientBackground>
     );
   }
 
   // Phone Number Input Screen
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.logoContainer}>
-          <View style={styles.logo}>
-            <Text style={styles.logoText}>🐾</Text>
+    <GradientBackground variant="orange">
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          <View style={styles.topSection}>
+            <WarmPawzLogo size="large" showText={true} />
+            <Text style={styles.tagline}>
+              Join our community of professional pet care providers
+            </Text>
           </View>
-        </View>
 
-        <Text style={styles.title}>Vendor Portal</Text>
-        <Text style={styles.subtitle}>
-          Enter your phone number to continue
-        </Text>
+          <BrandedCard>
+            {error ? (
+              <View style={styles.errorContainer}>
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            ) : null}
 
-        {error ? (
-          <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>{error}</Text>
+            <View style={styles.inputContainer}>
+              <Text style={styles.inputLabel}>Phone Number</Text>
+              <TextInput
+                style={styles.phoneInput}
+                placeholder="+91 74493 38923"
+                value={phoneNumber}
+                onChangeText={(text) => {
+                  const cleaned = text.replace(/[^0-9]/g, '');
+                  if (cleaned.length <= 10) {
+                    setPhoneNumber(cleaned);
+                  }
+                }}
+                keyboardType="phone-pad"
+                maxLength={10}
+              />
+            </View>
+
+            <TouchableOpacity
+              style={[styles.button, (loading || phoneNumber.length !== 10) && styles.buttonDisabled]}
+              onPress={handleSendCode}
+              disabled={loading || phoneNumber.length !== 10}
+            >
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.buttonText}>Send Verification Code</Text>
+              )}
+            </TouchableOpacity>
+
+            <View style={styles.termsContainer}>
+              <Text style={styles.termsText}>
+                By continuing, you agree to our{' '}
+                <Text 
+                  style={styles.termsLink}
+                  onPress={() => Linking.openURL('https://warmpawz.com/terms')}
+                >
+                  Terms of Service
+                </Text>
+                {' '}and{' '}
+                <Text 
+                  style={styles.termsLink}
+                  onPress={() => Linking.openURL('https://warmpawz.com/privacy')}
+                >
+                  Privacy Policy
+                </Text>
+              </Text>
+            </View>
+
+            <View style={styles.signInContainer}>
+              <Text style={styles.signInText}>Already have an account? </Text>
+              <TouchableOpacity onPress={() => setIsSignUp(false)}>
+                <Text style={styles.signInLink}>Sign In</Text>
+              </TouchableOpacity>
+            </View>
+          </BrandedCard>
+
+          <View style={styles.footer}>
+            <Text style={styles.footerText}>Need Help?</Text>
+            <Text style={styles.footerVersion}>WARMPAWS Provider v2.1.0</Text>
+            <Text style={styles.footerCopyright}>© 2025 WARMPAWS Inc. All rights reserved</Text>
           </View>
-        ) : null}
-
-        <TextInput
-          style={styles.phoneInput}
-          placeholder="Enter 10-digit phone number"
-          value={phoneNumber}
-          onChangeText={(text) => {
-            const cleaned = text.replace(/[^0-9]/g, '');
-            if (cleaned.length <= 10) {
-              setPhoneNumber(cleaned);
-            }
-          }}
-          keyboardType="phone-pad"
-          maxLength={10}
-        />
-
-        <TouchableOpacity
-          style={[styles.button, (loading || phoneNumber.length !== 10) && styles.buttonDisabled]}
-          onPress={handleSendCode}
-          disabled={loading || phoneNumber.length !== 10}
-        >
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.buttonText}>Send Code</Text>
-          )}
-        </TouchableOpacity>
-      </ScrollView>
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </GradientBackground>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   scrollContent: {
     flexGrow: 1,
-    padding: spacing.lg,
-    justifyContent: 'center',
+    paddingTop: spacing.xxl,
+  },
+  otpScrollContent: {
+    flexGrow: 1,
+    paddingTop: spacing.xl,
+  },
+  topSection: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xl,
+    alignItems: 'center',
+    paddingBottom: spacing.xxl,
+  },
+  tagline: {
+    fontSize: typography.fontSizes.md,
+    color: colors.text,
+    textAlign: 'center',
+    marginTop: spacing.md,
+    paddingHorizontal: spacing.lg,
+  },
+  otpTopSection: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xl,
+    alignItems: 'center',
+    paddingBottom: spacing.xl,
   },
   backButton: {
     alignSelf: 'flex-start',
@@ -273,43 +357,53 @@ const styles = StyleSheet.create({
   backButtonText: {
     fontSize: typography.fontSizes.md,
     color: colors.primary,
+    textDecorationLine: 'underline',
   },
-  logoContainer: {
-    alignItems: 'center',
-    marginBottom: spacing.xl,
-  },
-  logo: {
-    width: 80,
-    height: 80,
-    borderRadius: borderRadius.full,
-    backgroundColor: colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  logoText: {
-    fontSize: 40,
-  },
-  title: {
+  otpTitle: {
     fontSize: typography.fontSizes['3xl'],
     fontWeight: typography.fontWeights.bold,
     color: colors.text,
     textAlign: 'center',
-    marginBottom: spacing.sm,
+    marginTop: spacing.md,
   },
-  subtitle: {
+  otpSubtitle: {
     fontSize: typography.fontSizes.md,
     color: colors.textSecondary,
     textAlign: 'center',
+    marginBottom: spacing.xs,
+  },
+  phoneNumberText: {
+    fontSize: typography.fontSizes.lg,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.text,
+    textAlign: 'center',
     marginBottom: spacing.xl,
+  },
+  inputContainer: {
+    marginBottom: spacing.lg,
+  },
+  inputLabel: {
+    fontSize: typography.fontSizes.md,
+    color: colors.text,
+    marginBottom: spacing.sm,
+    fontWeight: typography.fontWeights.medium,
   },
   phoneInput: {
     backgroundColor: colors.inputBackground,
     borderRadius: borderRadius.lg,
     padding: spacing.md,
     fontSize: typography.fontSizes.md,
-    marginBottom: spacing.lg,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.primary,
+  },
+  otpInputContainer: {
+    marginBottom: spacing.lg,
+  },
+  otpLabel: {
+    fontSize: typography.fontSizes.md,
+    color: colors.text,
+    marginBottom: spacing.sm,
+    fontWeight: typography.fontWeights.medium,
   },
   otpInput: {
     backgroundColor: colors.inputBackground,
@@ -317,10 +411,10 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     fontSize: typography.fontSizes['2xl'],
     textAlign: 'center',
-    marginBottom: spacing.lg,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.primary,
     letterSpacing: 8,
+    fontWeight: typography.fontWeights.bold,
   },
   button: {
     backgroundColor: colors.primary,
@@ -329,6 +423,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 50,
+    marginBottom: spacing.md,
   },
   buttonDisabled: {
     opacity: 0.5,
@@ -348,6 +443,70 @@ const styles = StyleSheet.create({
     color: colors.error,
     fontSize: typography.fontSizes.sm,
     textAlign: 'center',
+  },
+  otpLinksContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: spacing.md,
+    flexWrap: 'wrap',
+  },
+  linkText: {
+    fontSize: typography.fontSizes.md,
+    color: colors.primary,
+    textDecorationLine: 'underline',
+  },
+  linkSeparator: {
+    fontSize: typography.fontSizes.md,
+    color: colors.textSecondary,
+  },
+  termsContainer: {
+    marginTop: spacing.md,
+    marginBottom: spacing.md,
+  },
+  termsText: {
+    fontSize: typography.fontSizes.sm,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  termsLink: {
+    color: colors.primary,
+    textDecorationLine: 'underline',
+  },
+  signInContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: spacing.md,
+  },
+  signInText: {
+    fontSize: typography.fontSizes.md,
+    color: colors.text,
+  },
+  signInLink: {
+    fontSize: typography.fontSizes.md,
+    color: colors.primary,
+    fontWeight: typography.fontWeights.semibold,
+  },
+  footer: {
+    padding: spacing.lg,
+    alignItems: 'center',
+    paddingTop: spacing.xl,
+  },
+  footerText: {
+    fontSize: typography.fontSizes.sm,
+    color: colors.textSecondary,
+    marginBottom: spacing.xs,
+  },
+  footerVersion: {
+    fontSize: typography.fontSizes.sm,
+    color: colors.textSecondary,
+    marginBottom: spacing.xs,
+  },
+  footerCopyright: {
+    fontSize: typography.fontSizes.xs,
+    color: colors.textMuted,
   },
 });
 

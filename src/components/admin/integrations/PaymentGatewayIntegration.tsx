@@ -6,7 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import { Save, Check, AlertCircle, Key, CreditCard } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 interface PaymentSettings {
   razorpay: {

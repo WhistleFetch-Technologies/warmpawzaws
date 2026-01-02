@@ -20,7 +20,7 @@ import { Hono } from 'npm:hono';
 import { getVendorsRepository } from '../../lib/repositories/vendors.ts';
 import { getStaffRepository } from '../../lib/repositories/staff.ts';
 import { getServicesRepository } from '../../lib/repositories/services.ts';
-import { calculateDistance, getStaffNextAvailableSlot, getCenterNextAvailableSlot } from './schedule-utils.tsx';
+import { calculateDistance, getStaffNextAvailableSlot, getCenterNextAvailableSlot } from './schedule-utils-sql.tsx'; // ✅ FIXED: Updated to SQL version
 import { getPrimarySpecialization, getAllSpecializations } from './specialization-mapping.tsx';
 import { getDbClient } from '../../lib/db.ts';
 

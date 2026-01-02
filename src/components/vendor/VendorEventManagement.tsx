@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Users, CheckCircle, XCircle, MapPin, Clock, Plus, Edit2 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { toast } from 'react-toastify';
+import { toast } from 'sonner';
 
 interface Event {
   id: string;
@@ -109,50 +108,49 @@ export function VendorEventManagement({ vendorId, vendorData, vendorType = 'othe
 
   const loadDashboard = async () => {
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/event-management/${vendorId}/dashboard`,
-        {
-          headers: { Authorization: `Bearer ${publicAnonKey}` }
-        }
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/event-management/${vendorId}/dashboard`
       );
-      const data = await response.json();
-      // ✅ FIX: Handle standardized response format
+
       if (data.success) {
         setStats(data.stats || data.data?.stats);
       } else {
-        const errorData = data.error || data.message || 'Unknown error';
-        console.error('Failed to load dashboard:', errorData);
-        // Don't show error toast on initial load - just log
+        console.error('Failed to load dashboard:', data.error || data.message);
       }
     } catch (error: any) {
       console.error('Error loading dashboard:', error);
-      // Don't show error toast on initial load - just log
     }
   };
 
   const loadEvents = async () => {
     setLoading(true);
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/event-management/${vendorId}/list`,
-        {
-          headers: { Authorization: `Bearer ${publicAnonKey}` }
-        }
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/event-management/${vendorId}/list`
       );
-      const data = await response.json();
-      // ✅ FIX: Handle standardized response format
-      // Response format: { success: true, events: [...], stats: {...}, total: ... }
+
       if (data.success) {
         setEvents(data.events || data.data?.events || []);
         setStats(data.stats || data.data?.stats);
       } else {
-        const errorData = data.error || data.message || 'Unknown error';
-        console.error('Failed to load events:', errorData);
-        // Don't show error toast on initial load - just log
+        console.error('Failed to load events:', data.error || data.message);
       }
     } catch (error: any) {
       console.error('Error loading events:', error);
-      // Don't show error toast on initial load - just log
     } finally {
       setLoading(false);
     }
@@ -160,17 +158,21 @@ export function VendorEventManagement({ vendorId, vendorData, vendorType = 'othe
 
   const loadRegistrations = async (eventId: string) => {
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/event-management/${vendorId}/${eventId}/registrations`,
-        {
-          headers: { Authorization: `Bearer ${publicAnonKey}` }
-        }
-      );
-      const data = await response.json();
-      if (data.success) {
-        setRegistrations(data.registrations);
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
       }
-    } catch (error) {
+
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/event-management/${vendorId}/${eventId}/registrations`
+      );
+
+      if (data.success) {
+        setRegistrations(data.registrations || data.data?.registrations || []);
+      }
+    } catch (error: any) {
       console.error('Error loading registrations:', error);
     }
   };
@@ -178,18 +180,21 @@ export function VendorEventManagement({ vendorId, vendorData, vendorType = 'othe
   const handleSaveEvent = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+
       const url = editingEvent
-        ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/event-management/${vendorId}/${editingEvent.id}`
-        : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/event-management/${vendorId}/create`;
+        ? `${API_GATEWAY_URL}/make-server-3dd53475/vendor/event-management/${vendorId}/${editingEvent.id}`
+        : `${API_GATEWAY_URL}/make-server-3dd53475/vendor/event-management/${vendorId}/create`;
 
       const method = editingEvent ? 'PUT' : 'POST';
 
-      const response = await fetch(url, {
+      const data = await apiCallJson<any>(url, {
         method,
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${publicAnonKey}`
-        },
         body: JSON.stringify({
           ...eventForm,
           vendorType,
@@ -207,51 +212,49 @@ export function VendorEventManagement({ vendorId, vendorData, vendorType = 'othe
         })
       });
 
-      const data = await response.json();
       if (data.success) {
         toast.success(editingEvent ? 'Event updated successfully' : 'Event created successfully');
         setShowAddEvent(false);
         setEditingEvent(null);
         resetForm();
-        await loadEvents(); // ✅ Ensure events reload
-        await loadDashboard(); // ✅ Ensure dashboard reloads
+        await loadEvents();
+        await loadDashboard();
       } else {
-        const errorData = data.error || data.message || 'Unknown error occurred';
-        toast.error(errorData);
+        toast.error(data.error || data.message || 'Unknown error occurred');
       }
     } catch (error: any) {
       console.error('Error saving event:', error);
-      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
-      toast.error(errorMessage);
+      toast.error(error?.message || 'Network error. Please check your connection and try again.');
     }
   };
 
   const updateEventStatus = async (eventId: string, status: Event['status']) => {
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/event-management/${vendorId}/${eventId}/status`,
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/event-management/${vendorId}/${eventId}/status`,
         {
           method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`
-          },
           body: JSON.stringify({ status })
         }
       );
-      const data = await response.json();
+
       if (data.success) {
         toast.success('Event status updated successfully');
-        await loadEvents(); // ✅ Ensure events reload
-        await loadDashboard(); // ✅ Ensure dashboard reloads
+        await loadEvents();
+        await loadDashboard();
       } else {
-        const errorData = data.error || data.message || 'Failed to update event status';
-        toast.error(errorData);
+        toast.error(data.error || data.message || 'Failed to update event status');
       }
     } catch (error: any) {
       console.error('Error updating event status:', error);
-      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
-      toast.error(errorMessage);
+      toast.error(error?.message || 'Network error. Please check your connection and try again.');
     }
   };
 
@@ -265,48 +268,58 @@ export function VendorEventManagement({ vendorId, vendorData, vendorType = 'othe
     }
 
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/event-management/${vendorId}/${eventId}`,
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/event-management/${vendorId}/${eventId}`,
         {
-          method: 'DELETE',
-          headers: {
-            Authorization: `Bearer ${publicAnonKey}`
-          }
+          method: 'DELETE'
         }
       );
 
-      const data = await response.json();
       if (data.success) {
         toast.success(`Event "${eventName}" deleted successfully`);
-        await loadEvents(); // ✅ Ensure events reload
-        await loadDashboard(); // ✅ Ensure dashboard reloads
+        await loadEvents();
+        await loadDashboard();
       } else {
-        const errorData = data.error || data.message || 'Failed to delete event';
-        toast.error(errorData);
+        toast.error(data.error || data.message || 'Failed to delete event');
       }
     } catch (error: any) {
       console.error('Error deleting event:', error);
-      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
-      toast.error(errorMessage);
+      toast.error(error?.message || 'Network error. Please check your connection and try again.');
     }
   };
 
   const handleCheckIn = async (eventId: string, registrationId: string) => {
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/event-management/${vendorId}/${eventId}/registrations/${registrationId}/checkin`,
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/event-management/${vendorId}/${eventId}/registrations/${registrationId}/checkin`,
         {
-          method: 'PUT',
-          headers: { Authorization: `Bearer ${publicAnonKey}` }
+          method: 'PUT'
         }
       );
 
-      const data = await response.json();
       if (data.success && selectedEvent) {
-        loadRegistrations(selectedEvent.id);
+        toast.success('Attendee checked in successfully');
+        await loadRegistrations(selectedEvent.id);
+      } else {
+        toast.error(data.error || data.message || 'Failed to check in attendee');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error checking in:', error);
+      toast.error(error?.message || 'Failed to check in attendee');
     }
   };
 

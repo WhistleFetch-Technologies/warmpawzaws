@@ -8,9 +8,9 @@
  * - Location (state-based GST)
  */
 
-import { Hono } from 'npm:hono';
-import { sendSuccess, sendError } from './response-utils.ts';
-import { getDbClient } from '../../lib/db.ts';
+import { Hono } from 'hono';
+import { sendSuccess, sendError } from './response-utils';
+import { getDbClient } from '../../lib/db';
 
 export interface GSTRule {
   id: string;

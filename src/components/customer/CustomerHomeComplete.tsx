@@ -17,6 +17,7 @@ const logoImage = LOGO_CIRCULAR_ORANGE;
 import { AIAssistantChat } from './AIAssistantChat';
 import { CustomerSidebar } from './CustomerSidebar';
 import { EnhancedSearchBar } from './EnhancedSearchBar';
+import { NotificationBellWrapper } from '../common/NotificationBellWrapper';
 
 interface Pet {
   id: string;
@@ -421,6 +422,20 @@ export function CustomerHome({
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <NotificationBellWrapper
+              className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm hover:bg-white/30 !p-0"
+              iconClassName="text-white"
+              fetchNotifications={async () => {
+                // TODO: Replace with actual API call when backend is ready
+                // For now, using useNotificationService hook data if available
+                return [];
+              }}
+              onNotificationClick={(notification) => {
+                if (notification.actionUrl && onNavigate) {
+                  onNavigate(notification.actionUrl);
+                }
+              }}
+            />
             <button 
               onClick={() => onNavigate && onNavigate('cart')}
               className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm relative"

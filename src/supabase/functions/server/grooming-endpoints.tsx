@@ -1,5 +1,11 @@
-import { Hono } from "npm:hono";
-import * as kv from "./kv_store.tsx";
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from "hono";
+import { 
+  getVendorsRepository,
+  getBookingsRepository,
+  getCustomersRepository,
+  getNotificationsRepository
+} from '../../../supabase/lib/repositories/index';
 
 const app = new Hono();
 
@@ -12,26 +18,24 @@ app.get("/grooming/services", async (c) => {
   try {
     console.log('📦 Fetching grooming services...');
 
-    // Get all vendors with groomer role
-    const allVendorKeys = await kv.getByPrefix('vendor:vendor_');
-    const groomers = allVendorKeys
-      .map(item => item.value)
-      .filter((v: any) => 
-        v && 
-        (v.roleId === 'pet_groomer' || v.roleId === 'groomer') && 
-        v.status === 'approved' && 
-        v.isAvailable
-      );
+    // ✅ SQL: Get all vendors with groomer role from vendors table
+    const vendorsRepo = getVendorsRepository();
+    const allVendors = await vendorsRepo.findAll({});
+    const groomers = allVendors.filter((v: any) => 
+      (v.role_id === 'pet_groomer' || v.role_id === 'groomer') && 
+      v.approval_status === 'approved' && 
+      v.is_active
+    );
 
     console.log(`Found ${groomers.length} active groomers`);
 
-    // Categorize by service style
+    // Categorize by service style (from metadata)
     const groomingCenters = groomers.filter((v: any) => 
-      v.serviceStyles && v.serviceStyles.includes('clinic')
+      v.metadata?.serviceStyles && v.metadata.serviceStyles.includes('clinic')
     );
     
     const homeGroomers = groomers.filter((v: any) => 
-      v.serviceStyles && v.serviceStyles.includes('home')
+      v.metadata?.serviceStyles && v.metadata.serviceStyles.includes('home')
     );
 
     // Get popular services from catalog
@@ -82,47 +86,45 @@ app.get("/grooming/:serviceType/providers", async (c) => {
 
     console.log(`📍 Fetching ${serviceType} providers near ${lat},${lng}`);
 
-    // Get all groomers
-    const allVendorKeys = await kv.getByPrefix('vendor:vendor_');
-    let groomers = allVendorKeys
-      .map(item => item.value)
-      .filter((v: any) => 
-        v && 
-        (v.roleId === 'pet_groomer' || v.roleId === 'groomer') && 
-        v.status === 'approved' && 
-        v.isAvailable
-      );
+    // ✅ SQL: Get all groomers from vendors table
+    const vendorsRepo = getVendorsRepository();
+    const allVendors = await vendorsRepo.findAll({});
+    let groomers = allVendors.filter((v: any) => 
+      (v.role_id === 'pet_groomer' || v.role_id === 'groomer') && 
+      v.approval_status === 'approved' && 
+      v.is_active
+    );
 
     // Filter by service type
     const serviceStyle = serviceType === 'grooming_center' ? 'clinic' : 'home';
     groomers = groomers.filter((v: any) => 
-      v.serviceStyles && v.serviceStyles.includes(serviceStyle)
+      v.metadata?.serviceStyles && v.metadata.serviceStyles.includes(serviceStyle)
     );
 
-    // Calculate distances if coordinates provided
-    if (lat && lng) {
-      const userLat = parseFloat(lat);
-      const userLng = parseFloat(lng);
-      const radiusKm = parseFloat(radius);
+      // Calculate distances if coordinates provided
+      if (lat && lng) {
+        const userLat = parseFloat(lat);
+        const userLng = parseFloat(lng);
+        const radiusKm = parseFloat(radius);
 
-      groomers = groomers
-        .filter((v: any) => {
-          if (!v.coordinates) return false;
-          const distance = calculateDistance(
-            userLat, userLng,
-            v.coordinates.lat, v.coordinates.lng
-          );
-          return distance <= radiusKm;
-        })
-        .map((v: any) => ({
-          ...v,
-          distance: calculateDistance(
-            userLat, userLng,
-            v.coordinates.lat, v.coordinates.lng
-          )
-        }))
-        .sort((a: any, b: any) => a.distance - b.distance);
-    }
+        groomers = groomers
+          .filter((v: any) => {
+            if (!v.location || !v.location.lat || !v.location.lng) return false;
+            const distance = calculateDistance(
+              userLat, userLng,
+              v.location.lat, v.location.lng
+            );
+            return distance <= radiusKm;
+          })
+          .map((v: any) => ({
+            ...v,
+            distance: calculateDistance(
+              userLat, userLng,
+              v.location.lat, v.location.lng
+            )
+          }))
+          .sort((a: any, b: any) => a.distance - b.distance);
+      }
 
     return c.json({
       success: true,
@@ -143,8 +145,9 @@ app.post("/booking/:bookingId/complete", async (c) => {
 
     console.log(`🔐 Completing booking ${bookingId} with OTP`);
 
-    // Get booking
-    const booking = await kv.get(`booking:${bookingId}`);
+    // ✅ SQL: Get booking from bookings table
+    const bookingsRepo = getBookingsRepository();
+    const booking = await bookingsRepo.findById(bookingId);
     
     if (!booking) {
       return c.json({ error: 'Booking not found' }, 404);
@@ -152,54 +155,72 @@ app.post("/booking/:bookingId/complete", async (c) => {
 
     // UAT Mode: Accept fixed OTP
     const UAT_MODE = true;
-    const validOTP = UAT_MODE ? '123456' : booking.completionOTP;
+    const validOTP = UAT_MODE ? '123456' : booking.metadata?.completionOTP;
 
     if (otp !== validOTP) {
       return c.json({ error: 'Invalid OTP' }, 400);
     }
 
-    // Update booking status
-    booking.status = 'completed';
-    booking.completedAt = new Date().toISOString();
-    booking.updatedAt = new Date().toISOString();
-    
-    await kv.set(`booking:${bookingId}`, booking);
+    // ✅ SQL: Update booking status
+    await bookingsRepo.update(bookingId, {
+      status: 'completed',
+      completed_at: new Date().toISOString(),
+      metadata: {
+        ...booking.metadata,
+        completedAt: new Date().toISOString()
+      }
+    });
 
-    // Update customer stats
-    const customer = await kv.get(`customer:${booking.customerId}`);
+    const updatedBooking = await bookingsRepo.findById(bookingId);
+
+    // ✅ SQL: Update customer stats
+    const customersRepo = getCustomersRepository();
+    const customer = await customersRepo.findById(booking.customer_id);
     if (customer) {
-      customer.completedBookings = (customer.completedBookings || 0) + 1;
-      customer.activeBookings = Math.max((customer.activeBookings || 0) - 1, 0);
-      await kv.set(`customer:${booking.customerId}`, customer);
+      const completedBookings = (customer.metadata?.completedBookings || 0) + 1;
+      const activeBookings = Math.max((customer.metadata?.activeBookings || 0) - 1, 0);
+      await customersRepo.update(customer.id, {
+        metadata: {
+          ...customer.metadata,
+          completedBookings,
+          activeBookings
+        }
+      });
     }
 
-    // Update vendor stats
-    const vendor = await kv.get(`vendor:${booking.vendorId}`);
+    // ✅ SQL: Update vendor stats
+    const vendorsRepo = getVendorsRepository();
+    const vendor = await vendorsRepo.findById(booking.vendor_id || '');
     if (vendor) {
-      vendor.completedBookings = (vendor.completedBookings || 0) + 1;
-      await kv.set(`vendor:${booking.vendorId}`, vendor);
+      const completedBookings = (vendor.metadata?.completedBookings || 0) + 1;
+      await vendorsRepo.update(vendor.id, {
+        metadata: {
+          ...vendor.metadata,
+          completedBookings
+        }
+      });
     }
 
-    // Create notification for review
+    // ✅ SQL: Create notification for review
+    const notificationsRepo = getNotificationsRepository();
     const notificationId = `notif_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-    await kv.set(`notification:${notificationId}`, {
+    await notificationsRepo.create({
       id: notificationId,
-      userId: booking.customerId,
-      userType: 'customer',
-      type: 'service_completed',
+      user_id: booking.customer_id,
+      user_type: 'customer',
+      notification_type: 'service_completed',
       title: 'Service Completed',
       message: 'Please rate your grooming experience',
-      actionType: 'rate_booking',
-      actionData: { bookingId },
-      read: false,
-      createdAt: new Date().toISOString()
+      action_type: 'rate_booking',
+      action_data: { bookingId },
+      is_read: false
     });
 
     console.log('✅ Booking completed successfully');
 
     return c.json({
       success: true,
-      booking,
+      booking: updatedBooking,
       message: 'Grooming session completed successfully'
     });
   } catch (error) {

@@ -1,5 +1,11 @@
-import { Hono } from "npm:hono";
-import { sendSuccess, sendError } from "./response-utils.ts";
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from "hono";
+import { sendSuccess, sendError } from "./response-utils";
+import { 
+  getBookingsRepository,
+  getWalletsRepository
+} from '../../../supabase/lib/repositories/index';
+import { getDbClient } from '../../../supabase/lib/db';
 
 /**
  * 💸 REFUND POLICY ENGINE & AUTOMATION
@@ -30,7 +36,7 @@ const DEFAULT_POLICY: RefundPolicy = {
   cancellationFee: 50 // Fixed fee
 };
 
-export function refundPolicyEndpoints(app: Hono, kv: any) {
+export function refundPolicyEndpoints(app: Hono) {
   const BASE_PATH = "/make-server-3dd53475";
 
   // ========================================
@@ -40,15 +46,23 @@ export function refundPolicyEndpoints(app: Hono, kv: any) {
     try {
       const bookingId = c.req.param('bookingId');
       
-      // 1. Fetch booking details
-      const booking = await kv.get(`booking_${bookingId}`);
+      // ✅ SQL: Fetch booking details from bookings table
+      const bookingsRepo = getBookingsRepository();
+      const booking = await bookingsRepo.findById(bookingId);
       if (!booking) return sendError(c, 'Booking not found', 404);
 
-      // 2. Fetch vendor specific policy or use default
-      const vendorPolicy = await kv.get(`refund_policy_${booking.vendorId}`) || DEFAULT_POLICY;
+      // ✅ SQL: Fetch vendor specific policy from vendor_settings or use default
+      const db = getDbClient();
+      const { data: vendorPolicyData } = await db
+        .from('vendor_settings')
+        .select('refund_policy')
+        .eq('vendor_id', booking.vendor_id)
+        .single();
+      
+      const vendorPolicy = vendorPolicyData?.refund_policy || DEFAULT_POLICY;
 
       // 3. Calculate Refund
-      const scheduledAt = new Date(booking.scheduledAt);
+      const scheduledAt = new Date(booking.scheduled_at || booking.service_date);
       const now = new Date();
       const hoursUntilService = (scheduledAt.getTime() - now.getTime()) / (1000 * 60 * 60);
 
@@ -70,7 +84,7 @@ export function refundPolicyEndpoints(app: Hono, kv: any) {
       // If closer than the last tier (e.g. < 4 hours), percentage remains 0 or whatever logic
       // Assuming if < 4 hours, it might be 0% or minimal.
 
-      const paidAmount = booking.totalAmount || 0;
+      const paidAmount = booking.total_amount || 0;
       let refundAmount = (paidAmount * percentage) / 100;
 
       // Deduct cancellation fee if applicable
@@ -101,15 +115,22 @@ export function refundPolicyEndpoints(app: Hono, kv: any) {
     try {
       const { bookingId, reason, refundMethod } = await c.req.json(); // refundMethod: 'wallet' | 'original'
 
-      // 1. Get Booking
-      const booking = await kv.get(`booking_${bookingId}`);
+      // ✅ SQL: Get Booking from bookings table
+      const bookingsRepo = getBookingsRepository();
+      const booking = await bookingsRepo.findById(bookingId);
       if (!booking) return sendError(c, 'Booking not found', 404);
       if (booking.status === 'cancelled') return sendError(c, 'Booking already cancelled', 400);
 
       // 2. Re-calculate refund amount (security check)
-      // ... reuse logic from estimate ...
-      const vendorPolicy = await kv.get(`refund_policy_${booking.vendorId}`) || DEFAULT_POLICY;
-      const scheduledAt = new Date(booking.scheduledAt);
+      const db = getDbClient();
+      const { data: vendorPolicyData } = await db
+        .from('vendor_settings')
+        .select('refund_policy')
+        .eq('vendor_id', booking.vendor_id)
+        .single();
+      
+      const vendorPolicy = vendorPolicyData?.refund_policy || DEFAULT_POLICY;
+      const scheduledAt = new Date(booking.scheduled_at || booking.service_date);
       const now = new Date();
       const hoursUntilService = (scheduledAt.getTime() - now.getTime()) / (1000 * 60 * 60);
       
@@ -121,7 +142,7 @@ export function refundPolicyEndpoints(app: Hono, kv: any) {
               break;
           }
       }
-      let refundAmount = (booking.totalAmount * percentage) / 100;
+      let refundAmount = ((booking.total_amount || 0) * percentage) / 100;
       if (refundAmount > 0) refundAmount = Math.max(0, refundAmount - (vendorPolicy.cancellationFee || 0));
 
       // 3. Process Refund
@@ -129,32 +150,36 @@ export function refundPolicyEndpoints(app: Hono, kv: any) {
       let status = 'processing';
 
       if (refundMethod === 'wallet') {
-          // Instant Wallet Credit
-          const customerWallet = await kv.get(`wallet_${booking.customerId}`) || { balance: 0 };
-          customerWallet.balance += refundAmount;
-          await kv.set(`wallet_${booking.customerId}`, customerWallet);
+          // ✅ SQL: Instant Wallet Credit using wallets repository
+          const walletsRepo = getWalletsRepository();
+          await walletsRepo.addTransaction(booking.customer_id, {
+            type: 'refund',
+            amount: refundAmount,
+            description: `Refund for booking ${bookingId}`,
+            booking_id: bookingId
+          });
           
           status = 'completed';
           transactionId = `WAL_${Date.now()}`;
-          console.log(`💰 Refunded ₹${refundAmount} to wallet for user ${booking.customerId}`);
+          console.log(`💰 Refunded ₹${refundAmount} to wallet for user ${booking.customer_id}`);
 
       } else {
           // Razorpay/Bank Refund
           // Mocking the API call
-          console.log(`💳 Initiating Razorpay refund for payment ${booking.paymentId}, Amount: ₹${refundAmount}`);
+          console.log(`💳 Initiating Razorpay refund for payment ${booking.payment_id}, Amount: ₹${refundAmount}`);
           // await razorpay.refunds.create(...)
           status = 'initiated'; // Takes 5-7 days
           transactionId = `rfnd_${Date.now()}`;
       }
 
-      // 4. Update Booking Status
-      booking.status = 'cancelled';
-      booking.cancellationReason = reason;
-      booking.refundStatus = status;
-      booking.refundAmount = refundAmount;
-      booking.refundTransactionId = transactionId;
-      
-      await kv.set(`booking_${bookingId}`, booking);
+      // ✅ SQL: Update Booking Status
+      await bookingsRepo.update(bookingId, {
+        status: 'cancelled',
+        cancellation_reason: reason,
+        refund_status: status,
+        refund_amount: refundAmount,
+        refund_transaction_id: transactionId
+      });
 
       return sendSuccess(c, {
           success: true,

@@ -11,10 +11,14 @@
  * Status: ✅ P1 IMPLEMENTATION
  */
 
-import { Hono } from 'npm:hono';
-import { cors } from 'npm:hono/cors';
-import * as kv from './kv_store.tsx';
-import { createRazorpayOrder, verifyRazorpaySignature } from './razorpay-integration.tsx';
+// ✅ Lambda Compatibility: Removed Deno.env.get() references
+import { Hono } from 'hono';
+import { cors } from "hono/cors";
+// ✅ SQL: KV import removed
+import { createRazorpayOrder, verifyRazorpaySignature } from './razorpay-integration';
+import { getRazorpayCredentials } from './razorpay-credentials-helper';
+import { getCustomersRepository, getWalletsRepository } from '../../../../supabase/lib/repositories/index';
+import { getDbClient } from '../../../../supabase/lib/db';
 
 const app = new Hono();
 app.use('*', cors());
@@ -52,7 +56,9 @@ app.post('/customer/:customerId/wallet/topup/initiate', async (c) => {
     }
     
     // Get customer
-    const customer = await kv.get(`customer:${customerId}`);
+    // ✅ SQL: Get customer
+    const customersRepo = getCustomersRepository();
+    const customer = await customersRepo.findById(customerId);
     if (!customer) {
       return c.json({ error: 'Customer not found' }, 404);
     }
@@ -82,7 +88,21 @@ app.post('/customer/:customerId/wallet/topup/initiate', async (c) => {
       createdAt: new Date().toISOString()
     };
     
-    await kv.set(`wallet:transaction:${transactionId}`, transaction);
+    // ✅ SQL: Store wallet transaction
+    const db = getDbClient();
+    await db.from('wallet_transactions').insert({
+      id: transactionId,
+      customer_id: customerId,
+      transaction_type: 'topup',
+      amount: amount,
+      bonus_amount: bonusAmount,
+      total_amount: amount + bonusAmount,
+      status: 'pending',
+      razorpay_order_id: razorpayOrder.id,
+      razorpay_amount: razorpayOrder.amount,
+      currency: razorpayOrder.currency,
+      created_at: new Date().toISOString()
+    });
     
     console.log(`💰 Wallet top-up initiated: ${transactionId} for ₹${amount}`);
     
@@ -99,7 +119,7 @@ app.post('/customer/:customerId/wallet/topup/initiate', async (c) => {
         amount: razorpayOrder.amount,
         currency: razorpayOrder.currency
       },
-      key: Deno.env.get('RAZORPAY_KEY_ID')
+      key: (await getRazorpayCredentials()).keyId // ✅ Lambda: Get from PlatformSettingsRepository
     });
     
   } catch (error) {
@@ -125,7 +145,30 @@ app.post('/customer/:customerId/wallet/topup/verify', async (c) => {
     }
     
     // Get transaction
-    const transaction = await kv.get(`wallet:transaction:${transactionId}`);
+    // ✅ SQL: Get wallet transaction
+    const db = getDbClient();
+    const { data: transactionData } = await db
+      .from('wallet_transactions')
+      .select('*')
+      .eq('id', transactionId)
+      .single();
+    
+    if (!transactionData) {
+      return c.json({ error: 'Transaction not found' }, 404);
+    }
+    
+    const transaction = {
+      id: transactionData.id,
+      customerId: transactionData.customer_id,
+      amount: transactionData.amount,
+      bonusAmount: transactionData.bonus_amount,
+      totalAmount: transactionData.total_amount,
+      status: transactionData.status,
+      razorpayOrderId: transactionData.razorpay_order_id,
+      razorpayAmount: transactionData.razorpay_amount,
+      currency: transactionData.currency,
+      createdAt: transactionData.created_at
+    };
     if (!transaction) {
       return c.json({ error: 'Transaction not found' }, 404);
     }
@@ -138,10 +181,15 @@ app.post('/customer/:customerId/wallet/topup/verify', async (c) => {
     );
     
     if (!isValid) {
-      transaction.status = 'failed';
-      transaction.failedAt = new Date().toISOString();
-      transaction.failureReason = 'Invalid signature';
-      await kv.set(`wallet:transaction:${transactionId}`, transaction);
+      // ✅ SQL: Update transaction status to failed
+      await db
+        .from('wallet_transactions')
+        .update({
+          status: 'failed',
+          failed_at: new Date().toISOString(),
+          failure_reason: 'Invalid signature'
+        })
+        .eq('id', transactionId);
       
       return c.json({
         error: 'Payment verification failed',
@@ -149,41 +197,60 @@ app.post('/customer/:customerId/wallet/topup/verify', async (c) => {
       }, 400);
     }
     
-    // Update transaction
-    transaction.status = 'completed';
-    transaction.completedAt = new Date().toISOString();
-    transaction.razorpayPaymentId = razorpayPaymentId;
-    transaction.razorpaySignature = razorpaySignature;
-    
-    await kv.set(`wallet:transaction:${transactionId}`, transaction);
+    // ✅ SQL: Update transaction to completed
+    await db
+      .from('wallet_transactions')
+      .update({
+        status: 'completed',
+        completed_at: new Date().toISOString(),
+        razorpay_payment_id: razorpayPaymentId,
+        razorpay_signature: razorpaySignature
+      })
+      .eq('id', transactionId);
     
     // Update wallet balance
-    const wallet = await kv.get(`wallet:${customerId}`) || {
-      balance: 0,
-      totalEarned: 0,
-      totalSpent: 0
-    };
+    // ✅ SQL: Get or create wallet
+    const walletsRepo = getWalletsRepository();
+    let walletData = await walletsRepo.findByCustomer(customerId);
     
-    wallet.balance += transaction.totalAmount;
-    wallet.totalEarned += transaction.totalAmount;
-    wallet.lastTopupAt = new Date().toISOString();
-    wallet.lastTopupAmount = transaction.totalAmount;
+    // ✅ SQL: Get or create wallet
+    let wallet = walletData;
+    if (!wallet) {
+      wallet = await walletsRepo.findOrCreate(customerId);
+    }
     
-    await kv.set(`wallet:${customerId}`, wallet);
+    // ✅ SQL: Create credit transaction (this will update wallet balance automatically)
+    await walletsRepo.addTransaction({
+      wallet_id: wallet.id,
+      customer_id: customerId,
+      transaction_type: 'credit',
+      amount: transaction.totalAmount,
+      source: 'wallet_topup',
+      purpose: 'topup',
+      description: `Wallet top-up via Razorpay`,
+      reference_id: transactionId
+    });
     
-    // Add to transaction history
-    const transactions = await kv.get(`wallet:${customerId}:transactions`) || [];
-    transactions.unshift(transactionId);
-    await kv.set(`wallet:${customerId}:transactions`, transactions);
+    // Get updated wallet data
+    const updatedWallet = await walletsRepo.findByCustomer(customerId);
     
-    console.log(`✅ Wallet top-up completed: ${transactionId}, Balance: ₹${wallet.balance}`);
+    // ✅ SQL: Wallet already updated via walletsRepo.credit() above
+    // Transaction already stored in wallet_transactions table
+    
+    console.log(`✅ Wallet top-up completed: ${transactionId}, Balance: ₹${updatedWallet?.balance || 0}`);
     
     return c.json({
       success: true,
-      transaction,
+      transaction: {
+        id: transaction.id,
+        amount: transaction.amount,
+        bonusAmount: transaction.bonusAmount,
+        totalAmount: transaction.totalAmount,
+        status: 'completed'
+      },
       wallet: {
-        balance: wallet.balance,
-        totalEarned: wallet.totalEarned
+        balance: updatedWallet?.balance || 0,
+        totalEarned: updatedWallet?.total_earned || 0
       },
       message: `₹${transaction.totalAmount} added to wallet successfully`
     });
@@ -247,42 +314,60 @@ app.get('/customer/:customerId/wallet', async (c) => {
     const customerId = c.req.param('customerId');
     
     // Get wallet data
-    const wallet = await kv.get(`wallet:${customerId}`) || {
-      balance: 0,
-      totalEarned: 0,
-      totalSpent: 0
-    };
+    // ✅ SQL: Get wallet
+    const walletsRepo = getWalletsRepository();
+    // ✅ SQL: Get or create wallet
+    const wallet = await walletsRepo.findOrCreate(customerId);
     
     // Get recent transactions (last 5)
-    const transactionIds = await kv.get(`wallet:${customerId}:transactions`) || [];
-    const recentTransactions = [];
+    // ✅ SQL: Get wallet transactions
+    const db = getDbClient();
+    const limit = 50; // Default limit
+    const { data: transactionsData } = await db
+      .from('wallet_transactions')
+      .select('*')
+      .eq('customer_id', customerId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
     
-    for (let i = 0; i < Math.min(5, transactionIds.length); i++) {
-      const txn = await kv.get(`wallet:transaction:${transactionIds[i]}`);
+    const recentTransactions: Array<{
+      id: string;
+      type: string;
+      amount: number;
+      status: string;
+      createdAt: string;
+    }> = [];
+    
+    for (let i = 0; i < Math.min(5, transactionsData?.length || 0); i++) {
+      // ✅ SQL: Transaction already in transactionsData array
+      const txn = transactionsData?.[i];
       if (txn) {
         recentTransactions.push({
           id: txn.id,
-          type: txn.type,
-          amount: txn.amount,
-          status: txn.status,
-          createdAt: txn.createdAt
+          type: txn.transaction_type || 'unknown',
+          amount: txn.amount || 0,
+          status: txn.status || 'pending',
+          createdAt: txn.created_at || new Date().toISOString()
         });
       }
     }
     
-    console.log(`💰 [GET-WALLET] Customer ${customerId}: Balance ₹${wallet.balance}`);
+    console.log(`💰 [GET-WALLET] Customer ${customerId}: Balance ₹${wallet?.balance || 0}`);
+    
+    // Get last topup transaction
+    const lastTopupTransaction = transactionsData?.find((t: any) => (t.transaction_type === 'topup' || t.purpose === 'topup') && t.status === 'completed');
     
     return c.json({
       success: true,
       wallet: {
-        balance: wallet.balance,
-        totalEarned: wallet.totalEarned || 0,
-        totalSpent: wallet.totalSpent || 0,
-        lastTopupAt: wallet.lastTopupAt,
-        lastTopupAmount: wallet.lastTopupAmount || 0
+        balance: wallet?.balance || 0,
+        totalEarned: wallet?.total_earned || 0,
+        totalSpent: wallet?.total_spent || 0,
+        lastTopupAt: lastTopupTransaction?.created_at || null,
+        lastTopupAmount: lastTopupTransaction?.total_amount || lastTopupTransaction?.amount || 0
       },
       recentTransactions,
-      transactionCount: transactionIds.length
+      transactionCount: transactionsData?.length || 0
     });
     
   } catch (error) {
@@ -304,23 +389,40 @@ app.get('/customer/:customerId/wallet/transactions', async (c) => {
     const offset = parseInt(c.req.query('offset') || '0');
     const type = c.req.query('type'); // Optional filter: topup, payment, refund
     
-    // Get transaction IDs
-    const transactionIds = await kv.get(`wallet:${customerId}:transactions`) || [];
+    // ✅ SQL: Get wallet transactions
+    const db = getDbClient();
+    let query = db
+      .from('wallet_transactions')
+      .select('*')
+      .eq('customer_id', customerId)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
     
-    // Get full transaction details
-    const transactions = [];
-    const startIdx = offset;
-    const endIdx = Math.min(offset + limit, transactionIds.length);
-    
-    for (let i = startIdx; i < endIdx; i++) {
-      const txn = await kv.get(`wallet:transaction:${transactionIds[i]}`);
-      if (txn) {
-        // Apply type filter if specified
-        if (!type || txn.type === type) {
-          transactions.push(txn);
-        }
-      }
+    // Apply type filter if specified
+    if (type) {
+      query = query.eq('transaction_type', type);
     }
+    
+    const { data: transactionsData } = await query;
+    const transactions = (transactionsData || []).map((txn: any) => ({
+      id: txn.id,
+      type: txn.transaction_type,
+      amount: txn.amount,
+      bonusAmount: txn.bonus_amount || 0,
+      totalAmount: txn.total_amount,
+      status: txn.status,
+      createdAt: txn.created_at,
+      razorpayOrderId: txn.razorpay_order_id,
+      razorpayPaymentId: txn.razorpay_payment_id
+    }));
+    
+    // Get total count for pagination
+    const { count } = await db
+      .from('wallet_transactions')
+      .select('*', { count: 'exact', head: true })
+      .eq('customer_id', customerId);
+    
+    const totalCount = count || 0;
     
     console.log(`💳 [WALLET-TRANSACTIONS] Customer ${customerId}: ${transactions.length} transactions`);
     
@@ -328,10 +430,10 @@ app.get('/customer/:customerId/wallet/transactions', async (c) => {
       success: true,
       transactions,
       pagination: {
-        total: transactionIds.length,
+        total: totalCount,
         limit,
         offset,
-        hasMore: endIdx < transactionIds.length
+        hasMore: offset + limit < totalCount
       }
     });
     

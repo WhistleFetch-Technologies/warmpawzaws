@@ -4,7 +4,7 @@
  */
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+// ✅ FIX: Removed Supabase imports - using API Gateway now
 import { handleVendorError, isVendorNotFound } from './utils/vendor-error-handler';
 import { useVendorNotificationService } from './useVendorNotificationService';
 import { StaffManagement } from './StaffManagement';
@@ -277,62 +277,76 @@ export function VendorLandingPage({
     try {
       setLoading(true);
       
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
       // Try to load vendor profile
-      const profileResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/profile/${vendorId}`,
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
+      try {
+        const profileData = await apiCallJson<any>(
+          `${API_GATEWAY_URL}/make-server-3dd53475/vendor/profile/${vendorId}`
+        );
+        
+        if (profileData.success && profileData.vendor) {
+          setVendorData(profileData.vendor);
 
-      if (profileResponse.ok) {
-        const profileData = await profileResponse.json();
-        setVendorData(profileData.vendor);
+          // Check if they have an application
+          if (profileData.vendor?.applicationId || profileData.vendor?.application_id) {
+            // Load application data (using existing endpoint)
+            try {
+              const appData = await apiCallJson<any>(
+                `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/application`
+              );
+              
+              if (appData.success && appData.application) {
+                setApplicationData(appData.application);
 
-        // Check if they have an application
-        if (profileData.vendor?.applicationId) {
-          // Load application status
-          const appResponse = await fetch(
-            `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/application/status/${vendorId}`,
-            {
-              headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-            }
-          );
-
-          if (appResponse.ok) {
-            const appData = await appResponse.json();
-            setApplicationData(appData.application);
-
-            // Determine status based on application status
-            if (appData.application.status === 'approved') {
-              if (profileData.vendor.setupCompleted) {
-                setStatus('active');
-              } else if (profileData.vendor.availabilitySetupCompleted) {
-                setStatus('setup_completed');
-              } else if (profileData.vendor.servicesSetupCompleted) {
-                setStatus('approved_availability');
-              } else {
-                setStatus('approved_services');
+                // Determine status based on application status
+                const appStatus = appData.application.status || profileData.vendor.status;
+                if (appStatus === 'approved') {
+                  if (profileData.vendor.setupCompleted || profileData.vendor.setup_completed) {
+                    setStatus('active');
+                  } else if (profileData.vendor.availabilitySetupCompleted) {
+                    setStatus('setup_completed');
+                  } else if (profileData.vendor.servicesSetupCompleted) {
+                    setStatus('approved_availability');
+                  } else {
+                    setStatus('approved_services');
+                  }
+                } else if (appStatus === 'rejected') {
+                  setStatus('rejected');
+                } else if (appStatus === 'clarification_requested' || appStatus === 'more_info_required') {
+                  setStatus('clarification');
+                } else if (appStatus === 'pending' || appStatus === 'under_review') {
+                  setStatus('pending');
+                }
               }
-            } else if (appData.application.status === 'rejected') {
-              setStatus('rejected');
-            } else if (appData.application.status === 'clarification_requested') {
-              setStatus('clarification');
-            } else if (appData.application.status === 'pending' || appData.application.status === 'under_review') {
-              // ✅ PHASE 2 FIX 2.1: Always show pending screen (remove justSubmitted dependency)
-              setStatus('pending');
+            } catch (appError) {
+              console.warn('⚠️ Could not load application data, using vendor status:', appError);
+              // Use vendor status directly
+              processVendorData(profileData.vendor);
             }
+          } else if (profileData.vendor?.profileCreated) {
+            // Profile exists but no application submitted
+            setStatus('profile_incomplete');
+          } else {
+            setStatus('new');
           }
-        } else if (profileData.vendor?.profileCreated) {
-          // Profile exists but no application submitted
-          setStatus('profile_incomplete');
         } else {
+          // No vendor data in response
+          console.warn(`⚠️ Vendor not found: ${vendorId}. Showing new vendor form.`);
           setStatus('new');
         }
-      } else {
+      } catch (profileError: any) {
         // No profile found - use standardized error handler
-        const errorData = await profileResponse.json().catch(() => ({}));
-        const error = { status: profileResponse.status, ...errorData };
+        const error = { 
+          status: profileError.status || 404, 
+          message: profileError.message || 'Vendor not found' 
+        };
         
         handleVendorError(error, vendorId);
         
@@ -383,66 +397,14 @@ export function VendorLandingPage({
       // ✅ LEGACY CODE BELOW - Only runs for old onboarding flow (if any)
       console.log('📤 Starting profile submission with document upload...');
       
-      // STEP 1: Upload all documents to Supabase Storage
-      const formData = new FormData();
-      formData.append('vendorId', vendorId);
+      // ✅ FIX: STEP 1: Upload all documents to S3 (not Supabase Storage)
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
       
       const documents: any[] = [];
-      
-      // Add Aadhaar front
-      if (profileData.aadhaarFiles?.front) {
-        formData.append('aadhaar_front', profileData.aadhaarFiles.front);
-        console.log('📎 Added Aadhaar Front');
-      }
-      
-      // Add Aadhaar back
-      if (profileData.aadhaarFiles?.back) {
-        formData.append('aadhaar_back', profileData.aadhaarFiles.back);
-        console.log('📎 Added Aadhaar Back');
-      }
-      
-      // Add GST certificate
-      if (profileData.gstCertificate) {
-        formData.append('gst_certificate', profileData.gstCertificate);
-        console.log('📎 Added GST Certificate');
-      }
-      
-      // Add Police Verification
-      if (profileData.policeVerification) {
-        formData.append('police_verification', profileData.policeVerification);
-        console.log('📎 Added Police Verification');
-      }
-      
-      // Add Cancelled Cheque
-      if (profileData.bankDetails?.cancelledCheque) {
-        formData.append('cancelled_cheque', profileData.bankDetails.cancelledCheque);
-        console.log('📎 Added Cancelled Cheque');
-      }
-      
-      // Upload all documents
-      console.log('☁️ Uploading documents to storage...');
-      const uploadResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/storage/upload-multiple`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
-          },
-          body: formData
-        }
-      );
-      
-      if (!uploadResponse.ok) {
-        const error = await uploadResponse.text();
-        console.error('❌ Upload failed:', error);
-        toast.error('Failed to upload documents');
-        return;
-      }
-      
-      const uploadResult = await uploadResponse.json();
-      console.log('✅ Documents uploaded:', uploadResult);
-      
-      // Map upload results to documents array
+      const filesToUpload: File[] = [];
       const documentTypeMap: Record<string, string> = {
         'aadhaar_front': 'Aadhaar Front',
         'aadhaar_back': 'Aadhaar Back',
@@ -451,18 +413,90 @@ export function VendorLandingPage({
         'cancelled_cheque': 'Cancelled Cheque'
       };
       
-      if (uploadResult.uploads) {
-        uploadResult.uploads.forEach((upload: any) => {
-          if (upload.success) {
-            documents.push({
-              name: upload.originalName || documentTypeMap[upload.documentType],
-              category: documentTypeMap[upload.documentType],
-              type: upload.type,
-              url: upload.url,
-              fileName: upload.fileName
-            });
-          }
+      // Collect all files
+      if (profileData.aadhaarFiles?.front) {
+        filesToUpload.push(profileData.aadhaarFiles.front);
+      }
+      if (profileData.aadhaarFiles?.back) {
+        filesToUpload.push(profileData.aadhaarFiles.back);
+      }
+      if (profileData.gstCertificate) {
+        filesToUpload.push(profileData.gstCertificate);
+      }
+      if (profileData.policeVerification) {
+        filesToUpload.push(profileData.policeVerification);
+      }
+      if (profileData.bankDetails?.cancelledCheque) {
+        filesToUpload.push(profileData.bankDetails.cancelledCheque);
+      }
+      
+      // Upload all documents to S3 using batch upload
+      if (filesToUpload.length > 0) {
+        console.log('☁️ Uploading documents to S3...');
+        const uploadFormData = new FormData();
+        filesToUpload.forEach((file, index) => {
+          uploadFormData.append('files', file);
         });
+        uploadFormData.append('folder', 'vendor-documents');
+        uploadFormData.append('userId', vendorId);
+        uploadFormData.append('userType', 'vendor');
+        
+        const { apiCall } = await import('@warmpawz/api-client/http');
+        const uploadResponse = await apiCall(
+          `${API_GATEWAY_URL}/make-server-3dd53475/media/upload-batch`,
+          {
+            method: 'POST',
+            body: uploadFormData
+          }
+        );
+        
+        if (!uploadResponse.ok) {
+          const errorText = await uploadResponse.text();
+          console.error('❌ Upload failed:', errorText);
+          toast.error('Failed to upload documents');
+          return;
+        }
+        
+        const uploadResult = await uploadResponse.json();
+        console.log('✅ Documents uploaded:', uploadResult);
+        
+        // Map upload results to documents array
+        if (uploadResult.success && uploadResult.uploads) {
+          uploadResult.uploads.forEach((upload: any, index: number) => {
+            if (upload.success && upload.url) {
+              const file = filesToUpload[index];
+              const docType = Object.keys(documentTypeMap).find(key => 
+                file.name.toLowerCase().includes(key.replace('_', ''))
+              ) || 'document';
+              
+              documents.push({
+                name: upload.fileName || file.name,
+                category: documentTypeMap[docType] || 'Document',
+                type: upload.type || file.type,
+                url: upload.url,
+                fileName: upload.fileName || file.name
+              });
+            } else {
+              console.warn(`⚠️ Upload failed for file ${index}:`, upload.error || 'Unknown error');
+            }
+          });
+          
+          // Check if all required documents were uploaded successfully
+          if (documents.length === 0 && filesToUpload.length > 0) {
+            toast.error('All document uploads failed. Please try again.');
+            return;
+          }
+          
+          // Warn if some uploads failed
+          const failedUploads = uploadResult.uploads.filter((u: any) => !u.success);
+          if (failedUploads.length > 0) {
+            toast.warning(`${failedUploads.length} document(s) failed to upload. Please retry those documents.`);
+          }
+        } else {
+          console.error('❌ Upload response format invalid:', uploadResult);
+          toast.error('Document upload failed. Please try again.');
+          return;
+        }
       }
       
       console.log('📋 Prepared documents array:', documents);
@@ -486,20 +520,41 @@ export function VendorLandingPage({
         createdAt: new Date().toISOString()
       };
 
-      const profileResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/profile/save`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
-          },
-          body: JSON.stringify(vendorProfile)
-        }
-      );
+      // ✅ FIX: STEP 2: Save the profile using API Gateway
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      try {
+        const profileResponse = await apiCallJson<any>(
+          `${API_GATEWAY_URL}/make-server-3dd53475/vendor/profile/${vendorId}`,
+          {
+            method: 'PUT',
+            body: JSON.stringify({
+              formData: {
+                fullName: vendorProfile.fullName,
+                businessName: vendorProfile.businessName,
+                email: profileData.email || `${phone}@warmpawz.com`,
+                address: vendorProfile.address,
+                city: profileData.city || '',
+                state: profileData.state || '',
+                pincode: profileData.pincode || '',
+                gstNumber: vendorProfile.gstNumber,
+                panNumber: profileData.panNumber || '',
+                yearsOfExperience: vendorProfile.experience || 0
+              },
+              location: vendorProfile.location
+            })
+          }
+        );
 
-      if (!profileResponse.ok) {
-        toast.error('Failed to save profile');
+        if (!profileResponse || !profileResponse.success) {
+          const errorMsg = profileResponse?.error || profileResponse?.message || 'Failed to save profile';
+          console.error('❌ Profile save failed:', errorMsg);
+          toast.error(errorMsg);
+          return;
+        }
+      } catch (profileError: any) {
+        console.error('❌ Error saving profile:', profileError);
+        const errorMsg = profileError?.message || profileError?.error || 'Failed to save profile';
+        toast.error(errorMsg);
         return;
       }
 
@@ -537,25 +592,44 @@ export function VendorLandingPage({
         documents: applicationPayload.documents
       });
 
-      const appResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/application/submit`,
+      // ✅ FIX: STEP 3: Submit the application using API Gateway
+      // Note: API_GATEWAY_URL is already defined above
+      const { apiCallJson: apiCallJsonApp } = await import('@warmpawz/api-client/http');
+      const appResponse = await apiCallJsonApp<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/apply`,
         {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
-          },
-          body: JSON.stringify(applicationPayload)
+          body: JSON.stringify({
+            roleId: vendorData?.roleId || applicationPayload.vendorType,
+            phone: phone,
+            email: applicationPayload.email,
+            serviceStyle: applicationPayload.serviceStyle,
+            location: applicationPayload.location,
+            formData: {
+              fullName: applicationPayload.fullName,
+              businessName: applicationPayload.businessName,
+              address: applicationPayload.address,
+              city: applicationPayload.city,
+              state: applicationPayload.state,
+              pincode: applicationPayload.pincode,
+              gstNumber: applicationPayload.gstNumber,
+              panNumber: applicationPayload.panNumber,
+              yearsOfExperience: applicationPayload.additionalInfo?.experience || 0
+            },
+            documents: documents
+          })
         }
       );
 
-      if (appResponse.ok) {
-        const result = await appResponse.json();
-        console.log('✅ Application submitted successfully:', result.applicationId);
+      // ✅ FIX: apiCallJson returns data directly
+      if (appResponse && (appResponse.success || appResponse.applicationId || appResponse.data?.applicationId)) {
+        const result = appResponse.data || appResponse;
+        const applicationId = result.applicationId || result.id;
+        console.log('✅ Application submitted successfully:', applicationId);
         
         // Update local state
         setApplicationData({
-          id: result.applicationId,
+          id: applicationId,
           status: 'pending'
         });
         
@@ -563,13 +637,19 @@ export function VendorLandingPage({
         setStatus('submitted');
         toast.success('Application submitted successfully!');
       } else {
-        const error = await appResponse.json();
-        console.error('❌ Failed to submit application:', error);
-        toast.error('Failed to submit application. Please try again.');
+        const errorMsg = appResponse?.error || appResponse?.message || 'Failed to submit application. Please try again.';
+        console.error('❌ Failed to submit application:', errorMsg, appResponse);
+        toast.error(errorMsg);
       }
-    } catch (error) {
-      console.error('Error submitting profile and application:', error);
-      toast.error('An error occurred. Please try again.');
+    } catch (error: any) {
+      console.error('❌ Error submitting profile and application:', error);
+      const errorMsg = error?.message || error?.error || 'An error occurred while submitting. Please try again.';
+      toast.error(errorMsg);
+      
+      // If it's an API Gateway URL error, provide helpful message
+      if (errorMsg.includes('API Gateway URL') || errorMsg.includes('fetch')) {
+        toast.error('Unable to connect to server. Please check your internet connection and try again.');
+      }
     }
   };
 
@@ -584,24 +664,24 @@ export function VendorLandingPage({
   const handleSetupComplete = async () => {
     console.log('🎯 [VendorLandingPage] handleSetupComplete called - updating vendor data...');
     
-    // Refetch vendor data to get updated status
+    // ✅ FIX: Refetch vendor data to get updated status using API Gateway
     try {
-      const profileResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/profile/${vendorId}`,
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (API_GATEWAY_URL) {
+        const { apiCallJson } = await import('@warmpawz/api-client/http');
+        const profileData = await apiCallJson<any>(
+          `${API_GATEWAY_URL}/make-server-3dd53475/vendor/profile/${vendorId}`
+        );
+        
+        if (profileData.success && profileData.vendor) {
+          const vendor = profileData.vendor;
+          console.log('✅ [VendorLandingPage] Vendor data refreshed:', {
+            setupCompleted: vendor?.setupCompleted || vendor?.setup_completed,
+            setupStage: vendor?.setupStage,
+            isActive: vendor?.isActive || vendor?.is_active
+          });
+          setVendorData(vendor);
         }
-      );
-
-      if (profileResponse.ok) {
-        const profileData = await profileResponse.json();
-        const vendor = profileData.vendorProfile || profileData.vendor;
-        console.log('✅ [VendorLandingPage] Vendor data refreshed:', {
-          setupCompleted: vendor?.setupCompleted,
-          setupStage: vendor?.setupStage,
-          isActive: vendor?.isActive
-        });
-        setVendorData(vendor);
       }
     } catch (error) {
       console.error('❌ [VendorLandingPage] Error refreshing vendor data:', error);
@@ -631,16 +711,18 @@ export function VendorLandingPage({
       console.log(`📝 Starting re-onboarding in ${mode} mode...`);
       setLoading(true);
       
-      // Load existing application data
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/application`,
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
+      // ✅ FIX: Load existing application data using API Gateway
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/application`
       );
       
-      if (response.ok) {
-        const data = await response.json();
+      if (data.success && data.application) {
         console.log('✅ Loaded existing application data:', data.application);
         
         setExistingApplicationData(data.application);
@@ -650,8 +732,7 @@ export function VendorLandingPage({
         
         toast.success('Application loaded. Please update the required information.');
       } else {
-        const error = await response.json();
-        console.error('❌ Failed to load application:', error);
+        console.error('❌ Failed to load application:', data);
         toast.error('Failed to load application data. Please try again.');
         setLoading(false);
       }
@@ -1046,7 +1127,6 @@ export function VendorLandingPage({
         return (
           <PackageManagementContainer
             vendorId={vendorId}
-            vendorData={vendorData}
             onBack={() => setShowPackages(false)}
           />
         );
@@ -1233,6 +1313,61 @@ export function VendorLandingPage({
           <VendorDistancePricing
             vendorId={vendorId}
             onClose={() => setShowDistancePricing(false)}
+          />
+        );
+      }
+      
+      // ✅ INTEGRATION: Multi-Doctor Management
+      if (showMultiDoctorManagement) {
+        return (
+          <VendorMultiDoctorManagement
+            vendorId={vendorId}
+            vendorData={vendorData}
+            onBack={() => setShowMultiDoctorManagement(false)}
+          />
+        );
+      }
+      
+      // ✅ INTEGRATION: Table Management
+      if (showTableManagement) {
+        return (
+          <VendorTableManagement
+            vendorId={vendorId}
+            vendorData={vendorData}
+            onBack={() => setShowTableManagement(false)}
+          />
+        );
+      }
+      
+      // ✅ INTEGRATION: Pax Management
+      if (showPaxManagement) {
+        return (
+          <VendorPaxManagement
+            vendorId={vendorId}
+            vendorData={vendorData}
+            onBack={() => setShowPaxManagement(false)}
+          />
+        );
+      }
+      
+      // ✅ INTEGRATION: Occupancy Tracking
+      if (showOccupancyTracking) {
+        return (
+          <VendorOccupancyTracking
+            vendorId={vendorId}
+            vendorData={vendorData}
+            onBack={() => setShowOccupancyTracking(false)}
+          />
+        );
+      }
+      
+      // ✅ INTEGRATION: Nightly Pricing
+      if (showNightlyPricing) {
+        return (
+          <VendorNightlyPricing
+            vendorId={vendorId}
+            vendorData={vendorData}
+            onBack={() => setShowNightlyPricing(false)}
           />
         );
       }

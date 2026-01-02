@@ -5,7 +5,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '../ui/card';
 import { Label } from '../ui/label';
 import { Switch } from '../ui/switch';
 import { Slider } from '../ui/slider';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { Save, MapPin, Clock, Truck, ShieldAlert } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 

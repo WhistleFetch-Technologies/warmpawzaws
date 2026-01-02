@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { projectId } from '../../utils/supabase/info';
 import { authenticatedGet } from '../../utils/authenticatedFetch';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { EnterpriseLogicTab } from './EnterpriseLogicTab';
 
 interface RevenueStats {

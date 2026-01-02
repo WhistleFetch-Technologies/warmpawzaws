@@ -71,9 +71,41 @@ export function VendorDashboardScreen({
   const loadDashboardData = async () => {
     try {
       setLoading(true);
-      const response = await VendorApi.getProfile(vendorId);
-      // TODO: Fetch dashboard stats from /vendor/dashboard/:vendorId endpoint
-      // For now, using basic data
+      // ✅ WIRED: Using actual dashboard endpoint (Task 5 - Endpoint Wiring)
+      const dashboardResponse = await VendorApi.getDashboard(vendorId, activeTab);
+      const profileResponse = await VendorApi.getProfile(vendorId);
+      
+      // Use dashboard stats if available, otherwise use profile data
+      if (dashboardResponse.stats) {
+        setStats({
+          appointments: dashboardResponse.stats.appointments || 0,
+          consultations: dashboardResponse.stats.consultations || 0,
+          earnings: dashboardResponse.stats.earnings || 0,
+          pendingEarnings: dashboardResponse.stats.pendingEarnings || 0,
+          completedServices: dashboardResponse.stats.completedServices || 0,
+          rating: dashboardResponse.stats.rating || profileResponse.rating || 4.5,
+          totalReviews: dashboardResponse.stats.totalReviews || profileResponse.totalReviews || 0,
+        });
+      } else {
+        // Fallback to profile data
+        setStats({
+          appointments: 0,
+          consultations: 0,
+          earnings: 0,
+          pendingEarnings: 0,
+          completedServices: 0,
+          rating: profileResponse.rating || 4.5,
+          totalReviews: profileResponse.totalReviews || 0,
+        });
+      }
+      
+      // Set today's schedule if available
+      if (dashboardResponse.schedule) {
+        setTodaySchedule(dashboardResponse.schedule);
+      }
+    } catch (error: any) {
+      console.error('Error loading dashboard:', error);
+      // Fallback to basic stats on error
       setStats({
         appointments: 0,
         consultations: 0,
@@ -83,8 +115,6 @@ export function VendorDashboardScreen({
         rating: 4.5,
         totalReviews: 0,
       });
-    } catch (error) {
-      console.error('Error loading dashboard:', error);
     } finally {
       setLoading(false);
       setRefreshing(false);

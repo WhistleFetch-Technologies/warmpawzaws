@@ -1,12 +1,30 @@
-import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
-import { calculateDuration, validateDuration } from './service-category-helpers.tsx';
+/**
+ * BOOKING MANAGEMENT ENDPOINTS - SQL VERSION
+ * ✅ MIGRATED TO SQL: NO KV STORE - All data from SQL
+ * 
+ * Booking lifecycle management, package occurrences, earnings tracking
+ * 
+ * Status: ✅ SQL-ONLY IMPLEMENTATION
+ * KV Operations: 38 → 0
+ */
+
+import { Hono } from 'hono';
+import { getDbClient } from '../../../supabase/lib/db';
+import { getBookingsRepository } from '../../../supabase/lib/repositories/bookings';
+import { getCustomersRepository } from '../../../supabase/lib/repositories/customers';
+import { getVendorsRepository } from '../../../supabase/lib/repositories/vendors';
+import { getVendorEarningsRepository } from '../../../supabase/lib/repositories/vendor-earnings';
+import { calculateCommission } from '../../../supabase/lib/services/commission-calculator';
+import { calculateDuration, validateDuration } from './service-category-helpers';
+
+const client = getDbClient();
 
 const app = new Hono();
 
 /**
  * GET /make-server-3dd53475/customer/:phone/bookings
  * Get all bookings for a customer
+ * ✅ SQL-ONLY: All KV operations replaced with SQL repositories
  */
 app.get('/make-server-3dd53475/customer/:phone/bookings', async (c) => {
   try {
@@ -16,49 +34,51 @@ app.get('/make-server-3dd53475/customer/:phone/bookings', async (c) => {
     console.log(`\n📚 ===== GET CUSTOMER BOOKINGS =====`);
     console.log(`📞 Phone: ${cleanPhone}`);
     
-    // Get booking IDs for this customer
-    const bookingIds = await kv.get(`customer:bookings:${cleanPhone}`) || [];
-    console.log(`📋 Found ${bookingIds.length} booking IDs`);
+    // ✅ SQL: Get customer by phone
+    const customersRepo = getCustomersRepository();
+    const customer = await customersRepo.findByPhone(cleanPhone);
     
-    if (bookingIds.length === 0) {
+    if (!customer) {
       return c.json({
         success: true,
         bookings: []
       });
     }
     
-    // Load all bookings
-    const bookings = [];
-    for (const bookingId of bookingIds) {
-      const booking = await kv.get(`booking:${bookingId}`);
-      if (booking) {
-        // Load package occurrences if it's a package
-        if (booking.isPackage) {
-          const occurrences = await kv.get(`booking:${bookingId}:occurrences`) || [];
-          booking.occurrences = occurrences;
-          
-          // Calculate completed sessions
-          const completedCount = occurrences.filter((o: any) => o.status === 'completed').length;
-          booking.packageDetails = {
-            ...booking.packageDetails,
-            completedSessions: completedCount
-          };
-        }
+    // ✅ SQL: Get all bookings for customer
+    const bookingsRepo = getBookingsRepository();
+    const bookings = await bookingsRepo.findByCustomer(customer.id);
+    
+    // ✅ SQL: Load package occurrences from package_details JSONB
+    const bookingsWithOccurrences = await Promise.all(bookings.map(async (booking) => {
+      if (booking.is_package && booking.package_details) {
+        const occurrences = booking.package_details.occurrences || [];
         
-        bookings.push(booking);
+        // Calculate completed sessions
+        const completedCount = occurrences.filter((o: any) => o.status === 'completed').length;
+        
+        return {
+          ...booking,
+          occurrences: occurrences,
+          packageDetails: {
+            ...booking.package_details,
+            completedSessions: completedCount
+          }
+        };
       }
-    }
+      return booking;
+    }));
     
     // Sort by creation date (newest first)
-    bookings.sort((a: any, b: any) => {
-      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    bookingsWithOccurrences.sort((a: any, b: any) => {
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
     
-    console.log(`✅ Returning ${bookings.length} bookings`);
+    console.log(`✅ Returning ${bookingsWithOccurrences.length} bookings`);
     
     return c.json({
       success: true,
-      bookings
+      bookings: bookingsWithOccurrences
     });
     
   } catch (error) {
@@ -74,6 +94,7 @@ app.get('/make-server-3dd53475/customer/:phone/bookings', async (c) => {
 /**
  * POST /make-server-3dd53475/booking/:bookingId/occurrence/:occurrenceId/complete
  * Complete a package occurrence with OTP
+ * ✅ SQL-ONLY: All KV operations replaced with SQL repositories
  */
 app.post('/make-server-3dd53475/booking/:bookingId/occurrence/:occurrenceId/complete', async (c) => {
   try {
@@ -85,14 +106,17 @@ app.post('/make-server-3dd53475/booking/:bookingId/occurrence/:occurrenceId/comp
     console.log(`📝 Occurrence ID: ${occurrenceId}`);
     console.log(`🔐 OTP: ${otp}`);
     
-    // Get booking
-    const booking = await kv.get(`booking:${bookingId}`);
+    const bookingsRepo = getBookingsRepository();
+    
+    // ✅ SQL: Get booking
+    const booking = await bookingsRepo.findById(bookingId);
     if (!booking) {
       return c.json({ success: false, error: 'Booking not found' }, 404);
     }
     
-    // Get occurrences
-    const occurrences = await kv.get(`booking:${bookingId}:occurrences`) || [];
+    // ✅ SQL: Get occurrences from package_details JSONB
+    const packageDetails = booking.package_details || {};
+    const occurrences = packageDetails.occurrences || [];
     const occurrenceIndex = occurrences.findIndex((o: any) => o.occurrenceId === occurrenceId);
     
     if (occurrenceIndex === -1) {
@@ -112,19 +136,33 @@ app.post('/make-server-3dd53475/booking/:bookingId/occurrence/:occurrenceId/comp
     occurrence.completedBy = staffId;
     occurrences[occurrenceIndex] = occurrence;
     
-    await kv.set(`booking:${bookingId}:occurrences`, occurrences);
+    // ✅ SQL: Update booking with updated occurrences
+    const updatedPackageDetails = {
+      ...packageDetails,
+      occurrences: occurrences
+    };
+    
+    // Use direct client update for JSONB field
+    await client
+      .from('bookings')
+      .update({ 
+        package_details: updatedPackageDetails,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', bookingId);
     
     // Check if all occurrences are completed
     const allCompleted = occurrences.every((o: any) => o.status === 'completed');
     
     if (allCompleted) {
-      booking.status = 'completed';
-      booking.completedAt = new Date().toISOString();
-      await kv.set(`booking:${bookingId}`, booking);
+      await bookingsRepo.update(bookingId, {
+        status: 'completed',
+        completed_at: new Date().toISOString()
+      });
     }
     
-    // Update earnings for vendor and staff
-    await updateEarnings(booking, staffId);
+    // ✅ SQL: Update earnings for vendor and staff
+    await updateEarningsSQL(booking, staffId);
     
     console.log(`✅ Occurrence completed successfully`);
     
@@ -148,6 +186,7 @@ app.post('/make-server-3dd53475/booking/:bookingId/occurrence/:occurrenceId/comp
 /**
  * POST /make-server-3dd53475/booking/:bookingId/complete
  * Complete a single booking with OTP
+ * ✅ SQL-ONLY: All KV operations replaced with SQL repositories
  */
 app.post('/make-server-3dd53475/booking/:bookingId/complete', async (c) => {
   try {
@@ -158,32 +197,37 @@ app.post('/make-server-3dd53475/booking/:bookingId/complete', async (c) => {
     console.log(`📋 Booking ID: ${bookingId}`);
     console.log(`🔐 OTP: ${otp}`);
     
-    // Get booking
-    const booking = await kv.get(`booking:${bookingId}`);
+    const bookingsRepo = getBookingsRepository();
+    
+    // ✅ SQL: Get booking
+    const booking = await bookingsRepo.findById(bookingId);
     if (!booking) {
       return c.json({ success: false, error: 'Booking not found' }, 404);
     }
     
-    // Verify OTP
-    if (booking.completionOTP !== otp) {
+    // Verify OTP (stored in otp_code or package_details)
+    const bookingOTP = booking.otp_code || booking.package_details?.completionOTP;
+    if (bookingOTP !== otp) {
       return c.json({ success: false, error: 'Invalid OTP' }, 400);
     }
     
-    // Update booking status
-    booking.status = 'completed';
-    booking.completedAt = new Date().toISOString();
-    booking.completedBy = staffId;
+    // ✅ SQL: Update booking status
+    await bookingsRepo.update(bookingId, {
+      status: 'completed',
+      completed_at: new Date().toISOString()
+    });
     
-    await kv.set(`booking:${bookingId}`, booking);
-    
-    // Update earnings
-    await updateEarnings(booking, staffId);
+    // ✅ SQL: Update earnings
+    await updateEarningsSQL(booking, staffId);
     
     console.log(`✅ Booking completed successfully`);
     
+    // Get updated booking
+    const updatedBooking = await bookingsRepo.findById(bookingId);
+    
     return c.json({
       success: true,
-      booking,
+      booking: updatedBooking,
       message: 'Booking completed successfully'
     });
     
@@ -198,142 +242,86 @@ app.post('/make-server-3dd53475/booking/:bookingId/complete', async (c) => {
 });
 
 /**
- * Helper function to update earnings
- * ✅ UPDATED: Uses tier-based commission calculation
+ * Helper function to update earnings using SQL
+ * ✅ SQL-ONLY: Uses calculateCommission and VendorEarningsRepository
  */
-async function updateEarnings(booking: any, staffId?: string) {
+async function updateEarningsSQL(booking: any, staffId?: string) {
   try {
-    const now = new Date();
-    const dateKey = now.toISOString().split('T')[0]; // YYYY-MM-DD
-    const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`; // YYYY-MM
+    const bookingsRepo = getBookingsRepository();
+    const vendorsRepo = getVendorsRepository();
+    const earningsRepo = getVendorEarningsRepository();
     
-    // ✅ Get vendor tier and commission rate
-    const vendor = await kv.get(`vendor:${booking.vendorId}`);
-    const tierData = await kv.get(`vendor:${booking.vendorId}:tier`) || await kv.get(`vendor_tier_${booking.vendorId}`);
-    const tier = tierData?.currentTier || vendor?.tier || 'tier_1';
+    // Get updated booking with total_amount
+    const updatedBooking = await bookingsRepo.findById(booking.id);
+    if (!updatedBooking) {
+      console.error('Booking not found for earnings update');
+      return;
+    }
     
-    // Get tier config from payment tiers
-    const tiers = await kv.get('payment:tiers') || [];
-    const tierConfig = tiers.find((t: any) => t.id === tier) || tiers.find((t: any) => t.isDefault) || { commissionRate: 15 };
+    const bookingAmount = updatedBooking.total_amount || updatedBooking.base_price || 0;
     
-    const commissionRate = tierConfig.commissionRate || 15;
-    const platformCommission = (booking.price * commissionRate) / 100;
-    const vendorEarnings = booking.price - platformCommission;
+    // ✅ SQL: Calculate commission using CommissionCalculator
+    const commissionCalc = await calculateCommission(
+      updatedBooking.vendor_id || '',
+      bookingAmount
+    );
     
-    // Update vendor daily earnings
-    const vendorDailyKey = `vendor:${booking.vendorId}:earnings:daily:${dateKey}`;
-    const vendorDaily = await kv.get(vendorDailyKey) || {
-      date: dateKey,
-      totalBookings: 0,
-      totalRevenue: 0,
-      totalEarnings: 0,
-      platformFees: 0
-    };
-    vendorDaily.totalBookings += 1;
-    vendorDaily.totalRevenue += booking.price;
-    vendorDaily.totalEarnings += vendorEarnings;
-    vendorDaily.platformFees += platformCommission;
-    await kv.set(vendorDailyKey, vendorDaily);
+    const commissionRate = commissionCalc.commissionRate;
+    const platformCommission = commissionCalc.commissionAmount;
+    const vendorEarnings = commissionCalc.vendorAmount;
     
-    // Update vendor monthly earnings
-    const vendorMonthlyKey = `vendor:${booking.vendorId}:earnings:monthly:${monthKey}`;
-    const vendorMonthly = await kv.get(vendorMonthlyKey) || {
-      month: monthKey,
-      totalBookings: 0,
-      totalRevenue: 0,
-      totalEarnings: 0,
-      platformFees: 0
-    };
-    vendorMonthly.totalBookings += 1;
-    vendorMonthly.totalRevenue += booking.price;
-    vendorMonthly.totalEarnings += vendorEarnings;
-    vendorMonthly.platformFees += platformCommission;
-    await kv.set(vendorMonthlyKey, vendorMonthly);
+    // ✅ SQL: Create vendor earnings record
+    await earningsRepo.create({
+      vendor_id: updatedBooking.vendor_id || '',
+      booking_id: updatedBooking.id,
+      amount: vendorEarnings,
+      commission_amount: platformCommission,
+      total_amount: bookingAmount,
+      commission_rate: commissionRate
+    });
     
-    // Update vendor lifetime earnings
-    const vendorLifetimeKey = `vendor:${booking.vendorId}:earnings:lifetime`;
-    const vendorLifetime = await kv.get(vendorLifetimeKey) || {
-      totalBookings: 0,
-      totalRevenue: 0,
-      totalEarnings: 0,
-      platformFees: 0
-    };
-    vendorLifetime.totalBookings += 1;
-    vendorLifetime.totalRevenue += booking.price;
-    vendorLifetime.totalEarnings += vendorEarnings;
-    vendorLifetime.platformFees += platformCommission;
-    await kv.set(vendorLifetimeKey, vendorLifetime);
-    
-    // ✅ UPDATED: Staff earnings tracking (center vs solo logic)
-    if (staffId && staffId !== booking.vendorId) {
+    // ✅ SQL: Update staff earnings if staff completed the booking
+    if (staffId && staffId !== updatedBooking.vendor_id && updatedBooking.staff_id) {
       // Get vendor to determine if it's center-based
-      const vendor = await kv.get(`vendor:${booking.vendorId}`);
-      const isCenterBased = vendor?.vendorType === 'healthcare_provider' || 
-                           vendor?.serviceStyle === 'at_center' ||
-                           vendor?.roleId === 'veterinary_clinic' ||
-                           vendor?.roleId === 'pet_boarding' ||
-                           vendor?.roleId === 'pet_resort' ||
-                           vendor?.roleId === 'pet_cafe';
+      const vendor = await vendorsRepo.findById(updatedBooking.vendor_id || '');
+      const isCenterBased = vendor?.vendor_type === 'healthcare_provider' || 
+                           vendor?.service_style === 'at_center' ||
+                           vendor?.role_id === 'veterinary_clinic' ||
+                           vendor?.role_id === 'pet_boarding' ||
+                           vendor?.role_id === 'pet_resort' ||
+                           vendor?.role_id === 'pet_cafe';
       
       // For center-based: Track full booking amount (center pays staff separately)
       // For solo vendors: Track vendor earnings percentage (actual staff payout)
       const staffRevenue = isCenterBased 
-        ? booking.price // Full amount for tracking
+        ? bookingAmount // Full amount for tracking
         : vendorEarnings * 0.8; // 80% of vendor earnings for solo vendors
       
-      // Update staff daily earnings
-      const staffDailyKey = `staff:${staffId}:earnings:daily:${dateKey}`;
-      const staffDaily = await kv.get(staffDailyKey) || {
-        date: dateKey,
-        totalBookings: 0,
-        totalRevenue: 0,
-        staffRevenue: 0, // ✅ Track staff revenue separately
-        isCenterBased: isCenterBased
-      };
-      staffDaily.totalBookings += 1;
-      staffDaily.totalRevenue += booking.price; // Total booking amount
-      staffDaily.staffRevenue += staffRevenue; // Actual staff revenue
-      await kv.set(staffDailyKey, staffDaily);
-      
-      // Update staff monthly earnings
-      const staffMonthlyKey = `staff:${staffId}:earnings:monthly:${monthKey}`;
-      const staffMonthly = await kv.get(staffMonthlyKey) || {
-        month: monthKey,
-        totalBookings: 0,
-        totalRevenue: 0,
-        staffRevenue: 0,
-        isCenterBased: isCenterBased
-      };
-      staffMonthly.totalBookings += 1;
-      staffMonthly.totalRevenue += booking.price;
-      staffMonthly.staffRevenue += staffRevenue;
-      await kv.set(staffMonthlyKey, staffMonthly);
-      
-      // Update staff lifetime earnings
-      const staffLifetimeKey = `staff:${staffId}:earnings:lifetime`;
-      const staffLifetime = await kv.get(staffLifetimeKey) || {
-        totalBookings: 0,
-        totalRevenue: 0,
-        staffRevenue: 0,
-        isCenterBased: isCenterBased
-      };
-      staffLifetime.totalBookings += 1;
-      staffLifetime.totalRevenue += booking.price;
-      staffLifetime.staffRevenue += staffRevenue;
-      await kv.set(staffLifetimeKey, staffLifetime);
-      
-      // ✅ Store staff revenue breakdown for payout tracking
-      const staffBreakupKey = `staff:${staffId}:breakup:${booking.id}`;
-      await kv.set(staffBreakupKey, {
-        bookingId: booking.id,
-        bookingAmount: booking.price,
-        vendorEarnings,
-        platformCommission,
-        staffRevenue,
-        isCenterBased,
-        commissionRate,
+      // ✅ SQL: Store staff earnings breakdown in booking package_details
+      const packageDetails = updatedBooking.package_details || {};
+      const staffBreakup = packageDetails.staffBreakup || [];
+      staffBreakup.push({
+        bookingId: updatedBooking.id,
+        bookingAmount: bookingAmount,
+        vendorEarnings: vendorEarnings,
+        platformCommission: platformCommission,
+        staffRevenue: staffRevenue,
+        isCenterBased: isCenterBased,
+        commissionRate: commissionRate,
         completedAt: new Date().toISOString()
       });
+      
+      // Use direct client update for JSONB field
+      await client
+        .from('bookings')
+        .update({ 
+          package_details: {
+            ...packageDetails,
+            staffBreakup: staffBreakup
+          },
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', updatedBooking.id);
     }
     
     console.log(`💰 Earnings updated - Vendor: ₹${vendorEarnings.toFixed(2)}, Platform: ₹${platformCommission.toFixed(2)}`);
@@ -346,6 +334,7 @@ async function updateEarnings(booking: any, staffId?: string) {
 /**
  * GET /make-server-3dd53475/vendor/:vendorId/earnings
  * Get vendor earnings analytics
+ * ✅ SQL-ONLY: Uses SQL aggregation from vendor_earnings table
  */
 app.get('/make-server-3dd53475/vendor/:vendorId/earnings', async (c) => {
   try {
@@ -359,30 +348,69 @@ app.get('/make-server-3dd53475/vendor/:vendorId/earnings', async (c) => {
     const now = new Date();
     let earnings: any = {};
     
+    // ✅ SQL: Aggregate earnings from vendor_earnings table
     if (period === 'lifetime') {
-      earnings = await kv.get(`vendor:${vendorId}:earnings:lifetime`) || {
-        totalBookings: 0,
-        totalRevenue: 0,
-        totalEarnings: 0,
-        platformFees: 0
+      const { data, error } = await client
+        .from('vendor_earnings')
+        .select('total_amount, amount, commission_amount')
+        .eq('vendor_id', vendorId)
+        .eq('status', 'settled');
+      
+      if (error) {
+        throw error;
+      }
+      
+      earnings = {
+        totalBookings: data?.length || 0,
+        totalRevenue: data?.reduce((sum, e) => sum + parseFloat(e.total_amount || '0'), 0) || 0,
+        totalEarnings: data?.reduce((sum, e) => sum + parseFloat(e.amount || '0'), 0) || 0,
+        platformFees: data?.reduce((sum, e) => sum + parseFloat(e.commission_amount || '0'), 0) || 0
       };
     } else if (period === 'month') {
       const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-      earnings = await kv.get(`vendor:${vendorId}:earnings:monthly:${monthKey}`) || {
+      const monthStart = `${monthKey}-01`;
+      const monthEnd = `${monthKey}-31`;
+      
+      const { data, error } = await client
+        .from('vendor_earnings')
+        .select('total_amount, amount, commission_amount, realized_at')
+        .eq('vendor_id', vendorId)
+        .eq('status', 'settled')
+        .gte('realized_at', monthStart)
+        .lte('realized_at', monthEnd);
+      
+      if (error) {
+        throw error;
+      }
+      
+      earnings = {
         month: monthKey,
-        totalBookings: 0,
-        totalRevenue: 0,
-        totalEarnings: 0,
-        platformFees: 0
+        totalBookings: data?.length || 0,
+        totalRevenue: data?.reduce((sum, e) => sum + parseFloat(e.total_amount || '0'), 0) || 0,
+        totalEarnings: data?.reduce((sum, e) => sum + parseFloat(e.amount || '0'), 0) || 0,
+        platformFees: data?.reduce((sum, e) => sum + parseFloat(e.commission_amount || '0'), 0) || 0
       };
     } else if (period === 'day') {
       const dateKey = now.toISOString().split('T')[0];
-      earnings = await kv.get(`vendor:${vendorId}:earnings:daily:${dateKey}`) || {
+      
+      const { data, error } = await client
+        .from('vendor_earnings')
+        .select('total_amount, amount, commission_amount, realized_at')
+        .eq('vendor_id', vendorId)
+        .eq('status', 'settled')
+        .gte('realized_at', `${dateKey}T00:00:00`)
+        .lte('realized_at', `${dateKey}T23:59:59`);
+      
+      if (error) {
+        throw error;
+      }
+      
+      earnings = {
         date: dateKey,
-        totalBookings: 0,
-        totalRevenue: 0,
-        totalEarnings: 0,
-        platformFees: 0
+        totalBookings: data?.length || 0,
+        totalRevenue: data?.reduce((sum, e) => sum + parseFloat(e.total_amount || '0'), 0) || 0,
+        totalEarnings: data?.reduce((sum, e) => sum + parseFloat(e.amount || '0'), 0) || 0,
+        platformFees: data?.reduce((sum, e) => sum + parseFloat(e.commission_amount || '0'), 0) || 0
       };
     }
     
@@ -407,6 +435,7 @@ app.get('/make-server-3dd53475/vendor/:vendorId/earnings', async (c) => {
 /**
  * GET /make-server-3dd53475/staff/:staffId/earnings
  * Get staff earnings analytics
+ * ✅ SQL-ONLY: Uses SQL aggregation from bookings package_details
  */
 app.get('/make-server-3dd53475/staff/:staffId/earnings', async (c) => {
   try {
@@ -417,31 +446,61 @@ app.get('/make-server-3dd53475/staff/:staffId/earnings', async (c) => {
     console.log(`👤 Staff ID: ${staffId}`);
     console.log(`📊 Period: ${period}`);
     
+    const bookingsRepo = getBookingsRepository();
     const now = new Date();
-    let earnings: any = {};
     
-    if (period === 'lifetime') {
-      earnings = await kv.get(`staff:${staffId}:earnings:lifetime`) || {
-        totalBookings: 0,
-        totalRevenue: 0
-      };
-    } else if (period === 'month') {
+    // ✅ SQL: Get all bookings completed by this staff
+    const allBookings = await bookingsRepo.findAll({ status: 'completed' });
+    
+    // Filter bookings by staff_id and period
+    let filteredBookings = allBookings.filter(b => b.staff_id === staffId);
+    
+    if (period === 'month') {
       const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-      earnings = await kv.get(`staff:${staffId}:earnings:monthly:${monthKey}`) || {
-        month: monthKey,
-        totalBookings: 0,
-        totalRevenue: 0
-      };
+      filteredBookings = filteredBookings.filter(b => {
+        if (!b.completed_at) return false;
+        const completedMonth = b.completed_at.substring(0, 7);
+        return completedMonth === monthKey;
+      });
     } else if (period === 'day') {
       const dateKey = now.toISOString().split('T')[0];
-      earnings = await kv.get(`staff:${staffId}:earnings:daily:${dateKey}`) || {
-        date: dateKey,
-        totalBookings: 0,
-        totalRevenue: 0
-      };
+      filteredBookings = filteredBookings.filter(b => {
+        if (!b.completed_at) return false;
+        const completedDate = b.completed_at.split('T')[0];
+        return completedDate === dateKey;
+      });
     }
     
-    console.log(`✅ Earnings: ₹${earnings.totalRevenue || 0}`);
+    // Calculate earnings from package_details.staffBreakup
+    let totalRevenue = 0;
+    let staffRevenue = 0;
+    
+    for (const booking of filteredBookings) {
+      if (booking.package_details?.staffBreakup) {
+        const breakups = booking.package_details.staffBreakup;
+        for (const breakup of breakups) {
+          totalRevenue += parseFloat(breakup.bookingAmount || '0');
+          staffRevenue += parseFloat(breakup.staffRevenue || '0');
+        }
+      } else {
+        // Fallback: use booking amount
+        totalRevenue += parseFloat(booking.total_amount?.toString() || '0');
+      }
+    }
+    
+    const earnings: any = {
+      totalBookings: filteredBookings.length,
+      totalRevenue: totalRevenue,
+      staffRevenue: staffRevenue
+    };
+    
+    if (period === 'month') {
+      earnings.month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    } else if (period === 'day') {
+      earnings.date = now.toISOString().split('T')[0];
+    }
+    
+    console.log(`✅ Earnings: ₹${staffRevenue || 0}`);
     
     return c.json({
       success: true,
@@ -462,6 +521,7 @@ app.get('/make-server-3dd53475/staff/:staffId/earnings', async (c) => {
 /**
  * POST /make-server-3dd53475/booking/:bookingId/start
  * Start a booking with START OTP (for trainers/walkers/behaviourists)
+ * ✅ SQL-ONLY: All KV operations replaced with SQL repositories
  */
 app.post('/make-server-3dd53475/booking/:bookingId/start', async (c) => {
   try {
@@ -473,46 +533,54 @@ app.post('/make-server-3dd53475/booking/:bookingId/start', async (c) => {
     console.log(`🔐 START OTP: ${otp}`);
     console.log(`👤 Staff ID: ${staffId}`);
     
-    // Get booking
-    const booking = await kv.get(`booking:${bookingId}`);
+    const bookingsRepo = getBookingsRepository();
+    
+    // ✅ SQL: Get booking
+    const booking = await bookingsRepo.findById(bookingId);
     if (!booking) {
       return c.json({ success: false, error: 'Booking not found' }, 404);
     }
     
-    // Check if booking requires START OTP
-    if (!booking.requiresStartOTP) {
+    // Check if booking requires START OTP (stored in package_details)
+    const packageDetails = booking.package_details || {};
+    if (!packageDetails.requiresStartOTP) {
       return c.json({ success: false, error: 'This service does not require START OTP' }, 400);
     }
     
-    // Verify START OTP
-    if (booking.startOTP !== otp) {
+    // Verify START OTP (stored in package_details or otp_start_code)
+    const startOTP = booking.otp_start_code || packageDetails.startOTP;
+    if (startOTP !== otp) {
       return c.json({ success: false, error: 'Invalid START OTP' }, 400);
     }
     
     // Check if already started
-    if (booking.startTime) {
+    if (booking.started_at) {
       return c.json({ success: false, error: 'Service already started' }, 400);
     }
     
-    // Update booking
+    // ✅ SQL: Update booking
     const now = new Date().toISOString();
-    booking.startTime = now;
-    booking.status = 'in_progress';
-    booking.updatedAt = now;
-    
-    if (staffId) {
-      booking.actualStaffId = staffId;
-    }
-    
-    await kv.set(`booking:${bookingId}`, booking);
+    // Use direct client update for started_at and staff_id
+    await client
+      .from('bookings')
+      .update({ 
+        status: 'in_progress',
+        started_at: now,
+        staff_id: staffId || booking.staff_id,
+        updated_at: now
+      })
+      .eq('id', bookingId);
     
     console.log(`✅ Booking started at: ${now}`);
+    
+    // Get updated booking
+    const updatedBooking = await bookingsRepo.findById(bookingId);
     
     return c.json({
       success: true,
       message: 'Service started successfully',
       startTime: now,
-      booking: booking
+      booking: updatedBooking
     });
     
   } catch (error) {
@@ -528,6 +596,7 @@ app.post('/make-server-3dd53475/booking/:bookingId/start', async (c) => {
 /**
  * POST /make-server-3dd53475/booking/:bookingId/occurrence/:occurrenceId/start
  * Start a package occurrence with START OTP
+ * ✅ SQL-ONLY: All KV operations replaced with SQL repositories
  */
 app.post('/make-server-3dd53475/booking/:bookingId/occurrence/:occurrenceId/start', async (c) => {
   try {
@@ -539,8 +608,17 @@ app.post('/make-server-3dd53475/booking/:bookingId/occurrence/:occurrenceId/star
     console.log(`📝 Occurrence ID: ${occurrenceId}`);
     console.log(`🔐 START OTP: ${otp}`);
     
-    // Get occurrences
-    const occurrences = await kv.get(`booking:${bookingId}:occurrences`) || [];
+    const bookingsRepo = getBookingsRepository();
+    
+    // ✅ SQL: Get booking
+    const booking = await bookingsRepo.findById(bookingId);
+    if (!booking) {
+      return c.json({ success: false, error: 'Booking not found' }, 404);
+    }
+    
+    // ✅ SQL: Get occurrences from package_details JSONB
+    const packageDetails = booking.package_details || {};
+    const occurrences = packageDetails.occurrences || [];
     const occurrenceIndex = occurrences.findIndex((o: any) => o.occurrenceId === occurrenceId);
     
     if (occurrenceIndex === -1) {
@@ -575,12 +653,18 @@ app.post('/make-server-3dd53475/booking/:bookingId/occurrence/:occurrenceId/star
     }
     
     occurrences[occurrenceIndex] = occurrence;
-    await kv.set(`booking:${bookingId}:occurrences`, occurrences);
     
-    // Update main booking
-    const booking = await kv.get(`booking:${bookingId}`);
-    booking.updatedAt = now;
-    await kv.set(`booking:${bookingId}`, booking);
+    // ✅ SQL: Update booking with updated occurrences
+    await client
+      .from('bookings')
+      .update({ 
+        package_details: {
+          ...packageDetails,
+          occurrences: occurrences
+        },
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', bookingId);
     
     console.log(`✅ Occurrence started at: ${now}`);
     

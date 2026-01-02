@@ -14,7 +14,7 @@ import { Input } from '../ui/input';
 import { Badge } from '../ui/badge';
 import { Card } from '../ui/card';
 import { useCart } from '../../context/CartContext';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 interface Product {
   id: string;

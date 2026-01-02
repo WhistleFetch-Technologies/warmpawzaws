@@ -14,7 +14,7 @@ import {
   TableRow 
 } from "../../ui/table";
 import { Gift, Plus, Save, Trash2, Trophy, Users } from "lucide-react";
-import { toast } from "sonner@2.0.3";
+import { toast } from "sonner";
 import { projectId, publicAnonKey } from "../../../utils/supabase/info";
 
 interface LoyaltyRule {

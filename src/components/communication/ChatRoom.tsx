@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Send, Paperclip, Image as ImageIcon, FileText, CalendarPlus } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 
 interface Message {
@@ -32,7 +32,7 @@ export function ChatRoom({ channelId, userId, userName, otherUserName, isConsult
   const [sending, setSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const pollingInterval = useRef<NodeJS.Timeout>();
+  const pollingInterval = useRef<NodeJS.Timeout | null>(null);
 
   // Load messages and start polling
   useEffect(() => {

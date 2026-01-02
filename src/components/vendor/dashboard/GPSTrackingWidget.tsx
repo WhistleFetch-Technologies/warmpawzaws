@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Navigation } from 'lucide-react';
 import { Button } from '../../ui/button';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
 
 interface GPSTrackingWidgetProps {

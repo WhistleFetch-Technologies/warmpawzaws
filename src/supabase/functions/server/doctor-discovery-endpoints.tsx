@@ -8,8 +8,14 @@
  * - Hybrid: Combination of both
  */
 
-import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from 'hono';
+import { 
+  getVendorsRepository,
+  getStaffRepository,
+  getVendorServicesRepository
+} from '../../../supabase/lib/repositories/index';
+import { getDbClient } from '../../../supabase/lib/db';
 
 const app = new Hono();
 
@@ -32,8 +38,14 @@ app.get('/make-server-3dd53475/customer/doctors/by-specialization/:specializatio
     console.log(`🔍 [DISCOVERY] Finding doctors for specialization: ${specialization}`);
     console.log(`   Location: ${location}, Radius: ${radius}km, Style: ${serviceStyleFilter || 'all'}`);
     
-    // Step 1: Verify health problem exists
-    const healthProblem = await kv.get(`health_problem:${specialization}`);
+    // ✅ SQL: Step 1: Verify health problem exists (check problem_grid or health_problems table)
+    const db = getDbClient();
+    const { data: healthProblem } = await db
+      .from('health_problems')
+      .select('*')
+      .eq('id', specialization)
+      .single();
+    
     if (!healthProblem) {
       return c.json({ 
         success: false, 
@@ -41,12 +53,13 @@ app.get('/make-server-3dd53475/customer/doctors/by-specialization/:specializatio
       }, 404);
     }
     
-    // Step 2: Get all approved vendors
-    const allVendors = await kv.getByPrefix('vendor:');
+    // ✅ SQL: Step 2: Get all approved vendors from vendors table
+    const vendorsRepo = getVendorsRepository();
+    const allVendors = await vendorsRepo.findAll({});
     const approvedVendors = allVendors.filter((v: any) => 
-      v.approvalStatus === 'approved' && 
-      (v.roleId === 'veterinarian' || v.roleId === 'pet_clinic' || 
-       v.roleId === 'role_veterinarian' || v.roleId === 'role_vet_clinic')
+      v.approval_status === 'approved' && 
+      (v.role_id === 'veterinarian' || v.role_id === 'pet_clinic' || 
+       v.role_id === 'role_veterinarian' || v.role_id === 'role_vet_clinic')
     );
     
     console.log(`   Found ${approvedVendors.length} approved vet vendors`);
@@ -55,20 +68,21 @@ app.get('/make-server-3dd53475/customer/doctors/by-specialization/:specializatio
     const matchingDoctors: any[] = [];
     
     for (const vendor of approvedVendors) {
-      // Check if vendor is a clinic with staff
-      if (vendor.roleId === 'pet_clinic' || vendor.roleId === 'role_vet_clinic') {
-        // Get clinic staff
-        const staff = await kv.getByPrefix(`staff:${vendor.id}:`);
+      // ✅ SQL: Check if vendor is a clinic with staff
+      if (vendor.role_id === 'pet_clinic' || vendor.role_id === 'role_vet_clinic') {
+        // ✅ SQL: Get clinic staff from staff table
+        const staffRepo = getStaffRepository();
+        const staff = await staffRepo.findByVendor(vendor.id);
         
         for (const staffMember of staff) {
-          if (staffMember.status !== 'active') continue;
+          if (staffMember.status !== 'active' || !staffMember.is_active) continue;
           
           // Check if staff has this specialization
           const hasSpecialization = checkSpecialization(staffMember, specialization);
           
           if (hasSpecialization) {
             // Get staff service styles
-            const serviceStyles = staffMember.serviceStyles || ['at_center'];
+            const serviceStyles = staffMember.metadata?.serviceStyles || ['at_center'];
             
             // Filter by service style if specified
             if (serviceStyleFilter && !serviceStyles.includes(serviceStyleFilter)) {
@@ -78,42 +92,41 @@ app.get('/make-server-3dd53475/customer/doctors/by-specialization/:specializatio
             matchingDoctors.push({
               type: 'clinic_doctor',
               doctorId: staffMember.id,
-              doctorName: staffMember.fullName,
-              doctorPhoto: staffMember.profilePhoto,
-              specialization: staffMember.specialization,
-              specializations: staffMember.specializations || [],
+              doctorName: staffMember.full_name,
+              doctorPhoto: staffMember.photo || staffMember.metadata?.profilePhoto,
+              specialization: staffMember.metadata?.specialization,
+              specializations: staffMember.metadata?.specializations || [],
               clinicId: vendor.id,
-              clinicName: vendor.businessName,
+              clinicName: vendor.business_name,
               clinicAddress: vendor.address,
               clinicLocation: vendor.location,
               serviceStyles: serviceStyles,
-              consultationFee: staffMember.consultationFee || 500,
-              rating: staffMember.rating || vendor.rating || 4.5,
-              reviewCount: staffMember.reviewCount || vendor.reviewCount || 0,
-              experience: staffMember.experience,
-              qualifications: staffMember.qualifications,
-              availability: staffMember.availability
+              consultationFee: staffMember.metadata?.consultationFee || 500,
+              rating: staffMember.metadata?.rating || vendor.average_rating || 4.5,
+              reviewCount: staffMember.metadata?.reviewCount || vendor.metadata?.reviewCount || 0,
+              experience: staffMember.metadata?.experience,
+              qualifications: staffMember.metadata?.qualifications,
+              availability: staffMember.metadata?.availability
             });
           }
         }
       } else {
         // Individual veterinarian
-        // For individual vets, check their profile specialization
-        // Since they don't have staff, we check the vendor profile directly
         const hasSpecialization = checkVendorSpecialization(vendor, specialization);
         
         if (hasSpecialization) {
-          // Get vendor service styles from their services
-          const vendorServices = await kv.getByPrefix(`vendor_service:${vendor.id}:`);
+          // ✅ SQL: Get vendor service styles from vendor_services table
+          const vendorServicesRepo = getVendorServicesRepository();
+          const vendorServices = await vendorServicesRepo.findByVendor(vendor.id);
           const serviceStyles = new Set<string>();
           vendorServices.forEach((service: any) => {
-            if (service.isEnabled && service.serviceStyle) {
-              serviceStyles.add(service.serviceStyle);
+            if (service.is_enabled && service.service_style) {
+              serviceStyles.add(service.service_style);
             }
           });
           
           const stylesArray = Array.from(serviceStyles);
-          if (stylesArray.length === 0) stylesArray.push('at_center'); // Default
+          if (stylesArray.length === 0) stylesArray.push('at_center');
           
           // Filter by service style if specified
           if (serviceStyleFilter && !stylesArray.includes(serviceStyleFilter)) {
@@ -123,18 +136,18 @@ app.get('/make-server-3dd53475/customer/doctors/by-specialization/:specializatio
           matchingDoctors.push({
             type: 'individual_veterinarian',
             doctorId: vendor.id,
-            doctorName: vendor.businessName || vendor.contactPerson,
+            doctorName: vendor.business_name || vendor.full_name,
             doctorPhoto: vendor.logo,
-            specialization: vendor.specialization || 'Veterinarian',
-            specializations: vendor.specializations || [],
+            specialization: vendor.metadata?.specialization || 'Veterinarian',
+            specializations: vendor.metadata?.specializations || [],
             serviceStyles: stylesArray,
-            consultationFee: vendor.consultationFee || 500,
-            rating: vendor.rating || 4.5,
-            reviewCount: vendor.reviewCount || 0,
+            consultationFee: vendor.metadata?.consultationFee || 500,
+            rating: vendor.average_rating || 4.5,
+            reviewCount: vendor.metadata?.reviewCount || 0,
             address: vendor.address,
             location: vendor.location,
-            experience: vendor.experience,
-            qualifications: vendor.qualifications
+            experience: vendor.metadata?.experience,
+            qualifications: vendor.metadata?.qualifications
           });
         }
       }
@@ -196,16 +209,16 @@ app.get('/make-server-3dd53475/customer/doctors/by-specialization/:specializatio
  * Check if staff member has specialization
  */
 function checkSpecialization(staff: any, specialization: string): boolean {
-  // Check new specializations array (primary method)
-  if (staff.specializations && Array.isArray(staff.specializations)) {
-    if (staff.specializations.includes(specialization)) {
-      return true;
-    }
+  // ✅ SQL: Check specializations from metadata
+  const specializations = staff.metadata?.specializations || [];
+  if (Array.isArray(specializations) && specializations.includes(specialization)) {
+    return true;
   }
   
-  // Fallback: Check old specialization field (backward compatibility)
-  if (staff.specialization) {
-    const normalized = staff.specialization.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+  // Fallback: Check old specialization field
+  const specializationField = staff.metadata?.specialization;
+  if (specializationField) {
+    const normalized = specializationField.toLowerCase().replace(/[^a-z0-9]+/g, '_');
     if (normalized === specialization || normalized.includes(specialization)) {
       return true;
     }
@@ -218,23 +231,23 @@ function checkSpecialization(staff: any, specialization: string): boolean {
  * Check if vendor (individual vet) has specialization
  */
 function checkVendorSpecialization(vendor: any, specialization: string): boolean {
-  // Check new specializations array
-  if (vendor.specializations && Array.isArray(vendor.specializations)) {
-    if (vendor.specializations.includes(specialization)) {
-      return true;
-    }
+  // ✅ SQL: Check specializations from metadata
+  const specializations = vendor.metadata?.specializations || [];
+  if (Array.isArray(specializations) && specializations.includes(specialization)) {
+    return true;
   }
   
   // Fallback: Check old specialization field
-  if (vendor.specialization) {
-    const normalized = vendor.specialization.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+  const specializationField = vendor.metadata?.specialization;
+  if (specializationField) {
+    const normalized = specializationField.toLowerCase().replace(/[^a-z0-9]+/g, '_');
     if (normalized === specialization || normalized.includes(specialization)) {
       return true;
     }
   }
   
   // Default: If no specialization set, include in general medicine
-  if (specialization === 'medicine' && !vendor.specialization && !vendor.specializations) {
+  if (specialization === 'medicine' && !specializationField && specializations.length === 0) {
     return true;
   }
   
@@ -268,54 +281,57 @@ app.get('/make-server-3dd53475/customer/doctors/:doctorId/profile', async (c) =>
     console.log(`🔍 [DISCOVERY] Fetching doctor profile: ${doctorId}, type: ${type}`);
     
     if (type === 'clinic_doctor') {
-      // Find staff member
-      const allStaff = await kv.getByPrefix('staff:');
-      const staff = allStaff.find((s: any) => s.id === doctorId);
+      // ✅ SQL: Find staff member from staff table
+      const staffRepo = getStaffRepository();
+      const staff = await staffRepo.findById(doctorId);
       
       if (!staff) {
         return c.json({ success: false, error: 'Doctor not found' }, 404);
       }
       
-      // Get clinic info
-      const clinic = await kv.get(`vendor:${staff.vendorId}`);
+      // ✅ SQL: Get clinic info from vendors table
+      const vendorsRepo = getVendorsRepository();
+      const clinic = await vendorsRepo.findById(staff.vendor_id);
       
       return c.json({
         success: true,
         doctor: {
           type: 'clinic_doctor',
           doctorId: staff.id,
-          doctorName: staff.fullName,
-          doctorPhoto: staff.profilePhoto,
-          specialization: staff.specialization,
-          specializations: staff.specializations || [],
+          doctorName: staff.full_name,
+          doctorPhoto: staff.photo || staff.metadata?.profilePhoto,
+          specialization: staff.metadata?.specialization,
+          specializations: staff.metadata?.specializations || [],
           clinicId: clinic?.id,
-          clinicName: clinic?.businessName,
+          clinicName: clinic?.business_name,
           clinicAddress: clinic?.address,
           clinicLocation: clinic?.location,
-          serviceStyles: staff.serviceStyles || ['at_center'],
-          consultationFee: staff.consultationFee || 500,
-          rating: staff.rating || 4.5,
-          reviewCount: staff.reviewCount || 0,
-          experience: staff.experience,
-          qualifications: staff.qualifications,
-          bio: staff.bio,
-          availability: staff.availability
+          serviceStyles: staff.metadata?.serviceStyles || ['at_center'],
+          consultationFee: staff.metadata?.consultationFee || 500,
+          rating: staff.metadata?.rating || clinic?.average_rating || 4.5,
+          reviewCount: staff.metadata?.reviewCount || clinic?.metadata?.reviewCount || 0,
+          experience: staff.metadata?.experience,
+          qualifications: staff.metadata?.qualifications,
+          bio: staff.metadata?.bio,
+          availability: staff.metadata?.availability
         }
       });
     } else {
-      // Individual veterinarian
-      const vendor = await kv.get(`vendor:${doctorId}`);
+      // ✅ SQL: Individual veterinarian from vendors table
+      const vendorsRepo = getVendorsRepository();
+      const vendor = await vendorsRepo.findById(doctorId);
       
       if (!vendor) {
         return c.json({ success: false, error: 'Doctor not found' }, 404);
       }
       
-      // Get service styles from vendor services
-      const vendorServices = await kv.getByPrefix(`vendor_service:${vendor.id}:`);
+      // ✅ SQL: Get service styles from vendor_services table
+      const vendorServicesRepo = getVendorServicesRepository();
+      const vendorServices = await vendorServicesRepo.findByVendor(vendor.id);
       const serviceStyles = new Set<string>();
       vendorServices.forEach((service: any) => {
-        if (service.isEnabled && service.serviceStyle) {
-          serviceStyles.add(service.serviceStyle);
+        if (service.is_enabled && service.service_style) {
+          serviceStyles.add(service.service_style);
         }
       });
       
@@ -327,19 +343,19 @@ app.get('/make-server-3dd53475/customer/doctors/:doctorId/profile', async (c) =>
         doctor: {
           type: 'individual_veterinarian',
           doctorId: vendor.id,
-          doctorName: vendor.businessName || vendor.contactPerson,
+          doctorName: vendor.business_name || vendor.full_name,
           doctorPhoto: vendor.logo,
-          specialization: vendor.specialization || 'Veterinarian',
-          specializations: vendor.specializations || [],
+          specialization: vendor.metadata?.specialization || 'Veterinarian',
+          specializations: vendor.metadata?.specializations || [],
           serviceStyles: stylesArray,
-          consultationFee: vendor.consultationFee || 500,
-          rating: vendor.rating || 4.5,
-          reviewCount: vendor.reviewCount || 0,
+          consultationFee: vendor.metadata?.consultationFee || 500,
+          rating: vendor.average_rating || 4.5,
+          reviewCount: vendor.metadata?.reviewCount || 0,
           address: vendor.address,
           location: vendor.location,
-          experience: vendor.experience,
-          qualifications: vendor.qualifications,
-          bio: vendor.bio
+          experience: vendor.metadata?.experience,
+          qualifications: vendor.metadata?.qualifications,
+          bio: vendor.metadata?.bio
         }
       });
     }

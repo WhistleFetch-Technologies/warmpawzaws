@@ -7,7 +7,7 @@ import {
   Crown, TrendingUp, Shield, Zap, CheckCircle, 
   ArrowUpCircle, Award, DollarSign, Info 
 } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 
 interface VendorTierData {

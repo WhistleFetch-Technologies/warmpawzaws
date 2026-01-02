@@ -5,7 +5,7 @@
  * ALWAYS use saveVendor() instead of kv.set() directly to ensure indexes are created.
  */
 
-import * as kv from './kv_store.tsx';
+import * as kv from './kv_store';
 
 /**
  * Save vendor with automatic index creation

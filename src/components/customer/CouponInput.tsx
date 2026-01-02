@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { Ticket, Loader2, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 interface CouponInputProps {
   orderAmount: number;

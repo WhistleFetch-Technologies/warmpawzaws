@@ -1,6 +1,10 @@
-import { Hono } from "npm:hono";
-import * as kv from "./kv_store.tsx";
-import { sendSuccess, sendError } from "./response-utils.ts";
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from "hono";
+import { sendSuccess, sendError } from "./response-utils";
+import { 
+  getVendorsRepository
+} from '../../../supabase/lib/repositories/index';
+import { getDbClient } from '../../../supabase/lib/db';
 
 /**
  * 🏆 TIER SYSTEM IMPLEMENTATION
@@ -42,7 +46,7 @@ export const TIER_CONFIG = {
   }
 };
 
-export function tierSystemEndpoints(app: Hono, kv: any) {
+export function tierSystemEndpoints(app: Hono) {
   const BASE_PATH = "/make-server-3dd53475";
 
   /**
@@ -53,16 +57,26 @@ export function tierSystemEndpoints(app: Hono, kv: any) {
     try {
       const { vendorId } = c.req.param();
       
-      const tierData = await kv.get(`vendor_tier_${vendorId}`) || {
-        currentTier: 'SILVER',
-        totalGMV: 0,
-        lastUpdated: new Date().toISOString()
+      // ✅ SQL: Get vendor tier from vendor_tiers table
+      const db = getDbClient();
+      const { data: tierData } = await db
+        .from('vendor_tiers')
+        .select('current_tier, total_gmv, last_updated')
+        .eq('vendor_id', vendorId)
+        .single();
+      
+      const tierInfo = tierData || {
+        current_tier: 'SILVER',
+        total_gmv: 0,
+        last_updated: new Date().toISOString()
       };
 
-      const config = TIER_CONFIG[tierData.currentTier as keyof typeof TIER_CONFIG];
+      const config = TIER_CONFIG[tierInfo.current_tier as keyof typeof TIER_CONFIG];
 
       return sendSuccess(c, {
-        ...tierData,
+        currentTier: tierInfo.current_tier,
+        totalGMV: tierInfo.total_gmv,
+        lastUpdated: tierInfo.last_updated,
         config
       });
     } catch (error) {
@@ -78,32 +92,48 @@ export function tierSystemEndpoints(app: Hono, kv: any) {
     try {
       const { vendorId } = c.req.param();
       
-      // Fetch Vendor Stats (Mocked or from real analytics)
-      // In real scenario, query `analytics_vendor_monthly_${vendorId}`
-      const stats = await kv.get(`vendor_stats_${vendorId}`) || { monthlyGMV: 0 };
+      // ✅ SQL: Fetch Vendor Stats from vendor_daily_stats aggregated
+      const db = getDbClient();
+      const currentMonth = new Date().getMonth() + 1;
+      const currentYear = new Date().getFullYear();
+      
+      const { data: statsData } = await db
+        .from('vendor_daily_stats')
+        .select('revenue')
+        .eq('vendor_id', vendorId)
+        .gte('date', `${currentYear}-${String(currentMonth).padStart(2, '0')}-01`)
+        .lte('date', `${currentYear}-${String(currentMonth).padStart(2, '0')}-31`);
+      
+      const monthlyGMV = statsData?.reduce((sum: number, stat: any) => sum + (stat.revenue || 0), 0) || 0;
       
       let newTier = 'SILVER';
-      if (stats.monthlyGMV >= TIER_CONFIG.PLATINUM.minGMV) {
+      if (monthlyGMV >= TIER_CONFIG.PLATINUM.minGMV) {
         newTier = 'PLATINUM';
-      } else if (stats.monthlyGMV >= TIER_CONFIG.GOLD.minGMV) {
+      } else if (monthlyGMV >= TIER_CONFIG.GOLD.minGMV) {
         newTier = 'GOLD';
       }
 
-      const tierData = {
-        currentTier: newTier,
-        totalGMV: stats.monthlyGMV,
-        lastUpdated: new Date().toISOString()
-      };
-
-      await kv.set(`vendor_tier_${vendorId}`, tierData);
+      // ✅ SQL: Update vendor tier in vendor_tiers table
+      await db
+        .from('vendor_tiers')
+        .upsert({
+          vendor_id: vendorId,
+          current_tier: newTier,
+          total_gmv: monthlyGMV,
+          last_updated: new Date().toISOString()
+        }, {
+          onConflict: 'vendor_id'
+        });
       
-      // Update Vendor Profile with commission rate for quick lookup
-      const vendor = await kv.get(`vendor:${vendorId}`);
-      if (vendor) {
-        vendor.commissionRate = TIER_CONFIG[newTier as keyof typeof TIER_CONFIG].commissionRate;
-        vendor.tier = newTier;
-        await kv.set(`vendor:${vendorId}`, vendor);
-      }
+      // ✅ SQL: Update Vendor Profile with commission rate for quick lookup
+      const vendorsRepo = getVendorsRepository();
+      await vendorsRepo.update(vendorId, {
+        metadata: {
+          ...(await vendorsRepo.findById(vendorId)).metadata,
+          commissionRate: TIER_CONFIG[newTier as keyof typeof TIER_CONFIG].commissionRate,
+          tier: newTier
+        }
+      });
 
       return sendSuccess(c, {
         newTier,
@@ -131,8 +161,18 @@ export function tierSystemEndpoints(app: Hono, kv: any) {
       // Since it's a const in this file, we can't update it dynamically without DB.
       // We will simulate updating a stored config in KV.
       
+      // ✅ SQL: Store tier system config in platform_settings
       const { tiers } = await c.req.json();
-      await kv.set('tier_system_config', tiers);
+      const db = getDbClient();
+      await db
+        .from('platform_settings')
+        .upsert({
+          setting_key: 'tier_system_config',
+          setting_value: tiers,
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'setting_key'
+        });
       
       return sendSuccess(c, { message: 'Tier configuration updated' });
   });

@@ -17,6 +17,8 @@ interface WarmpawzButtonProps {
   fullWidth?: boolean;
   className?: string;
   style?: React.CSSProperties;
+  'aria-label'?: string; // ✅ ADD: Required for icon-only buttons
+  'aria-describedby'?: string; // ✅ ADD: For additional context
 }
 
 export function WarmpawzButton({
@@ -29,7 +31,13 @@ export function WarmpawzButton({
   fullWidth = false,
   className = '',
   style,
+  'aria-label': ariaLabel,
+  'aria-describedby': ariaDescribedBy,
 }: WarmpawzButtonProps) {
+  // ✅ VALIDATION: Require aria-label for icon-only buttons
+  if (variant === 'icon' && !ariaLabel && !children) {
+    console.warn('WarmpawzButton: aria-label is required for icon-only buttons (variant="icon")');
+  }
   const effectiveVariant = disabled ? 'disabled' : variant;
   const styles = BUTTON_VARIANTS[effectiveVariant];
 
@@ -54,8 +62,10 @@ export function WarmpawzButton({
       disabled={disabled}
       className={className}
       style={{ ...baseStyles, ...style }}
+      aria-label={ariaLabel}
+      aria-describedby={ariaDescribedBy}
       onMouseEnter={(e) => {
-        if (!disabled && styles.hover) {
+        if (!disabled && 'hover' in styles && styles.hover) {
           e.currentTarget.style.background = styles.hover;
         }
       }}
@@ -65,12 +75,12 @@ export function WarmpawzButton({
         }
       }}
       onMouseDown={(e) => {
-        if (!disabled && styles.active) {
+        if (!disabled && 'active' in styles && styles.active) {
           e.currentTarget.style.background = styles.active;
         }
       }}
       onMouseUp={(e) => {
-        if (!disabled && styles.hover) {
+        if (!disabled && 'hover' in styles && styles.hover) {
           e.currentTarget.style.background = styles.hover;
         }
       }}

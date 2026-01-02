@@ -36,35 +36,40 @@ export function VendorAnalytics({ vendorId, vendorData, onBack }: VendorAnalytic
     try {
       setLoading(true);
 
-      // Load vendor analytics
-      const analyticsRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/analytics?period=${period}`,
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
 
-      if (analyticsRes.ok) {
-        const data = await analyticsRes.json();
-        setAnalytics(data.analytics);
+      // Load vendor analytics
+      try {
+        const analyticsData = await apiCallJson<any>(
+          `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/analytics?period=${period}`
+        );
+        if (analyticsData.success) {
+          setAnalytics(analyticsData.analytics || analyticsData.data?.analytics || analyticsData);
+        }
+      } catch (error: any) {
+        console.error('Error loading analytics:', error);
       }
 
       // Load staff performance
-      const staffRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/staff-performance?period=${period}`,
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+      try {
+        const staffData = await apiCallJson<any>(
+          `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/staff-performance?period=${period}`
+        );
+        if (staffData.success) {
+          setStaffPerformance(staffData.staffPerformance || staffData.data?.staffPerformance || []);
         }
-      );
-
-      if (staffRes.ok) {
-        const data = await staffRes.json();
-        setStaffPerformance(data.staffPerformance || []);
+      } catch (error: any) {
+        console.error('Error loading staff performance:', error);
       }
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading analytics:', error);
-      toast.error('Failed to load analytics');
+      toast.error(error?.message || 'Failed to load analytics');
     } finally {
       setLoading(false);
     }

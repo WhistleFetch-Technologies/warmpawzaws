@@ -1,5 +1,5 @@
-import { Hono } from "npm:hono";
-import { sendSuccess, sendError } from "./response-utils.ts";
+import { Hono } from "hono";
+import { sendSuccess, sendError } from "./response-utils";
 
 /**
  * 👥 PREVIOUS PROVIDERS SYSTEM
@@ -37,7 +37,7 @@ interface ServiceHistory {
   feedback?: string;
 }
 
-export function previousProvidersEndpoints(app: Hono, kv: any) {
+export function previousProvidersEndpoints(app: Hono) {
   const BASE_PATH = "/make-server-3dd53475";
 
   // ========================================
@@ -47,8 +47,12 @@ export function previousProvidersEndpoints(app: Hono, kv: any) {
     try {
       const customerId = c.req.param('customerId');
 
-      // Get all service history for customer
-      const historyData = await kv.getByPrefix(`service_history_${customerId}_`);
+      // ✅ SQL: Get all service history for customer
+      const db = getDbClient();
+      const { data: historyData } = await db
+        .from('service_history')
+        .select('*')
+        .eq('customer_id', customerId);
       
       if (!historyData || historyData.length === 0) {
         return sendSuccess(c, { providers: [] });
@@ -94,12 +98,18 @@ export function previousProvidersEndpoints(app: Hono, kv: any) {
           ? data.ratings.reduce((sum: number, r: number) => sum + r, 0) / data.ratings.length
           : 0;
 
-        // Check if favorited
-        const favoriteKey = `favorite_provider_${customerId}_${providerId}`;
-        const isFavorite = await kv.get(favoriteKey);
+        // ✅ SQL: Check if favorited
+        const { data: favorite } = await db
+          .from('favorite_providers')
+          .select('*')
+          .eq('customer_id', customerId)
+          .eq('provider_id', providerId)
+          .single();
+        const isFavorite = !!favorite;
 
-        // Get provider details for location
-        const vendor = await kv.get(`vendor:${providerId}`);
+        // ✅ SQL: Get provider details for location
+        const vendorsRepo = getVendorsRepository();
+        const vendor = await vendorsRepo.findById(providerId);
 
         providers.push({
           providerId: data.providerId,
@@ -138,28 +148,27 @@ export function previousProvidersEndpoints(app: Hono, kv: any) {
 
       console.log(`👥 Fetching previous providers for customer: ${customerId}`);
 
-      // Get customer's completed bookings
-      const cleanPhone = customerId.replace(/[^0-9]/g, '');
-      const bookingIds = await kv.get(`customer:bookings:${cleanPhone}`) || [];
+      // ✅ SQL: Get customer's completed bookings
+      const bookingsRepo = getBookingsRepository();
+      const bookings = await bookingsRepo.findByCustomer(customerId);
 
-      if (bookingIds.length === 0) {
+      if (bookings.length === 0) {
         return sendSuccess(c, { providers: [], total: 0 });
       }
 
       const providerMap = new Map<string, any>();
 
       // Process each booking
-      for (const bookingId of bookingIds) {
-        const booking = await kv.get(`booking:${bookingId}`);
-        
+      for (const booking of bookings) {
         if (!booking || booking.status !== 'completed') continue;
-        if (serviceType && booking.serviceType !== serviceType) continue;
+        if (serviceType && booking.service_type !== serviceType) continue;
 
-        const providerId = booking.vendorId;
+        const providerId = booking.vendor_id || booking.vendorId;
         
         if (!providerMap.has(providerId)) {
-          // Get vendor details
-          const vendor = await kv.get(`vendor:${providerId}`);
+          // ✅ SQL: Get vendor details
+          const vendorsRepo = getVendorsRepository();
+          const vendor = await vendorsRepo.findById(providerId);
           
           providerMap.set(providerId, {
             providerId,
@@ -183,8 +192,9 @@ export function previousProvidersEndpoints(app: Hono, kv: any) {
           provider.lastServiceDate = booking.scheduledDate;
         }
 
-        // Get rating if exists
-        const review = await kv.get(`review:${bookingId}`);
+        // ✅ SQL: Get rating if exists
+        const reviewsRepo = getReviewsRepository();
+        const review = await reviewsRepo.findByBooking(booking.id);
         if (review && review.rating) {
           provider.ratings.push(review.rating);
         }
@@ -198,9 +208,14 @@ export function previousProvidersEndpoints(app: Hono, kv: any) {
           ? data.ratings.reduce((sum: number, r: number) => sum + r, 0) / data.ratings.length
           : 0;
 
-        // Check if favorited
-        const favoriteKey = `favorite_provider_${customerId}_${providerId}`;
-        const isFavorite = await kv.get(favoriteKey);
+        // ✅ SQL: Check if favorited
+        const { data: favorite } = await db
+          .from('favorite_providers')
+          .select('*')
+          .eq('customer_id', customerId)
+          .eq('provider_id', providerId)
+          .single();
+        const isFavorite = !!favorite;
 
         providers.push({
           providerId: data.providerId,
@@ -244,12 +259,14 @@ export function previousProvidersEndpoints(app: Hono, kv: any) {
         return sendError(c, 'customerId and providerId are required', 400);
       }
 
-      const favoriteKey = `favorite_provider_${customerId}_${providerId}`;
-      
-      await kv.set(favoriteKey, {
-        customerId,
-        providerId,
-        favoritedAt: new Date().toISOString(),
+      // ✅ SQL: Add favorite provider
+      const db = getDbClient();
+      await db.from('favorite_providers').upsert({
+        customer_id: customerId,
+        provider_id: providerId,
+        favorited_at: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       });
 
       console.log(`✅ Provider ${providerId} added to favorites for customer ${customerId}`);
@@ -266,8 +283,13 @@ export function previousProvidersEndpoints(app: Hono, kv: any) {
       const customerId = c.req.param('customerId');
       const providerId = c.req.param('providerId');
 
-      const favoriteKey = `favorite_provider_${customerId}_${providerId}`;
-      await kv.del(favoriteKey);
+      // ✅ SQL: Remove favorite provider
+      const db = getDbClient();
+      await db
+        .from('favorite_providers')
+        .delete()
+        .eq('customer_id', customerId)
+        .eq('provider_id', providerId);
 
       console.log(`✅ Provider ${providerId} removed from favorites for customer ${customerId}`);
 
@@ -286,14 +308,16 @@ export function previousProvidersEndpoints(app: Hono, kv: any) {
       const customerId = c.req.param('customerId');
       const limit = parseInt(c.req.query('limit') || '50');
 
-      const historyData = await kv.getByPrefix(`service_history_${customerId}_`);
+      // ✅ SQL: Get service history
+      const db = getDbClient();
+      const { data: historyData } = await db
+        .from('service_history')
+        .select('*')
+        .eq('customer_id', customerId)
+        .order('service_date', { ascending: false })
+        .limit(limit);
       
-      const history = historyData
-        .map((item: any) => item.value || item)
-        .sort((a: any, b: any) => 
-          new Date(b.serviceDate).getTime() - new Date(a.serviceDate).getTime()
-        )
-        .slice(0, limit);
+      const history = historyData || [];
 
       return sendSuccess(c, { history, count: history.length });
     } catch (error) {
@@ -334,7 +358,20 @@ export function previousProvidersEndpoints(app: Hono, kv: any) {
         feedback,
       };
 
-      await kv.set(`service_history_${customerId}_${historyId}`, history);
+      // ✅ SQL: Store service history
+      const db = getDbClient();
+      await db.from('service_history').insert({
+        id: historyId,
+        customer_id: customerId,
+        provider_id: providerId,
+        provider_name: providerName,
+        service_type: serviceType,
+        service_date: serviceDate || new Date().toISOString(),
+        rating: rating || null,
+        feedback: feedback || null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
 
       console.log(`✅ Service recorded for customer ${customerId} with provider ${providerId}`);
 

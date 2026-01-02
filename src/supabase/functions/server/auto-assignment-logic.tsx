@@ -7,7 +7,14 @@
  * - Fallback: "Request accepted - vendor to assign"
  */
 
-import * as kv from './kv_store.tsx';
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import {
+  getStaffRepository,
+  getStaffAvailabilityRepository,
+  getVendorServicesRepository,
+  getBookingsRepository,
+  getNotificationsRepository
+} from '../../../supabase/lib/repositories/index';
 
 interface AssignmentResult {
   success: boolean;
@@ -198,24 +205,34 @@ function fallbackToManualAssignment(
  */
 async function loadStaffDetails(staffIds: string[]): Promise<StaffAvailability[]> {
   const staff: StaffAvailability[] = [];
+  const staffRepo = getStaffRepository();
+  const availabilityRepo = getStaffAvailabilityRepository();
 
   for (const staffId of staffIds) {
     try {
-      const data = await kv.get(`staff:${staffId}:profile`);
-      if (data && data.value) {
-        // Check current availability
-        const availability = await kv.get(`staff:${staffId}:availability:current`);
+      // ✅ SQL: Get staff profile
+      const staffData = await staffRepo.findById(staffId);
+      if (staffData) {
+        // ✅ SQL: Check current availability
+        const availability = await availabilityRepo.getCurrentAvailability(staffId);
+        
+        // ✅ SQL: Count active bookings
+        const bookingsRepo = getBookingsRepository();
+        const activeBookings = await bookingsRepo.findByStaffAndStatus(staffId, ['confirmed', 'assigned', 'in_progress']);
         
         staff.push({
           staffId,
-          staffName: data.value.fullName,
-          staffPhoto: data.value.photo,
-          rating: data.value.rating || 4.5,
-          isOnline: availability?.value?.isOnline || false,
-          currentLocation: availability?.value?.currentLocation,
-          activeBookings: availability?.value?.activeBookings || 0,
-          maxConcurrentBookings: availability?.value?.maxConcurrentBookings || 1,
-          specializations: data.value.specializations || []
+          staffName: staffData.full_name || staffData.name,
+          staffPhoto: staffData.photo_url || staffData.photo,
+          rating: staffData.rating || 4.5,
+          isOnline: availability?.is_online || false,
+          currentLocation: availability?.current_location ? {
+            latitude: availability.current_location.latitude,
+            longitude: availability.current_location.longitude
+          } : undefined,
+          activeBookings: activeBookings.length,
+          maxConcurrentBookings: staffData.max_concurrent_bookings || 1,
+          specializations: staffData.specializations || []
         });
       }
     } catch (error) {
@@ -231,13 +248,15 @@ async function loadStaffDetails(staffIds: string[]): Promise<StaffAvailability[]
  */
 async function getStaffForService(serviceId: string): Promise<StaffAvailability[]> {
   try {
-    const serviceData = await kv.get(`service:${serviceId}`);
-    if (!serviceData || !serviceData.value) {
+    // ✅ SQL: Get service data
+    const servicesRepo = getVendorServicesRepository();
+    const service = await servicesRepo.findById(serviceId);
+    
+    if (!service) {
       return [];
     }
 
-    const service = serviceData.value;
-    const staffIds = service.assignedStaffIds || [];
+    const staffIds = service.assigned_staff_ids || service.assignedStaffIds || [];
 
     return await loadStaffDetails(staffIds);
   } catch (error) {
@@ -258,19 +277,23 @@ async function filterByScheduledAvailability(
   const dayOfWeek = requestedDate.getDay();
   const time = `${String(requestedDate.getHours()).padStart(2, '0')}:${String(requestedDate.getMinutes()).padStart(2, '0')}`;
 
+  // ✅ SQL: Get availability for all staff
+  const availabilityRepo = getStaffAvailabilityRepository();
+  
   for (const member of staff) {
     try {
-      // Get staff availability slots
-      const slotsData = await kv.getByPrefix(`staff:${member.staffId}:availability:`);
+      // ✅ SQL: Get staff availability slots
+      const slots = await availabilityRepo.findByStaff(member.staffId);
       
       // Check if any slot matches the requested day and time
-      const hasAvailability = slotsData.some((item: any) => {
-        const slot = item.value;
-        if (!slot || !slot.isActive) return false;
-        if (slot.dayOfWeek !== dayOfWeek) return false;
+      const hasAvailability = slots.some((slot: any) => {
+        if (!slot.is_active) return false;
+        if (slot.day_of_week !== dayOfWeek) return false;
         
         // Check if time falls within slot
-        return time >= slot.startTime && time <= slot.endTime;
+        const slotStart = slot.start_time || slot.startTime;
+        const slotEnd = slot.end_time || slot.endTime;
+        return time >= slotStart && time <= slotEnd;
       });
 
       if (hasAvailability) {
@@ -353,26 +376,24 @@ function toRad(degrees: number): number {
  */
 async function assignStaffToBooking(bookingId: string, staffId: string): Promise<void> {
   try {
-    const bookingData = await kv.get(`booking:${bookingId}`);
-    if (!bookingData || !bookingData.value) {
+    // ✅ SQL: Get and update booking
+    const bookingsRepo = getBookingsRepository();
+    const booking = await bookingsRepo.findById(bookingId);
+    
+    if (!booking) {
       throw new Error('Booking not found');
     }
 
-    const booking = bookingData.value;
-    booking.assignedStaffId = staffId;
-    booking.assignmentMethod = 'auto';
-    booking.assignedAt = new Date().toISOString();
-    booking.status = 'assigned';
+    // ✅ SQL: Update booking with staff assignment
+    await bookingsRepo.update(bookingId, {
+      assigned_staff_id: staffId,
+      assignment_method: 'auto',
+      assigned_at: new Date().toISOString(),
+      status: 'assigned'
+    });
 
-    await kv.set(`booking:${bookingId}`, booking);
-
-    // Update staff active bookings
-    const availabilityData = await kv.get(`staff:${staffId}:availability:current`);
-    if (availabilityData && availabilityData.value) {
-      const availability = availabilityData.value;
-      availability.activeBookings = (availability.activeBookings || 0) + 1;
-      await kv.set(`staff:${staffId}:availability:current`, availability);
-    }
+    // ✅ SQL: Update staff availability (active bookings count is calculated from bookings table)
+    // No need to manually track - query bookings table for active count
   } catch (error) {
     console.error('Error assigning staff to booking:', error);
     throw error;
@@ -384,25 +405,18 @@ async function assignStaffToBooking(bookingId: string, staffId: string): Promise
  */
 async function notifyStaffOfAssignment(staffId: string, bookingId: string): Promise<void> {
   try {
-    // Create notification record
-    const notification = {
-      id: `notification_${Date.now()}`,
-      staffId,
-      bookingId,
+    // ✅ SQL: Create notification record
+    const notificationsRepo = getNotificationsRepository();
+    const notification = await notificationsRepo.create({
+      entity_type: 'staff',
+      entity_id: staffId,
       type: 'new_assignment',
       title: 'New Booking Assigned',
       message: 'You have been assigned to a new booking',
-      createdAt: new Date().toISOString(),
-      read: false
-    };
-
-    await kv.set(`notification:${notification.id}`, notification);
-
-    // Add to staff's notification list
-    const notificationsList = await kv.get(`staff:${staffId}:notifications`);
-    const notifications = notificationsList?.value || [];
-    notifications.unshift(notification.id);
-    await kv.set(`staff:${staffId}:notifications`, notifications);
+      metadata: { bookingId },
+      read: false,
+      created_at: new Date().toISOString()
+    });
 
     // In production, also send push notification, SMS, etc.
     console.log(`📬 Notification sent to staff ${staffId} for booking ${bookingId}`);

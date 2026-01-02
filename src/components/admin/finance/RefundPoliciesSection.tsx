@@ -5,7 +5,7 @@ import { Label } from '../../ui/label';
 import { Checkbox } from '../../ui/checkbox';
 import { Plus, Edit, Trash2, Check, X, RefreshCw } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 // Hardcoded vendor types with icons - same as payment settings
 const VENDOR_TYPES = [

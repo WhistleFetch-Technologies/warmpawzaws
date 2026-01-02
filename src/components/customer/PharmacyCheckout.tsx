@@ -17,7 +17,7 @@ import { RadioGroup, RadioGroupItem } from '../ui/radio-group';
 import { Label } from '../ui/label';
 import { Separator } from '../ui/separator';
 import { useCart } from '../../context/CartContext';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 
 interface PharmacyCheckoutProps {

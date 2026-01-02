@@ -44,94 +44,14 @@ const BASE_PATH = '/make-server-3dd53475';
 // REFUND POLICIES CONFIGURATION
 // ==========================================
 
-const DEFAULT_REFUND_POLICIES = {
-  veterinary: {
-    fullRefund: 24, // 24 hours before appointment
-    partialRefund: 12, // 12 hours before appointment
-    partialPercentage: 50,
-    noRefund: 2, // 2 hours before appointment
-    processingFee: 0,
-    rules: [
-      'Full refund if cancelled 24+ hours before appointment',
-      '50% refund if cancelled 12-24 hours before appointment',
-      'No refund if cancelled less than 12 hours before appointment',
-      'Emergency cancellations may be reviewed on case-by-case basis'
-    ]
-  },
-  grooming: {
-    fullRefund: 12,
-    partialRefund: 6,
-    partialPercentage: 50,
-    noRefund: 2,
-    processingFee: 0,
-    rules: [
-      'Full refund if cancelled 12+ hours before appointment',
-      '50% refund if cancelled 6-12 hours before appointment',
-      'No refund if cancelled less than 6 hours before appointment'
-    ]
-  },
-  boarding: {
-    fullRefund: 48,
-    partialRefund: 24,
-    partialPercentage: 75,
-    noRefund: 12,
-    processingFee: 100,
-    rules: [
-      'Full refund if cancelled 48+ hours before check-in',
-      '75% refund if cancelled 24-48 hours before check-in',
-      'No refund if cancelled less than 24 hours before check-in',
-      '₹100 processing fee applies to all refunds'
-    ]
-  },
-  training: {
-    fullRefund: 24,
-    partialRefund: 12,
-    partialPercentage: 60,
-    noRefund: 6,
-    processingFee: 0,
-    rules: [
-      'Full refund if cancelled 24+ hours before session',
-      '60% refund if cancelled 12-24 hours before session',
-      'No refund if cancelled less than 12 hours before session',
-      'Package cancellations prorated based on sessions completed'
-    ]
-  },
-  home_service: {
-    fullRefund: 6,
-    partialRefund: 3,
-    partialPercentage: 50,
-    noRefund: 1,
-    processingFee: 0,
-    rules: [
-      'Full refund if cancelled 6+ hours before service',
-      '50% refund if cancelled 3-6 hours before service',
-      'No refund if cancelled less than 3 hours before service'
-    ]
-  },
-  tele_consultation: {
-    fullRefund: 2,
-    partialRefund: 1,
-    partialPercentage: 50,
-    noRefund: 0.5,
-    processingFee: 0,
-    rules: [
-      'Full refund if cancelled 2+ hours before consultation',
-      '50% refund if cancelled 1-2 hours before consultation',
-      'No refund if cancelled less than 1 hour before consultation'
-    ]
-  },
-  default: {
-    fullRefund: 24,
-    partialRefund: 12,
-    partialPercentage: 50,
-    noRefund: 2,
-    processingFee: 0,
-    rules: [
-      'Full refund if cancelled 24+ hours before service',
-      '50% refund if cancelled 12-24 hours before service',
-      'No refund if cancelled less than 12 hours before service'
-    ]
-  }
+// Simple 2-tier refund policy:
+// - >24 hours before service: 100% refund
+// - ≤24 hours before service: 90% refund (10% cancellation fee)
+const SIMPLE_REFUND_POLICY = {
+  fullRefundHours: 24,
+  fullRefundPercentage: 1.0, // 100%
+  partialRefundPercentage: 0.9, // 90%
+  cancellationFee: 0.1 // 10% fee for ≤24h cancellations
 };
 
 // ==========================================
@@ -139,7 +59,9 @@ const DEFAULT_REFUND_POLICIES = {
 // ==========================================
 
 /**
- * Calculate refund amount based on policy and timing
+ * Calculate refund amount based on simple 2-tier policy
+ * - >24 hours before service: 100% refund
+ * - ≤24 hours before service: 90% refund (10% cancellation fee)
  */
 function calculateRefundAmount(
   bookingAmount: number,
@@ -149,41 +71,38 @@ function calculateRefundAmount(
 ): {
   refundableAmount: number;
   refundPercentage: number;
-  processingFee: number;
+  cancellationFee: number;
   netRefund: number;
   reason: string;
 } {
-  const policy = customPolicy || DEFAULT_REFUND_POLICIES[serviceType as keyof typeof DEFAULT_REFUND_POLICIES] || DEFAULT_REFUND_POLICIES.default;
-  
   const scheduledDate = new Date(scheduledTime);
   const now = new Date();
   const hoursUntilAppointment = (scheduledDate.getTime() - now.getTime()) / (1000 * 60 * 60);
   
-  let refundPercentage = 0;
-  let reason = '';
+  let refundPercentage: number;
+  let cancellationFee: number;
+  let reason: string;
   
-  if (hoursUntilAppointment >= policy.fullRefund) {
-    refundPercentage = 100;
-    reason = `Cancelled ${hoursUntilAppointment.toFixed(1)} hours before appointment. Full refund applicable.`;
-  } else if (hoursUntilAppointment >= policy.partialRefund) {
-    refundPercentage = policy.partialPercentage;
-    reason = `Cancelled ${hoursUntilAppointment.toFixed(1)} hours before appointment. Partial refund (${policy.partialPercentage}%) applicable.`;
-  } else if (hoursUntilAppointment >= policy.noRefund) {
-    refundPercentage = 0;
-    reason = `Cancelled ${hoursUntilAppointment.toFixed(1)} hours before appointment. No refund applicable as per policy.`;
+  if (hoursUntilAppointment > SIMPLE_REFUND_POLICY.fullRefundHours) {
+    // >24 hours: 100% refund
+    refundPercentage = SIMPLE_REFUND_POLICY.fullRefundPercentage;
+    cancellationFee = 0;
+    reason = `Cancelled ${hoursUntilAppointment.toFixed(1)} hours before service. Full refund (100%) applicable.`;
   } else {
-    refundPercentage = 0;
-    reason = `Cancelled ${hoursUntilAppointment.toFixed(1)} hours before appointment. Service time too close for refund.`;
+    // ≤24 hours: 90% refund (10% cancellation fee)
+    refundPercentage = SIMPLE_REFUND_POLICY.partialRefundPercentage;
+    cancellationFee = SIMPLE_REFUND_POLICY.cancellationFee;
+    reason = `Cancelled ${hoursUntilAppointment.toFixed(1)} hours before service. Partial refund (90%) applicable with 10% cancellation fee.`;
   }
   
-  const refundableAmount = (bookingAmount * refundPercentage) / 100;
-  const processingFee = refundPercentage > 0 ? policy.processingFee : 0;
-  const netRefund = Math.max(0, refundableAmount - processingFee);
+  const refundableAmount = bookingAmount * refundPercentage;
+  const feeAmount = bookingAmount * cancellationFee;
+  const netRefund = refundableAmount;
   
   return {
     refundableAmount,
-    refundPercentage,
-    processingFee,
+    refundPercentage: refundPercentage * 100, // Return as percentage (0-100)
+    cancellationFee: feeAmount,
     netRefund,
     reason
   };
@@ -210,18 +129,15 @@ export function refundReschedulingEndpointsSQL(app: Hono) {
     // Get service type
     const serviceType = booking.service_type || 'default';
     
-    // ✅ SQL: Get vendor-specific policy from platform_settings
-    const platformSettingsRepo = getPlatformSettingsRepository();
-    const vendorPolicy = await platformSettingsRepo.getSetting(`refund_policy_${booking.vendor_id}`) as any;
-    const policy = vendorPolicy?.[serviceType] || DEFAULT_REFUND_POLICIES[serviceType as keyof typeof DEFAULT_REFUND_POLICIES] || DEFAULT_REFUND_POLICIES.default;
+    // Use simple 2-tier refund policy
+    const policy = SIMPLE_REFUND_POLICY;
     
     // Calculate current refund amount
     const scheduledTime = booking.booking_date ? `${booking.booking_date}T${booking.booking_time || '00:00:00'}` : new Date().toISOString();
     const refundCalc = calculateRefundAmount(
       booking.total_amount || 0,
       serviceType,
-      scheduledTime,
-      vendorPolicy?.[serviceType]
+      scheduledTime
     );
     
     return c.json({
@@ -277,16 +193,13 @@ app.post(`${BASE_PATH}/refunds/request`, async (c) => {
       return c.json({ success: false, error: 'Refund already requested for this booking' }, 400);
     }
     
-    // Calculate refund
+    // Calculate refund using simple 2-tier policy
     const serviceType = booking.service_type || 'default';
-    const platformSettingsRepo = getPlatformSettingsRepository();
-    const vendorPolicy = await platformSettingsRepo.getSetting(`refund_policy_${booking.vendor_id}`) as any;
     const scheduledTime = booking.booking_date ? `${booking.booking_date}T${booking.booking_time || '00:00:00'}` : new Date().toISOString();
     const refundCalc = calculateRefundAmount(
       booking.total_amount || 0,
       serviceType,
-      scheduledTime,
-      vendorPolicy?.[serviceType]
+      scheduledTime
     );
     
     // ✅ SQL: Get payment for this booking
@@ -325,7 +238,7 @@ app.post(`${BASE_PATH}/refunds/request`, async (c) => {
         amount: booking.total_amount || 0,
         ...refundCalc,
         reason,
-        policy: vendorPolicy?.[serviceType] || DEFAULT_REFUND_POLICIES[serviceType as keyof typeof DEFAULT_REFUND_POLICIES] || DEFAULT_REFUND_POLICIES.default,
+        policy: SIMPLE_REFUND_POLICY,
         status: refund.refund_status,
         refundMethod: refundMethod || 'original',
         requestedAt: refund.requested_at,
@@ -605,7 +518,7 @@ app.get(`${BASE_PATH}/bookings/:bookingId/reschedule-policy`, async (c) => {
     
     // Default rescheduling policy
     const policy = {
-      allowedUntil: 24, // Hours before appointment
+      allowedUntil: 2, // Hours before appointment
       maxReschedules: 2,
       currentReschedules,
       fee: currentReschedules > 0 ? 50 : 0, // First reschedule free, ₹50 afterwards
@@ -613,7 +526,7 @@ app.get(`${BASE_PATH}/bookings/:bookingId/reschedule-policy`, async (c) => {
         'First rescheduling is free',
         'Subsequent reschedulings cost ₹50',
         'Maximum 2 reschedulings allowed per booking',
-        'Must be rescheduled at least 24 hours before appointment'
+        'Must be rescheduled at least 2 hours before appointment'
       ]
     };
     
@@ -750,10 +663,10 @@ app.post(`${BASE_PATH}/bookings/:bookingId/reschedule`, async (c) => {
     const now = new Date();
     const hoursUntilAppointment = (scheduledDate.getTime() - now.getTime()) / (1000 * 60 * 60);
     
-    if (hoursUntilAppointment < 24) {
+    if (hoursUntilAppointment < 2) {
       return c.json({ 
         success: false, 
-        error: 'Cannot reschedule less than 24 hours before appointment' 
+        error: 'Cannot reschedule less than 2 hours before appointment' 
       }, 400);
     }
     

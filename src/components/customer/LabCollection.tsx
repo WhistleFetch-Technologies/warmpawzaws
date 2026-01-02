@@ -4,7 +4,7 @@ import { Card } from '../ui/card';
 import { Input } from '../ui/input';
 import { ArrowLeft, FlaskConical, Check, MapPin, User, Phone, FileText } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 interface LabCollectionProps {
   onBack: () => void;

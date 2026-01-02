@@ -10,8 +10,9 @@
  * - Service does NOT have applicableRoles (inherited from category.vendorType)
  */
 
-import type { Hono } from "npm:hono@4.6.14";
-import * as kv from "./kv_store.tsx";
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import type { Hono } from "hono";
+import { getDbClient } from '../../../supabase/lib/db';
 
 export function registerVendorCatalogAPI(app: Hono) {
   
@@ -58,8 +59,14 @@ export function registerVendorCatalogAPI(app: Hono) {
       console.log(`   Role ID: ${roleId}`);
       console.log(`   Service Style Filter: ${serviceStyle || 'all'}`);
       
-      // ✅ Read from catalog:categories (where admin creates services)
-      const categories = await kv.get('catalog:categories') || [];
+      // ✅ SQL: Read from catalog_categories table (where admin creates services)
+      const db = getDbClient();
+      const { data: categoriesData } = await db
+        .from('catalog_categories')
+        .select('*')
+        .order('created_at', { ascending: true });
+      
+      const categories = categoriesData || [];
       
       console.log(`   Total categories in catalog: ${categories.length}`);
       
@@ -203,7 +210,14 @@ export function registerVendorCatalogAPI(app: Hono) {
    */
   app.get("/make-server-3dd53475/service-catalog/debug", async (c) => {
     try {
-      const categories = await kv.get('catalog:categories') || [];
+      // ✅ SQL: Read from catalog_categories table
+      const db = getDbClient();
+      const { data: categoriesData } = await db
+        .from('catalog_categories')
+        .select('*')
+        .order('created_at', { ascending: true });
+      
+      const categories = categoriesData || [];
       
       // Flatten services
       const allServices: any[] = [];
@@ -266,7 +280,14 @@ export function registerVendorCatalogAPI(app: Hono) {
    */
   app.get("/make-server-3dd53475/service-catalog/raw-dump", async (c) => {
     try {
-      const categories = await kv.get('catalog:categories') || [];
+      // ✅ SQL: Read from catalog_categories table
+      const db = getDbClient();
+      const { data: categoriesData } = await db
+        .from('catalog_categories')
+        .select('*')
+        .order('created_at', { ascending: true });
+      
+      const categories = categoriesData || [];
       
       console.log('\n🔍 ===== RAW CATALOG DUMP =====');
       console.log(`Total categories: ${categories.length}`);

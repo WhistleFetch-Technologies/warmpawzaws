@@ -1,5 +1,5 @@
-import { Hono } from "npm:hono";
-import { sendSuccess, sendError } from "./response-utils.ts";
+import { Hono } from "hono";
+import { sendSuccess, sendError } from "./response-utils";
 
 /**
  * 🔍 ADVANCED SEARCH API
@@ -268,7 +268,10 @@ function formatSearchResults(esResponse: any) {
   };
 }
 
-export function advancedSearchAPI(app: Hono, kv: any) {
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { getDbClient } from '../../../supabase/lib/db';
+
+export function advancedSearchAPI(app: Hono) {
   const BASE_PATH = "/make-server-3dd53475";
 
   // ========================================
@@ -353,7 +356,23 @@ export function advancedSearchAPI(app: Hono, kv: any) {
           }
         };
 
-        await kv.set(`search_analytics_${analyticsEvent.eventId}`, analyticsEvent);
+        // ✅ SQL: Store search analytics in search_analytics table (if exists) or skip
+        // Analytics should be stored in time-series database or search_analytics table
+        const db = getDbClient();
+        try {
+          await db.from('search_analytics').insert({
+            id: analyticsEvent.eventId,
+            event_id: analyticsEvent.eventId,
+            query: analyticsEvent.query,
+            timestamp: analyticsEvent.timestamp,
+            results_count: analyticsEvent.results.count,
+            top_results: analyticsEvent.results.topResults,
+            metadata: analyticsEvent.metadata
+          });
+        } catch (error) {
+          // Table might not exist yet, skip silently
+          console.warn('search_analytics table not available, skipping analytics storage');
+        }
       } catch (analyticsError) {
         console.error('Error tracking search analytics:', analyticsError);
       }
@@ -527,10 +546,24 @@ export function advancedSearchAPI(app: Hono, kv: any) {
     try {
       const limit = parseInt(c.req.query('limit') || '10');
 
-      // Get recent search analytics
-      const analyticsData = await kv.getByPrefix('search_analytics_');
+      // ✅ SQL: Get recent search analytics from search_analytics table
+      const db = getDbClient();
+      let analyticsData: any[] = [];
       
-      if (!analyticsData || analyticsData.length === 0) {
+      try {
+        const { data } = await db
+          .from('search_analytics')
+          .select('query, timestamp')
+          .order('timestamp', { ascending: false })
+          .limit(10000); // Last 10k searches
+        
+        analyticsData = data || [];
+      } catch (error) {
+        console.warn('search_analytics table not available, returning empty popular searches');
+        return sendSuccess(c, { popular: [] });
+      }
+      
+      if (analyticsData.length === 0) {
         return sendSuccess(c, { popular: [] });
       }
 
@@ -538,8 +571,7 @@ export function advancedSearchAPI(app: Hono, kv: any) {
       const queryFrequency: Record<string, number> = {};
       
       analyticsData.forEach((item: any) => {
-        const event = item.value || item;
-        const query = event.query?.toLowerCase().trim();
+        const query = item.query?.toLowerCase().trim();
         
         if (query && query.length > 2) {
           queryFrequency[query] = (queryFrequency[query] || 0) + 1;

@@ -1,5 +1,13 @@
-import { Hono } from "npm:hono";
-import { sendSuccess, sendError } from "./response-utils.ts";
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+// ✅ LAMBDA COMPATIBILITY: Node.js compatible imports
+import { Hono } from "hono";
+import { sendSuccess, sendError } from "./response-utils";
+import {
+  getBookingsRepository,
+  getVendorsRepository,
+  getVendorTiersRepository,
+  getCommissionsRepository
+} from '../../../supabase/lib/repositories/index';
 
 /**
  * 🎯 TIER COMMISSION INTEGRATION
@@ -38,7 +46,7 @@ interface CommissionCalculation {
   calculatedAt: string;
 }
 
-export function tierCommissionIntegrationEndpoints(app: Hono, kv: any) {
+export function tierCommissionIntegrationEndpoints(app: Hono) {
   const BASE_PATH = "/make-server-3dd53475";
 
   // ========================================
@@ -48,23 +56,26 @@ export function tierCommissionIntegrationEndpoints(app: Hono, kv: any) {
     try {
       const bookingId = c.req.param('bookingId');
 
-      // Get booking details
-      const booking = await kv.get(`booking_${bookingId}`);
+      // ✅ SQL: Get booking details
+      const bookingsRepo = getBookingsRepository();
+      const booking = await bookingsRepo.findById(bookingId);
 
       if (!booking) {
         return sendError(c, 'Booking not found', 404);
       }
 
-      const vendorId = booking.vendorId;
-      const serviceType = booking.serviceType;
-      const bookingAmount = booking.totalAmount || booking.amount || 0;
+      const vendorId = booking.vendor_id || booking.vendorId;
+      const serviceType = booking.service_type || booking.serviceType;
+      const bookingAmount = booking.total_amount || booking.totalAmount || booking.amount || 0;
 
-      // Get vendor's tier
-      const vendor = await kv.get(`vendor_${vendorId}`);
-      const tierId = vendor?.tierId || 'default';
+      // ✅ SQL: Get vendor's tier
+      const vendorsRepo = getVendorsRepository();
+      const vendor = await vendorsRepo.findById(vendorId);
+      const tierId = vendor?.tier_id || vendor?.tierId || 'default';
 
-      // Get tier commission
-      const tier = await kv.get(`tier_commission_${tierId}`);
+      // ✅ SQL: Get tier commission
+      const tiersRepo = getVendorTiersRepository();
+      const tier = await tiersRepo.findById(tierId);
 
       if (!tier) {
         // Use default commission if tier not found
@@ -82,39 +93,48 @@ export function tierCommissionIntegrationEndpoints(app: Hono, kv: any) {
         });
       }
 
-      // Check if service is applicable
-      const isApplicable = tier.applicableServices.includes('all') || 
-                          tier.applicableServices.includes(serviceType);
+      // Check if service is applicable (using features field if available)
+      // Note: VendorTier schema uses 'features' JSONB field, not 'applicable_services'
+      const features = tier.features || {};
+      const applicableServices = features.applicable_services || features.applicableServices || [];
+      const isApplicable = applicableServices.length === 0 || 
+                          applicableServices.includes('all') || 
+                          applicableServices.includes(serviceType);
 
       if (!isApplicable) {
         return sendError(c, 'Tier commission not applicable for this service type', 400);
       }
 
-      // Check amount limits
-      if (tier.minBookingAmount && bookingAmount < tier.minBookingAmount) {
-        return sendError(c, `Booking amount below minimum (₹${tier.minBookingAmount})`, 400);
+      // Check amount limits (using features field if available)
+      const minBookingAmount = features.min_booking_amount || features.minBookingAmount;
+      const maxBookingAmount = features.max_booking_amount || features.maxBookingAmount;
+      
+      if (minBookingAmount && bookingAmount < minBookingAmount) {
+        return sendError(c, `Booking amount below minimum (₹${minBookingAmount})`, 400);
       }
 
-      if (tier.maxBookingAmount && bookingAmount > tier.maxBookingAmount) {
-        return sendError(c, `Booking amount above maximum (₹${tier.maxBookingAmount})`, 400);
+      if (maxBookingAmount && bookingAmount > maxBookingAmount) {
+        return sendError(c, `Booking amount above maximum (₹${maxBookingAmount})`, 400);
       }
 
-      const commissionAmount = (bookingAmount * tier.commissionPercentage) / 100;
+      // Use commission_rate from VendorTier schema (not commission_percentage)
+      const commissionPercentage = tier.commission_rate || tier.commissionRate || 15;
+      const commissionAmount = (bookingAmount * commissionPercentage) / 100;
       const netAmount = bookingAmount - commissionAmount;
 
       const calculation = {
         bookingId,
         vendorId,
-        tierId: tier.tierId,
-        tierName: tier.tierName,
+        tierId: tier.id || tier.tierId,
+        tierName: tier.tier_name || tier.tierName,
         bookingAmount,
-        commissionPercentage: tier.commissionPercentage,
+        commissionPercentage,
         commissionAmount,
         netAmount,
         serviceType,
       };
 
-      console.log(`✅ Commission calculated for booking ${bookingId}: ₹${commissionAmount} (${tier.commissionPercentage}%)`);
+      console.log(`✅ Commission calculated for booking ${bookingId}: ₹${commissionAmount} (${commissionPercentage}%)`);
 
       return sendSuccess(c, calculation);
     } catch (error) {
@@ -159,13 +179,20 @@ export function tierCommissionIntegrationEndpoints(app: Hono, kv: any) {
         calculatedAt: new Date().toISOString(),
       };
 
-      await kv.set(`commission_calculation_${calculationId}`, calculation);
-      await kv.set(`commission_calculation_booking_${bookingId}`, calculationId);
-
-      // Track vendor commission history
-      const vendorCommissions = await kv.get(`vendor_commissions_${vendorId}`) || [];
-      vendorCommissions.push(calculationId);
-      await kv.set(`vendor_commissions_${vendorId}`, vendorCommissions);
+      // ✅ SQL: Store commission calculation
+      const commissionsRepo = getCommissionsRepository();
+      await commissionsRepo.create({
+        id: calculationId,
+        booking_id: bookingId,
+        vendor_id: vendorId,
+        tier_id: tierId || 'default',
+        booking_amount: bookingAmount,
+        commission_percentage: commissionPercentage,
+        commission_amount: commissionAmount,
+        net_amount: netAmount,
+        service_type: serviceType,
+        calculated_at: new Date().toISOString()
+      });
 
       console.log(`✅ Commission applied: ${calculationId} - ₹${commissionAmount}`);
 
@@ -183,7 +210,9 @@ export function tierCommissionIntegrationEndpoints(app: Hono, kv: any) {
     try {
       const tierId = c.req.param('tierId');
 
-      const tier = await kv.get(`tier_commission_${tierId}`);
+      // ✅ SQL: Get tier commission
+      const tiersRepo = getVendorTiersRepository();
+      const tier = await tiersRepo.findById(tierId);
 
       if (!tier) {
         return sendError(c, 'Tier commission not found', 404);
@@ -204,36 +233,46 @@ export function tierCommissionIntegrationEndpoints(app: Hono, kv: any) {
       const tierId = c.req.param('tierId');
       const updates = await c.req.json();
 
-      const tier = await kv.get(`tier_commission_${tierId}`);
+      // ✅ SQL: Get tier commission
+      const tiersRepo = getVendorTiersRepository();
+      const tier = await tiersRepo.findById(tierId);
 
       if (!tier) {
         return sendError(c, 'Tier commission not found', 404);
       }
 
-      // Update allowed fields
+      // ✅ SQL: Update tier commission
+      const updateData: any = {
+        updated_at: new Date().toISOString()
+      };
+      
+      // Update commission_rate (VendorTier schema field)
       if (updates.commissionPercentage !== undefined) {
-        tier.commissionPercentage = updates.commissionPercentage;
+        updateData.commission_rate = updates.commissionPercentage;
       }
-      if (updates.applicableServices) {
-        tier.applicableServices = updates.applicableServices;
+      
+      // Update features JSONB field for service-specific settings
+      if (updates.applicableServices || updates.minBookingAmount !== undefined || updates.maxBookingAmount !== undefined) {
+        const currentFeatures = tier.features || {};
+        updateData.features = {
+          ...currentFeatures,
+          ...(updates.applicableServices && { applicable_services: updates.applicableServices }),
+          ...(updates.minBookingAmount !== undefined && { min_booking_amount: updates.minBookingAmount }),
+          ...(updates.maxBookingAmount !== undefined && { max_booking_amount: updates.maxBookingAmount }),
+        };
       }
-      if (updates.minBookingAmount !== undefined) {
-        tier.minBookingAmount = updates.minBookingAmount;
-      }
-      if (updates.maxBookingAmount !== undefined) {
-        tier.maxBookingAmount = updates.maxBookingAmount;
-      }
+      
       if (updates.isActive !== undefined) {
-        tier.isActive = updates.isActive;
+        updateData.is_active = updates.isActive;
       }
 
-      tier.updatedAt = new Date().toISOString();
-
-      await kv.set(`tier_commission_${tierId}`, tier);
+      await tiersRepo.update(tierId, updateData);
+      
+      const updatedTier = await tiersRepo.findById(tierId);
 
       console.log(`✅ Tier commission updated: ${tierId}`);
 
-      return sendSuccess(c, { tier }, 'Tier commission updated successfully');
+      return sendSuccess(c, { tier: updatedTier }, 'Tier commission updated successfully');
     } catch (error) {
       console.error('Error updating tier commission:', error);
       return sendError(c, error, 500);
@@ -245,14 +284,18 @@ export function tierCommissionIntegrationEndpoints(app: Hono, kv: any) {
   // ========================================
   app.get(`${BASE_PATH}/payment/commission/tiers/list`, async (c) => {
     try {
-      const tiersData = await kv.getByPrefix('tier_commission_');
+      // ✅ SQL: Get all active tier commissions
+      const tiersRepo = getVendorTiersRepository();
+      const allTiers = await tiersRepo.findAllActive();
 
-      const tiers = tiersData
-        .map((item: any) => item.value || item)
-        .filter((t: any) => t.isActive !== false);
+      const tiers = allTiers.filter((t: any) => t.is_active !== false && t.isActive !== false);
 
-      // Sort by commission percentage
-      tiers.sort((a: any, b: any) => a.commissionPercentage - b.commissionPercentage);
+      // Sort by commission rate (commission_rate in VendorTier schema)
+      tiers.sort((a: any, b: any) => {
+        const aPct = a.commission_rate || a.commissionRate || 0;
+        const bPct = b.commission_rate || b.commissionRate || 0;
+        return aPct - bPct;
+      });
 
       return sendSuccess(c, { tiers, count: tiers.length });
     } catch (error) {

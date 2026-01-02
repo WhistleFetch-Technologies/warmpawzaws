@@ -12,9 +12,16 @@
  * Status: ✅ P2 IMPLEMENTATION (3%)
  */
 
-import { Hono } from 'npm:hono';
-import { cors } from 'npm:hono/cors';
-import * as kv from './kv_store.tsx';
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from 'hono';
+import { cors } from "hono/cors";
+import {
+  getVendorServicesRepository,
+  getVendorsRepository,
+  getBookingsRepository,
+  getCustomersRepository,
+  getDbClient
+} from '../../../supabase/lib/repositories/index';
 
 const app = new Hono();
 app.use('*', cors());
@@ -45,10 +52,11 @@ app.post('/customer/compare/services', async (c) => {
       }, 400);
     }
     
-    // Fetch all services
+    // ✅ SQL: Fetch all services from vendor_services table
+    const servicesRepo = getVendorServicesRepository();
     const services: any[] = [];
     for (const serviceId of serviceIds) {
-      const service = await kv.get(`service:${serviceId}`);
+      const service = await servicesRepo.findById(serviceId);
       if (service) {
         services.push(service);
       }
@@ -297,10 +305,11 @@ app.post('/customer/compare/vendors', async (c) => {
       }, 400);
     }
     
-    // Fetch vendors
+    // ✅ SQL: Fetch vendors from vendors table
+    const vendorsRepo = getVendorsRepository();
     const vendors: any[] = [];
     for (const vendorId of vendorIds) {
-      const vendor = await kv.get(`vendor:${vendorId}`);
+      const vendor = await vendorsRepo.findById(vendorId);
       if (vendor) {
         // Get vendor stats
         const stats = await getVendorStats(vendorId);
@@ -376,35 +385,30 @@ app.post('/customer/compare/vendors', async (c) => {
   }
 });
 
-// Helper: Get vendor statistics
+// ✅ SQL: Helper: Get vendor statistics from bookings table
 async function getVendorStats(vendorId: string): Promise<any> {
+  const bookingsRepo = getBookingsRepository();
+  const db = getDbClient();
+  
   // Get all bookings for vendor
-  const bookingIds = await kv.get(`vendor:bookings:${vendorId}`) || [];
+  const { data: bookings } = await db
+    .from('bookings')
+    .select('id, status, rating')
+    .eq('vendor_id', vendorId);
   
-  let totalBookings = bookingIds.length;
-  let completedBookings = 0;
-  let totalRating = 0;
-  let ratedBookings = 0;
+  const totalBookings = bookings?.length || 0;
+  const completedBookings = bookings?.filter(b => b.status === 'completed').length || 0;
   
-  for (const bookingId of bookingIds) {
-    const booking = await kv.get(`booking:${bookingId}`);
-    if (booking) {
-      if (booking.status === 'completed') {
-        completedBookings++;
-      }
-      if (booking.rating) {
-        totalRating += booking.rating;
-        ratedBookings++;
-      }
-    }
-  }
+  const ratedBookings = bookings?.filter(b => b.rating && b.rating > 0) || [];
+  const totalRating = ratedBookings.reduce((sum, b) => sum + (b.rating || 0), 0);
+  const ratedCount = ratedBookings.length;
   
   return {
     totalBookings,
     completedBookings,
     completionRate: totalBookings > 0 ? (completedBookings / totalBookings * 100).toFixed(1) : 0,
-    averageRating: ratedBookings > 0 ? (totalRating / ratedBookings).toFixed(1) : 0,
-    totalReviews: ratedBookings,
+    averageRating: ratedCount > 0 ? (totalRating / ratedCount).toFixed(1) : 0,
+    totalReviews: ratedCount,
     avgResponseTime: 15 // Placeholder - would calculate from actual data
   };
 }
@@ -422,24 +426,36 @@ app.post('/customer/:customerId/comparisons/save', async (c) => {
     const customerId = c.req.param('customerId');
     const { comparisonType, comparisonData, name } = await c.req.json();
     
-    const savedComparisons = await kv.get(`customer:${customerId}:saved-comparisons`) || [];
-    
+    // ✅ SQL: Save comparison in customer_comparisons table
+    const db = getDbClient();
     const comparisonId = `comparison_${Date.now()}`;
     
-    savedComparisons.push({
-      id: comparisonId,
-      name: name || `Comparison ${savedComparisons.length + 1}`,
-      type: comparisonType, // 'services', 'vendors', 'staff'
-      data: comparisonData,
-      createdAt: new Date().toISOString()
-    });
-    
-    // Keep only last 20 comparisons
-    if (savedComparisons.length > 20) {
-      savedComparisons.splice(0, savedComparisons.length - 20);
+    await db
+      .from('customer_comparisons')
+      .insert({
+        id: comparisonId,
+        customer_id: customerId,
+        name: name || `Comparison ${Date.now()}`,
+        comparison_type: comparisonType, // 'services', 'vendors', 'staff'
+        comparison_data: comparisonData,
+        created_at: new Date().toISOString()
+      });
+
+    // Keep only last 20 comparisons (cleanup old ones)
+    const { data: allComparisons } = await db
+      .from('customer_comparisons')
+      .select('id')
+      .eq('customer_id', customerId)
+      .order('created_at', { ascending: false })
+      .limit(21);
+
+    if (allComparisons && allComparisons.length > 20) {
+      const idsToDelete = allComparisons.slice(20).map(c => c.id);
+      await db
+        .from('customer_comparisons')
+        .delete()
+        .in('id', idsToDelete);
     }
-    
-    await kv.set(`customer:${customerId}:saved-comparisons`, savedComparisons);
     
     return c.json({
       success: true,
@@ -461,12 +477,19 @@ app.get('/customer/:customerId/comparisons', async (c) => {
   try {
     const customerId = c.req.param('customerId');
     
-    const savedComparisons = await kv.get(`customer:${customerId}:saved-comparisons`) || [];
+    // ✅ SQL: Get saved comparisons from customer_comparisons table
+    const db = getDbClient();
+    const { data: savedComparisons } = await db
+      .from('customer_comparisons')
+      .select('*')
+      .eq('customer_id', customerId)
+      .order('created_at', { ascending: false })
+      .limit(20);
     
     return c.json({
       success: true,
-      comparisons: savedComparisons,
-      count: savedComparisons.length
+      comparisons: savedComparisons || [],
+      count: savedComparisons?.length || 0
     });
     
   } catch (error) {
@@ -484,11 +507,13 @@ app.delete('/customer/:customerId/comparisons/:comparisonId', async (c) => {
     const customerId = c.req.param('customerId');
     const comparisonId = c.req.param('comparisonId');
     
-    let savedComparisons = await kv.get(`customer:${customerId}:saved-comparisons`) || [];
-    
-    savedComparisons = savedComparisons.filter((comp: any) => comp.id !== comparisonId);
-    
-    await kv.set(`customer:${customerId}:saved-comparisons`, savedComparisons);
+    // ✅ SQL: Delete comparison from customer_comparisons table
+    const db = getDbClient();
+    await db
+      .from('customer_comparisons')
+      .delete()
+      .eq('id', comparisonId)
+      .eq('customer_id', customerId);
     
     return c.json({
       success: true,

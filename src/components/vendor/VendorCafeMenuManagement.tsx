@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Coffee, Upload, Plus, Edit2, Trash2, Grid, Table, Download } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+// ✅ FIX: Removed Supabase imports - using API Gateway now
+import { toast } from 'sonner';
 
 interface MenuItem {
   id: string;
@@ -100,77 +101,93 @@ export function VendorCafeMenuManagement({ vendorId, vendorData, onBack }: Vendo
 
   const loadMenuItems = async () => {
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/cafe/${vendorId}/menu`,
-        {
-          headers: { Authorization: `Bearer ${publicAnonKey}` }
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      // TODO: Create cafe menu endpoint if it doesn't exist
+      // For now, using placeholder - would need: GET /vendor/cafe/:vendorId/menu
+      try {
+        const menuData = await apiCallJson<any>(
+          `${API_GATEWAY_URL}/make-server-3dd53475/vendor/cafe/${vendorId}/menu`
+        );
+        
+        if (menuData.success) {
+          setMenuItems(menuData.items || menuData.data?.items || []);
+        } else {
+          setMenuItems([]);
         }
-      );
-      const data = await response.json();
-      // ✅ FIX: Handle standardized response format
-      // Response format: { success: true, items: [...], total: ... }
-      if (data.success) {
-        setMenuItems(data.items || data.data?.items || []);
-      } else {
-        const errorData = data.error || data.message || 'Unknown error';
-        console.error('Failed to load menu items:', errorData);
-        // Don't show error toast on initial load - just log
+      } catch (menuError) {
+        console.warn('Cafe menu endpoint not available yet');
+        setMenuItems([]);
       }
     } catch (error: any) {
       console.error('Error loading menu items:', error);
-      // Don't show error toast on initial load - just log
+      setMenuItems([]);
     }
   };
 
   const loadTables = async () => {
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/cafe/${vendorId}/tables`,
-        {
-          headers: { Authorization: `Bearer ${publicAnonKey}` }
-        }
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      // Use the cafe table management endpoint (already exists)
+      const tablesData = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/cafe/${vendorId}/tables`
       );
-      const data = await response.json();
-      // ✅ FIX: Handle standardized response format
-      // Response format: { success: true, tables: [...], total: ... }
-      if (data.success) {
-        setTables(data.tables || data.data?.tables || []);
+      
+      if (tablesData.success) {
+        setTables(tablesData.tables || tablesData.data?.tables || []);
       } else {
-        const errorData = data.error || data.message || 'Unknown error';
-        console.error('Failed to load tables:', errorData);
-        // Don't show error toast on initial load - just log
+        setTables([]);
       }
     } catch (error: any) {
       console.error('Error loading tables:', error);
-      // Don't show error toast on initial load - just log
+      setTables([]);
     }
   };
 
   const handleSaveMenuItem = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const url = editingItem
-        ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/cafe/${vendorId}/menu/${editingItem.id}`
-        : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/cafe/${vendorId}/menu`;
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      const endpoint = editingItem
+        ? `${API_GATEWAY_URL}/make-server-3dd53475/vendor/cafe/${vendorId}/menu/${editingItem.id}`
+        : `${API_GATEWAY_URL}/make-server-3dd53475/vendor/cafe/${vendorId}/menu`;
 
       const method = editingItem ? 'PUT' : 'POST';
 
-      const response = await fetch(url, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${publicAnonKey}`
-        },
-        body: JSON.stringify({
-          ...itemForm,
-          price: parseFloat(itemForm.price),
-          allergens: itemForm.allergens.split(',').map(a => a.trim()).filter(Boolean),
-          preparationTime: itemForm.preparationTime ? parseInt(itemForm.preparationTime) : undefined
-        })
-      });
+      const menuData = await apiCallJson<any>(
+        endpoint,
+        {
+          method,
+          body: JSON.stringify({
+            ...itemForm,
+            price: parseFloat(itemForm.price),
+            allergens: itemForm.allergens.split(',').map(a => a.trim()).filter(Boolean),
+            preparationTime: itemForm.preparationTime ? parseInt(itemForm.preparationTime) : undefined
+          })
+        }
+      );
 
-      const data = await response.json();
-      if (data.success) {
+      if (menuData.success) {
         toast.success(editingItem ? 'Menu item updated successfully' : 'Menu item added successfully');
         setShowAddItem(false);
         setEditingItem(null);
@@ -188,8 +205,7 @@ export function VendorCafeMenuManagement({ vendorId, vendorData, onBack }: Vendo
         });
         await loadMenuItems(); // ✅ Ensure menu items reload
       } else {
-        const errorData = data.error || data.message || 'Unknown error occurred';
-        toast.error(errorData);
+        toast.error(menuData.error || menuData.message || 'Failed to save menu item');
       }
     } catch (error: any) {
       console.error('Error saving menu item:', error);
@@ -207,21 +223,26 @@ export function VendorCafeMenuManagement({ vendorId, vendorData, onBack }: Vendo
     }
 
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/cafe/${vendorId}/menu/${itemId}`,
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      const deleteData = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/cafe/${vendorId}/menu/${itemId}`,
         {
-          method: 'DELETE',
-          headers: { Authorization: `Bearer ${publicAnonKey}` }
+          method: 'DELETE'
         }
       );
 
-      const data = await response.json();
-      if (data.success) {
+      if (deleteData.success) {
         toast.success(`Menu item "${itemName}" deleted successfully`);
         await loadMenuItems(); // ✅ Ensure menu items reload
       } else {
-        const errorData = data.error || data.message || 'Failed to delete menu item';
-        toast.error(errorData);
+        toast.error(deleteData.error || deleteData.message || 'Failed to delete menu item');
       }
     } catch (error: any) {
       console.error('Error deleting menu item:', error);
@@ -233,26 +254,32 @@ export function VendorCafeMenuManagement({ vendorId, vendorData, onBack }: Vendo
   const handleSaveTable = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const url = editingTable
-        ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/cafe/${vendorId}/tables/${editingTable.id}`
-        : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/cafe/${vendorId}/tables`;
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      const endpoint = editingTable
+        ? `${API_GATEWAY_URL}/make-server-3dd53475/cafe/${vendorId}/tables/${editingTable.id}`
+        : `${API_GATEWAY_URL}/make-server-3dd53475/cafe/${vendorId}/tables`;
 
       const method = editingTable ? 'PUT' : 'POST';
 
-      const response = await fetch(url, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${publicAnonKey}`
-        },
-        body: JSON.stringify({
-          ...tableForm,
-          capacity: parseInt(tableForm.capacity)
-        })
-      });
+      const tableData = await apiCallJson<any>(
+        endpoint,
+        {
+          method,
+          body: JSON.stringify({
+            ...tableForm,
+            capacity: parseInt(tableForm.capacity)
+          })
+        }
+      );
 
-      const data = await response.json();
-      if (data.success) {
+      if (tableData.success) {
         toast.success(editingTable ? 'Table updated successfully' : 'Table added successfully');
         setShowAddTable(false);
         setEditingTable(null);
@@ -265,8 +292,7 @@ export function VendorCafeMenuManagement({ vendorId, vendorData, onBack }: Vendo
         });
         await loadTables(); // ✅ Ensure tables reload
       } else {
-        const errorData = data.error || data.message || 'Unknown error occurred';
-        toast.error(errorData);
+        toast.error(tableData.error || tableData.message || 'Failed to save table');
       }
     } catch (error: any) {
       console.error('Error saving table:', error);
@@ -277,24 +303,28 @@ export function VendorCafeMenuManagement({ vendorId, vendorData, onBack }: Vendo
 
   const handleUpdateTableStatus = async (tableId: string, status: TableConfig['status']) => {
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/cafe/${vendorId}/tables/${tableId}/status`,
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      const statusData = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/cafe/${vendorId}/tables/${tableId}/status`,
         {
           method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`
-          },
           body: JSON.stringify({ status })
         }
       );
 
-      const data = await response.json();
-      if (data.success) {
+      if (statusData.success) {
         loadTables();
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error updating table status:', error);
+      toast.error(error?.message || 'Failed to update table status');
     }
   };
 

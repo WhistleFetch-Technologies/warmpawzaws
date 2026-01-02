@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Briefcase, Plus, X, Edit2, Trash2, Camera, Award, Calendar, DollarSign, Star } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+// ✅ FIX: Removed Supabase imports - using API Gateway now
+import { toast } from 'sonner';
 
 interface PortfolioItem {
   id: string;
@@ -43,8 +43,6 @@ export function VendorPortfolioManagement({ vendorId, vendorData, onBack }: Vend
     featured: false
   });
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
-
   useEffect(() => {
     fetchPortfolio();
   }, [vendorId]);
@@ -52,19 +50,29 @@ export function VendorPortfolioManagement({ vendorId, vendorData, onBack }: Vend
   const fetchPortfolio = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_BASE}/vendor/portfolio/${vendorId}`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        // ✅ FIX: Handle standardized response format
-        // Response format: { success: true, portfolioItems: [...], total: ... }
-        setPortfolio(data.portfolioItems || data.items || data.data?.items || []);
-      } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-        console.error('Failed to fetch portfolio:', errorData);
-        toast.error(errorData.error || 'Failed to load portfolio');
+      
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      // TODO: Create portfolio endpoint if it doesn't exist
+      // For now, using placeholder - would need: GET /vendor/portfolio/:vendorId
+      try {
+        const portfolioData = await apiCallJson<any>(
+          `${API_GATEWAY_URL}/make-server-3dd53475/vendor/portfolio/${vendorId}`
+        );
+        
+        if (portfolioData.success) {
+          setPortfolio(portfolioData.portfolioItems || portfolioData.items || portfolioData.data?.items || []);
+        } else {
+          setPortfolio([]);
+        }
+      } catch (portfolioError) {
+        console.warn('Portfolio endpoint not available yet');
         setPortfolio([]);
       }
     } catch (error: any) {
@@ -86,21 +94,27 @@ export function VendorPortfolioManagement({ vendorId, vendorData, onBack }: Vend
     }
 
     try {
-      const url = editingItem 
-        ? `${API_BASE}/vendor/portfolio/${vendorId}/${editingItem.id}`
-        : `${API_BASE}/vendor/portfolio/${vendorId}`;
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      const endpoint = editingItem 
+        ? `${API_GATEWAY_URL}/make-server-3dd53475/vendor/portfolio/${vendorId}/${editingItem.id}`
+        : `${API_GATEWAY_URL}/make-server-3dd53475/vendor/portfolio/${vendorId}`;
 
-      const response = await fetch(url, {
-        method: editingItem ? 'PUT' : 'POST',
-        headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(formData)
-      });
+      const portfolioData = await apiCallJson<any>(
+        endpoint,
+        {
+          method: editingItem ? 'PUT' : 'POST',
+          body: JSON.stringify(formData)
+        }
+      );
 
-      if (response.ok) {
-        const result = await response.json();
+      if (portfolioData.success) {
         toast.success(editingItem ? 'Portfolio item updated successfully' : 'Portfolio item added successfully');
         setModalOpen(false);
         setEditingItem(null);
@@ -115,9 +129,7 @@ export function VendorPortfolioManagement({ vendorId, vendorData, onBack }: Vend
         });
         await fetchPortfolio(); // ✅ Ensure portfolio reloads
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
-        const errorMessage = errorData.error || errorData.message || 'Failed to save portfolio item';
-        toast.error(errorMessage);
+        toast.error(portfolioData.error || portfolioData.message || 'Failed to save portfolio item');
       }
     } catch (error: any) {
       console.error('Error saving portfolio:', error);
@@ -135,18 +147,26 @@ export function VendorPortfolioManagement({ vendorId, vendorData, onBack }: Vend
     }
 
     try {
-      const response = await fetch(`${API_BASE}/vendor/portfolio/${vendorId}/${itemId}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-      });
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      const deleteData = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/portfolio/${vendorId}/${itemId}`,
+        {
+          method: 'DELETE'
+        }
+      );
 
-      if (response.ok) {
+      if (deleteData.success) {
         toast.success(`Portfolio item "${itemTitle}" deleted successfully`);
         await fetchPortfolio(); // ✅ Ensure portfolio reloads
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
-        const errorMessage = errorData.error || errorData.message || 'Failed to delete portfolio item';
-        toast.error(errorMessage);
+        toast.error(deleteData.error || deleteData.message || 'Failed to delete portfolio item');
       }
     } catch (error: any) {
       console.error('Error deleting portfolio item:', error);

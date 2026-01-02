@@ -1,5 +1,11 @@
-import { Hono } from "npm:hono";
-import { sendSuccess, sendError } from "./response-utils.ts";
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from "hono";
+import { sendSuccess, sendError } from "./response-utils";
+import {
+  getVendorsRepository,
+  getIntegratedServicesRepository
+} from '../../../supabase/lib/repositories/index';
+import { getDbClient } from '../../../supabase/lib/db';
 
 /**
  * 🏪 INDEPENDENT VENDOR SYSTEM
@@ -37,7 +43,7 @@ interface IndependentVendor {
   updatedAt: string;
 }
 
-export function independentVendorSystemEndpoints(app: Hono, kv: any) {
+export function independentVendorSystemEndpoints(app: Hono) {
   const BASE_PATH = "/make-server-3dd53475";
 
   // ========================================
@@ -87,12 +93,27 @@ export function independentVendorSystemEndpoints(app: Hono, kv: any) {
         updatedAt: new Date().toISOString(),
       };
 
-      await kv.set(`independent_vendor_${vendorId}`, vendor);
-
-      // Store in vendor type index
-      const typeIndex = await kv.get(`independent_vendor_index_${vendorType}`) || [];
-      typeIndex.push(vendorId);
-      await kv.set(`independent_vendor_index_${vendorType}`, typeIndex);
+      // ✅ SQL: Create independent vendor
+      const integratedServicesRepo = getIntegratedServicesRepository();
+      await integratedServicesRepo.create({
+        id: vendorId,
+        vendor_name: vendorName,
+        vendor_type: vendorType,
+        is_independent: true,
+        location: JSON.stringify(location),
+        services: services || [],
+        operating_hours: JSON.stringify(operatingHours || {
+          open: '00:00',
+          close: '23:59',
+          days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+        }),
+        contact_info: JSON.stringify(contactInfo),
+        logistics_partner: logisticsPartner || null,
+        is_approved: false,
+        is_active: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
 
       console.log(`✅ Independent vendor onboarded: ${vendorId} (${vendorType})`);
 
@@ -110,7 +131,9 @@ export function independentVendorSystemEndpoints(app: Hono, kv: any) {
     try {
       const vendorId = c.req.param('vendorId');
 
-      const vendor = await kv.get(`independent_vendor_${vendorId}`);
+      // ✅ SQL: Get independent vendor
+      const integratedServicesRepo = getIntegratedServicesRepository();
+      const vendor = await integratedServicesRepo.findById(vendorId);
 
       if (!vendor) {
         return sendError(c, 'Independent vendor not found', 404);
@@ -131,7 +154,9 @@ export function independentVendorSystemEndpoints(app: Hono, kv: any) {
       const vendorId = c.req.param('vendorId');
       const updates = await c.req.json();
 
-      const vendor = await kv.get(`independent_vendor_${vendorId}`);
+      // ✅ SQL: Get independent vendor
+      const integratedServicesRepo = getIntegratedServicesRepository();
+      const vendor = await integratedServicesRepo.findById(vendorId);
 
       if (!vendor) {
         return sendError(c, 'Independent vendor not found', 404);
@@ -149,7 +174,19 @@ export function independentVendorSystemEndpoints(app: Hono, kv: any) {
         updatedAt: new Date().toISOString(),
       };
 
-      await kv.set(`independent_vendor_${vendorId}`, updated);
+      // ✅ SQL: Update independent vendor
+      await integratedServicesRepo.update(vendorId, {
+        vendor_name: updates.vendorName || vendor.vendor_name,
+        location: updates.location ? JSON.stringify(updates.location) : vendor.location,
+        services: updates.services || vendor.services,
+        operating_hours: updates.operatingHours ? JSON.stringify(updates.operatingHours) : vendor.operating_hours,
+        contact_info: updates.contactInfo ? JSON.stringify(updates.contactInfo) : vendor.contact_info,
+        logistics_partner: updates.logisticsPartner !== undefined ? updates.logisticsPartner : vendor.logistics_partner,
+        is_active: updates.isActive !== undefined ? updates.isActive : vendor.is_active,
+        updated_at: new Date().toISOString()
+      });
+      
+      const updated = await integratedServicesRepo.findById(vendorId);
 
       console.log(`✅ Independent vendor updated: ${vendorId}`);
 
@@ -169,31 +206,32 @@ export function independentVendorSystemEndpoints(app: Hono, kv: any) {
       const isApproved = c.req.query('approved');
       const isActive = c.req.query('active');
 
-      const vendorsData = await kv.getByPrefix('independent_vendor_');
-      
-      let vendors = vendorsData
-        .map((item: any) => item.value || item)
-        .filter((v: any) => v.isIndependent === true);
+      // ✅ SQL: Get all independent vendors
+      const integratedServicesRepo = getIntegratedServicesRepository();
+      let vendors = await integratedServicesRepo.findAll();
+      vendors = vendors.filter((v: any) => v.is_independent === true || v.isIndependent === true);
 
       // Apply filters
       if (vendorType) {
-        vendors = vendors.filter((v: any) => v.vendorType === vendorType);
+        vendors = vendors.filter((v: any) => (v.vendor_type || v.vendorType) === vendorType);
       }
 
       if (isApproved !== undefined) {
         const approvedFilter = isApproved === 'true';
-        vendors = vendors.filter((v: any) => v.isApproved === approvedFilter);
+        vendors = vendors.filter((v: any) => (v.is_approved !== undefined ? v.is_approved : v.isApproved) === approvedFilter);
       }
 
       if (isActive !== undefined) {
         const activeFilter = isActive === 'true';
-        vendors = vendors.filter((v: any) => v.isActive === activeFilter);
+        vendors = vendors.filter((v: any) => (v.is_active !== undefined ? v.is_active : v.isActive) === activeFilter);
       }
 
       // Sort by creation date (newest first)
-      vendors.sort((a: any, b: any) => 
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      );
+      vendors.sort((a: any, b: any) => {
+        const aDate = a.created_at || a.createdAt;
+        const bDate = b.created_at || b.createdAt;
+        return new Date(bDate).getTime() - new Date(aDate).getTime();
+      });
 
       return sendSuccess(c, { vendors, count: vendors.length });
     } catch (error) {
@@ -217,7 +255,9 @@ export function independentVendorSystemEndpoints(app: Hono, kv: any) {
         return sendError(c, 'Required fields missing', 400);
       }
 
-      const vendor = await kv.get(`independent_vendor_${vendorId}`);
+      // ✅ SQL: Get independent vendor
+      const integratedServicesRepo = getIntegratedServicesRepository();
+      const vendor = await integratedServicesRepo.findById(vendorId);
 
       if (!vendor) {
         return sendError(c, 'Independent vendor not found', 404);
@@ -234,13 +274,16 @@ export function independentVendorSystemEndpoints(app: Hono, kv: any) {
         updatedAt: new Date().toISOString(),
       };
 
-      await kv.set(configId, config);
+      // ✅ SQL: Store service configuration
+      await integratedServicesRepo.updateServiceConfig(vendorId, serviceType, serviceConfig);
 
-      // Add service to vendor's service list if not exists
-      if (!vendor.services.includes(serviceType)) {
-        vendor.services.push(serviceType);
-        vendor.updatedAt = new Date().toISOString();
-        await kv.set(`independent_vendor_${vendorId}`, vendor);
+      // ✅ SQL: Add service to vendor's service list if not exists
+      const currentServices = vendor.services || [];
+      if (!currentServices.includes(serviceType)) {
+        await integratedServicesRepo.update(vendorId, {
+          services: [...currentServices, serviceType],
+          updated_at: new Date().toISOString()
+        });
       }
 
       console.log(`✅ Service config created: ${configId}`);
@@ -260,29 +303,34 @@ export function independentVendorSystemEndpoints(app: Hono, kv: any) {
       const vendorId = c.req.param('vendorId');
       const { isApproved, rejectionReason } = await c.req.json();
 
-      const vendor = await kv.get(`independent_vendor_${vendorId}`);
+      // ✅ SQL: Get independent vendor
+      const integratedServicesRepo = getIntegratedServicesRepository();
+      const vendor = await integratedServicesRepo.findById(vendorId);
 
       if (!vendor) {
         return sendError(c, 'Independent vendor not found', 404);
       }
 
-      vendor.isApproved = isApproved;
+      // ✅ SQL: Update vendor approval status
+      const updateData: any = {
+        is_approved: isApproved,
+        updated_at: new Date().toISOString()
+      };
       
       if (isApproved) {
-        vendor.isActive = true; // Auto-activate on approval
+        updateData.is_active = true; // Auto-activate on approval
       } else {
-        vendor.rejectionReason = rejectionReason;
-        vendor.isActive = false;
+        updateData.rejection_reason = rejectionReason;
+        updateData.is_active = false;
       }
 
-      vendor.updatedAt = new Date().toISOString();
-
-      await kv.set(`independent_vendor_${vendorId}`, vendor);
+      await integratedServicesRepo.update(vendorId, updateData);
+      const updatedVendor = await integratedServicesRepo.findById(vendorId);
 
       const action = isApproved ? 'approved' : 'rejected';
       console.log(`✅ Independent vendor ${action}: ${vendorId}`);
 
-      return sendSuccess(c, { vendor }, `Independent vendor ${action} successfully`);
+      return sendSuccess(c, { vendor: updatedVendor }, `Independent vendor ${action} successfully`);
     } catch (error) {
       console.error('Error approving/rejecting vendor:', error);
       return sendError(c, error, 500);

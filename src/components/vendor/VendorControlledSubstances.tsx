@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Pill, Plus, X, AlertTriangle, Clock, Package, TrendingDown, Search, Download } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+// ✅ FIX: Removed Supabase imports - using API Gateway now
+import { toast } from 'sonner';
 
 interface ControlledSubstance {
   id: string;
@@ -33,9 +33,8 @@ export function VendorControlledSubstances({ vendorId, vendorData, onBack }: Ven
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [transactionModalOpen, setTransactionModalOpen] = useState(false);
   const [selectedSubstance, setSelectedSubstance] = useState<ControlledSubstance | null>(null);
+  const [editingSubstance, setEditingSubstance] = useState<ControlledSubstance | null>(null);
   const [stats, setStats] = useState({ total: 0, lowStock: 0, expiringSoon: 0 });
-
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
 
   useEffect(() => {
     fetchSubstances();
@@ -44,20 +43,25 @@ export function VendorControlledSubstances({ vendorId, vendorData, onBack }: Ven
   const fetchSubstances = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_BASE}/controlled-substances/${vendorId}`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-      });
+      
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      const substancesData = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/controlled-substances/${vendorId}`
+      );
 
-      if (response.ok) {
-        const data = await response.json();
-        // ✅ FIX: Handle standardized response format
-        // Response format: { success: true, substances: [...], stats: {...}, total: ... }
-        setSubstances(data.substances || data.data?.substances || []);
-        setStats(data.stats || data.data?.stats || { total: 0, lowStock: 0, expiringSoon: 0 });
+      // ✅ FIX: Handle standardized response format
+      // Response format: { success: true, substances: [...], stats: {...}, total: ... }
+      if (substancesData.success) {
+        setSubstances(substancesData.substances || substancesData.data?.substances || []);
+        setStats(substancesData.stats || substancesData.data?.stats || { total: 0, lowStock: 0, expiringSoon: 0 });
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-        console.error('Failed to fetch controlled substances:', errorData);
-        toast.error(errorData.error || 'Failed to load controlled substances');
         setSubstances([]);
         setStats({ total: 0, lowStock: 0, expiringSoon: 0 });
       }
@@ -100,30 +104,26 @@ export function VendorControlledSubstances({ vendorId, vendorData, onBack }: Ven
     }
 
     try {
-      const response = await fetch(
-        `${API_BASE}/vendor/controlled-substances/${vendorId}/${substanceId}`,
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      const deleteData = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/controlled-substances/${vendorId}/${substanceId}`,
         {
-          method: 'DELETE',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          }
+          method: 'DELETE'
         }
       );
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          toast.success(`Controlled substance "${substanceName}" deleted successfully`);
-          await fetchSubstances(); // ✅ Ensure substances reload
-        } else {
-          const errorMessage = data.error || data.message || 'Failed to delete substance';
-          toast.error(errorMessage);
-        }
+      if (deleteData.success) {
+        toast.success(`Controlled substance "${substanceName}" deleted successfully`);
+        await fetchSubstances(); // ✅ Ensure substances reload
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
-        const errorMessage = errorData.error || errorData.message || 'Failed to delete substance';
-        toast.error(errorMessage);
+        toast.error(deleteData.error || deleteData.message || 'Failed to delete substance');
       }
     } catch (error: any) {
       console.error('Error deleting controlled substance:', error);
@@ -135,33 +135,29 @@ export function VendorControlledSubstances({ vendorId, vendorData, onBack }: Ven
   // ✅ LIFECYCLE FIX: Add update substance handler
   const handleUpdateSubstance = async (substanceId: string, updates: any) => {
     try {
-      const response = await fetch(
-        `${API_BASE}/vendor/controlled-substances/${vendorId}/${substanceId}`,
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      const updateData = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/controlled-substances/${vendorId}/${substanceId}`,
         {
           method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify(updates)
         }
       );
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          toast.success('Controlled substance updated successfully');
-          await fetchSubstances(); // ✅ Ensure substances reload
-          setAddModalOpen(false);
-          setEditingSubstance(null);
-        } else {
-          const errorMessage = data.error || data.message || 'Failed to update substance';
-          toast.error(errorMessage);
-        }
+      if (updateData.success) {
+        toast.success('Controlled substance updated successfully');
+        await fetchSubstances(); // ✅ Ensure substances reload
+        setAddModalOpen(false);
+        setEditingSubstance(null);
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
-        const errorMessage = errorData.error || errorData.message || 'Failed to update substance';
-        toast.error(errorMessage);
+        toast.error(updateData.error || updateData.message || 'Failed to update substance');
       }
     } catch (error: any) {
       console.error('Error updating controlled substance:', error);
@@ -595,7 +591,7 @@ export function VendorControlledSubstances({ vendorId, vendorData, onBack }: Ven
                   </button>
                   <button
                     type="submit"
-                    onClick={(e) => {
+                    onClick={async (e) => {
                       e.preventDefault();
                       if (editingSubstance) {
                         // ✅ LIFECYCLE FIX: Update existing substance
@@ -620,10 +616,54 @@ export function VendorControlledSubstances({ vendorId, vendorData, onBack }: Ven
                           handleUpdateSubstance(editingSubstance.id, updates);
                         }
                       } else {
-                        // Add new substance (existing logic - needs backend integration)
-                        toast.success('Controlled substance added');
-                        setAddModalOpen(false);
-                        fetchSubstances();
+                        // ✅ FIX: Add new substance using API Gateway
+                        const form = e.currentTarget.closest('form');
+                        if (form) {
+                          const formData = new FormData(form);
+                          const newSubstance = {
+                            name: formData.get('drugName') as string,
+                            genericName: formData.get('genericName') as string || undefined,
+                            schedule: formData.get('scheduleClass') as string,
+                            strength: formData.get('strength') as string || undefined,
+                            unit: formData.get('unit') as string || 'mg',
+                            currentStock: parseInt(formData.get('currentStock') as string) || 0,
+                            minimumStock: parseInt(formData.get('minStockLevel') as string) || 10,
+                            maximumStock: parseInt(formData.get('maxStockLevel') as string) || 100,
+                            location: formData.get('storageLocation') as string || undefined,
+                            expiryDate: formData.get('expiryDate') as string,
+                            batchNumber: formData.get('batchNumber') as string || undefined,
+                            supplier: formData.get('manufacturer') as string || undefined
+                          };
+                          
+                          try {
+                            // ✅ FIX: Use API Gateway URL instead of Supabase
+                            const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+                            if (!API_GATEWAY_URL) {
+                              throw new Error('API Gateway URL not configured');
+                            }
+                            
+                            const { apiCallJson } = await import('@warmpawz/api-client/http');
+                            
+                            const createData = await apiCallJson<any>(
+                              `${API_GATEWAY_URL}/make-server-3dd53475/vendor/controlled-substances/${vendorId}`,
+                              {
+                                method: 'POST',
+                                body: JSON.stringify(newSubstance)
+                              }
+                            );
+                            
+                            if (createData.success) {
+                              toast.success('Controlled substance added successfully');
+                              setAddModalOpen(false);
+                              await fetchSubstances();
+                            } else {
+                              toast.error(createData.error || createData.message || 'Failed to add substance');
+                            }
+                          } catch (error: any) {
+                            console.error('Error adding substance:', error);
+                            toast.error(error?.message || 'Failed to add substance');
+                          }
+                        }
                       }
                     }}
                     className="flex-1 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600"

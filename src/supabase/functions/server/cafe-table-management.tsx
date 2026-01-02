@@ -13,9 +13,9 @@
  * Status: ✅ P1 IMPLEMENTATION
  */
 
-import { Hono } from 'npm:hono';
-import { cors } from 'npm:hono/cors';
-import * as kv from './kv_store.tsx';
+import { Hono } from 'hono';
+import { cors } from "hono/cors";
+import * as kv from './kv_store';
 
 const app = new Hono();
 app.use('*', cors());

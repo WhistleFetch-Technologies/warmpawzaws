@@ -1,7 +1,7 @@
-import { Hono } from "npm:hono";
-import { determineServiceCategory, getServiceCategoryFromVendorTypes } from "./service-category-mapping.tsx";
-import { normalizePhone, createVendorId, phonesMatch } from "./phone-utils.tsx";
-import { sendSuccess, sendError } from "./response-utils.ts";
+import { Hono } from "hono";
+import { determineServiceCategory, getServiceCategoryFromVendorTypes } from "./service-category-mapping";
+import { normalizePhone, createVendorId, phonesMatch } from "./phone-utils";
+import { sendSuccess, sendError } from "./response-utils";
 
 /**
  * Vendor Onboarding & Application Management Endpoints
@@ -13,7 +13,14 @@ import { sendSuccess, sendError } from "./response-utils.ts";
  * 3. Business name priority in display
  * 4. Document handling
  */
-export function vendorOnboardingEndpoints(app: Hono, kv: any) {
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { getDbClient } from '../../../supabase/lib/db';
+import {
+  getVendorsRepository,
+  getRolesRepository
+} from '../../../supabase/lib/repositories/index';
+
+export function vendorOnboardingEndpoints(app: Hono) {
 
   /**
    * NOTE: /config/roles endpoint has been moved to vendor-role-config.tsx
@@ -45,21 +52,19 @@ export function vendorOnboardingEndpoints(app: Hono, kv: any) {
       const cleanPhone = normalizePhone(phone);
       console.log(`🔍 Checking for duplicate phone: ${cleanPhone}`);
       
-      const allVendors = await kv.getByPrefix('vendor:vendor_');
-      const existingVendor = allVendors.find((v: any) => {
-        if (!v || !v.phone) return false;
-        const vendorCleanPhone = normalizePhone(v.phone);
-        return phonesMatch(vendorCleanPhone, cleanPhone);
-      });
+      // ✅ SQL: Check for existing vendor by phone
+      const vendorsRepo = getVendorsRepository();
+      const existingVendor = await vendorsRepo.findByPhone(cleanPhone);
       
-      if (existingVendor) {
+      if (existingVendor && existingVendor.id) {
         console.log(`⚠️ EXISTING VENDOR FOUND WITH THIS PHONE`);
         console.log(`   Existing Vendor: ${existingVendor.id}`);
-        console.log(`   Name: ${existingVendor.fullName || existingVendor.businessName}`);
-        console.log(`   Status: ${existingVendor.status}`);
+        console.log(`   Name: ${existingVendor.business_name || existingVendor.owner_name || existingVendor.fullName || existingVendor.businessName}`);
+        const status = existingVendor.application_status || existingVendor.status;
+        console.log(`   Status: ${status}`);
         
         // ✅ FIX GAP #3: Allow rejected vendors to reapply
-        if (existingVendor.status === 'rejected') {
+        if (status === 'rejected') {
           console.log(`✅ Vendor was REJECTED - allowing reapplication`);
           console.log(`   Previous rejection reason: ${existingVendor.rejectionReason || 'N/A'}`);
           // We'll update the existing vendor record below instead of creating a new one
@@ -72,11 +77,11 @@ export function vendorOnboardingEndpoints(app: Hono, kv: any) {
             message: `An application with this phone number already exists.`,
             existingApplication: {
               id: existingVendor.id,
-              applicationId: existingVendor.applicationId,
-              name: existingVendor.businessName || existingVendor.fullName,
-              status: existingVendor.status,
-              submittedAt: existingVendor.submittedAt || existingVendor.createdAt,
-              role: existingVendor.roleName
+              applicationId: existingVendor.application_id || existingVendor.applicationId,
+              name: existingVendor.business_name || existingVendor.owner_name || existingVendor.businessName || existingVendor.fullName,
+              status: existingVendor.application_status || existingVendor.status,
+              submittedAt: existingVendor.submitted_at || existingVendor.created_at || existingVendor.submittedAt || existingVendor.createdAt,
+              role: existingVendor.role_id || existingVendor.roleName
             }
           }, 409); // 409 Conflict status code
         }
@@ -89,7 +94,7 @@ export function vendorOnboardingEndpoints(app: Hono, kv: any) {
       const applicationId = `APP${Date.now()}${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
       
       // ✅ FIX GAP #3: Check if this is a reapplication from rejected vendor
-      const isReapplication = existingVendor && existingVendor.status === 'rejected';
+      const isReapplication = existingVendor && (existingVendor.application_status || existingVendor.status) === 'rejected';
       
       if (isReapplication) {
         console.log(`🔄 This is a REAPPLICATION from a rejected vendor`);
@@ -98,8 +103,10 @@ export function vendorOnboardingEndpoints(app: Hono, kv: any) {
         console.log(`   New applicationId: ${applicationId}`);
       }
       
-      // Get role configuration
-      const role = await kv.get(`role:config:${roleId}`);
+      // ✅ SQL: Get role configuration
+      const rolesRepo = getRolesRepository();
+      const role = await rolesRepo.findById(roleId);
+      
       if (!role) {
         console.error(`❌ ROLE NOT FOUND: ${roleId}`);
         return c.json({ 
@@ -108,11 +115,11 @@ export function vendorOnboardingEndpoints(app: Hono, kv: any) {
         }, 400);
       }
       
-      const roleName = role?.name || 'Vendor';
-      const vendorType = role?.vendorTypes?.[0] || 'service_provider';
+      const roleName = role.name || role.display_name || 'Vendor';
+      const vendorType = role.vendor_types?.[0] || role.vendorType || 'service_provider';
       
       // ✅ CRITICAL FIX #2: Proper service category determination
-      const serviceCategory = role.serviceCategory || 
+      const serviceCategory = role.service_category || 
                             determineServiceCategory(role) || 
                             'general_services';
       
@@ -169,102 +176,63 @@ export function vendorOnboardingEndpoints(app: Hono, kv: any) {
       // Determine display name (Business Name takes priority)
       const displayName = formData.businessName || formData.fullName || 'Unnamed Vendor';
       
-      // ✅ FIX GAP #3: For reapplications, preserve history and original creation date
-      const baseVendor = isReapplication ? {
-        // Keep original creation date and history
-        createdAt: existingVendor.createdAt,
-        originalApplicationId: existingVendor.applicationId,
-        rejectionHistory: [
-          ...(existingVendor.rejectionHistory || []),
-          {
-            applicationId: existingVendor.applicationId,
-            rejectedAt: existingVendor.reviewedAt,
-            rejectionReason: existingVendor.rejectionReason,
-            reviewedBy: existingVendor.reviewedBy
-          }
-        ]
-      } : {
-        createdAt: new Date().toISOString()
-      };
+      // ✅ SQL: Create or update vendor record
+      const vendorsRepo = getVendorsRepository();
       
-      const vendor = {
-        id: vendorId,
-        applicationId,
-        roleId,
-        roleName,
-        serviceCategory, // ✅ FIX: Always set service category
-        vendorType,
-        serviceStyle: serviceStyle || role.defaultServiceStyle || null,
-        
-        // ✅ NEW: Specializations for center/vendor
-        specializations: specializations || [],
-        
-        // ✅ FIX: Names with proper priority
-        businessName: formData.businessName || null,
-        fullName: formData.fullName || null,
-        displayName: displayName, // For UI display purposes
-        
-        // Contact
+      const vendorData: any = {
+        id: isReapplication ? existingVendor.id : vendorId,
+        phone: cleanPhone,
         email: email || formData.email || null,
-        phone: phone || formData.phone,
-        
-        // Address
+        business_name: formData.businessName || null,
+        owner_name: formData.fullName || null,
+        role_id: roleId,
+        category: serviceCategory,
         address: formData.address || null,
         city: formData.city || null,
         state: formData.state || null,
         pincode: formData.pincode || null,
-        location: location || formData.location || null,
-        
-        // Business Details
-        gstNumber: formData.gstNumber || null,
-        yearsOfExperience: formData.yearsOfExperience || 0,
-        
-        // Bank Details
-        bankDetails: {
-          accountHolderName: formData.accountHolderName || null,
-          accountNumber: formData.accountNumber || null,
-          ifscCode: formData.ifscCode || null,
-          bankName: formData.bankName || null,
-          branchName: formData.branchName || null
-        },
-        
-        // Documents
-        documents: documentsArray,
-        documentsRaw: documents, // Keep raw for reference
-        
-        // All form data for reference
-        customFields: formData,
-        
-        // Status & Timestamps
-        // ✅ FIX #3: Standardized status terminology
-        status: 'pending_approval', // Will be 'pending_approval', 'approved', 'rejected', 'more_info_required'
-        setupCompleted: false,
-        isActive: false,
-        submittedAt: new Date().toISOString(),
-        ...baseVendor, // ✅ Merge history for reapplications
-        updatedAt: new Date().toISOString(),
-        
-        // Progress tracking
-        onboardingProgress: 100, // Application is complete
-        applicationComplete: true,
-        
-        // ✅ FIX GAP #3: Mark as reapplication if applicable
-        isReapplication: isReapplication || false,
-        reapplicationCount: isReapplication ? (existingVendor.reapplicationCount || 0) + 1 : 0
+        latitude: location?.latitude || formData.latitude || null,
+        longitude: location?.longitude || formData.longitude || null,
+        gst_number: formData.gstNumber || null,
+        experience_years: formData.yearsOfExperience || 0,
+        status: 'pending',
+        tier: 'bronze',
+        commission_percentage: 5.0,
+        is_active: false,
+        setup_completed: false,
+        application_id: applicationId,
+        submitted_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       };
       
-      await kv.set(vendorKey, vendor);
-      
-      // ✅ FIX #6: REMOVED DUPLICATE APPLICATION RECORD STORAGE
-      // The vendor record itself contains all application data (applicationId, status, documents, etc.)
-      // No need to store a separate application record - reduces data redundancy
-      
-      // Add vendorId (not applicationId) to pending list
-      const pendingVendors = await kv.get('vendor:pending_approvals') || [];
-      if (!pendingVendors.includes(vendorId)) {
-        pendingVendors.push(vendorId);
-        await kv.set('vendor:pending_approvals', pendingVendors);
+      if (isReapplication) {
+        // Update existing vendor
+        await vendorsRepo.update(existingVendor.id, vendorData);
+      } else {
+        // Create new vendor
+        await vendorsRepo.create(vendorData);
       }
+      
+      // ✅ SQL: Store documents in file_uploads table if needed
+      if (documentsArray.length > 0) {
+        const db = getDbClient();
+        for (const doc of documentsArray) {
+          await db.from('file_uploads').insert({
+            entity_type: 'vendor',
+            entity_id: vendorId,
+            file_type: doc.type,
+            file_url: doc.url || doc.preview,
+            file_name: doc.fileName,
+            uploaded_at: new Date().toISOString()
+          }).catch(() => {
+            // Table might not exist, skip
+            console.warn('file_uploads table not found, skipping document storage');
+          });
+        }
+      }
+      
+      // ✅ SQL: Store pending approval in admin_notifications or use status filter
+      // No need for separate pending list - query vendors with status='pending' instead
       
       console.log(`✅ Added to pending approvals list: ${vendorId}`);
       
@@ -304,24 +272,22 @@ export function vendorOnboardingEndpoints(app: Hono, kv: any) {
       const cleanPhone = normalizePhone(phone);
       console.log(`🔍 Checking if phone exists: ${cleanPhone}`);
       
-      const allVendors = await kv.getByPrefix('vendor:vendor_');
-      const existingVendor = allVendors.find((v: any) => {
-        if (!v || !v.phone) return false;
-        const vendorCleanPhone = normalizePhone(v.phone);
-        return phonesMatch(vendorCleanPhone, cleanPhone);
-      });
+      // ✅ SQL: Check for existing vendor by phone
+      const vendorsRepo = getVendorsRepository();
+      const existingVendor = await vendorsRepo.findByPhone(cleanPhone);
       
-      if (existingVendor) {
-        console.log(`✅ Phone found: ${existingVendor.id} - ${existingVendor.status}`);
+      if (existingVendor && existingVendor.id) {
+        const status = existingVendor.application_status || existingVendor.status;
+        console.log(`✅ Phone found: ${existingVendor.id} - ${status}`);
         return c.json({
           exists: true,
           application: {
             id: existingVendor.id,
-            applicationId: existingVendor.applicationId,
-            name: existingVendor.businessName || existingVendor.fullName,
-            status: existingVendor.status,
-            submittedAt: existingVendor.submittedAt || existingVendor.createdAt,
-            role: existingVendor.roleName
+            applicationId: existingVendor.application_id || existingVendor.applicationId,
+            name: existingVendor.business_name || existingVendor.owner_name || existingVendor.businessName || existingVendor.fullName,
+            status: status,
+            submittedAt: existingVendor.submitted_at || existingVendor.created_at || existingVendor.submittedAt || existingVendor.createdAt,
+            role: existingVendor.role_id || existingVendor.roleName
           }
         });
       }
@@ -354,33 +320,35 @@ export function vendorOnboardingEndpoints(app: Hono, kv: any) {
       console.log(`   Specializations:`, specializations);
       console.log(`   Location:`, location);
 
-      // Get existing vendor
-      const vendorKey = `vendor:${vendorId}`;
-      const existingVendor = await kv.get(vendorKey);
+      // ✅ SQL: Get and update vendor
+      const vendorsRepo = getVendorsRepository();
+      const existingVendor = await vendorsRepo.findById(vendorId);
 
       if (!existingVendor) {
         console.error(`❌ Vendor not found: ${vendorId}`);
         return c.json({ error: 'Vendor not found' }, 404);
       }
 
-      // Update vendor with new data
-      const updatedVendor = {
-        ...existingVendor,
-        // Update form data
-        ...formData,
-        // Update specializations
-        specializations: specializations || existingVendor.specializations || [],
-        // Update location
-        location: location || formData?.location || existingVendor.location,
-        coordinates: location || formData?.coordinates || existingVendor.coordinates,
-        // Update documents if provided
-        documents: documents ? [...(existingVendor.documents || []), ...documents] : existingVendor.documents,
-        // Track update
-        updatedAt: new Date().toISOString(),
-        lastProfileUpdate: new Date().toISOString()
+      // ✅ SQL: Update vendor with new data
+      const updateData: any = {
+        updated_at: new Date().toISOString()
       };
-
-      await kv.set(vendorKey, updatedVendor);
+      
+      if (formData.businessName) updateData.business_name = formData.businessName;
+      if (formData.fullName) updateData.owner_name = formData.fullName;
+      if (formData.email) updateData.email = formData.email;
+      if (formData.address) updateData.address = formData.address;
+      if (formData.city) updateData.city = formData.city;
+      if (formData.state) updateData.state = formData.state;
+      if (formData.pincode) updateData.pincode = formData.pincode;
+      if (location?.latitude) updateData.latitude = location.latitude;
+      if (location?.longitude) updateData.longitude = location.longitude;
+      if (formData.gstNumber) updateData.gst_number = formData.gstNumber;
+      if (formData.yearsOfExperience) updateData.experience_years = formData.yearsOfExperience;
+      
+      await vendorsRepo.update(vendorId, updateData);
+      
+      const updatedVendor = await vendorsRepo.findById(vendorId);
 
       console.log(`✅ Vendor profile updated successfully: ${vendorId}`);
 
@@ -407,8 +375,9 @@ export function vendorOnboardingEndpoints(app: Hono, kv: any) {
 
       console.log(`📖 Loading vendor profile: ${vendorId}`);
 
-      const vendorKey = `vendor:${vendorId}`;
-      const vendor = await kv.get(vendorKey);
+      // ✅ SQL: Get vendor
+      const vendorsRepo = getVendorsRepository();
+      const vendor = await vendorsRepo.findById(vendorId);
 
       if (!vendor) {
         console.error(`❌ Vendor not found: ${vendorId}`);
@@ -443,8 +412,9 @@ export function vendorOnboardingEndpoints(app: Hono, kv: any) {
 
       console.log(`📖 Loading vendor application: ${vendorId}`);
 
-      const vendorKey = `vendor:${vendorId}`;
-      const vendor = await kv.get(vendorKey);
+      // ✅ SQL: Get vendor
+      const vendorsRepo = getVendorsRepository();
+      const vendor = await vendorsRepo.findById(vendorId);
 
       if (!vendor) {
         console.error(`❌ Vendor not found: ${vendorId}`);

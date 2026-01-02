@@ -11,7 +11,7 @@
  * - Error recovery and retry logic
  */
 
-import * as kv from './kv_store.tsx';
+import * as kv from './kv_store';
 
 /**
  * Index a single staff member

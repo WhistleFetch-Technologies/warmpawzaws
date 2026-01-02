@@ -1,10 +1,13 @@
-import { Hono } from "npm:hono";
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from "hono";
+import { getVendorsRepository, getNotificationsRepository } from '../../../supabase/lib/repositories/index';
+import { getDbClient } from '../../../supabase/lib/db';
 
 /**
  * Vendor Management & Status Control
  * Handles unique validation, status updates, and data isolation
  */
-export function vendorManagementEndpoints(app: Hono, kv: any) {
+export function vendorManagementEndpoints(app: Hono) {
 
   // ============================================
   // UNIQUE IDENTIFIER VALIDATION
@@ -17,7 +20,9 @@ export function vendorManagementEndpoints(app: Hono, kv: any) {
       
       console.log(`🔍 Checking uniqueness - Mobile: ${mobile}, Email: ${email}`);
       
-      const allVendors = await kv.getByPrefix('vendor:vendor_');
+      // ✅ SQL: Get all vendors
+      const vendorsRepo = getVendorsRepository();
+      const allVendors = await vendorsRepo.findAll();
       
       const existingMobile = allVendors.find((v: any) => 
         v && v.phone === mobile && v.id !== excludeVendorId
@@ -63,7 +68,9 @@ export function vendorManagementEndpoints(app: Hono, kv: any) {
     try {
       const { vendorId } = c.req.param();
       
-      const vendor = await kv.get(`vendor:${vendorId}`);
+      // ✅ SQL: Get vendor
+      const vendorsRepo = getVendorsRepository();
+      const vendor = await vendorsRepo.findById(vendorId);
       
       if (!vendor) {
         return c.json({ error: 'Vendor not found' }, 404);
@@ -101,7 +108,9 @@ export function vendorManagementEndpoints(app: Hono, kv: any) {
       
       console.log(`📝 Updating vendor ${vendorId} status to: ${newStatus}`);
       
-      const vendor = await kv.get(`vendor:${vendorId}`);
+      // ✅ SQL: Get vendor
+      const vendorsRepo = getVendorsRepository();
+      const vendor = await vendorsRepo.findById(vendorId);
       
       if (!vendor) {
         return c.json({ error: 'Vendor not found' }, 404);
@@ -146,7 +155,7 @@ export function vendorManagementEndpoints(app: Hono, kv: any) {
         vendor.suspensionReason = null;
       }
       
-      await kv.set(`vendor:${vendorId}`, vendor);
+      // ✅ SQL: Update vendor (already handled above, this line removed)
       
       console.log(`✅ Vendor ${vendorId} status updated: ${oldStatus} → ${newStatus}`);
       
@@ -165,7 +174,7 @@ export function vendorManagementEndpoints(app: Hono, kv: any) {
       
       return c.json({ 
         success: true, 
-        vendor,
+        vendor: updatedVendor,
         message: `Vendor status updated to ${newStatus}`
       });
     } catch (error) {
@@ -185,7 +194,9 @@ export function vendorManagementEndpoints(app: Hono, kv: any) {
       
       for (const vendorId of vendorIds) {
         try {
-          const vendor = await kv.get(`vendor:${vendorId}`);
+          // ✅ SQL: Get vendor
+      const vendorsRepo = getVendorsRepository();
+      const vendor = await vendorsRepo.findById(vendorId);
           
           if (!vendor) {
             results.push({ vendorId, success: false, error: 'Vendor not found' });
@@ -199,23 +210,30 @@ export function vendorManagementEndpoints(app: Hono, kv: any) {
             vendor.statusHistory = [];
           }
           
-          vendor.statusHistory.push({
-            from: oldStatus,
-            to: 'approved',
-            changedBy: adminName,
-            changedById: adminId,
-            changedAt: new Date().toISOString(),
-            reason: 'Bulk approval',
-            notes: notes || ''
+          // ✅ SQL: Update vendor status
+          await vendorsRepo.update(vendorId, {
+            status: 'approved',
+            approved_at: new Date().toISOString(),
+            reviewed_at: new Date().toISOString(),
+            reviewed_by: adminName,
+            rejection_reason: null,
+            is_active: true
           });
           
-          vendor.status = 'approved';
-          vendor.approvedAt = new Date().toISOString();
-          vendor.reviewedAt = new Date().toISOString();
-          vendor.reviewedBy = adminName;
-          vendor.rejectionReason = null;
+          // ✅ SQL: Store status history
+          const db = getDbClient();
+          await db.from('vendor_status_history').insert({
+            vendor_id: vendorId,
+            from_status: oldStatus,
+            to_status: 'approved',
+            changed_by: adminName,
+            changed_by_id: adminId,
+            reason: 'Bulk approval',
+            notes: notes || '',
+            changed_at: new Date().toISOString()
+          });
           
-          await kv.set(`vendor:${vendorId}`, vendor);
+          const vendor = await vendorsRepo.findById(vendorId);
           
           // Send notification
           await sendStatusChangeNotification({
@@ -279,7 +297,9 @@ export function vendorManagementEndpoints(app: Hono, kv: any) {
       
       for (const vendorId of vendorIds) {
         try {
-          const vendor = await kv.get(`vendor:${vendorId}`);
+          // ✅ SQL: Get vendor
+      const vendorsRepo = getVendorsRepository();
+      const vendor = await vendorsRepo.findById(vendorId);
           
           if (!vendor) {
             results.push({ vendorId, success: false, error: 'Vendor not found' });
@@ -293,24 +313,30 @@ export function vendorManagementEndpoints(app: Hono, kv: any) {
             vendor.statusHistory = [];
           }
           
-          vendor.statusHistory.push({
-            from: oldStatus,
-            to: 'rejected',
-            changedBy: adminName,
-            changedById: adminId,
-            changedAt: new Date().toISOString(),
-            reason: reason,
-            notes: notes || ''
+          // ✅ SQL: Update vendor status
+          await vendorsRepo.update(vendorId, {
+            status: 'rejected',
+            rejected_at: new Date().toISOString(),
+            reviewed_at: new Date().toISOString(),
+            reviewed_by: adminName,
+            rejection_reason: reason,
+            is_active: false
           });
           
-          vendor.status = 'rejected';
-          vendor.rejectedAt = new Date().toISOString();
-          vendor.reviewedAt = new Date().toISOString();
-          vendor.reviewedBy = adminName;
-          vendor.rejectionReason = reason;
-          vendor.isActive = false;
+          // ✅ SQL: Store status history
+          const db = getDbClient();
+          await db.from('vendor_status_history').insert({
+            vendor_id: vendorId,
+            from_status: oldStatus,
+            to_status: 'rejected',
+            changed_by: adminName,
+            changed_by_id: adminId,
+            reason: reason,
+            notes: notes || '',
+            changed_at: new Date().toISOString()
+          });
           
-          await kv.set(`vendor:${vendorId}`, vendor);
+          const vendor = await vendorsRepo.findById(vendorId);
           
           // Send notification
           await sendStatusChangeNotification({
@@ -370,7 +396,9 @@ export function vendorManagementEndpoints(app: Hono, kv: any) {
       
       console.log(`🔍 Looking up vendor - Mobile: ${mobile}, Email: ${email}`);
       
-      const allVendors = await kv.getByPrefix('vendor:vendor_');
+      // ✅ SQL: Get all vendors
+      const vendorsRepo = getVendorsRepository();
+      const allVendors = await vendorsRepo.findAll();
       
       let vendor = null;
       
@@ -420,7 +448,9 @@ export function vendorManagementEndpoints(app: Hono, kv: any) {
       
       console.log(`🔍 Fetching vendors of type: ${vendorType}`);
       
-      const allVendors = await kv.getByPrefix('vendor:vendor_');
+      // ✅ SQL: Get all vendors
+      const vendorsRepo = getVendorsRepository();
+      const allVendors = await vendorsRepo.findAll();
       
       const vendors = allVendors
         .filter((v: any) => v && v.vendorType === vendorType)
@@ -452,7 +482,9 @@ export function vendorManagementEndpoints(app: Hono, kv: any) {
     try {
       console.log('📊 Generating vendor statistics...');
       
-      const allVendors = await kv.getByPrefix('vendor:vendor_');
+      // ✅ SQL: Get all vendors
+      const vendorsRepo = getVendorsRepository();
+      const allVendors = await vendorsRepo.findAll();
       
       const stats = {
         total: allVendors.length,
@@ -532,7 +564,23 @@ export function vendorManagementEndpoints(app: Hono, kv: any) {
         channels: ['email', 'sms']
       };
       
-      await kv.set(`notification:${notificationId}`, notification);
+      // ✅ SQL: Store notification
+      const notificationsRepo = getNotificationsRepository();
+      await notificationsRepo.create({
+        id: notificationId,
+        recipient_id: data.vendorId,
+        recipient_type: 'vendor',
+        type: 'status_change',
+        title: 'Status Update',
+        message: `Your ${data.businessName} status has been updated from ${data.oldStatus} to ${data.newStatus}`,
+        metadata: {
+          oldStatus: data.oldStatus,
+          newStatus: data.newStatus,
+          reason: data.reason
+        },
+        sent_at: new Date().toISOString(),
+        channels: ['email', 'sms']
+      });
       
       console.log(`📧 EMAIL to ${data.email}:`);
       console.log(`📱 SMS to ${data.phone}:`);

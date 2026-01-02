@@ -14,8 +14,7 @@ import {
   Wallet, CheckCircle2, Clock, AlertCircle, ChevronDown, ChevronUp, 
   Users, DollarSign, TrendingUp, Building2
 } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { toast } from 'sonner';
 
 interface PayoutRecord {
   payoutId: string;
@@ -56,8 +55,6 @@ export function VendorPayoutRecords({ vendorId }: VendorPayoutRecordsProps) {
   const [expandedPayouts, setExpandedPayouts] = useState<Set<string>>(new Set());
   const [isCenterBased, setIsCenterBased] = useState(false);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
-
   useEffect(() => {
     loadPayouts();
   }, [vendorId]);
@@ -65,19 +62,27 @@ export function VendorPayoutRecords({ vendorId }: VendorPayoutRecordsProps) {
   const loadPayouts = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE}/vendor/payouts/${vendorId}`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setPayouts(data.payouts || []);
-        setSummary(data.summary);
-        setIsCenterBased(data.isCenterBased || false);
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
       }
-    } catch (error) {
+
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/payouts/${vendorId}`
+      );
+
+      if (data.success) {
+        setPayouts(data.payouts || data.data?.payouts || []);
+        setSummary(data.summary || data.data?.summary);
+        setIsCenterBased(data.isCenterBased || false);
+      } else {
+        toast.error(data.error || data.message || 'Failed to load payout records');
+      }
+    } catch (error: any) {
       console.error('Error loading payouts:', error);
-      toast.error('Failed to load payout records');
+      toast.error(error?.message || 'Failed to load payout records');
     } finally {
       setLoading(false);
     }

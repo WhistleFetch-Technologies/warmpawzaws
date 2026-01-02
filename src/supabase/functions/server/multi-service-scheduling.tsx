@@ -1,5 +1,5 @@
-import { Hono } from "npm:hono";
-import { sendSuccess, sendError } from "./response-utils.ts";
+import { Hono } from "hono";
+import { sendSuccess, sendError } from "./response-utils";
 
 /**
  * 🗓️ MULTI-SERVICE SCHEDULING SYSTEM ENHANCED
@@ -38,7 +38,14 @@ interface ServiceWindow {
   totalTime: number;
 }
 
-export function multiServiceSchedulingEndpoints(app: Hono, kv: any) {
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { 
+  getVendorsRepository,
+  getBookingsRepository
+} from '../../../supabase/lib/repositories/index';
+import { getDbClient } from '../../../supabase/lib/db';
+
+export function multiServiceSchedulingEndpoints(app: Hono) {
   const BASE_PATH = "/make-server-3dd53475";
 
   // ========================================
@@ -57,15 +64,22 @@ export function multiServiceSchedulingEndpoints(app: Hono, kv: any) {
 
       console.log(`📅 Checking multi-service availability for provider ${providerId} on ${date}`);
 
-      // Get provider details
-      const provider = await kv.get(`vendor:${providerId}`);
+      // ✅ SQL: Get provider details using repository
+      const vendorsRepo = getVendorsRepository();
+      const provider = await vendorsRepo.findById(providerId);
       if (!provider) {
         return sendError(c, 'Provider not found', 404);
       }
 
-      // Get scheduling policy
-      const policyRes = await kv.get(`scheduling_policy_${providerId}`);
-      const policy: SchedulingPolicy = policyRes || {
+      // ✅ SQL: Get scheduling policy from vendor_settings table
+      const db = getDbClient();
+      const { data: policyRes } = await db
+        .from('vendor_settings')
+        .select('scheduling_policy')
+        .eq('vendor_id', providerId)
+        .single();
+      const policyData = policyRes?.scheduling_policy || null;
+      const policy: SchedulingPolicy = policyData || {
         vendorId: providerId,
         bufferTimeBetweenServices: 15,
         multiServiceSwitchBuffer: 10,
@@ -79,19 +93,31 @@ export function multiServiceSchedulingEndpoints(app: Hono, kv: any) {
         updatedAt: new Date().toISOString()
       };
 
-      // Get all provider's services
-      const vendorServices = await kv.get(`vendor:${providerId}:services`) || [];
+      // ✅ SQL: Get all provider's services from vendor_services table
+      const db = getDbClient();
+      const { data: vendorServicesData } = await db
+        .from('vendor_services')
+        .select('*')
+        .eq('vendor_id', providerId)
+        .eq('is_enabled', true);
       
-      // Get all bookings for this provider on the requested date
-      const allBookingIds = await kv.get(`vendor:${providerId}:bookings`) || [];
-      const dateBookings = [];
-
-      for (const bookingId of allBookingIds) {
-        const booking = await kv.get(`booking:${bookingId}`);
-        if (booking && booking.scheduledDate === date && booking.status !== 'cancelled') {
-          dateBookings.push(booking);
-        }
-      }
+      const vendorServices = vendorServicesData || [];
+      
+      // ✅ SQL: Get all bookings for this provider on the requested date
+      const bookingsRepo = getBookingsRepository();
+      const allBookings = await bookingsRepo.findByVendor(providerId);
+      const dateBookings = allBookings
+        .filter((b: any) => {
+          const bookingDate = b.scheduled_date || b.booking_date;
+          const dateOnly = bookingDate ? bookingDate.split('T')[0] : null;
+          return dateOnly === date && b.status !== 'cancelled';
+        })
+        .map((b: any) => ({
+          scheduledDate: b.scheduled_date || b.booking_date,
+          status: b.status,
+          serviceType: b.service_type,
+          commuteTime: b.commute_time || 0
+        }));
 
       // Calculate commute time to customer
       let commuteTime = 15; // default
@@ -122,8 +148,7 @@ export function multiServiceSchedulingEndpoints(app: Hono, kv: any) {
           serviceType,
           date,
           dateBookings,
-          policy,
-          kv
+          policy
         );
 
         // Generate available slots
@@ -212,8 +237,7 @@ async function checkServiceTypeConflicts(
   serviceType: string,
   date: string,
   dateBookings: any[],
-  policy: SchedulingPolicy,
-  kv: any
+  policy: SchedulingPolicy
 ): Promise<any[]> {
   const conflicts = [];
 

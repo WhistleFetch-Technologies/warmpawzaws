@@ -4,7 +4,7 @@ import { Card } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import { Calendar, Clock, Users, ChevronRight, AlertCircle, Coffee, ArrowLeft, Check } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 interface PetCafeTableBookingProps {
   vendorId: string;

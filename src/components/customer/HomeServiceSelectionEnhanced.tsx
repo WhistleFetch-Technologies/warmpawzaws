@@ -3,7 +3,7 @@ import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Card, CardContent } from '../ui/card';
 import { MapPin, Clock, Star, Calendar, ChevronRight, Heart, TrendingUp, Navigation, User, Radar, Filter, RefreshCw } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { motion, AnimatePresence } from 'motion/react';
 import { RadarProviderMap } from '../RadarProviderMap';

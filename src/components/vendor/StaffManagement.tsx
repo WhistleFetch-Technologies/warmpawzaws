@@ -2,9 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Edit, Save, X, User, Phone, Mail, MapPin, Calendar, Clock, UserCheck, Upload, CheckCircle, Check, Camera, Award, Star, DollarSign, Settings, ArrowLeft } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
-import { authenticatedFetch } from '../../utils/session-manager'; // ✅ FIXED: Use correct session manager
+// ✅ FIX: Removed Supabase imports - using API Gateway now
+import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../ui/dialog';
 import { StaffScheduleManagement } from './StaffScheduleManagement'; // ✅ NEW: Staff schedule management
 
@@ -65,55 +64,48 @@ export function StaffManagement({ vendorId, vendorData, onBack, onNavigateToServ
     try {
       setLoading(true);
       
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
       // Fetch staff
-      const staffResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/vendor/${vendorId}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-
-      if (staffResponse.ok) {
-        const data = await staffResponse.json();
+      try {
+        const staffData = await apiCallJson<any>(
+          `${API_GATEWAY_URL}/make-server-3dd53475/vendor/staff/${vendorId}`
+        );
+        
         // ✅ FIX: Handle standardized response format
         // Response format: { success: true, staff: [...], total: ... }
-        const staffList = data.staff || data.data?.staff || [];
+        const staffList = staffData.staff || staffData.data?.staff || [];
         // ✅ FIX: Filter out null values AND invalid IDs (staffsvc_ are service records, not staff)
         setStaff(staffList
           .filter((s: any) => s !== null && s !== undefined && s.id && !s.id.startsWith('staffsvc_'))
         );
-      } else {
-        const errorData = await staffResponse.json().catch(() => ({ error: 'Unknown error' }));
-        console.error('Failed to load staff:', errorData);
-        // Don't show error toast on initial load - just log
+      } catch (staffError) {
+        console.error('Failed to load staff:', staffError);
+        setStaff([]);
       }
 
       // Fetch vendor services - using the vendor-service-management endpoint for consistent structure
-      const servicesResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/services`,
-        {
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          }
-        }
-      );
+      try {
+        const servicesData = await apiCallJson<any>(
+          `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/services`
+        );
 
-      if (servicesResponse.ok) {
-        const data = await servicesResponse.json();
-        console.log('[STAFF MANAGEMENT] Services API response:', data);
+        console.log('[STAFF MANAGEMENT] Services API response:', servicesData);
         
         // ✅ FIXED: Extract services from NEW vendor_services system
         const allServices: Service[] = [];
         
         // First, try to get from the new 'services' object (grouped by style)
-        if (data.success && data.services) {
+        if (servicesData.success && servicesData.services) {
           ['at_home', 'at_center', 'tele'].forEach(style => {
-            if (data.services[style] && data.services[style].services) {
-              const styleServices = data.services[style].services
+            if (servicesData.services[style] && servicesData.services[style].services) {
+              const styleServices = servicesData.services[style].services
                 .filter((s: any) => s.isEnabled) // Only enabled services
                 .map((s: any) => ({
                   serviceId: s.serviceId,
@@ -129,8 +121,8 @@ export function StaffManagement({ vendorId, vendorData, onBack, onNavigateToServ
         }
         
         // Also check allServices flat array (alternative format)
-        if (data.allServices && Array.isArray(data.allServices)) {
-          const flatServices = data.allServices
+        if (servicesData.allServices && Array.isArray(servicesData.allServices)) {
+          const flatServices = servicesData.allServices
             .filter((s: any) => s.isEnabled)
             .map((s: any) => ({
               serviceId: s.serviceId,
@@ -142,7 +134,7 @@ export function StaffManagement({ vendorId, vendorData, onBack, onNavigateToServ
             }));
           
           // Merge and deduplicate
-          flatServices.forEach(fs => {
+          flatServices.forEach((fs: Service) => {
             if (!allServices.find(s => s.serviceId === fs.serviceId)) {
               allServices.push(fs);
             }
@@ -150,8 +142,8 @@ export function StaffManagement({ vendorId, vendorData, onBack, onNavigateToServ
         }
         
         // Fallback to legacy services if available
-        if (allServices.length === 0 && data.legacyServices && Array.isArray(data.legacyServices)) {
-          const legacyMapped = data.legacyServices.map((s: any) => ({
+        if (allServices.length === 0 && servicesData.legacyServices && Array.isArray(servicesData.legacyServices)) {
+          const legacyMapped = servicesData.legacyServices.map((s: any) => ({
             serviceId: s.id,
             name: s.serviceName || s.name,
             category: s.category || 'General',
@@ -164,6 +156,9 @@ export function StaffManagement({ vendorId, vendorData, onBack, onNavigateToServ
         
         console.log('[STAFF MANAGEMENT] Processed services:', allServices.length, allServices);
         setServices(allServices);
+      } catch (serviceError) {
+        console.error('Failed to load services:', serviceError);
+        setServices([]);
       }
     } catch (error: any) {
       console.error('[STAFF MANAGEMENT] Error fetching data:', error);
@@ -195,21 +190,26 @@ export function StaffManagement({ vendorId, vendorData, onBack, onNavigateToServ
     }
 
     try {
-      // ✅ SECURITY FIX: Use authenticated fetch
-      const response = await authenticatedFetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/${staffId}`,
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      const deleteData = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/staff/${staffId}`,
         {
           method: 'DELETE'
         }
       );
 
-      if (response.ok) {
+      if (deleteData.success) {
         toast.success('Staff member removed successfully');
         await fetchData(); // ✅ Ensure data reloads
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
-        const errorMessage = errorData.error || errorData.message || 'Failed to remove staff member';
-        throw new Error(errorMessage);
+        throw new Error(deleteData.error || deleteData.message || 'Failed to remove staff member');
       }
     } catch (error: any) {
       console.error('[REMOVE STAFF] Error:', error);
@@ -541,26 +541,20 @@ function StaffFormModal({ vendorId, vendorData, staff, onClose, onSuccess }: Sta
       console.log('[STAFF FORM] VendorData:', vendorData);
       
       // ✅ NEW: Use problem-grid-specializations endpoint (same labels as customer app)
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/problem-grid-specializations/${roleId}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
-          }
-        }
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      const specData = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/problem-grid-specializations/${roleId}`
       );
       
-      console.log('[STAFF FORM] Problem grid specializations response status:', response.status);
-      
-      if (response.ok) {
-        const data = await response.json();
-        console.log('[STAFF FORM] Problem grid specializations data:', data);
-        setAvailableSpecializations(data.specializations || []);
-      } else {
-        const errorText = await response.text();
-        console.error('[STAFF FORM] Failed to load specializations:', errorText);
-        toast.error('Could not load specializations');
-      }
+      console.log('[STAFF FORM] Problem grid specializations data:', specData);
+      setAvailableSpecializations(specData.specializations || []);
     } catch (error) {
       console.error('[STAFF FORM] Error loading specializations:', error);
       toast.error('Error loading specializations');
@@ -605,34 +599,30 @@ function StaffFormModal({ vendorId, vendorData, staff, onClose, onSuccess }: Sta
     formData.append('vendorId', vendorId);
     formData.append('staff_photo', photoFile);
 
-    // ✅ FIX: Use regular fetch with publicAnonKey (backend doesn't require auth for uploads)
-    const uploadResponse = await fetch(
-      `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/storage/upload-multiple`,
+    // ✅ FIX: Use API Gateway URL instead of Supabase
+    const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+    if (!API_GATEWAY_URL) {
+      throw new Error('API Gateway URL not configured');
+    }
+    
+    const { apiCallJson } = await import('@warmpawz/api-client/http');
+    
+    // Use media upload endpoint for S3
+    const uploadResult = await apiCallJson<any>(
+      `${API_GATEWAY_URL}/make-server-3dd53475/media/upload-batch`,
       {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${publicAnonKey}`
-        },
         body: formData
         // Note: Don't set Content-Type header - browser handles it for FormData
       }
     );
 
-    if (!uploadResponse.ok) {
-      const errorText = await uploadResponse.text();
-      console.error('[STAFF FORM] Photo upload failed:', uploadResponse.status, errorText);
-      throw new Error(`Failed to upload photo: ${uploadResponse.status} - ${errorText}`);
-    }
-
-    const uploadResult = await uploadResponse.json();
     console.log('[STAFF FORM] Photo upload result:', uploadResult);
     
-    if (uploadResult.uploads && uploadResult.uploads[0]?.success) {
+    if (uploadResult.success && uploadResult.uploads && uploadResult.uploads[0]?.url) {
       return uploadResult.uploads[0].url;
     } else {
-      const errorMsg = uploadResult.uploads && uploadResult.uploads[0]?.error 
-        ? uploadResult.uploads[0].error 
-        : 'Upload failed without specific error';
+      const errorMsg = uploadResult.error || uploadResult.uploads?.[0]?.error || 'Upload failed without specific error';
       console.error('[STAFF FORM] Photo upload result indicates failure:', uploadResult);
       throw new Error(`Photo upload failed: ${errorMsg}`);
     }
@@ -680,7 +670,7 @@ function StaffFormModal({ vendorId, vendorData, staff, onClose, onSuccess }: Sta
 
       // Upload photo
       console.log('[STAFF FORM] Uploading photo...');
-      const photoUrl = await uploadStaffPhoto(photoFile);
+      const photoUrl = photoFile ? await uploadStaffPhoto(photoFile) : null;
       console.log('[STAFF FORM] Photo uploaded:', photoUrl);
 
       // Determine role based on vendor type
@@ -708,47 +698,37 @@ function StaffFormModal({ vendorId, vendorData, staff, onClose, onSuccess }: Sta
 
       console.log('[STAFF FORM] Prepared staff data:', JSON.stringify(staffData, null, 2));
 
-      const url = staff 
-        ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/${staff.id}`
-        : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/create`;
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      const endpoint = staff 
+        ? `${API_GATEWAY_URL}/make-server-3dd53475/staff/${staff.id}`
+        : `${API_GATEWAY_URL}/make-server-3dd53475/staff/create`;
       
       const method = staff ? 'PUT' : 'POST';
 
-      console.log(`[STAFF FORM] Making ${method} request to:`, url);
+      console.log(`[STAFF FORM] Making ${method} request to:`, endpoint);
 
-      // ✅ FIX: Use regular fetch with publicAnonKey (session issue workaround)
-      const response = await fetch(url, {
-        method,
-        headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(staffData)
-      });
+      const result = await apiCallJson<any>(
+        endpoint,
+        {
+          method,
+          body: JSON.stringify(staffData)
+        }
+      );
 
-      console.log('[STAFF FORM] Response status:', response.status);
-      console.log('[STAFF FORM] Response ok:', response.ok);
-
-      if (response.ok) {
-        const result = await response.json();
-        console.log('[STAFF FORM] Success response:', result);
+      console.log('[STAFF FORM] Success response:', result);
+      
+      if (result.success) {
         toast.success(staff ? 'Staff updated successfully' : 'Staff added successfully');
         onSuccess();
       } else {
-        // Read response as text first, then try to parse as JSON
-        const responseText = await response.text();
-        console.error('[STAFF FORM] Error response text:', responseText);
-        let errorMessage = 'Failed to save staff';
-        try {
-          const error = JSON.parse(responseText);
-          console.error('[STAFF FORM] Parsed error:', error);
-          errorMessage = error.error || errorMessage;
-        } catch (e) {
-          // If JSON parsing fails, use the raw text
-          console.error('[STAFF FORM] Could not parse error as JSON');
-          errorMessage = responseText || errorMessage;
-        }
-        throw new Error(errorMessage);
+        throw new Error(result.error || result.message || 'Failed to save staff');
       }
     } catch (error: any) {
       console.error('[STAFF FORM] ===== ERROR SAVING STAFF =====');
@@ -1043,20 +1023,27 @@ function ServiceAssignmentModal({ vendorId, staff, availableServices, onClose, o
     try {
       setSubmitting(true);
 
-      // ✅ SECURITY FIX: Use authenticatedFetch for service assignment
-      const response = await authenticatedFetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/${staff.id}/services`,
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      const serviceData = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/staff/${staff.id}/services`,
         {
           method: 'PUT',
           body: JSON.stringify({ serviceIds: selectedServices })
         }
       );
 
-      if (response.ok) {
+      if (serviceData.success) {
         toast.success('Services updated successfully');
         onSuccess();
       } else {
-        throw new Error('Failed to update services');
+        throw new Error(serviceData.error || serviceData.message || 'Failed to update services');
       }
     } catch (error) {
       console.error('[SERVICE ASSIGNMENT] Error:', error);

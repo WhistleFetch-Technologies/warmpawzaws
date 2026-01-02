@@ -4,8 +4,7 @@ import { Button } from '../ui/button';
 import { Textarea } from '../ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { CheckCircle, User } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 interface AcceptBookingModalProps {
   booking: any;
@@ -21,25 +20,33 @@ export function AcceptBookingModal({ booking, vendorId, onClose, onSuccess }: Ac
   const [loading, setLoading] = useState(false);
   const [loadingStaff, setLoadingStaff] = useState(true);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
-
   useEffect(() => {
     loadStaffMembers();
   }, []);
 
   const loadStaffMembers = async () => {
     try {
-      const response = await fetch(
-        `${API_BASE}/vendor/${vendorId}/staff?active=true`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        console.error('API Gateway URL not configured');
+        setLoadingStaff(false);
+        return;
+      }
+
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/staff?active=true`
       );
 
-      if (response.ok) {
-        const data = await response.json();
-        setStaffMembers(data.staff || []);
+      if (data.success) {
+        setStaffMembers(data.staff || data.data?.staff || []);
+      } else {
+        setStaffMembers([]);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading staff:', error);
+      setStaffMembers([]);
     } finally {
       setLoadingStaff(false);
     }
@@ -54,14 +61,17 @@ export function AcceptBookingModal({ booking, vendorId, onClose, onSuccess }: Ac
     try {
       setLoading(true);
 
-      const response = await fetch(
-        `${API_BASE}/bookings/${booking.id}/accept`,
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+
+      const result = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/bookings/${booking.id}/accept`,
         {
           method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify({
             vendorId,
             staffId: selectedStaffId || undefined,
@@ -70,16 +80,15 @@ export function AcceptBookingModal({ booking, vendorId, onClose, onSuccess }: Ac
         }
       );
 
-      if (response.ok) {
+      if (result.success) {
         toast.success('Booking accepted successfully!');
         onSuccess();
       } else {
-        const error = await response.json();
-        toast.error(error.error || 'Failed to accept booking');
+        toast.error(result.error || result.message || 'Failed to accept booking');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error accepting booking:', error);
-      toast.error('Network error');
+      toast.error(error?.message || 'Network error');
     } finally {
       setLoading(false);
     }

@@ -4,7 +4,7 @@ import { Card } from '../ui/card';
 import { Input } from '../ui/input';
 import { ArrowLeft, Home, MapPin, Navigation, Star, User, Clock, Check, Phone } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { UniversalHomeServiceTracking } from './UniversalHomeServiceTracking';
 
 interface HomeVisitProps {

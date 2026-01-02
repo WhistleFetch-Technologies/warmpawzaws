@@ -21,13 +21,13 @@
  * ============================================================================
  */
 
-import { Hono } from "npm:hono";
-import { sendSuccess, sendError } from "./response-utils.ts";
-import { createRazorpayPayout } from "./razorpay-marketplace-payout.tsx";
-import { getPayoutsRepository } from "../../lib/repositories/payouts.ts";
-import { getVendorsRepository } from "../../lib/repositories/vendors.ts";
-import { getDbClient, withTransaction } from "../../lib/db.ts";
-import { createNotificationHelper } from "./notification-system.tsx";
+import { Hono } from "hono";
+import { sendSuccess, sendError } from "./response-utils";
+import { createRazorpayPayout } from "./razorpay-marketplace-payout";
+import { getPayoutsRepository } from "../../lib/repositories/payouts";
+import { getVendorsRepository } from "../../lib/repositories/vendors";
+import { getDbClient, withTransaction } from "../../lib/db";
+import { createNotificationHelper } from "./notification-system";
 
 export function registerPayoutCronJobSQL(app: Hono) {
   const BASE_PATH = "/make-server-3dd53475";

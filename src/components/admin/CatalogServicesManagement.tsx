@@ -3,6 +3,7 @@ import { RoleManagement } from './RoleManagement';
 import { EnhancedOnboardingFormBuilder } from './EnhancedOnboardingFormBuilder';
 import { ServiceCatalogTab } from './catalog/ServiceCatalogTab';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { adminCatalogApi } from '../../utils/api/client';
 import { Button } from '../ui/button';
 import { WARM_ORANGE, LOGO_CIRCULAR_ORANGE } from '../../assets/design-tokens';
 import { 
@@ -70,20 +71,10 @@ export function CatalogServicesManagement({ onNavigate }: CatalogServicesManagem
 
   const loadCategories = async () => {
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/catalog/categories`,
-        {
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
-          }
-        }
-      );
-      
-      if (response.ok) {
-        const data = await response.json();
-        const categoryNames = data.categories?.map((cat: any) => cat.name) || [];
-        setCategories(categoryNames);
-      }
+      // ✅ FIX: Use adminCatalogApi instead of direct fetch
+      const data = await adminCatalogApi.getCategories();
+      const categoryNames = data.categories?.map((cat: any) => cat.name) || [];
+      setCategories(categoryNames);
     } catch (error) {
       console.error('Error loading categories:', error);
     }
@@ -93,19 +84,9 @@ export function CatalogServicesManagement({ onNavigate }: CatalogServicesManagem
     try {
       setLoading(true);
       
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/catalog/stats`,
-        {
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
-          }
-        }
-      );
-      
-      if (response.ok) {
-        const data = await response.json();
-        setStats(data.stats);
-      }
+      // ✅ FIX: Use adminCatalogApi instead of direct fetch
+      const data = await adminCatalogApi.getStats();
+      setStats(data.stats);
     } catch (error) {
       console.error('Error loading catalog stats:', error);
     } finally {

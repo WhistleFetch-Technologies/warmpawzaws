@@ -1,4 +1,10 @@
-import { normalizePhone, phonesMatch } from "./phone-utils.tsx";
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { normalizePhone, phonesMatch } from "./phone-utils";
+import { getDbClient } from '../../../supabase/lib/db';
+import {
+  getVendorsRepository,
+  getStaffRepository
+} from '../../../supabase/lib/repositories/index';
 
 /**
  * SOLO PROVIDER AUTHENTICATION HELPERS
@@ -12,11 +18,22 @@ import { normalizePhone, phonesMatch } from "./phone-utils.tsx";
 /**
  * Check if a phone belongs to a solo provider
  */
-export async function isSoloProvider(phone: string, kv: any): Promise<boolean> {
+export async function isSoloProvider(phone: string): Promise<boolean> {
   try {
     const cleanPhone = normalizePhone(phone);
-    const phoneIndex = await kv.get(`vendor:phone:${cleanPhone}`);
-    return phoneIndex?.isSoloProvider === true;
+    const vendorsRepo = getVendorsRepository();
+    const vendor = await vendorsRepo.findByPhone(cleanPhone);
+    
+    if (!vendor || !vendor.id) {
+      return false;
+    }
+    
+    // Check if vendor is solo provider (has only one staff member with same phone)
+    const staffRepo = getStaffRepository();
+    const staffList = await staffRepo.findByVendor(vendor.id);
+    const matchingStaff = staffList.filter((s: any) => phonesMatch(normalizePhone(s.phone || ''), cleanPhone));
+    
+    return matchingStaff.length === 1 && matchingStaff[0].id === vendor.id;
   } catch (error) {
     console.error('Error checking solo provider:', error);
     return false;
@@ -27,43 +44,54 @@ export async function isSoloProvider(phone: string, kv: any): Promise<boolean> {
  * Get solo provider session data
  * Returns: { vendorId, centerId, staffId, vendor, center, staff, isSoloProvider: true }
  */
-export async function getSoloProviderSession(phone: string, kv: any) {
+export async function getSoloProviderSession(phone: string) {
   try {
     const cleanPhone = normalizePhone(phone);
     
     console.log(`🔍 [SOLO AUTH] Fetching solo provider data for: ${cleanPhone}`);
     
-    // Get phone index
-    const phoneIndex = await kv.get(`vendor:phone:${cleanPhone}`);
+    // ✅ SQL: Find vendor by phone
+    const vendorsRepo = getVendorsRepository();
+    const vendor = await vendorsRepo.findByPhone(cleanPhone);
     
-    if (!phoneIndex) {
-      console.log(`❌ [SOLO AUTH] No phone index found`);
+    if (!vendor || !vendor.id) {
+      console.log(`❌ [SOLO AUTH] No vendor found for phone`);
       return null;
     }
     
-    if (!phoneIndex.isSoloProvider) {
-      console.log(`❌ [SOLO AUTH] Phone exists but not a solo provider`);
+    // ✅ SQL: Check if solo provider (has staff with same phone)
+    const staffRepo = getStaffRepository();
+    const staffList = await staffRepo.findByVendor(vendor.id);
+    const matchingStaff = staffList.filter((s: any) => phonesMatch(normalizePhone(s.phone || ''), cleanPhone));
+    
+    if (matchingStaff.length !== 1) {
+      console.log(`❌ [SOLO AUTH] Phone exists but not a solo provider (staff count: ${matchingStaff.length})`);
       return null;
     }
     
-    const { vendorId, centerId, staffId } = phoneIndex;
+    const staff = matchingStaff[0];
+    const vendorId = vendor.id;
+    const staffId = staff.id;
+    const centerId = vendor.center_id || staff.center_id;
     
     console.log(`✅ [SOLO AUTH] Found solo provider:`, { vendorId, centerId, staffId });
     
-    // Fetch all entities
-    const vendor = await kv.get(`vendor:${vendorId}`);
-    const center = await kv.get(`center:${centerId}`);
-    const staff = await kv.get(`staff:${staffId}`);
-    
-    if (!vendor) {
-      console.error(`❌ [SOLO AUTH] Vendor not found: ${vendorId}`);
-      return null;
+    // ✅ SQL: Get center if exists
+    const db = getDbClient();
+    let center = null;
+    if (centerId) {
+      const { data: centerData } = await db
+        .from('centres')
+        .select('*')
+        .eq('id', centerId)
+        .single();
+      center = centerData;
     }
     
     console.log(`✅ [SOLO AUTH] Loaded all entities`);
-    console.log(`   Vendor status: ${vendor.status}`);
+    console.log(`   Vendor status: ${vendor.application_status || vendor.status}`);
     console.log(`   Center status: ${center?.status}`);
-    console.log(`   Staff status: ${staff?.status}`);
+    console.log(`   Staff status: ${staff.status}`);
     
     return {
       vendorId,
@@ -73,12 +101,12 @@ export async function getSoloProviderSession(phone: string, kv: any) {
       center,
       staff,
       isSoloProvider: true,
-      ownerName: vendor.ownerName,
-      businessName: vendor.businessName,
-      roleName: vendor.roleName,
-      status: vendor.status,
-      isActive: vendor.isActive,
-      setupCompleted: vendor.setupCompleted,
+      ownerName: vendor.owner_name || vendor.ownerName,
+      businessName: vendor.business_name || vendor.businessName,
+      roleName: vendor.role_id || vendor.roleName,
+      status: vendor.application_status || vendor.status,
+      isActive: vendor.is_active !== false,
+      setupCompleted: vendor.setup_completed || vendor.setupCompleted,
       defaultMode: 'CENTER' // Start in center mode by default
     };
     
@@ -91,34 +119,42 @@ export async function getSoloProviderSession(phone: string, kv: any) {
 /**
  * Get regular multi-staff vendor session data
  */
-export async function getMultiStaffVendorSession(phone: string, kv: any) {
+export async function getMultiStaffVendorSession(phone: string) {
   try {
     const cleanPhone = normalizePhone(phone);
     
     console.log(`🔍 [VENDOR AUTH] Fetching multi-staff vendor for: ${cleanPhone}`);
     
-    // Find vendor by phone
-    const allVendors = await kv.getByPrefix('vendor:vendor_');
-    const vendor = allVendors.find((v: any) => {
-      if (!v || !v.phone) return false;
-      return phonesMatch(normalizePhone(v.phone), cleanPhone);
-    });
+    // ✅ SQL: Find vendor by phone
+    const vendorsRepo = getVendorsRepository();
+    const vendor = await vendorsRepo.findByPhone(cleanPhone);
     
-    if (!vendor) {
+    if (!vendor || !vendor.id) {
       console.log(`❌ [VENDOR AUTH] No vendor found`);
       return null;
     }
     
-    if (vendor.isSoloProvider) {
+    // Check if solo provider (has only one staff with same phone)
+    const isSolo = await isSoloProvider(phone);
+    if (isSolo) {
       console.log(`ℹ️ [VENDOR AUTH] Vendor is solo provider, use getSoloProviderSession instead`);
       return null;
     }
     
     console.log(`✅ [VENDOR AUTH] Found multi-staff vendor: ${vendor.id}`);
     
-    // Get center
-    const centerId = vendor.centerId || (await kv.get(`vendor:${vendor.id}:center`));
-    const center = centerId ? await kv.get(`center:${centerId}`) : null;
+    // ✅ SQL: Get center if exists
+    const db = getDbClient();
+    const centerId = vendor.center_id;
+    let center = null;
+    if (centerId) {
+      const { data: centerData } = await db
+        .from('centres')
+        .select('*')
+        .eq('id', centerId)
+        .single();
+      center = centerData;
+    }
     
     return {
       vendorId: vendor.id,
@@ -126,9 +162,9 @@ export async function getMultiStaffVendorSession(phone: string, kv: any) {
       vendor,
       center,
       isSoloProvider: false,
-      status: vendor.status,
-      isActive: vendor.isActive,
-      setupCompleted: vendor.setupCompleted
+      status: vendor.application_status || vendor.status,
+      isActive: vendor.is_active !== false,
+      setupCompleted: vendor.setup_completed || vendor.setupCompleted
     };
     
   } catch (error) {
@@ -140,14 +176,14 @@ export async function getMultiStaffVendorSession(phone: string, kv: any) {
 /**
  * Get staff session data (for staff portal login)
  */
-export async function getStaffSession(phone: string, kv: any) {
+export async function getStaffSession(phone: string) {
   try {
     const cleanPhone = normalizePhone(phone);
     
     console.log(`🔍 [STAFF AUTH] Fetching staff for: ${cleanPhone}`);
     
     // Check if solo provider first
-    const soloSession = await getSoloProviderSession(phone, kv);
+    const soloSession = await getSoloProviderSession(phone);
     if (soloSession) {
       console.log(`✅ [STAFF AUTH] Solo provider found, returning as staff`);
       return {
@@ -156,8 +192,9 @@ export async function getStaffSession(phone: string, kv: any) {
       };
     }
     
-    // Find staff by phone
-    const allStaff = await kv.getByPrefix('staff:staff_');
+    // ✅ SQL: Find staff by phone
+    const staffRepo = getStaffRepository();
+    const allStaff = await staffRepo.findAll();
     const staff = allStaff.find((s: any) => {
       if (!s || !s.phone) return false;
       return phonesMatch(normalizePhone(s.phone), cleanPhone);
@@ -170,19 +207,28 @@ export async function getStaffSession(phone: string, kv: any) {
     
     console.log(`✅ [STAFF AUTH] Found staff: ${staff.id}`);
     
-    // Get center
-    const center = staff.centerId ? await kv.get(`center:${staff.centerId}`) : null;
+    // ✅ SQL: Get center if exists
+    const db = getDbClient();
+    let center = null;
+    if (staff.center_id) {
+      const { data: centerData } = await db
+        .from('centres')
+        .select('*')
+        .eq('id', staff.center_id)
+        .single();
+      center = centerData;
+    }
     
     return {
       staffId: staff.id,
-      centerId: staff.centerId,
-      vendorId: staff.vendorId,
+      centerId: staff.center_id,
+      vendorId: staff.vendor_id,
       staff,
       center,
       isSoloProvider: false,
       isStaffLogin: true,
       status: staff.status,
-      isActive: staff.isActive
+      isActive: staff.is_active !== false
     };
     
   } catch (error) {
@@ -195,14 +241,14 @@ export async function getStaffSession(phone: string, kv: any) {
  * Universal vendor/staff login resolver
  * Returns appropriate session based on phone type
  */
-export async function resolveVendorLogin(phone: string, kv: any) {
+export async function resolveVendorLogin(phone: string) {
   try {
     const cleanPhone = normalizePhone(phone);
     
     console.log(`🔐 [AUTH RESOLVER] Resolving login for: ${cleanPhone}`);
     
     // 1. Check if solo provider
-    const soloSession = await getSoloProviderSession(phone, kv);
+    const soloSession = await getSoloProviderSession(phone);
     if (soloSession) {
       console.log(`✅ [AUTH RESOLVER] Solo provider login`);
       return {
@@ -212,7 +258,7 @@ export async function resolveVendorLogin(phone: string, kv: any) {
     }
     
     // 2. Check if multi-staff vendor
-    const vendorSession = await getMultiStaffVendorSession(phone, kv);
+    const vendorSession = await getMultiStaffVendorSession(phone);
     if (vendorSession) {
       console.log(`✅ [AUTH RESOLVER] Multi-staff vendor login`);
       return {
@@ -222,7 +268,7 @@ export async function resolveVendorLogin(phone: string, kv: any) {
     }
     
     // 3. Check if regular staff
-    const staffSession = await getStaffSession(phone, kv);
+    const staffSession = await getStaffSession(phone);
     if (staffSession) {
       console.log(`✅ [AUTH RESOLVER] Staff login`);
       return {
@@ -250,28 +296,32 @@ export function determineVendorState(session: any): string {
   
   if (!vendor) return 'new';
   
+  const status = vendor.application_status || vendor.status;
+  const isActive = vendor.is_active !== false;
+  const setupCompleted = vendor.setup_completed || vendor.setupCompleted;
+  
   // Pending approval
-  if (vendor.status === 'pending') {
+  if (status === 'pending') {
     return 'pending_approval';
   }
   
   // Rejected
-  if (vendor.status === 'rejected') {
+  if (status === 'rejected') {
     return 'rejected';
   }
   
   // Approved but setup not complete
-  if (vendor.status === 'approved' && !vendor.setupCompleted) {
+  if (status === 'approved' && !setupCompleted) {
     return 'approved_setup_pending';
   }
   
   // Active and setup complete
-  if (vendor.status === 'approved' && vendor.setupCompleted && vendor.isActive) {
+  if (status === 'approved' && setupCompleted && isActive) {
     return 'active';
   }
   
   // Inactive
-  if (vendor.status === 'approved' && !vendor.isActive) {
+  if (status === 'approved' && !isActive) {
     return 'inactive';
   }
   

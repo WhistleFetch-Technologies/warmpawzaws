@@ -1,5 +1,11 @@
-import { Hono } from "npm:hono";
-import * as kv from "./kv_store.tsx";
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from "hono";
+import {
+  getVendorsRepository,
+  getBookingsRepository,
+  getVendorCenterSettingsRepository
+} from '../../../supabase/lib/repositories/index';
+import { getDbClient } from '../../../supabase/lib/db';
 
 /**
  * VENDOR SCHEDULE MANAGEMENT V2 - PRODUCTION GRADE
@@ -43,7 +49,10 @@ app.get("/vendor/availability-v2/:vendorId", async (c) => {
     
     console.log(`\n🔍 Fetching V2 availability for vendor: ${vendorId}`);
     
-    const savedData = await kv.get(`vendor:${vendorId}:availability:v2`);
+    // ✅ SQL: Get vendor availability
+    const centerSettingsRepo = getVendorCenterSettingsRepository();
+    const centerSettings = await centerSettingsRepo.findByVendor(vendorId);
+    const savedData = centerSettings.length > 0 ? centerSettings[0].availability_v2 : null;
     
     let availability: DayAvailability[] = [];
     let serviceStyles: string[] = [];
@@ -120,7 +129,20 @@ app.put("/vendor/availability-v2/:vendorId", async (c) => {
       serviceStyles: extractedServiceStyles
     };
     
-    await kv.set(`vendor:${vendorId}:availability:v2`, dataToSave);
+    // ✅ SQL: Save vendor availability
+    if (centerSettings.length > 0) {
+      await centerSettingsRepo.update(centerSettings[0].id, {
+        availability_v2: dataToSave,
+        updated_at: new Date().toISOString()
+      });
+    } else {
+      await centerSettingsRepo.create({
+        vendor_id: vendorId,
+        availability_v2: dataToSave,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
+    }
     
     // Generate and cache customer-facing slot availability
     await generateCustomerSlots(vendorId, availability);
@@ -157,9 +179,11 @@ app.get("/vendor/:vendorId/available-slots", async (c) => {
     console.log(`   Service Style (customer): ${serviceStyle || 'not specified'}`);
     console.log(`   Service Style (vendor): ${vendorServiceStyle || 'not specified'}`);
     
-    // Check if vendor is online
-    const vendorStatus = await kv.get(`vendor:${vendorId}:status`) || { isOnline: true };
-    if (!vendorStatus.isOnline) {
+    // ✅ SQL: Check if vendor is online
+    const vendorsRepo = getVendorsRepository();
+    const vendor = await vendorsRepo.findById(vendorId);
+    const isOnline = vendor?.is_online !== false && vendor?.isOnline !== false;
+    if (!isOnline) {
       console.log(`❌ Vendor is offline (vacation mode)`);
       return c.json({
         success: true,
@@ -170,7 +194,10 @@ app.get("/vendor/:vendorId/available-slots", async (c) => {
     }
     
     // Get vendor availability V2 - handle both old and new format
-    const savedData = await kv.get(`vendor:${vendorId}:availability:v2`);
+    // ✅ SQL: Get vendor availability
+    const centerSettingsRepo = getVendorCenterSettingsRepository();
+    const centerSettings = await centerSettingsRepo.findByVendor(vendorId);
+    const savedData = centerSettings.length > 0 ? centerSettings[0].availability_v2 : null;
     let availability: DayAvailability[] = [];
     
     console.log('🔍 Raw saved data:', JSON.stringify(savedData, null, 2));
@@ -239,17 +266,30 @@ app.post("/vendor/:vendorId/check-slot", async (c) => {
     console.log(`   Time: ${time}`);
     console.log(`   Service: ${serviceStyle}`);
     
-    // Check vendor is online
-    const vendorStatus = await kv.get(`vendor:${vendorId}:status`) || { isOnline: true };
-    if (!vendorStatus.isOnline) {
+    // ✅ SQL: Check vendor is online
+    const vendorsRepo = getVendorsRepository();
+    const vendor = await vendorsRepo.findById(vendorId);
+    const isOnline = vendor?.is_online !== false && vendor?.isOnline !== false;
+    if (!isOnline) {
       return c.json({
         available: false,
         reason: 'Vendor is in vacation mode'
       });
     }
     
-    // Get vendor availability
-    const availability = await kv.get(`vendor:${vendorId}:availability:v2`) as DayAvailability[] || [];
+    // ✅ SQL: Get vendor availability
+    const centerSettingsRepo = getVendorCenterSettingsRepository();
+    const centerSettings = await centerSettingsRepo.findByVendor(vendorId);
+    const availabilityData = centerSettings.length > 0 ? centerSettings[0].availability_v2 : null;
+    let availability: DayAvailability[] = [];
+    
+    if (availabilityData) {
+      if (Array.isArray(availabilityData)) {
+        availability = availabilityData;
+      } else if (availabilityData.availability && Array.isArray(availabilityData.availability)) {
+        availability = availabilityData.availability;
+      }
+    }
     
     if (availability.length === 0) {
       // No restrictions - available by default
@@ -304,19 +344,17 @@ app.post("/vendor/:vendorId/check-slot", async (c) => {
       }
     }
     
-    // Check for existing bookings
-    const vendorBookings = await kv.get(`vendor:${vendorId}:bookings`) || [];
-    let bookedCount = 0;
-    
-    for (const bookingId of vendorBookings) {
-      const booking = await kv.get(`booking:${bookingId}`);
-      if (booking && 
-          booking.scheduledDate === date && 
-          booking.scheduledTime === time &&
-          booking.status !== 'cancelled') {
-        bookedCount++;
-      }
-    }
+    // ✅ SQL: Check for existing bookings
+    const bookingsRepo = getBookingsRepository();
+    const vendorBookings = await bookingsRepo.findByVendor(vendorId);
+    const bookedCount = vendorBookings.filter(b => {
+      const scheduledDate = b.scheduled_date || b.scheduledDate;
+      const scheduledTime = b.scheduled_time || b.scheduledTime;
+      const status = b.status;
+      return scheduledDate === date && 
+             scheduledTime === time &&
+             status !== 'cancelled';
+    }).length;
     
     // For now, allow 1 booking per slot (can be made configurable)
     if (bookedCount >= 1) {
@@ -368,7 +406,15 @@ async function generateCustomerSlots(vendorId: string, availability: DayAvailabi
     customerSlots[dayConfig.dayOfWeek] = daySlots;
   }
   
-  await kv.set(`vendor:${vendorId}:customer-slots`, customerSlots);
+  // ✅ SQL: Store customer slots (in vendor_center_settings or cache table)
+  const centerSettingsRepo = getVendorCenterSettingsRepository();
+  const centerSettings = await centerSettingsRepo.findByVendor(vendorId);
+  if (centerSettings.length > 0) {
+    await centerSettingsRepo.update(centerSettings[0].id, {
+      customer_slots: customerSlots,
+      updated_at: new Date().toISOString()
+    });
+  }
   console.log(`✅ Customer slots cached for all days`);
 }
 
@@ -470,15 +516,17 @@ function generateSlotsForCustomer(
 async function filterBookedSlots(vendorId: string, date: string, slots: string[]): Promise<string[]> {
   if (!date) return slots; // Can't filter without date
   
-  const vendorBookings = await kv.get(`vendor:${vendorId}:bookings`) || [];
+  // ✅ SQL: Get vendor bookings
+  const bookingsRepo = getBookingsRepository();
+  const vendorBookings = await bookingsRepo.findByVendor(vendorId);
   const bookedSlots = new Set<string>();
   
-  for (const bookingId of vendorBookings) {
-    const booking = await kv.get(`booking:${bookingId}`);
-    if (booking && 
-        booking.scheduledDate === date && 
-        booking.status !== 'cancelled') {
-      bookedSlots.add(booking.scheduledTime);
+  for (const booking of vendorBookings) {
+    const scheduledDate = booking.scheduled_date || booking.scheduledDate;
+    const scheduledTime = booking.scheduled_time || booking.scheduledTime;
+    const status = booking.status;
+    if (scheduledDate === date && status !== 'cancelled') {
+      bookedSlots.add(scheduledTime);
     }
   }
   

@@ -14,9 +14,9 @@
  * Part of: Practo Parity Implementation - Tasks 2.1, 2.2, 2.3
  */
 
-import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
-import { sendSuccess, sendError } from './response-utils.ts';
+import { Hono } from 'hono';
+import * as kv from './kv_store';
+import { sendSuccess, sendError } from './response-utils';
 
 const app = new Hono();
 

@@ -19,7 +19,13 @@
 
 import { Hono } from "npm:hono";
 import { sendSuccess, sendError } from "./response-utils.ts";
-import { TIER_CONFIG } from "./tier-system.tsx";
+// ✅ FIXED: Define TIER_CONFIG locally (not exported from tier-system-sql.tsx)
+const TIER_CONFIG = {
+  BRONZE: { commissionRate: 0.20, payoutSchedule: 'T+30' },
+  SILVER: { commissionRate: 0.15, payoutSchedule: 'T+14' },
+  GOLD: { commissionRate: 0.12, payoutSchedule: 'T+7' },
+  PLATINUM: { commissionRate: 0.10, payoutSchedule: 'T+3' }
+} as const;
 import { getOTPRequirements } from "./service-category-helpers.tsx";
 import { getNotificationsRepository } from "../../lib/repositories/notifications.ts";
 import { getBookingsRepository } from "../../lib/repositories/bookings.ts";

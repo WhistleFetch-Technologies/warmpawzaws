@@ -1,7 +1,12 @@
-import { Hono } from "npm:hono";
-import * as kv from "./kv_store.tsx";
-import { BedrockRuntimeClient, InvokeModelCommand } from "npm:@aws-sdk/client-bedrock-runtime";
-import { NodeHttpHandler } from "npm:@smithy/node-http-handler";
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from "hono";
+import { 
+  getPlatformSettingsRepository,
+  getProductsRepository
+} from '../../../supabase/lib/repositories/index';
+import { getDbClient } from '../../../supabase/lib/db';
+import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
+import { NodeHttpHandler } from "@smithy/node-http-handler";
 
 export function registerAIChatbotRoutes(app: Hono) {
 
@@ -18,18 +23,17 @@ export function registerAIChatbotRoutes(app: Hono) {
       // Generate or use conversation ID
       const currentConversationId = conversationId || `conv_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
 
-      // Fetch AWS Settings
-      const awsSettings = await kv.get('admin:settings:aws');
+      // ✅ SQL: Fetch AWS Settings from platform_settings
+      const platformSettingsRepo = getPlatformSettingsRepository();
+      const awsSettings = await platformSettingsRepo.getAWSSettings();
       
-      // Fetch Store Context (Products/Services)
-      // This helps the AI recommend products
+      // ✅ SQL: Fetch Store Context (Products/Services) from products table
       let storeContext = "";
       try {
-        // Fetch top 5 products to have some context
-        const allProducts = await kv.getByPrefix('product:') || [];
+        const productsRepo = getProductsRepository();
+        const allProducts = await productsRepo.findAll({ limit: 5 });
         const products = allProducts
-            .slice(0, 5)
-            .map((p: any) => `- ${p.name} (₹${p.salePrice || p.basePrice})`)
+            .map((p: any) => `- ${p.name} (₹${p.sale_price || p.base_price})`)
             .join('\n');
         
         storeContext = products ? `Featured Products:\n${products}` : "";
@@ -183,22 +187,46 @@ export function registerAIChatbotRoutes(app: Hono) {
         }
       }
 
-      // Save conversation history (optional, simplified)
-      const historyKey = `ai_chat:${currentConversationId}`;
-      const history = await kv.get(historyKey) || [];
-      history.push({ role: 'user', content: message, timestamp: new Date().toISOString() });
-      history.push({ role: 'assistant', content: responseText, intent, timestamp: new Date().toISOString() });
-      await kv.set(historyKey, history);
+      // ✅ SQL: Save conversation history in ai_conversations and ai_messages tables
+      const db = getDbClient();
+      const { data: conversationData } = await db
+        .from('ai_conversations')
+        .upsert({
+          id: currentConversationId,
+          customer_phone: customerPhone || null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'id'
+        })
+        .select()
+        .single();
+      
+      // Save messages
+      await db
+        .from('ai_messages')
+        .insert([
+          {
+            conversation_id: currentConversationId,
+            role: 'user',
+            content: message,
+            intent: null,
+            created_at: new Date().toISOString()
+          },
+          {
+            conversation_id: currentConversationId,
+            role: 'assistant',
+            content: responseText,
+            intent: intent,
+            created_at: new Date().toISOString()
+          }
+        ]);
 
-      // Update Customer's conversation list
-      if (customerPhone) {
-        const userConvsKey = `ai_chat_list:${customerPhone}`;
-        const userConvs = await kv.get(userConvsKey) || [];
-        if (!userConvs.includes(currentConversationId)) {
-            userConvs.push(currentConversationId);
-            await kv.set(userConvsKey, userConvs);
-        }
-      }
+      // Update conversation updated_at
+      await db
+        .from('ai_conversations')
+        .update({ updated_at: new Date().toISOString() })
+        .eq('id', currentConversationId);
 
       return c.json({
         success: true,
@@ -220,7 +248,21 @@ export function registerAIChatbotRoutes(app: Hono) {
    */
   app.get("/make-server-3dd53475/ai-chatbot/conversation/:conversationId", async (c) => {
     const conversationId = c.req.param('conversationId');
-    const history = await kv.get(`ai_chat:${conversationId}`) || [];
+    // ✅ SQL: Get conversation history from ai_messages table
+    const db = getDbClient();
+    const { data: messages } = await db
+      .from('ai_messages')
+      .select('*')
+      .eq('conversation_id', conversationId)
+      .order('created_at', { ascending: true });
+    
+    const history = (messages || []).map((m: any) => ({
+      role: m.role,
+      content: m.content,
+      intent: m.intent,
+      timestamp: m.created_at
+    }));
+    
     return c.json({ success: true, history });
   });
 }

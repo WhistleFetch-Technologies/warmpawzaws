@@ -12,21 +12,15 @@
  * Status: ✅ P1 IMPLEMENTATION
  */
 
-import { Hono } from "npm:hono";
-import * as kv from "./kv_store.tsx";
-import { createClient } from "jsr:@supabase/supabase-js@2.49.8";
-import { ensureBucket } from "./bucket-manager.tsx";
+// ✅ S3 MIGRATION: Supabase Storage replaced with AWS S3
+import { Hono } from "hono";
+import * as kv from "./kv_store";
+import { getS3Helper, uploadToS3 } from '../../../supabase/lib/storage/s3-helper';
 
 export function registerCustomerMedicalRecordsEndpoints(app: Hono) {
   const BASE_PATH = "/make-server-3dd53475";
   
-  const MEDICAL_DOCS_BUCKET = 'make-3dd53475-customer-medical-docs';
-
-  // Initialize medical docs bucket (non-blocking, fire-and-forget)
-  ensureBucket(MEDICAL_DOCS_BUCKET, {
-    public: false,
-    fileSizeLimit: 10485760 // 10MB
-  }).catch(err => console.warn('⚠️ Medical docs bucket init warning:', err));
+  // S3 bucket is configured via PlatformSettingsRepository
 
   // Helper: Generate document ID
   function generateDocumentId() {

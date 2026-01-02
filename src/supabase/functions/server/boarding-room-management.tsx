@@ -1,7 +1,10 @@
-import { Hono } from "npm:hono";
-import * as kv from './kv_store.tsx';
-import { generateId } from './database-schema.tsx';
-import { createClient } from 'npm:@supabase/supabase-js@2';
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+// ✅ S3 MIGRATION: Supabase Storage replaced with AWS S3
+import { Hono } from "hono";
+import { generateId } from './database-schema';
+import { getS3Helper, uploadToS3 } from '../../../supabase/lib/storage/s3-helper';
+import { getVendorsRepository, getBoardingRoomsRepository } from '../../../supabase/lib/repositories/index';
+import { getDbClient } from '../../../supabase/lib/db';
 
 /**
  * BOARDING & RESORT ROOM MANAGEMENT
@@ -19,29 +22,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 export function registerBoardingRoomManagement(app: Hono) {
   const BASE = '/make-server-3dd53475';
 
-  // Initialize Supabase client for storage
-  const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
-  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
-  const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
-  // Ensure boarding media bucket exists
-  const BUCKET_NAME = 'make-3dd53475-boarding-media';
-  
-  async function ensureBucket() {
-    const { data: buckets } = await supabase.storage.listBuckets();
-    const exists = buckets?.some(b => b.name === BUCKET_NAME);
-    
-    if (!exists) {
-      await supabase.storage.createBucket(BUCKET_NAME, {
-        public: false,
-        fileSizeLimit: 52428800 // 50MB
-      });
-      console.log(`✅ Created bucket: ${BUCKET_NAME}`);
-    }
-  }
-
-  // Initialize bucket on startup
-  ensureBucket().catch(console.error);
+  // S3 bucket is configured via PlatformSettingsRepository
 
   // =============================================
   // GET ALL ROOM TYPES FOR A VENDOR
@@ -52,32 +33,41 @@ export function registerBoardingRoomManagement(app: Hono) {
 
       console.log(`[BOARDING] Fetching rooms for vendor: ${vendorId}`);
 
-      // Verify vendor
-      const vendor = await kv.get(`vendor:${vendorId}`);
+      // ✅ SQL: Verify vendor
+      const vendorsRepo = getVendorsRepository();
+      const vendor = await vendorsRepo.findById(vendorId);
       if (!vendor) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
 
-      // Get all room types
-      const rooms = await kv.get(`vendor:${vendorId}:boarding_rooms`) || [];
+      // ✅ SQL: Get all room types
+      const boardingRoomsRepo = getBoardingRoomsRepository();
+      const rooms = await boardingRoomsRepo.findByVendor(vendorId);
 
-      // Refresh signed URLs for photos/videos (1 hour expiry)
+      // ✅ S3: Refresh signed URLs for photos/videos (1 hour expiry)
+      const s3 = getS3Helper();
       const roomsWithUrls = await Promise.all(rooms.map(async (room: any) => {
         const refreshedPhotos = await Promise.all(
           (room.photos || []).map(async (path: string) => {
-            const { data } = await supabase.storage
-              .from(BUCKET_NAME)
-              .createSignedUrl(path, 3600);
-            return data?.signedUrl || path;
+            try {
+              const signedUrl = await s3.getSignedUrl(path, 3600);
+              return signedUrl;
+            } catch (err) {
+              console.warn('Warning: Could not get signed URL for photo', path);
+              return path;
+            }
           })
         );
 
         const refreshedVideos = await Promise.all(
           (room.videos || []).map(async (path: string) => {
-            const { data } = await supabase.storage
-              .from(BUCKET_NAME)
-              .createSignedUrl(path, 3600);
-            return data?.signedUrl || path;
+            try {
+              const signedUrl = await s3.getSignedUrl(path, 3600);
+              return signedUrl;
+            } catch (err) {
+              console.warn('Warning: Could not get signed URL for video', path);
+              return path;
+            }
           })
         );
 
@@ -121,12 +111,11 @@ export function registerBoardingRoomManagement(app: Hono) {
         }, 400);
       }
 
-      // Get existing rooms
-      const rooms = await kv.get(`vendor:${vendorId}:boarding_rooms`) || [];
-
-      // Check for duplicate name
-      const duplicate = rooms.find((r: any) => 
-        r.name.toLowerCase() === body.name.toLowerCase()
+      // ✅ SQL: Check for duplicate name
+      const boardingRoomsRepo = getBoardingRoomsRepository();
+      const existingRooms = await boardingRoomsRepo.findByVendor(vendorId);
+      const duplicate = existingRooms.find((r: any) => 
+        r.name?.toLowerCase() === body.name.toLowerCase()
       );
 
       if (duplicate) {
@@ -135,49 +124,30 @@ export function registerBoardingRoomManagement(app: Hono) {
         }, 400);
       }
 
-      // Create new room
+      // ✅ SQL: Create new room
       const roomId = generateId('room');
-      const newRoom = {
+      const newRoom = await boardingRoomsRepo.create({
         id: roomId,
-        vendorId,
+        vendor_id: vendorId,
         name: body.name,
         description: body.description || '',
-        
-        // Pricing
-        dayPrice: parseFloat(body.dayPrice),
-        nightPrice: parseFloat(body.nightPrice),
-        
-        // Capacity
+        day_price: parseFloat(body.dayPrice),
+        night_price: parseFloat(body.nightPrice),
         capacity: body.capacity || 1,
-        petTypes: body.petTypes || ['dog', 'cat'], // which pets allowed
-        
-        // Amenities
+        pet_types: body.petTypes || ['dog', 'cat'],
         amenities: body.amenities || [],
-        
-        // What's included/not included
         included: body.included || [],
-        notIncluded: body.notIncluded || [],
-        
-        // Media (storage paths)
+        not_included: body.notIncluded || [],
         photos: body.photos || [],
         videos: body.videos || [],
-        
-        // Additional info
-        size: body.size || '', // e.g., "10ft x 8ft"
-        features: body.features || '', // additional features
-        rules: body.rules || '', // house rules
-        
-        // Availability
-        isActive: body.isActive !== undefined ? body.isActive : true,
-        totalUnits: body.totalUnits || 1, // how many of this room type exist
-        
-        // Metadata
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-
-      rooms.push(newRoom);
-      await kv.set(`vendor:${vendorId}:boarding_rooms`, rooms);
+        size: body.size || '',
+        features: body.features || '',
+        rules: body.rules || '',
+        is_active: body.isActive !== undefined ? body.isActive : true,
+        total_units: body.totalUnits || 1,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
 
       console.log(`✅ [BOARDING] Created room: ${roomId}`);
 
@@ -203,29 +173,39 @@ export function registerBoardingRoomManagement(app: Hono) {
 
       console.log(`[BOARDING] Updating room: ${roomId}`);
 
-      const rooms = await kv.get(`vendor:${vendorId}:boarding_rooms`) || [];
-      const index = rooms.findIndex((r: any) => r.id === roomId);
+      // ✅ SQL: Update room
+      const boardingRoomsRepo = getBoardingRoomsRepository();
+      const existingRoom = await boardingRoomsRepo.findById(roomId);
 
-      if (index === -1) {
+      if (!existingRoom) {
         return c.json({ error: 'Room not found' }, 404);
       }
 
-      // Update room
-      rooms[index] = {
-        ...rooms[index],
-        ...body,
-        id: roomId, // prevent ID change
-        vendorId, // prevent vendor change
-        updatedAt: new Date().toISOString()
-      };
-
-      await kv.set(`vendor:${vendorId}:boarding_rooms`, rooms);
+      const updatedRoom = await boardingRoomsRepo.update(roomId, {
+        name: body.name || existingRoom.name,
+        description: body.description !== undefined ? body.description : existingRoom.description,
+        day_price: body.dayPrice !== undefined ? parseFloat(body.dayPrice) : existingRoom.day_price,
+        night_price: body.nightPrice !== undefined ? parseFloat(body.nightPrice) : existingRoom.night_price,
+        capacity: body.capacity !== undefined ? body.capacity : existingRoom.capacity,
+        pet_types: body.petTypes !== undefined ? body.petTypes : existingRoom.pet_types,
+        amenities: body.amenities !== undefined ? body.amenities : existingRoom.amenities,
+        included: body.included !== undefined ? body.included : existingRoom.included,
+        not_included: body.notIncluded !== undefined ? body.notIncluded : existingRoom.not_included,
+        photos: body.photos !== undefined ? body.photos : existingRoom.photos,
+        videos: body.videos !== undefined ? body.videos : existingRoom.videos,
+        size: body.size !== undefined ? body.size : existingRoom.size,
+        features: body.features !== undefined ? body.features : existingRoom.features,
+        rules: body.rules !== undefined ? body.rules : existingRoom.rules,
+        is_active: body.isActive !== undefined ? body.isActive : existingRoom.is_active,
+        total_units: body.totalUnits !== undefined ? body.totalUnits : existingRoom.total_units,
+        updated_at: new Date().toISOString()
+      });
 
       console.log(`✅ [BOARDING] Updated room: ${roomId}`);
 
       return c.json({
         success: true,
-        room: rooms[index],
+        room: updatedRoom,
         message: 'Room updated successfully'
       });
 
@@ -244,26 +224,34 @@ export function registerBoardingRoomManagement(app: Hono) {
 
       console.log(`[BOARDING] Deleting room: ${roomId}`);
 
-      const rooms = await kv.get(`vendor:${vendorId}:boarding_rooms`) || [];
-      const room = rooms.find((r: any) => r.id === roomId);
+      // ✅ SQL: Get room
+      const boardingRoomsRepo = getBoardingRoomsRepository();
+      const room = await boardingRoomsRepo.findById(roomId);
 
       if (!room) {
         return c.json({ error: 'Room not found' }, 404);
       }
 
-      // Delete photos from storage
+      // ✅ S3: Delete photos and videos from storage
+      const s3 = getS3Helper();
       for (const photoPath of room.photos || []) {
-        await supabase.storage.from(BUCKET_NAME).remove([photoPath]);
+        try {
+          await s3.deleteFile(photoPath);
+        } catch (err) {
+          console.warn('Warning: Could not delete photo', photoPath);
+        }
       }
 
-      // Delete videos from storage
       for (const videoPath of room.videos || []) {
-        await supabase.storage.from(BUCKET_NAME).remove([videoPath]);
+        try {
+          await s3.deleteFile(videoPath);
+        } catch (err) {
+          console.warn('Warning: Could not delete video', videoPath);
+        }
       }
 
-      // Remove room from list
-      const filtered = rooms.filter((r: any) => r.id !== roomId);
-      await kv.set(`vendor:${vendorId}:boarding_rooms`, filtered);
+      // ✅ SQL: Delete room
+      await boardingRoomsRepo.delete(roomId);
 
       console.log(`✅ [BOARDING] Deleted room: ${roomId}`);
 
@@ -305,52 +293,46 @@ export function registerBoardingRoomManagement(app: Hono) {
         return c.json({ error: 'File size exceeds 50MB limit' }, 400);
       }
 
-      // Generate storage path
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${vendorId}/${roomId}/${Date.now()}.${fileExt}`;
+      // ✅ S3: Generate storage path and upload
+      const fileExt = file.name.split('.').pop() || (isPhoto ? 'jpg' : 'mp4');
+      const s3Key = `boarding/${vendorId}/${roomId}/${Date.now()}.${fileExt}`;
 
-      // Upload to Supabase Storage
-      const fileBuffer = await file.arrayBuffer();
-      const { data, error } = await supabase.storage
-        .from(BUCKET_NAME)
-        .upload(fileName, fileBuffer, {
+      // ✅ S3: Upload to S3
+      const s3 = getS3Helper();
+      const uploadResult = await uploadToS3(
+        file,
+        `boarding/${vendorId}/${roomId}`,
+        `${Date.now()}.${fileExt}`,
+        {
           contentType: file.type,
-          upsert: false
-        });
+          acl: 'private',
+        }
+      );
 
-      if (error) {
-        console.error('[BOARDING] Upload error:', error);
-        return c.json({ error: 'Failed to upload file' }, 500);
-      }
+      // ✅ SQL: Update room record
+      const boardingRoomsRepo = getBoardingRoomsRepository();
+      const room = await boardingRoomsRepo.findById(roomId);
 
-      // Update room record
-      const rooms = await kv.get(`vendor:${vendorId}:boarding_rooms`) || [];
-      const index = rooms.findIndex((r: any) => r.id === roomId);
-
-      if (index === -1) {
+      if (!room) {
         return c.json({ error: 'Room not found' }, 404);
       }
 
-      if (isPhoto) {
-        rooms[index].photos = [...(rooms[index].photos || []), fileName];
-      } else {
-        rooms[index].videos = [...(rooms[index].videos || []), fileName];
-      }
+      const updatedPhotos = isPhoto ? [...(room.photos || []), s3Key] : room.photos;
+      const updatedVideos = isVideo ? [...(room.videos || []), s3Key] : room.videos;
 
-      rooms[index].updatedAt = new Date().toISOString();
-      await kv.set(`vendor:${vendorId}:boarding_rooms`, rooms);
+      await boardingRoomsRepo.update(roomId, {
+        photos: updatedPhotos,
+        videos: updatedVideos,
+        updated_at: new Date().toISOString()
+      });
 
-      // Generate signed URL for immediate use
-      const { data: urlData } = await supabase.storage
-        .from(BUCKET_NAME)
-        .createSignedUrl(fileName, 3600);
-
-      console.log(`✅ [BOARDING] Uploaded ${mediaType}: ${fileName}`);
+      console.log(`✅ [BOARDING] Uploaded ${mediaType}: ${s3Key}`);
 
       return c.json({
         success: true,
-        filePath: fileName,
-        url: urlData?.signedUrl,
+        filePath: s3Key,
+        key: s3Key,
+        url: uploadResult.signedUrl || uploadResult.url,
         message: 'File uploaded successfully'
       });
 
@@ -372,25 +354,34 @@ export function registerBoardingRoomManagement(app: Hono) {
         return c.json({ error: 'File path and media type are required' }, 400);
       }
 
-      // Delete from storage
-      await supabase.storage.from(BUCKET_NAME).remove([filePath]);
+      // ✅ S3: Delete from storage
+      const s3 = getS3Helper();
+      try {
+        await s3.deleteFile(filePath);
+      } catch (err) {
+        console.warn('Warning: Could not delete file', filePath);
+      }
 
-      // Update room record
-      const rooms = await kv.get(`vendor:${vendorId}:boarding_rooms`) || [];
-      const index = rooms.findIndex((r: any) => r.id === roomId);
+      // ✅ SQL: Update room record
+      const boardingRoomsRepo = getBoardingRoomsRepository();
+      const room = await boardingRoomsRepo.findById(roomId);
 
-      if (index === -1) {
+      if (!room) {
         return c.json({ error: 'Room not found' }, 404);
       }
 
-      if (mediaType === 'photo') {
-        rooms[index].photos = rooms[index].photos.filter((p: string) => p !== filePath);
-      } else {
-        rooms[index].videos = rooms[index].videos.filter((v: string) => v !== filePath);
-      }
+      const updatedPhotos = mediaType === 'photo' 
+        ? (room.photos || []).filter((p: string) => p !== filePath)
+        : room.photos;
+      const updatedVideos = mediaType === 'video'
+        ? (room.videos || []).filter((v: string) => v !== filePath)
+        : room.videos;
 
-      rooms[index].updatedAt = new Date().toISOString();
-      await kv.set(`vendor:${vendorId}:boarding_rooms`, rooms);
+      await boardingRoomsRepo.update(roomId, {
+        photos: updatedPhotos,
+        videos: updatedVideos,
+        updated_at: new Date().toISOString()
+      });
 
       return c.json({
         success: true,
@@ -410,28 +401,35 @@ export function registerBoardingRoomManagement(app: Hono) {
     try {
       const { vendorId } = c.req.param();
 
-      const rooms = await kv.get(`vendor:${vendorId}:boarding_rooms`) || [];
+      // ✅ SQL: Get active rooms
+      const boardingRoomsRepo = getBoardingRoomsRepository();
+      const allRooms = await boardingRoomsRepo.findByVendor(vendorId);
       
       // Filter only active rooms
-      const activeRooms = rooms.filter((r: any) => r.isActive);
+      const activeRooms = allRooms.filter((r: any) => r.is_active !== false);
 
-      // Refresh URLs
+      // ✅ S3: Refresh URLs
+      const s3 = getS3Helper();
       const roomsWithUrls = await Promise.all(activeRooms.map(async (room: any) => {
         const photoUrls = await Promise.all(
           (room.photos || []).map(async (path: string) => {
-            const { data } = await supabase.storage
-              .from(BUCKET_NAME)
-              .createSignedUrl(path, 3600);
-            return data?.signedUrl || null;
+            try {
+              const signedUrl = await s3.getSignedUrl(path, 3600);
+              return signedUrl;
+            } catch (err) {
+              return null;
+            }
           })
         );
 
         const videoUrls = await Promise.all(
           (room.videos || []).map(async (path: string) => {
-            const { data } = await supabase.storage
-              .from(BUCKET_NAME)
-              .createSignedUrl(path, 3600);
-            return data?.signedUrl || null;
+            try {
+              const signedUrl = await s3.getSignedUrl(path, 3600);
+              return signedUrl;
+            } catch (err) {
+              return null;
+            }
           })
         );
 
@@ -439,10 +437,10 @@ export function registerBoardingRoomManagement(app: Hono) {
           id: room.id,
           name: room.name,
           description: room.description,
-          dayPrice: room.dayPrice,
-          nightPrice: room.nightPrice,
+          dayPrice: room.day_price || room.dayPrice,
+          nightPrice: room.night_price || room.nightPrice,
           capacity: room.capacity,
-          petTypes: room.petTypes,
+          petTypes: room.pet_types || room.petTypes,
           amenities: room.amenities,
           included: room.included,
           notIncluded: room.notIncluded,

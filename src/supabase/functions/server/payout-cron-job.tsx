@@ -11,15 +11,15 @@
  * Endpoint: POST /make-server-3dd53475/cron/process-scheduled-payouts
  */
 
-import { Hono } from "npm:hono";
-import { sendSuccess, sendError } from "./response-utils.ts";
-import { createRazorpayPayout } from "./razorpay-marketplace-payout.tsx";
-import { createNotificationHelper } from "./notification-system.tsx";
+import { Hono } from "hono";
+import { sendSuccess, sendError } from "./response-utils";
+import { createRazorpayPayout } from "./razorpay-marketplace-payout";
+import { createNotificationHelper } from "./notification-system";
 // ✅ SQL Repositories
-import { getPayoutsRepository } from "../../../supabase/lib/repositories/payouts.ts";
-import { getVendorsRepository } from "../../../supabase/lib/repositories/vendors.ts";
-import { getVendorEarningsRepository } from "../../../supabase/lib/repositories/vendor-earnings.ts";
-import { getDbClient } from "../../../supabase/lib/db.ts";
+import { getPayoutsRepository } from "../../../supabase/lib/repositories/payouts";
+import { getVendorsRepository } from "../../../supabase/lib/repositories/vendors";
+import { getVendorEarningsRepository } from "../../../supabase/lib/repositories/vendor-earnings";
+import { getDbClient } from "../../../supabase/lib/db";
 // ✅ Note: Razorpay credentials now fetched from platform settings via createRazorpayPayout
 
 export function registerPayoutCronJob(app: Hono) {

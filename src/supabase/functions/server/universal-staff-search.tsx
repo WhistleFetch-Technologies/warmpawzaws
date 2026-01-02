@@ -1,6 +1,12 @@
-import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
-import { getPrimarySpecialization, getAllSpecializations } from './specialization-mapping.tsx';
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from 'hono';
+import { getPrimarySpecialization, getAllSpecializations } from './specialization-mapping';
+import {
+  getVendorsRepository,
+  getStaffRepository,
+  getVendorServicesRepository
+} from '../../../supabase/lib/repositories/index';
+import { getDbClient } from '../../../supabase/lib/db';
 
 const app = new Hono();
 
@@ -63,7 +69,9 @@ app.get('/make-server-3dd53475/customer/staff/search', async (c) => {
     console.log(`👤 Gender: ${gender || 'All'}`);
 
     // Step 1: Get all vendors
-    const allVendors = await kv.getByPrefix('vendor:vendor_');
+    // ✅ SQL: Get all vendors
+    const vendorsRepo = getVendorsRepository();
+    const allVendors = await vendorsRepo.findAll();
     console.log(`\n📊 Total vendors in database: ${allVendors.length}`);
 
     // Step 2: Filter vendors by status and roleId
@@ -99,13 +107,17 @@ app.get('/make-server-3dd53475/customer/staff/search', async (c) => {
       console.log(`   │    Role: ${vendor.roleId}`);
       
       // Get vendor's staff array
-      const staffIds = await kv.get(`vendor:${vendor.id}:staff`) || [];
+      // ✅ SQL: Get staff for vendor
+      const staffRepo = getStaffRepository();
+      const vendorStaff = await staffRepo.findByVendor(vendor.id);
+      const staffIds = vendorStaff.map(s => s.id);
       totalStaffFound += staffIds.length;
       
       console.log(`   │    Staff Array: ${staffIds.length} members → [${staffIds.slice(0, 3).join(', ')}${staffIds.length > 3 ? '...' : ''}]`);
       
       for (const staffId of staffIds) {
-        const staff = await kv.get(`staff:${staffId}`);
+        // ✅ SQL: Get staff
+        const staff = await staffRepo.findById(staffId);
         
         if (!staff) {
           console.log(`   │    ❌ ${staffId} - Record not found in KV!`);
@@ -121,7 +133,9 @@ app.get('/make-server-3dd53475/customer/staff/search', async (c) => {
         console.log(`   │    ✅ ${staff.fullName} - Active`);
         
         // Get staff services
-        const staffServices = await kv.getByPrefix(`staff:${staff.id}:service:`) || [];
+        // ✅ SQL: Get staff services
+        const vendorServicesRepo = getVendorServicesRepository();
+        const staffServices = await vendorServicesRepo.findByStaff(staff.id) || [];
         const enabledServices = staffServices
           .filter((s: any) => s.isActive !== false)
           .map((s: any) => ({
@@ -151,9 +165,10 @@ app.get('/make-server-3dd53475/customer/staff/search', async (c) => {
         let vendorServices: any[] = [];
         if (enabledServices.length === 0) {
           // Fallback to vendor services
-          const servicesAtCenter = await kv.get(`vendor_services:${vendor.id}:at_center`) || { services: [] };
-          const servicesAtHome = await kv.get(`vendor_services:${vendor.id}:at_home`) || { services: [] };
-          const servicesTele = await kv.get(`vendor_services:${vendor.id}:tele`) || { services: [] };
+          // ✅ SQL: Get vendor services by style
+          const servicesAtCenter = await vendorServicesRepo.findByVendorAndStyle(vendor.id, 'at_center') || [];
+          const servicesAtHome = await vendorServicesRepo.findByVendorAndStyle(vendor.id, 'at_home') || [];
+          const servicesTele = await vendorServicesRepo.findByVendorAndStyle(vendor.id, 'tele') || [];
           
           vendorServices = [
             ...(servicesAtCenter.services || []).map((s: any) => ({ ...s, serviceStyle: 'at_center' })),
@@ -336,7 +351,9 @@ app.get('/make-server-3dd53475/customer/staff/:staffId', async (c) => {
     console.log(`\n👨‍⚕️ ===== GET STAFF DETAILS =====`);
     console.log(`📝 Staff ID: ${staffId}`);
     
-    const staff = await kv.get(`staff:${staffId}`);
+    // ✅ SQL: Get staff
+    const staffRepo = getStaffRepository();
+    const staff = await staffRepo.findById(staffId);
     
     if (!staff) {
       return c.json({
@@ -346,7 +363,10 @@ app.get('/make-server-3dd53475/customer/staff/:staffId', async (c) => {
     }
 
     // Get vendor/clinic info
-    const vendor = await kv.get(`vendor:${staff.vendorId}`);
+    // ✅ SQL: Get vendor
+    const vendorsRepo = getVendorsRepository();
+    const vendorId = staff.vendor_id || staff.vendorId;
+    const vendor = vendorId ? await vendorsRepo.findById(vendorId) : null;
     
     if (!vendor) {
       return c.json({
@@ -356,7 +376,9 @@ app.get('/make-server-3dd53475/customer/staff/:staffId', async (c) => {
     }
 
     // Get staff services
-    const staffServices = await kv.getByPrefix(`staff:${staff.id}:service:`) || [];
+    // ✅ SQL: Get staff services
+    const vendorServicesRepo = getVendorServicesRepository();
+    const staffServices = await vendorServicesRepo.findByStaff(staff.id) || [];
     const enabledServices = staffServices
       .filter((s: any) => s.isActive !== false)
       .map((s: any) => ({
@@ -374,9 +396,10 @@ app.get('/make-server-3dd53475/customer/staff/:staffId', async (c) => {
     // Get vendor services as fallback
     let vendorServices: any[] = [];
     if (enabledServices.length === 0) {
-      const servicesAtCenter = await kv.get(`vendor_services:${vendor.id}:at_center`) || { services: [] };
-      const servicesAtHome = await kv.get(`vendor_services:${vendor.id}:at_home`) || { services: [] };
-      const servicesTele = await kv.get(`vendor_services:${vendor.id}:tele`) || { services: [] };
+      // ✅ SQL: Get vendor services by style
+      const servicesAtCenter = await vendorServicesRepo.findByVendorAndStyle(vendor.id, 'at_center') || [];
+      const servicesAtHome = await vendorServicesRepo.findByVendorAndStyle(vendor.id, 'at_home') || [];
+      const servicesTele = await vendorServicesRepo.findByVendorAndStyle(vendor.id, 'tele') || [];
       
       vendorServices = [
         ...(servicesAtCenter.services || []).map((s: any) => ({ ...s, serviceStyle: 'at_center' })),

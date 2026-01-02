@@ -1,6 +1,6 @@
-import { Hono } from "npm:hono";
-import { normalizePhone, createVendorId, phonesMatch } from "./phone-utils.tsx";
-import { sendSuccess, sendError } from "./response-utils.ts";
+import { Hono } from "hono";
+import { normalizePhone, createVendorId, phonesMatch } from "./phone-utils";
+import { sendSuccess, sendError } from "./response-utils";
 
 /**
  * SOLO PROVIDER ENDPOINTS

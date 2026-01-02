@@ -3,8 +3,9 @@
  * Handles CCTV camera access, streaming, and permissions
  */
 
-import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from 'hono';
+import { getDbClient } from '../../../supabase/lib/db';
 
 const app = new Hono();
 
@@ -54,7 +55,12 @@ app.get('/:vendorId', async (c) => {
   try {
     const vendorId = c.req.param('vendorId');
     
-    const cameras = await kv.getByPrefix<CCTVCamera>(`cctv:camera:${vendorId}:`);
+    // ✅ SQL: Get CCTV cameras from cctv_cameras table
+    const db = getDbClient();
+    const { data: cameras } = await db
+      .from('cctv_cameras')
+      .select('*')
+      .eq('vendor_id', vendorId);
     
     // Sort by status (online first) then by name
     cameras.sort((a, b) => {
@@ -87,7 +93,14 @@ app.get('/:vendorId/:cameraId', async (c) => {
   try {
     const { vendorId, cameraId } = c.req.param();
     
-    const camera = await kv.get<CCTVCamera>(`cctv:camera:${vendorId}:${cameraId}`);
+    // ✅ SQL: Get CCTV camera
+    const db = getDbClient();
+    const { data: camera } = await db
+      .from('cctv_cameras')
+      .select('*')
+      .eq('vendor_id', vendorId)
+      .eq('id', cameraId)
+      .single();
     
     if (!camera) {
       return c.json({ 
@@ -137,7 +150,24 @@ app.post('/:vendorId', async (c) => {
       updatedAt: now
     };
     
-    await kv.set(`cctv:camera:${vendorId}:${cameraId}`, camera);
+    // ✅ SQL: Create CCTV camera
+    const db = getDbClient();
+    await db
+      .from('cctv_cameras')
+      .insert({
+        id: cameraId,
+        vendor_id: vendorId,
+        name: body.name,
+        location: body.location,
+        stream_url: body.streamUrl,
+        status: 'offline',
+        enabled: body.enabled !== false,
+        public_access: body.publicAccess || false,
+        recording_enabled: body.recordingEnabled || false,
+        motion_detection: body.motionDetection || false,
+        created_at: now,
+        updated_at: now
+      });
     
     return c.json({
       success: true,
@@ -163,7 +193,14 @@ app.put('/:vendorId/:cameraId', async (c) => {
     const { vendorId, cameraId } = c.req.param();
     const body = await c.req.json();
     
-    const existing = await kv.get<CCTVCamera>(`cctv:camera:${vendorId}:${cameraId}`);
+    // ✅ SQL: Get and update CCTV camera
+    const db = getDbClient();
+    const { data: existing } = await db
+      .from('cctv_cameras')
+      .select('*')
+      .eq('vendor_id', vendorId)
+      .eq('id', cameraId)
+      .single();
     
     if (!existing) {
       return c.json({ 
@@ -172,15 +209,30 @@ app.put('/:vendorId/:cameraId', async (c) => {
       }, 404);
     }
     
-    const updated: CCTVCamera = {
-      ...existing,
-      ...body,
-      id: cameraId,
-      vendorId,
-      updatedAt: new Date().toISOString()
+    const updateData: any = {
+      updated_at: new Date().toISOString()
     };
     
-    await kv.set(`cctv:camera:${vendorId}:${cameraId}`, updated);
+    if (body.name) updateData.name = body.name;
+    if (body.location) updateData.location = body.location;
+    if (body.streamUrl) updateData.stream_url = body.streamUrl;
+    if (body.status) updateData.status = body.status;
+    if (body.enabled !== undefined) updateData.enabled = body.enabled;
+    if (body.publicAccess !== undefined) updateData.public_access = body.publicAccess;
+    if (body.recordingEnabled !== undefined) updateData.recording_enabled = body.recordingEnabled;
+    if (body.motionDetection !== undefined) updateData.motion_detection = body.motionDetection;
+    
+    await db
+      .from('cctv_cameras')
+      .update(updateData)
+      .eq('id', cameraId)
+      .eq('vendor_id', vendorId);
+    
+    const { data: updated } = await db
+      .from('cctv_cameras')
+      .select('*')
+      .eq('id', cameraId)
+      .single();
     
     return c.json({
       success: true,
@@ -205,7 +257,13 @@ app.delete('/:vendorId/:cameraId', async (c) => {
   try {
     const { vendorId, cameraId } = c.req.param();
     
-    await kv.del(`cctv:camera:${vendorId}:${cameraId}`);
+    // ✅ SQL: Delete CCTV camera
+    const db = getDbClient();
+    await db
+      .from('cctv_cameras')
+      .delete()
+      .eq('id', cameraId)
+      .eq('vendor_id', vendorId);
     
     return c.json({
       success: true,
@@ -230,7 +288,14 @@ app.post('/:vendorId/:cameraId/status', async (c) => {
     const { vendorId, cameraId } = c.req.param();
     const { status } = await c.req.json();
     
-    const camera = await kv.get<CCTVCamera>(`cctv:camera:${vendorId}:${cameraId}`);
+    // ✅ SQL: Get CCTV camera
+    const db = getDbClient();
+    const { data: camera } = await db
+      .from('cctv_cameras')
+      .select('*')
+      .eq('vendor_id', vendorId)
+      .eq('id', cameraId)
+      .single();
     
     if (!camera) {
       return c.json({ 
@@ -239,14 +304,23 @@ app.post('/:vendorId/:cameraId/status', async (c) => {
       }, 404);
     }
     
-    const updated: CCTVCamera = {
-      ...camera,
-      status,
-      lastOnline: status === 'online' ? new Date().toISOString() : camera.lastOnline,
-      updatedAt: new Date().toISOString()
-    };
+    // ✅ SQL: Update camera status
+    const db = getDbClient();
+    await db
+      .from('cctv_cameras')
+      .update({
+        status,
+        last_online: status === 'online' ? new Date().toISOString() : camera.last_online,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', cameraId)
+      .eq('vendor_id', vendorId);
     
-    await kv.set(`cctv:camera:${vendorId}:${cameraId}`, updated);
+    const { data: updated } = await db
+      .from('cctv_cameras')
+      .select('*')
+      .eq('id', cameraId)
+      .single();
     
     return c.json({
       success: true,
@@ -285,7 +359,18 @@ app.post('/:vendorId/access-token', async (c) => {
       createdAt: now.toISOString()
     };
     
-    await kv.set(`cctv:token:${tokenId}`, token);
+    // ✅ SQL: Create CCTV access token
+    const db = getDbClient();
+    await db
+      .from('cctv_access_tokens')
+      .insert({
+        id: tokenId,
+        customer_id: customerId,
+        vendor_id: vendorId,
+        camera_ids: cameraIds,
+        expires_at: expiresAt,
+        created_at: now.toISOString()
+      });
     
     return c.json({
       success: true,
@@ -310,7 +395,13 @@ app.get('/:vendorId/access-logs', async (c) => {
   try {
     const vendorId = c.req.param('vendorId');
     
-    const logs = await kv.getByPrefix<CCTVAccessLog>(`cctv:log:${vendorId}:`);
+    // ✅ SQL: Get CCTV access logs
+    const db = getDbClient();
+    const { data: logs } = await db
+      .from('cctv_access_logs')
+      .select('*')
+      .eq('vendor_id', vendorId)
+      .order('access_time', { ascending: false });
     
     // Sort by access time (most recent first)
     logs.sort((a, b) => new Date(b.accessTime).getTime() - new Date(a.accessTime).getTime());
@@ -350,7 +441,18 @@ app.post('/:vendorId/log-access', async (c) => {
       accessType
     };
     
-    await kv.set(`cctv:log:${vendorId}:${logId}`, log);
+    // ✅ SQL: Create CCTV access log
+    const db = getDbClient();
+    await db
+      .from('cctv_access_logs')
+      .insert({
+        id: logId,
+        camera_id: cameraId,
+        customer_id: customerId,
+        vendor_id: vendorId,
+        access_time: new Date().toISOString(),
+        access_type: accessType
+      });
     
     return c.json({
       success: true,

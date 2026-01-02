@@ -1,6 +1,8 @@
-import { Hono } from "npm:hono";
-import * as kv from './kv_store.tsx';
-import { generateId } from './database-schema.tsx';
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from "hono";
+import { generateId } from './database-schema';
+import { getLoyaltyRepository, getWalletsRepository } from '../../../supabase/lib/repositories/index';
+import { getDbClient } from '../../../supabase/lib/db';
 
 // ==========================================
 // TYPES & INTERFACES
@@ -253,40 +255,148 @@ function sendError(c: any, error: any, status: number = 500) {
 }
 
 async function getLoyaltyProfile(userId: string, userType: 'customer' | 'vendor'): Promise<UserLoyaltyProfile> {
-  const key = `loyalty_profile:${userId}`;
-  let profile = await kv.get(key);
+  // ✅ SQL: Get or create loyalty profile
+  const db = getDbClient();
+  const { data: profileData } = await db
+    .from('loyalty_profiles')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('user_type', userType)
+    .single();
 
-  if (!profile) {
+  if (!profileData) {
     // Generate referral code: REF + First 3 chars of ID (or random) + Random 4
     const seed = userId.substring(0, 3).toUpperCase();
     const random = Math.floor(1000 + Math.random() * 9000);
     const code = `REF${seed}${random}`;
 
-    profile = {
+    // ✅ SQL: Create new profile
+    const { data: newProfile } = await db
+      .from('loyalty_profiles')
+      .insert({
+        user_id: userId,
+        user_type: userType,
+        points_balance: 0,
+        total_points_earned: 0,
+        total_points_redeemed: 0,
+        referral_code: code,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .select()
+      .single();
+    
+    // ✅ SQL: Index referral code
+    await db.from('referral_codes').insert({
+      code: code,
+      user_id: userId,
+      user_type: userType,
+      created_at: new Date().toISOString()
+    });
+    
+    // Get transaction history
+    const { data: history } = await db
+      .from('loyalty_transactions')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+    
+    return {
       userId,
       userType,
       pointsBalance: 0,
       totalPointsEarned: 0,
       totalPointsRedeemed: 0,
       referralCode: code,
-      history: []
+      history: (history || []).map((t: any) => ({
+        id: t.id,
+        userId: t.user_id,
+        actionKey: t.action_key,
+        points: t.points,
+        type: t.transaction_type,
+        description: t.description,
+        metadata: t.metadata,
+        timestamp: t.created_at
+      }))
     };
-    
-    await kv.set(key, profile);
-    // Index referral code
-    await kv.set(`referral_code:${code}`, userId);
   }
   
-  return profile;
+  // Get transaction history
+  const { data: history } = await db
+    .from('loyalty_transactions')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(100);
+  
+  return {
+    userId: profileData.user_id,
+    userType: profileData.user_type,
+    pointsBalance: profileData.points_balance || 0,
+    totalPointsEarned: profileData.total_points_earned || 0,
+    totalPointsRedeemed: profileData.total_points_redeemed || 0,
+    referralCode: profileData.referral_code,
+    referredBy: profileData.referred_by || undefined,
+    history: (history || []).map((t: any) => ({
+      id: t.id,
+      userId: t.user_id,
+      actionKey: t.action_key,
+      points: t.points,
+      type: t.transaction_type,
+      description: t.description,
+      metadata: t.metadata,
+      timestamp: t.created_at
+    }))
+  };
 }
 
 async function getRules(): Promise<LoyaltyRule[]> {
-  const rules = await kv.get('loyalty_rules');
-  if (!rules || rules.length === 0) {
-    await kv.set('loyalty_rules', DEFAULT_RULES);
+  // ✅ SQL: Get loyalty rules
+  const db = getDbClient();
+  const { data: rulesData } = await db
+    .from('loyalty_rules')
+    .select('*')
+    .eq('is_active', true);
+  
+  if (!rulesData || rulesData.length === 0) {
+    // Seed default rules
+    for (const rule of DEFAULT_RULES) {
+      await db.from('loyalty_rules').upsert({
+        id: rule.id,
+        category: rule.category,
+        action_key: rule.actionKey,
+        rule_name: rule.name,
+        points: rule.points,
+        rule_type: rule.type,
+        spend_unit: rule.spendUnit || null,
+        frequency: rule.frequency,
+        period: rule.period || null,
+        max_count_per_period: rule.maxCountPerPeriod || null,
+        condition: rule.condition || null,
+        is_active: rule.isActive,
+        description: rule.description || null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
+    }
     return DEFAULT_RULES;
   }
-  return rules;
+  
+  return rulesData.map((r: any) => ({
+    id: r.id,
+    category: r.category,
+    actionKey: r.action_key,
+    name: r.rule_name,
+    points: r.points,
+    type: r.rule_type,
+    spendUnit: r.spend_unit,
+    frequency: r.frequency,
+    period: r.period,
+    maxCountPerPeriod: r.max_count_per_period,
+    condition: r.condition,
+    isActive: r.is_active,
+    description: r.description
+  }));
 }
 
 // ==========================================
@@ -313,16 +423,28 @@ app.get('/admin/loyalty/rules', async (c) => {
 app.post('/admin/loyalty/rules', async (c) => {
   try {
     const rule = await c.req.json();
-    let rules = await getRules();
+    // ✅ SQL: Update or create rule
+    const db = getDbClient();
+    const ruleId = rule.id || generateId('rule');
     
-    const index = rules.findIndex((r: any) => r.id === rule.id);
-    if (index >= 0) {
-      rules[index] = { ...rules[index], ...rule };
-    } else {
-      rules.push({ ...rule, id: rule.id || generateId('rule') });
-    }
+    await db.from('loyalty_rules').upsert({
+      id: ruleId,
+      category: rule.category,
+      action_key: rule.actionKey,
+      rule_name: rule.name,
+      points: rule.points,
+      rule_type: rule.type,
+      spend_unit: rule.spendUnit || null,
+      frequency: rule.frequency,
+      period: rule.period || null,
+      max_count_per_period: rule.maxCountPerPeriod || null,
+      condition: rule.condition || null,
+      is_active: rule.isActive !== false,
+      description: rule.description || null,
+      updated_at: new Date().toISOString()
+    });
     
-    await kv.set('loyalty_rules', rules);
+    const rules = await getRules();
     return sendSuccess(c, { rules }, 'Rules updated');
   } catch (e) {
     return sendError(c, e, 500);
@@ -465,8 +587,30 @@ app.post('/loyalty/process-action', async (c) => {
       timestamp: new Date().toISOString()
     };
     
+    // ✅ SQL: Update loyalty profile and add transaction
+    const db = getDbClient();
+    await db.from('loyalty_profiles')
+      .update({
+        points_balance: profile.pointsBalance + pointsToAward,
+        total_points_earned: profile.totalPointsEarned + pointsToAward,
+        updated_at: new Date().toISOString()
+      })
+      .eq('user_id', userId);
+    
+    await db.from('loyalty_transactions').insert({
+      id: transaction.id,
+      user_id: userId,
+      action_key: actionKey,
+      points: pointsToAward,
+      transaction_type: 'earned',
+      description: rule.name,
+      metadata: metadata || null,
+      created_at: new Date().toISOString()
+    });
+    
+    profile.pointsBalance += pointsToAward;
+    profile.totalPointsEarned += pointsToAward;
     profile.history.unshift(transaction);
-    await kv.set(`loyalty_profile:${userId}`, profile);
     
     console.log(`✅ [LOYALTY] Awarded ${pointsToAward} points to ${userId}`);
 
@@ -512,40 +656,46 @@ app.post('/loyalty/redeem', async (c) => {
       description: 'Converted to Wallet Balance',
       timestamp: new Date().toISOString()
     };
-    profile.history.unshift(transaction);
+    // ✅ SQL: Update loyalty profile
+    const db = getDbClient();
+    await db.from('loyalty_profiles')
+      .update({
+        points_balance: profile.pointsBalance - pointsToRedeem,
+        total_points_redeemed: profile.totalPointsRedeemed + pointsToRedeem,
+        updated_at: new Date().toISOString()
+      })
+      .eq('user_id', userId);
     
-    await kv.set(`loyalty_profile:${userId}`, profile);
+    // ✅ SQL: Add redemption transaction
+    await db.from('loyalty_transactions').insert({
+      id: transaction.id,
+      user_id: userId,
+      action_key: 'redemption',
+      points: pointsToRedeem,
+      transaction_type: 'redeemed',
+      description: 'Converted to Wallet Balance',
+      created_at: new Date().toISOString()
+    });
 
-    // Credit Wallet
-    const walletKey = `wallet:${userId}`;
-    let wallet = await kv.get(walletKey) || {
-      customerId: userId,
-      balance: 0,
-      totalEarned: 0,
-      transactions: []
-    };
-
-    wallet.balance += creditAmount;
-    wallet.totalEarned += creditAmount;
-    wallet.transactions.push({
-      id: `txn_reward_${Date.now()}`,
-      type: 'credit',
+    // ✅ SQL: Credit Wallet
+    const walletsRepo = getWalletsRepository();
+    await walletsRepo.credit({
+      customer_id: userId,
       amount: creditAmount,
       source: 'loyalty_rewards',
       description: `Redeemed ${pointsToRedeem} Pawints`,
-      timestamp: new Date().toISOString(),
-      balanceAfter: wallet.balance
+      reference_id: transaction.id
     });
-
-    await kv.set(walletKey, wallet);
+    
+    const wallet = await walletsRepo.findByCustomer(userId);
 
     console.log(`✅ [LOYALTY] Redeemed ${pointsToRedeem} points for ₹${creditAmount}`);
 
     return sendSuccess(c, { 
       redeemed: pointsToRedeem, 
       walletCredited: creditAmount,
-      newPointsBalance: profile.pointsBalance,
-      newWalletBalance: wallet.balance
+      newPointsBalance: profile.pointsBalance - pointsToRedeem,
+      newWalletBalance: wallet?.balance || creditAmount
     });
 
   } catch (e) {
@@ -560,7 +710,15 @@ app.post('/loyalty/referral/apply', async (c) => {
   try {
     const { newUserId, referralCode, userType } = await c.req.json();
     
-    const referrerId = await kv.get(`referral_code:${referralCode}`);
+    // ✅ SQL: Get referrer by code
+    const db = getDbClient();
+    const { data: referralCodeData } = await db
+      .from('referral_codes')
+      .select('*')
+      .eq('code', referralCode)
+      .single();
+    
+    const referrerId = referralCodeData?.user_id;
     if (!referrerId) {
       return sendError(c, 'Invalid referral code', 400);
     }
@@ -575,17 +733,22 @@ app.post('/loyalty/referral/apply', async (c) => {
       return sendError(c, 'User already referred', 400);
     }
 
-    profile.referredBy = referrerId;
-    await kv.set(`loyalty_profile:${newUserId}`, profile);
+    // ✅ SQL: Update profile with referrer
+    const db = getDbClient();
+    await db.from('loyalty_profiles')
+      .update({
+        referred_by: referrerId,
+        updated_at: new Date().toISOString()
+      })
+      .eq('user_id', newUserId);
 
-    const referralRecord = {
-      referrerId,
-      refereeId: newUserId,
+    // ✅ SQL: Store referral link
+    await db.from('referrals').insert({
+      referrer_id: referrerId,
+      referee_id: newUserId,
       status: 'pending',
-      createdAt: new Date().toISOString()
-    };
-    
-    await kv.set(`referral_link:${newUserId}`, referralRecord);
+      created_at: new Date().toISOString()
+    });
 
     return sendSuccess(c, { message: 'Referral code applied' });
 

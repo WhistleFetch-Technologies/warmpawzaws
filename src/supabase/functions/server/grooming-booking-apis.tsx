@@ -1,8 +1,59 @@
-import { Hono } from "npm:hono@4";
-import * as kv from "./kv_store.tsx";
-import { broadcastSlotUpdate } from "./websocket-server.tsx"; // ✅ NEW: Real-time WebSocket
+/**
+ * ============================================================================
+ * GROOMING BOOKING APIs - SQL-ONLY VERSION
+ * ============================================================================
+ * 
+ * ✅ MIGRATED TO SQL: NO KV STORE - All data from SQL
+ * 
+ * Features:
+ * - Address management
+ * - Wallet operations
+ * - Coupon validation
+ * - Slot availability
+ * - Booking creation with OTP
+ * - OTP verification for service completion
+ * 
+ * KV Operations: 26 → 0
+ * 
+ * RULES:
+ * ❌ NO KV imports allowed
+ * ✅ All operations use SQL only
+ */
+
+import { Hono } from "hono";
+import { broadcastSlotUpdate } from "./websocket-server";
+import { getCustomersRepository } from '../../../supabase/lib/repositories/customers';
+import { getAddressesRepository } from '../../../supabase/lib/repositories/addresses';
+import { getWalletsRepository } from '../../../supabase/lib/repositories/wallets';
+import { getCouponsRepository } from '../../../supabase/lib/repositories/coupons';
+import { getBookingsRepository } from '../../../supabase/lib/repositories/bookings';
+import { getVendorsRepository } from '../../../supabase/lib/repositories/vendors';
+import { getSchedulingRepository } from '../../../supabase/lib/repositories/scheduling';
+import { getDbClient, selectQuery } from '../../../supabase/lib/db';
+import { normalizePhone } from './phone-utils';
 
 const groomingBookingAPIs = new Hono();
+
+/**
+ * Helper: Get customer by phone, create if doesn't exist
+ */
+async function getOrCreateCustomerByPhone(phone: string) {
+  const cleanPhone = normalizePhone(phone);
+  const customersRepo = getCustomersRepository();
+  
+  // Try to find by phone
+  let customer = await customersRepo.findByPhone(cleanPhone);
+  
+  if (!customer) {
+    // Create new customer
+    customer = await customersRepo.create({
+      phone: cleanPhone,
+      customer_id: `cust_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    });
+  }
+  
+  return customer;
+}
 
 /**
  * ========================================
@@ -14,15 +65,33 @@ const groomingBookingAPIs = new Hono();
 groomingBookingAPIs.get("/customer/addresses/:phone", async (c) => {
   try {
     const phone = c.req.param("phone");
-    const cleanPhone = phone.replace(/[^0-9]/g, "");
+    const cleanPhone = normalizePhone(phone);
 
     console.log(`\n📍 [GET-ADDRESSES] Fetching addresses for: ${cleanPhone}`);
 
-    const addresses = await kv.get(`customer:addresses:${cleanPhone}`) || [];
+    // ✅ SQL: Get customer by phone
+    const customer = await getOrCreateCustomerByPhone(cleanPhone);
     
-    console.log(`✅ [GET-ADDRESSES] Found ${addresses.length} addresses`);
+    // ✅ SQL: Get addresses
+    const addressesRepo = getAddressesRepository();
+    const addresses = await addressesRepo.findByCustomer(customer.id);
+    
+    // Map to expected format
+    const formattedAddresses = addresses.map(addr => ({
+      id: addr.id,
+      label: addr.address_type,
+      fullAddress: addr.address_line1 + (addr.address_line2 ? `, ${addr.address_line2}` : ''),
+      landmark: addr.landmark || '',
+      city: addr.city,
+      pincode: addr.pincode,
+      state: addr.state,
+      isDefault: addr.is_default,
+      createdAt: addr.created_at
+    }));
 
-    return c.json({ addresses, count: addresses.length });
+    console.log(`✅ [GET-ADDRESSES] Found ${formattedAddresses.length} addresses`);
+
+    return c.json({ addresses: formattedAddresses, count: formattedAddresses.length });
   } catch (error) {
     console.error("❌ [GET-ADDRESSES] Error:", error);
     return c.json({ error: "Failed to fetch addresses", addresses: [] }, 500);
@@ -33,56 +102,62 @@ groomingBookingAPIs.get("/customer/addresses/:phone", async (c) => {
 groomingBookingAPIs.post("/customer/addresses", async (c) => {
   try {
     const body = await c.req.json();
-    const { phone, label, fullAddress, landmark, city, pincode, isDefault } = body;
-    const cleanPhone = phone.replace(/[^0-9]/g, "");
+    const { phone, label, fullAddress, landmark, city, pincode, state, isDefault } = body;
+    const cleanPhone = normalizePhone(phone);
 
     console.log(`\n📍 [ADD-ADDRESS] Adding address for: ${cleanPhone}`);
 
-    // Get existing addresses
-    const addresses = await kv.get(`customer:addresses:${cleanPhone}`) || [];
+    // ✅ SQL: Get or create customer
+    const customer = await getOrCreateCustomerByPhone(cleanPhone);
     
-    // If this is set as default, remove default from others
-    if (isDefault) {
-      addresses.forEach((addr: any) => addr.isDefault = false);
-    }
+    // ✅ SQL: Create address
+    const addressesRepo = getAddressesRepository();
+    const address = await addressesRepo.create({
+      customer_id: customer.id,
+      address_type: label === 'work' ? 'work' : label === 'other' ? 'other' : 'home',
+      full_name: customer.full_name || customer.phone,
+      phone: cleanPhone,
+      address_line1: fullAddress,
+      city: city,
+      state: state || '',
+      pincode: pincode,
+      landmark: landmark || null,
+      is_default: isDefault || false
+    });
 
-    // Create new address
-    const newAddress = {
-      id: `addr_${Date.now()}`,
-      label,
-      fullAddress,
-      landmark: landmark || '',
-      city,
-      pincode,
-      isDefault: isDefault || addresses.length === 0, // First address is default
-      createdAt: new Date().toISOString()
-    };
+    console.log(`✅ [ADD-ADDRESS] Address added: ${address.id}`);
 
-    addresses.push(newAddress);
-    await kv.set(`customer:addresses:${cleanPhone}`, addresses);
-
-    console.log(`✅ [ADD-ADDRESS] Address added: ${newAddress.id}`);
-
-    return c.json({ address: newAddress, success: true });
+    return c.json({ 
+      address: {
+        id: address.id,
+        label: address.address_type,
+        fullAddress: address.address_line1,
+        landmark: address.landmark || '',
+        city: address.city,
+        pincode: address.pincode,
+        isDefault: address.is_default,
+        createdAt: address.created_at
+      },
+      success: true 
+    });
   } catch (error) {
     console.error("❌ [ADD-ADDRESS] Error:", error);
     return c.json({ error: "Failed to add address" }, 500);
   }
 });
 
-// DELETE /customer/addresses/:addressId - Delete address
+// DELETE /customer/addresses/:phone/:addressId - Delete address
 groomingBookingAPIs.delete("/customer/addresses/:phone/:addressId", async (c) => {
   try {
     const phone = c.req.param("phone");
     const addressId = c.req.param("addressId");
-    const cleanPhone = phone.replace(/[^0-9]/g, "");
+    const cleanPhone = normalizePhone(phone);
 
     console.log(`\n📍 [DELETE-ADDRESS] Deleting ${addressId} for: ${cleanPhone}`);
 
-    const addresses = await kv.get(`customer:addresses:${cleanPhone}`) || [];
-    const filtered = addresses.filter((addr: any) => addr.id !== addressId);
-
-    await kv.set(`customer:addresses:${cleanPhone}`, filtered);
+    // ✅ SQL: Delete address
+    const addressesRepo = getAddressesRepository();
+    await addressesRepo.delete(addressId);
 
     console.log(`✅ [DELETE-ADDRESS] Address deleted`);
 
@@ -103,18 +178,33 @@ groomingBookingAPIs.delete("/customer/addresses/:phone/:addressId", async (c) =>
 groomingBookingAPIs.get("/customer/wallet/:phone", async (c) => {
   try {
     const phone = c.req.param("phone");
-    const cleanPhone = phone.replace(/[^0-9]/g, "");
+    const cleanPhone = normalizePhone(phone);
 
     console.log(`\n💰 [GET-WALLET] Fetching wallet for: ${cleanPhone}`);
 
-    const wallet = await kv.get(`customer:wallet:${cleanPhone}`) || {
-      balance: 0,
-      transactions: []
-    };
+    // ✅ SQL: Get or create customer
+    const customer = await getOrCreateCustomerByPhone(cleanPhone);
+    
+    // ✅ SQL: Get or create wallet
+    const walletsRepo = getWalletsRepository();
+    const wallet = await walletsRepo.findOrCreate(customer.id);
+    
+    // ✅ SQL: Get transactions
+    const transactions = await walletsRepo.getTransactionsByCustomer(customer.id, { limit: 50 });
 
     console.log(`✅ [GET-WALLET] Balance: ₹${wallet.balance}`);
 
-    return c.json(wallet);
+    return c.json({
+      balance: wallet.balance,
+      transactions: transactions.map(txn => ({
+        id: txn.id,
+        type: txn.transaction_type,
+        amount: txn.amount,
+        description: txn.description || '',
+        timestamp: txn.created_at,
+        bookingId: txn.reference_id || null
+      }))
+    });
   } catch (error) {
     console.error("❌ [GET-WALLET] Error:", error);
     return c.json({ error: "Failed to fetch wallet", balance: 0, transactions: [] }, 500);
@@ -126,34 +216,38 @@ groomingBookingAPIs.post("/customer/wallet/deduct", async (c) => {
   try {
     const body = await c.req.json();
     const { phone, amount, bookingId, description } = body;
-    const cleanPhone = phone.replace(/[^0-9]/g, "");
+    const cleanPhone = normalizePhone(phone);
 
     console.log(`\n💰 [WALLET-DEDUCT] Deducting ₹${amount} for: ${cleanPhone}`);
 
-    const wallet = await kv.get(`customer:wallet:${cleanPhone}`) || {
-      balance: 0,
-      transactions: []
-    };
+    // ✅ SQL: Get or create customer
+    const customer = await getOrCreateCustomerByPhone(cleanPhone);
+    
+    // ✅ SQL: Get or create wallet
+    const walletsRepo = getWalletsRepository();
+    const wallet = await walletsRepo.findOrCreate(customer.id);
 
     if (wallet.balance < amount) {
       return c.json({ error: "Insufficient wallet balance", success: false }, 400);
     }
 
-    wallet.balance -= amount;
-    wallet.transactions.push({
-      id: `txn_${Date.now()}`,
-      type: 'debit',
-      amount,
-      bookingId,
+    // ✅ SQL: Add debit transaction
+    await walletsRepo.addTransaction({
+      wallet_id: wallet.id,
+      customer_id: customer.id,
+      transaction_type: 'debit',
+      amount: amount,
       description: description || 'Booking payment',
-      timestamp: new Date().toISOString()
+      reference_id: bookingId || null,
+      purpose: 'booking_payment'
     });
 
-    await kv.set(`customer:wallet:${cleanPhone}`, wallet);
+    // Get updated wallet
+    const updatedWallet = await walletsRepo.findByCustomer(customer.id);
 
-    console.log(`✅ [WALLET-DEDUCT] New balance: ₹${wallet.balance}`);
+    console.log(`✅ [WALLET-DEDUCT] New balance: ₹${updatedWallet?.balance || 0}`);
 
-    return c.json({ success: true, newBalance: wallet.balance });
+    return c.json({ success: true, newBalance: updatedWallet?.balance || 0 });
   } catch (error) {
     console.error("❌ [WALLET-DEDUCT] Error:", error);
     return c.json({ error: "Failed to deduct from wallet" }, 500);
@@ -165,29 +259,33 @@ groomingBookingAPIs.post("/customer/wallet/credit", async (c) => {
   try {
     const body = await c.req.json();
     const { phone, amount, description } = body;
-    const cleanPhone = phone.replace(/[^0-9]/g, "");
+    const cleanPhone = normalizePhone(phone);
 
     console.log(`\n💰 [WALLET-CREDIT] Adding ₹${amount} for: ${cleanPhone}`);
 
-    const wallet = await kv.get(`customer:wallet:${cleanPhone}`) || {
-      balance: 0,
-      transactions: []
-    };
+    // ✅ SQL: Get or create customer
+    const customer = await getOrCreateCustomerByPhone(cleanPhone);
+    
+    // ✅ SQL: Get or create wallet
+    const walletsRepo = getWalletsRepository();
+    const wallet = await walletsRepo.findOrCreate(customer.id);
 
-    wallet.balance += amount;
-    wallet.transactions.push({
-      id: `txn_${Date.now()}`,
-      type: 'credit',
-      amount,
+    // ✅ SQL: Add credit transaction
+    await walletsRepo.addTransaction({
+      wallet_id: wallet.id,
+      customer_id: customer.id,
+      transaction_type: 'credit',
+      amount: amount,
       description: description || 'Wallet top-up',
-      timestamp: new Date().toISOString()
+      purpose: 'wallet_topup'
     });
 
-    await kv.set(`customer:wallet:${cleanPhone}`, wallet);
+    // Get updated wallet
+    const updatedWallet = await walletsRepo.findByCustomer(customer.id);
 
-    console.log(`✅ [WALLET-CREDIT] New balance: ₹${wallet.balance}`);
+    console.log(`✅ [WALLET-CREDIT] New balance: ₹${updatedWallet?.balance || 0}`);
 
-    return c.json({ success: true, newBalance: wallet.balance });
+    return c.json({ success: true, newBalance: updatedWallet?.balance || 0 });
   } catch (error) {
     console.error("❌ [WALLET-CREDIT] Error:", error);
     return c.json({ error: "Failed to credit wallet" }, 500);
@@ -204,52 +302,27 @@ groomingBookingAPIs.post("/customer/wallet/credit", async (c) => {
 groomingBookingAPIs.post("/coupon/validate", async (c) => {
   try {
     const body = await c.req.json();
-    const { code, amount } = body;
+    const { code, amount, customerId } = body;
 
     console.log(`\n🎟️ [VALIDATE-COUPON] Validating: ${code}`);
 
-    // Get all coupons from admin config
-    const allCoupons = await kv.get('admin:coupons') || [];
-    
-    // Hardcoded test coupons for now
-    const testCoupons = [
-      { code: 'FIRST20', discount: 20, maxDiscount: 500, minOrder: 0, active: true },
-      { code: 'SAVE10', discount: 10, maxDiscount: 200, minOrder: 0, active: true },
-      { code: 'GROOM50', discount: 15, maxDiscount: 300, minOrder: 500, active: true }
-    ];
+    // ✅ SQL: Validate coupon
+    const couponsRepo = getCouponsRepository();
+    const result = await couponsRepo.validateCoupon(code, amount, customerId || null);
 
-    const allAvailableCoupons = [...allCoupons, ...testCoupons];
-    const coupon = allAvailableCoupons.find((c: any) => 
-      c.code.toUpperCase() === code.toUpperCase() && c.active !== false
-    );
-
-    if (!coupon) {
-      console.log(`❌ [VALIDATE-COUPON] Invalid coupon: ${code}`);
-      return c.json({ valid: false, error: "Invalid coupon code" }, 400);
+    if (!result.valid) {
+      console.log(`❌ [VALIDATE-COUPON] Invalid coupon: ${code} - ${result.error}`);
+      return c.json({ valid: false, error: result.error || "Invalid coupon code" }, 400);
     }
 
-    // Check minimum order
-    if (coupon.minOrder && amount < coupon.minOrder) {
-      return c.json({ 
-        valid: false, 
-        error: `Minimum order of ₹${coupon.minOrder} required` 
-      }, 400);
-    }
-
-    // Calculate discount
-    let discountAmount = (amount * coupon.discount) / 100;
-    if (coupon.maxDiscount) {
-      discountAmount = Math.min(discountAmount, coupon.maxDiscount);
-    }
-
-    console.log(`✅ [VALIDATE-COUPON] Valid! Discount: ₹${discountAmount}`);
+    console.log(`✅ [VALIDATE-COUPON] Valid! Discount: ₹${result.discount_amount}`);
 
     return c.json({
       valid: true,
-      code: coupon.code,
-      discount: coupon.discount,
-      discountAmount,
-      maxDiscount: coupon.maxDiscount
+      code: result.coupon?.code,
+      discount: result.coupon?.discount_type === 'percentage' ? result.coupon?.discount_value : 0,
+      discountAmount: result.discount_amount,
+      maxDiscount: result.coupon?.max_discount
     });
   } catch (error) {
     console.error("❌ [VALIDATE-COUPON] Error:", error);
@@ -271,43 +344,38 @@ groomingBookingAPIs.get("/grooming/slots/:vendorId/:date", async (c) => {
 
     console.log(`\n📅 [GET-SLOTS] Fetching slots for vendor: ${vendorId}, date: ${date}`);
 
-    // Get vendor's availability V2
-    const availabilityData = await kv.get(`vendor:${vendorId}:availability:v2`);
-    console.log(`📅 [GET-SLOTS] Raw availability data:`, availabilityData);
+    // ✅ SQL: Get vendor
+    const vendorsRepo = getVendorsRepository();
+    const vendor = await vendorsRepo.findById(vendorId) || await vendorsRepo.findByVendorId(vendorId);
     
-    // Ensure availabilityV2 is an array
-    let availabilityV2 = [];
-    if (Array.isArray(availabilityData)) {
-      availabilityV2 = availabilityData;
-    } else if (availabilityData && typeof availabilityData === 'object') {
-      // Handle case where it might be an object with an array property
-      if (Array.isArray(availabilityData.availability)) {
-        availabilityV2 = availabilityData.availability;
-      } else if (Array.isArray(availabilityData.schedule)) {
-        availabilityV2 = availabilityData.schedule;
-      } else if (Array.isArray(availabilityData.days)) {
-        availabilityV2 = availabilityData.days;
-      } else {
-        console.warn('⚠️ [GET-SLOTS] Unexpected availability format:', availabilityData);
-      }
+    if (!vendor) {
+      return c.json({ error: "Vendor not found", slots: [] }, 404);
     }
-    
-    console.log(`📅 [GET-SLOTS] Parsed availability array:`, availabilityV2.length, 'days');
-    
-    // Get bookings for this date
-    const allBookings = await kv.getByPrefix('booking:');
-    const dateBookings = allBookings.filter((b: any) => 
-      b.vendorId === vendorId && 
-      b.scheduledDate === date &&
-      b.status !== 'cancelled'
-    );
+
+    // ✅ SQL: Get bookings for this date
+    const bookingsRepo = getBookingsRepository();
+    const dateBookings = await bookingsRepo.findAll({
+      vendor_id: vendor.id,
+      booking_date: date,
+      status: 'confirmed' // Only confirmed bookings count
+    });
 
     // Get day of week
     const bookingDate = new Date(date);
     const dayOfWeek = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][bookingDate.getDay()];
 
+    // ✅ SQL: Get vendor schedule
+    const schedulingRepo = getSchedulingRepository();
+    const occupiedSlots = await schedulingRepo.getOccupiedSlots(vendor.id, date);
+
+    // Get vendor availability from metadata or scheduling
+    const metadata = (vendor as any).metadata || {};
+    const availability = metadata.availability || [];
+    
     // Find day configuration
-    const dayConfig = availabilityV2.find((a: any) => a.dayOfWeek === dayOfWeek);
+    const dayConfig = Array.isArray(availability) 
+      ? availability.find((a: any) => a.dayOfWeek === dayOfWeek)
+      : null;
 
     if (!dayConfig) {
       console.log(`❌ [GET-SLOTS] No availability for ${dayOfWeek}`);
@@ -317,7 +385,8 @@ groomingBookingAPIs.get("/grooming/slots/:vendorId/:date", async (c) => {
     // Generate slots from time windows
     const slots: any[] = [];
     
-    for (const window of dayConfig.timeWindows) {
+    const timeWindows = dayConfig.timeWindows || [];
+    for (const window of timeWindows) {
       if (!window.isEnabled) continue;
 
       const startMinutes = timeToMinutes(window.startTime);
@@ -329,7 +398,7 @@ groomingBookingAPIs.get("/grooming/slots/:vendorId/:date", async (c) => {
         
         // Count bookings for this slot
         const bookedCount = dateBookings.filter((b: any) => {
-          const bookingTime = b.scheduledTime?.split(' - ')[0];
+          const bookingTime = b.booking_time?.split(' - ')[0] || b.booking_time;
           return bookingTime === time;
         }).length;
 
@@ -356,7 +425,7 @@ groomingBookingAPIs.get("/grooming/slots/:vendorId/:date", async (c) => {
 
 /**
  * ========================================
- * OTP APIs for Service Completion
+ * BOOKING APIs
  * ========================================
  */
 
@@ -368,94 +437,77 @@ groomingBookingAPIs.post("/customer/booking", async (c) => {
     console.log('\n📝 [CREATE-BOOKING] Creating new booking');
     console.log('📝 [CREATE-BOOKING] Data:', bookingData);
     
-    // Generate booking ID
-    const bookingId = `booking_${Date.now()}`;
+    // Clean phone number
+    const cleanPhone = normalizePhone(bookingData.customerPhone);
+    
+    // ✅ SQL: Get or create customer
+    const customer = await getOrCreateCustomerByPhone(cleanPhone);
+    
+    // ✅ SQL: Get vendor
+    const vendorsRepo = getVendorsRepository();
+    const vendor = await vendorsRepo.findById(bookingData.vendorId) || await vendorsRepo.findByVendorId(bookingData.vendorId);
+    
+    if (!vendor) {
+      return c.json({ error: 'Vendor not found', success: false }, 404);
+    }
+
+    // ✅ SQL: Get pet (from customer metadata or pets table)
+    const client = getDbClient();
+    const petsResult = await selectQuery<any>("pets", { customer_id: customer.id }, {});
+    const pet = petsResult.find((p: any) => p.id === bookingData.petId) || null;
     
     // Generate 4-digit OTP immediately
     const otp = Math.floor(1000 + Math.random() * 9000).toString();
+    const otpExpiresAt = new Date();
+    otpExpiresAt.setDate(otpExpiresAt.getDate() + 7); // 7 days expiry
+    
     console.log(`🔐 [CREATE-BOOKING] Generated OTP: ${otp}`);
     
-    // Clean phone number
-    const cleanPhone = bookingData.customerPhone.replace(/[^0-9]/g, '');
+    console.log(`📝 [CREATE-BOOKING] Vendor: ${vendor.business_name || 'Unknown'}`);
+    console.log(`📝 [CREATE-BOOKING] Pet: ${pet?.name || 'Unknown'}`);
     
-    // Get vendor and pet details for display
-    const vendor = await kv.get(`vendor:${bookingData.vendorId}`) || {};
-    const pets = await kv.get(`customer:pets:${cleanPhone}`) || { pets: [] };
-    const pet = pets.pets?.find((p: any) => p.id === bookingData.petId) || {};
-    
-    console.log(`📝 [CREATE-BOOKING] Vendor: ${vendor.name || 'Unknown'}`);
-    console.log(`📝 [CREATE-BOOKING] Pet: ${pet.name || 'Unknown'}`);
-    
-    // Create comprehensive booking object
-    const booking = {
-      id: bookingId,
-      bookingId,
-      customerPhone: cleanPhone,
-      petId: bookingData.petId,
-      petName: pet.name || bookingData.petName || 'Pet',
-      petBreed: pet.breed,
-      petAge: pet.age,
-      petPhoto: pet.photo,
-      vendorId: bookingData.vendorId,
-      vendorName: vendor.name || bookingData.vendorName || 'Vendor',
-      vendorPhone: vendor.phone || vendor.contactNumber,
-      vendorPhoto: vendor.logo,
-      serviceId: bookingData.serviceId,
-      serviceType: bookingData.serviceType || 'grooming',
-      serviceName: bookingData.serviceName || 'Grooming Service',
-      serviceStyle: bookingData.serviceStyle || 'at_center',
-      scheduledDate: bookingData.scheduledDate,
-      scheduledTime: bookingData.scheduledTime,
-      startDate: bookingData.scheduledDate, // For compatibility
+    // ✅ SQL: Create booking
+    const bookingsRepo = getBookingsRepository();
+    const booking = await bookingsRepo.create({
+      customer_id: customer.id,
+      vendor_id: vendor.id,
+      staff_id: bookingData.staffId || null,
+      service_id: bookingData.serviceId,
+      booking_date: bookingData.scheduledDate,
+      booking_time: bookingData.scheduledTime,
+      service_type: bookingData.serviceStyle || 'at_center',
       address: bookingData.address || null,
-      paymentMethod: bookingData.paymentMethod,
-      transactionId: bookingData.transactionId,
-      price: bookingData.amount,
-      amount: bookingData.amount,
-      addOns: bookingData.addOns || [],
-      walletUsed: bookingData.walletUsed || 0,
-      couponApplied: bookingData.couponApplied || null,
-      
-      // OTP fields
-      requiresOTP: true,
-      completionOTP: otp,
-      otpGeneratedAt: new Date().toISOString(),
-      otpVerifiedAt: null,
-      
-      // Status tracking
+      base_price: parseFloat(bookingData.amount),
+      total_amount: parseFloat(bookingData.amount),
+      payment_status: 'pending',
       status: 'confirmed',
-      totalSessions: 1,
-      completedSessions: 0,
-      upcomingSessions: 1,
-      
-      // Timestamps
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
+      otp_code: otp,
+      otp_expires_at: otpExpiresAt.toISOString(),
+      notes: JSON.stringify({
+        petId: bookingData.petId || null,
+        petName: pet?.name || bookingData.petName || 'Pet',
+        petBreed: pet?.breed || null,
+        petAge: pet?.age || null,
+        petPhoto: pet?.photo || null,
+        vendorName: vendor.business_name,
+        vendorPhone: vendor.phone,
+        serviceName: bookingData.serviceName || 'Grooming Service',
+        serviceType: bookingData.serviceType || 'grooming',
+        paymentMethod: bookingData.paymentMethod,
+        transactionId: bookingData.transactionId || null,
+        addOns: bookingData.addOns || [],
+        walletUsed: bookingData.walletUsed || 0,
+        couponApplied: bookingData.couponApplied || null,
+        requiresOTP: true,
+        completionOTP: otp,
+        otpGeneratedAt: new Date().toISOString(),
+        totalSessions: 1,
+        completedSessions: 0,
+        upcomingSessions: 1
+      })
+    });
     
-    // Save booking to main key
-    await kv.set(`booking:${bookingId}`, booking);
-    console.log('✅ [CREATE-BOOKING] Saved to booking:' + bookingId);
-    
-    // Add booking ID to customer's booking list
-    const customerBookingsKey = `customer:bookings:${cleanPhone}`;
-    const customerBookings = await kv.get(customerBookingsKey) || [];
-    if (!customerBookings.includes(bookingId)) {
-      customerBookings.push(bookingId);
-      await kv.set(customerBookingsKey, customerBookings);
-      console.log('✅ [CREATE-BOOKING] Added to customer booking list');
-    }
-    
-    // Also save OTP data separately for verification
-    const otpData = {
-      otp,
-      bookingId,
-      generatedAt: new Date().toISOString(),
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days
-      verified: false
-    };
-    await kv.set(`booking:otp:${bookingId}`, otpData);
-    console.log('✅ [CREATE-BOOKING] OTP data saved');
+    console.log('✅ [CREATE-BOOKING] Saved to booking:' + booking.id);
     
     // ✅ NEW: Broadcast slot update via WebSocket
     if (bookingData.staffId) {
@@ -466,8 +518,8 @@ groomingBookingAPIs.post("/customer/booking", async (c) => {
           date: bookingData.scheduledDate,
           time: bookingData.scheduledTime,
           action: 'booked',
-          bookingId,
-          customerName: pet.name || 'Customer',
+          bookingId: booking.id,
+          customerName: pet?.name || 'Customer',
           serviceName: bookingData.serviceName,
           duration: bookingData.serviceDuration || 30
         });
@@ -478,12 +530,22 @@ groomingBookingAPIs.post("/customer/booking", async (c) => {
       }
     }
     
-    console.log('✅ [CREATE-BOOKING] Booking created successfully:', bookingId);
+    console.log('✅ [CREATE-BOOKING] Booking created successfully:', booking.id);
     
     return c.json({ 
       success: true,
-      bookingId,
-      booking,
+      bookingId: booking.id,
+      booking: {
+        id: booking.id,
+        bookingId: booking.id,
+        customerPhone: cleanPhone,
+        vendorId: booking.vendor_id,
+        serviceId: booking.service_id,
+        scheduledDate: booking.booking_date,
+        scheduledTime: booking.booking_time,
+        status: booking.status,
+        amount: booking.total_amount
+      },
       otp, // Return OTP in response
       message: 'Booking created successfully'
     });
@@ -506,36 +568,38 @@ groomingBookingAPIs.post("/booking/:bookingId/generate-otp", async (c) => {
 
     console.log(`\n🔐 [GENERATE-OTP] Generating OTP for booking: ${bookingId}`);
 
-    // Get booking
-    const booking = await kv.get(`booking:${bookingId}`);
+    // ✅ SQL: Get booking
+    const bookingsRepo = getBookingsRepository();
+    const booking = await bookingsRepo.findById(bookingId);
+    
     if (!booking) {
       return c.json({ error: "Booking not found" }, 404);
     }
 
     // Generate 4-digit OTP
     const otp = Math.floor(1000 + Math.random() * 9000).toString();
+    const otpExpiresAt = new Date();
+    otpExpiresAt.setHours(otpExpiresAt.getHours() + 1); // 1 hour expiry
 
-    // Store OTP with expiry (1 hour)
-    const otpData = {
-      otp,
-      bookingId,
-      generatedAt: new Date().toISOString(),
-      expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(), // 1 hour
-      verified: false
-    };
+    // ✅ SQL: Update booking with OTP
+    await bookingsRepo.update(bookingId, {
+      otp_code: otp,
+      otp_expires_at: otpExpiresAt.toISOString()
+    });
 
-    await kv.set(`booking:otp:${bookingId}`, otpData);
-
-    // Update booking with OTP
-    booking.serviceCompletionOtp = otp;
-    await kv.set(`booking:${bookingId}`, booking);
+    // Update notes with OTP info
+    const notes = typeof booking.notes === 'string' ? JSON.parse(booking.notes || '{}') : (booking.notes || {});
+    notes.serviceCompletionOtp = otp;
+    await bookingsRepo.update(bookingId, {
+      notes: JSON.stringify(notes)
+    });
 
     console.log(`✅ [GENERATE-OTP] OTP generated: ${otp}`);
 
     return c.json({ 
       otp, 
       bookingId,
-      expiresAt: otpData.expiresAt,
+      expiresAt: otpExpiresAt.toISOString(),
       message: "OTP generated successfully"
     });
   } catch (error) {
@@ -553,43 +617,46 @@ groomingBookingAPIs.post("/booking/:bookingId/verify-otp", async (c) => {
 
     console.log(`\n🔐 [VERIFY-OTP] Verifying OTP for booking: ${bookingId}`);
 
-    // Get OTP data
-    const otpData = await kv.get(`booking:otp:${bookingId}`);
-    if (!otpData) {
-      return c.json({ error: "OTP not found", verified: false }, 404);
+    // ✅ SQL: Get booking
+    const bookingsRepo = getBookingsRepository();
+    const booking = await bookingsRepo.findById(bookingId);
+    
+    if (!booking) {
+      return c.json({ error: "Booking not found", verified: false }, 404);
     }
 
     // Check expiry
-    if (new Date() > new Date(otpData.expiresAt)) {
+    if (booking.otp_expires_at && new Date() > new Date(booking.otp_expires_at)) {
       return c.json({ error: "OTP expired", verified: false }, 400);
     }
 
     // Verify OTP
-    if (otpData.otp !== otp) {
+    if (booking.otp_code !== otp) {
       console.log(`❌ [VERIFY-OTP] Invalid OTP provided`);
       return c.json({ error: "Invalid OTP", verified: false }, 400);
     }
 
-    // Mark OTP as verified
-    otpData.verified = true;
-    otpData.verifiedAt = new Date().toISOString();
-    await kv.set(`booking:otp:${bookingId}`, otpData);
+    // ✅ SQL: Update booking status to completed
+    await bookingsRepo.update(bookingId, {
+      status: 'completed',
+      completed_at: new Date().toISOString(),
+      otp_verified: true
+    });
 
-    // Update booking status to completed
-    const booking = await kv.get(`booking:${bookingId}`);
-    if (booking) {
-      booking.status = 'completed';
-      booking.completedAt = new Date().toISOString();
-      booking.serviceCompletionVerified = true;
-      await kv.set(`booking:${bookingId}`, booking);
+    // Update notes
+    const notes = typeof booking.notes === 'string' ? JSON.parse(booking.notes || '{}') : (booking.notes || {});
+    notes.serviceCompletionVerified = true;
+    notes.otpVerifiedAt = new Date().toISOString();
+    await bookingsRepo.update(bookingId, {
+      notes: JSON.stringify(notes)
+    });
 
-      console.log(`✅ [VERIFY-OTP] Booking completed: ${bookingId}`);
-    }
+    console.log(`✅ [VERIFY-OTP] Booking completed: ${bookingId}`);
 
     return c.json({ 
       verified: true, 
       bookingCompleted: true,
-      completedAt: otpData.verifiedAt,
+      completedAt: new Date().toISOString(),
       message: "Service completed successfully"
     });
   } catch (error) {

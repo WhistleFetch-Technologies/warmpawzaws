@@ -3,7 +3,6 @@ import { CapabilityDebugOverlay } from './CapabilityDebugOverlay';
 import { ModuleDisabledMessage, ModuleMessages } from './ModuleDisabledMessage';
 import { SoloProviderDashboard } from './dashboard/SoloProviderDashboard'; // ✅ INTEGRATION: Solo provider dashboard
 import { useVendorCapabilities } from './hooks/useVendorCapabilities';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { getVendorIconTheme, getRoleIcon, getRoleColorScheme } from '../../utils/vendor-icon-themes';
 import VendorUtils from '../../utils/vendor-utils';
 import CapabilityHelper from '../../utils/capability-helper';
@@ -45,6 +44,7 @@ import {
 import { Badge } from '../ui/badge';
 import { VendorNotificationModal } from './VendorNotificationModal';
 import { CommunicationHub } from '../communication/CommunicationHub';
+import { NotificationBellWrapper } from '../common/NotificationBellWrapper';
 import { AppointmentDetailModal } from './AppointmentDetailModal';
 import { VendorAnalytics } from './VendorAnalytics';
 import { VendorPaymentSettings } from './VendorPaymentSettings';
@@ -239,7 +239,9 @@ export function VendorDashboard({
   // 🔌 CORE: Load dynamic capabilities
   const { capabilities, loading: capsLoading, roleName } = useVendorCapabilities(vendorData?.roleId);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  // ✅ FIX: Use API Gateway URL instead of Supabase
+  const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+  const API_BASE = API_GATEWAY_URL ? `${API_GATEWAY_URL}/make-server-3dd53475` : '';
   
   // ✅ USE UTILITY: Replace duplicated role check with centralized utility
   const isVet = VendorUtils.isVet(vendorData?.roleId);
@@ -306,40 +308,48 @@ export function VendorDashboard({
       // Prepare all fetch promises based on capabilities
       const today = new Date().toISOString().split('T')[0];
       
+      // ✅ FIX: Use API client for authenticated requests
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
       // ✅ OPTIMIZATION: Split critical and non-critical data
       // Critical data: dashboard stats + schedule (needed for initial render)
-      const criticalPromises: Promise<Response | null>[] = [
+      const criticalPromises: Promise<any>[] = [
         // 1. Always fetch dashboard stats
-        fetch(`${API_BASE}/vendor/dashboard/${vendorId}?timeframe=${activeTab}`, {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        apiCallJson(`${API_BASE}/vendor/dashboard/${vendorId}?timeframe=${activeTab}`).catch(err => {
+          console.error('Failed to fetch dashboard stats:', err);
+          return null;
         }),
         
         // 2. Fetch schedule if booking enabled - USE UTILITY
         CapabilityHelper.hasBooking(capabilities)
-          ? fetch(`${API_BASE}/vendor/schedule/${vendorId}?date=${today}`, {
-              headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          ? apiCallJson(`${API_BASE}/vendor/schedule/${vendorId}?date=${today}`).catch(err => {
+              console.error('Failed to fetch schedule:', err);
+              return null;
             })
           : Promise.resolve(null)
       ];
       
       // Non-critical data: notifications, watchlist, services (can load after)
-      const nonCriticalPromises: Promise<Response | null>[] = [
+      const nonCriticalPromises: Promise<any>[] = [
         // 3. Fetch watchlist if medical records enabled - USE UTILITY
         CapabilityHelper.hasMedicalRecords(capabilities)
-          ? fetch(`${API_BASE}/vendor/watchlist/${vendorId}`, {
-              headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          ? apiCallJson(`${API_BASE}/vendor/watchlist/${vendorId}`).catch(err => {
+              console.error('Failed to fetch watchlist:', err);
+              return null;
             })
           : Promise.resolve(null),
         
         // 4. Always fetch notifications
-        fetch(`${API_BASE}/vendor/notifications/${vendorId}?limit=5`, {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        apiCallJson(`${API_BASE}/vendor/notifications/${vendorId}?limit=5`).catch(err => {
+          console.error('Failed to fetch notifications:', err);
+          return null;
         }),
         
         // 5. Fetch services if catalog or booking enabled - USE UTILITY
         (CapabilityHelper.hasCatalog(capabilities) || CapabilityHelper.hasBooking(capabilities))
-          ? fetch(`${API_BASE}/vendor/services/${vendorId}`, {
-              headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          ? apiCallJson(`${API_BASE}/vendor/services/${vendorId}`).catch(err => {
+              console.error('Failed to fetch services:', err);
+              return null;
             })
           : Promise.resolve(null)
       ];
@@ -347,28 +357,14 @@ export function VendorDashboard({
       // ✅ OPTIMIZATION: Execute critical fetches first, hide loading screen ASAP
       const [dashboardRes, scheduleRes] = await Promise.all(criticalPromises);
       
-      // ✅ OPTIMIZATION: Parse JSON responses in parallel
-      const criticalParsing = [];
-      
-      if (dashboardRes && dashboardRes.ok) {
-        criticalParsing.push(
-          dashboardRes.json().then(data => {
-            if (data.success) {
-              setStats(data.stats);
-              setVendor(data.vendor);
-            }
-          })
-        );
+      // ✅ FIX: apiCallJson returns data directly, not Response object
+      if (dashboardRes && dashboardRes.success) {
+        setStats(dashboardRes.stats || dashboardRes.data?.stats);
+        setVendor(dashboardRes.vendor || dashboardRes.data?.vendor);
       }
       
-      if (scheduleRes && scheduleRes.ok) {
-        criticalParsing.push(
-          scheduleRes.json().then(data => {
-            if (data.success) {
-              setTodaySchedule(data.schedule || []);
-            }
-          })
-        );
+      if (scheduleRes && scheduleRes.success) {
+        setTodaySchedule(scheduleRes.schedule || scheduleRes.data?.schedule || []);
       }
       
       // Wait for critical parsing to complete
@@ -385,13 +381,10 @@ export function VendorDashboard({
       
       // ✅ OPTIMIZATION: Load non-critical data in background
       Promise.all(nonCriticalPromises).then(async ([watchlistRes, notificationsRes, servicesRes]) => {
-        const backgroundParsing = [];
+        // ✅ FIX: apiCallJson returns data directly, not Response object
         
         // Process watchlist
-        if (watchlistRes && watchlistRes.ok) {
-          backgroundParsing.push(
-            watchlistRes.json().then(data => {
-              if (data.success) {
+        if (watchlistRes && watchlistRes.success) {
                 setWatchlist(data.watchlist || []);
               }
             })
@@ -399,32 +392,19 @@ export function VendorDashboard({
         }
         
         // Process notifications
-        if (notificationsRes && notificationsRes.ok) {
-          backgroundParsing.push(
-            notificationsRes.json().then(data => {
-              if (data.success) {
-                setNotifications(data.notifications || []);
-              }
-            })
-          );
+        if (notificationsRes && notificationsRes.success) {
+          setNotifications(notificationsRes.notifications || notificationsRes.data?.notifications || []);
         }
         
         // Process services
-        if (servicesRes && servicesRes.ok) {
-          backgroundParsing.push(
-            servicesRes.json().then(data => {
-              if (data.success) {
-                const servicesData = Array.isArray(data.services) ? data.services : [];
-                setServices(servicesData);
-              }
-            }).catch(error => {
-              console.error('Error parsing services data:', error);
-              setServices([]);
-            })
-          );
+        if (servicesRes && servicesRes.success) {
+          const servicesData = Array.isArray(servicesRes.services) 
+            ? servicesRes.services 
+            : Array.isArray(servicesRes.data?.services) 
+              ? servicesRes.data.services 
+              : [];
+          setServices(servicesData);
         }
-        
-        await Promise.all(backgroundParsing);
         console.log('✅ Non-critical dashboard data loaded (background)');
         
         // ✅ PERFORMANCE: Save to cache for next visit (capture all state in closure)
@@ -521,7 +501,7 @@ export function VendorDashboard({
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="w-full max-w-[430px] mx-auto bg-white min-h-screen">
+      <div className="w-full max-w-[430px] lg:max-w-[1200px] mx-auto bg-white min-h-screen lg:min-h-[calc(100vh-2rem)] lg:my-4 lg:rounded-2xl lg:shadow-xl">
         {/* Header */}
         <div className="p-4 bg-white border-b border-gray-200">
           <div className="flex items-center justify-between mb-3">
@@ -545,15 +525,35 @@ export function VendorDashboard({
                 <iconTheme.actions.messages className="w-5 h-5 text-gray-400" />
               )}
 
-              <button 
-                className="relative"
-                onClick={() => setNotificationModalOpen(true)}
-              >
-                <iconTheme.actions.notifications className="w-5 h-5 text-gray-400 hover:text-[#FF8C42] transition-colors" />
-                {unreadNotificationCount > 0 && (
-                  <div className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
-                )}
-              </button>
+              <NotificationBellWrapper
+                className="!p-0"
+                unreadCount={unreadNotificationCount}
+                fetchNotifications={async () => {
+                  // Use existing notifications from state, convert to Notification format
+                  return notifications.map(n => ({
+                    id: n.notificationId,
+                    type: (n.type === 'booking' ? 'booking' : 
+                           n.type === 'payment' ? 'payment' : 
+                           n.type === 'warning' ? 'warning' : 
+                           n.type === 'error' ? 'error' : 'info') as 'info' | 'success' | 'warning' | 'error' | 'booking' | 'payment' | 'system',
+                    title: n.title,
+                    message: n.message,
+                    timestamp: new Date(n.createdAt),
+                    read: n.isRead,
+                  }));
+                }}
+                onNotificationClick={(notification) => {
+                  // Handle notification click if needed
+                  console.log('Notification clicked:', notification);
+                }}
+              />
+              
+              {/* Keep VendorNotificationModal for backward compatibility */}
+              <VendorNotificationModal
+                vendorId={vendorId}
+                open={notificationModalOpen}
+                onClose={() => setNotificationModalOpen(false)}
+              />
             </div>
           </div>
 
@@ -583,8 +583,8 @@ export function VendorDashboard({
         </div>
 
         {/* 🧱 DYNAMIC QUICK ACTIONS */}
-        <div className="p-4 border-b border-gray-100">
-          <div className="flex flex-wrap gap-3">
+        <div className="p-4 lg:p-6 border-b border-gray-100">
+          <div className="flex flex-wrap gap-3 lg:gap-4">
             {/* Staff Management - For Clinics/Hospitals */}
             {onNavigateToStaffManagement && (capabilities.staff_management || VendorUtils.isHealthcareProvider(vendorData?.roleId)) && (
               <button
@@ -633,9 +633,9 @@ export function VendorDashboard({
           vendorData?.roleId?.includes('vet') || 
           vendorData?.serviceCategory === 'veterinary'
         ) && (
-          <div className="p-4 border-b border-gray-100">
-            <h2 className="font-semibold text-gray-900 mb-3">Vet Center Services</h2>
-            <div className="grid grid-cols-3 gap-2">
+          <div className="p-4 lg:p-6 border-b border-gray-100">
+            <h2 className="font-semibold text-gray-900 mb-3 lg:mb-4">Vet Center Services</h2>
+            <div className="grid grid-cols-3 lg:grid-cols-4 gap-2 lg:gap-3">
               <button
                 onClick={() => onNavigateToSpecializedServices?.()}
                 className="bg-teal-50 border border-teal-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-teal-100 transition-colors"
@@ -681,9 +681,9 @@ export function VendorDashboard({
           capabilities.room_management || capabilities.claims_management || capabilities.diagnostic_lab || capabilities.ambulance_services ||
           capabilities.multi_doctor_management || capabilities.table_management || capabilities.pax_management ||
           capabilities.occupancy_tracking || capabilities.nightly_pricing) && (
-          <div className="p-4 border-b border-gray-100">
-            <h2 className="font-semibold text-gray-900 mb-3">Additional Features</h2>
-            <div className="grid grid-cols-3 gap-2">
+          <div className="p-4 lg:p-6 border-b border-gray-100">
+            <h2 className="font-semibold text-gray-900 mb-3 lg:mb-4">Additional Features</h2>
+            <div className="grid grid-cols-3 lg:grid-cols-4 gap-2 lg:gap-3">
               {/* Gallery Management */}
               {onNavigateToGallery && capabilities.gallery && (
                 <button
@@ -1082,66 +1082,66 @@ export function VendorDashboard({
         )}
 
         {/* Stats Dashboard - Conditionally Rendered */}
-        <div className="p-4 border-b border-gray-100">
-          <div className="flex gap-2 mb-3">
+        <div className="p-4 lg:p-6 border-b border-gray-100">
+          <div className="flex gap-2 lg:gap-3 mb-3 lg:mb-4">
              <button
               onClick={() => setActiveTab('today')}
-              className={`px-4 py-1.5 rounded-full text-sm ${activeTab === 'today' ? 'bg-[#FF8C42] text-white' : 'bg-gray-100 text-gray-600'}`}
+              className={`px-4 lg:px-6 py-1.5 lg:py-2 rounded-full text-sm lg:text-base ${activeTab === 'today' ? 'bg-[#FF8C42] text-white' : 'bg-gray-100 text-gray-600'}`}
             >Today</button>
             <button
               onClick={() => setActiveTab('week')}
-              className={`px-4 py-1.5 rounded-full text-sm ${activeTab === 'week' ? 'bg-[#FF8C42] text-white' : 'bg-gray-100 text-gray-600'}`}
+              className={`px-4 lg:px-6 py-1.5 lg:py-2 rounded-full text-sm lg:text-base ${activeTab === 'week' ? 'bg-[#FF8C42] text-white' : 'bg-gray-100 text-gray-600'}`}
             >Week</button>
             <button
               onClick={() => setActiveTab('month')}
-              className={`px-4 py-1.5 rounded-full text-sm ${activeTab === 'month' ? 'bg-[#FF8C42] text-white' : 'bg-gray-100 text-gray-600'}`}
+              className={`px-4 lg:px-6 py-1.5 lg:py-2 rounded-full text-sm lg:text-base ${activeTab === 'month' ? 'bg-[#FF8C42] text-white' : 'bg-gray-100 text-gray-600'}`}
             >Month</button>
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-3 lg:grid-cols-4 gap-3 lg:gap-4">
             {/* Appointments Stat */}
             {capabilities.booking && (
-              <div key="stat-appointments" className={`text-center p-3 ${colorScheme.light} rounded-lg`}>
-                <iconTheme.stats.bookings className={`w-5 h-5 ${colorScheme.dark} mx-auto mb-1`} />
-                <div className="text-2xl font-bold text-gray-900">{stats.appointments}</div>
-                <div className="text-xs text-gray-500">Appointments</div>
+              <div key="stat-appointments" className={`text-center p-3 lg:p-4 ${colorScheme.light} rounded-lg`}>
+                <iconTheme.stats.bookings className={`w-5 h-5 lg:w-6 lg:h-6 ${colorScheme.dark} mx-auto mb-1`} />
+                <div className="text-2xl lg:text-3xl font-bold text-gray-900">{stats.appointments}</div>
+                <div className="text-xs lg:text-sm text-gray-500">Appointments</div>
               </div>
             )}
 
             {/* Orders Stat (if booking is disabled or orders enabled) */}
             {capabilities.orders && (
-              <div key="stat-orders" className={`text-center p-3 bg-blue-50 rounded-lg`}>
-                <ShoppingBag className={`w-5 h-5 text-blue-600 mx-auto mb-1`} />
-                <div className="text-2xl font-bold text-gray-900">{stats.activeOrders || 0}</div>
-                <div className="text-xs text-gray-500">Orders</div>
+              <div key="stat-orders" className={`text-center p-3 lg:p-4 bg-blue-50 rounded-lg`}>
+                <ShoppingBag className={`w-5 h-5 lg:w-6 lg:h-6 text-blue-600 mx-auto mb-1`} />
+                <div className="text-2xl lg:text-3xl font-bold text-gray-900">{stats.activeOrders || 0}</div>
+                <div className="text-xs lg:text-sm text-gray-500">Orders</div>
               </div>
             )}
 
             {/* Consultations Stat */}
             {(capabilities.tele || capabilities.booking) && (
-              <div key="stat-consultations" className={`text-center p-3 ${colorScheme.light} rounded-lg`}>
-                <iconTheme.stats.customers className={`w-5 h-5 ${colorScheme.dark} mx-auto mb-1`} />
-                <div className="text-2xl font-bold text-gray-900">{stats.consultations}</div>
-                <div className="text-xs text-gray-500">Consultations</div>
+              <div key="stat-consultations" className={`text-center p-3 lg:p-4 ${colorScheme.light} rounded-lg`}>
+                <iconTheme.stats.customers className={`w-5 h-5 lg:w-6 lg:h-6 ${colorScheme.dark} mx-auto mb-1`} />
+                <div className="text-2xl lg:text-3xl font-bold text-gray-900">{stats.consultations}</div>
+                <div className="text-xs lg:text-sm text-gray-500">Consultations</div>
               </div>
             )}
 
             {/* Earnings Stat - Always show */}
-            <div key="stat-earnings" className="text-center p-3 bg-green-50 rounded-lg">
-              <iconTheme.stats.revenue className="w-5 h-5 text-green-600 mx-auto mb-1" />
-              <div className="text-2xl font-bold text-green-600">₹{stats.earnings.toLocaleString()}</div>
-              <div className="text-xs text-gray-500">Earnings</div>
+            <div key="stat-earnings" className="text-center p-3 lg:p-4 bg-green-50 rounded-lg">
+              <iconTheme.stats.revenue className="w-5 h-5 lg:w-6 lg:h-6 text-green-600 mx-auto mb-1" />
+              <div className="text-2xl lg:text-3xl font-bold text-green-600">₹{stats.earnings.toLocaleString()}</div>
+              <div className="text-xs lg:text-sm text-gray-500">Earnings</div>
             </div>
           </div>
         </div>
 
         {/* 🗓️ TODAY'S SCHEDULE (Conditional) */}
         {capabilities.booking && (
-          <div className="p-4 border-b border-gray-100">
-            <h2 className="font-semibold text-gray-900 text-center mb-3">Today's Schedule</h2>
+          <div className="p-4 lg:p-6 border-b border-gray-100">
+            <h2 className="font-semibold text-gray-900 text-center mb-3 lg:mb-4">Today's Schedule</h2>
             
             {/* Appointment Type Filter */}
-            <div className="flex gap-2 mb-3 overflow-x-auto pb-2">
+            <div className="flex gap-2 lg:gap-3 mb-3 lg:mb-4 overflow-x-auto pb-2">
               <button onClick={() => setAppointmentTypeFilter('all')} className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${appointmentTypeFilter === 'all' ? 'bg-[#FF8C42] text-white' : 'bg-gray-100 text-gray-600'}`}>All Types</button>
               
               <button onClick={() => setAppointmentTypeFilter('clinic')} className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${appointmentTypeFilter === 'clinic' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-600'}`}>
@@ -1183,8 +1183,11 @@ export function VendorDashboard({
                         console.error('Share failed:', err);
                       }
                     } else {
-                      copyTextToClipboard(window.location.origin);
-                      alert('Profile link copied to clipboard!');
+                      navigator.clipboard.writeText(window.location.origin).then(() => {
+                        alert('Profile link copied to clipboard!');
+                      }).catch(() => {
+                        alert('Failed to copy to clipboard');
+                      });
                     }
                   }}
                   className="px-4 py-2 bg-[#FF8C42] hover:bg-[#FF7A2E] text-white rounded-lg text-sm font-medium transition-colors inline-flex items-center gap-2"
@@ -1198,7 +1201,7 @@ export function VendorDashboard({
                 <div className="flex items-center justify-end mb-2">
                   <button className="text-sm text-[#FF8C42]" onClick={onNavigateToBookingManagement}>View All →</button>
                 </div>
-                <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
+                <div className="space-y-3 lg:grid lg:grid-cols-2 lg:gap-4 lg:space-y-0 max-h-[400px] lg:max-h-[500px] overflow-y-auto pr-1">
                   {filteredSchedule.map(appointment => {
                        const serviceType = appointment.serviceType?.toLowerCase();
                        let typeIcon = Stethoscope;
@@ -1364,7 +1367,7 @@ export function VendorDashboard({
         <div className="pb-24"></div>
 
         {/* Bottom Navigation */}
-        <div className="fixed bottom-0 left-0 right-0 max-w-[430px] mx-auto pb-safe z-10">
+        <div className="fixed lg:relative bottom-0 left-0 right-0 max-w-[430px] lg:max-w-full mx-auto pb-safe lg:pb-0 z-10">
           <BottomNavBar
             items={[
               { id: 'home', label: 'Home', icon: Home },

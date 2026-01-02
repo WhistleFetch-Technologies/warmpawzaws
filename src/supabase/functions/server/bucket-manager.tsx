@@ -1,6 +1,13 @@
 /**
  * Bucket Manager - Centralized bucket initialization with timeout protection
  * 
+ * ⚠️ DEPRECATED: This file is no longer needed for S3 migration.
+ * S3 buckets are managed by CDK infrastructure.
+ * This file is kept for backward compatibility only.
+ * 
+ * TODO: Remove this file after confirming all dependencies are migrated.
+ * 
+ * Original purpose:
  * This module prevents database timeout issues by:
  * 1. Caching bucket existence checks
  * 2. Adding timeout protection to all operations
@@ -8,7 +15,7 @@
  * 4. Graceful fallback on errors
  */
 
-import { createClient } from "jsr:@supabase/supabase-js@2.49.8";
+import { createClient } from "@supabase/supabase-js";
 
 const TIMEOUT_MS = 2000; // 2 second timeout (reduced from 5s for faster failure)
 const CACHE_DURATION_MS = 5 * 60 * 1000; // Cache bucket existence for 5 minutes

@@ -11,9 +11,11 @@
  * Status: ⚠️ 50% → ✅ 95%
  */
 
-import { Hono } from 'npm:hono';
-import { cors } from 'npm:hono/cors';
-import * as kv from './kv_store.tsx';
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from 'hono';
+import { cors } from "hono/cors";
+import { getBookingsRepository } from '../../../supabase/lib/repositories/index';
+import { getDbClient } from '../../../supabase/lib/db';
 
 const app = new Hono();
 app.use('*', cors());
@@ -39,7 +41,9 @@ app.post('/bookings/:bookingId/update-location', async (c) => {
     }
 
     // ✅ FEATURE 1: Get booking and validate session is active
-    const bookingData = await kv.get(`booking:${bookingId}`);
+    // ✅ SQL: Get booking data
+    const bookingsRepo = getBookingsRepository();
+    const bookingData = await bookingsRepo.findById(bookingId);
     if (!bookingData || !bookingData.value) {
       return c.json({ error: 'Booking not found' }, 404);
     }
@@ -79,7 +83,13 @@ app.post('/bookings/:bookingId/update-location', async (c) => {
 
     // Get or create route tracking
     const routeKey = `booking:${bookingId}:session:${sessionNumber}:route`;
-    const routeData = await kv.get(routeKey);
+    // ✅ SQL: Get route data from bookings table (stored as JSONB)
+    const db = getDbClient();
+    const { data: routeData } = await db
+      .from('bookings')
+      .select('route_data')
+      .eq('id', bookingId)
+      .single();
     
     let route = routeData?.value || {
       bookingId,
@@ -107,7 +117,10 @@ app.post('/bookings/:bookingId/update-location', async (c) => {
     }
 
     // Save updated route
-    await kv.set(routeKey, route);
+    // ✅ SQL: Update route data in bookings table
+    await db.from('bookings')
+      .update({ route_data: route, updated_at: new Date().toISOString() })
+      .eq('id', bookingId);
 
     // ✅ FEATURE 6: Calculate ETA if customer location available
     let eta = null;
@@ -129,7 +142,8 @@ app.post('/bookings/:bookingId/update-location', async (c) => {
     booking.lastKnownLocation = locationUpdate;
     booking.routePointsCount = route.points.length;
     booking.totalDistanceCovered = route.totalDistance;
-    await kv.set(`booking:${bookingId}`, booking);
+    // ✅ SQL: Update booking
+    await bookingsRepo.update(bookingId, booking);
 
     // ✅ FEATURE 8: Broadcast to customer (via WebSocket/SSE in production)
     await broadcastLocationToCustomer(bookingId, locationUpdate, eta);
@@ -162,7 +176,13 @@ app.get('/bookings/:bookingId/route', async (c) => {
     const sessionNumber = parseInt(c.req.query('sessionNumber') || '1');
 
     const routeKey = `booking:${bookingId}:session:${sessionNumber}:route`;
-    const routeData = await kv.get(routeKey);
+    // ✅ SQL: Get route data from bookings table (stored as JSONB)
+    const db = getDbClient();
+    const { data: routeData } = await db
+      .from('bookings')
+      .select('route_data')
+      .eq('id', bookingId)
+      .single();
 
     if (!routeData || !routeData.value) {
       return c.json({
@@ -205,7 +225,9 @@ app.get('/bookings/:bookingId/live-location', async (c) => {
   try {
     const bookingId = c.req.param('bookingId');
 
-    const bookingData = await kv.get(`booking:${bookingId}`);
+    // ✅ SQL: Get booking data
+    const bookingsRepo = getBookingsRepository();
+    const bookingData = await bookingsRepo.findById(bookingId);
     if (!bookingData || !bookingData.value) {
       return c.json({ error: 'Booking not found' }, 404);
     }
@@ -265,7 +287,9 @@ app.post('/bookings/:bookingId/start-tracking', async (c) => {
     const bookingId = c.req.param('bookingId');
     const { sessionNumber = 1 } = await c.req.json();
 
-    const bookingData = await kv.get(`booking:${bookingId}`);
+    // ✅ SQL: Get booking data
+    const bookingsRepo = getBookingsRepository();
+    const bookingData = await bookingsRepo.findById(bookingId);
     if (!bookingData || !bookingData.value) {
       return c.json({ error: 'Booking not found' }, 404);
     }
@@ -274,7 +298,9 @@ app.post('/bookings/:bookingId/start-tracking', async (c) => {
 
     // Initialize route tracking
     const routeKey = `booking:${bookingId}:session:${sessionNumber}:route`;
-    await kv.set(routeKey, {
+    // ✅ SQL: Update route data in bookings table
+    await db.from('bookings')
+      .update({ route_data: {
       bookingId,
       sessionNumber,
       startTime: new Date().toISOString(),
@@ -286,7 +312,8 @@ app.post('/bookings/:bookingId/start-tracking', async (c) => {
     // Update booking
     booking.gpsTrackingEnabled = true;
     booking.gpsTrackingStartedAt = new Date().toISOString();
-    await kv.set(`booking:${bookingId}`, booking);
+    // ✅ SQL: Update booking
+    await bookingsRepo.update(bookingId, booking);
 
     console.log(`✅ GPS tracking started for booking ${bookingId}, session ${sessionNumber}`);
 
@@ -314,7 +341,13 @@ app.post('/bookings/:bookingId/stop-tracking', async (c) => {
     const { sessionNumber = 1 } = await c.req.json();
 
     const routeKey = `booking:${bookingId}:session:${sessionNumber}:route`;
-    const routeData = await kv.get(routeKey);
+    // ✅ SQL: Get route data from bookings table (stored as JSONB)
+    const db = getDbClient();
+    const { data: routeData } = await db
+      .from('bookings')
+      .select('route_data')
+      .eq('id', bookingId)
+      .single();
 
     if (!routeData || !routeData.value) {
       return c.json({ error: 'No active tracking found' }, 404);
@@ -324,15 +357,21 @@ app.post('/bookings/:bookingId/stop-tracking', async (c) => {
     route.endTime = new Date().toISOString();
     route.finalized = true;
 
-    await kv.set(routeKey, route);
+    // ✅ SQL: Update route data in bookings table
+    await db.from('bookings')
+      .update({ route_data: route, updated_at: new Date().toISOString() })
+      .eq('id', bookingId);
 
     // Update booking
-    const bookingData = await kv.get(`booking:${bookingId}`);
+    // ✅ SQL: Get booking data
+    const bookingsRepo = getBookingsRepository();
+    const bookingData = await bookingsRepo.findById(bookingId);
     if (bookingData && bookingData.value) {
       const booking = bookingData.value;
       booking.gpsTrackingEnabled = false;
       booking.gpsTrackingStoppedAt = route.endTime;
-      await kv.set(`booking:${bookingId}`, booking);
+      // ✅ SQL: Update booking
+    await bookingsRepo.update(bookingId, booking);
     }
 
     console.log(`✅ GPS tracking stopped for booking ${bookingId}, session ${sessionNumber}`);
@@ -445,7 +484,14 @@ function calculateRouteDuration(route: any): string | null {
 async function broadcastLocationToCustomer(bookingId: string, location: any, eta: string | null) {
   // Store in a channel/topic for real-time updates
   const updateKey = `booking:${bookingId}:location:latest`;
-  await kv.set(updateKey, {
+  // ✅ SQL: Store GPS tracking update in bookings table
+  const db = getDbClient();
+  await db.from('bookings')
+    .update({ 
+      location_updates: updateData,
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', bookingId);
     location,
     eta,
     timestamp: new Date().toISOString()

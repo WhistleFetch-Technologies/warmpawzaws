@@ -1,4 +1,4 @@
-import { Context, Next } from "npm:hono";
+import { Context, Next } from "hono";
 
 /**
  * CRITICAL ACTION GUARD

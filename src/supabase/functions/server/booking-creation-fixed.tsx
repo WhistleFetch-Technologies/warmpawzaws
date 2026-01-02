@@ -10,9 +10,9 @@
  * ============================================================================
  */
 
-import { getSchedulingService } from "../../../lib/services/scheduling-service.ts";
-import { getBookingsRepository } from "../../../lib/repositories/bookings.ts";
-import type { CreateBookingInput } from "../../../lib/repositories/bookings.ts";
+import { getSchedulingService } from "../../../lib/services/scheduling-service";
+import { getBookingsRepository } from "../../../lib/repositories/bookings";
+import type { CreateBookingInput } from "../../../lib/repositories/bookings";
 
 /**
  * PRODUCTION-GRADE BOOKING CREATION HANDLER

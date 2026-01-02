@@ -125,7 +125,7 @@ import { refundPolicyEndpoints } from './refund-policy-engine-enhanced-sql.tsx';
 import { marketplacePaymentEndpoints } from './marketplace-payment-endpoints-refactored.tsx'; // ✅ SQL-only: Marketplace payment endpoints (Batch 12, 1 KV op removed)
 // ✅ NEW: Batch 1 Phase 3 - Additional Financial Operations (Phase 3 Registration)
 import { registerRazorpayRefundProcessor } from './razorpay-refund-processor.tsx'; // ✅ SQL-only: Razorpay refund processor (Batch 1, KV ops removed)
-import { razorpayPaymentEndpoints } from './razorpay-payment-endpoints.tsx'; // ✅ SQL-only: Razorpay payment endpoints (Batch 1, KV ops removed)
+import { razorpayPaymentEndpoints } from './razorpay-payment-endpoints-sql.tsx'; // ✅ SQL-only: Razorpay payment endpoints (Batch 1, KV ops removed) - FIXED: Updated to SQL version
 import { registerSettlementAutomation } from './settlement-automation.tsx'; // ✅ SQL-only: Settlement automation (Batch 1, KV ops removed)
 import { registerPayoutCronJob } from './payout-cron-job.tsx'; // ✅ SQL-only: Payout cron job (Batch 1, KV ops removed)
 import { adminPayoutEndpoints } from './admin-payout-endpoints.tsx'; // ✅ SQL-only: Admin payout endpoints (Batch 1, KV ops removed)
@@ -280,6 +280,7 @@ import { registerAuthEndpoints } from './auth-endpoints-sql.tsx'; // ✅ SQL-onl
 // ✅ NEW: Additional SQL-only endpoints (missing registrations)
 import { serviceStyleManagement } from './service-style-management-sql.tsx'; // ✅ SQL-only: Service style management
 import { servicesByProblemEndpoints } from './services-by-problem-sql.tsx'; // ✅ SQL-only: Services by problem
+import { registerStorageEndpoints } from './storage-handler-sql.tsx'; // ✅ SQL-only: Storage handler (Batch 35, 0 KV ops - unused import removed)
 import { registerSettlementTierSystemSQL } from './settlement-tier-system-sql.tsx'; // ✅ SQL-only: Settlement tier system
 import groomingBookingAPIs from './grooming-booking-apis-sql.tsx'; // ✅ SQL-only: Grooming booking APIs
 import { smsNotificationServiceEnhanced } from './sms-notification-service-enhanced-sql.tsx'; // ✅ SQL-only: SMS notification service
@@ -339,6 +340,13 @@ try {
 }
 
 try {
+  console.log('✅ Registering storage handler endpoints (SQL-only)...');
+  registerStorageEndpoints(app);
+} catch (error) {
+  console.error('❌ Error registering storage handler endpoints:', error);
+}
+
+try {
   console.log('✅ Registering settlement tier system (SQL-only)...');
   registerSettlementTierSystemSQL(app);
 } catch (error) {
@@ -381,10 +389,24 @@ try {
 }
 
 try {
+  console.log('✅ Registering vendor onboarding endpoints (SQL-only)...');
+  vendorOnboardingEndpoints(app);
+} catch (error) {
+  console.error('❌ Error registering vendor onboarding endpoints:', error);
+}
+
+try {
   console.log('✅ Registering admin vendor routes (applications, approve, reject)...');
   registerAdminVendorRoutes(app);
 } catch (error) {
   console.error('❌ Error registering admin vendor routes:', error);
+}
+
+try {
+  console.log('✅ Registering customer routes (SQL-only)...');
+  registerCustomerRoutes(app);
+} catch (error) {
+  console.error('❌ Error registering customer routes:', error);
 }
 
 try {
@@ -1728,6 +1750,34 @@ try {
 
 // ✅ NEW: Batch 20 - Register SQL-only endpoints
 // Note: catalogEndpointsSQL already registered at line 338, enhancedRefundSystemSQL at line 1011, systemOptimizationEndpoints at line 1249
+
+try {
+  console.log('✅ Registering booking management endpoints (SQL-only)...');
+  bookingManagementEndpointsSQL(app);
+} catch (error) {
+  console.error('❌ Error registering booking management endpoints:', error);
+}
+
+try {
+  console.log('✅ Registering booking endpoints (SQL-only)...');
+  bookingEndpointsSQL(app);
+} catch (error) {
+  console.error('❌ Error registering booking endpoints:', error);
+}
+
+try {
+  console.log('✅ Registering vendor booking actions endpoints (SQL-only)...');
+  vendorBookingActionsEndpointsSQL(app);
+} catch (error) {
+  console.error('❌ Error registering vendor booking actions endpoints:', error);
+}
+
+try {
+  console.log('✅ Registering vendor bookings endpoints (SQL-only)...');
+  app.route('/make-server-3dd53475', vendorBookingsSQL);
+} catch (error) {
+  console.error('❌ Error registering vendor bookings endpoints:', error);
+}
 
 // ✅ NEW: Batch 21 - Register SQL-only endpoints
 // Note: staffScheduleEndpointsSQL already registered at line 353, reschedulingPoliciesEndpointsSQL at line 360, settlementScheduleEndpointsSQL at line 1527

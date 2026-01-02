@@ -1,6 +1,12 @@
-import { Hono } from "npm:hono";
-import * as kv from './kv_store.tsx';
-import { S3Client, PutObjectCommand } from "npm:@aws-sdk/client-s3@3";
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from "hono";
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { 
+  getPlatformSettingsRepository,
+  getVendorsRepository,
+  getBookingsRepository,
+  getDbClient
+} from '../../../supabase/lib/repositories/index';
 
 /**
  * S3 AUTO-UPLOADER SERVICE
@@ -33,9 +39,10 @@ export function registerS3AutoUploader(app: Hono) {
         return c.json({ error: 'No file provided' }, 400);
       }
 
-      // Get S3 settings from admin configuration
-      const awsSettings = await kv.get('admin:settings:aws') || {};
-      const s3Config = awsSettings.s3 || {};
+      // ✅ SQL: Get S3 settings from platform_settings table
+      const platformSettingsRepo = getPlatformSettingsRepository();
+      const awsSettings = await platformSettingsRepo.getAWSSettings();
+      const s3Config = awsSettings?.s3_config || {};
 
       if (!s3Config.enabled || !s3Config.bucket) {
         return c.json({ error: 'S3 not configured' }, 500);
@@ -143,16 +150,17 @@ export function registerS3AutoUploader(app: Hono) {
       
       const s3Url = await uploadMedia(file, 'kyc-documents', fileName);
 
-      // Update vendor KYC record
-      const vendor = await kv.get(`vendor:${vendorId}`);
+      // ✅ SQL: Update vendor KYC record in vendors table
+      const vendorsRepo = getVendorsRepository();
+      const vendor = await vendorsRepo.findById(vendorId);
       if (vendor) {
-        if (!vendor.kycDocuments) vendor.kycDocuments = {};
-        vendor.kycDocuments[docType] = {
+        const currentKycDocs = vendor.kyc_documents || {};
+        currentKycDocs[docType] = {
           url: s3Url,
           uploadedAt: new Date().toISOString(),
           status: 'pending_verification'
         };
-        await kv.set(`vendor:${vendorId}`, vendor);
+        await vendorsRepo.update(vendorId, { kyc_documents: currentKycDocs });
       }
 
       return c.json({
@@ -183,16 +191,17 @@ export function registerS3AutoUploader(app: Hono) {
       
       const s3Url = await uploadMedia(file, 'prescriptions', fileName);
 
-      // Update booking with prescription URL
-      const booking = await kv.get(`booking:${bookingId}`);
+      // ✅ SQL: Update booking with prescription URL in bookings table
+      const bookingsRepo = getBookingsRepository();
+      const booking = await bookingsRepo.findById(bookingId);
       if (booking) {
-        if (!booking.prescriptions) booking.prescriptions = [];
-        booking.prescriptions.push({
+        const currentPrescriptions = booking.prescriptions || [];
+        currentPrescriptions.push({
           url: s3Url,
           uploadedAt: new Date().toISOString(),
           uploadedBy: 'vendor'
         });
-        await kv.set(`booking:${bookingId}`, booking);
+        await bookingsRepo.update(bookingId, { prescriptions: currentPrescriptions });
       }
 
       return c.json({
@@ -215,8 +224,10 @@ export function registerS3AutoUploader(app: Hono) {
     try {
       const { url } = await c.req.json();
 
-      const awsSettings = await kv.get('admin:settings:aws') || {};
-      const s3Config = awsSettings.s3 || {};
+      // ✅ SQL: Get AWS settings from platform_settings table
+      const platformSettingsRepo = getPlatformSettingsRepository();
+      const awsSettings = await platformSettingsRepo.getAWSSettings();
+      const s3Config = awsSettings?.s3_config || {};
 
       if (!s3Config.enabled) {
         return c.json({ error: 'S3 not configured' }, 500);
@@ -240,8 +251,10 @@ export function registerS3AutoUploader(app: Hono) {
   // ==========================================
 
   async function uploadMedia(file: File, folder: string, fileName: string): Promise<string> {
-    const awsSettings = await kv.get('admin:settings:aws') || {};
-    const s3Config = awsSettings.s3 || {};
+    // ✅ SQL: Get AWS settings from platform_settings table
+    const platformSettingsRepo = getPlatformSettingsRepository();
+    const awsSettings = await platformSettingsRepo.getAWSSettings();
+    const s3Config = awsSettings?.s3_config || {};
 
     if (!s3Config.enabled || !s3Config.bucket) {
       throw new Error('S3 not configured');
@@ -326,23 +339,35 @@ export function registerS3AutoUploader(app: Hono) {
     size: number
   ) {
     try {
-      const uploads = await kv.get(`uploads:${userId}`) || [];
-      
-      uploads.unshift({
-        folder,
-        fileName,
-        url,
-        size,
-        uploadedAt: new Date().toISOString(),
-        userType
-      });
+      // ✅ SQL: Track upload in user_uploads table (or file_uploads table)
+      const db = getDbClient();
+      await db
+        .from('file_uploads')
+        .insert({
+          user_id: userId,
+          user_type: userType,
+          folder,
+          file_name: fileName,
+          file_url: url,
+          file_size: size,
+          uploaded_at: new Date().toISOString()
+        });
 
-      // Keep last 100 uploads
-      if (uploads.length > 100) {
-        uploads.splice(100);
+      // Keep only last 100 uploads per user (cleanup old ones)
+      const { data: uploads } = await db
+        .from('file_uploads')
+        .select('id')
+        .eq('user_id', userId)
+        .order('uploaded_at', { ascending: false })
+        .limit(101);
+
+      if (uploads && uploads.length > 100) {
+        const idsToDelete = uploads.slice(100).map(u => u.id);
+        await db
+          .from('file_uploads')
+          .delete()
+          .in('id', idsToDelete);
       }
-
-      await kv.set(`uploads:${userId}`, uploads);
     } catch (error) {
       console.error('[S3] Upload tracking error:', error);
     }

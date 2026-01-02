@@ -29,9 +29,8 @@ import {
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Badge } from '../ui/badge';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+// ✅ FIX: Removed Supabase imports - using API Gateway now
 import { toast } from 'sonner';
-import { authenticatedFetch } from '../../utils/session-manager';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../ui/dialog';
 
 interface VendorTableManagementProps {
@@ -102,20 +101,28 @@ export function VendorTableManagement({
     try {
       setLoading(true);
       
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
       // Fetch tables
-      const tablesResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/cafe/tables/${vendorId}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          }
+      try {
+        const tablesData = await apiCallJson<any>(
+          `${API_GATEWAY_URL}/make-server-3dd53475/cafe/${vendorId}/tables`
+        );
+        
+        if (tablesData.success && tablesData.tables) {
+          setTables(tablesData.tables);
+        } else {
+          setTables([]);
         }
-      );
-
-      if (tablesResponse.ok) {
-        const data = await tablesResponse.json();
-        setTables(data.tables || data.data?.tables || []);
+      } catch (tableError) {
+        console.error('Error fetching tables:', tableError);
+        setTables([]);
       }
 
       // Fetch bookings
@@ -132,22 +139,41 @@ export function VendorTableManagement({
 
   const fetchBookings = async () => {
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/bookings?serviceType=cafe`,
-        {
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          }
-        }
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      // Fetch cafe reservations
+      const reservationsData = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/cafe/${vendorId}/reservations`
       );
-
-      if (response.ok) {
-        const data = await response.json();
-        setBookings(data.bookings || data.data?.bookings || []);
+      
+      if (reservationsData.success && reservationsData.reservations) {
+        // Map reservations to bookings format
+        const mappedBookings = reservationsData.reservations.map((res: any) => ({
+          id: res.id,
+          customerId: res.customerId,
+          date: res.date,
+          time: res.time,
+          status: res.status,
+          tableId: res.tableId,
+          tableNumber: res.tableNumber,
+          partySize: res.partySize,
+          duration: res.duration,
+          specialRequests: res.specialRequests,
+          petDetails: res.petDetails
+        }));
+        setBookings(mappedBookings);
+      } else {
+        setBookings([]);
       }
     } catch (error) {
       console.error('Error fetching bookings:', error);
+      setBookings([]);
     }
   };
 
@@ -171,24 +197,52 @@ export function VendorTableManagement({
         amenities: formData.amenities
       };
 
-      const url = editingTable
-        ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/cafe/${vendorId}/tables/${editingTable.id}`
-        : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/cafe/tables`;
-
-      const response = await authenticatedFetch(url, {
-        method: editingTable ? 'PUT' : 'POST',
-        body: JSON.stringify(tableData)
-      });
-
-      if (response.ok) {
-        toast.success(editingTable ? 'Table updated successfully' : 'Table added successfully');
-        setShowAddModal(false);
-        setEditingTable(null);
-        resetForm();
-        fetchData();
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson, apiCall } = await import('@warmpawz/api-client/http');
+      
+      if (editingTable) {
+        // Update existing table
+        const updateData = await apiCallJson<any>(
+          `${API_GATEWAY_URL}/make-server-3dd53475/cafe/${vendorId}/tables/${editingTable.id}`,
+          {
+            method: 'PUT',
+            body: JSON.stringify(tableData)
+          }
+        );
+        
+        if (updateData.success) {
+          toast.success('Table updated successfully');
+          setShowAddModal(false);
+          setEditingTable(null);
+          resetForm();
+          fetchData();
+        } else {
+          toast.error(updateData.error || updateData.message || 'Failed to update table');
+        }
       } else {
-        const error = await response.json();
-        toast.error(error.error || 'Failed to save table');
+        // Create new table
+        const createData = await apiCallJson<any>(
+          `${API_GATEWAY_URL}/make-server-3dd53475/cafe/${vendorId}/tables`,
+          {
+            method: 'POST',
+            body: JSON.stringify(tableData)
+          }
+        );
+        
+        if (createData.success) {
+          toast.success('Table added successfully');
+          setShowAddModal(false);
+          setEditingTable(null);
+          resetForm();
+          fetchData();
+        } else {
+          toast.error(createData.error || createData.message || 'Failed to create table');
+        }
       }
     } catch (error: any) {
       console.error('Error saving table:', error);
@@ -200,46 +254,60 @@ export function VendorTableManagement({
     if (!confirm('Are you sure you want to delete this table?')) return;
 
     try {
-      const response = await authenticatedFetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/cafe/tables/${tableId}`,
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      const deleteData = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/cafe/${vendorId}/tables/${tableId}`,
         {
           method: 'DELETE'
         }
       );
 
-      if (response.ok) {
+      if (deleteData.success) {
         toast.success('Table deleted successfully');
         fetchData();
       } else {
-        const error = await response.json();
-        toast.error(error.error || 'Failed to delete table');
+        toast.error(deleteData.error || deleteData.message || 'Failed to delete table');
       }
     } catch (error: any) {
       console.error('Error deleting table:', error);
-      toast.error('Failed to delete table');
+      toast.error(error?.message || 'Failed to delete table');
     }
   };
 
   const handleStatusChange = async (tableId: string, newStatus: string) => {
     try {
-      const response = await authenticatedFetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/cafe/${vendorId}/tables/${tableId}/status`,
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      const statusData = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/cafe/${vendorId}/tables/${tableId}/status`,
         {
           method: 'PUT',
           body: JSON.stringify({ status: newStatus })
         }
       );
 
-      if (response.ok) {
+      if (statusData.success) {
         toast.success('Table status updated');
         fetchData();
       } else {
-        const error = await response.json();
-        toast.error(error.error || 'Failed to update status');
+        toast.error(statusData.error || statusData.message || 'Failed to update status');
       }
     } catch (error: any) {
       console.error('Error updating status:', error);
-      toast.error('Failed to update status');
+      toast.error(error?.message || 'Failed to update status');
     }
   };
 

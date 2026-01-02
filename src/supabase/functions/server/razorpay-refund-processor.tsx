@@ -1,6 +1,6 @@
-import { Hono } from "npm:hono";
-import * as kv from './kv_store.tsx';
-import { generateId } from './database-schema.tsx';
+import { Hono } from "hono";
+import * as kv from './kv_store';
+import { generateId } from './database-schema';
 
 /**
  * RAZORPAY REFUND PROCESSOR
@@ -47,10 +47,12 @@ export function registerRazorpayRefundProcessor(app: Hono) {
         }, 400);
       }
 
-      // Get payment settings
-      const paymentSettings = await kv.get('admin:settings:payment') || {};
-      const razorpayKeyId = paymentSettings.razorpay?.keyId || Deno.env.get('RAZORPAY_KEY_ID');
-      const razorpayKeySecret = paymentSettings.razorpay?.keySecret || Deno.env.get('RAZORPAY_KEY_SECRET');
+      // ✅ Lambda: Get Razorpay credentials from PlatformSettingsRepository
+      const { getPlatformSettingsRepository } = await import('../../../supabase/lib/repositories/index');
+      const platformSettingsRepo = getPlatformSettingsRepository();
+      const paymentSettings = await platformSettingsRepo.getPaymentGatewaySettings('razorpay') || {};
+      const razorpayKeyId = paymentSettings?.key_id || paymentSettings?.keyId || '';
+      const razorpayKeySecret = paymentSettings?.key_secret || paymentSettings?.keySecret || '';
 
       if (!razorpayKeyId || !razorpayKeySecret) {
         console.error('[REFUND] Razorpay credentials not configured');
@@ -157,10 +159,12 @@ export function registerRazorpayRefundProcessor(app: Hono) {
     try {
       const { refundId } = c.req.param();
 
-      // Get payment settings
-      const paymentSettings = await kv.get('admin:settings:payment') || {};
-      const razorpayKeyId = paymentSettings.razorpay?.keyId || Deno.env.get('RAZORPAY_KEY_ID');
-      const razorpayKeySecret = paymentSettings.razorpay?.keySecret || Deno.env.get('RAZORPAY_KEY_SECRET');
+      // ✅ Lambda: Get Razorpay credentials from PlatformSettingsRepository
+      const { getPlatformSettingsRepository } = await import('../../../supabase/lib/repositories/index');
+      const platformSettingsRepo = getPlatformSettingsRepository();
+      const paymentSettings = await platformSettingsRepo.getPaymentGatewaySettings('razorpay') || {};
+      const razorpayKeyId = paymentSettings?.key_id || paymentSettings?.keyId || '';
+      const razorpayKeySecret = paymentSettings?.key_secret || paymentSettings?.keySecret || '';
 
       const status = await fetchRefundStatus(refundId, razorpayKeyId, razorpayKeySecret);
 

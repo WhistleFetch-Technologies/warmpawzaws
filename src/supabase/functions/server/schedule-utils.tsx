@@ -5,7 +5,7 @@ import {
   getCenterNextAvailableSlot,
   getStaffAvailabilityByLocation,
   calculateDistance
-} from '../../../supabase/lib/utils/schedule-utils-sql.ts';
+} from '../../../supabase/lib/utils/schedule-utils-sql';
 
 // Re-export for backward compatibility
 export { calculateDistance, getStaffNextAvailableSlot, getCenterNextAvailableSlot, getStaffAvailabilityByLocation };

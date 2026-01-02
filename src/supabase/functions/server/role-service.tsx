@@ -1,4 +1,6 @@
-import * as kv from './kv_store.tsx';
+// ✅ SQL MIGRATION: KV operations replaced with SQL repositories
+// Note: This file defines canonical roles, but also has sync functions to KV (deprecated)
+import { getRolesRepository, getDbClient } from '../../../supabase/lib/repositories/index';
 
 /**
  * ✅ GAP #5 FIX: CENTRALIZED ROLE SERVICE
@@ -627,24 +629,38 @@ class RoleService {
   }
 
   /**
-   * Load roles from KV store (for custom roles)
+   * ✅ SQL: Load custom roles from roles table (non-system roles)
    */
   async loadCustomRoles(): Promise<VendorRole[]> {
     try {
-      // Add timeout protection at the KV operation level
-      const customRolesPromise = kv.getByPrefix('role:custom:');
-      const timeoutPromise = new Promise<any[]>((resolve) => 
-        setTimeout(() => {
-          console.warn('⚠️ [ROLE SERVICE] Custom role loading timeout - continuing with defaults');
-          resolve([]);
-        }, 3000)
-      );
+      // ✅ SQL: Get custom roles from roles table where is_system_role = false
+      const rolesRepo = getRolesRepository();
+      const allRoles = await rolesRepo.findAll();
       
-      const customRoles = await Promise.race([customRolesPromise, timeoutPromise]);
-      console.log(`📥 [ROLE SERVICE] Loaded ${customRoles.length} custom roles`);
+      // Filter for custom (non-system) roles
+      const customRoles = allRoles
+        .filter(role => !role.is_system_role && role.is_active)
+        .map(role => ({
+          id: role.id,
+          name: role.name,
+          displayName: role.display_name,
+          description: role.description || '',
+          category: role.config?.category || role.category || 'general',
+          permissions: role.config?.permissions || [],
+          serviceCategories: role.config?.serviceCategories || [],
+          requiresLicense: role.config?.requiresLicense || false,
+          requiresCertification: role.config?.requiresCertification || false,
+          allowsStaff: role.config?.allowsStaff || false,
+          allowsAtHome: role.config?.allowsAtHome || false,
+          allowsAtCenter: role.config?.allowsAtCenter || false,
+          allowsTele: role.config?.allowsTele || false,
+          isActive: role.is_active
+        }));
+      
+      console.log(`📥 [ROLE SERVICE] Loaded ${customRoles.length} custom roles from SQL`);
       return customRoles;
     } catch (error) {
-      console.warn('⚠️ [ROLE SERVICE] Custom roles not loaded (using defaults only):', error.message);
+      console.warn('⚠️ [ROLE SERVICE] Custom roles not loaded (using defaults only):', error instanceof Error ? error.message : String(error));
       return [];
     }
   }

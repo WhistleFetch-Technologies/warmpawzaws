@@ -1,4 +1,7 @@
-import { Hono } from "npm:hono";
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from "hono";
+import { getBookingsRepository } from '../../../supabase/lib/repositories/index';
+import { broadcastVendorUpdate } from './websocket-server';
 
 /**
  * VENDOR BOOKING ACTIONS
@@ -9,7 +12,7 @@ import { Hono } from "npm:hono";
  * - End session
  */
 
-export function vendorBookingActionsEndpoints(app: Hono, kv: any) {
+export function vendorBookingActionsEndpoints(app: Hono) {
   
   /**
    * Complete a booking with OTP verification
@@ -22,14 +25,15 @@ export function vendorBookingActionsEndpoints(app: Hono, kv: any) {
       
       console.log(`📋 [COMPLETE-BOOKING] Vendor ${vendorId} completing booking ${bookingId} with OTP: ${otp}`);
       
-      // Get booking
-      const booking = await kv.get(`booking:${bookingId}`);
+      // ✅ SQL: Get booking from bookings table
+      const bookingsRepo = getBookingsRepository();
+      const booking = await bookingsRepo.findById(bookingId);
       if (!booking) {
         return c.json({ error: 'Booking not found' }, 404);
       }
       
       // Verify vendor owns this booking
-      if (booking.vendorId !== vendorId) {
+      if (booking.vendor_id !== vendorId) {
         return c.json({ error: 'Unauthorized: This booking belongs to another vendor' }, 403);
       }
       
@@ -39,40 +43,59 @@ export function vendorBookingActionsEndpoints(app: Hono, kv: any) {
       }
       
       // For tele consultations, no OTP required
-      if (!booking.requiresOTP) {
-        booking.status = 'completed';
-        booking.completedAt = new Date().toISOString();
-        booking.updatedAt = new Date().toISOString();
+      const requiresOTP = booking.metadata?.requiresOTP !== false;
+      if (!requiresOTP) {
+        await bookingsRepo.update(bookingId, {
+          status: 'completed',
+          completed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
         
-        await kv.set(`booking:${bookingId}`, booking);
-        
+        const updatedBooking = await bookingsRepo.findById(bookingId);
         console.log(`✅ [COMPLETE-BOOKING] Tele consultation completed without OTP`);
-        return c.json({ success: true, booking, message: 'Booking completed successfully!' });
+        return c.json({ success: true, booking: updatedBooking, message: 'Booking completed successfully!' });
       }
       
       // Verify OTP for in-person services
       // Convert both to strings for comparison to handle type mismatch
-      const expectedOTP = String(booking.completionOTP).trim();
+      const expectedOTP = String(booking.completion_otp || booking.metadata?.completionOTP || '').trim();
       const providedOTP = String(otp).trim();
       
       if (expectedOTP !== providedOTP) {
-        console.error(`❌ [COMPLETE-BOOKING] Invalid OTP. Expected: "${expectedOTP}" (${typeof booking.completionOTP}), Got: "${providedOTP}" (${typeof otp})`);
+        console.error(`❌ [COMPLETE-BOOKING] Invalid OTP. Expected: "${expectedOTP}", Got: "${providedOTP}"`);
         return c.json({ error: 'Invalid OTP. Please check with the customer.' }, 400);
       }
       
-      // Mark booking as completed
-      booking.status = 'completed';
-      booking.otpVerifiedAt = new Date().toISOString();
-      booking.completedAt = new Date().toISOString();
-      booking.updatedAt = new Date().toISOString();
+      // ✅ SQL: Mark booking as completed
+      await bookingsRepo.update(bookingId, {
+        status: 'completed',
+        otp_verified_at: new Date().toISOString(),
+        completed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
       
-      await kv.set(`booking:${bookingId}`, booking);
+      const updatedBooking = await bookingsRepo.findById(bookingId);
       
       console.log(`✅ [COMPLETE-BOOKING] Booking completed successfully with OTP verification`);
       
+      // ✅ BROADCAST: Send real-time update to vendor mobile app
+      try {
+        broadcastVendorUpdate({
+          vendorId,
+          updateType: 'booking',
+          title: 'Booking Completed',
+          message: `Booking ${bookingId} has been completed successfully`,
+          bookingId,
+          data: { status: 'completed', booking: updatedBooking }
+        });
+      } catch (wsError) {
+        console.error('[COMPLETE-BOOKING] WebSocket broadcast error:', wsError);
+        // Don't fail the request if WebSocket fails
+      }
+      
       return c.json({ 
         success: true, 
-        booking,
+        booking: updatedBooking,
         message: 'Booking completed successfully!' 
       });
       
@@ -93,45 +116,62 @@ export function vendorBookingActionsEndpoints(app: Hono, kv: any) {
       
       console.log(`🚀 [START-SESSION] Vendor ${vendorId} starting session for booking ${bookingId} with OTP: ${otp}`);
       
-      // Get booking
-      const booking = await kv.get(`booking:${bookingId}`);
+      // ✅ SQL: Get booking from bookings table
+      const bookingsRepo = getBookingsRepository();
+      const booking = await bookingsRepo.findById(bookingId);
       if (!booking) {
         return c.json({ error: 'Booking not found' }, 404);
       }
       
       // Verify vendor owns this booking
-      if (booking.vendorId !== vendorId) {
+      if (booking.vendor_id !== vendorId) {
         return c.json({ error: 'Unauthorized: This booking belongs to another vendor' }, 403);
       }
       
       // Check if session already started
-      if (booking.sessionStartedAt) {
+      if (booking.session_started_at || booking.metadata?.sessionStartedAt) {
         return c.json({ error: 'Session already started' }, 400);
       }
       
       // Verify OTP
-      // Convert both to strings for comparison to handle type mismatch
-      const expectedOTP = String(booking.completionOTP).trim();
+      const expectedOTP = String(booking.completion_otp || booking.metadata?.completionOTP || '').trim();
       const providedOTP = String(otp).trim();
       
       if (expectedOTP !== providedOTP) {
-        console.error(`❌ [START-SESSION] Invalid OTP. Expected: "${expectedOTP}" (${typeof booking.completionOTP}), Got: "${providedOTP}" (${typeof otp})`);
+        console.error(`❌ [START-SESSION] Invalid OTP. Expected: "${expectedOTP}", Got: "${providedOTP}"`);
         return c.json({ error: 'Invalid OTP. Please check with the customer.' }, 400);
       }
       
-      // Start session
-      booking.status = 'in_progress';
-      booking.sessionStartedAt = new Date().toISOString();
-      booking.otpVerifiedAt = new Date().toISOString();
-      booking.updatedAt = new Date().toISOString();
+      // ✅ SQL: Start session
+      await bookingsRepo.update(bookingId, {
+        status: 'in_progress',
+        session_started_at: new Date().toISOString(),
+        otp_verified_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
       
-      await kv.set(`booking:${bookingId}`, booking);
+      const updatedBooking = await bookingsRepo.findById(bookingId);
       
       console.log(`✅ [START-SESSION] Session started successfully`);
       
+      // ✅ BROADCAST: Send real-time update to vendor mobile app
+      try {
+        broadcastVendorUpdate({
+          vendorId,
+          updateType: 'booking',
+          title: 'Service Started',
+          message: `Service for booking ${bookingId} has started`,
+          bookingId,
+          data: { status: 'in_progress', booking: updatedBooking }
+        });
+      } catch (wsError) {
+        console.error('[START-SESSION] WebSocket broadcast error:', wsError);
+        // Don't fail the request if WebSocket fails
+      }
+      
       return c.json({ 
         success: true, 
-        booking,
+        booking: updatedBooking,
         message: 'Session started! Customer can now track live location.' 
       });
       
@@ -152,35 +192,38 @@ export function vendorBookingActionsEndpoints(app: Hono, kv: any) {
       
       console.log(`🏁 [END-SESSION] Vendor ${vendorId} ending session for booking ${bookingId}`);
       
-      // Get booking
-      const booking = await kv.get(`booking:${bookingId}`);
+      // ✅ SQL: Get booking from bookings table
+      const bookingsRepo = getBookingsRepository();
+      const booking = await bookingsRepo.findById(bookingId);
       if (!booking) {
         return c.json({ error: 'Booking not found' }, 404);
       }
       
       // Verify vendor owns this booking
-      if (booking.vendorId !== vendorId) {
+      if (booking.vendor_id !== vendorId) {
         return c.json({ error: 'Unauthorized: This booking belongs to another vendor' }, 403);
       }
       
       // Check if session was started
-      if (!booking.sessionStartedAt) {
+      if (!booking.session_started_at && !booking.metadata?.sessionStartedAt) {
         return c.json({ error: 'Session was not started' }, 400);
       }
       
-      // End session and mark as completed
-      booking.status = 'completed';
-      booking.sessionEndedAt = new Date().toISOString();
-      booking.completedAt = new Date().toISOString();
-      booking.updatedAt = new Date().toISOString();
+      // ✅ SQL: End session and mark as completed
+      await bookingsRepo.update(bookingId, {
+        status: 'completed',
+        session_ended_at: new Date().toISOString(),
+        completed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
       
-      await kv.set(`booking:${bookingId}`, booking);
+      const updatedBooking = await bookingsRepo.findById(bookingId);
       
       console.log(`✅ [END-SESSION] Session ended successfully`);
       
       return c.json({ 
         success: true, 
-        booking,
+        booking: updatedBooking,
         message: 'Session ended and booking completed!' 
       });
       

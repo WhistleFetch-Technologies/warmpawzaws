@@ -4,7 +4,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
 import { Badge } from '../ui/badge';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+// ✅ FIX: Removed Supabase imports - using API Gateway now
 import { toast } from 'sonner';
 import { getAmenitiesForVendorType } from '../../utils/master-amenities';
 import { SpecializationSelector } from './SpecializationSelector';
@@ -87,7 +87,6 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
   const [newPhotos, setNewPhotos] = useState<File[]>([]);
   const [customAmenityInput, setCustomAmenityInput] = useState('');
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
   const availableAmenities = getAmenitiesForVendorType(vendorData?.roleId);
   const MAX_PHOTOS = 10;
 
@@ -99,13 +98,20 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
     try {
       setLoading(true);
       
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
       // Load facility data
-      const facilityRes = await fetch(`${API_BASE}/vendor/facility/${vendorId}`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-      });
-
-      if (facilityRes.ok) {
-        const facilityData = await facilityRes.json();
+      try {
+        const facilityData = await apiCallJson<any>(
+          `${API_GATEWAY_URL}/make-server-3dd53475/vendor/facility/${vendorId}`
+        );
+        
         if (facilityData.success && facilityData.facility) {
           setProfile(prev => ({
             ...prev,
@@ -117,27 +123,29 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
             specializations: facilityData.facility.specializations || []
           }));
         }
+      } catch (facilityError) {
+        console.warn('Facility endpoint not available');
       }
 
       // Load center availability (timings)
-      const availabilityRes = await fetch(
-        `${API_BASE}/vendor/${vendorId}/center-availability`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
-      );
-
-      if (availabilityRes.ok) {
-        const availabilityData = await availabilityRes.json();
-        if (availabilityData.availability) {
+      try {
+        const availabilityData = await apiCallJson<any>(
+          `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/center-availability`
+        );
+        
+        if (availabilityData.success && availabilityData.availability) {
           setProfile(prev => ({
             ...prev,
             operatingHours: availabilityData.availability.operatingHours || prev.operatingHours,
             emergencyServices: availabilityData.availability.emergencyServices || prev.emergencyServices
           }));
         }
+      } catch (availabilityError) {
+        console.warn('Center availability endpoint not available');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading center profile:', error);
-      toast.error('Failed to load center profile');
+      toast.error(error?.message || 'Failed to load center profile');
     } finally {
       setLoading(false);
     }
@@ -147,6 +155,14 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
     try {
       setSaving(true);
 
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
       // 1. Upload new photos if any
       let uploadedPhotoUrls: string[] = [];
       if (newPhotos.length > 0) {
@@ -154,18 +170,21 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
         const formData = new FormData();
         newPhotos.forEach(photo => formData.append('photos', photo));
 
-        const uploadRes = await fetch(
-          `${API_BASE}/vendor/facility/${vendorId}/upload-photos`,
-          {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${publicAnonKey}` },
-            body: formData
+        try {
+          const uploadData = await apiCallJson<any>(
+            `${API_GATEWAY_URL}/make-server-3dd53475/media/upload-batch`,
+            {
+              method: 'POST',
+              body: formData
+            }
+          );
+          
+          if (uploadData.success && uploadData.uploads) {
+            uploadedPhotoUrls = uploadData.uploads.map((u: any) => u.url).filter(Boolean);
           }
-        );
-
-        if (uploadRes.ok) {
-          const data = await uploadRes.json();
-          uploadedPhotoUrls = data.photoUrls || [];
+        } catch (uploadError) {
+          console.error('Error uploading photos:', uploadError);
+          toast.error('Failed to upload photos');
         }
         setUploading(false);
       }
@@ -173,14 +192,10 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
       const allPhotos = [...profile.photos, ...uploadedPhotoUrls];
 
       // 2. Save facility data (including centerName to update vendor business_name)
-      const facilityRes = await fetch(
-        `${API_BASE}/vendor/facility/${vendorId}`,
+      const facilityData = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/facility/${vendorId}`,
         {
           method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify({
             centerName: profile.centerName, // ✅ FIX: Include centerName to update vendor business_name
             description: profile.description,
@@ -197,19 +212,15 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
         }
       );
 
-      if (!facilityRes.ok) {
-        throw new Error('Failed to save facility data');
+      if (!facilityData.success) {
+        throw new Error(facilityData.error || facilityData.message || 'Failed to save facility data');
       }
 
       // 3. Save center availability (detailed timings)
-      const availabilityRes = await fetch(
-        `${API_BASE}/vendor/${vendorId}/center-availability`,
+      const availabilityData = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/center-availability`,
         {
           method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify({
             operatingHours: profile.operatingHours,
             emergencyServices: profile.emergencyServices
@@ -217,8 +228,8 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
         }
       );
 
-      if (!availabilityRes.ok) {
-        throw new Error('Failed to save availability settings');
+      if (!availabilityData.success) {
+        throw new Error(availabilityData.error || availabilityData.message || 'Failed to save availability settings');
       }
 
       toast.success('✅ Center profile saved successfully!');
@@ -688,7 +699,7 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
                     onChange={() => toggleAmenity(amenity.id)}
                     className="w-4 h-4"
                   />
-                  <span className="text-sm">{amenity.label}</span>
+                  <span className="text-sm">{(amenity as any).label || amenity.name || amenity}</span>
                 </label>
               ))}
             </div>

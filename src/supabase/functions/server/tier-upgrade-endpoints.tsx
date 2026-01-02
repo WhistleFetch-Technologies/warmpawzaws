@@ -12,11 +12,11 @@
  * ============================================================================
  */
 
-import { Hono } from "npm:hono";
-import { sendSuccess, sendError } from "./response-utils.ts";
-import { getDbClient } from "../../lib/db.ts";
-import { createRazorpayOrder, verifyRazorpaySignature } from "./razorpay-integration.tsx";
-import { v4 as uuidv4 } from "npm:uuid@10";
+import { Hono } from "hono";
+import { sendSuccess, sendError } from "./response-utils";
+import { getDbClient } from "../../lib/db";
+import { createRazorpayOrder, verifyRazorpaySignature } from "./razorpay-integration";
+import { v4 as uuidv4 } from "uuid";
 
 export function tierUpgradeEndpoints(app: Hono) {
   const client = getDbClient();

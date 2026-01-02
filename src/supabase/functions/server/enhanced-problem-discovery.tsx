@@ -4,9 +4,9 @@
  * Universal vendor discovery by problem across all vendor types
  */
 
-import { Hono } from "npm:hono";
-import { getDiscoveryService } from '../../../supabase/lib/services/discovery-service.ts';
-import { findProblemById } from './problem-grid-catalog.tsx';
+import { Hono } from "hono";
+import { getDiscoveryService } from '../../../supabase/lib/services/discovery-service';
+import { findProblemById } from './problem-grid-catalog';
 
 const app = new Hono();
 

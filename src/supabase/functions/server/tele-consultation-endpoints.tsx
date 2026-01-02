@@ -3,8 +3,8 @@
  * Video call and chat integration for remote consultations
  */
 
-import { Hono } from 'npm:hono@4';
-import * as kv from './kv_store.tsx';
+import { Hono } from 'hono';
+import * as kv from './kv_store';
 
 export function teleConsultationEndpoints(app: Hono) {
   

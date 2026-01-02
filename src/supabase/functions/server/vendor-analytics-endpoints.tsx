@@ -4,8 +4,15 @@
  * Provides performance metrics, earnings, and business insights
  */
 
-import { Hono } from "npm:hono";
-import * as kv from "./kv_store.tsx";
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from "hono";
+import { getDbClient } from '../../../supabase/lib/db';
+import {
+  getVendorsRepository,
+  getBookingsRepository,
+  getStaffRepository,
+  getReviewsRepository
+} from '../../../supabase/lib/repositories/index';
 
 const app = new Hono();
 
@@ -24,18 +31,17 @@ app.get("/vendor/:vendorId/analytics", async (c) => {
     
     console.log(`📊 Fetching analytics for vendor: ${vendorId}, period: ${period}`);
     
-    // Get vendor data
-    const vendor = await kv.get(`vendor:${vendorId}`);
+    // ✅ SQL: Get vendor data
+    const vendorsRepo = getVendorsRepository();
+    const vendor = await vendorsRepo.findById(vendorId);
     
     if (!vendor) {
       return c.json({ error: "Vendor not found" }, 404);
     }
     
-    // Get all bookings
-    const bookingKeys = await kv.getByPrefix("booking:");
-    const vendorBookings = bookingKeys
-      .map((item: any) => item.value)
-      .filter((booking: any) => booking && booking.vendorId === vendorId);
+    // ✅ SQL: Get all bookings for vendor
+    const bookingsRepo = getBookingsRepository();
+    const vendorBookings = await bookingsRepo.findByVendor(vendorId);
     
     // Calculate period start
     const now = new Date();
@@ -63,7 +69,7 @@ app.get("/vendor/:vendorId/analytics", async (c) => {
     const periodBookings = period === 'all' 
       ? vendorBookings 
       : vendorBookings.filter((booking: any) => 
-          new Date(booking.createdAt) >= periodStart
+          new Date(booking.created_at || booking.createdAt) >= periodStart
         );
     
     // Calculate status breakdown
@@ -74,8 +80,8 @@ app.get("/vendor/:vendorId/analytics", async (c) => {
     const inProgress = periodBookings.filter((b: any) => b.status === 'in_progress' || b.status === 'customer_arrived');
     
     // Calculate earnings
-    const totalEarnings = completed.reduce((sum: number, b: any) => sum + (b.price || 0), 0);
-    const pendingEarnings = confirmed.reduce((sum: number, b: any) => sum + (b.price || 0), 0);
+    const totalEarnings = completed.reduce((sum: number, b: any) => sum + (b.total_amount || b.price || 0), 0);
+    const pendingEarnings = confirmed.reduce((sum: number, b: any) => sum + (b.total_amount || b.price || 0), 0);
     
     // Calculate service breakdown
     const serviceBreakdown: Record<string, any> = {};
@@ -91,31 +97,30 @@ app.get("/vendor/:vendorId/analytics", async (c) => {
       serviceBreakdown[serviceName].count++;
       if (booking.status === 'completed') {
         serviceBreakdown[serviceName].completed++;
-        serviceBreakdown[serviceName].revenue += booking.price || 0;
+        serviceBreakdown[serviceName].revenue += booking.total_amount || booking.price || 0;
       }
     });
     
-    // Get reviews
-    const reviewKeys = await kv.getByPrefix(`review:vendor:${vendorId}:`);
-    const reviews = reviewKeys.map((item: any) => item.value);
+    // ✅ SQL: Get reviews for vendor
+    const db = getDbClient();
+    const { data: reviews } = await db
+      .from('reviews')
+      .select('*')
+      .eq('vendor_id', vendorId);
+    
     const periodReviews = period === 'all'
-      ? reviews
-      : reviews.filter((r: any) => new Date(r.createdAt) >= periodStart);
+      ? (reviews || [])
+      : (reviews || []).filter((r: any) => new Date(r.created_at || r.createdAt) >= periodStart);
     
     const avgRating = periodReviews.length > 0
       ? (periodReviews.reduce((sum: number, r: any) => sum + (r.rating || 0), 0) / periodReviews.length).toFixed(1)
       : 0;
     
-    // Get staff count
-    const vendorStaffKey = `vendor:${vendorId}:staff`;
-    const staffIds = await kv.get(vendorStaffKey) || [];
-    const activeStaff = await Promise.all(
-      staffIds.map(async (id: string) => {
-        const staff = await kv.get(`staff:${id}`);
-        return staff?.status === 'active' ? staff : null;
-      })
-    );
-    const staffCount = activeStaff.filter(s => s !== null).length;
+    // ✅ SQL: Get staff count
+    const staffRepo = getStaffRepository();
+    const staffList = await staffRepo.findByVendorId(vendorId);
+    const activeStaff = staffList.filter((s: any) => s.status === 'active');
+    const staffCount = activeStaff.length;
     
     // Calculate customer breakdown
     const uniqueCustomers = new Set(periodBookings.map((b: any) => b.customerId));
@@ -138,11 +143,11 @@ app.get("/vendor/:vendorId/analytics", async (c) => {
       nextDate.setDate(nextDate.getDate() + 1);
       
       const dayBookings = completed.filter((b: any) => {
-        const bookingDate = new Date(b.completedAt || b.createdAt);
+        const bookingDate = new Date(b.completed_at || b.completedAt || b.created_at || b.createdAt);
         return bookingDate >= date && bookingDate < nextDate;
       });
       
-      const dayEarnings = dayBookings.reduce((sum: number, b: any) => sum + (b.price || 0), 0);
+      const dayEarnings = dayBookings.reduce((sum: number, b: any) => sum + (b.total_amount || b.price || 0), 0);
       
       dailyEarnings.push({
         date: date.toISOString().split('T')[0],
@@ -222,26 +227,25 @@ app.get("/vendor/:vendorId/staff-performance", async (c) => {
     
     console.log(`👥 Fetching staff performance for vendor: ${vendorId}`);
     
-    // Get all staff
-    const vendorStaffKey = `vendor:${vendorId}:staff`;
-    const staffIds = await kv.get(vendorStaffKey) || [];
+    // ✅ SQL: Get all staff for vendor
+    const staffRepo = getStaffRepository();
+    const staffList = await staffRepo.findByVendorId(vendorId);
     
     // Get performance for each staff
     const staffPerformance = await Promise.all(
-      staffIds.map(async (staffId: string) => {
-        const staff = await kv.get(`staff:${staffId}`);
-        
+      staffList.map(async (staff: any) => {
         if (!staff || staff.status !== 'active') {
           return null;
         }
         
-        // Get bookings for this staff
-        const bookingKeys = await kv.getByPrefix("booking:");
-        const staffBookings = bookingKeys
-          .map((item: any) => item.value)
-          .filter((booking: any) => 
-            booking.staffId === staffId || booking.doctorId === staffId
-          );
+        const staffId = staff.id;
+        
+        // ✅ SQL: Get bookings for this staff
+        const bookingsRepo = getBookingsRepository();
+        const allBookings = await bookingsRepo.findByVendor(vendorId);
+        const staffBookings = allBookings.filter((booking: any) => 
+          booking.staff_id === staffId || booking.doctor_id === staffId || booking.staffId === staffId || booking.doctorId === staffId
+        );
         
         // Calculate period
         const now = new Date();
@@ -263,11 +267,11 @@ app.get("/vendor/:vendorId/staff-performance", async (c) => {
         }
         
         const periodBookings = staffBookings.filter((booking: any) => 
-          new Date(booking.createdAt) >= periodStart
+          new Date(booking.created_at || booking.createdAt) >= periodStart
         );
         
         const completed = periodBookings.filter((b: any) => b.status === 'completed');
-        const totalEarnings = completed.reduce((sum: number, b: any) => sum + (b.price || 0), 0);
+        const totalEarnings = completed.reduce((sum: number, b: any) => sum + (b.total_amount || b.price || 0), 0);
         
         return {
           staffId: staff.id,
@@ -316,11 +320,9 @@ app.get("/vendor/:vendorId/customer-insights", async (c) => {
     
     console.log(`👥 Fetching customer insights for vendor: ${vendorId}`);
     
-    // Get all bookings
-    const bookingKeys = await kv.getByPrefix("booking:");
-    const vendorBookings = bookingKeys
-      .map((item: any) => item.value)
-      .filter((booking: any) => booking && booking.vendorId === vendorId);
+    // ✅ SQL: Get all bookings for vendor
+    const bookingsRepo = getBookingsRepository();
+    const vendorBookings = await bookingsRepo.findByVendor(vendorId);
     
     // Customer frequency map
     const customerFrequency: Record<string, number> = {};
@@ -335,13 +337,14 @@ app.get("/vendor/:vendorId/customer-insights", async (c) => {
       
       // Sum spending (only completed)
       if (booking.status === 'completed') {
-        customerSpending[customerId] = (customerSpending[customerId] || 0) + (booking.price || 0);
+        customerSpending[customerId] = (customerSpending[customerId] || 0) + (booking.total_amount || booking.price || 0);
       }
       
       // Track last visit
+      const bookingDate = booking.booking_date || booking.date || booking.created_at || booking.createdAt;
       if (!customerLastVisit[customerId] || 
-          new Date(booking.date) > new Date(customerLastVisit[customerId])) {
-        customerLastVisit[customerId] = booking.date;
+          new Date(bookingDate) > new Date(customerLastVisit[customerId])) {
+        customerLastVisit[customerId] = bookingDate;
       }
     });
     
@@ -411,13 +414,12 @@ app.get("/vendor/:vendorId/revenue-forecast", async (c) => {
     
     console.log(`💰 Fetching revenue forecast for vendor: ${vendorId}`);
     
-    // Get completed bookings
-    const bookingKeys = await kv.getByPrefix("booking:");
-    const completedBookings = bookingKeys
-      .map((item: any) => item.value)
-      .filter((booking: any) => 
-        booking && booking.vendorId === vendorId && booking.status === 'completed'
-      );
+    // ✅ SQL: Get completed bookings for vendor
+    const bookingsRepo = getBookingsRepository();
+    const allBookings = await bookingsRepo.findByVendor(vendorId);
+    const completedBookings = allBookings.filter((booking: any) => 
+      booking.status === 'completed'
+    );
     
     // Calculate monthly revenue for last 6 months
     const monthlyRevenue = [];
@@ -428,11 +430,11 @@ app.get("/vendor/:vendorId/revenue-forecast", async (c) => {
       const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 0);
       
       const monthBookings = completedBookings.filter((b: any) => {
-        const bookingDate = new Date(b.completedAt || b.createdAt);
+        const bookingDate = new Date(b.completed_at || b.completedAt || b.created_at || b.createdAt);
         return bookingDate >= monthStart && bookingDate <= monthEnd;
       });
       
-      const revenue = monthBookings.reduce((sum: number, b: any) => sum + (b.price || 0), 0);
+      const revenue = monthBookings.reduce((sum: number, b: any) => sum + (b.total_amount || b.price || 0), 0);
       
       monthlyRevenue.push({
         month: monthStart.toLocaleString('default', { month: 'short', year: 'numeric' }),

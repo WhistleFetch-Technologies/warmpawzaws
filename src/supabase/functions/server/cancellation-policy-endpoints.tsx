@@ -3,9 +3,10 @@
  * Handles cancellation policy CRUD operations
  */
 
-import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
-import { sendSuccess, sendError } from './response-utils.ts';
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from 'hono';
+import { sendSuccess, sendError } from './response-utils';
+import { getDbClient } from '../../../supabase/lib/db';
 
 export function cancellationPolicyEndpoints(app: Hono) {
   const BASE_PATH = '/make-server-3dd53475';
@@ -16,7 +17,15 @@ export function cancellationPolicyEndpoints(app: Hono) {
    */
   app.get(`${BASE_PATH}/admin/finance/cancellation-policies`, async (c) => {
     try {
-      const policies = await kv.get('platform:cancellation_policies') || [];
+      // ✅ SQL: Get cancellation policies from platform_settings table
+      const db = getDbClient();
+      const { data: settingsData } = await db
+        .from('platform_settings')
+        .select('setting_value')
+        .eq('setting_key', 'cancellation_policies')
+        .single();
+      
+      const policies = settingsData?.setting_value || [];
       // Sort by priority
       const sorted = policies.sort((a: any, b: any) => a.priority - b.priority);
       return sendSuccess(c, { policies: sorted });
@@ -49,9 +58,26 @@ export function cancellationPolicyEndpoints(app: Hono) {
         updatedAt: new Date().toISOString()
       };
 
-      const policies = await kv.get('platform:cancellation_policies') || [];
+      // ✅ SQL: Get cancellation policies from platform_settings table
+      const db = getDbClient();
+      const { data: settingsData } = await db
+        .from('platform_settings')
+        .select('setting_value')
+        .eq('setting_key', 'cancellation_policies')
+        .single();
+      
+      const policies = settingsData?.setting_value || [];
       policies.push(policy);
-      await kv.set('platform:cancellation_policies', policies);
+      // ✅ SQL: Update cancellation policies in platform_settings table
+      await db
+        .from('platform_settings')
+        .upsert({
+          setting_key: 'cancellation_policies',
+          setting_value: policies,
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'setting_key'
+        });
 
       console.log('✅ Cancellation policy created:', policy.id);
       return sendSuccess(c, { policy });
@@ -70,7 +96,15 @@ export function cancellationPolicyEndpoints(app: Hono) {
       const { policyId } = c.req.param();
       const updates = await c.req.json();
 
-      const policies = await kv.get('platform:cancellation_policies') || [];
+      // ✅ SQL: Get cancellation policies from platform_settings table
+      const db = getDbClient();
+      const { data: settingsData } = await db
+        .from('platform_settings')
+        .select('setting_value')
+        .eq('setting_key', 'cancellation_policies')
+        .single();
+      
+      const policies = settingsData?.setting_value || [];
       const index = policies.findIndex((p: any) => p.id === policyId);
 
       if (index === -1) {
@@ -89,7 +123,16 @@ export function cancellationPolicyEndpoints(app: Hono) {
         updatedAt: new Date().toISOString()
       };
 
-      await kv.set('platform:cancellation_policies', policies);
+      // ✅ SQL: Update cancellation policies in platform_settings table
+      await db
+        .from('platform_settings')
+        .upsert({
+          setting_key: 'cancellation_policies',
+          setting_value: policies,
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'setting_key'
+        });
 
       console.log('✅ Cancellation policy updated:', policyId);
       return sendSuccess(c, { policy: policies[index] });
@@ -106,9 +149,17 @@ export function cancellationPolicyEndpoints(app: Hono) {
   app.delete(`${BASE_PATH}/admin/finance/cancellation-policies/:policyId`, async (c) => {
     try {
       const { policyId } = c.req.param();
-      const policies = await kv.get('platform:cancellation_policies') || [];
+      // ✅ SQL: Get cancellation policies from platform_settings table
+      const db = getDbClient();
+      const { data: settingsData } = await db
+        .from('platform_settings')
+        .select('setting_value')
+        .eq('setting_key', 'cancellation_policies')
+        .single();
+      
+      const policies = settingsData?.setting_value || [];
       const filtered = policies.filter((p: any) => p.id !== policyId);
-      await kv.set('platform:cancellation_policies', filtered);
+      await platformSettingsRepo.updateCancellationPolicies(filtered);
 
       console.log('✅ Cancellation policy deleted:', policyId);
       return sendSuccess(c, { success: true });
@@ -125,7 +176,15 @@ export function cancellationPolicyEndpoints(app: Hono) {
   app.get(`${BASE_PATH}/admin/finance/cancellation-policies/:policyId`, async (c) => {
     try {
       const { policyId } = c.req.param();
-      const policies = await kv.get('platform:cancellation_policies') || [];
+      // ✅ SQL: Get cancellation policies from platform_settings table
+      const db = getDbClient();
+      const { data: settingsData } = await db
+        .from('platform_settings')
+        .select('setting_value')
+        .eq('setting_key', 'cancellation_policies')
+        .single();
+      
+      const policies = settingsData?.setting_value || [];
       const policy = policies.find((p: any) => p.id === policyId);
 
       if (!policy) {

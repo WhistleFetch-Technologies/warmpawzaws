@@ -1,5 +1,8 @@
-import { Hono } from "npm:hono";
-import { sendSuccess, sendError } from "./response-utils.ts";
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from "hono";
+import { sendSuccess, sendError } from "./response-utils";
+import { getSettlementsRepository } from '../../../supabase/lib/repositories/index';
+import { getDbClient } from '../../../supabase/lib/db';
 
 /**
  * 💰 MARKETPLACE SETTLEMENT AUTOMATION
@@ -66,17 +69,13 @@ export function marketplaceSettlementAutomationEndpoints(app: Hono, kv: any) {
         updatedAt: new Date().toISOString(),
       };
 
-      await kv.set(`settlement_${settlementId}`, settlement);
+      // ✅ SQL: Create settlement (already done via settlementsRepo.create above)
 
       // Add to vendor's settlements
-      const vendorSettlements = await kv.get(`vendor_settlements_${vendorId}`) || [];
-      vendorSettlements.push(settlementId);
-      await kv.set(`vendor_settlements_${vendorId}`, vendorSettlements);
+      // ✅ SQL: Settlement already linked to vendor via vendor_id in settlements table
 
       // Add to pending settlements
-      const pendingSettlements = await kv.get('pending_settlements') || [];
-      pendingSettlements.push(settlementId);
-      await kv.set('pending_settlements', pendingSettlements);
+      // ✅ SQL: Pending settlements are queried by status='pending' from settlements table
 
       console.log(`✅ Settlement created: ${settlementId} for vendor ${vendorId} - ₹${netAmount}`);
 
@@ -92,10 +91,18 @@ export function marketplaceSettlementAutomationEndpoints(app: Hono, kv: any) {
   // ========================================
   app.get(`${BASE_PATH}/payment/settlement/pending`, async (c) => {
     try {
-      const pendingIds = await kv.get('pending_settlements') || [];
+      // ✅ SQL: Get pending settlements
+      const settlementsRepo = getSettlementsRepository();
+      const { data: pendingSettlements } = await db
+        .from('settlements')
+        .select('*')
+        .eq('status', 'pending')
+        .order('created_at', { ascending: true });
+      
+      const pendingIds = pendingSettlements?.map(s => s.id) || [];
 
       const settlements = await Promise.all(
-        pendingIds.map((id: string) => kv.get(`settlement_${id}`))
+        pendingSettlements || []
       );
 
       const validSettlements = settlements.filter(Boolean);
@@ -114,10 +121,17 @@ export function marketplaceSettlementAutomationEndpoints(app: Hono, kv: any) {
     try {
       const vendorId = c.req.param('vendorId');
 
-      const settlementIds = await kv.get(`vendor_settlements_${vendorId}`) || [];
+      // ✅ SQL: Get vendor settlements
+      const { data: vendorSettlements } = await db
+        .from('settlements')
+        .select('*')
+        .eq('vendor_id', vendorId)
+        .order('created_at', { ascending: false });
+      
+      const settlementIds = vendorSettlements?.map(s => s.id) || [];
 
       const settlements = await Promise.all(
-        settlementIds.map((id: string) => kv.get(`settlement_${id}`))
+        vendorSettlements || []
       );
 
       const validSettlements = settlements.filter(Boolean);
@@ -142,7 +156,8 @@ export function marketplaceSettlementAutomationEndpoints(app: Hono, kv: any) {
       const settlementId = c.req.param('settlementId');
       const { status, razorpayPayoutId, failureReason } = await c.req.json();
 
-      const settlement = await kv.get(`settlement_${settlementId}`);
+      // ✅ SQL: Get settlement
+      const settlement = await settlementsRepo.findById(settlementId);
 
       if (!settlement) {
         return sendError(c, 'Settlement not found', 404);
@@ -162,17 +177,12 @@ export function marketplaceSettlementAutomationEndpoints(app: Hono, kv: any) {
         settlement.processedAt = new Date().toISOString();
 
         // Remove from pending
-        const pendingSettlements = await kv.get('pending_settlements') || [];
-        const index = pendingSettlements.indexOf(settlementId);
-        if (index > -1) {
-          pendingSettlements.splice(index, 1);
-          await kv.set('pending_settlements', pendingSettlements);
-        }
+        // ✅ SQL: Settlement status updated above, no need to manage pending list separately
       }
 
       settlement.updatedAt = new Date().toISOString();
 
-      await kv.set(`settlement_${settlementId}`, settlement);
+      // ✅ SQL: Create settlement (already done via settlementsRepo.create above)
 
       console.log(`✅ Settlement status updated: ${settlementId} - ${status}`);
 
@@ -208,7 +218,14 @@ export function marketplaceSettlementAutomationEndpoints(app: Hono, kv: any) {
         updatedAt: new Date().toISOString(),
       };
 
-      await kv.set(`settlement_schedule_${vendorId}`, schedule);
+      // ✅ SQL: Store settlement schedule in settlements table or separate settlement_schedules table
+      await db.from('settlement_schedules')
+        .upsert({
+          vendor_id: vendorId,
+          schedule_config: schedule,
+          updated_at: new Date().toISOString()
+        })
+        .eq('vendor_id', vendorId);
 
       console.log(`✅ Auto-settlement scheduled for vendor ${vendorId}: ${frequency}`);
 

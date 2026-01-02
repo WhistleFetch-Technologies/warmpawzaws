@@ -14,7 +14,7 @@
 import { useState } from 'react';
 import { RefreshCw, CheckCircle, AlertCircle, Database, Play, Eye, Trash2, Filter } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 interface MigrationStatus {
   total: number;

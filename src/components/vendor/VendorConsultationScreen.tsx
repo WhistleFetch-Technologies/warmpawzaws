@@ -8,7 +8,7 @@ import {
   Calendar
 } from 'lucide-react';
 import { Button } from '../ui/button';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { toast } from 'sonner';
 
 interface VendorConsultationScreenProps {
   vendorId: string;
@@ -60,12 +60,19 @@ export function VendorConsultationScreen({ vendorId, vendorData, onBack }: Vendo
 
   const handlePublishPrescription = async () => {
     if (!petName || !ownerName || medications.length === 0) {
-      alert('Please fill in pet details and add at least one medication');
+      toast.error('Please fill in pet details and add at least one medication');
       return;
     }
 
     setIsPublishing(true);
     try {
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+
       const prescriptionData = {
         vendorId,
         petName,
@@ -77,38 +84,32 @@ export function VendorConsultationScreen({ vendorId, vendorData, onBack }: Vendo
         createdAt: new Date().toISOString()
       };
 
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/consultation/create`,
+      // Use prescription upload endpoint (same as VendorPrescriptionForm)
+      const result = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/prescription/upload`,
         {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`,
-          },
           body: JSON.stringify(prescriptionData),
         }
       );
 
-      if (!response.ok) {
-        throw new Error('Failed to publish prescription');
+      if (result.success) {
+        console.log('✅ Prescription published:', result);
+        toast.success('Prescription published to pharmacy successfully!');
+        
+        // Reset form
+        setPetName('');
+        setOwnerName('');
+        setConsultationDate('');
+        setMedications([]);
+        setConsultationNotes('');
+        setNextFollowUpDate('');
+      } else {
+        throw new Error(result.error || result.message || 'Failed to publish prescription');
       }
-
-      const result = await response.json();
-      console.log('✅ Prescription published:', result);
-      
-      alert('Prescription published to pharmacy successfully!');
-      
-      // Reset form
-      setPetName('');
-      setOwnerName('');
-      setConsultationDate('');
-      setMedications([]);
-      setConsultationNotes('');
-      setNextFollowUpDate('');
-      
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error publishing prescription:', error);
-      alert('Failed to publish prescription. Please try again.');
+      toast.error(error?.message || 'Failed to publish prescription. Please try again.');
     } finally {
       setIsPublishing(false);
     }

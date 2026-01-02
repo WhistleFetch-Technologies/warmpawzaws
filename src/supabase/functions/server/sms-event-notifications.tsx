@@ -1,5 +1,6 @@
-import { Hono } from "npm:hono";
-import * as kv from './kv_store.tsx';
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from "hono";
+import { getPlatformSettingsRepository } from '../../../supabase/lib/repositories/index';
 
 /**
  * SMS EVENT NOTIFICATIONS SERVICE
@@ -69,8 +70,10 @@ export function registerSmsEventNotifications(app: Hono) {
     data: Record<string, any>
   ): Promise<boolean> {
     try {
-      // Get SMS settings
-      const smsSettings = await kv.get('admin:settings:sms') || {};
+      // ✅ SQL: Get SMS settings from platform settings
+      const platformSettingsRepo = getPlatformSettingsRepository();
+      const awsSettings = await platformSettingsRepo.getAWSSettings();
+      const smsSettings = awsSettings?.sns_config || { provider: 'mock' };
       
       // Check if SMS is configured
       if (!smsSettings.provider || smsSettings.provider === 'mock') {

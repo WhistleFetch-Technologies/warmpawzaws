@@ -3,7 +3,7 @@
  * Provides status and health checks for all integrations
  */
 
-import { Hono } from 'npm:hono';
+import { Hono } from 'hono';
 
 export function registerIntegrationInitEndpoints(app: Hono) {
   

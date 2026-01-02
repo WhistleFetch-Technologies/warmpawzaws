@@ -1,10 +1,13 @@
 /**
  * Adoption Management Endpoints
  * Handles pet adoption listings, applications, and process management
+ * 
+ * ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
  */
 
-import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
+import { Hono } from 'hono';
+import { getAdoptionRepository } from '../../../supabase/lib/repositories/adoption';
+import { getDbClient } from '../../../supabase/lib/db';
 
 const app = new Hono();
 
@@ -102,7 +105,10 @@ app.get('/:vendorId/listings', async (c) => {
     const vendorId = c.req.param('vendorId');
     const { status } = c.req.query();
     
-    let listings = await kv.getByPrefix<AdoptionListing>(`adoption:listing:${vendorId}:`);
+    // ✅ SQL: Get vendor listings
+    const adoptionRepo = getAdoptionRepository();
+    let allListings = await adoptionRepo.getAllListings();
+    let listings = allListings.filter((l: any) => l.vendorId === vendorId || l.vendor_id === vendorId);
     
     // Filter by status if specified
     if (status) {
@@ -140,7 +146,9 @@ app.get('/:vendorId/listings/:listingId', async (c) => {
   try {
     const { vendorId, listingId } = c.req.param();
     
-    const listing = await kv.get<AdoptionListing>(`adoption:listing:${vendorId}:${listingId}`);
+    // ✅ SQL: Get listing
+    const adoptionRepo = getAdoptionRepository();
+    const listing = await adoptionRepo.getListingById(listingId);
     
     if (!listing) {
       return c.json({ 
@@ -200,11 +208,29 @@ app.post('/:vendorId/listings', async (c) => {
       updatedAt: now
     };
     
-    await kv.set(`adoption:listing:${vendorId}:${listingId}`, listing);
+    // ✅ SQL: Create listing
+    const createdListing = await adoptionRepo.createListing({
+      listingId: listingId,
+      vendorId: vendorId,
+      petName: listing.petName,
+      petType: listing.petType,
+      breed: listing.breed,
+      age: listing.age ? parseInt(String(listing.age)) : undefined,
+      gender: listing.gender,
+      size: listing.size,
+      color: listing.color,
+      description: listing.description,
+      photos: listing.images || [],
+      videos: listing.videos || [],
+      medicalHistory: listing.medicalHistory,
+      spayedNeutered: listing.spayedNeutered,
+      adoptionFee: listing.adoptionFee || 0,
+      status: listing.status || 'available'
+    });
     
     return c.json({
       success: true,
-      listing,
+      listing: createdListing,
       message: 'Adoption listing created successfully'
     });
   } catch (error) {
@@ -226,7 +252,8 @@ app.put('/:vendorId/listings/:listingId', async (c) => {
     const { vendorId, listingId } = c.req.param();
     const body = await c.req.json();
     
-    const existing = await kv.get<AdoptionListing>(`adoption:listing:${vendorId}:${listingId}`);
+    // ✅ SQL: Get existing listing
+    const existing = await adoptionRepo.getListingById(listingId);
     
     if (!existing) {
       return c.json({ 
@@ -235,19 +262,15 @@ app.put('/:vendorId/listings/:listingId', async (c) => {
       }, 404);
     }
     
-    const updated: AdoptionListing = {
-      ...existing,
+    // ✅ SQL: Update listing
+    const updatedListing = await adoptionRepo.updateListing(listingId, {
       ...body,
-      id: listingId,
-      vendorId,
       updatedAt: new Date().toISOString()
-    };
-    
-    await kv.set(`adoption:listing:${vendorId}:${listingId}`, updated);
+    });
     
     return c.json({
       success: true,
-      listing: updated,
+      listing: updatedListing || updated,
       message: 'Adoption listing updated successfully'
     });
   } catch (error) {
@@ -268,7 +291,8 @@ app.delete('/:vendorId/listings/:listingId', async (c) => {
   try {
     const { vendorId, listingId } = c.req.param();
     
-    await kv.del(`adoption:listing:${vendorId}:${listingId}`);
+    // ✅ SQL: Delete listing (mark as withdrawn)
+    await adoptionRepo.updateListing(listingId, { status: 'withdrawn' });
     
     return c.json({
       success: true,
@@ -293,7 +317,18 @@ app.get('/:vendorId/applications', async (c) => {
     const vendorId = c.req.param('vendorId');
     const { status } = c.req.query();
     
-    let applications = await kv.getByPrefix<AdoptionApplication>(`adoption:application:${vendorId}:`);
+    // ✅ SQL: Get vendor applications (filter by listing vendor_id)
+    const adoptionRepo = getAdoptionRepository();
+    const allListings = await adoptionRepo.getAllListings();
+    const vendorListingIds = allListings
+      .filter((l: any) => l.vendorId === vendorId || l.vendor_id === vendorId)
+      .map((l: any) => l.listingId || l.listing_id);
+    
+    let applications: any[] = [];
+    for (const listingId of vendorListingIds) {
+      const listingApps = await adoptionRepo.getListingApplications(listingId);
+      applications.push(...listingApps);
+    }
     
     // Filter by status if specified
     if (status) {
@@ -327,7 +362,8 @@ app.get('/:vendorId/applications/:applicationId', async (c) => {
   try {
     const { vendorId, applicationId } = c.req.param();
     
-    const application = await kv.get<AdoptionApplication>(`adoption:application:${vendorId}:${applicationId}`);
+    // ✅ SQL: Get application
+    const application = await adoptionRepo.getApplicationById(applicationId);
     
     if (!application) {
       return c.json({ 
@@ -359,7 +395,8 @@ app.post('/:vendorId/applications/:applicationId/review', async (c) => {
     const { vendorId, applicationId } = c.req.param();
     const { status, reviewedBy, notes, rejectionReason } = await c.req.json();
     
-    const application = await kv.get<AdoptionApplication>(`adoption:application:${vendorId}:${applicationId}`);
+    // ✅ SQL: Get application
+    const application = await adoptionRepo.getApplicationById(applicationId);
     
     if (!application) {
       return c.json({ 
@@ -379,15 +416,30 @@ app.post('/:vendorId/applications/:applicationId/review', async (c) => {
       updatedAt: now
     };
     
-    await kv.set(`adoption:application:${vendorId}:${applicationId}`, updated);
+    // ✅ SQL: Update application
+    const updateData = {
+      status,
+      reviewedBy,
+      reviewedAt: now,
+      notes,
+      rejectionReason,
+      updatedAt: now,
+      ...(status === 'approved' && { approvedAt: now })
+    };
+    await adoptionRepo.updateApplication(applicationId, updateData);
     
     // If approved, update listing status
     if (status === 'approved') {
-      const listing = await kv.get<AdoptionListing>(`adoption:listing:${vendorId}:${application.listingId}`);
+      // ✅ SQL: Get listing
+      const listing = await adoptionRepo.getListingById(application.listingId);
       if (listing) {
         listing.status = 'pending';
         listing.updatedAt = now;
-        await kv.set(`adoption:listing:${vendorId}:${application.listingId}`, listing);
+        // ✅ SQL: Update listing status
+        await adoptionRepo.updateListing(application.listingId, { 
+          status: 'pending', 
+          applicationCount: (listing.applicationCount || 0) + 1 
+        });
       }
     }
     
@@ -415,7 +467,9 @@ app.post('/:vendorId/listings/:listingId/mark-adopted', async (c) => {
     const { vendorId, listingId } = c.req.param();
     const { adoptedBy } = await c.req.json();
     
-    const listing = await kv.get<AdoptionListing>(`adoption:listing:${vendorId}:${listingId}`);
+    // ✅ SQL: Get listing
+    const adoptionRepo = getAdoptionRepository();
+    const listing = await adoptionRepo.getListingById(listingId);
     
     if (!listing) {
       return c.json({ 
@@ -430,11 +484,15 @@ app.post('/:vendorId/listings/:listingId/mark-adopted', async (c) => {
       updatedAt: new Date().toISOString()
     };
     
-    await kv.set(`adoption:listing:${vendorId}:${listingId}`, updated);
+    // ✅ SQL: Update listing
+    const updatedListing = await adoptionRepo.updateListing(listingId, {
+      status: 'adopted',
+      adoptedAt: new Date().toISOString()
+    });
     
     return c.json({
       success: true,
-      listing: updated,
+      listing: updatedListing || existing,
       message: 'Pet marked as adopted successfully'
     });
   } catch (error) {

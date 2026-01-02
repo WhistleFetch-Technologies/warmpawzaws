@@ -1,5 +1,9 @@
-import { Hono } from "npm:hono";
-import * as kv from './kv_store.tsx';
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from "hono";
+import {
+  getVendorsRepository,
+  getDbClient
+} from '../../../supabase/lib/repositories/index';
 
 /**
  * CENTER AVAILABILITY MANAGEMENT
@@ -26,14 +30,22 @@ export function registerCenterAvailabilityEndpoints(app: Hono) {
 
       console.log(`[CENTER] Fetching availability for vendor: ${vendorId}`);
 
-      // Get vendor info
-      const vendor = await kv.get(`vendor:${vendorId}`);
+      // ✅ SQL: Get vendor info from vendors table
+      const vendorsRepo = getVendorsRepository();
+      const vendor = await vendorsRepo.findById(vendorId);
       if (!vendor) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
 
-      // Get center availability settings
-      const availability = await kv.get(`vendor:${vendorId}:center_availability`) || {
+      // ✅ SQL: Get center availability settings from vendor_center_settings table
+      const db = getDbClient();
+      const { data: settings } = await db
+        .from('vendor_center_settings')
+        .select('*')
+        .eq('vendor_id', vendorId)
+        .single();
+
+      const availability = settings?.settings || {
         // Default settings
         operatingHours: {
           monday: { open: '09:00', close: '21:00', isOpen: true },
@@ -88,8 +100,8 @@ export function registerCenterAvailabilityEndpoints(app: Hono) {
         success: true,
         vendor: {
           id: vendor.id,
-          businessName: vendor.businessName,
-          roleId: vendor.roleId
+          businessName: vendor.business_name || vendor.businessName,
+          roleId: vendor.role_id || vendor.roleId
         },
         availability
       });
@@ -110,22 +122,36 @@ export function registerCenterAvailabilityEndpoints(app: Hono) {
 
       console.log(`[CENTER] Updating availability for vendor: ${vendorId}`);
 
-      // Get current settings
-      const currentSettings = await kv.get(`vendor:${vendorId}:center_availability`) || {};
+      // ✅ SQL: Get current settings from vendor_center_settings table
+      const db = getDbClient();
+      const { data: existing } = await db
+        .from('vendor_center_settings')
+        .select('*')
+        .eq('vendor_id', vendorId)
+        .single();
 
       // Merge with updates
       const updatedSettings = {
-        ...currentSettings,
+        ...(existing?.settings || {}),
         ...body,
         updatedAt: new Date().toISOString()
       };
 
-      // Save
-      await kv.set(`vendor:${vendorId}:center_availability`, updatedSettings);
+      // ✅ SQL: Save to vendor_center_settings table
+      await db
+        .from('vendor_center_settings')
+        .upsert({
+          vendor_id: vendorId,
+          settings: updatedSettings,
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'vendor_id'
+        });
 
-      // Also update vendor's quick-access operating hours for customer display
+      // ✅ SQL: Also update vendor's quick-access operating hours for customer display
       if (body.operatingHours) {
-        const vendor = await kv.get(`vendor:${vendorId}`);
+        const vendorsRepo = getVendorsRepository();
+        const vendor = await vendorsRepo.findById(vendorId);
         if (vendor) {
           // Generate human-readable operating hours string
           const hours = body.operatingHours;
@@ -136,8 +162,9 @@ export function registerCenterAvailabilityEndpoints(app: Hono) {
             ? `${hours.sunday.open}-${hours.sunday.close}` 
             : 'Closed';
 
-          vendor.operatingHours = `Mon-Sat: ${weekdayHours}, Sun: ${sundayHours}`;
-          await kv.set(`vendor:${vendorId}`, vendor);
+          await vendorsRepo.update(vendorId, {
+            operating_hours: `Mon-Sat: ${weekdayHours}, Sun: ${sundayHours}`
+          });
         }
       }
 
@@ -162,7 +189,15 @@ export function registerCenterAvailabilityEndpoints(app: Hono) {
     try {
       const { vendorId } = c.req.param();
 
-      const availability = await kv.get(`vendor:${vendorId}:center_availability`);
+      // ✅ SQL: Get availability from vendor_center_settings table
+      const db = getDbClient();
+      const { data: settings } = await db
+        .from('vendor_center_settings')
+        .select('settings')
+        .eq('vendor_id', vendorId)
+        .single();
+
+      const availability = settings?.settings;
       
       if (!availability) {
         return c.json({
@@ -221,7 +256,15 @@ export function registerCenterAvailabilityEndpoints(app: Hono) {
     try {
       const { vendorId } = c.req.param();
 
-      const availability = await kv.get(`vendor:${vendorId}:center_availability`);
+      // ✅ SQL: Get availability from vendor_center_settings table
+      const db = getDbClient();
+      const { data: settings } = await db
+        .from('vendor_center_settings')
+        .select('settings')
+        .eq('vendor_id', vendorId)
+        .single();
+
+      const availability = settings?.settings;
       
       if (!availability?.pharmacy?.enabled) {
         return c.json({
@@ -278,7 +321,15 @@ export function registerCenterAvailabilityEndpoints(app: Hono) {
         return c.json({ error: 'Distance is required' }, 400);
       }
 
-      const availability = await kv.get(`vendor:${vendorId}:center_availability`);
+      // ✅ SQL: Get availability from vendor_center_settings table
+      const db = getDbClient();
+      const { data: settings } = await db
+        .from('vendor_center_settings')
+        .select('settings')
+        .eq('vendor_id', vendorId)
+        .single();
+
+      const availability = settings?.settings;
       
       if (!availability?.ambulanceService?.enabled) {
         return c.json({ error: 'Ambulance service not available' }, 400);
@@ -324,7 +375,15 @@ export function registerCenterAvailabilityEndpoints(app: Hono) {
       const { vendorId } = c.req.param();
       const day = c.req.query('day'); // optional, defaults to today
 
-      const availability = await kv.get(`vendor:${vendorId}:center_availability`);
+      // ✅ SQL: Get availability from vendor_center_settings table
+      const db = getDbClient();
+      const { data: settings } = await db
+        .from('vendor_center_settings')
+        .select('settings')
+        .eq('vendor_id', vendorId)
+        .single();
+
+      const availability = settings?.settings;
       
       if (!availability?.homeSampleCollection?.enabled) {
         return c.json({

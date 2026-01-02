@@ -16,6 +16,7 @@ import {
   Alert,
 } from 'react-native';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
+import { GradientBackground, BrandedCard, StatusIcon } from '../../components/branded';
 import { VendorApi } from '../../services/api';
 
 interface VendorLandingScreenProps {
@@ -24,6 +25,7 @@ interface VendorLandingScreenProps {
   initialVendorData?: any;
   onNavigateToDashboard?: () => void;
   onNavigateToOnboarding?: (roleId: string) => void;
+  onNavigate?: (screen: string, data?: any) => void;
 }
 
 type VendorStatus =
@@ -43,6 +45,7 @@ export function VendorLandingScreen({
   initialVendorData,
   onNavigateToDashboard,
   onNavigateToOnboarding,
+  onNavigate,
 }: VendorLandingScreenProps) {
   const [status, setStatus] = useState<VendorStatus>('new');
   const [loading, setLoading] = useState(true);
@@ -119,159 +122,190 @@ export function VendorLandingScreen({
 
   // Render based on status
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        {status === 'new' && (
-          <View style={styles.statusContainer}>
-            <Text style={styles.statusEmoji}>🆕</Text>
-            <Text style={styles.statusTitle}>Welcome to Warmpawz!</Text>
-            <Text style={styles.statusDescription}>
-              You're new here. Let's get you started by selecting your vendor role.
-            </Text>
-            <TouchableOpacity
-              style={styles.primaryButton}
-              onPress={() => onNavigateToOnboarding?.('')}
-            >
-              <Text style={styles.buttonText}>Get Started</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {status === 'submitted' && (
-          <View style={styles.statusContainer}>
-            <Text style={styles.statusEmoji}>✅</Text>
-            <Text style={styles.statusTitle}>Application Submitted!</Text>
-            <Text style={styles.statusDescription}>
-              Your vendor application has been submitted successfully. Our team will review it and get back to you within 24-48 hours.
-            </Text>
-            <View style={styles.infoBox}>
-              <Text style={styles.infoText}>
-                You'll receive a notification once your application is reviewed.
+    <GradientBackground variant="orange">
+      <SafeAreaView style={styles.container}>
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          {status === 'new' && (
+            <View style={styles.statusTopSection}>
+              <StatusIcon icon="info" size={100} />
+              <Text style={styles.statusTitle}>Welcome to Warmpawz!</Text>
+              <Text style={styles.statusDescription}>
+                You're new here. Let's get you started by selecting your vendor role.
               </Text>
             </View>
-          </View>
-        )}
+          )}
 
-        {status === 'pending' && (
-          <View style={styles.statusContainer}>
-            <Text style={styles.statusEmoji}>⏳</Text>
-            <Text style={styles.statusTitle}>Application Under Review</Text>
-            <Text style={styles.statusDescription}>
-              Your application is being reviewed by our admin team. This usually takes 24-48 hours.
-            </Text>
-            <View style={styles.infoBox}>
-              <Text style={styles.infoText}>
-                We'll notify you once a decision has been made.
+          {status === 'submitted' && (
+            <View style={styles.statusTopSection}>
+              <StatusIcon icon="checkmark" size={100} />
+              <Text style={styles.statusTitle}>Application Submitted!</Text>
+              <Text style={styles.statusDescription}>
+                Your vendor application has been submitted successfully. Our team will review it and get back to you within 24-48 hours.
               </Text>
             </View>
-          </View>
-        )}
+          )}
 
-        {status === 'approved_services' && (
-          <View style={styles.statusContainer}>
-            <Text style={styles.statusEmoji}>🎉</Text>
-            <Text style={styles.statusTitle}>Application Approved!</Text>
-            <Text style={styles.statusDescription}>
-              Great news! Your application has been approved. Now let's set up your services.
-            </Text>
-            <TouchableOpacity
-              style={styles.primaryButton}
-              onPress={() => {
-                // Navigate to service setup
-                Alert.alert('Service Setup', 'Service management screen will open here');
-              }}
-            >
-              <Text style={styles.buttonText}>Set Up Services</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+          {status === 'pending' && (
+            <View style={styles.statusTopSection}>
+              <StatusIcon icon="clock" size={100} />
+              <Text style={styles.statusTitle}>Application Under Review</Text>
+              <Text style={styles.statusDescription}>
+                Your application is being reviewed by our admin team. This usually takes 24-48 hours.
+              </Text>
+            </View>
+          )}
 
-        {status === 'approved_availability' && (
-          <View style={styles.statusContainer}>
-            <Text style={styles.statusEmoji}>📅</Text>
-            <Text style={styles.statusTitle}>Services Configured!</Text>
-            <Text style={styles.statusDescription}>
-              Your services are set up. Now configure your availability schedule.
-            </Text>
-            <TouchableOpacity
-              style={styles.primaryButton}
-              onPress={() => {
-                // Navigate to availability setup
-                Alert.alert('Availability Setup', 'Availability screen will open here');
-              }}
-            >
-              <Text style={styles.buttonText}>Set Up Availability</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+          {status === 'approved_services' && (
+            <View style={styles.statusTopSection}>
+              <StatusIcon icon="checkmark" size={100} backgroundColor={colors.success} />
+              <Text style={styles.statusTitle}>Application Approved!</Text>
+              <Text style={styles.statusDescription}>
+                Great news! Your application has been approved. Now let's set up your services.
+              </Text>
+            </View>
+          )}
 
-        {status === 'setup_completed' && (
-          <View style={styles.statusContainer}>
-            <Text style={styles.statusEmoji}>🎊</Text>
-            <Text style={styles.statusTitle}>Setup Complete!</Text>
-            <Text style={styles.statusDescription}>
-              Congratulations! Your vendor profile is complete. You're now ready to start receiving bookings.
-            </Text>
-            <TouchableOpacity
-              style={styles.primaryButton}
-              onPress={() => onNavigateToDashboard?.()}
-            >
-              <Text style={styles.buttonText}>Go to Dashboard</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+          {status === 'approved_availability' && (
+            <View style={styles.statusTopSection}>
+              <StatusIcon icon="checkmark" size={100} backgroundColor={colors.success} />
+              <Text style={styles.statusTitle}>Services Configured!</Text>
+              <Text style={styles.statusDescription}>
+                Your services are set up. Now configure your availability schedule.
+              </Text>
+            </View>
+          )}
 
-        {status === 'active' && (
-          <View style={styles.statusContainer}>
-            <Text style={styles.statusEmoji}>🚀</Text>
-            <Text style={styles.statusTitle}>Welcome Back!</Text>
-            <Text style={styles.statusDescription}>
-              Your vendor account is active. Manage your services, bookings, and more from the dashboard.
-            </Text>
-            <TouchableOpacity
-              style={styles.primaryButton}
-              onPress={() => onNavigateToDashboard?.()}
-            >
-              <Text style={styles.buttonText}>Go to Dashboard</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+          {status === 'setup_completed' && (
+            <View style={styles.statusTopSection}>
+              <StatusIcon icon="checkmark" size={100} backgroundColor={colors.success} />
+              <Text style={styles.statusTitle}>Setup Complete!</Text>
+              <Text style={styles.statusDescription}>
+                Congratulations! Your vendor profile is complete. You're now ready to start receiving bookings.
+              </Text>
+            </View>
+          )}
 
-        {status === 'rejected' && (
-          <View style={styles.statusContainer}>
-            <Text style={styles.statusEmoji}>❌</Text>
-            <Text style={styles.statusTitle}>Application Rejected</Text>
-            <Text style={styles.statusDescription}>
-              Unfortunately, your application has been rejected. Please contact support for more information.
-            </Text>
-            <TouchableOpacity
-              style={styles.secondaryButton}
-              onPress={() => {
-                Alert.alert('Contact Support', 'Support contact screen will open here');
-              }}
-            >
-              <Text style={styles.secondaryButtonText}>Contact Support</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+          {status === 'active' && (
+            <View style={styles.statusTopSection}>
+              <StatusIcon icon="checkmark" size={100} backgroundColor={colors.success} />
+              <Text style={styles.statusTitle}>Welcome Back!</Text>
+              <Text style={styles.statusDescription}>
+                Your vendor account is active. Manage your services, bookings, and more from the dashboard.
+              </Text>
+            </View>
+          )}
 
-        {status === 'clarification' && (
-          <View style={styles.statusContainer}>
-            <Text style={styles.statusEmoji}>📝</Text>
-            <Text style={styles.statusTitle}>More Information Needed</Text>
-            <Text style={styles.statusDescription}>
-              We need some additional information to process your application. Please review and update your profile.
-            </Text>
-            <TouchableOpacity
-              style={styles.primaryButton}
-              onPress={() => {
-                Alert.alert('Update Profile', 'Profile update screen will open here');
-              }}
-            >
-              <Text style={styles.buttonText}>Update Profile</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+          {status === 'rejected' && (
+            <View style={styles.statusTopSection}>
+              <StatusIcon icon="error" size={100} backgroundColor={colors.error} />
+              <Text style={styles.statusTitle}>Application Rejected</Text>
+              <Text style={styles.statusDescription}>
+                Unfortunately, your application has been rejected. Please contact support for more information.
+              </Text>
+            </View>
+          )}
+
+          {status === 'clarification' && (
+            <View style={styles.statusTopSection}>
+              <StatusIcon icon="warning" size={100} />
+              <Text style={styles.statusTitle}>More Information Needed</Text>
+              <Text style={styles.statusDescription}>
+                We need some additional information to process your application. Please review and update your profile.
+              </Text>
+            </View>
+          )}
+
+          {/* Action Buttons in Branded Card */}
+          {(status === 'new' || status === 'approved_services' || status === 'approved_availability' || 
+            status === 'setup_completed' || status === 'active' || status === 'rejected' || status === 'clarification') && (
+            <BrandedCard>
+              {status === 'new' && (
+                <TouchableOpacity
+                  style={styles.primaryButton}
+                  onPress={() => onNavigateToOnboarding?.('')}
+                >
+                  <Text style={styles.buttonText}>Get Started</Text>
+                </TouchableOpacity>
+              )}
+
+              {status === 'submitted' && (
+                <View style={styles.infoBox}>
+                  <Text style={styles.infoText}>
+                    You'll receive a notification once your application is reviewed.
+                  </Text>
+                </View>
+              )}
+
+              {status === 'pending' && (
+                <View style={styles.infoBox}>
+                  <Text style={styles.infoText}>
+                    We'll notify you once a decision has been made.
+                  </Text>
+                </View>
+              )}
+
+              {status === 'approved_services' && (
+                <TouchableOpacity
+                  style={styles.primaryButton}
+                  onPress={() => {
+                    Alert.alert('Service Setup', 'Service management screen will open here');
+                  }}
+                >
+                  <Text style={styles.buttonText}>Set Up Services</Text>
+                </TouchableOpacity>
+              )}
+
+              {status === 'approved_availability' && (
+                <TouchableOpacity
+                  style={styles.primaryButton}
+                  onPress={() => {
+                    Alert.alert('Availability Setup', 'Availability screen will open here');
+                  }}
+                >
+                  <Text style={styles.buttonText}>Set Up Availability</Text>
+                </TouchableOpacity>
+              )}
+
+              {(status === 'setup_completed' || status === 'active') && (
+                <TouchableOpacity
+                  style={styles.primaryButton}
+                  onPress={() => onNavigateToDashboard?.()}
+                >
+                  <Text style={styles.buttonText}>Go to Dashboard</Text>
+                </TouchableOpacity>
+              )}
+
+              {status === 'rejected' && (
+                <TouchableOpacity
+                  style={styles.secondaryButton}
+                  onPress={() => {
+                    if (onNavigate) {
+                      onNavigate('Help', { vendorId });
+                    } else {
+                      Alert.alert('Contact Support', 'Please use the Help section in Settings to contact support.');
+                    }
+                  }}
+                >
+                  <Text style={styles.secondaryButtonText}>Contact Support</Text>
+                </TouchableOpacity>
+              )}
+
+              {status === 'clarification' && (
+                <TouchableOpacity
+                  style={styles.primaryButton}
+                  onPress={() => {
+                    if (onNavigate) {
+                      onNavigate('Profile', { vendorId });
+                    } else {
+                      Alert.alert('Update Profile', 'Please go to Settings > Profile to update your information.');
+                    }
+                  }}
+                >
+                  <Text style={styles.buttonText}>Update Profile</Text>
+                </TouchableOpacity>
+              )}
+            </BrandedCard>
+          )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -280,11 +314,10 @@ export function VendorLandingScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   scrollContent: {
     flexGrow: 1,
-    padding: spacing.lg,
+    paddingTop: spacing.xxl,
   },
   loadingContainer: {
     flex: 1,
@@ -296,29 +329,27 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
     color: colors.textSecondary,
   },
-  statusContainer: {
-    flex: 1,
-    justifyContent: 'center',
+  statusTopSection: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xl,
     alignItems: 'center',
-    padding: spacing.xl,
-  },
-  statusEmoji: {
-    fontSize: 80,
-    marginBottom: spacing.lg,
+    paddingBottom: spacing.xl,
   },
   statusTitle: {
     fontSize: typography.fontSizes['3xl'],
     fontWeight: typography.fontWeights.bold,
     color: colors.text,
     textAlign: 'center',
+    marginTop: spacing.md,
     marginBottom: spacing.md,
   },
   statusDescription: {
     fontSize: typography.fontSizes.md,
     color: colors.textSecondary,
     textAlign: 'center',
-    marginBottom: spacing.xl,
+    marginTop: spacing.sm,
     lineHeight: 24,
+    paddingHorizontal: spacing.md,
   },
   infoBox: {
     backgroundColor: colors.backgroundSecondary,

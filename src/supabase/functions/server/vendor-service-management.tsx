@@ -1,5 +1,12 @@
-import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from 'hono';
+import { getDbClient } from '../../../supabase/lib/db';
+import { 
+  getVendorsRepository,
+  getRolesRepository,
+  getServicesRepository,
+  getStaffRepository
+} from '../../../supabase/lib/repositories/index';
 
 export function registerVendorServiceManagementRoutes(app: Hono) {
   
@@ -347,12 +354,15 @@ export function registerVendorServiceManagementRoutes(app: Hono) {
         const roleId = vendor.roleId || 'veterinarian';
         
         // Fetch default services
+        // ✅ Lambda: Use relative path or API Gateway URL for internal calls
         try {
+          const apiBaseUrl = process.env.API_GATEWAY_URL || 'https://api.warmpawz.com';
           const defaultServicesResponse = await fetch(
-            `${Deno.env.get('SUPABASE_URL')}/functions/v1/make-server-3dd53475/vendor/${vendorId}/default-services/${roleId}?serviceStyle=${serviceStyle}`,
+            `${apiBaseUrl}/make-server-3dd53475/vendor/${vendorId}/default-services/${roleId}?serviceStyle=${serviceStyle}`,
             {
               headers: {
-                'Authorization': `Bearer ${Deno.env.get('SUPABASE_ANON_KEY')}`
+                'Authorization': `Bearer ${process.env.API_KEY || ''}`,
+                'Content-Type': 'application/json'
               }
             }
           );

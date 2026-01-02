@@ -10,7 +10,7 @@ import {
   Play,
   Square
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { toast } from 'sonner';
 
 interface BookingCardProps {
   booking: any;
@@ -42,19 +42,25 @@ export function VendorBookingCard({
     
     const bookingId = booking.bookingId || booking.id;
     
-    // Mark messages as read
+    // Mark messages as read (if endpoint exists)
     try {
-      await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/chat/mark-read/${bookingId}`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ vendorId })
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (API_GATEWAY_URL) {
+        // Note: Chat mark-read endpoint may not exist yet, so we'll skip silently
+        try {
+          await apiCallJson<any>(
+            `${API_GATEWAY_URL}/make-server-3dd53475/chat/mark-read/${bookingId}`,
+            {
+              method: 'POST',
+              body: JSON.stringify({ vendorId })
+            }
+          );
+        } catch (err) {
+          // Endpoint may not exist yet, that's OK
+          console.log('Chat mark-read endpoint not available yet');
         }
-      );
+      }
     } catch (error) {
       console.error('Error marking messages as read:', error);
     }
@@ -72,26 +78,29 @@ export function VendorBookingCard({
     console.log('💊 Opening prescription for booking:', booking.bookingId || booking.id);
     
     const bookingId = booking.bookingId || booking.id;
+    const { apiCallJson } = await import('@warmpawz/api-client/http');
+    const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+    if (!API_GATEWAY_URL) {
+      toast.error('API Gateway URL not configured');
+      return;
+    }
     
     if (booking.hasPrescription) {
       // View existing prescription
       try {
-        const response = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/prescription/${bookingId}`,
-          {
-            headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-          }
+        const data = await apiCallJson<any>(
+          `${API_GATEWAY_URL}/make-server-3dd53475/vendor/prescription/booking/${bookingId}`
         );
         
-        if (response.ok) {
-          const data = await response.json();
-          alert(`📋 Prescription Details\n\n${data.prescription.notes}\n\nUploaded: ${new Date(data.prescription.uploadedAt).toLocaleString()}`);
+        if (data.success && data.prescription) {
+          const prescription = data.prescription;
+          alert(`📋 Prescription Details\n\n${prescription.notes || prescription.generalNotes || 'No notes'}\n\nUploaded: ${new Date(prescription.uploadedAt).toLocaleString()}`);
         } else {
-          alert('❌ Failed to load prescription');
+          toast.error('Failed to load prescription');
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error('Error fetching prescription:', error);
-        alert('❌ Error loading prescription');
+        toast.error(error?.message || 'Error loading prescription');
       }
     } else {
       // Upload new prescription
@@ -99,14 +108,10 @@ export function VendorBookingCard({
       if (!notes) return;
       
       try {
-        const response = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/prescription/upload`,
+        const result = await apiCallJson<any>(
+          `${API_GATEWAY_URL}/make-server-3dd53475/vendor/prescription/upload`,
           {
             method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${publicAnonKey}`,
-              'Content-Type': 'application/json'
-            },
             body: JSON.stringify({
               bookingId,
               vendorId,
@@ -116,16 +121,15 @@ export function VendorBookingCard({
           }
         );
         
-        if (response.ok) {
-          alert('✅ Prescription uploaded successfully!');
+        if (result.success) {
+          toast.success('Prescription uploaded successfully!');
           onRefresh(); // Reload to show prescription badge
         } else {
-          const data = await response.json();
-          alert('❌ Failed to upload prescription: ' + (data.error || 'Unknown error'));
+          toast.error(result.error || result.message || 'Failed to upload prescription');
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error('Error uploading prescription:', error);
-        alert('❌ Error uploading prescription');
+        toast.error(error?.message || 'Error uploading prescription');
       }
     }
   };
