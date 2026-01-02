@@ -1,7 +1,13 @@
-import { Hono } from "npm:hono";
-import { sendSuccess, sendError } from "./response-utils.ts";
+import { Hono } from "hono";
+import { sendSuccess, sendError } from "./response-utils";
+// ✅ SQL MIGRATION: Replace KV with SQL repositories
+import { getVendorsRepository } from "../../../supabase/lib/repositories/vendors";
+import { getBookingsRepository } from "../../../supabase/lib/repositories/bookings";
+import { getReviewsRepository } from "../../../supabase/lib/repositories/reviews";
+import { getCustomersRepository } from "../../../supabase/lib/repositories/customers";
+import { getPetsRepository } from "../../../supabase/lib/repositories/pets";
 
-export function analyticsEndpoints(app: Hono, kv: any) {
+export function analyticsEndpoints(app: Hono) {
   
   // ============================================
   // ANALYTICS & REPORTS ENDPOINTS
@@ -15,15 +21,18 @@ export function analyticsEndpoints(app: Hono, kv: any) {
     try {
       const { vendorId } = c.req.param();
       
-      const vendor = await kv.get(`vendor:${vendorId}`);
+      // ✅ SQL: Get vendor from repository
+      const vendorsRepo = getVendorsRepository();
+      const vendor = await vendorsRepo.findById(vendorId);
       if (!vendor) {
         return sendError(c, 'Vendor not found', 404);
       }
 
-      // Get bookings
-      const bookingIds = await kv.get(`vendor:${vendorId}:bookings`) || [];
+      // ✅ SQL: Get all bookings for vendor
+      const bookingsRepo = getBookingsRepository();
+      const bookings = await bookingsRepo.findByVendor(vendorId);
       
-      let totalBookings = 0;
+      let totalBookings = bookings.length;
       let pendingBookings = 0;
       let confirmedBookings = 0;
       let completedBookings = 0;
@@ -35,33 +44,30 @@ export function analyticsEndpoints(app: Hono, kv: any) {
       const today = new Date().toISOString().split('T')[0];
       const thisMonth = new Date().toISOString().substring(0, 7);
       
-      for (const bookingId of bookingIds) {
-        const booking = await kv.get(`booking:${bookingId}`);
-        if (booking) {
-          totalBookings++;
-          
-          switch (booking.status) {
-            case 'pending': pendingBookings++; break;
-            case 'confirmed': confirmedBookings++; break;
-            case 'completed': 
-              completedBookings++;
-              totalRevenue += booking.price || 0;
-              if (booking.bookingDate?.startsWith(thisMonth)) {
-                thisMonthRevenue += booking.price || 0;
-              }
-              break;
-            case 'cancelled': cancelledBookings++; break;
-          }
-          
-          if (booking.bookingDate === today) {
-            todayBookings++;
-          }
+      for (const booking of bookings) {
+        switch (booking.status) {
+          case 'pending': pendingBookings++; break;
+          case 'confirmed': confirmedBookings++; break;
+          case 'completed': 
+            completedBookings++;
+            const revenue = booking.total_amount || 0;
+            totalRevenue += revenue;
+            if (booking.booking_date?.startsWith(thisMonth)) {
+              thisMonthRevenue += revenue;
+            }
+            break;
+          case 'cancelled': cancelledBookings++; break;
+        }
+        
+        if (booking.booking_date === today) {
+          todayBookings++;
         }
       }
 
-      // Get reviews
-      const reviewIds = await kv.get(`vendor:${vendorId}:reviews`) || [];
-      const totalReviews = reviewIds.length;
+      // ✅ SQL: Get reviews count for vendor
+      const reviewsRepo = getReviewsRepository();
+      const reviews = await reviewsRepo.findByVendor(vendorId);
+      const totalReviews = reviews.length;
 
       // Response rate (confirmed / total requests)
       const responseRate = totalBookings > 0 
@@ -76,7 +82,9 @@ export function analyticsEndpoints(app: Hono, kv: any) {
           completedBookings,
           cancelledBookings,
           todayBookings,
-          rating: vendor.rating || 0,
+          rating: reviews.length > 0 
+            ? parseFloat((reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length).toFixed(2))
+            : 0,
           totalReviews,
           responseRate: parseFloat(responseRate as string)
         },
@@ -106,50 +114,50 @@ export function analyticsEndpoints(app: Hono, kv: any) {
     try {
       const { customerId } = c.req.param();
       
-      const customer = await kv.get(`customer:${customerId}`);
+      // ✅ SQL: Get customer from repository
+      const customersRepo = getCustomersRepository();
+      const customer = await customersRepo.findById(customerId);
       if (!customer) {
         return sendError(c, 'Customer not found', 404);
       }
 
-      // Get pets
-      const petIds = await kv.get(`customer:${customerId}:pets`) || [];
-      const totalPets = petIds.length;
+      // ✅ SQL: Get pets for customer
+      const petsRepo = getPetsRepository();
+      const pets = await petsRepo.findByCustomer(customerId);
+      const totalPets = pets.length;
 
-      // Get bookings
-      const bookingIds = await kv.get(`customer:${customerId}:bookings`) || [];
+      // ✅ SQL: Get bookings for customer
+      const bookingsRepo = getBookingsRepository();
+      const bookings = await bookingsRepo.findByCustomer(customerId);
       
-      let totalBookings = 0;
+      let totalBookings = bookings.length;
       let upcomingBookings = 0;
       let completedBookings = 0;
       let totalSpent = 0;
       
       const now = new Date();
       
-      for (const bookingId of bookingIds) {
-        const booking = await kv.get(`booking:${bookingId}`);
-        if (booking) {
-          totalBookings++;
-          
-          if (booking.status === 'completed') {
-            completedBookings++;
-            totalSpent += booking.price || 0;
-          }
-          
-          if (booking.status === 'confirmed' || booking.status === 'pending') {
-            const bookingDate = new Date(booking.bookingDate);
-            if (bookingDate >= now) {
-              upcomingBookings++;
-            }
+      for (const booking of bookings) {
+        if (booking.status === 'completed') {
+          completedBookings++;
+          totalSpent += booking.total_amount || 0;
+        }
+        
+        if (booking.status === 'confirmed' || booking.status === 'pending') {
+          const bookingDate = new Date(booking.booking_date);
+          if (bookingDate >= now) {
+            upcomingBookings++;
           }
         }
       }
 
-      // Get reviews
-      const reviewIds = await kv.get(`customer:${customerId}:reviews`) || [];
-      const totalReviews = reviewIds.length;
+      // ✅ SQL: Get reviews count for customer
+      const reviewsRepo = getReviewsRepository();
+      const reviews = await reviewsRepo.findByCustomer(customerId);
+      const totalReviews = reviews.length;
 
-      // Get favorite vendors
-      const favoriteVendors = customer.favoriteVendors || [];
+      // Get favorite vendors (may be stored in customer preferences)
+      const favoriteVendors = customer.preferences?.favorite_vendors || [];
 
       const stats = {
         overview: {
@@ -179,48 +187,47 @@ export function analyticsEndpoints(app: Hono, kv: any) {
    */
   app.get("/make-server-3dd53475/analytics/admin/platform", async (c) => {
     try {
-      // Get all vendors
-      const allVendors = await kv.getByPrefix('vendor:vendor_');
+      // ✅ SQL: Get all vendors
+      const vendorsRepo = getVendorsRepository();
+      const allVendors = await vendorsRepo.findAll();
       const totalVendors = allVendors.length;
-      const activeVendors = allVendors.filter((v: any) => v.status === 'approved' && v.isActive).length;
-      const pendingVendors = allVendors.filter((v: any) => v.status === 'pending_approval').length;
+      const activeVendors = allVendors.filter(v => v.status === 'approved' && v.is_active).length;
+      const pendingVendors = allVendors.filter(v => v.status === 'pending_approval').length;
 
-      // Get all customers
-      const allCustomers = await kv.getByPrefix('customer:customer_');
+      // ✅ SQL: Get all customers
+      const customersRepo = getCustomersRepository();
+      const allCustomers = await customersRepo.findAll();
       const totalCustomers = allCustomers.length;
 
-      // Get all bookings
-      const allBookings = await kv.getByPrefix('booking:booking_');
+      // ✅ SQL: Get all bookings
+      const bookingsRepo = getBookingsRepository();
+      const allBookings = await bookingsRepo.findAll();
       const totalBookings = allBookings.length;
-      const completedBookings = allBookings.filter((b: any) => b.status === 'completed').length;
-      const pendingBookings = allBookings.filter((b: any) => b.status === 'pending').length;
+      const completedBookings = allBookings.filter(b => b.status === 'completed').length;
+      const pendingBookings = allBookings.filter(b => b.status === 'pending').length;
 
       // Calculate revenue
       let totalRevenue = 0;
       let platformCommission = 0;
       
       for (const booking of allBookings) {
-        if (booking.status === 'completed' && booking.price) {
-          totalRevenue += booking.price;
+        if (booking.status === 'completed') {
+          const revenue = booking.total_amount || 0;
+          totalRevenue += revenue;
           // Assuming 10% platform commission
-          platformCommission += booking.price * 0.10;
+          platformCommission += revenue * 0.10;
         }
       }
 
-      // Get all reviews
-      const allReviews = await kv.getByPrefix('review:review_');
+      // ✅ SQL: Get all reviews
+      const reviewsRepo = getReviewsRepository();
+      const allReviews = await reviewsRepo.findAll();
       const totalReviews = allReviews.length;
 
       // Calculate average platform rating
-      let totalRating = 0;
-      let ratingCount = 0;
-      for (const review of allReviews) {
-        if (review.status === 'published' && review.rating) {
-          totalRating += review.rating;
-          ratingCount++;
-        }
-      }
-      const averagePlatformRating = ratingCount > 0 ? totalRating / ratingCount : 0;
+      const averagePlatformRating = allReviews.length > 0
+        ? allReviews.reduce((sum, r) => sum + r.rating, 0) / allReviews.length
+        : 0;
 
       const stats = {
         users: {
@@ -262,15 +269,16 @@ export function analyticsEndpoints(app: Hono, kv: any) {
       const { vendorId } = c.req.param();
       const period = c.req.query('period') || 'month'; // day, week, month, year
 
-      const bookingIds = await kv.get(`vendor:${vendorId}:bookings`) || [];
+      // ✅ SQL: Get all bookings for vendor
+      const bookingsRepo = getBookingsRepository();
+      const bookings = await bookingsRepo.findByVendor(vendorId);
       
       const revenueByPeriod: { [key: string]: number } = {};
       let totalRevenue = 0;
       
-      for (const bookingId of bookingIds) {
-        const booking = await kv.get(`booking:${bookingId}`);
-        if (booking && booking.status === 'completed' && booking.completedAt) {
-          const date = new Date(booking.completedAt);
+      for (const booking of bookings) {
+        if (booking.status === 'completed' && booking.completed_at) {
+          const date = new Date(booking.completed_at);
           let periodKey = '';
           
           switch (period) {
@@ -289,8 +297,9 @@ export function analyticsEndpoints(app: Hono, kv: any) {
               break;
           }
           
-          revenueByPeriod[periodKey] = (revenueByPeriod[periodKey] || 0) + (booking.price || 0);
-          totalRevenue += booking.price || 0;
+          const revenue = booking.total_amount || 0;
+          revenueByPeriod[periodKey] = (revenueByPeriod[periodKey] || 0) + revenue;
+          totalRevenue += revenue;
         }
       }
 
@@ -315,13 +324,15 @@ export function analyticsEndpoints(app: Hono, kv: any) {
   app.get("/make-server-3dd53475/analytics/admin/trends/bookings", async (c) => {
     try {
       const period = c.req.query('period') || 'month';
-      const allBookings = await kv.getByPrefix('booking:booking_');
+      // ✅ SQL: Get all bookings
+      const bookingsRepo = getBookingsRepository();
+      const allBookings = await bookingsRepo.findAll();
       
       const bookingsByPeriod: { [key: string]: number } = {};
       
       for (const booking of allBookings) {
-        if (booking.createdAt) {
-          const date = new Date(booking.createdAt);
+        if (booking.created_at) {
+          const date = new Date(booking.created_at);
           let periodKey = '';
           
           switch (period) {
@@ -364,18 +375,21 @@ export function analyticsEndpoints(app: Hono, kv: any) {
    */
   app.get("/make-server-3dd53475/analytics/admin/service-popularity", async (c) => {
     try {
-      const allBookings = await kv.getByPrefix('booking:booking_');
+      // ✅ SQL: Get all bookings
+      const bookingsRepo = getBookingsRepository();
+      const allBookings = await bookingsRepo.findAll();
       
       const serviceCount: { [key: string]: number } = {};
       const serviceRevenue: { [key: string]: number } = {};
       
       for (const booking of allBookings) {
-        if (booking.serviceType || booking.serviceName) {
-          const service = booking.serviceType || booking.serviceName;
+        if (booking.service_type) {
+          const service = booking.service_type;
           serviceCount[service] = (serviceCount[service] || 0) + 1;
           
-          if (booking.status === 'completed' && booking.price) {
-            serviceRevenue[service] = (serviceRevenue[service] || 0) + booking.price;
+          if (booking.status === 'completed') {
+            const revenue = booking.total_amount || 0;
+            serviceRevenue[service] = (serviceRevenue[service] || 0) + revenue;
           }
         }
       }

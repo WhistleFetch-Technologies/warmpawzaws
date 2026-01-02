@@ -11,9 +11,10 @@
  * Status: ⚠️ 50% → ✅ 95%
  */
 
-import { Hono } from 'npm:hono';
-import { cors } from 'npm:hono/cors';
-import * as kv from './kv_store.tsx';
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from 'hono';
+import { cors } from "hono/cors";
+import { getCentresRepository, getDbClient } from '../../../supabase/lib/repositories/index';
 
 const app = new Hono();
 app.use('*', cors());
@@ -78,16 +79,17 @@ app.post('/staff/:staffId/availability-slots', async (c) => {
         }, 400);
       }
 
-      // Validate centre exists
-      const centreData = await kv.get(`centre:${slot.centreId}`);
-      if (!centreData || !centreData.value) {
+      // ✅ SQL: Validate centre exists from centres table
+      const centresRepo = getCentresRepository();
+      const centreData = await centresRepo.findById(slot.centreId);
+      if (!centreData) {
         return c.json({
           error: 'Centre not found',
           centreId: slot.centreId
         }, 404);
       }
 
-      slot.centreName = centreData.value.name;
+      slot.centreName = centreData.name || centreData.metadata?.name;
     }
 
     // ✅ FEATURE 4: Conditional Field Validation for Home Services
@@ -161,8 +163,33 @@ app.post('/staff/:staffId/availability-slots', async (c) => {
     slot.updatedAt = new Date().toISOString();
     slot.isActive = slot.isActive !== false; // Default to true
 
-    // Save slot
-    await kv.set(`staff:${staffId}:availability:${slotId}`, slot);
+    // ✅ SQL: Save slot to staff_availability_slots table
+    const db = getDbClient();
+    await db
+      .from('staff_availability_slots')
+      .insert({
+        id: slotId,
+        staff_id: staffId,
+        day_of_week: slot.dayOfWeek,
+        start_time: slot.startTime,
+        end_time: slot.endTime,
+        mode: slot.mode,
+        centre_id: slot.mode === 'centre' ? slot.centreId : null,
+        location: slot.mode === 'location' ? slot.location : null,
+        has_home_services: slot.hasHomeServices || false,
+        has_tele_services: slot.hasTeleServices || false,
+        lead_time_minutes: slot.leadTime || null,
+        max_distance_km: slot.maxDistance || null,
+        buffer_time_minutes: slot.bufferTime || 0,
+        max_concurrent_bookings: slot.maxConcurrentBookings || 1,
+        is_active: slot.isActive !== false,
+        metadata: {
+          centreName: slot.centreName,
+          ...slot
+        },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
 
     console.log(`✅ Created availability slot ${slotId} for staff ${staffId}`);
 
@@ -188,15 +215,41 @@ app.put('/staff/:staffId/availability-slots/:slotId', async (c) => {
     const slotId = c.req.param('slotId');
     const { slot } = await c.req.json();
 
-    // Get existing slot
-    const existingData = await kv.get(`staff:${staffId}:availability:${slotId}`);
-    if (!existingData || !existingData.value) {
+    // ✅ SQL: Get existing slot from staff_availability_slots table
+    const db = getDbClient();
+    const { data: existingData, error: fetchError } = await db
+      .from('staff_availability_slots')
+      .select('*')
+      .eq('id', slotId)
+      .eq('staff_id', staffId)
+      .single();
+
+    if (fetchError || !existingData) {
       return c.json({ error: 'Availability slot not found' }, 404);
     }
 
     // Merge with existing
+    const existingSlot = {
+      ...existingData.metadata,
+      id: existingData.id,
+      staffId: existingData.staff_id,
+      dayOfWeek: existingData.day_of_week,
+      startTime: existingData.start_time,
+      endTime: existingData.end_time,
+      mode: existingData.mode,
+      centreId: existingData.centre_id,
+      location: existingData.location,
+      hasHomeServices: existingData.has_home_services,
+      hasTeleServices: existingData.has_tele_services,
+      leadTime: existingData.lead_time_minutes,
+      maxDistance: existingData.max_distance_km,
+      bufferTime: existingData.buffer_time_minutes,
+      maxConcurrentBookings: existingData.max_concurrent_bookings,
+      isActive: existingData.is_active
+    };
+
     const updatedSlot = {
-      ...existingData.value,
+      ...existingSlot,
       ...slot,
       id: slotId,
       staffId,
@@ -229,8 +282,31 @@ app.put('/staff/:staffId/availability-slots/:slotId', async (c) => {
       }, 409);
     }
 
-    // Save updated slot
-    await kv.set(`staff:${staffId}:availability:${slotId}`, updatedSlot);
+    // ✅ SQL: Update slot in staff_availability_slots table
+    await db
+      .from('staff_availability_slots')
+      .update({
+        day_of_week: updatedSlot.dayOfWeek,
+        start_time: updatedSlot.startTime,
+        end_time: updatedSlot.endTime,
+        mode: updatedSlot.mode,
+        centre_id: updatedSlot.mode === 'centre' ? updatedSlot.centreId : null,
+        location: updatedSlot.mode === 'location' ? updatedSlot.location : null,
+        has_home_services: updatedSlot.hasHomeServices || false,
+        has_tele_services: updatedSlot.hasTeleServices || false,
+        lead_time_minutes: updatedSlot.leadTime || null,
+        max_distance_km: updatedSlot.maxDistance || null,
+        buffer_time_minutes: updatedSlot.bufferTime || 0,
+        max_concurrent_bookings: updatedSlot.maxConcurrentBookings || 1,
+        is_active: updatedSlot.isActive !== false,
+        metadata: {
+          ...existingData.metadata,
+          ...updatedSlot
+        },
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', slotId)
+      .eq('staff_id', staffId);
 
     console.log(`✅ Updated availability slot ${slotId}`);
 
@@ -255,8 +331,33 @@ app.get('/staff/:staffId/availability-slots', async (c) => {
     const staffId = c.req.param('staffId');
     const activeOnly = c.req.query('activeOnly') === 'true';
 
-    const slotsData = await kv.getByPrefix(`staff:${staffId}:availability:`);
-    let slots = slotsData.map(item => item.value);
+    // ✅ SQL: Get all availability slots for staff from staff_availability_slots table
+    const db = getDbClient();
+    const { data: slotsData } = await db
+      .from('staff_availability_slots')
+      .select('*')
+      .eq('staff_id', staffId);
+    
+    let slots = (slotsData || []).map((item: any) => ({
+      ...item.metadata,
+      id: item.id,
+      staffId: item.staff_id,
+      dayOfWeek: item.day_of_week,
+      startTime: item.start_time,
+      endTime: item.end_time,
+      mode: item.mode,
+      centreId: item.centre_id,
+      location: item.location,
+      hasHomeServices: item.has_home_services,
+      hasTeleServices: item.has_tele_services,
+      leadTime: item.lead_time_minutes,
+      maxDistance: item.max_distance_km,
+      bufferTime: item.buffer_time_minutes,
+      maxConcurrentBookings: item.max_concurrent_bookings,
+      isActive: item.is_active,
+      createdAt: item.created_at,
+      updatedAt: item.updated_at
+    }));
 
     if (activeOnly) {
       slots = slots.filter(slot => slot.isActive !== false);
@@ -293,12 +394,24 @@ app.delete('/staff/:staffId/availability-slots/:slotId', async (c) => {
     const staffId = c.req.param('staffId');
     const slotId = c.req.param('slotId');
 
-    const existingData = await kv.get(`staff:${staffId}:availability:${slotId}`);
-    if (!existingData || !existingData.value) {
+    // ✅ SQL: Get existing slot and delete from staff_availability_slots table
+    const db = getDbClient();
+    const { data: existingData } = await db
+      .from('staff_availability_slots')
+      .select('*')
+      .eq('id', slotId)
+      .eq('staff_id', staffId)
+      .single();
+
+    if (!existingData) {
       return c.json({ error: 'Availability slot not found' }, 404);
     }
 
-    await kv.del(`staff:${staffId}:availability:${slotId}`);
+    await db
+      .from('staff_availability_slots')
+      .delete()
+      .eq('id', slotId)
+      .eq('staff_id', staffId);
 
     console.log(`✅ Deleted availability slot ${slotId}`);
 
@@ -323,10 +436,27 @@ async function detectScheduleConflicts(
 ): Promise<any[]> {
   const conflicts = [];
 
-  // Get all existing slots for this staff
-  const existingSlotsData = await kv.getByPrefix(`staff:${staffId}:availability:`);
-  const existingSlots = existingSlotsData
-    .map(item => item.value)
+  // ✅ SQL: Get all existing slots for this staff from staff_availability_slots table
+  const db = getDbClient();
+  const { data: existingSlotsData } = await db
+    .from('staff_availability_slots')
+    .select('*')
+    .eq('staff_id', staffId);
+  
+  const existingSlots = (existingSlotsData || [])
+    .map((item: any) => ({
+      ...item.metadata,
+      id: item.id,
+      dayOfWeek: item.day_of_week,
+      startTime: item.start_time,
+      endTime: item.end_time,
+      mode: item.mode,
+      centreId: item.centre_id,
+      location: item.location,
+      bufferTime: item.buffer_time_minutes,
+      maxConcurrentBookings: item.max_concurrent_bookings,
+      isActive: item.is_active
+    }))
     .filter(slot => slot.isActive !== false)
     .filter(slot => slot.id !== excludeSlotId); // Exclude current slot if updating
 
@@ -356,11 +486,11 @@ async function detectScheduleConflicts(
     if (newSlot.mode === 'centre' && existingSlot.mode === 'centre') {
       if (newSlot.centreId === existingSlot.centreId) {
         if (existingSlot.dayOfWeek === newSlot.dayOfWeek && hasTimeOverlap(existingSlot, newSlot)) {
-          // Check centre max concurrent bookings
-          const centreData = await kv.get(`centre:${newSlot.centreId}`);
-          if (centreData && centreData.value) {
-            const centre = centreData.value;
-            const maxConcurrent = centre.maxConcurrentBookings || 5;
+          // ✅ SQL: Check centre max concurrent bookings from centres table
+          const centresRepo = getCentresRepository();
+          const centreData = await centresRepo.findById(newSlot.centreId);
+          if (centreData) {
+            const maxConcurrent = centreData.metadata?.maxConcurrentBookings || 5;
 
             // Count overlapping slots at this centre
             const overlappingSlots = existingSlots.filter(slot => 

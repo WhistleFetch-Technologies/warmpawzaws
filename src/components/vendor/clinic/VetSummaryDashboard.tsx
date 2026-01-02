@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '../../ui/button';
 import { Calendar, TrendingUp, Users, FileText, Clock, Activity, DollarSign, AlertCircle, CheckCircle } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { toast } from 'sonner';
+// ✅ FIX: Removed Supabase imports - using API Gateway now
 
 interface VetSummaryDashboardProps {
   vendorId: string;
@@ -58,16 +58,21 @@ export function VetSummaryDashboard({ vendorId, vendorName }: VetSummaryDashboar
     try {
       setLoading(true);
 
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+
       // Load bookings for analysis
-      const bookingsResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/bookings`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+      const bookingsData = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/bookings`
       );
 
-      if (bookingsResponse.ok) {
-        const bookingsData = await bookingsResponse.json();
-        // ✅ FIX: Handle standardized response format
-        // Response format: { success: true, bookings: [...], total: ... }
+      // ✅ FIX: Handle standardized response format
+      // Response format: { success: true, bookings: [...], total: ... }
+      if (bookingsData.success) {
         const bookings = bookingsData.bookings || bookingsData.data?.bookings || [];
 
         // Calculate stats
@@ -140,6 +145,8 @@ export function VetSummaryDashboard({ vendorId, vendorName }: VetSummaryDashboar
           ],
           recentActivity
         });
+      } else {
+        console.error('Failed to load bookings:', bookingsData.error || bookingsData.message);
       }
     } catch (error: any) {
       console.error('Error loading summary data:', error);
@@ -253,11 +260,11 @@ export function VetSummaryDashboard({ vendorId, vendorName }: VetSummaryDashboar
                 {selectedPeriod === 'today' ? 'Avg Time' : selectedPeriod === 'week' ? 'New Patients' : 'Repeat Patients'}
               </p>
               <p className="text-2xl font-bold text-gray-900">
-                {selectedPeriod === 'today' 
-                  ? `${currentStats.avgConsultationTime} min`
+                {selectedPeriod === 'today'
+                  ? `${(currentStats as any).avgConsultationTime || 0} min`
                   : selectedPeriod === 'week'
-                  ? currentStats.newPatients
-                  : currentStats.repeatPatients}
+                  ? (currentStats as any).newPatients || 0
+                  : (currentStats as any).repeatPatients || 0}
               </p>
             </div>
           </div>

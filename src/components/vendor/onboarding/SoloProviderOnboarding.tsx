@@ -126,8 +126,8 @@ export function SoloProviderOnboarding({
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-white p-6">
-      <div className="max-w-3xl mx-auto">
+    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-white p-6 flex items-center justify-center">
+      <div className="w-full max-w-[430px] lg:max-w-[600px] mx-auto">
         {/* Header */}
         <div className="mb-6">
           <Button

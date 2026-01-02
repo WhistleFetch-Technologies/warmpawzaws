@@ -12,7 +12,7 @@ import { Separator } from '../../ui/separator';
 import { ScrollArea } from '../../ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../ui/tabs';
 import { Plus, Edit2, Trash2, ArrowRight, Package, MapPin, Zap, DollarSign, AlertCircle, Play } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
 
 interface DeliveryRule {

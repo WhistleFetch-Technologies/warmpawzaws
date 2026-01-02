@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Camera, Play, Pause, Download, RefreshCw, X, Video, Clock, MapPin, Settings, Trash2 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+// ✅ FIX: Removed Supabase imports - using API Gateway now
+import { toast } from 'sonner';
 
 interface CCTVCamera {
   id: string;
@@ -49,8 +49,6 @@ export function VendorCCTVAccess({ vendorId, vendorData, onBack }: VendorCCTVAcc
   // ✅ FIX Bug 4: Use React state for edit form instead of uncontrolled inputs
   const [editFormData, setEditFormData] = useState({ name: '', location: '', streamUrl: '' });
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
-
   useEffect(() => {
     fetchCameras();
     fetchSharedAccess();
@@ -59,20 +57,25 @@ export function VendorCCTVAccess({ vendorId, vendorData, onBack }: VendorCCTVAcc
   const fetchCameras = async () => {
     try {
       setLoading(true);
+      
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
       // ✅ FIX: Use Batch 13 SQL-migrated CCTV endpoint
-      const response = await fetch(`${API_BASE}/vendor/cctv/${vendorId}`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-      });
+      const camerasData = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/cctv/${vendorId}`
+      );
 
-      if (response.ok) {
-        const data = await response.json();
-        // ✅ FIX: Handle standardized response format
-        // Response format: { success: true, cameras: [...], total: ... }
-        setCameras(data.cameras || data.data?.cameras || []);
+      // ✅ FIX: Handle standardized response format
+      // Response format: { success: true, cameras: [...], total: ... }
+      if (camerasData.success) {
+        setCameras(camerasData.cameras || camerasData.data?.cameras || []);
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-        console.error('Failed to fetch cameras:', errorData);
-        toast.error(errorData.error || 'Failed to load cameras');
         setCameras([]);
       }
     } catch (error: any) {
@@ -87,18 +90,23 @@ export function VendorCCTVAccess({ vendorId, vendorData, onBack }: VendorCCTVAcc
 
   const fetchSharedAccess = async () => {
     try {
-      const response = await fetch(`${API_BASE}/vendor/cctv/${vendorId}/shared`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-      });
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      const sharedData = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/cctv/${vendorId}/shared`
+      );
 
-      if (response.ok) {
-        const data = await response.json();
-        // ✅ FIX: Handle standardized response format
-        // Response format: { success: true, shared: [...], total: ... }
-        setSharedAccess(data.shared || data.data?.shared || []);
+      // ✅ FIX: Handle standardized response format
+      // Response format: { success: true, shared: [...], total: ... }
+      if (sharedData.success) {
+        setSharedAccess(sharedData.shared || sharedData.data?.shared || []);
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-        console.error('Failed to fetch shared access:', errorData);
         // Don't show toast for shared access - it's not critical
         setSharedAccess([]);
       }
@@ -111,18 +119,26 @@ export function VendorCCTVAccess({ vendorId, vendorData, onBack }: VendorCCTVAcc
 
   const refreshSnapshot = async (cameraId: string) => {
     try {
-      const response = await fetch(`${API_BASE}/vendor/cctv/${vendorId}/cameras/${cameraId}/snapshot`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-      });
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      const snapshotData = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/cctv/${vendorId}/cameras/${cameraId}/snapshot`,
+        {
+          method: 'POST'
+        }
+      );
 
-      if (response.ok) {
+      if (snapshotData.success) {
         toast.success('Snapshot refreshed successfully');
         await fetchCameras(); // ✅ Ensure cameras reload
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
-        const errorMessage = errorData.error || errorData.message || 'Failed to refresh snapshot';
-        toast.error(errorMessage);
+        toast.error(snapshotData.error || snapshotData.message || 'Failed to refresh snapshot');
       }
     } catch (error: any) {
       console.error('Error refreshing snapshot:', error);
@@ -138,24 +154,26 @@ export function VendorCCTVAccess({ vendorId, vendorData, onBack }: VendorCCTVAcc
     }
 
     try {
-      const response = await fetch(`${API_BASE}/vendor/cctv/${vendorId}/${cameraId}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          toast.success(`Camera "${cameraName}" deleted successfully`);
-          await fetchCameras(); // ✅ Ensure cameras reload
-        } else {
-          const errorMessage = data.error || data.message || 'Failed to delete camera';
-          toast.error(errorMessage);
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      const deleteData = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/cctv/${vendorId}/${cameraId}`,
+        {
+          method: 'DELETE'
         }
+      );
+
+      if (deleteData.success) {
+        toast.success(`Camera "${cameraName}" deleted successfully`);
+        await fetchCameras(); // ✅ Ensure cameras reload
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
-        const errorMessage = errorData.error || errorData.message || 'Failed to delete camera';
-        toast.error(errorMessage);
+        toast.error(deleteData.error || deleteData.message || 'Failed to delete camera');
       }
     } catch (error: any) {
       console.error('Error deleting camera:', error);
@@ -167,32 +185,31 @@ export function VendorCCTVAccess({ vendorId, vendorData, onBack }: VendorCCTVAcc
   // ✅ LIFECYCLE FIX: Add update camera handler
   const handleUpdateCamera = async (cameraId: string, updates: Partial<CCTVCamera>) => {
     try {
-      const response = await fetch(`${API_BASE}/vendor/cctv/${vendorId}/${cameraId}`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(updates)
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          toast.success('Camera updated successfully');
-          await fetchCameras(); // ✅ Ensure cameras reload
-          setAddCameraModal(false);
-          setSelectedCamera(null);
-          setEditingCamera(null); // ✅ FIX Bug 4: Reset editing state
-          setEditFormData({ name: '', location: '', streamUrl: '' }); // ✅ FIX Bug 4: Reset form data
-        } else {
-          const errorMessage = data.error || data.message || 'Failed to update camera';
-          toast.error(errorMessage);
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      const updateData = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/cctv/${vendorId}/${cameraId}`,
+        {
+          method: 'PUT',
+          body: JSON.stringify(updates)
         }
+      );
+
+      if (updateData.success) {
+        toast.success('Camera updated successfully');
+        await fetchCameras(); // ✅ Ensure cameras reload
+        setAddCameraModal(false);
+        setSelectedCamera(null);
+        setEditingCamera(null); // ✅ FIX Bug 4: Reset editing state
+        setEditFormData({ name: '', location: '', streamUrl: '' }); // ✅ FIX Bug 4: Reset form data
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
-        const errorMessage = errorData.error || errorData.message || 'Failed to update camera';
-        toast.error(errorMessage);
+        toast.error(updateData.error || updateData.message || 'Failed to update camera');
       }
     } catch (error: any) {
       console.error('Error updating camera:', error);

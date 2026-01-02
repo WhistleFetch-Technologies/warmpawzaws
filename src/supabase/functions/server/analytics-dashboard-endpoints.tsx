@@ -1,5 +1,5 @@
-import { Hono } from "npm:hono";
-import { sendSuccess, sendError } from "./response-utils.ts";
+import { Hono } from "hono";
+import { sendSuccess, sendError } from "./response-utils";
 
 /**
  * 📊 ANALYTICS DASHBOARD ENDPOINTS
@@ -190,7 +190,14 @@ function calculateGrowth(current: number, previous: number): number {
   return ((current - previous) / previous) * 100;
 }
 
-export function analyticsDashboardEndpoints(app: Hono, kv: any) {
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { 
+  getBookingsRepository,
+  getVendorsRepository,
+  getCustomersRepository
+} from '../../../supabase/lib/repositories/index';
+
+export function analyticsDashboardEndpoints(app: Hono) {
   const BASE_PATH = "/make-server-3dd53475";
 
   /**
@@ -202,17 +209,33 @@ export function analyticsDashboardEndpoints(app: Hono, kv: any) {
       const period = (c.req.query('period') || 'monthly') as 'daily' | 'weekly' | 'monthly' | 'yearly';
       const { startDate, endDate } = getDateRange(period);
 
-      // Fetch all data
-      const allBookings = await kv.getByPrefix('booking:') || [];
-      const allVendors = await kv.getByPrefix('vendor:') || [];
-      const allCustomers = await kv.getByPrefix('customer:') || [];
+      // ✅ SQL: Fetch all data using repositories
+      const bookingsRepo = getBookingsRepository();
+      const vendorsRepo = getVendorsRepository();
+      const customersRepo = getCustomersRepository();
+      
+      const allBookingsData = await bookingsRepo.findAll({});
+      const allVendorsData = await vendorsRepo.findAll({});
+      const allCustomersData = await customersRepo.findAll({});
 
-      const bookings = allBookings
-        .map((item: any) => item.value || item)
+      const bookings = allBookingsData
         .filter((b: any) => {
-          const bookingDate = new Date(b.createdAt);
+          const bookingDate = new Date(b.created_at);
           return bookingDate >= startDate && bookingDate <= endDate;
-        });
+        })
+        .map((b: any) => ({
+          id: b.id,
+          customerId: b.customer_id,
+          vendorId: b.vendor_id,
+          vendorName: b.vendor_name || '',
+          serviceType: b.service_type,
+          status: b.status,
+          totalAmount: b.total_amount || 0,
+          createdAt: b.created_at,
+          location: {
+            city: b.city || 'Unknown'
+          }
+        }));
 
       const completedBookings = bookings.filter((b: any) => b.status === 'completed');
       const cancelledBookings = bookings.filter((b: any) => b.status === 'cancelled');
@@ -283,14 +306,14 @@ export function analyticsDashboardEndpoints(app: Hono, kv: any) {
         endDate: endDate.toISOString(),
         
         users: {
-          totalCustomers: allCustomers.length,
-          totalVendors: allVendors.length,
-          newCustomers: allCustomers.filter((c: any) => {
-            const created = new Date((c.value || c).createdAt);
+          totalCustomers: allCustomersData.length,
+          totalVendors: allVendorsData.length,
+          newCustomers: allCustomersData.filter((c: any) => {
+            const created = new Date(c.created_at);
             return created >= startDate && created <= endDate;
           }).length,
-          newVendors: allVendors.filter((v: any) => {
-            const created = new Date((v.value || v).createdAt);
+          newVendors: allVendorsData.filter((v: any) => {
+            const created = new Date(v.created_at);
             return created >= startDate && created <= endDate;
           }).length,
           activeCustomers: new Set(bookings.map((b: any) => b.customerId)).size,
@@ -354,19 +377,30 @@ export function analyticsDashboardEndpoints(app: Hono, kv: any) {
       const period = c.req.query('period') || 'monthly';
       const { startDate, endDate } = getDateRange(period as any);
 
-      const vendor = await kv.get(`vendor:${vendorId}`);
+      // ✅ SQL: Get vendor using repository
+      const vendorsRepo = getVendorsRepository();
+      const vendor = await vendorsRepo.findById(vendorId);
       if (!vendor) {
         return sendError(c, 'Vendor not found', 404);
       }
 
-      // Fetch vendor bookings
-      const allBookings = await kv.getByPrefix('booking:') || [];
-      const vendorBookings = allBookings
-        .map((item: any) => item.value || item)
+      // ✅ SQL: Fetch vendor bookings using repository
+      const bookingsRepo = getBookingsRepository();
+      const allBookingsData = await bookingsRepo.findByVendor(vendorId);
+      const vendorBookings = allBookingsData
         .filter((b: any) => {
-          const bookingDate = new Date(b.createdAt);
-          return b.vendorId === vendorId && bookingDate >= startDate && bookingDate <= endDate;
-        });
+          const bookingDate = new Date(b.created_at);
+          return bookingDate >= startDate && bookingDate <= endDate;
+        })
+        .map((b: any) => ({
+          id: b.id,
+          customerId: b.customer_id,
+          vendorId: b.vendor_id,
+          serviceType: b.service_type,
+          status: b.status,
+          totalAmount: b.total_amount || 0,
+          createdAt: b.created_at
+        }));
 
       const completedBookings = vendorBookings.filter((b: any) => b.status === 'completed');
       const cancelledBookings = vendorBookings.filter((b: any) => b.status === 'cancelled');
@@ -502,13 +536,19 @@ export function analyticsDashboardEndpoints(app: Hono, kv: any) {
       const startDate = new Date();
       startDate.setDate(startDate.getDate() - days);
 
-      const allBookings = await kv.getByPrefix('booking:') || [];
-      const bookings = allBookings
-        .map((item: any) => item.value || item)
+      // ✅ SQL: Get bookings for trends using repository
+      const bookingsRepo = getBookingsRepository();
+      const allBookingsData = await bookingsRepo.findAll({});
+      const bookings = allBookingsData
         .filter((b: any) => {
-          const bookingDate = new Date(b.createdAt);
+          const bookingDate = new Date(b.created_at);
           return bookingDate >= startDate && bookingDate <= endDate;
-        });
+        })
+        .map((b: any) => ({
+          createdAt: b.created_at,
+          status: b.status,
+          totalAmount: b.total_amount || 0
+        }));
 
       // Group by day
       const dailyData: Record<string, { date: string; bookings: number; revenue: number }> = {};

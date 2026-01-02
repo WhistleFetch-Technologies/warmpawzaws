@@ -1,6 +1,11 @@
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
 // Vendor booking management endpoints
-import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
+import { Hono } from 'hono';
+import { getDbClient } from '../../../supabase/lib/db';
+import {
+  getBookingsRepository,
+  getCustomersRepository
+} from '../../../supabase/lib/repositories/index';
 
 const app = new Hono();
 
@@ -20,93 +25,43 @@ app.get("/make-server-3dd53475/vendor/bookings/:vendorId", async (c) => {
     console.log(`📋 [VENDOR-BOOKINGS] Fetching bookings for vendor: ${vendorId}`);
     console.log(`   Filters: date=${date}, status=${filter}`);
     
-    // Get vendor's booking IDs
-    const vendorBookingsKey = `vendor:bookings:${vendorId}`;
-    console.log(`   Looking up key: ${vendorBookingsKey}`);
+    // ✅ SQL: Get all bookings for vendor
+    const bookingsRepo = getBookingsRepository();
+    const allBookings = await bookingsRepo.findByVendor(vendorId);
     
-    const bookingIds = await kv.get(vendorBookingsKey) || [];
+    console.log(`   Found ${allBookings.length} bookings for vendor`);
     
-    console.log(`   Found ${bookingIds.length} booking IDs:`, bookingIds);
-    
-    if (bookingIds.length === 0) {
-      console.log(`   ⚠️ No booking IDs found in key: ${vendorBookingsKey}`);
-      
-      // DEBUG: Try to list all vendor booking data to see what exists
-      const allVendorBookingData = await kv.getByPrefix('vendor:bookings:');
-      console.log(`   📊 Total vendor booking lists in system: ${allVendorBookingData.length}`);
-      if (allVendorBookingData.length > 0) {
-        console.log(`   Sample booking lists:`, allVendorBookingData.slice(0, 3));
-      }
-      
-      // DEBUG: Also check if there are any bookings at all
-      const allBookings = await kv.getByPrefix('booking:BK_');
-      console.log(`   📊 Total bookings in system: ${allBookings.length}`);
-      if (allBookings.length > 0) {
-        const sampleBooking = allBookings[0];
-        console.log(`   Sample booking vendorId:`, sampleBooking?.vendorId);
-      }
-      
-      return c.json({ 
-        success: true, 
-        bookings: [],
-        total: 0,
-        debug: {
-          vendorId,
-          keySearched: vendorBookingsKey,
-          totalVendorBookingLists: allVendorBookingData.length,
-          totalBookingsInSystem: allBookings.length
-        },
-        message: 'No bookings found'
-      });
-    }
-    
-    // Fetch full booking details
-    const bookings = [];
-    const missingBookings = [];
-    for (const bookingId of bookingIds) {
-      console.log(`   🔍 Fetching booking: ${bookingId}`);
-      const booking = await kv.get(`booking:${bookingId}`);
-      if (booking) {
-        console.log(`      ✅ Found booking: ${booking.serviceName || booking.id}`);
-        
-        // ✅ ADD: Ensure chatEnabled is always true (unless cancelled)
-        booking.chatEnabled = booking.status !== 'cancelled';
-        booking.hasUnreadMessages = booking.hasUnreadMessages || false;
-        booking.unreadMessageCount = booking.unreadMessageCount || 0;
-        booking.isFollowUp = booking.isFollowUp || false;
-        booking.hasPrescription = booking.hasPrescription || false;
-        
-        bookings.push(booking);
-      } else {
-        console.log(`      ❌ Missing booking: ${bookingId}`);
-        missingBookings.push(bookingId);
-      }
-    }
-    
-    console.log(`   Loaded ${bookings.length} complete bookings out of ${bookingIds.length} IDs`);
-    if (missingBookings.length > 0) {
-      console.log(`   ⚠️ Missing ${missingBookings.length} bookings:`, missingBookings);
-    }
+    // Map to expected format and add chat flags
+    const bookings = allBookings.map((booking: any) => {
+      // ✅ ADD: Ensure chatEnabled is always true (unless cancelled)
+      return {
+        ...booking,
+        chatEnabled: booking.status !== 'cancelled',
+        hasUnreadMessages: booking.has_unread_messages || false,
+        unreadMessageCount: booking.unread_message_count || 0,
+        isFollowUp: booking.is_follow_up || false,
+        hasPrescription: booking.has_prescription || false,
+        // Map SQL field names to expected format
+        serviceName: booking.service_name || booking.serviceName,
+        scheduledDate: booking.booking_date || booking.scheduled_date || booking.scheduledDate,
+        date: booking.booking_date || booking.date,
+        bookingDate: booking.booking_date || booking.bookingDate,
+        createdAt: booking.created_at || booking.createdAt
+      };
+    });
     
     // Apply filters
     let filteredBookings = bookings;
     
     console.log(`   📊 Before filtering: ${bookings.length} bookings`);
-    if (bookings.length > 0) {
-      console.log(`   Sample booking dates:`, bookings.slice(0, 3).map((b: any) => ({
-        id: b.id,
-        scheduledDate: b.scheduledDate,
-        date: b.date,
-        bookingDate: b.bookingDate
-      })));
-    }
     
     // Filter by date
     if (date) {
       console.log(`   🔍 Filtering by date: ${date}`);
-      filteredBookings = filteredBookings.filter((b: any) => 
-        b.scheduledDate === date || b.date === date || b.bookingDate === date
-      );
+      filteredBookings = filteredBookings.filter((b: any) => {
+        const bookingDate = b.scheduledDate || b.date || b.bookingDate;
+        return bookingDate && bookingDate.startsWith(date);
+      });
       console.log(`   After date filter: ${filteredBookings.length} bookings`);
     }
     
@@ -134,15 +89,6 @@ app.get("/make-server-3dd53475/vendor/bookings/:vendorId", async (c) => {
       filters: {
         date,
         status: filter
-      },
-      debug: {
-        vendorId,
-        keySearched: vendorBookingsKey,
-        totalBookingIds: bookingIds.length,
-        loadedBookings: bookings.length,
-        missingBookings: missingBookings.length,
-        missingBookingIds: missingBookings,
-        bookingIds: bookingIds
       }
     });
     
@@ -163,26 +109,30 @@ app.post("/make-server-3dd53475/vendor/bookings/:bookingId/cancel", async (c) =>
     
     console.log(`❌ [VENDOR-BOOKINGS] Cancelling booking: ${bookingId}`);
     
-    // Get booking
-    const booking = await kv.get(`booking:${bookingId}`);
+    // ✅ SQL: Get and update booking
+    const bookingsRepo = getBookingsRepository();
+    const booking = await bookingsRepo.findById(bookingId);
+    
     if (!booking) {
       return c.json({ error: 'Booking not found' }, 404);
     }
     
-    // Update booking status
-    booking.status = 'cancelled';
-    booking.cancelledAt = new Date().toISOString();
-    booking.cancelledBy = 'vendor';
-    booking.cancellationReason = reason || 'Cancelled by vendor';
-    booking.updatedAt = new Date().toISOString();
+    // ✅ SQL: Update booking status
+    await bookingsRepo.update(bookingId, {
+      status: 'cancelled',
+      cancelled_at: new Date().toISOString(),
+      cancelled_by: 'vendor',
+      cancellation_reason: reason || 'Cancelled by vendor',
+      updated_at: new Date().toISOString()
+    });
     
-    await kv.set(`booking:${bookingId}`, booking);
+    const updatedBooking = await bookingsRepo.findById(bookingId);
     
     console.log(`✅ [VENDOR-BOOKINGS] Booking cancelled: ${bookingId}`);
     
     return c.json({
       success: true,
-      booking,
+      booking: updatedBooking,
       message: 'Booking cancelled successfully'
     });
     
@@ -202,24 +152,28 @@ app.post("/make-server-3dd53475/vendor/bookings/:bookingId/complete", async (c) 
     
     console.log(`✅ [VENDOR-BOOKINGS] Completing booking: ${bookingId}`);
     
-    // Get booking
-    const booking = await kv.get(`booking:${bookingId}`);
+    // ✅ SQL: Get and update booking
+    const bookingsRepo = getBookingsRepository();
+    const booking = await bookingsRepo.findById(bookingId);
+    
     if (!booking) {
       return c.json({ error: 'Booking not found' }, 404);
     }
     
-    // Update booking status
-    booking.status = 'completed';
-    booking.completedAt = new Date().toISOString();
-    booking.updatedAt = new Date().toISOString();
+    // ✅ SQL: Update booking status
+    await bookingsRepo.update(bookingId, {
+      status: 'completed',
+      completed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    });
     
-    await kv.set(`booking:${bookingId}`, booking);
+    const updatedBooking = await bookingsRepo.findById(bookingId);
     
     console.log(`✅ [VENDOR-BOOKINGS] Booking completed: ${bookingId}`);
     
     return c.json({
       success: true,
-      booking,
+      booking: updatedBooking,
       message: 'Booking marked as completed'
     });
     
@@ -240,29 +194,34 @@ app.get("/make-server-3dd53475/vendor/customer-history/:customerPhone", async (c
     
     console.log(`📜 [VENDOR] Fetching customer history for: ${cleanPhone}`);
     
-    // Get customer's bookings
-    const customerBookingsKey = `customer:bookings:${cleanPhone}`;
-    const bookingIds = await kv.get(customerBookingsKey) || [];
+    // ✅ SQL: Get customer by phone and their bookings
+    const customersRepo = getCustomersRepository();
+    const customer = await customersRepo.findByPhone(cleanPhone);
     
-    const history = [];
-    
-    for (const bookingId of bookingIds) {
-      const booking = await kv.get(`booking:${bookingId}`);
-      if (booking) {
-        history.push({
-          id: booking.id,
-          serviceName: booking.serviceName,
-          serviceType: booking.serviceType,
-          vendorName: booking.vendorName,
-          petName: booking.petName,
-          status: booking.status,
-          selectedDate: booking.selectedDate,
-          selectedTime: booking.selectedTime,
-          createdAt: booking.createdAt,
-          completedAt: booking.otpVerifiedAt || booking.completedAt
-        });
-      }
+    if (!customer) {
+      return c.json({
+        success: true,
+        history: [],
+        total: 0
+      });
     }
+    
+    // ✅ SQL: Get customer bookings
+    const bookingsRepo = getBookingsRepository();
+    const customerBookings = await bookingsRepo.findByCustomer(customer.id);
+    
+    const history = customerBookings.map((booking: any) => ({
+      id: booking.id,
+      serviceName: booking.service_name || booking.serviceName,
+      serviceType: booking.service_type || booking.serviceType,
+      vendorName: booking.vendor_name || booking.vendorName,
+      petName: booking.pet_name || booking.petName,
+      status: booking.status,
+      selectedDate: booking.booking_date || booking.selected_date || booking.selectedDate,
+      selectedTime: booking.booking_time || booking.selected_time || booking.selectedTime,
+      createdAt: booking.created_at || booking.createdAt,
+      completedAt: booking.completed_at || booking.otp_verified_at || booking.completedAt
+    }));
     
     // Sort by date (newest first)
     history.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());

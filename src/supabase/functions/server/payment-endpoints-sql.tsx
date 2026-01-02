@@ -15,15 +15,15 @@
  * ============================================================================
  */
 
-import { Hono } from "npm:hono";
-import { sendSuccess, sendError } from "./response-utils.ts";
-import { createRazorpayOrder, verifyRazorpaySignature, fetchRazorpayPayment } from "./razorpay-integration.tsx";
-import { createNotificationHelper } from "./notification-system.tsx";
-import { getPaymentsRepository } from "../../lib/repositories/payments.ts";
-import { getBookingsRepository } from "../../lib/repositories/bookings.ts";
-import { getVendorsRepository } from "../../lib/repositories/vendors.ts";
-import { withTransaction, getDbClient } from "../../lib/db.ts";
-import { getServicesRepository } from "../../lib/repositories/services.ts";
+import { Hono } from "hono";
+import { sendSuccess, sendError } from "./response-utils";
+import { createRazorpayOrder, verifyRazorpaySignature, fetchRazorpayPayment } from "./razorpay-integration";
+import { createNotificationHelper } from "./notification-system";
+import { getPaymentsRepository } from "../../lib/repositories/payments";
+import { getBookingsRepository } from "../../lib/repositories/bookings";
+import { getVendorsRepository } from "../../lib/repositories/vendors";
+import { withTransaction, getDbClient } from "../../lib/db";
+import { getServicesRepository } from "../../lib/repositories/services";
 
 export function paymentEndpointsSQL(app: Hono) {
   

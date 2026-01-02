@@ -1,6 +1,7 @@
-import { Hono } from "npm:hono";
-import * as kv from "./kv_store.tsx";
-import { sendSuccess, sendError } from "./response-utils.ts";
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from "hono";
+import { sendSuccess, sendError } from "./response-utils";
+import { getDbClient } from '../../../supabase/lib/db';
 
 export function registerSubscriptionEndpoints(app: Hono) {
 
@@ -29,13 +30,19 @@ export function registerSubscriptionEndpoints(app: Hono) {
         createdAt: new Date().toISOString()
       };
 
-      await kv.set(`plan:${planId}`, newPlan);
-      
-      // Index by Vendor
-      const vendorPlansKey = `vendor:${vendorId}:plans`;
-      const vendorPlans = await kv.get(vendorPlansKey) || [];
-      vendorPlans.push(planId);
-      await kv.set(vendorPlansKey, vendorPlans);
+      // ✅ SQL: Store subscription plan
+      const db = getDbClient();
+      await db.from('vendor_subscription_plans').insert({
+        plan_id: planId,
+        vendor_id: vendorId,
+        name: name,
+        price: Number(price),
+        interval: interval,
+        features: features || [],
+        is_active: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
 
       return sendSuccess(c, { plan: newPlan });
     } catch (error) {
@@ -50,16 +57,27 @@ export function registerSubscriptionEndpoints(app: Hono) {
   app.get("/make-server-3dd53475/subscriptions/plans/:vendorId", async (c) => {
     try {
       const { vendorId } = c.req.param();
-      const vendorPlansKey = `vendor:${vendorId}:plans`;
-      const planIds = await kv.get(vendorPlansKey) || [];
+      // ✅ SQL: Get plans for vendor
+      const db = getDbClient();
+      const { data: plansData } = await db
+        .from('vendor_subscription_plans')
+        .select('*')
+        .eq('vendor_id', vendorId)
+        .eq('is_active', true)
+        .order('created_at', { ascending: false });
       
-      const plans = [];
-      for (const id of planIds) {
-        const plan = await kv.get(`plan:${id}`);
-        if (plan && plan.isActive) {
-          plans.push(plan);
-        }
-      }
+      const plans = (plansData || []).map((p: any) => ({
+        id: p.plan_id || p.id,
+        planId: p.plan_id || p.id,
+        vendorId: p.vendor_id,
+        name: p.name,
+        price: p.price,
+        interval: p.interval,
+        features: p.features || [],
+        isActive: p.is_active,
+        createdAt: p.created_at,
+        updatedAt: p.updated_at
+      }));
 
       return sendSuccess(c, { plans });
     } catch (error) {
@@ -75,8 +93,24 @@ export function registerSubscriptionEndpoints(app: Hono) {
     try {
       const { userId, planId, paymentMethodId } = await c.req.json();
       
-      const plan = await kv.get(`plan:${planId}`);
-      if (!plan) return sendError(c, 'Plan not found', 404);
+      // ✅ SQL: Get plan
+      const db = getDbClient();
+      const { data: planData } = await db
+        .from('vendor_subscription_plans')
+        .select('*')
+        .eq('plan_id', planId)
+        .single();
+      
+      if (!planData) return sendError(c, 'Plan not found', 404);
+      
+      const plan = {
+        id: planData.plan_id || planData.id,
+        vendorId: planData.vendor_id,
+        name: planData.name,
+        price: planData.price,
+        interval: planData.interval,
+        features: planData.features || []
+      };
 
       const subId = `sub_${Date.now()}_${Math.random().toString(36).substring(7)}`;
       
@@ -103,13 +137,22 @@ export function registerSubscriptionEndpoints(app: Hono) {
         paymentMethodId: paymentMethodId || 'default'
       };
 
-      await kv.set(`sub:${subId}`, subscription);
-
-      // Index by User
-      const userSubsKey = `user:${userId}:subscriptions`;
-      const userSubs = await kv.get(userSubsKey) || [];
-      userSubs.push(subId);
-      await kv.set(userSubsKey, userSubs);
+      // ✅ SQL: Store subscription
+      await db.from('customer_subscriptions').insert({
+        subscription_id: subId,
+        customer_id: userId,
+        plan_id: planId,
+        vendor_id: plan.vendorId,
+        plan_name: plan.name,
+        price: plan.price,
+        interval: plan.interval,
+        status: 'active',
+        start_date: now.toISOString(),
+        next_billing_date: nextBilling.toISOString(),
+        payment_method_id: paymentMethodId || 'default',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
 
       return sendSuccess(c, { subscription });
     } catch (error) {
@@ -125,17 +168,48 @@ export function registerSubscriptionEndpoints(app: Hono) {
     try {
       const { subscriptionId, reason } = await c.req.json();
       
-      const sub = await kv.get(`sub:${subscriptionId}`);
-      if (!sub) return sendError(c, 'Subscription not found', 404);
+      // ✅ SQL: Get and update subscription
+      const db = getDbClient();
+      const { data: subData } = await db
+        .from('customer_subscriptions')
+        .select('*')
+        .eq('subscription_id', subscriptionId)
+        .single();
+      
+      if (!subData) return sendError(c, 'Subscription not found', 404);
 
-      // Update status
-      sub.status = 'cancelled';
-      sub.cancelledAt = new Date().toISOString();
-      sub.cancellationReason = reason || 'User request';
+      // ✅ SQL: Update subscription status
+      await db.from('customer_subscriptions')
+        .update({
+          status: 'cancelled',
+          cancelled_at: new Date().toISOString(),
+          cancellation_reason: reason || 'User request',
+          updated_at: new Date().toISOString()
+        })
+        .eq('subscription_id', subscriptionId);
       
-      // Keep nextBillingDate as the "valid until" date
+      const { data: updatedSub } = await db
+        .from('customer_subscriptions')
+        .select('*')
+        .eq('subscription_id', subscriptionId)
+        .single();
       
-      await kv.set(`sub:${subscriptionId}`, sub);
+      const sub = {
+        id: updatedSub.subscription_id || updatedSub.id,
+        subscriptionId: updatedSub.subscription_id,
+        userId: updatedSub.customer_id,
+        planId: updatedSub.plan_id,
+        vendorId: updatedSub.vendor_id,
+        planName: updatedSub.plan_name,
+        price: updatedSub.price,
+        interval: updatedSub.interval,
+        status: updatedSub.status,
+        startDate: updatedSub.start_date,
+        nextBillingDate: updatedSub.next_billing_date,
+        paymentMethodId: updatedSub.payment_method_id,
+        cancelledAt: updatedSub.cancelled_at,
+        cancellationReason: updatedSub.cancellation_reason
+      };
       
       return sendSuccess(c, { subscription: sub });
     } catch (error) {
@@ -156,21 +230,54 @@ export function registerSubscriptionEndpoints(app: Hono) {
       const { specificSubId } = await c.req.json().catch(() => ({}));
       
       if (specificSubId) {
-        const sub = await kv.get(`sub:${specificSubId}`);
-        if (sub && sub.status === 'active') {
+        // ✅ SQL: Get subscription
+        const db = getDbClient();
+        const { data: subData } = await db
+          .from('customer_subscriptions')
+          .select('*')
+          .eq('subscription_id', specificSubId)
+          .single();
+        
+        if (subData && subData.status === 'active') {
             // Renew
              const now = new Date();
-             const nextBilling = new Date(sub.nextBillingDate);
+             const nextBilling = new Date(subData.next_billing_date);
              
              if (now >= nextBilling) {
                  // Process renewal
-                 if (sub.interval === 'monthly') {
+                 if (subData.interval === 'monthly') {
                     nextBilling.setMonth(nextBilling.getMonth() + 1);
                  } else {
                     nextBilling.setFullYear(nextBilling.getFullYear() + 1);
                  }
-                 sub.nextBillingDate = nextBilling.toISOString();
-                 await kv.set(`sub:${specificSubId}`, sub);
+                 
+                 // ✅ SQL: Update next billing date
+                 await db.from('customer_subscriptions')
+                   .update({
+                     next_billing_date: nextBilling.toISOString(),
+                     updated_at: new Date().toISOString()
+                   })
+                   .eq('subscription_id', specificSubId);
+                 
+                 const { data: renewedSub } = await db
+                   .from('customer_subscriptions')
+                   .select('*')
+                   .eq('subscription_id', specificSubId)
+                   .single();
+                 
+                 const sub = {
+                   id: renewedSub.subscription_id || renewedSub.id,
+                   subscriptionId: renewedSub.subscription_id,
+                   userId: renewedSub.customer_id,
+                   planId: renewedSub.plan_id,
+                   vendorId: renewedSub.vendor_id,
+                   planName: renewedSub.plan_name,
+                   price: renewedSub.price,
+                   interval: renewedSub.interval,
+                   status: renewedSub.status,
+                   startDate: renewedSub.start_date,
+                   nextBillingDate: renewedSub.next_billing_date
+                 };
                  
                  return sendSuccess(c, { subscription: sub }, 'Renewed successfully');
              }

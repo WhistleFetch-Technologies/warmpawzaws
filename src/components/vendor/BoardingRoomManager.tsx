@@ -15,8 +15,7 @@ import {
   Users,
   Home as HomeIcon
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { Button } from '../ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
 
@@ -102,25 +101,24 @@ export function BoardingRoomManager({
   const loadRooms = async () => {
     try {
       setLoading(true);
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/boarding/rooms`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/boarding/rooms`
       );
 
-      if (response.ok) {
-        const data = await response.json();
-        // ✅ FIX: Handle standardized response format
-        // Response format: { success: true, rooms: [...], total: ... }
+      if (data.success) {
         setRooms(data.rooms || data.data?.rooms || []);
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-        console.error('Failed to load rooms:', errorData);
-        // Don't show error toast on initial load - just log
+        console.error('Failed to load rooms:', data.error || data.message);
       }
     } catch (error: any) {
       console.error('Error:', error);
-      const errorMessage = error?.message || 'Failed to load rooms. Please try again.';
-      // Don't show error toast on initial load - just log
     } finally {
       setLoading(false);
     }
@@ -139,14 +137,17 @@ export function BoardingRoomManager({
     }
 
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/boarding/rooms`,
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+
+      const result = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/boarding/rooms`,
         {
           method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify({
             name,
             description,
@@ -167,20 +168,17 @@ export function BoardingRoomManager({
         }
       );
 
-      if (response.ok) {
+      if (result.success) {
         toast.success('Room created successfully');
         setShowAddRoom(false);
         resetForm();
-        await loadRooms(); // ✅ Ensure rooms reload
+        await loadRooms();
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
-        const errorMessage = errorData.error || errorData.message || 'Failed to create room';
-        toast.error(errorMessage);
+        toast.error(result.error || result.message || 'Failed to create room');
       }
     } catch (error: any) {
       console.error('Error:', error);
-      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
-      toast.error(errorMessage);
+      toast.error(error?.message || 'Network error. Please check your connection and try again.');
     }
   };
 
@@ -188,14 +186,17 @@ export function BoardingRoomManager({
     if (!editingRoom) return;
 
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/boarding/rooms/${editingRoom.id}`,
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+
+      const result = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/boarding/rooms/${editingRoom.id}`,
         {
           method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify({
             name,
             description,
@@ -216,20 +217,17 @@ export function BoardingRoomManager({
         }
       );
 
-      if (response.ok) {
+      if (result.success) {
         toast.success('Room updated successfully');
         setEditingRoom(null);
         resetForm();
-        await loadRooms(); // ✅ Ensure rooms reload
+        await loadRooms();
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
-        const errorMessage = errorData.error || errorData.message || 'Failed to update room';
-        toast.error(errorMessage);
+        toast.error(result.error || result.message || 'Failed to update room');
       }
     } catch (error: any) {
       console.error('Error updating room:', error);
-      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
-      toast.error(errorMessage);
+      toast.error(error?.message || 'Network error. Please check your connection and try again.');
     }
   };
 
@@ -242,26 +240,29 @@ export function BoardingRoomManager({
     }
 
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/boarding/rooms/${roomId}`,
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+
+      const result = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/boarding/rooms/${roomId}`,
         {
-          method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          method: 'DELETE'
         }
       );
 
-      if (response.ok) {
+      if (result.success) {
         toast.success(`Room "${roomName}" deleted successfully`);
-        await loadRooms(); // ✅ Ensure rooms reload
+        await loadRooms();
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
-        const errorMessage = errorData.error || errorData.message || 'Failed to delete room';
-        toast.error(errorMessage);
+        toast.error(result.error || result.message || 'Failed to delete room');
       }
     } catch (error: any) {
       console.error('Error deleting room:', error);
-      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
-      toast.error(errorMessage);
+      toast.error(error?.message || 'Network error. Please check your connection and try again.');
     }
   };
 
@@ -288,27 +289,23 @@ export function BoardingRoomManager({
       formData.append('file', file);
       formData.append('type', isPhoto ? 'photo' : 'video');
 
-      const endpoint = roomId
-        ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/boarding/rooms/${roomId}/media`
-        : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/boarding/rooms/temp/media`;
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
 
-      const response = await fetch(endpoint, {
+      // Use S3 upload endpoint
+      const endpoint = `${API_GATEWAY_URL}/make-server-3dd53475/media/upload-batch`;
+
+      const result = await apiCallJson<any>(endpoint, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` },
         body: formData
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        
-        if (isPhoto) {
-          setPhotos([...photos, data.filePath]);
-        } else {
-          setVideos([...videos, data.filePath]);
-        }
-
-        // ✅ FIX: Handle standardized response format
-        const filePath = data.filePath || data.data?.filePath || data.url || data.data?.url;
+      if (result.success) {
+        const filePath = result.filePath || result.data?.filePath || result.url || result.data?.url || result.files?.[0]?.url;
         
         if (filePath) {
           if (isPhoto) {
@@ -321,9 +318,7 @@ export function BoardingRoomManager({
           toast.error('Upload succeeded but file path not returned');
         }
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
-        const errorMessage = errorData.error || errorData.message || 'Failed to upload file';
-        toast.error(errorMessage);
+        toast.error(result.error || result.message || 'Failed to upload file');
       }
     } catch (error: any) {
       console.error('Upload error:', error);

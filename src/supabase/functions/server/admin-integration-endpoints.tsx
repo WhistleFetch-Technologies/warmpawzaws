@@ -1,7 +1,7 @@
-import { Hono } from "npm:hono";
-import * as kv from "./kv_store.tsx";
-import { S3Client, PutObjectCommand, ListBucketsCommand, CreateBucketCommand, HeadBucketCommand } from "npm:@aws-sdk/client-s3";
-import { STSClient, GetCallerIdentityCommand } from "npm:@aws-sdk/client-sts";
+import { Hono } from "hono";
+import * as kv from "./kv_store";
+import { S3Client, PutObjectCommand, ListBucketsCommand, CreateBucketCommand, HeadBucketCommand } from "@aws-sdk/client-s3";
+import { STSClient, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
 
 /**
  * Environment Sync Helper

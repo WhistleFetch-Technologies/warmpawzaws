@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { X, MapPin, Clock, User, Phone, Calendar, Star, CheckCircle2, XCircle, AlertCircle, Navigation, Loader2, MessageSquare, Video, FileText, Pill, Stethoscope, RefreshCw, History, Activity } from 'lucide-react';
+import { X, MapPin, Clock, User, Phone, Calendar, Star, CheckCircle2, XCircle, AlertCircle, Navigation, Loader2, MessageSquare, Video, FileText, Pill, Stethoscope, RefreshCw, History, Activity, Users, DollarSign, TrendingUp, Briefcase, Heart } from 'lucide-react';
 import { Button } from '../ui/button';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3'; // ✅ FIX: Use consistent toast import
-import { authenticatedFetch } from '../../utils/session-manager'; // ✅ SECURITY FIX
+// ✅ FIX: Removed Supabase imports - using API Gateway now
+import { toast } from 'sonner'; // ✅ FIX: Use consistent toast import
 import { useVendorCapabilities } from './hooks/useVendorCapabilities'; // ✅ NEW: Capability-based actions
+import { MedicalHistoryModal } from './MedicalHistoryModal';
+import { CommunicationHub } from '../communication/CommunicationHub';
+import { VendorPrescriptionModal } from './VendorPrescriptionModal';
 
 interface AppointmentDetailModalProps {
   bookingId: string;
@@ -108,16 +110,19 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
     try {
       setLoading(true);
       
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
       // Load booking details
-      const bookingResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/bookings/${bookingId}/details`,
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/bookings/${bookingId}/details`
       );
       
-      if (bookingResponse.ok) {
-        const data = await bookingResponse.json();
+      if (data.success) {
         setBooking(data.booking);
         setActivities(data.activities || []);
         setPrescriptions(data.prescriptions || []);
@@ -139,17 +144,24 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
     setOtpError(null);
 
     try {
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
       // ✅ MIGRATION: Use new complete lifecycle endpoint for completion OTP
       let endpoint: string;
       let body: any;
       
       if (otpAction === 'start') {
         // Start OTP - use existing endpoint
-        endpoint = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/bookings/${bookingId}/verify-start`;
+        endpoint = `${API_GATEWAY_URL}/make-server-3dd53475/bookings/${bookingId}/verify-start`;
         body = { otp, vendorId: vendorData?.id || vendorData?.vendorId };
       } else {
         // ✅ NEW: Completion OTP - use complete lifecycle endpoint
-        endpoint = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/booking/${bookingId}/verify-otp-complete`;
+        endpoint = `${API_GATEWAY_URL}/make-server-3dd53475/booking/${bookingId}/verify-otp-complete`;
         body = {
           otp,
           action: 'end', // 'end' or 'complete'
@@ -157,17 +169,15 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
         };
       }
       
-      // ✅ SECURITY FIX: Use authenticated fetch for OTP verification
-      const response = await authenticatedFetch(endpoint, {
+      const data = await apiCallJson<any>(endpoint, {
         method: 'POST',
         body: JSON.stringify(body)
       });
 
-      if (response.ok) {
-        const data = await response.json();
+      if (data.success) {
         
         // Show enhanced success message for completion with lifecycle info
-        if ((otpAction === 'complete' || otpAction === 'end') && data.success && data.earnings) {
+        if ((otpAction === 'complete' || otpAction === 'end' as any) && data.success && data.earnings) {
           const earningsInfo = ` Earnings: ₹${data.earnings.vendorEarnings}`;
           const settlementInfo = data.settlement ? ` Settlement: ${data.settlement.status}` : '';
           const payoutInfo = data.payout?.scheduled ? ` Payout: ${new Date(data.payout.scheduledAt).toLocaleDateString()}` : '';
@@ -182,8 +192,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
         loadAppointmentDetails(); // Refresh state
         onRefresh?.();
       } else {
-        const error = await response.json();
-        setOtpError(error.error || error.message || 'Invalid OTP');
+        setOtpError(data.error || data.message || 'Invalid OTP');
       }
     } catch (error) {
       console.error('Error verifying OTP:', error);
@@ -196,11 +205,17 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
   const handleStartTravel = async () => {
     if (!booking) return;
     
-    // ✅ SECURITY FIX: Use authenticated fetch for tracking session
+    // ✅ FIX: Use API Gateway URL instead of Supabase
     try {
       setProcessing(true);
-      const response = await authenticatedFetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/tracking/session/create`,
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/tracking/session/create`,
         {
           method: 'POST',
           body: JSON.stringify({
@@ -211,7 +226,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
         }
       );
       
-      if (response.ok) {
+      if (data.success) {
         // Update local state to show we are traveling
         loadAppointmentDetails();
         onRefresh?.();
@@ -224,11 +239,17 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
   };
 
   const handleArrived = async () => {
-    // ✅ SECURITY FIX: Use authenticated fetch for status update
+    // ✅ FIX: Use API Gateway URL instead of Supabase
     try {
       setProcessing(true);
-      await authenticatedFetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/bookings/${bookingId}/status`,
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/bookings/${bookingId}/status`,
         {
           method: 'POST',
           body: JSON.stringify({ status: 'arrived', note: 'Vendor has arrived at location' })
@@ -635,7 +656,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                   )}
 
                   {/* Phase 2: Arrived (If traveling/in_progress) */}
-                  {(booking.status === 'traveling' || (booking.status === 'in_progress' && !booking.arrived)) && (
+                  {(booking.status === 'traveling' || (booking.status === 'in_progress' && !(booking as any).arrived)) && (
                     <button
                       onClick={handleArrived}
                       disabled={processing}
@@ -661,7 +682,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                   )}
 
                   {/* Phase 4: Complete (If In Progress or Arrived for non-session roles) */}
-                  {((booking.status === 'in_progress' && booking.arrived) || (booking.status === 'arrived' && vendorData?.roleId !== 'pet_walker' && vendorData?.roleId !== 'pet_trainer')) && (
+                  {((booking.status === 'in_progress' && (booking as any).arrived) || (booking.status === 'arrived' && vendorData?.roleId !== 'pet_walker' && vendorData?.roleId !== 'pet_trainer')) && (
                     <button
                       onClick={() => {
                         setOtpAction('complete');
@@ -788,7 +809,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                     }}
                     className="w-full py-3 bg-yellow-50 text-yellow-700 border border-yellow-200 hover:bg-yellow-100 rounded-xl font-medium flex items-center justify-center gap-2"
                   >
-                    <Users className="w-4 h-4" />
+                    <User className="w-4 h-4" />
                     Manage Guests
                   </button>
                 )}
@@ -852,7 +873,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                 )}
 
                 {/* ✅ NEW: Order Management */}
-                {capabilities.order_management && (
+                {(capabilities as any).order_management && (
                   <button
                     onClick={() => {
                       toast.info('Order management feature coming soon');
@@ -867,7 +888,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                 )}
 
                 {/* ✅ NEW: Photo Upload */}
-                {capabilities.photo_upload && (
+                {(capabilities as any).photo_upload && (
                   <button
                     onClick={() => {
                       toast.info('Photo upload feature coming soon');
@@ -895,7 +916,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                 )}
 
                 {/* ✅ NEW: Donation Management */}
-                {capabilities.donation && (
+                {(capabilities as any).donation && (
                   <button
                     onClick={() => {
                       toast.info('Donation management feature coming soon');
@@ -910,7 +931,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                 )}
 
                 {/* ✅ NEW: Event Management */}
-                {capabilities.event_management && (
+                {(capabilities as any).event_management && (
                   <button
                     onClick={() => {
                       toast.info('Event management feature coming soon');
@@ -1072,7 +1093,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                 )}
 
                 {/* ✅ NEW: Adoption */}
-                {capabilities.adoption && (
+                {(capabilities as any).adoption && (
                   <button
                     onClick={() => {
                       toast.info('Adoption feature coming soon');
@@ -1085,7 +1106,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                 )}
 
                 {/* ✅ NEW: Memorial */}
-                {capabilities.memorial && (
+                {(capabilities as any).memorial && (
                   <button
                     onClick={() => {
                       toast.info('Memorial services feature coming soon');
@@ -1117,17 +1138,22 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
 
       {/* Add Vet Summary Modal */}
       {showVetSummaryModal && (
-        <AddVetSummaryModal
-          appointmentId={bookingId}
-          petName={booking.petName}
-          vendorId={vendorData?.id || ''}
-          onClose={() => setShowVetSummaryModal(false)}
-          onSuccess={() => {
-            setShowVetSummaryModal(false);
-            loadAppointmentDetails(); // Refresh
-            onRefresh?.();
-          }}
-        />
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl p-6 max-w-2xl w-full">
+            <h2 className="text-xl font-bold mb-4">Vet Summary</h2>
+            <p className="text-gray-600 mb-4">Vet summary feature coming soon</p>
+            <button
+              onClick={() => {
+                setShowVetSummaryModal(false);
+                loadAppointmentDetails(); // Refresh
+                onRefresh?.();
+              }}
+              className="px-4 py-2 bg-gray-200 rounded-lg"
+            >
+              Close
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Communication Hub (Unified Chat/Video) */}

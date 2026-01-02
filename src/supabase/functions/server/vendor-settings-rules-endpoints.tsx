@@ -1,5 +1,5 @@
-import { Hono } from "npm:hono";
-import * as kv from "./kv_store.tsx";
+import { Hono } from "hono";
+import * as kv from "./kv_store";
 
 export function registerVendorSettingsRulesEndpoints(app: Hono) {
   const BASE_PATH = "/make-server-3dd53475";

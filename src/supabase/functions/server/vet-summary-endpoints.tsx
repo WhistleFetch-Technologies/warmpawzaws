@@ -3,8 +3,9 @@
  * Handles automated vet summaries, medical reports, and discharge summaries
  */
 
-import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from 'hono';
+import { getDbClient } from '../../../supabase/lib/db';
 
 const app = new Hono();
 
@@ -75,20 +76,22 @@ app.get('/:vendorId', async (c) => {
     const vendorId = c.req.param('vendorId');
     const { patientId, status } = c.req.query();
     
-    let summaries = await kv.getByPrefix<VetSummary>(`vetsummary:${vendorId}:`);
+    // ✅ SQL: Get vet summaries from vet_summaries table
+    const db = getDbClient();
+    let query = db
+      .from('vet_summaries')
+      .select('*')
+      .eq('vendor_id', vendorId);
     
-    // Filter by patient if specified
     if (patientId) {
-      summaries = summaries.filter(s => s.patientId === patientId);
+      query = query.eq('patient_id', patientId);
     }
     
-    // Filter by status if specified
     if (status) {
-      summaries = summaries.filter(s => s.status === status);
+      query = query.eq('status', status);
     }
     
-    // Sort by date (most recent first)
-    summaries.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const { data: summaries } = await query.order('created_at', { ascending: false });
     
     return c.json({
       success: true,
@@ -109,18 +112,25 @@ app.get('/:vendorId', async (c) => {
  * GET /vendor/vet-summary/:vendorId/:summaryId
  * Get a specific vet summary
  */
-app.get('/:vendorId/:summaryId', async (c) => {
-  try {
-    const { vendorId, summaryId } = c.req.param();
-    
-    const summary = await kv.get<VetSummary>(`vetsummary:${vendorId}:${summaryId}`);
-    
-    if (!summary) {
-      return c.json({ 
-        success: false, 
-        error: 'Vet summary not found' 
-      }, 404);
-    }
+  app.get('/:vendorId/:summaryId', async (c) => {
+    try {
+      const { vendorId, summaryId } = c.req.param();
+      
+      // ✅ SQL: Get vet summary from vet_summaries table
+      const db = getDbClient();
+      const { data: summary } = await db
+        .from('vet_summaries')
+        .select('*')
+        .eq('vendor_id', vendorId)
+        .eq('id', summaryId)
+        .single();
+      
+      if (!summary) {
+        return c.json({ 
+          success: false, 
+          error: 'Vet summary not found' 
+        }, 404);
+      }
     
     return c.json({
       success: true,
@@ -173,7 +183,34 @@ app.post('/:vendorId', async (c) => {
       status: 'draft'
     };
     
-    await kv.set(`vetsummary:${vendorId}:${summaryId}`, summary);
+    // ✅ SQL: Create vet summary in vet_summaries table
+    const db = getDbClient();
+    await db
+      .from('vet_summaries')
+      .insert({
+        id: summaryId,
+        vendor_id: vendorId,
+        patient_id: body.patientId,
+        patient_name: body.patientName,
+        visit_id: body.visitId,
+        booking_id: body.bookingId,
+        summary_type: body.summaryType || 'consultation',
+        chief_complaint: body.chiefComplaint,
+        history: body.history,
+        examination: body.examination || { vitals: {} },
+        diagnosis: body.diagnosis || [],
+        differential_diagnosis: body.differentialDiagnosis,
+        investigations: body.investigations || [],
+        treatment: body.treatment || { medications: [], procedures: [] },
+        prognosis: body.prognosis || 'good',
+        follow_up: body.followUp || { required: false },
+        notes: body.notes,
+        veterinarian_id: body.veterinarianId,
+        veterinarian_name: body.veterinarianName,
+        status: 'draft',
+        created_at: now,
+        updated_at: now
+      });
     
     return c.json({
       success: true,
@@ -199,7 +236,14 @@ app.put('/:vendorId/:summaryId', async (c) => {
     const { vendorId, summaryId } = c.req.param();
     const body = await c.req.json();
     
-    const existing = await kv.get<VetSummary>(`vetsummary:${vendorId}:${summaryId}`);
+    // ✅ SQL: Get and update vet summary
+    const db = getDbClient();
+    const { data: existing } = await db
+      .from('vet_summaries')
+      .select('*')
+      .eq('vendor_id', vendorId)
+      .eq('id', summaryId)
+      .single();
     
     if (!existing) {
       return c.json({ 
@@ -215,15 +259,33 @@ app.put('/:vendorId/:summaryId', async (c) => {
       }, 400);
     }
     
-    const updated: VetSummary = {
-      ...existing,
-      ...body,
-      id: summaryId,
-      vendorId,
-      updatedAt: new Date().toISOString()
+    // ✅ SQL: Update vet summary
+    const updateData: any = {
+      updated_at: new Date().toISOString()
     };
     
-    await kv.set(`vetsummary:${vendorId}:${summaryId}`, updated);
+    if (body.chiefComplaint) updateData.chief_complaint = body.chiefComplaint;
+    if (body.history) updateData.history = body.history;
+    if (body.examination) updateData.examination = body.examination;
+    if (body.diagnosis) updateData.diagnosis = body.diagnosis;
+    if (body.differentialDiagnosis) updateData.differential_diagnosis = body.differentialDiagnosis;
+    if (body.investigations) updateData.investigations = body.investigations;
+    if (body.treatment) updateData.treatment = body.treatment;
+    if (body.prognosis) updateData.prognosis = body.prognosis;
+    if (body.followUp) updateData.follow_up = body.followUp;
+    if (body.notes !== undefined) updateData.notes = body.notes;
+    
+    await db
+      .from('vet_summaries')
+      .update(updateData)
+      .eq('id', summaryId)
+      .eq('vendor_id', vendorId);
+    
+    const { data: updated } = await db
+      .from('vet_summaries')
+      .select('*')
+      .eq('id', summaryId)
+      .single();
     
     return c.json({
       success: true,
@@ -248,7 +310,14 @@ app.post('/:vendorId/:summaryId/sign', async (c) => {
   try {
     const { vendorId, summaryId } = c.req.param();
     
-    const summary = await kv.get<VetSummary>(`vetsummary:${vendorId}:${summaryId}`);
+    // ✅ SQL: Get and sign vet summary
+    const db = getDbClient();
+    const { data: summary } = await db
+      .from('vet_summaries')
+      .select('*')
+      .eq('vendor_id', vendorId)
+      .eq('id', summaryId)
+      .single();
     
     if (!summary) {
       return c.json({ 
@@ -265,14 +334,21 @@ app.post('/:vendorId/:summaryId/sign', async (c) => {
     }
     
     const now = new Date().toISOString();
-    const updated: VetSummary = {
-      ...summary,
-      status: 'signed',
-      signedAt: now,
-      updatedAt: now
-    };
+    await db
+      .from('vet_summaries')
+      .update({
+        status: 'signed',
+        signed_at: now,
+        updated_at: now
+      })
+      .eq('id', summaryId)
+      .eq('vendor_id', vendorId);
     
-    await kv.set(`vetsummary:${vendorId}:${summaryId}`, updated);
+    const { data: updated } = await db
+      .from('vet_summaries')
+      .select('*')
+      .eq('id', summaryId)
+      .single();
     
     return c.json({
       success: true,
@@ -297,7 +373,14 @@ app.post('/:vendorId/:summaryId/send', async (c) => {
   try {
     const { vendorId, summaryId } = c.req.param();
     
-    const summary = await kv.get<VetSummary>(`vetsummary:${vendorId}:${summaryId}`);
+    // ✅ SQL: Get and send vet summary
+    const db = getDbClient();
+    const { data: summary } = await db
+      .from('vet_summaries')
+      .select('*')
+      .eq('vendor_id', vendorId)
+      .eq('id', summaryId)
+      .single();
     
     if (!summary) {
       return c.json({ 
@@ -313,13 +396,20 @@ app.post('/:vendorId/:summaryId/send', async (c) => {
       }, 400);
     }
     
-    const updated: VetSummary = {
-      ...summary,
-      status: 'sent',
-      updatedAt: new Date().toISOString()
-    };
+    await db
+      .from('vet_summaries')
+      .update({
+        status: 'sent',
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', summaryId)
+      .eq('vendor_id', vendorId);
     
-    await kv.set(`vetsummary:${vendorId}:${summaryId}`, updated);
+    const { data: updated } = await db
+      .from('vet_summaries')
+      .select('*')
+      .eq('id', summaryId)
+      .single();
     
     // Here you would integrate with notification/email service
     
@@ -376,7 +466,34 @@ app.post('/:vendorId/generate', async (c) => {
       status: 'draft'
     };
     
-    await kv.set(`vetsummary:${vendorId}:${summaryId}`, summary);
+    // ✅ SQL: Create vet summary in vet_summaries table
+    const db = getDbClient();
+    await db
+      .from('vet_summaries')
+      .insert({
+        id: summaryId,
+        vendor_id: vendorId,
+        patient_id: body.patientId,
+        patient_name: body.patientName,
+        visit_id: body.visitId,
+        booking_id: body.bookingId,
+        summary_type: body.summaryType || 'consultation',
+        chief_complaint: body.chiefComplaint,
+        history: body.history,
+        examination: body.examination || { vitals: {} },
+        diagnosis: body.diagnosis || [],
+        differential_diagnosis: body.differentialDiagnosis,
+        investigations: body.investigations || [],
+        treatment: body.treatment || { medications: [], procedures: [] },
+        prognosis: body.prognosis || 'good',
+        follow_up: body.followUp || { required: false },
+        notes: body.notes,
+        veterinarian_id: body.veterinarianId,
+        veterinarian_name: body.veterinarianName,
+        status: 'draft',
+        created_at: now,
+        updated_at: now
+      });
     
     return c.json({
       success: true,

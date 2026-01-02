@@ -1,10 +1,23 @@
 /**
- * AUTHENTICATION & USER STATE MANAGEMENT SERVICE
+ * ============================================================================
+ * AUTHENTICATION & USER STATE MANAGEMENT SERVICE - SQL-ONLY VERSION
+ * ============================================================================
+ * 
+ * ✅ MIGRATED TO SQL: NO KV STORE - All data from SQL
+ * ⚠️ NOTE: Cognito integration will be added in a separate phase
  * 
  * Handles user creation, login, session management, and state persistence
+ * 
+ * KV Operations: 66 → 0
+ * 
+ * RULES:
+ * ❌ NO KV imports allowed
+ * ✅ All operations use SQL only
+ * ✅ Users stored in customers/vendors/staff tables
+ * ✅ Sessions stored in sessions table
+ * ✅ Tokens stored in access_tokens table
  */
 
-import * as kv from './kv_store.tsx';
 import { 
   User, 
   Session, 
@@ -13,8 +26,15 @@ import {
   AdminProfile,
   generateId, 
   createSession 
-} from './database-schema.tsx';
-import { normalizePhone, phonesMatch } from './phone-utils.tsx';
+} from './database-schema';
+import { normalizePhone, phonesMatch } from './phone-utils';
+import { createVendorId } from "./phone-utils";
+import { getCustomersRepository } from '../../../supabase/lib/repositories/customers';
+import { getVendorsRepository } from '../../../supabase/lib/repositories/vendors';
+import { getStaffRepository } from '../../../supabase/lib/repositories/staff';
+import { getSessionsRepository } from '../../../supabase/lib/repositories/sessions';
+import { getAccessTokensRepository } from '../../../supabase/lib/repositories/access-tokens';
+import { getDbClient, selectQuery } from '../../../supabase/lib/db';
 
 // ============================================
 // USER MANAGEMENT
@@ -32,115 +52,157 @@ export async function findOrCreateUser(phone: string, role?: 'customer' | 'vendo
   console.log(`   Cleaned phone: ${cleanedPhone}`);
   console.log(`   Requested role: ${role}`);
   
-  // Try to find existing user
-  const existingUser = await kv.get(`user:phone:${cleanedPhone}`);
+  // Determine target role
+  const targetRole = role || 'customer';
   
-  if (existingUser) {
-    console.log(`   ✅ Existing user found: ${existingUser.userId}`);
-    console.log(`========== FIND OR CREATE USER END (existing) ==========\n`);
-    
-    // Update last login
-    existingUser.lastLoginAt = new Date().toISOString();
-    await kv.set(`user:phone:${cleanedPhone}`, existingUser);
-    await kv.set(`user:id:${existingUser.userId}`, existingUser);
-    
-    return existingUser;
-  }
+  // Try to find existing user based on role
+  let existingUser: User | null = null;
   
-  // MIGRATION: Check for old vendor profiles before creating new user
-  console.log(`   📋 No existing user - checking for OLD vendor profiles to migrate...`);
-  
-  // Check old vendor profile format: vendor:profile:*
-  const oldVendorProfiles = await kv.getByPrefix('vendor:profile:');
-  console.log(`   Found ${oldVendorProfiles.length} vendor:profile: entries`);
-  
-  let oldVendor = null;
-  
-  for (const profile of oldVendorProfiles) {
-    const profileCleanedPhone = profile.phone ? normalizePhone(profile.phone) : null;
-    console.log(`      Profile ${profile.id}: phone=${profile.phone} → cleaned=${profileCleanedPhone}`);
-    
-    if (profile.phone && phonesMatch(profileCleanedPhone, cleanedPhone)) {
-      oldVendor = profile;
-      console.log(`   🔄 MATCH! Found OLD vendor profile to migrate: ${profile.id}`);
-      break;
+  if (targetRole === 'customer') {
+    const customersRepo = getCustomersRepository();
+    const customer = await customersRepo.findByPhone(cleanedPhone);
+    if (customer) {
+      existingUser = {
+        userId: customer.id,
+        phone: customer.phone,
+        role: 'customer',
+        name: customer.full_name || '',
+        email: customer.email || '',
+        isActive: customer.is_active !== false,
+        isVerified: true,
+        createdAt: customer.created_at,
+        lastLoginAt: customer.last_login_at || customer.created_at
+      };
+    }
+  } else if (targetRole === 'vendor') {
+    const vendorsRepo = getVendorsRepository();
+    const vendors = await vendorsRepo.findAll({ phone: cleanedPhone });
+    const vendor = vendors.find(v => v.phone === cleanedPhone);
+    if (vendor) {
+      existingUser = {
+        userId: vendor.id,
+        phone: vendor.phone || cleanedPhone,
+        role: 'vendor',
+        name: vendor.business_name || '',
+        email: vendor.email || '',
+        isActive: vendor.is_active !== false,
+        isVerified: vendor.approval_status === 'approved',
+        createdAt: vendor.created_at,
+        lastLoginAt: vendor.last_login_at || vendor.created_at
+      };
+    }
+  } else if (targetRole === 'admin') {
+    // Admin users - check if exists (admins might be in a separate table or vendors with admin role)
+    // For now, check vendors with admin role
+    const vendorsRepo = getVendorsRepository();
+    const vendors = await vendorsRepo.findAll({ phone: cleanedPhone });
+    const adminVendor = vendors.find(v => v.phone === cleanedPhone && (v as any).role === 'admin');
+    if (adminVendor) {
+      existingUser = {
+        userId: adminVendor.id,
+        phone: adminVendor.phone || cleanedPhone,
+        role: 'admin',
+        name: adminVendor.business_name || '',
+        email: adminVendor.email || '',
+        isActive: adminVendor.is_active !== false,
+        isVerified: true,
+        createdAt: adminVendor.created_at,
+        lastLoginAt: adminVendor.last_login_at || adminVendor.created_at
+      };
     }
   }
   
-  // If old vendor found, migrate to new system
-  if (oldVendor && role === 'vendor') {
-    console.log(`   🔄 MIGRATING old vendor to new auth system...`);
+  if (existingUser) {
+    console.log(`   ✅ Existing user found: ${existingUser.userId}`);
     
-    const userId = generateId('user');
-    const now = new Date().toISOString();
+    // ✅ SQL: Update last login
+    if (targetRole === 'customer') {
+      const customersRepo = getCustomersRepository();
+      await customersRepo.update(existingUser.userId, {
+        last_login_at: new Date().toISOString()
+      });
+    } else if (targetRole === 'vendor') {
+      const vendorsRepo = getVendorsRepository();
+      await vendorsRepo.update(existingUser.userId, {
+        last_login_at: new Date().toISOString()
+      });
+    }
     
-    // Create user for old vendor
-    const newUser: User = {
-      userId,
-      phone: cleanedPhone,
-      role: 'vendor',
-      name: oldVendor.fullName || oldVendor.ownerName,
-      email: oldVendor.email,
-      isActive: true,
-      isVerified: true,
-      createdAt: oldVendor.createdAt || now,
-      lastLoginAt: now
-    };
-    
-    // Save user
-    await kv.set(`user:phone:${cleanedPhone}`, newUser);
-    await kv.set(`user:id:${userId}`, newUser);
-    
-    console.log(`   ✅ Created user for migrated vendor: ${userId}`);
-    
-    // Update old vendor profile to include userId
-    oldVendor.userId = userId;
-    oldVendor.updatedAt = now;
-    
-    // Save updated vendor profile with userId
-    const vendorId = oldVendor.id || oldVendor.vendorId;
-    await kv.set(`vendor:${vendorId}`, oldVendor);
-    
-    // Create vendor indexes if they don't exist
-    await kv.set(`vendor:user:${userId}`, vendorId);
-    await kv.set(`vendor:phone:${cleanedPhone}`, vendorId);
-    
-    console.log(`   ✅ Migrated vendor profile: ${vendorId} → user: ${userId}`);
-    console.log(`   ✅ Created indexes: vendor:user:${userId} and vendor:phone:${cleanedPhone}`);
-    console.log(`========== FIND OR CREATE USER END (migrated) ==========\n`);
-    
-    return newUser;
-  }
-  
-  if (oldVendor && role !== 'vendor') {
-    console.log(`   ⚠️ Found old vendor but role mismatch: requested=${role}, found=vendor`);
+    console.log(`========== FIND OR CREATE USER END (existing) ==========\n`);
+    return existingUser;
   }
   
   // Create new user
+  console.log(`   🆕 No existing user - creating NEW user with role ${targetRole}`);
+  
   const userId = generateId('user');
   const now = new Date().toISOString();
   
-  const newUser: User = {
-    userId,
-    phone: cleanedPhone,
-    role: role || 'customer', // Default to customer if not specified
-    name: '', // Default empty string instead of undefined
-    email: '', // Default empty string instead of undefined
-    isActive: true,
-    isVerified: true, // Auto-verify for now (OTP would be here)
-    createdAt: now,
-    lastLoginAt: now
-  };
-  
-  console.log(`   🆕 Creating NEW user: ${userId} with role ${newUser.role}`);
-  
-  // Store in multiple indexes
-  await kv.set(`user:phone:${cleanedPhone}`, newUser);
-  await kv.set(`user:id:${userId}`, newUser);
+  if (targetRole === 'customer') {
+    const customersRepo = getCustomersRepository();
+    const customer = await customersRepo.create({
+      phone: cleanedPhone,
+      customer_id: `cust_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      full_name: ''
+    });
+    
+    existingUser = {
+      userId: customer.id,
+      phone: customer.phone,
+      role: 'customer',
+      name: customer.full_name || '',
+      email: customer.email || '',
+      isActive: true,
+      isVerified: true,
+      createdAt: customer.created_at,
+      lastLoginAt: now
+    };
+  } else if (targetRole === 'vendor') {
+    const vendorsRepo = getVendorsRepository();
+    const vendor = await vendorsRepo.create({
+      phone: cleanedPhone,
+      vendor_id: createVendorId(cleanedPhone),
+      business_name: '',
+      role_id: 'vendor' // Will be set properly during onboarding
+    });
+    
+    existingUser = {
+      userId: vendor.id,
+      phone: vendor.phone || cleanedPhone,
+      role: 'vendor',
+      name: vendor.business_name || '',
+      email: vendor.email || '',
+      isActive: vendor.is_active !== false,
+      isVerified: false,
+      createdAt: vendor.created_at,
+      lastLoginAt: now
+    };
+  } else {
+    // Admin - create as vendor with admin role for now
+    const vendorsRepo = getVendorsRepository();
+    const vendor = await vendorsRepo.create({
+      phone: cleanedPhone,
+      vendor_id: `admin_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      business_name: '',
+      role_id: 'admin'
+    });
+    
+    existingUser = {
+      userId: vendor.id,
+      phone: vendor.phone || cleanedPhone,
+      role: 'admin',
+      name: vendor.business_name || '',
+      email: vendor.email || '',
+      isActive: true,
+      isVerified: true,
+      createdAt: vendor.created_at,
+      lastLoginAt: now
+    };
+  }
   
   console.log(`========== FIND OR CREATE USER END (new user) ==========\n`);
   
-  return newUser;
+  return existingUser!;
 }
 
 /**
@@ -148,14 +210,92 @@ export async function findOrCreateUser(phone: string, role?: 'customer' | 'vendo
  */
 export async function getUserByPhone(phone: string): Promise<User | null> {
   const cleanedPhone = normalizePhone(phone);
-  return await kv.get(`user:phone:${cleanedPhone}`);
+  
+  // Try customer first
+  const customersRepo = getCustomersRepository();
+  const customer = await customersRepo.findByPhone(cleanedPhone);
+  if (customer) {
+    return {
+      userId: customer.id,
+      phone: customer.phone,
+      role: 'customer',
+      name: customer.full_name || '',
+      email: customer.email || '',
+      isActive: customer.is_active !== false,
+      isVerified: true,
+      createdAt: customer.created_at,
+      lastLoginAt: customer.last_login_at || customer.created_at
+    };
+  }
+  
+  // Try vendor
+  const vendorsRepo = getVendorsRepository();
+  const vendors = await vendorsRepo.findAll({ phone: cleanedPhone });
+  const vendor = vendors.find(v => v.phone === cleanedPhone);
+  if (vendor) {
+    return {
+      userId: vendor.id,
+      phone: vendor.phone || cleanedPhone,
+      role: 'vendor',
+      name: vendor.business_name || '',
+      email: vendor.email || '',
+      isActive: vendor.is_active !== false,
+      isVerified: vendor.approval_status === 'approved',
+      createdAt: vendor.created_at,
+      lastLoginAt: vendor.last_login_at || vendor.created_at
+    };
+  }
+  
+  return null;
 }
 
 /**
  * Get user by ID
  */
 export async function getUserById(userId: string): Promise<User | null> {
-  return await kv.get(`user:id:${userId}`);
+  // Try customer first
+  const customersRepo = getCustomersRepository();
+  try {
+    const customer = await customersRepo.findById(userId);
+    if (customer) {
+      return {
+        userId: customer.id,
+        phone: customer.phone,
+        role: 'customer',
+        name: customer.full_name || '',
+        email: customer.email || '',
+        isActive: customer.is_active !== false,
+        isVerified: true,
+        createdAt: customer.created_at,
+        lastLoginAt: customer.last_login_at || customer.created_at
+      };
+    }
+  } catch (e) {
+    // Not a customer, try vendor
+  }
+  
+  // Try vendor
+  const vendorsRepo = getVendorsRepository();
+  try {
+    const vendor = await vendorsRepo.findById(userId) || await vendorsRepo.findByVendorId(userId);
+    if (vendor) {
+      return {
+        userId: vendor.id,
+        phone: vendor.phone || '',
+        role: 'vendor',
+        name: vendor.business_name || '',
+        email: vendor.email || '',
+        isActive: vendor.is_active !== false,
+        isVerified: vendor.approval_status === 'approved',
+        createdAt: vendor.created_at,
+        lastLoginAt: vendor.last_login_at || vendor.created_at
+      };
+    }
+  } catch (e) {
+    // Not a vendor
+  }
+  
+  return null;
 }
 
 /**
@@ -167,10 +307,26 @@ export async function updateUser(userId: string, updates: Partial<User>): Promis
     throw new Error(`User not found: ${userId}`);
   }
   
-  const updatedUser = { ...user, ...updates };
+  if (user.role === 'customer') {
+    const customersRepo = getCustomersRepository();
+    await customersRepo.update(userId, {
+      full_name: updates.name || undefined,
+      email: updates.email || undefined,
+      is_active: updates.isActive
+    });
+  } else if (user.role === 'vendor') {
+    const vendorsRepo = getVendorsRepository();
+    await vendorsRepo.update(userId, {
+      business_name: updates.name || undefined,
+      email: updates.email || undefined,
+      is_active: updates.isActive
+    });
+  }
   
-  await kv.set(`user:phone:${user.phone}`, updatedUser);
-  await kv.set(`user:id:${userId}`, updatedUser);
+  const updatedUser = await getUserById(userId);
+  if (!updatedUser) {
+    throw new Error('Failed to update user');
+  }
   
   return updatedUser;
 }
@@ -185,76 +341,118 @@ export async function updateUser(userId: string, updates: Partial<User>): Promis
 export async function createUserSession(userId: string, phone: string, role: string): Promise<Session> {
   const sessionId = generateId('session');
   const now = new Date().toISOString();
-  const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(); // ✅ EXTENDED: 48 hours (was 30 days, now aligned with frontend)
+  const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(); // 48 hours
   
-  const session: Session = {
-    sessionId,
-    userId,
+  const token = createSession(userId, role as 'customer' | 'vendor' | 'staff' | 'admin');
+  
+  // ✅ SQL: Create session
+  const sessionsRepo = getSessionsRepository();
+  const session = await sessionsRepo.create({
+    user_id: userId,
+    user_type: role,
+    token: token,
+    expires_in_days: 2 // 48 hours
+  });
+  
+  const sessionData: Session = {
+    sessionId: session.id,
+    userId: session.user_id,
     phone: normalizePhone(phone),
     role: role as 'customer' | 'vendor' | 'staff' | 'admin',
-    token: createSession(userId, role as 'customer' | 'vendor' | 'staff' | 'admin'),
-    createdAt: now,
-    expiresAt
+    token: session.token,
+    createdAt: session.created_at,
+    expiresAt: session.expires_at
   };
   
-  // Store session
-  await kv.set(`session:${session.sessionId}`, session);
-  await kv.set(`session:user:${userId}`, session.sessionId);
-  await kv.set(`session:phone:${normalizePhone(phone)}`, session.sessionId);
+  console.log(`🔑 Session created: ${session.id} for user ${userId}`);
   
-  console.log(`🔑 Session created: ${session.sessionId} for user ${userId}`);
-  
-  return session;
+  return sessionData;
 }
 
 /**
  * Get session by session ID
  */
 export async function getSession(sessionId: string): Promise<Session | null> {
-  const session = await kv.get(`session:${sessionId}`);
+  // ✅ SQL: Get session
+  const sessionsRepo = getSessionsRepository();
+  const session = await sessionsRepo.findById(sessionId);
   
-  if (!session) {
+  if (!session || !session.is_active) {
     return null;
   }
   
   // Check if expired
-  if (new Date(session.expiresAt) < new Date()) {
+  if (new Date(session.expires_at) < new Date()) {
     console.log(`⏰ Session expired: ${sessionId}`);
     await deleteSession(sessionId);
     return null;
   }
   
-  return session;
+  return {
+    sessionId: session.id,
+    userId: session.user_id,
+    phone: '', // Phone not stored in session table
+    role: session.user_type as 'customer' | 'vendor' | 'staff' | 'admin',
+    token: session.token,
+    createdAt: session.created_at,
+    expiresAt: session.expires_at
+  };
 }
 
 /**
  * ✅ SECURITY FIX: Get session by user ID
  */
 export async function getSessionByUserId(userId: string): Promise<Session | null> {
-  const sessionId = await kv.get(`session:user:${userId}`);
-  if (!sessionId) return null;
+  // ✅ SQL: Get latest session for user
+  const sessionsRepo = getSessionsRepository();
+  const sessions = await sessionsRepo.findByUser(userId, 'customer', { limit: 1 });
   
-  return await getSession(sessionId);
+  if (sessions.length === 0) {
+    // Try vendor
+    const vendorSessions = await sessionsRepo.findByUser(userId, 'vendor', { limit: 1 });
+    if (vendorSessions.length > 0) {
+      const session = vendorSessions[0];
+      return {
+        sessionId: session.id,
+        userId: session.user_id,
+        phone: '',
+        role: session.user_type as 'customer' | 'vendor' | 'staff' | 'admin',
+        token: session.token,
+        createdAt: session.created_at,
+        expiresAt: session.expires_at
+      };
+    }
+    return null;
+  }
+  
+  const session = sessions[0];
+  return {
+    sessionId: session.id,
+    userId: session.user_id,
+    phone: '',
+    role: session.user_type as 'customer' | 'vendor' | 'staff' | 'admin',
+    token: session.token,
+    createdAt: session.created_at,
+    expiresAt: session.expires_at
+  };
 }
 
 /**
  * Delete session
  */
 export async function deleteSession(sessionId: string): Promise<void> {
-  const session = await kv.get(`session:${sessionId}`);
-  
-  if (session) {
-    await kv.del(`session:${sessionId}`);
-    await kv.del(`session:user:${session.userId}`);
-    await kv.del(`session:phone:${session.phone}`);
-  }
+  // ✅ SQL: Invalidate session
+  const sessionsRepo = getSessionsRepository();
+  await sessionsRepo.invalidate(sessionId);
 }
+
+// ============================================
+// TOKEN MANAGEMENT
+// ============================================
 
 /**
  * ✅ SECURITY FIX: Generate access token for authenticated API calls
- * Tokens are stored in KV and validated on each API call
- * 
- * Token format: {userId}_{phone}_{timestamp}_{random}
+ * Tokens are stored in SQL and validated on each API call
  */
 export async function generateAccessToken(userId: string, phone: string, role: string): Promise<string> {
   const cleanedPhone = normalizePhone(phone);
@@ -264,19 +462,18 @@ export async function generateAccessToken(userId: string, phone: string, role: s
   // Create token with user info embedded
   const token = `${userId}_${cleanedPhone}_${timestamp}_${randomPart}`;
   
-  // ✅ EXTENDED: Store token in KV for validation (expires in 48 hours to match session expiry)
-  const expiresAt = timestamp + (48 * 60 * 60 * 1000); // 48 hours
-  const tokenData = {
-    token,
-    userId,
-    phone: cleanedPhone,
-    role,
-    createdAt: new Date().toISOString(),
-    expiresAt: new Date(expiresAt).toISOString()
-  };
+  // ✅ SQL: Store token
+  const expiresAt = new Date(timestamp + (48 * 60 * 60 * 1000)); // 48 hours
+  const tokensRepo = getAccessTokensRepository();
   
-  await kv.set(`token:${token}`, tokenData);
-  await kv.set(`token:user:${userId}`, token); // For quick user→token lookup
+  await tokensRepo.create({
+    token,
+    user_id: userId,
+    user_type: role,
+    phone: cleanedPhone,
+    role: role,
+    expires_at: expiresAt.toISOString()
+  });
   
   console.log(`🔐 Access token created: ${token.substring(0, 20)}... for user ${userId}, expires in 48 hours`);
   
@@ -292,47 +489,46 @@ export async function validateAccessToken(token: string): Promise<any | null> {
     return null;
   }
   
-  // Get token data from KV
-  const tokenData = await kv.get(`token:${token}`);
+  // ✅ SQL: Get token data
+  const tokensRepo = getAccessTokensRepository();
+  const tokenData = await tokensRepo.findByToken(token);
   
   if (!tokenData) {
-    console.log(`❌ Invalid token: not found in KV store`);
+    console.log(`❌ Invalid token: not found`);
     return null;
   }
   
   // Check if expired
-  const now = Date.now();
-  const expiresAt = new Date(tokenData.expiresAt).getTime();
-  
-  if (now > expiresAt) {
+  if (new Date(tokenData.expires_at) < new Date()) {
     console.log(`❌ Token expired: ${token.substring(0, 20)}...`);
-    // Clean up expired token
-    await kv.del(`token:${token}`);
+    await tokensRepo.invalidate(token);
     return null;
   }
   
-  console.log(`✅ Token validated for user ${tokenData.userId}`);
-  return tokenData;
+  console.log(`✅ Token validated for user ${tokenData.user_id}`);
+  return {
+    token: tokenData.token,
+    userId: tokenData.user_id,
+    phone: tokenData.phone,
+    role: tokenData.role,
+    createdAt: tokenData.created_at,
+    expiresAt: tokenData.expires_at
+  };
 }
 
 /**
  * Delete (invalidate) access token
  */
 export async function deleteAccessToken(token: string): Promise<void> {
-  const tokenData = await kv.get(`token:${token}`);
-  
-  if (tokenData) {
-    await kv.del(`token:${token}`);
-    await kv.del(`token:user:${tokenData.userId}`);
-    console.log(`🗑️ Token deleted: ${token.substring(0, 20)}...`);
-  }
+  // ✅ SQL: Invalidate token
+  const tokensRepo = getAccessTokensRepository();
+  await tokensRepo.invalidate(token);
+  console.log(`🗑️ Token deleted: ${token.substring(0, 20)}...`);
 }
 
 // ============================================
 // VENDOR STATE MANAGEMENT
 // ============================================
-
-import { createVendorId } from "./phone-utils.tsx";
 
 /**
  * Get complete vendor state
@@ -353,197 +549,83 @@ export async function getVendorState(userId: string, phone: string): Promise<{
     throw new Error('User not found');
   }
   
-  // Find vendor profile by userId first
-  let vendorId = await kv.get(`vendor:user:${userId}`);
-  console.log(`   Step 1 - Check vendor:user:${userId} → ${vendorId || 'NOT FOUND'}`);
+  // ✅ SQL: Get vendor by user ID or phone
+  const vendorsRepo = getVendorsRepository();
+  let vendor = await vendorsRepo.findById(userId) || await vendorsRepo.findByVendorId(userId);
   
-  let vendor: VendorProfile | null = null;
+  if (!vendor) {
+    const cleanedPhone = normalizePhone(phone);
+    const vendors = await vendorsRepo.findAll({ phone: cleanedPhone });
+    vendor = vendors.find(v => v.phone === cleanedPhone) || null;
+  }
+  
   let application: any = null;
   let state: any = 'new';
   
-  // If not found by userId, try by phone (for old vendor profiles)
-  if (!vendorId) {
-    console.log(`   Step 2 - Checking by phone...`);
-    const cleanedPhone = normalizePhone(phone);
-    console.log(`   Cleaned phone: ${cleanedPhone}`);
-    
-    vendorId = await kv.get(`vendor:phone:${cleanedPhone}`);
-    console.log(`   Check vendor:phone:${cleanedPhone} → ${vendorId || 'NOT FOUND'}`);
-
-    // ⚠️ FAST PATH FIX: Check vendor:${createVendorId(phone)} directly
-    if (!vendorId) {
-       const directVendorId = createVendorId(cleanedPhone);
-       const directVendor = await kv.get(`vendor:${directVendorId}`);
-       if (directVendor) {
-         console.log(`   ✅ FAST PATH MATCH! Found vendor directly at vendor:${directVendorId}`);
-         vendor = directVendor;
-         vendorId = directVendorId;
-         
-         // Self-heal indexes
-         await kv.set(`vendor:user:${userId}`, vendorId);
-         await kv.set(`vendor:phone:${cleanedPhone}`, vendorId);
-         // Also ensure the vendor record has the userId
-         if (!vendor.userId || vendor.userId !== userId) {
-            vendor.userId = userId;
-            await kv.set(`vendor:${vendorId}`, vendor);
-         }
-       }
-    }
-    
-    // Also check old format vendor:profile:*
-    if (!vendorId) {
-      console.log(`   Step 3 - Checking old vendor:profile: format...`);
-      const oldProfiles = await kv.getByPrefix('vendor:profile:');
-      console.log(`   Found ${oldProfiles.length} old profiles total`);
-      
-      for (const profile of oldProfiles) {
-        const profileCleanedPhone = profile.phone ? normalizePhone(profile.phone) : null;
-        console.log(`      Profile ${profile.id}: phone=${profile.phone} → cleaned=${profileCleanedPhone}`);
-        
-        if (profile.phone && phonesMatch(profileCleanedPhone, cleanedPhone)) {
-          vendor = profile;
-          vendorId = profile.id;
-          console.log(`   ✅ MATCH! Found old vendor profile: ${vendorId}`);
-          
-          // Link to user
-          await kv.set(`vendor:user:${userId}`, vendorId);
-          await kv.set(`vendor:phone:${cleanedPhone}`, vendorId);
-          console.log(`   Created indexes for future lookups`);
-          
-          break;
-        }
-      }
-      
-      // Also check vendor:vendor_ format
-      if (!vendorId) {
-        console.log(`   Step 4 - Checking vendor:vendor_ format...`);
-        const allVendors = await kv.getByPrefix('vendor:vendor_');
-        console.log(`   Found ${allVendors.length} vendor:vendor_ entries total`);
-        
-        for (const v of allVendors) {
-          const vCleanedPhone = v.phone ? normalizePhone(v.phone) : null;
-          console.log(`      Vendor ${v.id || v.vendorId}: phone=${v.phone} → cleaned=${vCleanedPhone}`);
-          
-          if (v.phone && phonesMatch(vCleanedPhone, cleanedPhone)) {
-            vendor = v;
-            vendorId = v.id || v.vendorId;
-            console.log(`   ✅ MATCH! Found vendor:vendor_ entry: ${vendorId}`);
-            
-            // 🔧 CRITICAL FIX: Update vendor record with userId if missing
-            if (!v.userId || v.userId !== userId) {
-              console.log(`   🔧 FIXING: Vendor userId mismatch or missing!`);
-              console.log(`      Current userId in vendor: ${v.userId || 'MISSING'}`);
-              console.log(`      Correct userId from login: ${userId}`);
-              
-              v.userId = userId;
-              v.updatedAt = new Date().toISOString();
-              await kv.set(`vendor:${vendorId}`, v);
-              console.log(`   ✅ Updated vendor record with correct userId`);
-            }
-            
-            // Link to user (this will OVERWRITE any wrong index!)
-            await kv.set(`vendor:user:${userId}`, vendorId);
-            await kv.set(`vendor:phone:${cleanedPhone}`, vendorId);
-            console.log(`   Created indexes for future lookups`);
-            
-            break;
-          }
-        }
-      }
-    }
-  }
-  
-  if (vendorId && !vendor) {
-    console.log(`   Step 5 - Loading vendor by ID: ${vendorId}`);
-    vendor = await kv.get(`vendor:${vendorId}`);
-    console.log(`   Vendor loaded: ${vendor ? 'YES' : 'NO'}`);
-  }
-  
   if (vendor) {
-    console.log(`   ✅ Vendor state loaded:`, {
-      vendorId: vendor.vendorId || vendor.id,
-      status: vendor.status, // NEW FIELD
-      applicationStatus: vendor.applicationStatus, // OLD FIELD (backwards compatibility)
-      hasApplication: !!vendor.applicationId,
-      setupCompleted: vendor.setupCompleted
-    });
+    // Application status is in vendor metadata or status field
+    const status = vendor.approval_status || (vendor as any).status || 'pending';
     
-    // Load application if exists
-    if (vendor.applicationId) {
-      application = await kv.get(`application:${vendor.applicationId}`);
-      
-      // Determine state based on application status
-      if (application) {
-        if (application.status === 'approved') {
-          state = vendor.setupCompleted ? 'active' : 'approved';
-        } else if (application.status === 'rejected') {
-          state = 'rejected';
-        } else {
-          state = 'pending';
-        }
-      } else {
-        state = 'onboarding';
-      }
-    } else if (vendor.status || vendor.applicationStatus) {
-      // CRITICAL FIX: Check BOTH new field (status) and old field (applicationStatus)
-      // New vendor onboarding uses 'status', old vendors use 'applicationStatus'
-      const vendorStatus = vendor.status || vendor.applicationStatus;
-      
-      console.log(`   📊 Vendor status field: ${vendorStatus} (from ${vendor.status ? 'vendor.status' : 'vendor.applicationStatus'})`);
-      
-      if (vendorStatus === 'approved') {
-        state = vendor.setupCompleted ? 'active' : 'approved';
-        console.log(`   ✅ Vendor approved - setup completed: ${vendor.setupCompleted} → state: ${state}`);
-      } else if (vendorStatus === 'rejected') {
-        state = 'rejected';
-        console.log(`   ❌ Vendor rejected → state: ${state}`);
-      } else if (vendorStatus === 'pending' || vendorStatus === 'pending_approval' || vendorStatus === 'under_review') {
-        state = 'pending';
-        console.log(`   ⏳ Vendor pending approval → state: ${state}`);
-      } else {
-        state = 'onboarding';
-        console.log(`   🔄 Vendor in onboarding → state: ${state}`);
-      }
+    if (status === 'approved') {
+      state = (vendor as any).setupCompleted ? 'active' : 'approved';
+    } else if (status === 'rejected') {
+      state = 'rejected';
+    } else if (status === 'pending' || status === 'pending_approval') {
+      state = 'pending';
     } else {
       state = 'onboarding';
-      console.log(`   🔄 No status found - default to onboarding`);
     }
-  } else {
-    console.log(`   ❌ NO VENDOR FOUND - State = new`);
+    
+    // Convert vendor to VendorProfile format
+    const vendorProfile: VendorProfile = {
+      vendorId: vendor.id,
+      userId: userId,
+      phone: vendor.phone || phone,
+      businessName: vendor.business_name || '',
+      vendorType: vendor.role_id || 'vendor',
+      status: status,
+      applicationStatus: status, // For backwards compatibility
+      isActive: vendor.is_active !== false,
+      setupCompleted: (vendor as any).setupCompleted || false
+    };
+    
+    console.log(`   ✅ Vendor state loaded: ${state}`);
+    console.log(`========== GET VENDOR STATE END ==========\n`);
+    
+    return { user, vendor: vendorProfile, application, state };
   }
   
-  console.log(`   📊 Final state: ${state}`);
+  console.log(`   ❌ NO VENDOR FOUND - State = new`);
   console.log(`========== GET VENDOR STATE END ==========\n`);
   
-  return { user, vendor, application, state };
+  return { user, vendor: null, application: null, state: 'new' };
 }
 
 /**
  * Create or update vendor profile
  */
 export async function saveVendorProfile(profile: VendorProfile): Promise<VendorProfile> {
-  // Store vendor profile
-  await kv.set(`vendor:${profile.vendorId}`, profile);
+  // ✅ SQL: Save vendor profile
+  const vendorsRepo = getVendorsRepository();
   
-  // Create indexes
-  await kv.set(`vendor:user:${profile.userId}`, profile.vendorId);
-  await kv.set(`vendor:phone:${profile.phone}`, profile.vendorId);
+  const existingVendor = await vendorsRepo.findById(profile.vendorId) || 
+                        await vendorsRepo.findByVendorId(profile.vendorId);
   
-  // Add to type index
-  const typeKey = `vendor:type:${profile.vendorType}`;
-  const vendorsOfType = await kv.get(typeKey) || [];
-  if (!vendorsOfType.includes(profile.vendorId)) {
-    vendorsOfType.push(profile.vendorId);
-    await kv.set(typeKey, vendorsOfType);
-  }
-  
-  // Add to active index if active
-  if (profile.isActive) {
-    const activeVendors = await kv.get('vendor:active') || [];
-    if (!activeVendors.includes(profile.vendorId)) {
-      activeVendors.push(profile.vendorId);
-      await kv.set('vendor:active', activeVendors);
-    }
+  if (existingVendor) {
+    await vendorsRepo.update(existingVendor.id, {
+      business_name: profile.businessName,
+      phone: profile.phone,
+      role_id: profile.vendorType,
+      is_active: profile.isActive,
+      approval_status: profile.status as any
+    });
+  } else {
+    await vendorsRepo.create({
+      vendor_id: profile.vendorId,
+      business_name: profile.businessName,
+      phone: profile.phone,
+      role_id: profile.vendorType
+    });
   }
   
   console.log(`💾 Vendor profile saved: ${profile.vendorId}`);
@@ -555,20 +637,51 @@ export async function saveVendorProfile(profile: VendorProfile): Promise<VendorP
  * Get vendor by user ID
  */
 export async function getVendorByUserId(userId: string): Promise<VendorProfile | null> {
-  const vendorId = await kv.get(`vendor:user:${userId}`);
-  if (!vendorId) return null;
+  // ✅ SQL: Get vendor
+  const vendorsRepo = getVendorsRepository();
+  const vendor = await vendorsRepo.findById(userId) || await vendorsRepo.findByVendorId(userId);
   
-  return await kv.get(`vendor:${vendorId}`);
+  if (!vendor) {
+    return null;
+  }
+  
+  return {
+    vendorId: vendor.id,
+    userId: userId,
+    phone: vendor.phone || '',
+    businessName: vendor.business_name || '',
+    vendorType: vendor.role_id || 'vendor',
+    status: vendor.approval_status || 'pending',
+    applicationStatus: vendor.approval_status || 'pending',
+    isActive: vendor.is_active !== false,
+    setupCompleted: (vendor as any).setupCompleted || false
+  };
 }
 
 /**
  * Get vendor by phone
  */
 export async function getVendorByPhone(phone: string): Promise<VendorProfile | null> {
-  const vendorId = await kv.get(`vendor:phone:${normalizePhone(phone)}`);
-  if (!vendorId) return null;
+  // ✅ SQL: Get vendor by phone
+  const vendorsRepo = getVendorsRepository();
+  const vendors = await vendorsRepo.findAll({ phone: normalizePhone(phone) });
+  const vendor = vendors.find(v => v.phone === normalizePhone(phone));
   
-  return await kv.get(`vendor:${vendorId}`);
+  if (!vendor) {
+    return null;
+  }
+  
+  return {
+    vendorId: vendor.id,
+    userId: vendor.id, // Use vendor ID as user ID for now
+    phone: vendor.phone || phone,
+    businessName: vendor.business_name || '',
+    vendorType: vendor.role_id || 'vendor',
+    status: vendor.approval_status || 'pending',
+    applicationStatus: vendor.approval_status || 'pending',
+    isActive: vendor.is_active !== false,
+    setupCompleted: (vendor as any).setupCompleted || false
+  };
 }
 
 // ============================================
@@ -587,23 +700,43 @@ export async function getCustomerState(userId: string): Promise<{
     throw new Error('User not found');
   }
   
-  const customerId = await kv.get(`customer:user:${userId}`);
-  let customer: CustomerProfile | null = null;
+  // ✅ SQL: Get customer
+  const customersRepo = getCustomersRepository();
+  const customer = await customersRepo.findById(userId);
   
-  if (customerId) {
-    customer = await kv.get(`customer:${customerId}`);
-  }
+  const customerProfile: CustomerProfile | null = customer ? {
+    customerId: customer.id,
+    userId: userId,
+    phone: customer.phone,
+    name: customer.full_name || '',
+    email: customer.email || ''
+  } : null;
   
-  return { user, customer };
+  return { user, customer: customerProfile };
 }
 
 /**
  * Create or update customer profile
  */
 export async function saveCustomerProfile(profile: CustomerProfile): Promise<CustomerProfile> {
-  await kv.set(`customer:${profile.customerId}`, profile);
-  await kv.set(`customer:user:${profile.userId}`, profile.customerId);
-  await kv.set(`customer:phone:${profile.phone}`, profile.customerId);
+  // ✅ SQL: Save customer profile
+  const customersRepo = getCustomersRepository();
+  
+  const existingCustomer = await customersRepo.findById(profile.customerId);
+  if (existingCustomer) {
+    await customersRepo.update(profile.customerId, {
+      full_name: profile.name,
+      email: profile.email,
+      phone: profile.phone
+    });
+  } else {
+    await customersRepo.create({
+      customer_id: profile.customerId,
+      phone: profile.phone,
+      full_name: profile.name,
+      email: profile.email
+    });
+  }
   
   console.log(`💾 Customer profile saved: ${profile.customerId}`);
   
@@ -626,22 +759,33 @@ export async function getAdminState(userId: string): Promise<{
     throw new Error('User not found');
   }
   
-  const adminId = await kv.get(`admin:user:${userId}`);
-  let admin: AdminProfile | null = null;
+  // Admins are vendors with admin role
+  const vendorsRepo = getVendorsRepository();
+  const vendor = await vendorsRepo.findById(userId);
   
-  if (adminId) {
-    admin = await kv.get(`admin:${adminId}`);
-  }
+  const adminProfile: AdminProfile | null = (vendor && (vendor as any).role === 'admin') ? {
+    adminId: vendor.id,
+    userId: userId,
+    name: vendor.business_name || ''
+  } : null;
   
-  return { user, admin };
+  return { user, admin: adminProfile };
 }
 
 /**
  * Create or update admin profile
  */
 export async function saveAdminProfile(profile: AdminProfile): Promise<AdminProfile> {
-  await kv.set(`admin:${profile.adminId}`, profile);
-  await kv.set(`admin:user:${profile.userId}`, profile.adminId);
+  // Admins stored as vendors with admin role
+  const vendorsRepo = getVendorsRepository();
+  const vendor = await vendorsRepo.findById(profile.adminId) || await vendorsRepo.findByVendorId(profile.adminId);
+  
+  if (vendor) {
+    await vendorsRepo.update(vendor.id, {
+      business_name: profile.name,
+      role_id: 'admin'
+    });
+  }
   
   console.log(`💾 Admin profile saved: ${profile.adminId}`);
   

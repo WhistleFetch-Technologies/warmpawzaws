@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useVideoCall } from '../../hooks/useVideoCall';
 import { VendorTeleConsultationActive } from './VendorTeleConsultationActive';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 interface VendorVideoCallContainerProps {
   bookingId: string;

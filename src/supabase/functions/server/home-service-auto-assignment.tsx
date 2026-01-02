@@ -11,9 +11,17 @@
  * - Fallback to manual assignment
  */
 
-import { Hono } from 'npm:hono';
-import { cors } from 'npm:hono/cors';
-import * as kv from './kv_store.tsx';
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from 'hono';
+import { cors } from "hono/cors";
+import {
+  getServicesRepository,
+  getStaffRepository,
+  getSchedulingRepository,
+  getBookingsRepository,
+  getNotificationsRepository,
+  getVendorsRepository
+} from '../../../supabase/lib/repositories/index';
 
 const app = new Hono();
 app.use('*', cors());
@@ -52,16 +60,16 @@ app.post('/assignments/auto-assign-home-service', async (c) => {
 
     console.log(`🔍 Starting home service auto-assignment for booking: ${bookingId}`);
 
-    // Get service details
-    const serviceData = await kv.get(`service:${serviceId}`);
-    if (!serviceData || !serviceData.value) {
+    // ✅ SQL: Get service details
+    const servicesRepo = getServicesRepository();
+    const service = await servicesRepo.findById(serviceId);
+    
+    if (!service) {
       return c.json({ error: 'Service not found' }, 404);
     }
 
-    const service = serviceData.value;
-
     // ✅ STEP 1: Find eligible staff for this service
-    const eligibleStaff = await findEligibleStaffForService(serviceId, service.vendorId);
+    const eligibleStaff = await findEligibleStaffForService(serviceId, service.vendor_id || service.vendorId);
 
     if (eligibleStaff.length === 0) {
       return fallbackToManualAssignment(bookingId, 'No staff available for this service');
@@ -115,25 +123,27 @@ app.post('/assignments/auto-assign-home-service', async (c) => {
     const selected = rankedStaff[0];
 
     // ✅ STEP 5: Assign to booking
-    const bookingData = await kv.get(`booking:${bookingId}`);
-    if (!bookingData || !bookingData.value) {
+    const bookingsRepo = getBookingsRepository();
+    const booking = await bookingsRepo.findById(bookingId);
+    
+    if (!booking) {
       return c.json({ error: 'Booking not found' }, 404);
     }
 
-    const booking = bookingData.value;
-    booking.assignedStaffId = selected.staffId;
-    booking.assignedStaffName = selected.staffName;
-    booking.assignedStaffPhoto = selected.staffPhoto;
-    booking.assignmentMethod = 'auto';
-    booking.assignmentCriteria = {
-      distance: selected.distance,
-      rating: selected.rating,
-      rankingScore: selected.score
-    };
-    booking.status = 'assigned';
-    booking.assignedAt = new Date().toISOString();
-
-    await kv.set(`booking:${bookingId}`, booking);
+    // ✅ SQL: Update booking with staff assignment
+    await bookingsRepo.update(bookingId, {
+      assigned_staff_id: selected.staffId,
+      assigned_staff_name: selected.staffName,
+      assigned_staff_photo: selected.staffPhoto,
+      assignment_method: 'auto',
+      assignment_criteria: {
+        distance: selected.distance,
+        rating: selected.rating,
+        rankingScore: selected.score
+      },
+      status: 'assigned',
+      assigned_at: new Date().toISOString()
+    });
 
     // Update staff active bookings
     await incrementStaffActiveBookings(selected.staffId);
@@ -168,28 +178,30 @@ app.post('/assignments/auto-assign-home-service', async (c) => {
  * Find eligible staff for a service
  */
 async function findEligibleStaffForService(serviceId: string, vendorId: string) {
+  // ✅ SQL: Get all staff for this vendor
+  const staffRepo = getStaffRepository();
+  const allStaff = await staffRepo.findByVendor(vendorId);
+
   const eligibleStaff = [];
 
-  // Get all staff for this vendor
-  const staffData = await kv.getByPrefix(`staff:vendor:${vendorId}:`);
-
-  for (const item of staffData) {
-    const staff = item.value;
-
+  for (const staff of allStaff) {
     // Check if staff can perform this service
-    const canPerform = staff.serviceIds?.includes(serviceId) || 
-                       staff.specializations?.some((spec: string) => 
+    const serviceIds = staff.service_ids || staff.serviceIds || [];
+    const specializations = staff.specializations || [];
+    
+    const canPerform = serviceIds.includes(serviceId) || 
+                       specializations.some((spec: string) => 
                          serviceId.toLowerCase().includes(spec.toLowerCase())
                        );
 
     if (canPerform) {
       eligibleStaff.push({
         staffId: staff.id,
-        staffName: staff.fullName,
-        staffPhoto: staff.photo,
+        staffName: staff.full_name || staff.name,
+        staffPhoto: staff.photo_url || staff.photo,
         rating: staff.rating || 4.5,
-        experience: staff.experience || 0,
-        specializations: staff.specializations || []
+        experience: staff.experience_years || staff.experience || 0,
+        specializations: specializations
       });
     }
   }
@@ -206,34 +218,42 @@ async function calculateStaffDistance(
   scheduledDateTime?: string
 ): Promise<number | null> {
   try {
-    // Get staff availability to find their service location
-    const availabilityData = await kv.getByPrefix(`staff:${staff.staffId}:availability:`);
-
-    if (availabilityData.length === 0) return null;
-
-    // Find the relevant availability slot
+    // ✅ SQL: Get staff availability to find their service location
+    const schedulingRepo = getSchedulingRepository();
     const scheduledDate = scheduledDateTime ? new Date(scheduledDateTime) : new Date();
-    const dayOfWeek = scheduledDate.getDay();
+    
+    // Get staff record to find location
+    const staffRepo = getStaffRepository();
+    const staffRecord = await staffRepo.findById(staff.staffId);
+    
+    if (!staffRecord || !(staffRecord as any).vendor_id) {
+      return null;
+    }
 
-    const relevantSlots = availabilityData
-      .map(item => item.value)
-      .filter(slot => 
-        slot.dayOfWeek === dayOfWeek && 
-        slot.isActive !== false &&
-        slot.mode === 'location' &&
-        slot.location
-      );
+    // Try to get location from staff metadata or availability
+    const metadata = (staffRecord as any).metadata || {};
+    const location = metadata.location || metadata.serviceLocation;
+    
+    if (!location || !location.latitude || !location.longitude) {
+      // Try to get from vendor location
+      const vendorsRepo = getVendorsRepository();
+      const vendor = await vendorsRepo.findById((staffRecord as any).vendor_id);
+      if (vendor && (vendor as any).latitude && (vendor as any).longitude) {
+        const distance = calculateDistance(
+          (vendor as any).latitude,
+          (vendor as any).longitude,
+          customerLocation.latitude,
+          customerLocation.longitude
+        );
+        return distance;
+      }
+      return null;
+    }
 
-    if (relevantSlots.length === 0) return null;
-
-    // Use the first matching slot's location
-    const slot = relevantSlots[0];
-    const staffLocation = slot.location;
-
-    // Calculate distance
+    // Calculate distance from staff location
     const distance = calculateDistance(
-      staffLocation.latitude,
-      staffLocation.longitude,
+      location.latitude,
+      location.longitude,
       customerLocation.latitude,
       customerLocation.longitude
     );
@@ -257,25 +277,51 @@ async function checkStaffAvailability(staffId: string, scheduledDateTime?: strin
     const dayOfWeek = scheduledDate.getDay();
     const scheduledTime = scheduledDate.getHours() * 60 + scheduledDate.getMinutes();
 
-    // Get availability slots
-    const availabilityData = await kv.getByPrefix(`staff:${staffId}:availability:`);
+    // ✅ SQL: Get staff availability using SchedulingRepository
+    const schedulingRepo = getSchedulingRepository();
+    const staffRepo = getStaffRepository();
+    const staffRecord = await staffRepo.findById(staffId);
+    
+    if (!staffRecord || !(staffRecord as any).vendor_id) {
+      return false;
+    }
 
-    const matchingSlots = availabilityData
-      .map(item => item.value)
-      .filter(slot => {
-        if (slot.dayOfWeek !== dayOfWeek || slot.isActive === false) return false;
+    // Get occupied slots to check conflicts
+    const vendorId = (staffRecord as any).vendor_id;
+    const bookingDate = scheduledDate.toISOString().split('T')[0];
+    const bookingTime = scheduledDate.toTimeString().split(' ')[0].substring(0, 5);
+    
+    // Check if slot is available using scheduling repository
+    const isAvailable = await schedulingRepo.isTimeSlotAvailable(
+      vendorId,
+      bookingDate,
+      bookingTime,
+      'at_home'
+    );
 
-        const slotStart = parseTime(slot.startTime);
-        const slotEnd = parseTime(slot.endTime);
+    if (!isAvailable) {
+      return false;
+    }
 
-        return scheduledTime >= slotStart && scheduledTime <= slotEnd;
-      });
+    // ✅ SQL: Check if staff has existing bookings at this time
+    const bookingsRepo = getBookingsRepository();
+    const existingBookings = await bookingsRepo.findAll({
+      staff_id: staffId,
+      booking_date: bookingDate,
+      status: 'confirmed' // Only check confirmed bookings
+    });
 
-    if (matchingSlots.length === 0) return false;
+    // Check time overlap
+    const hasConflict = existingBookings.some((booking: any) => {
+      const bookingTimeStr = booking.booking_time || '';
+      const [hours, mins] = bookingTimeStr.split(':').map(Number);
+      const bookingTimeMinutes = hours * 60 + mins;
+      
+      // Allow 30 min buffer for travel/overlap
+      return Math.abs(bookingTimeMinutes - scheduledTime) < 30;
+    });
 
-    // Check if staff is not over-booked at this time
-    // (This would check existing bookings in production)
-    return true;
+    return !hasConflict;
 
   } catch (error) {
     console.error(`Error checking availability for staff ${staffId}:`, error);
@@ -319,16 +365,19 @@ async function fallbackToManualAssignment(
   reason: string,
   maxRadius?: number
 ) {
-  const bookingData = await kv.get(`booking:${bookingId}`);
-  if (!bookingData || !bookingData.value) {
+  // ✅ SQL: Update booking with manual assignment status
+  const bookingsRepo = getBookingsRepository();
+  const booking = await bookingsRepo.findById(bookingId);
+  
+  if (!booking) {
     return { error: 'Booking not found' };
   }
 
-  const booking = bookingData.value;
-  booking.status = 'manual_assignment_pending';
-  booking.assignmentMethod = 'manual_pending';
-  booking.fallbackReason = reason;
-  await kv.set(`booking:${bookingId}`, booking);
+  await bookingsRepo.update(bookingId, {
+    status: 'manual_assignment_pending',
+    assignment_method: 'manual_pending',
+    fallback_reason: reason
+  });
 
   console.log(`⚠️ Fallback to manual assignment for ${bookingId}: ${reason}`);
 
@@ -369,28 +418,57 @@ function parseTime(time: string): number {
 }
 
 async function incrementStaffActiveBookings(staffId: string) {
-  const data = await kv.get(`staff:${staffId}:availability:current`);
-  if (data && data.value) {
-    const availability = data.value;
-    availability.activeBookings = (availability.activeBookings || 0) + 1;
-    await kv.set(`staff:${staffId}:availability:current`, availability);
+  // ✅ SQL: Update staff active bookings count
+  const staffRepo = getStaffRepository();
+  const staff = await staffRepo.findById(staffId);
+  
+  if (staff) {
+    // Get current active bookings count
+    const bookingsRepo = getBookingsRepository();
+    const activeBookings = await bookingsRepo.findAll({
+      staff_id: staffId,
+      status: 'confirmed' // Count only confirmed bookings as active
+    });
+    
+    const activeCount = activeBookings.length;
+    
+    // Update staff metadata with active bookings count
+    const metadata = (staff as any).metadata || {};
+    metadata.activeBookings = activeCount;
+    metadata.lastAssignmentAt = new Date().toISOString();
+    
+    await staffRepo.update(staffId, {
+      metadata: metadata
+    });
   }
 }
 
 async function notifyStaffOfAssignment(staffId: string, bookingId: string, serviceType: string) {
-  const notification = {
-    id: `notification_${Date.now()}`,
-    staffId,
-    bookingId,
-    type: 'new_assignment',
-    serviceType,
-    title: 'New Booking Assigned',
-    message: `You have been assigned to a new ${serviceType.replace('_', ' ')}`,
-    createdAt: new Date().toISOString(),
-    read: false
-  };
+  // ✅ SQL: Create notification
+  const notificationsRepo = getNotificationsRepository();
+  const staffRepo = getStaffRepository();
+  const staff = await staffRepo.findById(staffId);
+  
+  if (!staff) {
+    console.error(`Staff not found: ${staffId}`);
+    return;
+  }
 
-  await kv.set(`notification:${notification.id}`, notification);
+  // Get user_id for notification (could be staff.id or from staff.user_id)
+  const userId = (staff as any).user_id || staff.id;
+  
+  await notificationsRepo.create({
+    user_id: userId,
+    notification_type: 'assignment',
+    title: 'New Booking Assigned',
+    message: `You have been assigned to a new ${serviceType.replace('_', ' ')} booking`,
+    data: {
+      bookingId,
+      serviceType,
+      staffId
+    }
+  });
+  
   console.log(`📬 Notification sent to staff ${staffId}`);
 }
 

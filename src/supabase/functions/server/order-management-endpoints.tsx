@@ -1,6 +1,8 @@
-import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
-import { broadcastOrderUpdate } from './websocket-server.tsx';
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from 'hono';
+import { broadcastOrderUpdate } from './websocket-server';
+import { getOrdersRepository } from '../../../supabase/lib/repositories/index';
+import { getDbClient } from '../../../supabase/lib/db';
 
 const orderRoutes = new Hono();
 
@@ -38,21 +40,52 @@ orderRoutes.post('/place', async (c) => {
       }
     };
 
-    // Store order
-    await kv.set(`order:${orderId}`, order);
+    // ✅ SQL: Store order
+    const ordersRepo = getOrdersRepository();
+    await ordersRepo.create({
+      id: orderId,
+      order_number: orderNumber,
+      customer_id: customerId || customerPhone,
+      order_status: 'pending',
+      subtotal: pricing?.subtotal || 0,
+      tax_amount: pricing?.tax || 0,
+      shipping_amount: pricing?.shipping || 0,
+      discount_amount: pricing?.discount || 0,
+      total_amount: pricing?.total || 0,
+      shipping_address: address?.address || address?.street || '',
+      shipping_city: address?.city || '',
+      shipping_state: address?.state || '',
+      shipping_pincode: address?.pincode || address?.zip || '',
+      shipping_phone: customerPhone,
+      payment_id: null,
+      payment_status: paymentMethod || 'pending',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    });
     
-    // Clear Cart if customerId is present
-    if (customerId) {
-      await kv.del(`cart:${customerId}`);
-      console.log(`[ORDER] Cleared cart for customer ${customerId}`);
+    // ✅ SQL: Store order items
+    const db = getDbClient();
+    for (const item of items) {
+      await db.from('order_items').insert({
+        id: `${orderId}_item_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        order_id: orderId,
+        product_id: item.productId || item.id,
+        quantity: item.quantity || 1,
+        unit_price: item.price || 0,
+        total_price: (item.price || 0) * (item.quantity || 1),
+        created_at: new Date().toISOString()
+      });
     }
     
-    // Add to customer's order list
-    const customerOrdersKey = `customer_orders:${customerPhone}`;
-    const existingOrders = await kv.get(customerOrdersKey);
-    const orderList = existingOrders ? JSON.parse(existingOrders) : [];
-    orderList.unshift(orderId);
-    await kv.set(customerOrdersKey, JSON.stringify(orderList));
+    // ✅ SQL: Clear Cart if customerId is present (if carts table exists)
+    if (customerId) {
+      try {
+        await db.from('carts').delete().eq('customer_id', customerId);
+        console.log(`[ORDER] Cleared cart for customer ${customerId}`);
+      } catch (err) {
+        console.warn('[ORDER] Cart clearing not available:', err);
+      }
+    }
 
     console.log(`[ORDER] Created order ${orderId} for customer ${customerPhone}`);
 
@@ -73,27 +106,38 @@ orderRoutes.get('/customer/:phone', async (c) => {
   try {
     const phone = c.req.param('phone');
     
-    const customerOrdersKey = `customer_orders:${phone}`;
-    const ordersData = await kv.get(customerOrdersKey);
+    // ✅ SQL: Get customer orders
+    const ordersRepo = getOrdersRepository();
+    const orders = await ordersRepo.findByCustomer(phone);
     
-    if (!ordersData) {
-      return c.json({ orders: [] });
-    }
+    // Enrich with items
+    const db = getDbClient();
+    const enrichedOrders = await Promise.all(
+      orders.map(async (order: any) => {
+        const { data: items } = await db
+          .from('order_items')
+          .select('*')
+          .eq('order_id', order.id);
+        
+        return {
+          ...order,
+          items: items || [],
+          orderNumber: order.order_number,
+          status: order.order_status,
+          address: {
+            address: order.shipping_address,
+            city: order.shipping_city,
+            state: order.shipping_state,
+            pincode: order.shipping_pincode
+          },
+          customerPhone: order.shipping_phone,
+          createdAt: order.created_at,
+          updatedAt: order.updated_at
+        };
+      })
+    );
 
-    const orderIds = JSON.parse(ordersData);
-    const orders = [];
-
-    for (const orderId of orderIds) {
-      const orderData = await kv.get(`order:${orderId}`);
-      if (orderData) {
-        orders.push(JSON.parse(orderData));
-      }
-    }
-
-    // Sort by date, newest first
-    orders.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-    return c.json({ orders });
+    return c.json({ orders: enrichedOrders });
   } catch (error) {
     console.error('[ORDER] Error fetching customer orders:', error);
     return c.json({ error: 'Failed to fetch orders', details: error.message }, 500);
@@ -105,14 +149,29 @@ orderRoutes.get('/:orderId', async (c) => {
   try {
     const orderId = c.req.param('orderId');
     
-    const orderData = await kv.get(`order:${orderId}`);
+    // ✅ SQL: Get order details
+    const ordersRepo = getOrdersRepository();
+    const order = await ordersRepo.findById(orderId);
     
-    if (!orderData) {
+    if (!order) {
       return c.json({ error: 'Order not found' }, 404);
     }
 
-    const order = JSON.parse(orderData);
-    return c.json({ order });
+    // Enrich with items
+    const db = getDbClient();
+    const { data: items } = await db
+      .from('order_items')
+      .select('*')
+      .eq('order_id', orderId);
+
+    return c.json({ 
+      order: {
+        ...order,
+        items: items || [],
+        orderNumber: order.order_number,
+        status: order.order_status
+      }
+    });
   } catch (error) {
     console.error('[ORDER] Error fetching order:', error);
     return c.json({ error: 'Failed to fetch order', details: error.message }, 500);
@@ -125,34 +184,32 @@ orderRoutes.patch('/:orderId/status', async (c) => {
     const orderId = c.req.param('orderId');
     const { status, message } = await c.req.json();
 
-    const orderData = await kv.get(`order:${orderId}`);
+    // ✅ SQL: Get and update order
+    const ordersRepo = getOrdersRepository();
+    const order = await ordersRepo.findById(orderId);
     
-    if (!orderData) {
+    if (!order) {
       return c.json({ error: 'Order not found' }, 404);
     }
 
-    const order = JSON.parse(orderData);
-    order.status = status;
-    order.updatedAt = new Date().toISOString();
+    // ✅ SQL: Update order status
+    await ordersRepo.update(orderId, {
+      order_status: status,
+      updated_at: new Date().toISOString()
+    });
     
-    // Update tracking history
-    if (!order.trackingHistory) {
-      order.trackingHistory = [];
-    }
-    
-    order.trackingHistory.push({
-      status,
+    // ✅ SQL: Store tracking history
+    const db = getDbClient();
+    await db.from('order_tracking').insert({
+      id: `${orderId}_track_${Date.now()}`,
+      order_id: orderId,
+      status: status,
       message: message || `Order ${status}`,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      created_at: new Date().toISOString()
     });
 
-    order.tracking = {
-      status,
-      message: message || `Order ${status}`,
-      timestamp: new Date().toISOString()
-    };
-
-    await kv.set(`order:${orderId}`, order);
+    const updatedOrder = await ordersRepo.findById(orderId);
 
     console.log(`[ORDER] Updated order ${orderId} status to ${status}`);
 
@@ -168,11 +225,11 @@ orderRoutes.patch('/:orderId/status', async (c) => {
     if (customerId || order.customerPhone) {
       try {
         broadcastOrderUpdate({
-          orderId: order.id,
-          customerId: customerId || order.customerPhone, // Broadcast to phone as ID if needed, assuming client subscribes to customer:{phone}
-          status: order.status,
+          orderId: updatedOrder.id,
+          customerId: updatedOrder.customer_id || customerId || updatedOrder.shipping_phone,
+          status: updatedOrder.order_status,
           message: message || `Order status updated to ${status}`,
-          updatedAt: order.updatedAt
+          updatedAt: updatedOrder.updated_at
         });
       } catch (wsError) {
         console.error('Failed to broadcast order update:', wsError);
@@ -192,63 +249,60 @@ orderRoutes.post('/:orderId/cancel', async (c) => {
     const orderId = c.req.param('orderId');
     const { reason } = await c.req.json();
 
-    const orderData = await kv.get(`order:${orderId}`);
+    // ✅ SQL: Get and cancel order
+    const ordersRepo = getOrdersRepository();
+    const order = await ordersRepo.findById(orderId);
     
-    if (!orderData) {
+    if (!order) {
       return c.json({ error: 'Order not found' }, 404);
     }
 
-    const order = JSON.parse(orderData);
-    
     // Check if order can be cancelled
-    if (['delivered', 'cancelled'].includes(order.status)) {
+    if (['delivered', 'cancelled'].includes(order.order_status)) {
       return c.json({ 
         error: 'Order cannot be cancelled', 
-        message: `Order is already ${order.status}` 
+        message: `Order is already ${order.order_status}` 
       }, 400);
     }
 
-    order.status = 'cancelled';
-    order.cancellationReason = reason;
-    order.cancelledAt = new Date().toISOString();
-    order.updatedAt = new Date().toISOString();
+    // ✅ SQL: Update order to cancelled
+    await ordersRepo.update(orderId, {
+      order_status: 'cancelled',
+      cancelled_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    });
     
-    if (!order.trackingHistory) {
-      order.trackingHistory = [];
-    }
-    
-    order.trackingHistory.push({
+    // ✅ SQL: Store cancellation tracking
+    const db = getDbClient();
+    await db.from('order_tracking').insert({
+      id: `${orderId}_track_${Date.now()}`,
+      order_id: orderId,
       status: 'cancelled',
       message: `Order cancelled. Reason: ${reason || 'Customer request'}`,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      created_at: new Date().toISOString()
     });
 
-    order.tracking = {
-      status: 'cancelled',
-      message: 'Order has been cancelled',
-      timestamp: new Date().toISOString()
-    };
-
-    await kv.set(`order:${orderId}`, order);
+    const cancelledOrder = await ordersRepo.findById(orderId);
 
     console.log(`[ORDER] Cancelled order ${orderId}`);
 
     // BROADCAST CANCELLATION
-     if (order.customerId || order.customerPhone) {
+     if (cancelledOrder.customer_id || cancelledOrder.shipping_phone) {
       try {
         broadcastOrderUpdate({
-          orderId: order.id,
-          customerId: order.customerId || order.customerPhone,
+          orderId: cancelledOrder.id,
+          customerId: cancelledOrder.customer_id || cancelledOrder.shipping_phone,
           status: 'cancelled',
           message: `Order cancelled: ${reason}`,
-          updatedAt: order.updatedAt
+          updatedAt: cancelledOrder.updated_at
         });
       } catch (wsError) {
         console.error('Failed to broadcast order cancellation:', wsError);
       }
     }
 
-    return c.json({ success: true, order });
+    return c.json({ success: true, order: cancelledOrder });
   } catch (error) {
     console.error('[ORDER] Error cancelling order:', error);
     return c.json({ error: 'Failed to cancel order', details: error.message }, 500);
@@ -260,35 +314,53 @@ orderRoutes.get('/:orderId/tracking', async (c) => {
   try {
     const orderId = c.req.param('orderId');
     
-    const orderData = await kv.get(`order:${orderId}`);
+    // ✅ SQL: Get order and tracking history
+    const ordersRepo = getOrdersRepository();
+    const order = await ordersRepo.findById(orderId);
     
-    if (!orderData) {
+    if (!order) {
       return c.json({ error: 'Order not found' }, 404);
     }
 
-    const order = JSON.parse(orderData);
+    // ✅ SQL: Get tracking timeline
+    const db = getDbClient();
+    const { data: trackingHistory } = await db
+      .from('order_tracking')
+      .select('*')
+      .eq('order_id', orderId)
+      .order('timestamp', { ascending: true });
     
-    // Generate tracking timeline
-    const timeline = order.trackingHistory || [
-      {
-        status: 'pending',
-        message: 'Order placed successfully',
-        timestamp: order.createdAt
-      }
-    ];
+    const timeline = trackingHistory && trackingHistory.length > 0
+      ? trackingHistory.map((t: any) => ({
+          status: t.status,
+          message: t.message,
+          timestamp: t.timestamp
+        }))
+      : [
+          {
+            status: 'pending',
+            message: 'Order placed successfully',
+            timestamp: order.created_at
+          }
+        ];
 
     // Mock estimated delivery based on order date
-    const estimatedDeliveryDate = new Date(order.createdAt);
+    const estimatedDeliveryDate = new Date(order.created_at);
     estimatedDeliveryDate.setDate(estimatedDeliveryDate.getDate() + 3);
 
     return c.json({ 
       tracking: {
         orderId: order.id,
-        orderNumber: order.orderNumber,
-        currentStatus: order.status,
+        orderNumber: order.order_number,
+        currentStatus: order.order_status,
         estimatedDelivery: estimatedDeliveryDate.toISOString(),
         timeline,
-        shippingAddress: order.address
+        shippingAddress: {
+          address: order.shipping_address,
+          city: order.shipping_city,
+          state: order.shipping_state,
+          pincode: order.shipping_pincode
+        }
       }
     });
   } catch (error) {

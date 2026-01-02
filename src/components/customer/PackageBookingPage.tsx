@@ -14,7 +14,7 @@
 import React, { useState, useEffect } from 'react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { Package, Calendar, Check, Clock, TrendingUp, ChevronRight, Info, Star, Users, DollarSign } from 'lucide-react';
-import { toast } from 'sonner@2.0.3'; // ✅ FIX Bug 3: Import toast at module level instead of dynamic import
+import { toast } from 'sonner'; // ✅ FIX Bug 3: Import toast at module level instead of dynamic import
 
 interface PackageItem {
   id: string;

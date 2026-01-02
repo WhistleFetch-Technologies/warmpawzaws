@@ -7,7 +7,7 @@ import { Separator } from '../../ui/separator';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { ImageWithFallback } from '../../figma/ImageWithFallback';
 import { cn } from '../../../lib/utils';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { useRealtimeUpdates } from '../../../hooks/useRealtimeUpdates';
 
 interface OrderDetailProps {

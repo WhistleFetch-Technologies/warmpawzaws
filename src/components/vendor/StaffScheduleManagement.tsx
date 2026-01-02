@@ -26,15 +26,20 @@ import {
   Plus,
   Trash2,
   Edit,
+  Edit2,
   X,
   Coffee,
   Sun,
+  Moon,
   AlertCircle,
-  Check
+  Check,
+  Settings,
+  Timer,
+  Palmtree,
+  Save
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
-import { authenticatedFetch } from '../../utils/session-manager'; // ✅ SECURITY FIX
+// ✅ FIX: Removed Supabase imports - using API Gateway now
+import { toast } from 'sonner';
 
 interface StaffScheduleManagementProps {
   staffId: string;
@@ -103,7 +108,14 @@ export function StaffScheduleManagement({ staffId, staffName, vendorId, onClose 
   const [showAddHolidayDialog, setShowAddHolidayDialog] = useState(false);
   const [editingHoliday, setEditingHoliday] = useState<Holiday | null>(null);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  // ✅ FIX: Use API Gateway URL instead of Supabase
+  const getApiBase = () => {
+    const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+    if (!API_GATEWAY_URL) {
+      throw new Error('API Gateway URL not configured');
+    }
+    return `${API_GATEWAY_URL}/make-server-3dd53475`;
+  };
 
   useEffect(() => {
     loadScheduleData();
@@ -113,45 +125,37 @@ export function StaffScheduleManagement({ staffId, staffName, vendorId, onClose 
     try {
       setLoading(true);
       
-      // Load breaks
-      const breaksResponse = await fetch(
-        `${API_BASE}/staff/${staffId}/breaks`,
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_BASE = getApiBase();
       
-      if (breaksResponse.ok) {
-        const breaksData = await breaksResponse.json();
-        setBreaks(breaksData.breaks || []);
+      // Load breaks
+      try {
+        const breaksData = await apiCallJson<any>(`${API_BASE}/staff/${staffId}/breaks`);
+        if (breaksData.success) {
+          setBreaks(breaksData.breaks || []);
+        }
+      } catch (err) {
+        console.warn('[SCHEDULE-MGMT] Failed to load breaks:', err);
       }
       
       // Load preferences
-      const prefsResponse = await fetch(
-        `${API_BASE}/staff/${staffId}/preferences`,
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
-      
-      if (prefsResponse.ok) {
-        const prefsData = await prefsResponse.json();
-        if (prefsData.preferences) {
+      try {
+        const prefsData = await apiCallJson<any>(`${API_BASE}/staff/${staffId}/preferences`);
+        if (prefsData.success && prefsData.preferences) {
           setPreferences(prefsData.preferences);
         }
+      } catch (err) {
+        console.warn('[SCHEDULE-MGMT] Failed to load preferences:', err);
       }
       
       // Load holidays
-      const holidaysResponse = await fetch(
-        `${API_BASE}/staff/${staffId}/holidays`,
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+      try {
+        const holidaysData = await apiCallJson<any>(`${API_BASE}/staff/${staffId}/holidays`);
+        if (holidaysData.success) {
+          setHolidays(holidaysData.holidays || []);
         }
-      );
-      
-      if (holidaysResponse.ok) {
-        const holidaysData = await holidaysResponse.json();
-        setHolidays(holidaysData.holidays || []);
+      } catch (err) {
+        console.warn('[SCHEDULE-MGMT] Failed to load holidays:', err);
       }
       
     } catch (error) {
@@ -178,8 +182,10 @@ export function StaffScheduleManagement({ staffId, staffName, vendorId, onClose 
         recurringDay: breakData.recurringDay
       };
 
-      // ✅ SECURITY FIX: Use authenticatedFetch
-      const response = await authenticatedFetch(
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_BASE = getApiBase();
+      
+      const data = await apiCallJson<any>(
         `${API_BASE}/staff/${staffId}/breaks`,
         {
           method: 'POST',
@@ -187,13 +193,12 @@ export function StaffScheduleManagement({ staffId, staffName, vendorId, onClose 
         }
       );
 
-      if (response.ok) {
-        const data = await response.json();
+      if (data.success) {
         setBreaks(data.breaks || [...breaks, newBreak]);
         setShowAddBreakDialog(false);
         toast.success('Break added successfully');
       } else {
-        toast.error('Failed to add break');
+        toast.error(data.error || data.message || 'Failed to add break');
       }
     } catch (error) {
       console.error('[SCHEDULE-MGMT] Error adding break:', error);
@@ -203,8 +208,10 @@ export function StaffScheduleManagement({ staffId, staffName, vendorId, onClose 
 
   const handleUpdateBreak = async (breakId: string, breakData: Partial<Break>) => {
     try {
-      // ✅ SECURITY FIX: Use authenticatedFetch
-      const response = await authenticatedFetch(
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_BASE = getApiBase();
+      
+      const data = await apiCallJson<any>(
         `${API_BASE}/staff/${staffId}/breaks/${breakId}`,
         {
           method: 'PUT',
@@ -212,13 +219,12 @@ export function StaffScheduleManagement({ staffId, staffName, vendorId, onClose 
         }
       );
 
-      if (response.ok) {
-        const data = await response.json();
+      if (data.success) {
         setBreaks(data.breaks || breaks.map(b => b.id === breakId ? { ...b, ...breakData } : b));
         setEditingBreak(null);
         toast.success('Break updated successfully');
       } else {
-        toast.error('Failed to update break');
+        toast.error(data.error || data.message || 'Failed to update break');
       }
     } catch (error) {
       console.error('[SCHEDULE-MGMT] Error updating break:', error);
@@ -230,20 +236,21 @@ export function StaffScheduleManagement({ staffId, staffName, vendorId, onClose 
     if (!confirm('Are you sure you want to delete this break?')) return;
 
     try {
-      // ✅ SECURITY FIX: Use authenticatedFetch
-      const response = await authenticatedFetch(
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_BASE = getApiBase();
+      
+      const data = await apiCallJson<any>(
         `${API_BASE}/staff/${staffId}/breaks/${breakId}`,
         {
           method: 'DELETE'
         }
       );
 
-      if (response.ok) {
-        const data = await response.json();
+      if (data.success) {
         setBreaks(data.breaks || breaks.filter(b => b.id !== breakId));
         toast.success('Break deleted successfully');
       } else {
-        toast.error('Failed to delete break');
+        toast.error(data.error || data.message || 'Failed to delete break');
       }
     } catch (error) {
       console.error('[SCHEDULE-MGMT] Error deleting break:', error);
@@ -257,8 +264,10 @@ export function StaffScheduleManagement({ staffId, staffName, vendorId, onClose 
 
   const handleSavePreferences = async () => {
     try {
-      // ✅ SECURITY FIX: Use authenticatedFetch
-      const response = await authenticatedFetch(
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_BASE = getApiBase();
+      
+      const data = await apiCallJson<any>(
         `${API_BASE}/staff/${staffId}/preferences`,
         {
           method: 'PUT',
@@ -266,11 +275,11 @@ export function StaffScheduleManagement({ staffId, staffName, vendorId, onClose 
         }
       );
 
-      if (response.ok) {
+      if (data.success) {
         setPreferencesChanged(false);
         toast.success('Preferences saved successfully');
       } else {
-        toast.error('Failed to save preferences');
+        toast.error(data.error || data.message || 'Failed to save preferences');
       }
     } catch (error) {
       console.error('[SCHEDULE-MGMT] Error saving preferences:', error);
@@ -293,8 +302,10 @@ export function StaffScheduleManagement({ staffId, staffName, vendorId, onClose 
         recurringDay: holidayData.recurringDay
       };
 
-      // ✅ SECURITY FIX: Use authenticatedFetch
-      const response = await authenticatedFetch(
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_BASE = getApiBase();
+      
+      const data = await apiCallJson<any>(
         `${API_BASE}/staff/${staffId}/holidays`,
         {
           method: 'POST',
@@ -302,13 +313,12 @@ export function StaffScheduleManagement({ staffId, staffName, vendorId, onClose 
         }
       );
 
-      if (response.ok) {
-        const data = await response.json();
+      if (data.success) {
         setHolidays(data.holidays || [...holidays, newHoliday]);
         setShowAddHolidayDialog(false);
         toast.success('Holiday added successfully');
       } else {
-        toast.error('Failed to add holiday');
+        toast.error(data.error || data.message || 'Failed to add holiday');
       }
     } catch (error) {
       console.error('[SCHEDULE-MGMT] Error adding holiday:', error);
@@ -320,20 +330,21 @@ export function StaffScheduleManagement({ staffId, staffName, vendorId, onClose 
     if (!confirm('Are you sure you want to delete this holiday?')) return;
 
     try {
-      // ✅ SECURITY FIX: Use authenticatedFetch
-      const response = await authenticatedFetch(
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_BASE = getApiBase();
+      
+      const data = await apiCallJson<any>(
         `${API_BASE}/staff/${staffId}/holidays/${holidayId}`,
         {
           method: 'DELETE'
         }
       );
 
-      if (response.ok) {
-        const data = await response.json();
+      if (data.success) {
         setHolidays(data.holidays || holidays.filter(h => h.id !== holidayId));
         toast.success('Holiday deleted successfully');
       } else {
-        toast.error('Failed to delete holiday');
+        toast.error(data.error || data.message || 'Failed to delete holiday');
       }
     } catch (error) {
       console.error('[SCHEDULE-MGMT] Error deleting holiday:', error);

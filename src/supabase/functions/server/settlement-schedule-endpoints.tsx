@@ -7,10 +7,10 @@
  * - Razorpay Marketplace API integration for payouts
  */
 
-import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
-import { sendSuccess, sendError } from './response-utils.ts';
-import { createRazorpayPayout } from './razorpay-marketplace-payout.tsx';
+import { Hono } from 'hono';
+import * as kv from './kv_store';
+import { sendSuccess, sendError } from './response-utils';
+import { createRazorpayPayout } from './razorpay-marketplace-payout';
 
 export function settlementScheduleEndpoints(app: Hono) {
   const BASE_PATH = '/make-server-3dd53475';

@@ -5,7 +5,8 @@
  * TASK 3: Concurrency and conflict detection
  */
 
-import * as kv from './kv_store.tsx';
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { getDbClient } from '../../../supabase/lib/db';
 
 interface AvailabilitySlot {
   id: string;
@@ -141,12 +142,36 @@ export async function detectConflicts(
   const conflicts: ConflictInfo[] = [];
 
   try {
-    // Get all existing slots for this staff member
-    const existingSlotsData = await kv.getByPrefix(`staff:${staffId}:availability:`);
-    const existingSlots: AvailabilitySlot[] = existingSlotsData
-      .filter((item: any) => item.value && item.value.isActive)
-      .filter((item: any) => item.value.id !== newSlot.id) // Exclude self when editing
-      .map((item: any) => item.value);
+    // ✅ SQL: Get all existing slots for this staff member from staff_availability table
+    const db = getDbClient();
+    const { data: existingSlotsData } = await db
+      .from('staff_availability')
+      .select('*')
+      .eq('staff_id', staffId)
+      .eq('is_active', true)
+      .neq('id', newSlot.id); // Exclude self when editing
+    
+    const existingSlots: AvailabilitySlot[] = (existingSlotsData || []).map((item: any) => ({
+      id: item.id,
+      staffId: item.staff_id,
+      dayOfWeek: item.day_of_week,
+      startTime: item.start_time,
+      endTime: item.end_time,
+      mode: item.mode,
+      location: item.location,
+      centreId: item.centre_id,
+      centreName: item.centre_name,
+      allowedServiceIds: item.allowed_service_ids || [],
+      hasHomeServices: item.has_home_services || false,
+      hasTeleServices: item.has_tele_services || false,
+      leadTime: item.lead_time,
+      maxDistance: item.max_distance,
+      bufferTime: item.buffer_time || 0,
+      maxConcurrentBookings: item.max_concurrent_bookings || 1,
+      isActive: item.is_active,
+      createdAt: item.created_at,
+      updatedAt: item.updated_at
+    }));
 
     // 1. Check for time overlaps on the same day
     const overlaps = detectTimeOverlaps(newSlot, existingSlots);
@@ -226,14 +251,20 @@ async function detectCentreConcurrencyConflicts(
   const conflicts: ConflictInfo[] = [];
 
   try {
-    // Get centre details to check limits
-    const centreData = await kv.get(`centre:${newSlot.centreId}`);
-    if (!centreData || !centreData.value) {
+    // ✅ SQL: Get centre details to check limits from vendors table (centre = vendor with role centre)
+    const db = getDbClient();
+    const { data: centreData } = await db
+      .from('vendors')
+      .select('*')
+      .eq('id', newSlot.centreId)
+      .single();
+    
+    if (!centreData) {
       // If centre not found, skip concurrency check (will be validated elsewhere)
       return conflicts;
     }
 
-    const centre = centreData.value;
+    const centre = centreData;
     const centreMaxConcurrency = centre.maxConcurrentBookings || 10; // Default limit
 
     // Find all slots at the same centre on the same day that overlap with this slot

@@ -1,5 +1,6 @@
-import { Hono } from "npm:hono";
-import * as kv from "./kv_store.tsx";
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from "hono";
+import { getDbClient } from '../../../supabase/lib/db';
 
 /**
  * AWS Chime Chat Integration
@@ -35,8 +36,15 @@ export function registerAWSChimeChatEndpoints(app: Hono) {
         return c.json({ success: false, error: 'Unauthorized' }, 401);
       }
 
-      // Get consultation
-      const consultation = await kv.get(`consultation:${id}`);
+      // ✅ SQL: Get consultation (stored as booking with consultation type)
+      const db = getDbClient();
+      const { data: consultation } = await db
+        .from('bookings')
+        .select('*')
+        .eq('id', id)
+        .eq('service_type', 'tele_consultation')
+        .single();
+      
       if (!consultation) {
         return c.json({ success: false, error: 'Consultation not found' }, 404);
       }
@@ -54,14 +62,20 @@ export function registerAWSChimeChatEndpoints(app: Hono) {
         read: false
       };
 
-      // Store message
-      await kv.set(`chat:${id}:${messageId}`, chatMessage);
-
-      // Add to conversation thread
-      const threadKey = `chat:thread:${id}`;
-      const thread = await kv.get(threadKey) || [];
-      thread.push(messageId);
-      await kv.set(threadKey, thread);
+      // ✅ SQL: Store message
+      await db
+        .from('chat_messages')
+        .insert({
+          id: messageId,
+          consultation_id: id,
+          sender_id: senderId,
+          sender_name: senderName,
+          sender_type: senderType,
+          message,
+          timestamp: new Date().toISOString(),
+          read: false,
+          created_at: new Date().toISOString()
+        });
 
       console.log(`💬 [Chat] Message sent in consultation ${id}`);
 
@@ -84,15 +98,13 @@ export function registerAWSChimeChatEndpoints(app: Hono) {
       const { id } = c.req.param();
       const limit = parseInt(c.req.query('limit') || '50');
 
-      // Get thread
-      const threadKey = `chat:thread:${id}`;
-      const thread = await kv.get(threadKey) || [];
-
-      // Get messages
-      const messageIds = thread.slice(-limit); // Get last N messages
-      const messages = await Promise.all(
-        messageIds.map((msgId: string) => kv.get(`chat:${id}:${msgId}`))
-      );
+      // ✅ SQL: Get messages
+      const { data: messages } = await db
+        .from('chat_messages')
+        .select('*')
+        .eq('consultation_id', id)
+        .order('timestamp', { ascending: false })
+        .limit(limit);
 
       return c.json({
         success: true,
@@ -113,13 +125,17 @@ export function registerAWSChimeChatEndpoints(app: Hono) {
       const { id } = c.req.param();
       const { messageIds } = await c.req.json();
 
+      // ✅ SQL: Mark messages as read
       for (const msgId of messageIds) {
-        const message = await kv.get(`chat:${id}:${msgId}`);
-        if (message) {
-          message.read = true;
-          message.readAt = new Date().toISOString();
-          await kv.set(`chat:${id}:${msgId}`, message);
-        }
+        await db
+          .from('chat_messages')
+          .update({
+            read: true,
+            read_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', msgId)
+          .eq('consultation_id', id);
       }
 
       return c.json({ success: true });
@@ -137,21 +153,27 @@ export function registerAWSChimeChatEndpoints(app: Hono) {
       const { id } = c.req.param();
       const { userId, userType, isTyping } = await c.req.json();
 
-      const typingKey = `chat:typing:${id}:${userId}`;
-      
+      // ✅ SQL: Store typing indicator
       if (isTyping) {
-        await kv.set(typingKey, {
-          userId,
-          userType,
-          timestamp: new Date().toISOString()
-        });
+        await db
+          .from('chat_typing_indicators')
+          .upsert({
+            consultation_id: id,
+            user_id: userId,
+            user_type: userType,
+            timestamp: new Date().toISOString(),
+            expires_at: new Date(Date.now() + 5000).toISOString()
+          }, {
+            onConflict: 'consultation_id,user_id'
+          });
         
-        // Auto-expire after 5 seconds
-        setTimeout(async () => {
-          await kv.del(typingKey);
-        }, 5000);
+        // Auto-expire after 5 seconds (can use DB trigger or cleanup job)
       } else {
-        await kv.del(typingKey);
+        await db
+          .from('chat_typing_indicators')
+          .delete()
+          .eq('consultation_id', id)
+          .eq('user_id', userId);
       }
 
       return c.json({ success: true });
@@ -168,15 +190,14 @@ export function registerAWSChimeChatEndpoints(app: Hono) {
     try {
       const { id } = c.req.param();
       
-      // Get all typing indicators for this consultation
-      const typingData = await kv.getByPrefix(`chat:typing:${id}:`);
+      // ✅ SQL: Get typing indicators
+      const { data: typingData } = await db
+        .from('chat_typing_indicators')
+        .select('*')
+        .eq('consultation_id', id)
+        .gt('expires_at', new Date().toISOString());
       
-      // Filter out expired ones (older than 5 seconds)
-      const now = Date.now();
-      const activeTyping = typingData.filter((t: any) => {
-        const timestamp = new Date(t.timestamp).getTime();
-        return (now - timestamp) < 5000;
-      });
+      const activeTyping = typingData || [];
 
       return c.json({
         success: true,

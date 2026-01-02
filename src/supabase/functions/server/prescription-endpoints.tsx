@@ -1,6 +1,6 @@
-import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
-import { createNotificationHelper } from './notification-system.tsx';
+import { Hono } from 'hono';
+import * as kv from './kv_store';
+import { createNotificationHelper } from './notification-system';
 
 const app = new Hono();
 

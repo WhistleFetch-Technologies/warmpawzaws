@@ -19,10 +19,10 @@
  * Returns: Complete health status report
  */
 
-import { Hono } from 'npm:hono';
-import { cors } from 'npm:hono/cors';
-import * as kv from './kv_store.tsx';
-import { roleService } from './role-service.tsx';
+import { Hono } from 'hono';
+import { cors } from "hono/cors";
+import * as kv from './kv_store';
+import { roleService } from './role-service';
 
 const app = new Hono();
 app.use('*', cors());

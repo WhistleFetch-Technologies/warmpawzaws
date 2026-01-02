@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../ui/tabs';
 import { 
   CreditCard, RefreshCcw, ShieldCheck, AlertCircle, Save, CheckCircle2, Settings, Receipt, Calendar, Percent
 } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
 import { PaymentRulesSection } from './PaymentRulesSection';
 import { RefundPoliciesSection } from './RefundPoliciesSection';

@@ -4,7 +4,7 @@ import {
   TrendingUp, DollarSign, Calendar, Package, Clock,
   ChevronLeft, RefreshCw, Download, TrendingDown
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+// ✅ FIX: Removed Supabase imports - using API Gateway now
 
 interface EarningsData {
   totalBookings: number;
@@ -36,22 +36,27 @@ export function EarningsAnalytics({ vendorId, staffId, userType, onBack }: Earni
 
     try {
       setLoading(true);
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
       const endpoint = userType === 'vendor' 
         ? `/vendor/${id}/earnings`
         : `/staff/${id}/earnings`;
 
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475${endpoint}?period=${activePeriod}`,
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
+      const result = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475${endpoint}?period=${activePeriod}`
       );
 
-      if (response.ok) {
-        const result = await response.json();
+      if (result.success) {
         setEarnings(result.earnings);
+      } else {
+        console.error('Error loading earnings:', result.error || result.message);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading earnings:', error);
     } finally {
       setLoading(false);

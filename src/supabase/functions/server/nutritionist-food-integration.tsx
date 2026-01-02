@@ -1,6 +1,12 @@
-import { Hono } from "npm:hono";
-import * as kv from "./kv_store.tsx";
-import { sendSuccess, sendError } from "./response-utils.ts";
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from "hono";
+import { sendSuccess, sendError } from "./response-utils";
+import { 
+  getMealPlansRepository,
+  getCustomersRepository,
+  getProductsRepository
+} from '../../../supabase/lib/repositories/index';
+import { getDbClient } from '../../../supabase/lib/db';
 
 /**
  * 🥗 NUTRITIONIST FOOD DELIVERY INTEGRATION
@@ -13,7 +19,7 @@ import { sendSuccess, sendError } from "./response-utils.ts";
  * - Schedule recurring deliveries based on plan duration
  */
 
-export function nutritionistFoodIntegrationEndpoints(app: Hono, kv: any) {
+export function nutritionistFoodIntegrationEndpoints(app: Hono) {
   const BASE_PATH = "/make-server-3dd53475";
 
   /**
@@ -32,12 +38,20 @@ export function nutritionistFoodIntegrationEndpoints(app: Hono, kv: any) {
         paymentMethod = 'razorpay'
       } = body;
 
-      // 1. Fetch Diet Plan
-      const plan = await kv.get(`diet_plan:${planId}`);
-      if (!plan) return sendError(c, 'Diet plan not found', 404);
+      // ✅ SQL: Fetch Diet Plan from meal_plans table
+      const mealPlansRepo = getMealPlansRepository();
+      const planData = await mealPlansRepo.findById(planId);
+      if (!planData) return sendError(c, 'Diet plan not found', 404);
+      
+      const plan = {
+        ...planData.metadata,
+        id: planData.id,
+        weeklySchedule: planData.weekly_schedule || []
+      };
 
-      // 2. Fetch Customer
-      const customer = await kv.get(`customer:${customerId}`);
+      // ✅ SQL: Fetch Customer from customers table
+      const customersRepo = getCustomersRepository();
+      const customer = await customersRepo.findById(customerId);
       if (!customer) return sendError(c, 'Customer not found', 404);
 
       // 3. Analyze Ingredients needed for the requested duration
@@ -52,30 +66,29 @@ export function nutritionistFoodIntegrationEndpoints(app: Hono, kv: any) {
         day.meals.flatMap((meal: any) => meal.items)
       );
       
-      // 4. Find matching products in Food Delivery Inventory (Hyperlocal)
-      // We'll search for vendors in customer's vicinity (mocked)
-      const products = await kv.getByPrefix('product:food:');
+      // ✅ SQL: Find matching products in Food Delivery Inventory from products table
+      const productsRepo = getProductsRepository();
+      const allProducts = await productsRepo.findByCategory('food');
       const cartItems: any[] = [];
       let totalAmount = 0;
 
       // Match plan items to products (Basic string matching for demo)
       for (const planItem of weeklyItems) {
         // Search for product matching planItem name
-        const match = products.find((p: any) => 
-          (p.value?.name || '').toLowerCase().includes(planItem.toLowerCase()) &&
-          p.value?.category === 'fresh_food'
+        const match = allProducts.find((p: any) => 
+          (p.name || '').toLowerCase().includes(planItem.toLowerCase()) &&
+          p.category === 'fresh_food'
         );
 
         if (match) {
-          const product = match.value;
           cartItems.push({
-            productId: product.id,
-            name: product.name,
-            price: product.price,
+            productId: match.id,
+            name: match.name,
+            price: match.sale_price || match.base_price,
             quantity: 1, // Default quantity
-            vendorId: product.vendorId
+            vendorId: match.vendor_id
           });
-          totalAmount += product.price;
+          totalAmount += (match.sale_price || match.base_price);
         }
       }
 
@@ -102,12 +115,34 @@ export function nutritionistFoodIntegrationEndpoints(app: Hono, kv: any) {
         createdAt: new Date().toISOString()
       };
 
-      await kv.set(`order:${orderId}`, order);
+      // ✅ SQL: Create order in orders table
+      const db = getDbClient();
+      await db
+        .from('orders')
+        .insert({
+          id: orderId,
+          customer_id: customerId,
+          type: 'diet_plan_fulfillment',
+          items: cartItems,
+          total_amount: totalAmount,
+          status: 'created',
+          address_id: addressId,
+          metadata: {
+            planId,
+            deliverySchedule: order.deliverySchedule
+          },
+          created_at: new Date().toISOString()
+        });
 
-      // 6. Link to Plan
-      plan.fulfillmentOrders = plan.fulfillmentOrders || [];
-      plan.fulfillmentOrders.push(orderId);
-      await kv.set(`diet_plan:${planId}`, plan);
+      // ✅ SQL: Link to Plan - update meal_plan metadata
+      const fulfillmentOrders = (planData.metadata?.fulfillmentOrders || []);
+      fulfillmentOrders.push(orderId);
+      await mealPlansRepo.update(planId, {
+        metadata: {
+          ...planData.metadata,
+          fulfillmentOrders
+        }
+      });
 
       console.log(`🥗 Diet plan converted to order: ${orderId}`);
 
@@ -131,12 +166,20 @@ export function nutritionistFoodIntegrationEndpoints(app: Hono, kv: any) {
   app.get(`${BASE_PATH}/nutritionist/diet-plan/:planId/orders`, async (c) => {
     try {
       const { planId } = c.req.param();
-      const plan = await kv.get(`diet_plan:${planId}`);
+      // ✅ SQL: Get plan and associated orders
+      const mealPlansRepo = getMealPlansRepository();
+      const planData = await mealPlansRepo.findById(planId);
       
-      if (!plan) return sendError(c, 'Diet plan not found', 404);
+      if (!planData) return sendError(c, 'Diet plan not found', 404);
 
-      const orderIds = plan.fulfillmentOrders || [];
-      const orders = await Promise.all(orderIds.map((id: string) => kv.get(`order:${id}`)));
+      const orderIds = planData.metadata?.fulfillmentOrders || [];
+      const db = getDbClient();
+      const { data: ordersData } = await db
+        .from('orders')
+        .select('*')
+        .in('id', orderIds);
+      
+      const orders = ordersData || [];
 
       return sendSuccess(c, { orders: orders.filter(Boolean) });
     } catch (error) {

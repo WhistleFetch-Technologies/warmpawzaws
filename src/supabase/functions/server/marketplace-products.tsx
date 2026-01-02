@@ -1,7 +1,8 @@
-import { Hono } from "npm:hono";
-import * as kv from './kv_store.tsx';
-import { generateId } from './database-schema.tsx';
-import { createClient } from 'npm:@supabase/supabase-js@2';
+// ✅ S3 MIGRATION: Supabase Storage replaced with AWS S3
+import { Hono } from "hono";
+import * as kv from './kv_store';
+import { generateId } from './database-schema';
+import { getS3Helper, uploadToS3 } from '../../../supabase/lib/storage/s3-helper';
 
 /**
  * MARKETPLACE PRODUCT MANAGEMENT
@@ -19,23 +20,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 export function registerMarketplaceProducts(app: Hono) {
   const BASE = '/make-server-3dd53475';
 
-  const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
-  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
-  const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
-  const BUCKET_NAME = 'make-3dd53475-marketplace-products';
-  
-  async function ensureBucket() {
-    const { data: buckets } = await supabase.storage.listBuckets();
-    const exists = buckets?.some(b => b.name === BUCKET_NAME);
-    
-    if (!exists) {
-      await supabase.storage.createBucket(BUCKET_NAME, { public: false });
-      console.log(`✅ Created bucket: ${BUCKET_NAME}`);
-    }
-  }
-
-  ensureBucket().catch(console.error);
+  // S3 bucket is configured via PlatformSettingsRepository
 
   const CATEGORIES = ['Toys', 'Accessories', 'Food', 'Furniture', 'Grooming', 'Healthcare'];
 
@@ -50,14 +35,18 @@ export function registerMarketplaceProducts(app: Hono) {
 
       const products = await kv.get(`vendor:${vendorId}:marketplace_products`) || [];
 
-      // Refresh signed URLs
+      // ✅ S3: Refresh signed URLs
+      const s3 = getS3Helper();
       const productsWithUrls = await Promise.all(products.map(async (product: any) => {
         const imageUrls = await Promise.all(
           (product.images || []).map(async (path: string) => {
-            const { data } = await supabase.storage
-              .from(BUCKET_NAME)
-              .createSignedUrl(path, 3600);
-            return data?.signedUrl || path;
+            try {
+              const signedUrl = await s3.getSignedUrl(path, 3600);
+              return signedUrl;
+            } catch (err) {
+              console.warn('Warning: Could not get signed URL for', path);
+              return path;
+            }
           })
         );
 
@@ -277,9 +266,14 @@ export function registerMarketplaceProducts(app: Hono) {
         return c.json({ error: 'Product not found' }, 404);
       }
 
-      // Delete images
+      // ✅ S3: Delete images
+      const s3 = getS3Helper();
       for (const imagePath of product.images || []) {
-        await supabase.storage.from(BUCKET_NAME).remove([imagePath]);
+        try {
+          await s3.deleteFile(imagePath);
+        } catch (err) {
+          console.warn('Warning: Could not delete image', imagePath);
+        }
       }
 
       const filtered = products.filter((p: any) => p.id !== productId);
@@ -318,21 +312,20 @@ export function registerMarketplaceProducts(app: Hono) {
         return c.json({ error: 'File size must be less than 10MB' }, 400);
       }
 
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${vendorId}/${productId || 'temp'}/${Date.now()}.${fileExt}`;
+      const fileExt = file.name.split('.').pop() || 'jpg';
+      const s3Key = `marketplace/${vendorId}/${productId || 'temp'}/${Date.now()}.${fileExt}`;
 
-      const fileBuffer = await file.arrayBuffer();
-      const { data, error } = await supabase.storage
-        .from(BUCKET_NAME)
-        .upload(fileName, fileBuffer, {
+      // ✅ S3: Upload to S3
+      const s3 = getS3Helper();
+      const uploadResult = await uploadToS3(
+        file,
+        `marketplace/${vendorId}/${productId || 'temp'}`,
+        `${Date.now()}.${fileExt}`,
+        {
           contentType: file.type,
-          upsert: false
-        });
-
-      if (error) {
-        console.error('[MARKETPLACE] Upload error:', error);
-        return c.json({ error: 'Failed to upload file' }, 500);
-      }
+          acl: 'private',
+        }
+      );
 
       // Update product if productId provided
       if (productId) {
@@ -340,20 +333,17 @@ export function registerMarketplaceProducts(app: Hono) {
         const index = products.findIndex((p: any) => p.id === productId);
 
         if (index !== -1) {
-          products[index].images = [...(products[index].images || []), fileName];
+          products[index].images = [...(products[index].images || []), s3Key];
           products[index].updatedAt = new Date().toISOString();
           await kv.set(`vendor:${vendorId}:marketplace_products`, products);
         }
       }
 
-      const { data: urlData } = await supabase.storage
-        .from(BUCKET_NAME)
-        .createSignedUrl(fileName, 3600);
-
       return c.json({
         success: true,
-        filePath: fileName,
-        url: urlData?.signedUrl,
+        filePath: s3Key,
+        key: s3Key,
+        url: uploadResult.signedUrl || uploadResult.url,
         message: 'Image uploaded successfully'
       });
 
@@ -423,14 +413,17 @@ export function registerMarketplaceProducts(app: Hono) {
         filtered = filtered.filter(p => p.petTypes.includes(petType));
       }
 
-      // Refresh URLs
+      // ✅ S3: Refresh URLs
+      const s3 = getS3Helper();
       const productsWithUrls = await Promise.all(filtered.map(async (product: any) => {
         const imageUrls = await Promise.all(
           (product.images || []).slice(0, 3).map(async (path: string) => {
-            const { data } = await supabase.storage
-              .from(BUCKET_NAME)
-              .createSignedUrl(path, 3600);
-            return data?.signedUrl || null;
+            try {
+              const signedUrl = await s3.getSignedUrl(path, 3600);
+              return signedUrl;
+            } catch (err) {
+              return null;
+            }
           })
         );
 

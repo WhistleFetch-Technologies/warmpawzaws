@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
-import { API_BASE_URL, publicAnonKey } from '../../config/supabase';
+import { API_BASE_URL } from '../../config/aws';
 
 interface CustomerPlanningJourneyScreenProps {
   phone: string;
@@ -127,7 +127,6 @@ export function CustomerPlanningJourneyScreen({
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`,
           },
           body: JSON.stringify({
             phone,

@@ -11,11 +11,11 @@
  * - Integration with booking lifecycle
  */
 
-import { Hono } from "npm:hono";
-import * as kv from "./kv_store.tsx";
-import { BedrockRuntimeClient, InvokeModelCommand } from "npm:@aws-sdk/client-bedrock-runtime";
-import { NodeHttpHandler } from "npm:@smithy/node-http-handler";
-import { sendSuccess, sendError } from "./response-utils.ts";
+import { Hono } from "hono";
+import * as kv from "./kv_store";
+import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
+import { NodeHttpHandler } from "@smithy/node-http-handler";
+import { sendSuccess, sendError } from "./response-utils";
 
 export function registerMedicalAISummaryEndpoints(app: Hono) {
   const BASE_PATH = "/make-server-3dd53475";

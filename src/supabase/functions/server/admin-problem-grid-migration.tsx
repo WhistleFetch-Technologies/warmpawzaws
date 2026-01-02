@@ -3,8 +3,8 @@
  * ✅ SQL-ONLY: Populates problem_grid_mappings table from catalog
  */
 
-import { Hono } from 'npm:hono';
-import { populateProblemGridMappings } from '../../../supabase/lib/services/problem-grid-migration.ts';
+import { Hono } from 'hono';
+import { populateProblemGridMappings } from '../../../supabase/lib/services/problem-grid-migration';
 
 export function registerProblemGridMigrationEndpoints(app: Hono) {
   /**

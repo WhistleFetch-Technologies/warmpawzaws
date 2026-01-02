@@ -1,7 +1,8 @@
-import { Hono } from "npm:hono";
-import * as kv from './kv_store.tsx';
-import { generateId } from './database-schema.tsx';
-import { createClient } from 'npm:@supabase/supabase-js@2';
+// ✅ S3 MIGRATION: Supabase Storage replaced with AWS S3
+import { Hono } from "hono";
+import * as kv from './kv_store';
+import { generateId } from './database-schema';
+import { getS3Helper, uploadToS3 } from '../../../supabase/lib/storage/s3-helper';
 
 /**
  * NUTRITIONIST MEAL MANAGEMENT
@@ -19,23 +20,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 export function registerNutritionistMealManagement(app: Hono) {
   const BASE = '/make-server-3dd53475';
 
-  const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
-  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
-  const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
-  const BUCKET_NAME = 'make-3dd53475-meal-products';
-  
-  async function ensureBucket() {
-    const { data: buckets } = await supabase.storage.listBuckets();
-    const exists = buckets?.some(b => b.name === BUCKET_NAME);
-    
-    if (!exists) {
-      await supabase.storage.createBucket(BUCKET_NAME, { public: false });
-      console.log(`✅ Created bucket: ${BUCKET_NAME}`);
-    }
-  }
-
-  ensureBucket().catch(console.error);
+  // S3 bucket is configured via PlatformSettingsRepository
 
   // =============================================
   // GET ALL MEAL PRODUCTS FOR VENDOR
@@ -53,14 +38,18 @@ export function registerNutritionistMealManagement(app: Hono) {
 
       const products = await kv.get(`vendor:${vendorId}:meal_products`) || [];
 
-      // Refresh signed URLs for images
+      // ✅ S3: Refresh signed URLs for images
+      const s3 = getS3Helper();
       const productsWithUrls = await Promise.all(products.map(async (product: any) => {
         const imageUrls = await Promise.all(
           (product.images || []).map(async (path: string) => {
-            const { data } = await supabase.storage
-              .from(BUCKET_NAME)
-              .createSignedUrl(path, 3600);
-            return data?.signedUrl || path;
+            try {
+              const signedUrl = await s3.getSignedUrl(path, 3600);
+              return signedUrl;
+            } catch (err) {
+              console.warn('Warning: Could not get signed URL for', path);
+              return path;
+            }
           })
         );
 
@@ -241,9 +230,14 @@ export function registerNutritionistMealManagement(app: Hono) {
         return c.json({ error: 'Product not found' }, 404);
       }
 
-      // Delete images
+      // ✅ S3: Delete images
+      const s3 = getS3Helper();
       for (const imagePath of product.images || []) {
-        await supabase.storage.from(BUCKET_NAME).remove([imagePath]);
+        try {
+          await s3.deleteFile(imagePath);
+        } catch (err) {
+          console.warn('Warning: Could not delete image', imagePath);
+        }
       }
 
       const filtered = products.filter((p: any) => p.id !== productId);
@@ -412,14 +406,17 @@ export function registerNutritionistMealManagement(app: Hono) {
       const products = await kv.get(`vendor:${vendorId}:meal_products`) || [];
       const activeProducts = products.filter((p: any) => p.isActive);
 
-      // Refresh URLs
+      // ✅ S3: Refresh URLs
+      const s3 = getS3Helper();
       const productsWithUrls = await Promise.all(activeProducts.map(async (product: any) => {
         const imageUrls = await Promise.all(
           (product.images || []).map(async (path: string) => {
-            const { data } = await supabase.storage
-              .from(BUCKET_NAME)
-              .createSignedUrl(path, 3600);
-            return data?.signedUrl || null;
+            try {
+              const signedUrl = await s3.getSignedUrl(path, 3600);
+              return signedUrl;
+            } catch (err) {
+              return null;
+            }
           })
         );
 

@@ -12,9 +12,9 @@
  * and properly filter by their specialization.
  */
 
-import { Hono } from 'npm:hono';
-import { getDiscoveryRepository } from '../../../supabase/lib/repositories/discovery.ts';
-import { findProblemById } from './problem-grid-catalog.tsx';
+import { Hono } from 'hono';
+import { getDiscoveryRepository } from '../../../supabase/lib/repositories/discovery';
+import { findProblemById } from './problem-grid-catalog';
 
 const app = new Hono();
 

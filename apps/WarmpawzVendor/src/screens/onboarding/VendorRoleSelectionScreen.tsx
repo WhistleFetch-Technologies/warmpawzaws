@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { VendorApi } from '../../services/api';
+import { API_BASE_URL } from '../../config/aws';
 
 interface VendorRoleSelectionScreenProps {
   onRoleSelect: (roleId: string) => void;
@@ -50,11 +51,12 @@ export function VendorRoleSelectionScreen({ onRoleSelect }: VendorRoleSelectionS
   const fetchRoles = async () => {
     try {
       setLoading(true);
+      // ✅ FIX: Use API_BASE_URL from AWS config instead of hardcoded Supabase URL
       const response = await fetch(
-        `https://vpvpbdwtyugbknrntkho.supabase.co/functions/v1/make-server-3dd53475/config/roles`,
+        `${API_BASE_URL}/config/roles`,
         {
           headers: { 
-            'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZwdnBiZHd0eXVnYmtucm50a2hvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4NDU4MjEsImV4cCI6MjA3ODQyMTgyMX0.z9Qo6ce4-y47Z-Q-lTRgRHUXBuERSFcplHuPypzgRbM` 
+            'Content-Type': 'application/json'
           }
         }
       );

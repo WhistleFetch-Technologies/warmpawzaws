@@ -1,6 +1,6 @@
 import { Hono } from 'npm:hono@4';
 // ✅ REMOVED: KV import - all operations use SQL repositories
-import { createNotificationHelper } from './notification-system.tsx';
+import { createNotificationHelper } from './notification-system-refactored.tsx'; // ✅ FIXED: Updated to SQL version
 import { getPrescriptionsRepository } from '../../lib/repositories/prescriptions.ts';
 import { getBookingsRepository } from '../../lib/repositories/bookings.ts';
 import { getVendorsRepository } from '../../lib/repositories/vendors.ts';

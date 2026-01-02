@@ -1,10 +1,80 @@
 import React from 'react';
 import { Loader2, AlertCircle, Search } from 'lucide-react';
 import { Button } from './button';
+import { Skeleton } from './skeleton';
+import { FormSkeleton, ListSkeleton, CardSkeleton, TableSkeleton } from './skeletons';
 
-export function LoadingState({ message = 'Loading...' }: { message?: string }) {
+export type LoadingStateVariant = 'spinner' | 'form' | 'list' | 'card' | 'table';
+
+interface LoadingStateProps {
+  message?: string;
+  variant?: LoadingStateVariant;
+  className?: string;
+  // Skeleton-specific props
+  fields?: number; // for form
+  count?: number; // for list/card
+  rows?: number; // for table
+  columns?: number; // for table
+}
+
+export function LoadingState({ 
+  message = 'Loading...', 
+  variant = 'spinner',
+  className = '',
+  fields = 5,
+  count = 5,
+  rows = 5,
+  columns = 4
+}: LoadingStateProps) {
+  // Spinner variant (default, backward compatible)
+  if (variant === 'spinner') {
+    return (
+      <div className={`flex flex-col items-center justify-center py-12 ${className}`}>
+        <Loader2 className="h-12 w-12 animate-spin text-blue-500" />
+        <p className="mt-4 text-gray-600 font-medium">{message}</p>
+      </div>
+    );
+  }
+
+  // Form skeleton variant
+  if (variant === 'form') {
+    return (
+      <div className={className}>
+        <FormSkeleton fields={fields} showSubmit={true} />
+      </div>
+    );
+  }
+
+  // List skeleton variant
+  if (variant === 'list') {
+    return (
+      <div className={className}>
+        <ListSkeleton count={count} />
+      </div>
+    );
+  }
+
+  // Card skeleton variant
+  if (variant === 'card') {
+    return (
+      <div className={className}>
+        <CardSkeleton />
+      </div>
+    );
+  }
+
+  // Table skeleton variant
+  if (variant === 'table') {
+    return (
+      <div className={className}>
+        <TableSkeleton rows={rows} columns={columns} />
+      </div>
+    );
+  }
+
+  // Fallback to spinner
   return (
-    <div className="flex flex-col items-center justify-center py-12">
+    <div className={`flex flex-col items-center justify-center py-12 ${className}`}>
       <Loader2 className="h-12 w-12 animate-spin text-blue-500" />
       <p className="mt-4 text-gray-600 font-medium">{message}</p>
     </div>

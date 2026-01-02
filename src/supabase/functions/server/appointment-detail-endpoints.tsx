@@ -1,18 +1,18 @@
-import { Hono } from "npm:hono";
-import { createClient } from "npm:@supabase/supabase-js@2";
-import * as kv from "./kv_store.tsx";
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+// ✅ Lambda Compatibility: Removed Deno.env.get() references
+import { Hono } from "hono";
+import { 
+  getBookingsRepository,
+  getPrescriptionsRepository,
+  getDbClient
+} from '../../../supabase/lib/repositories/index';
 
 const app = new Hono();
-
-// Initialize Supabase client
-const supabase = createClient(
-  Deno.env.get('SUPABASE_URL') ?? '',
-  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
-);
 
 // ============================================
 // HELPER FUNCTION: Log Booking Activity
 // ============================================
+// ✅ SQL: Log booking activity in booking_activities table
 async function logBookingActivity(
   bookingId: string,
   type: string,
@@ -21,22 +21,22 @@ async function logBookingActivity(
   actorName: string
 ) {
   try {
-    // Store activity in KV store with composite key
+    const db = getDbClient();
     const activityId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    const activityKey = `booking_activity:${bookingId}:${activityId}`;
     
-    const activity = {
-      id: activityId,
-      booking_id: bookingId,
-      type,
-      description,
-      actor,
-      actor_name: actorName,
-      timestamp: new Date().toISOString()
-    };
-
-    await kv.set(activityKey, activity);
-    console.log('✅ [ACTIVITY] Logged activity:', activityKey);
+    await db
+      .from('booking_activities')
+      .insert({
+        id: activityId,
+        booking_id: bookingId,
+        activity_type: type,
+        description,
+        actor_type: actor,
+        actor_name: actorName,
+        created_at: new Date().toISOString()
+      });
+    
+    console.log('✅ [ACTIVITY] Logged activity:', activityId);
   } catch (error) {
     console.error('❌ Error logging activity:', error);
   }
@@ -52,9 +52,9 @@ app.get('/make-server-3dd53475/vendor/bookings/:bookingId/details', async (c) =>
   console.log('📋 [APPOINTMENT-DETAIL] Loading details for booking:', bookingId);
 
   try {
-    // 1. Load booking details from KV store
-    const bookingKey = `booking:${bookingId}`;
-    const bookingData = await kv.get(bookingKey);
+    // ✅ SQL: 1. Load booking details from bookings table
+    const bookingsRepo = getBookingsRepository();
+    const bookingData = await bookingsRepo.findById(bookingId);
     
     if (!bookingData) {
       console.error('❌ [APPOINTMENT-DETAIL] Booking not found:', bookingId);
@@ -63,63 +63,61 @@ app.get('/make-server-3dd53475/vendor/bookings/:bookingId/details', async (c) =>
 
     console.log('📦 [APPOINTMENT-DETAIL] Found booking:', bookingData);
 
-    // 2. Load activities from KV store
-    const activityPrefix = `booking_activity:${bookingId}:`;
-    const activitiesData = await kv.getByPrefix(activityPrefix);
+    // ✅ SQL: 2. Load activities from booking_activities table
+    const db = getDbClient();
+    const { data: activitiesData } = await db
+      .from('booking_activities')
+      .select('*')
+      .eq('booking_id', bookingId)
+      .order('created_at', { ascending: false });
     
-    // Sort activities by timestamp (newest first)
-    const activities = activitiesData.sort((a, b) => {
-      const timeA = new Date(a.timestamp).getTime();
-      const timeB = new Date(b.timestamp).getTime();
-      return timeB - timeA;
-    });
+    const activities = (activitiesData || []).map((a: any) => ({
+      id: a.id,
+      type: a.activity_type,
+      description: a.description,
+      actor: a.actor_type,
+      actor_name: a.actor_name,
+      timestamp: a.created_at
+    }));
 
     console.log(`📝 [APPOINTMENT-DETAIL] Loaded ${activities.length} activities`);
 
-    // 3. Load prescriptions from KV store
-    const prescriptionPrefix = `prescription:${bookingId}:`;
-    const prescriptionsData = await kv.getByPrefix(prescriptionPrefix);
-    
-    // Sort prescriptions by uploaded_at (newest first)
-    const prescriptions = prescriptionsData.sort((a, b) => {
-      const timeA = new Date(a.uploaded_at).getTime();
-      const timeB = new Date(b.uploaded_at).getTime();
-      return timeB - timeA;
-    });
+    // ✅ SQL: 3. Load prescriptions from prescriptions table
+    const prescriptionsRepo = getPrescriptionsRepository();
+    const prescriptionsData = await prescriptionsRepo.getByBookingId(bookingId, bookingData.customer_id, 'customer');
 
-    console.log(`💊 [APPOINTMENT-DETAIL] Loaded ${prescriptions.length} prescriptions`);
+    console.log(`💊 [APPOINTMENT-DETAIL] Loaded ${prescriptionsData.length} prescriptions`);
 
-    // 4. If this is a follow-up, load parent booking data
+    // ✅ SQL: 4. If this is a follow-up, load parent booking data
     let parentBooking = null;
-    if (bookingData.isFollowUp && bookingData.parentBookingId) {
-      const parentKey = `booking:${bookingData.parentBookingId}`;
-      parentBooking = await kv.get(parentKey);
+    if (bookingData.metadata?.isFollowUp && bookingData.metadata?.parentBookingId) {
+      parentBooking = await bookingsRepo.findById(bookingData.metadata.parentBookingId);
       console.log('🔗 [APPOINTMENT-DETAIL] Loaded parent booking:', parentBooking);
     }
 
-    // 5. Format booking data
+    // 5. Format booking data (map SQL fields to API response format)
     const booking = {
       id: bookingData.id || bookingId,
-      time: bookingData.scheduledTime || bookingData.time || '10:00 AM',
-      date: bookingData.scheduledDate || bookingData.date,
-      customerName: bookingData.customerName,
-      customerPhone: bookingData.customerPhone,
-      petName: bookingData.petName,
-      petType: bookingData.petType,
-      petBreed: bookingData.petBreed || 'Unknown',
-      petAge: bookingData.petAge || 'Unknown',
-      location: bookingData.location || bookingData.address,
-      serviceType: bookingData.serviceType,
-      serviceName: bookingData.serviceName,
+      time: bookingData.booking_time || '10:00 AM',
+      date: bookingData.booking_date,
+      customerName: bookingData.metadata?.customerName,
+      customerPhone: bookingData.metadata?.customerPhone,
+      petName: bookingData.metadata?.petName,
+      petType: bookingData.metadata?.petType,
+      petBreed: bookingData.metadata?.petBreed || 'Unknown',
+      petAge: bookingData.metadata?.petAge || 'Unknown',
+      location: bookingData.address || bookingData.metadata?.location,
+      serviceType: bookingData.service_type,
+      serviceName: bookingData.metadata?.serviceName,
       status: bookingData.status,
-      price: bookingData.price || 0,
-      duration: bookingData.duration || 30,
-      createdAt: bookingData.createdAt,
-      updatedAt: bookingData.updatedAt || bookingData.createdAt,
-      isFollowUp: bookingData.isFollowUp || false,
-      parentBookingId: bookingData.parentBookingId || null,
-      hasPrescription: (prescriptions?.length || 0) > 0,
-      communicationType: bookingData.communicationType
+      price: bookingData.total_amount || 0,
+      duration: bookingData.metadata?.duration || 30,
+      createdAt: bookingData.created_at,
+      updatedAt: bookingData.updated_at || bookingData.created_at,
+      isFollowUp: bookingData.metadata?.isFollowUp || false,
+      parentBookingId: bookingData.metadata?.parentBookingId || null,
+      hasPrescription: (prescriptionsData?.length || 0) > 0,
+      communicationType: bookingData.metadata?.communicationType
     };
 
     // 6. Format activities
@@ -132,18 +130,18 @@ app.get('/make-server-3dd53475/vendor/bookings/:bookingId/details', async (c) =>
     }));
 
     // 7. Format prescriptions
-    const formattedPrescriptions = (prescriptions || []).map(prescription => ({
+    const formattedPrescriptions = prescriptionsData.map(prescription => ({
       id: prescription.id,
       bookingId: prescription.booking_id,
-      notes: prescription.notes,
+      notes: prescription.general_notes,
       medications: prescription.medications,
-      dosage: prescription.dosage,
-      frequency: prescription.frequency,
-      duration: prescription.duration,
+      dosage: prescription.medications?.[0]?.dosage,
+      frequency: prescription.medications?.[0]?.frequency,
+      duration: prescription.medications?.[0]?.duration,
       diagnosis: prescription.diagnosis,
       followUpDate: prescription.follow_up_date,
-      uploadedAt: prescription.uploaded_at,
-      uploadedBy: prescription.vendor_name
+      uploadedAt: prescription.created_at,
+      uploadedBy: prescription.metadata?.vendor_name
     }));
 
     // 8. Return complete data
@@ -198,38 +196,56 @@ app.post('/make-server-3dd53475/vendor/prescription/upload', async (c) => {
   }
 
   try {
-    // 1. Create prescription object and store in KV store
-    const prescriptionId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    const prescriptionKey = `prescription:${bookingId}:${prescriptionId}`;
+    // ✅ SQL: 1. Get booking to get customer_id and pet_id
+    const bookingsRepo = getBookingsRepository();
+    const booking = await bookingsRepo.findById(bookingId);
     
-    const prescription = {
-      id: prescriptionId,
-      booking_id: bookingId,
-      vendor_id: vendorId,
-      vendor_name: vendorName || 'Vendor',
-      diagnosis: diagnosis || null,
-      medications,
-      dosage: dosage || null,
-      frequency: frequency || 'Once Daily',
-      duration: duration || '7 days',
-      notes: notes || null,
-      follow_up_date: followUpDate || null,
-      uploaded_at: new Date().toISOString()
-    };
-
-    await kv.set(prescriptionKey, prescription);
-    console.log('✅ [PRESCRIPTION] Prescription saved:', prescriptionId);
-
-    // 2. Update booking to mark has_prescription = true
-    const bookingKey = `booking:${bookingId}`;
-    const bookingData = await kv.get(bookingKey);
-    
-    if (bookingData) {
-      bookingData.hasPrescription = true;
-      bookingData.prescriptionNotes = notes || medications;
-      await kv.set(bookingKey, bookingData);
-      console.log('✅ [PRESCRIPTION] Updated booking with prescription flag');
+    if (!booking) {
+      return c.json({ error: 'Booking not found' }, 404);
     }
+
+    // ✅ SQL: 2. Create prescription in prescriptions table
+    const prescriptionsRepo = getPrescriptionsRepository();
+    
+    // Format medications array with dosage, frequency, duration
+    const medicationsArray = Array.isArray(medications) ? medications.map((med: any) => ({
+      name: med.name || med,
+      dosage: med.dosage || dosage,
+      frequency: med.frequency || frequency,
+      duration: med.duration || duration
+    })) : [{
+      name: medications,
+      dosage: dosage,
+      frequency: frequency || 'Once Daily',
+      duration: duration || '7 days'
+    }];
+
+    const prescription = await prescriptionsRepo.create({
+      booking_id: bookingId,
+      pet_id: booking.metadata?.pet_id || '',
+      customer_id: booking.customer_id,
+      vendor_id: vendorId,
+      staff_id: booking.staff_id || null,
+      diagnosis: diagnosis || null,
+      medications: medicationsArray,
+      general_notes: notes || null,
+      follow_up_date: followUpDate || null,
+      created_by: vendorId,
+      created_by_role: 'vendor'
+    });
+
+    console.log('✅ [PRESCRIPTION] Prescription saved:', prescription.id);
+
+    // ✅ SQL: 3. Update booking metadata to mark has_prescription = true
+    await bookingsRepo.update(bookingId, {
+      metadata: {
+        ...booking.metadata,
+        hasPrescription: true,
+        prescriptionNotes: notes || medications
+      }
+    });
+    
+    console.log('✅ [PRESCRIPTION] Updated booking with prescription flag');
 
     // 3. Log activity
     await logBookingActivity(
@@ -279,18 +295,19 @@ app.get('/make-server-3dd53475/vendor/prescription/:bookingId', async (c) => {
   console.log('💊 [PRESCRIPTION] Loading prescription for booking:', bookingId);
 
   try {
-    // Load prescriptions from KV store
-    const prescriptionPrefix = `prescription:${bookingId}:`;
-    const prescriptionsData = await kv.getByPrefix(prescriptionPrefix);
+    // ✅ SQL: Load prescription from prescriptions table
+    const bookingsRepo = getBookingsRepository();
+    const booking = await bookingsRepo.findById(bookingId);
     
-    // Sort prescriptions by uploaded_at (newest first) and get the most recent
-    const sortedPrescriptions = prescriptionsData.sort((a, b) => {
-      const timeA = new Date(a.uploaded_at).getTime();
-      const timeB = new Date(b.uploaded_at).getTime();
-      return timeB - timeA;
-    });
+    if (!booking) {
+      return c.json({ error: 'Booking not found' }, 404);
+    }
 
-    const prescription = sortedPrescriptions[0];
+    const prescriptionsRepo = getPrescriptionsRepository();
+    const prescriptions = await prescriptionsRepo.getByBookingId(bookingId, booking.customer_id, 'customer');
+    
+    // Get the most recent prescription
+    const prescription = prescriptions.length > 0 ? prescriptions[0] : null;
 
     if (!prescription) {
       console.log('ℹ️ [PRESCRIPTION] No prescription found for booking:', bookingId);
@@ -303,19 +320,19 @@ app.get('/make-server-3dd53475/vendor/prescription/:bookingId', async (c) => {
     console.log('✅ [PRESCRIPTION] Found prescription:', prescription.id);
 
     return c.json({
-      prescription: {
+      prescription: prescription ? {
         id: prescription.id,
         bookingId: prescription.booking_id,
         diagnosis: prescription.diagnosis,
         medications: prescription.medications,
-        dosage: prescription.dosage,
-        frequency: prescription.frequency,
-        duration: prescription.duration,
-        notes: prescription.notes,
+        dosage: prescription.medications?.[0]?.dosage,
+        frequency: prescription.medications?.[0]?.frequency,
+        duration: prescription.medications?.[0]?.duration,
+        notes: prescription.general_notes,
         followUpDate: prescription.follow_up_date,
-        uploadedAt: prescription.uploaded_at,
-        uploadedBy: prescription.vendor_name
-      }
+        uploadedAt: prescription.created_at,
+        uploadedBy: prescription.metadata?.vendor_name
+      } : null
     });
 
   } catch (error) {

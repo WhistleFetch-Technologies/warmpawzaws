@@ -51,7 +51,7 @@ import { OrderTrackingView } from './OrderTrackingView';
 import { ProblemCategoryMapper } from '../admin/ProblemCategoryMapper';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { useNotificationService } from './useNotificationService';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { useCart } from '../../context/CartContext';
 import { MyBookings } from './MyBookings';
 import { AppointmentsList } from './AppointmentsList';

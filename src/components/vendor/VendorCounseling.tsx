@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { X, Heart, Calendar, Clock, User, Phone, Video, MessageSquare, Plus, Search } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+// ✅ FIX: Removed Supabase imports - using API Gateway now
+import { toast } from 'sonner';
 
 interface CounselingProps {
   vendorId: string;
@@ -49,7 +49,14 @@ export function VendorCounseling({ vendorId, onClose }: CounselingProps) {
     notes: ''
   });
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  // ✅ FIX: Use API Gateway URL instead of Supabase
+  const getApiBase = () => {
+    const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+    if (!API_GATEWAY_URL) {
+      throw new Error('API Gateway URL not configured');
+    }
+    return `${API_GATEWAY_URL}/make-server-3dd53475`;
+  };
 
   useEffect(() => {
     fetchSessions();
@@ -58,14 +65,13 @@ export function VendorCounseling({ vendorId, onClose }: CounselingProps) {
   const fetchSessions = async () => {
     try {
       setLoading(true);
-      const response = await fetch(
-        `${API_BASE}/vendor/counseling/${vendorId}?status=${filter === 'all' ? '' : filter}`,
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_BASE = getApiBase();
+      
+      const data = await apiCallJson<any>(
+        `${API_BASE}/vendor/counseling/${vendorId}?status=${filter === 'all' ? '' : filter}`
       );
 
-      const data = await response.json();
       // ✅ FIX: Handle standardized response format
       // Response format: { success: true, sessions: [...], total: ... }
       if (data.success) {
@@ -86,19 +92,17 @@ export function VendorCounseling({ vendorId, onClose }: CounselingProps) {
 
   const saveSession = async () => {
     try {
-      const response = await fetch(
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_BASE = getApiBase();
+      
+      const data = await apiCallJson<any>(
         `${API_BASE}/vendor/counseling/${vendorId}${selectedSession ? `/${selectedSession.id}` : ''}`,
         {
           method: selectedSession ? 'PUT' : 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify(formData)
         }
       );
 
-      const data = await response.json();
       if (data.success) {
         toast.success(`Session ${selectedSession ? 'updated' : 'scheduled'} successfully`);
         setShowCreateModal(false);
@@ -118,19 +122,17 @@ export function VendorCounseling({ vendorId, onClose }: CounselingProps) {
 
   const updateSessionStatus = async (sessionId: string, status: string) => {
     try {
-      const response = await fetch(
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_BASE = getApiBase();
+      
+      const data = await apiCallJson<any>(
         `${API_BASE}/vendor/counseling/${vendorId}/${sessionId}/status`,
         {
           method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify({ status })
         }
       );
 
-      const data = await response.json();
       if (data.success) {
         toast.success('Session status updated successfully');
         await fetchSessions(); // ✅ Ensure sessions reload

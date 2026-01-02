@@ -14,6 +14,7 @@
 import React, { useState, useEffect } from 'react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { Wallet, Plus, History, Gift, ArrowUpCircle, ArrowDownCircle, Check, X } from 'lucide-react';
+import { WarmpawzButton } from '../shared/design-system/WarmpawzButton';
 
 interface Transaction {
   id: string;
@@ -318,13 +319,19 @@ export function WalletPage({ customerPhone, customerId }: WalletPageProps) {
             <Wallet className="w-6 h-6" />
             <span className="text-sm opacity-90">Wallet Balance</span>
           </div>
-          <button
+          <WarmpawzButton
+            variant="outlined"
             onClick={() => setShowTopUpModal(true)}
-            className="bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+            icon={Plus}
+            iconPosition="left"
+            style={{ 
+              background: 'rgba(255, 255, 255, 0.2)',
+              color: 'white',
+              border: 'none'
+            }}
           >
-            <Plus className="w-4 h-4" />
-            <span className="text-sm">Top Up</span>
-          </button>
+            Top Up
+          </WarmpawzButton>
         </div>
         
         <div className="text-4xl mb-6">
@@ -356,13 +363,17 @@ export function WalletPage({ customerPhone, customerId }: WalletPageProps) {
                 <div className="text-2xl font-bold text-gray-900">{loyaltyProfile.pointsBalance} <span className="text-sm font-normal text-gray-400">Pawints</span></div>
               </div>
             </div>
-            <button 
+            <WarmpawzButton
+              variant="solid"
               onClick={redeemPoints}
               disabled={redeeming || loyaltyProfile.pointsBalance < 10}
-              className="bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ 
+                background: '#111827',
+                color: 'white'
+              }}
             >
               {redeeming ? '...' : 'Redeem to Wallet'}
-            </button>
+            </WarmpawzButton>
           </div>
           <div className="mt-3 text-xs text-gray-500 bg-gray-50 p-2 rounded-lg">
             1 Pawint = ₹1 • Minimum redemption: 10 Points
@@ -374,20 +385,40 @@ export function WalletPage({ customerPhone, customerId }: WalletPageProps) {
       <div className="bg-white rounded-xl p-4 shadow-sm mb-6">
         <h3 className="text-sm font-medium text-gray-700 mb-3">Quick Actions</h3>
         <div className="grid grid-cols-2 gap-3">
-          <button
+          <WarmpawzButton
+            variant="outlined"
             onClick={() => setShowTopUpModal(true)}
-            className="bg-orange-50 hover:bg-orange-100 border border-orange-200 rounded-lg p-4 flex flex-col items-center gap-2 transition-colors"
+            icon={ArrowUpCircle}
+            iconPosition="left"
+            fullWidth
+            style={{ 
+              background: '#FFF7ED',
+              borderColor: '#FED7AA',
+              color: '#9A3412',
+              flexDirection: 'column',
+              padding: '1rem',
+              gap: '0.5rem'
+            }}
           >
-            <ArrowUpCircle className="w-6 h-6 text-orange-500" />
-            <span className="text-sm text-orange-700">Add Money</span>
-          </button>
-          <button
+            Add Money
+          </WarmpawzButton>
+          <WarmpawzButton
+            variant="outlined"
             onClick={() => setShowHistory(true)}
-            className="bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg p-4 flex flex-col items-center gap-2 transition-colors"
+            icon={History}
+            iconPosition="left"
+            fullWidth
+            style={{ 
+              background: '#F9FAFB',
+              borderColor: '#E5E7EB',
+              color: '#374151',
+              flexDirection: 'column',
+              padding: '1rem',
+              gap: '0.5rem'
+            }}
           >
-            <History className="w-6 h-6 text-gray-600" />
-            <span className="text-sm text-gray-700">History</span>
-          </button>
+            History
+          </WarmpawzButton>
         </div>
       </div>
 
@@ -395,12 +426,19 @@ export function WalletPage({ customerPhone, customerId }: WalletPageProps) {
       <div className="bg-white rounded-xl p-4 shadow-sm">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-medium text-gray-900">Recent Transactions</h3>
-          <button
+          <WarmpawzButton
+            variant="outlined"
             onClick={() => setShowHistory(true)}
-            className="text-sm text-orange-500 hover:text-orange-600"
+            style={{ 
+              background: 'transparent',
+              border: 'none',
+              color: '#F97316',
+              padding: 0,
+              fontSize: '0.875rem'
+            }}
           >
             View All
-          </button>
+          </WarmpawzButton>
         </div>
 
         <div className="space-y-3">
@@ -452,17 +490,22 @@ export function WalletPage({ customerPhone, customerId }: WalletPageProps) {
           <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full sm:max-w-md max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
               <h2 className="text-xl font-semibold">Add Money to Wallet</h2>
-              <button
+              <WarmpawzButton
+                variant="icon"
                 onClick={() => {
                   setShowTopUpModal(false);
                   setSelectedAmount(null);
                   setCustomAmount('');
                   setError(null);
                 }}
-                className="text-gray-500 hover:text-gray-700"
+                aria-label="Close top-up modal"
+                style={{ 
+                  color: '#6B7280',
+                  background: 'transparent'
+                }}
               >
                 <X className="w-6 h-6" />
-              </button>
+              </WarmpawzButton>
             </div>
 
             <div className="p-6">
@@ -477,17 +520,20 @@ export function WalletPage({ customerPhone, customerId }: WalletPageProps) {
                 <h3 className="text-sm font-medium text-gray-700 mb-3">Choose Amount</h3>
                 <div className="grid grid-cols-3 gap-3">
                   {topUpOffers.map((offer) => (
-                    <button
+                    <WarmpawzButton
                       key={offer.amount}
+                      variant={selectedAmount === offer.amount ? 'solid' : 'outlined'}
                       onClick={() => handleTopUpClick(offer.amount)}
                       disabled={processing}
-                      className={`relative border-2 rounded-lg p-4 transition-all ${
-                        selectedAmount === offer.amount
-                          ? 'border-orange-500 bg-orange-50'
-                          : 'border-gray-200 hover:border-orange-300'
-                      } ${processing ? 'opacity-50 cursor-not-allowed' : ''} ${
-                        offer.popular ? 'ring-2 ring-orange-300' : ''
-                      }`}
+                      style={{
+                        position: 'relative',
+                        padding: '1rem',
+                        borderWidth: '2px',
+                        borderColor: selectedAmount === offer.amount ? '#F97316' : '#E5E7EB',
+                        backgroundColor: selectedAmount === offer.amount ? '#FFF7ED' : 'white',
+                        ...(offer.popular ? { boxShadow: '0 0 0 2px rgba(249, 115, 22, 0.3)' } : {})
+                      }}
+                      aria-label={`Select ₹${offer.amount} top-up amount`}
                     >
                       {offer.popular && (
                         <div className="absolute -top-2 left-1/2 transform -translate-x-1/2 bg-orange-500 text-white text-xs px-2 py-0.5 rounded-full">
@@ -501,7 +547,7 @@ export function WalletPage({ customerPhone, customerId }: WalletPageProps) {
                           <span>+₹{offer.bonusAmount}</span>
                         </div>
                       )}
-                    </button>
+                    </WarmpawzButton>
                   ))}
                 </div>
               </div>
@@ -519,13 +565,13 @@ export function WalletPage({ customerPhone, customerId }: WalletPageProps) {
                     min="100"
                     max="10000"
                   />
-                  <button
+                  <WarmpawzButton
+                    variant="solid"
                     onClick={handleCustomTopUp}
                     disabled={processing || !customAmount}
-                    className="bg-orange-500 hover:bg-orange-600 text-white px-6 py-3 rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     Add
-                  </button>
+                  </WarmpawzButton>
                 </div>
                 <p className="text-xs text-gray-500 mt-2">Minimum: ₹100 | Maximum: ₹10,000</p>
               </div>
@@ -560,12 +606,17 @@ export function WalletPage({ customerPhone, customerId }: WalletPageProps) {
           <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full sm:max-w-md max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b border-gray-200 p-4 flex items-center justify-between">
               <h2 className="text-xl font-semibold">Transaction History</h2>
-              <button
+              <WarmpawzButton
+                variant="icon"
                 onClick={() => setShowHistory(false)}
-                className="text-gray-500 hover:text-gray-700"
+                aria-label="Close transaction history modal"
+                style={{ 
+                  color: '#6B7280',
+                  background: 'transparent'
+                }}
               >
                 <X className="w-6 h-6" />
-              </button>
+              </WarmpawzButton>
             </div>
 
             <div className="p-4">

@@ -1,6 +1,7 @@
 /**
  * Customer Authentication Screen
- * Migrated from web app with identical functionality
+ * Redesigned to match design reference with orange/white split layout
+ * Identical functionality to web app
  */
 
 import React, { useState, useEffect } from 'react';
@@ -16,9 +17,13 @@ import {
   Platform,
   ScrollView,
   Alert,
+  Linking,
+  Dimensions,
 } from 'react-native';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi, ApiService } from '../../services/api';
+
+const { width, height } = Dimensions.get('window');
 
 interface CustomerAuthScreenProps {
   onAuthSuccess: (session: any) => void;
@@ -32,6 +37,7 @@ export function CustomerAuthScreen({ onAuthSuccess }: CustomerAuthScreenProps) {
   const [error, setError] = useState('');
   const [referralCode, setReferralCode] = useState('');
   const [showReferralInput, setShowReferralInput] = useState(false);
+  const [resendTimer, setResendTimer] = useState(0);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -40,6 +46,14 @@ export function CustomerAuthScreen({ onAuthSuccess }: CustomerAuthScreenProps) {
       setLoading(false);
     };
   }, []);
+
+  // Resend timer
+  useEffect(() => {
+    if (resendTimer > 0) {
+      const timer = setTimeout(() => setResendTimer(resendTimer - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [resendTimer]);
 
   const handleSendCode = async () => {
     setLoading(true);
@@ -63,6 +77,7 @@ export function CustomerAuthScreen({ onAuthSuccess }: CustomerAuthScreenProps) {
       }
       
       setShowOtpScreen(true);
+      setResendTimer(60);
       setLoading(false);
     } catch (err: any) {
       setError(err.message || 'Failed to send verification code');
@@ -118,6 +133,30 @@ export function CustomerAuthScreen({ onAuthSuccess }: CustomerAuthScreenProps) {
     }
   };
 
+  const handleResendCode = async () => {
+    if (resendTimer > 0) return;
+    
+    try {
+      const cleanPhone = phoneNumber.replace(/[^0-9]/g, '');
+      await CustomerApi.generateOtp(cleanPhone);
+      setResendTimer(60);
+      Alert.alert('Success', 'OTP resent to your phone');
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to resend OTP');
+    }
+  };
+
+  const formatPhoneNumber = (text: string) => {
+    const cleaned = text.replace(/[^0-9]/g, '');
+    if (cleaned.length <= 10) {
+      if (cleaned.length > 0) {
+        return `+91 ${cleaned.slice(0, 5)} ${cleaned.slice(5)}`;
+      }
+      return '+91 ';
+    }
+    return phoneNumber;
+  };
+
   // OTP Verification Screen
   if (showOtpScreen) {
     return (
@@ -125,76 +164,122 @@ export function CustomerAuthScreen({ onAuthSuccess }: CustomerAuthScreenProps) {
         style={styles.container}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <ScrollView contentContainerStyle={styles.scrollContent}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => {
-              setShowOtpScreen(false);
-              setOtpCode('');
-              setError('');
-            }}
-          >
-            <Text style={styles.backButtonText}>← Back</Text>
-          </TouchableOpacity>
-
+        {/* Orange Top Section (2/3) */}
+        <View style={styles.orangeSection}>
           <View style={styles.logoContainer}>
-            <View style={styles.logo}>
-              <Text style={styles.logoText}>🐾</Text>
+            {/* Logo - Using placeholder until SVG support is added */}
+            <View style={styles.logoPlaceholder}>
+              <Text style={styles.logoPaw}>🐾</Text>
+              <View style={styles.logoAnimals}>
+                <Text style={styles.logoDog}>🐕</Text>
+                <Text style={styles.logoCat}>🐈</Text>
+              </View>
+              <Text style={styles.logoText}>Warmpawz</Text>
             </View>
+            {/* TODO: When react-native-svg is added, use:
+            <SvgXml xml={logoSvg} width={120} height={120} />
+            Logo file available at: src/assets/images/logo.svg
+            */}
           </View>
+          <Text style={styles.verifyTitle}>Verify Your Number</Text>
+        </View>
 
-          <Text style={styles.title}>Enter Verification Code</Text>
-          <Text style={styles.subtitle}>
-            We sent a code to {phoneNumber}
-          </Text>
-
-          {error ? (
-            <View style={styles.errorContainer}>
-              <Text style={styles.errorText}>{error}</Text>
-            </View>
-          ) : null}
-
-          <TextInput
-            style={styles.otpInput}
-            placeholder="Enter 6-digit code"
-            value={otpCode}
-            onChangeText={setOtpCode}
-            keyboardType="number-pad"
-            maxLength={6}
-            autoFocus
-          />
-
-          {showReferralInput && (
-            <TextInput
-              style={styles.referralInput}
-              placeholder="Referral Code (Optional)"
-              value={referralCode}
-              onChangeText={setReferralCode}
-              autoCapitalize="characters"
-            />
-          )}
-
-          <TouchableOpacity
-            style={[styles.button, loading && styles.buttonDisabled]}
-            onPress={handleVerifyOtp}
-            disabled={loading || otpCode.length !== 6}
+        {/* White Bottom Card (1/3) */}
+        <View style={styles.whiteCard}>
+          <ScrollView 
+            contentContainerStyle={styles.whiteCardContent}
+            showsVerticalScrollIndicator={false}
           >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.buttonText}>Verify</Text>
-            )}
-          </TouchableOpacity>
+            <Text style={styles.otpInstruction}>
+              Enter the OTP sent to{'\n'}
+              <Text style={styles.phoneNumberText}>+91 {phoneNumber}</Text>
+            </Text>
 
-          {!showReferralInput && (
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Verification Code</Text>
+              <TextInput
+                style={styles.otpInput}
+                placeholder="Enter 6-digit code"
+                value={otpCode}
+                onChangeText={setOtpCode}
+                keyboardType="number-pad"
+                maxLength={6}
+                autoFocus
+              />
+            </View>
+
+            {showReferralInput && (
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Referral Code (Optional)</Text>
+                <TextInput
+                  style={styles.referralInput}
+                  placeholder="Enter referral code"
+                  value={referralCode}
+                  onChangeText={setReferralCode}
+                  autoCapitalize="characters"
+                />
+              </View>
+            )}
+
+            {error ? (
+              <View style={styles.errorContainer}>
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            ) : null}
+
             <TouchableOpacity
-              onPress={() => setShowReferralInput(true)}
-              style={styles.referralLink}
+              style={[styles.verifyButton, (loading || otpCode.length !== 6) && styles.buttonDisabled]}
+              onPress={handleVerifyOtp}
+              disabled={loading || otpCode.length !== 6}
             >
-              <Text style={styles.referralLinkText}>Have a referral code?</Text>
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.verifyButtonText}>Verify & Continue</Text>
+              )}
             </TouchableOpacity>
-          )}
-        </ScrollView>
+
+            <View style={styles.otpLinks}>
+              <TouchableOpacity
+                onPress={handleResendCode}
+                disabled={resendTimer > 0}
+              >
+                <Text style={[styles.linkText, styles.blueLink, resendTimer > 0 && styles.linkDisabled]}>
+                  {resendTimer > 0 ? `Resend Code (${resendTimer}s)` : 'Resend Code'}
+                </Text>
+              </TouchableOpacity>
+              <Text style={styles.linkSeparator}> • </Text>
+              <TouchableOpacity onPress={() => Alert.alert('Help', 'Contact support for assistance')}>
+                <Text style={[styles.linkText, styles.orangeLink]}>Get Help</Text>
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              onPress={() => {
+                setShowOtpScreen(false);
+                setOtpCode('');
+                setError('');
+              }}
+              style={styles.changeNumberLink}
+            >
+              <Text style={[styles.linkText, styles.blueLink]}>← Change phone number</Text>
+            </TouchableOpacity>
+
+            {!showReferralInput && (
+              <TouchableOpacity
+                onPress={() => setShowReferralInput(true)}
+                style={styles.referralLink}
+              >
+                <Text style={[styles.linkText, styles.orangeLink]}>Have a referral code?</Text>
+              </TouchableOpacity>
+            )}
+
+            <View style={styles.appInfo}>
+              <Text style={styles.appInfoText}>WARMPAWS Provider v2.1.0</Text>
+              <Text style={styles.copyrightText}>© 2025 WARMPAWS Inc. All rights reserved</Text>
+            </View>
+          </ScrollView>
+        </View>
       </KeyboardAvoidingView>
     );
   }
@@ -205,50 +290,131 @@ export function CustomerAuthScreen({ onAuthSuccess }: CustomerAuthScreenProps) {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      {/* Orange Top Section (2/3) */}
+      <View style={styles.orangeSection}>
         <View style={styles.logoContainer}>
-          <View style={styles.logo}>
-            <Text style={styles.logoText}>🐾</Text>
+          {/* Logo - Using placeholder until SVG support is added */}
+          <View style={styles.logoPlaceholder}>
+            <Text style={styles.logoPaw}>🐾</Text>
+            <View style={styles.logoAnimals}>
+              <Text style={styles.logoDog}>🐕</Text>
+              <Text style={styles.logoCat}>🐈</Text>
+            </View>
+            <Text style={styles.logoText}>Warmpawz</Text>
           </View>
+          {/* TODO: When react-native-svg is added, use:
+          <SvgXml xml={logoSvg} width={120} height={120} />
+          Logo file available at: src/assets/images/logo.svg
+          */}
         </View>
+        <Text style={styles.welcomeText}>Welcome to</Text>
+        <Text style={styles.welcomeTitle}>WARMPAWZ!</Text>
+      </View>
 
-        <Text style={styles.title}>Welcome to Warmpawz</Text>
-        <Text style={styles.subtitle}>
-          Enter your phone number to get started
-        </Text>
-
-        {error ? (
-          <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>{error}</Text>
-          </View>
-        ) : null}
-
-        <TextInput
-          style={styles.phoneInput}
-          placeholder="Enter 10-digit phone number"
-          value={phoneNumber}
-          onChangeText={(text) => {
-            const cleaned = text.replace(/[^0-9]/g, '');
-            if (cleaned.length <= 10) {
-              setPhoneNumber(cleaned);
-            }
-          }}
-          keyboardType="phone-pad"
-          maxLength={10}
-        />
-
-        <TouchableOpacity
-          style={[styles.button, (loading || phoneNumber.length !== 10) && styles.buttonDisabled]}
-          onPress={handleSendCode}
-          disabled={loading || phoneNumber.length !== 10}
+      {/* White Bottom Card (1/3) */}
+      <View style={styles.whiteCard}>
+        <ScrollView 
+          contentContainerStyle={styles.whiteCardContent}
+          showsVerticalScrollIndicator={false}
         >
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.buttonText}>Send Code</Text>
+          <Text style={styles.introText}>
+            Join our community of pet lovers and access{'\n'}
+            the best care for your furry friends
+          </Text>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Phone Number</Text>
+            <TextInput
+              style={styles.phoneInput}
+              placeholder="+91 74493 38923"
+              value={formatPhoneNumber(phoneNumber)}
+              onChangeText={(text) => {
+                const cleaned = text.replace(/[^0-9]/g, '');
+                if (cleaned.length <= 10) {
+                  setPhoneNumber(cleaned);
+                }
+              }}
+              keyboardType="phone-pad"
+              maxLength={15}
+            />
+          </View>
+
+          {showReferralInput && (
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Referral Code (Optional)</Text>
+              <TextInput
+                style={styles.referralInput}
+                placeholder="Enter referral code"
+                value={referralCode}
+                onChangeText={setReferralCode}
+                autoCapitalize="characters"
+              />
+            </View>
           )}
-        </TouchableOpacity>
-      </ScrollView>
+
+          {error ? (
+            <View style={styles.errorContainer}>
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
+          ) : null}
+
+          <TouchableOpacity
+            style={[styles.sendCodeButton, (loading || phoneNumber.length !== 10) && styles.buttonDisabled]}
+            onPress={handleSendCode}
+            disabled={loading || phoneNumber.length !== 10}
+          >
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.sendCodeButtonText}>Send Verification Code</Text>
+            )}
+          </TouchableOpacity>
+
+          <View style={styles.legalLinks}>
+            <Text style={styles.legalText}>
+              By continuing, you agree to our{' '}
+              <Text 
+                style={styles.legalLink}
+                onPress={() => Linking.openURL('https://warmpawz.com/terms')}
+              >
+                Terms of Service
+              </Text>
+              {' '}and{' '}
+              <Text 
+                style={styles.legalLink}
+                onPress={() => Linking.openURL('https://warmpawz.com/privacy')}
+              >
+                Privacy Policy
+              </Text>
+            </Text>
+          </View>
+
+          <TouchableOpacity
+            onPress={() => Alert.alert('Sign In', 'Sign in functionality coming soon')}
+            style={styles.signInLink}
+          >
+            <Text style={styles.signInText}>
+              Already have an account?{' '}
+              <Text style={styles.signInLinkText}>Sign In</Text>
+            </Text>
+          </TouchableOpacity>
+
+          {!showReferralInput && (
+            <TouchableOpacity
+              onPress={() => setShowReferralInput(true)}
+              style={styles.referralLink}
+            >
+              <Text style={[styles.linkText, styles.orangeLink]}>Have a referral code?</Text>
+            </TouchableOpacity>
+          )}
+
+          <View style={styles.appInfo}>
+            <Text style={styles.helpText}>Need Help?</Text>
+            <Text style={styles.appInfoText}>WARMPAWS Provider v2.1.0</Text>
+            <Text style={styles.copyrightText}>© 2025 WARMPAWS Inc. All rights reserved</Text>
+          </View>
+        </ScrollView>
+      </View>
     </KeyboardAvoidingView>
   );
 }
@@ -256,112 +422,252 @@ export function CustomerAuthScreen({ onAuthSuccess }: CustomerAuthScreenProps) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.primary,
   },
-  scrollContent: {
-    flexGrow: 1,
-    padding: spacing.lg,
+  // Orange Section (Top 2/3)
+  orangeSection: {
+    flex: 2,
+    backgroundColor: colors.primary,
     justifyContent: 'center',
-  },
-  backButton: {
-    alignSelf: 'flex-start',
-    marginBottom: spacing.lg,
-  },
-  backButtonText: {
-    fontSize: typography.fontSizes.md,
-    color: colors.primary,
+    alignItems: 'center',
+    paddingTop: spacing.xl * 2,
   },
   logoContainer: {
     alignItems: 'center',
     marginBottom: spacing.xl,
   },
-  logo: {
-    width: 80,
-    height: 80,
-    borderRadius: borderRadius.full,
-    backgroundColor: colors.primary,
-    justifyContent: 'center',
+  logoPlaceholder: {
     alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoPaw: {
+    fontSize: 60,
+    marginBottom: spacing.xs,
+  },
+  logoAnimals: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  logoDog: {
+    fontSize: 24,
+  },
+  logoCat: {
+    fontSize: 24,
   },
   logoText: {
-    fontSize: 40,
+    fontSize: typography.fontSizes['2xl'],
+    fontWeight: typography.fontWeights.bold,
+    color: '#FFD700',
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 2,
+    fontStyle: 'italic',
   },
-  title: {
+  welcomeText: {
+    fontSize: typography.fontSizes.lg,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.text,
+    marginBottom: spacing.xs,
+  },
+  welcomeTitle: {
     fontSize: typography.fontSizes['3xl'],
     fontWeight: typography.fontWeights.bold,
     color: colors.text,
-    textAlign: 'center',
-    marginBottom: spacing.sm,
   },
-  subtitle: {
+  verifyTitle: {
+    fontSize: typography.fontSizes['2xl'],
+    fontWeight: typography.fontWeights.bold,
+    color: colors.text,
+    marginTop: spacing.lg,
+  },
+  // White Card (Bottom 1/3)
+  whiteCard: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderTopLeftRadius: borderRadius.xl * 2,
+    borderTopRightRadius: borderRadius.xl * 2,
+    paddingTop: spacing.lg,
+  },
+  whiteCardContent: {
+    padding: spacing.lg,
+    paddingBottom: spacing.xl,
+  },
+  introText: {
     fontSize: typography.fontSizes.md,
-    color: colors.textSecondary,
+    color: colors.text,
     textAlign: 'center',
-    marginBottom: spacing.xl,
+    marginBottom: spacing.lg,
+    lineHeight: 22,
+  },
+  otpInstruction: {
+    fontSize: typography.fontSizes.md,
+    color: colors.text,
+    textAlign: 'center',
+    marginBottom: spacing.lg,
+    lineHeight: 22,
+  },
+  phoneNumberText: {
+    fontWeight: typography.fontWeights.semibold,
+  },
+  inputGroup: {
+    marginBottom: spacing.md,
+  },
+  inputLabel: {
+    fontSize: typography.fontSizes.sm,
+    fontWeight: typography.fontWeights.semibold,
+    color: colors.text,
+    marginBottom: spacing.xs,
   },
   phoneInput: {
-    backgroundColor: colors.inputBackground,
-    borderRadius: borderRadius.lg,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: borderRadius.md,
     padding: spacing.md,
     fontSize: typography.fontSizes.md,
-    marginBottom: spacing.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
+    color: colors.text,
   },
   otpInput: {
-    backgroundColor: colors.inputBackground,
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
-    fontSize: typography.fontSizes['2xl'],
-    textAlign: 'center',
-    marginBottom: spacing.lg,
+    backgroundColor: '#fff',
     borderWidth: 1,
-    borderColor: colors.border,
-    letterSpacing: 8,
+    borderColor: colors.primary,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    fontSize: typography.fontSizes.xl,
+    textAlign: 'center',
+    color: colors.text,
+    letterSpacing: 4,
   },
   referralInput: {
-    backgroundColor: colors.inputBackground,
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
-    fontSize: typography.fontSizes.md,
-    marginBottom: spacing.lg,
+    backgroundColor: '#fff',
     borderWidth: 1,
     borderColor: colors.border,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    fontSize: typography.fontSizes.md,
+    color: colors.text,
   },
-  button: {
+  sendCodeButton: {
     backgroundColor: colors.primary,
-    borderRadius: borderRadius.lg,
+    borderRadius: borderRadius.md,
     padding: spacing.md,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 50,
+    marginTop: spacing.md,
+    marginBottom: spacing.md,
+  },
+  sendCodeButtonText: {
+    color: '#fff',
+    fontSize: typography.fontSizes.lg,
+    fontWeight: typography.fontWeights.bold,
+  },
+  verifyButton: {
+    backgroundColor: colors.primary,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 50,
+    marginTop: spacing.md,
+    marginBottom: spacing.md,
+  },
+  verifyButtonText: {
+    color: '#fff',
+    fontSize: typography.fontSizes.lg,
+    fontWeight: typography.fontWeights.bold,
   },
   buttonDisabled: {
     opacity: 0.5,
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: typography.fontSizes.lg,
-    fontWeight: typography.fontWeights.semibold,
   },
   errorContainer: {
     backgroundColor: '#fee',
     padding: spacing.md,
     borderRadius: borderRadius.md,
-    marginBottom: spacing.lg,
+    marginBottom: spacing.md,
   },
   errorText: {
     color: colors.error,
     fontSize: typography.fontSizes.sm,
     textAlign: 'center',
   },
-  referralLink: {
-    marginTop: spacing.md,
+  legalLinks: {
+    marginBottom: spacing.md,
+  },
+  legalText: {
+    fontSize: typography.fontSizes.sm,
+    color: colors.text,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  legalLink: {
+    color: colors.primary,
+    textDecorationLine: 'underline',
+    fontWeight: typography.fontWeights.semibold,
+  },
+  signInLink: {
+    marginBottom: spacing.md,
     alignItems: 'center',
   },
-  referralLinkText: {
+  signInText: {
+    fontSize: typography.fontSizes.sm,
+    color: colors.text,
+    textAlign: 'center',
+  },
+  signInLinkText: {
     color: colors.primary,
+    textDecorationLine: 'underline',
+    fontWeight: typography.fontWeights.semibold,
+  },
+  otpLinks: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  linkText: {
     fontSize: typography.fontSizes.sm,
   },
+  blueLink: {
+    color: '#3b82f6',
+    textDecorationLine: 'underline',
+  },
+  orangeLink: {
+    color: colors.primary,
+    textDecorationLine: 'underline',
+  },
+  linkDisabled: {
+    opacity: 0.5,
+  },
+  linkSeparator: {
+    color: colors.textSecondary,
+    fontSize: typography.fontSizes.sm,
+  },
+  changeNumberLink: {
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  referralLink: {
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  appInfo: {
+    alignItems: 'center',
+    marginTop: spacing.lg,
+  },
+  helpText: {
+    fontSize: typography.fontSizes.sm,
+    color: colors.textSecondary,
+    marginBottom: spacing.xs,
+  },
+  appInfoText: {
+    fontSize: typography.fontSizes.xs,
+    color: colors.textSecondary,
+    marginBottom: spacing.xs / 2,
+  },
+  copyrightText: {
+    fontSize: typography.fontSizes.xs,
+    color: colors.textSecondary,
+  },
 });
-

@@ -7,7 +7,7 @@ import {
 import { Button } from '../../ui/button';
 import { Badge } from '../../ui/badge';
 import { Card } from '../../ui/card';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+// ✅ FIX: Removed Supabase imports - using API Gateway now
 
 interface InsurancePlan {
   id: string;
@@ -83,56 +83,70 @@ export function InsuranceDashboard({
     try {
       setLoading(true);
       
-      // Load plans
-      const plansResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/insurance/plans`,
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
       
-      if (plansResponse.ok) {
-        const plansData = await plansResponse.json();
-        setPlans(plansData.plans || []);
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      // Load plans
+      try {
+        const plansData = await apiCallJson<any>(
+          `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/insurance/plans`
+        );
         
-        // Calculate stats
-        const totalPlans = plansData.plans?.length || 0;
-        const activePlans = plansData.plans?.filter((p: InsurancePlan) => p.status === 'approved').length || 0;
-        const pendingApproval = plansData.plans?.filter((p: InsurancePlan) => p.status === 'pending').length || 0;
-        
-        setStats(prev => ({
-          ...prev,
-          totalPlans,
-          activePlans,
-          pendingApproval
-        }));
+        if (plansData.success && plansData.plans) {
+          setPlans(plansData.plans);
+          
+          // Calculate stats
+          const totalPlans = plansData.plans.length || 0;
+          const activePlans = plansData.plans.filter((p: InsurancePlan) => p.status === 'approved').length || 0;
+          const pendingApproval = plansData.plans.filter((p: InsurancePlan) => p.status === 'pending').length || 0;
+          
+          setStats(prev => ({
+            ...prev,
+            totalPlans,
+            activePlans,
+            pendingApproval
+          }));
+        } else {
+          setPlans([]);
+        }
+      } catch (planError) {
+        console.warn('Insurance plans endpoint not available');
+        setPlans([]);
       }
       
       // Load claims
-      const claimsResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/insurance/claims`,
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+      try {
+        const claimsData = await apiCallJson<any>(
+          `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/insurance/claims`
+        );
+        
+        if (claimsData.success && claimsData.claims) {
+          setClaims(claimsData.claims);
+          
+          const totalClaims = claimsData.claims.length || 0;
+          const pendingClaims = claimsData.claims.filter((c: Claim) => c.status === 'pending').length || 0;
+          const claimsApproved = claimsData.claims.filter((c: Claim) => c.status === 'approved').length || 0;
+          
+          setStats(prev => ({
+            ...prev,
+            totalClaims,
+            pendingClaims,
+            claimsApproved
+          }));
+        } else {
+          setClaims([]);
         }
-      );
-      
-      if (claimsResponse.ok) {
-        const claimsData = await claimsResponse.json();
-        setClaims(claimsData.claims || []);
-        
-        const totalClaims = claimsData.claims?.length || 0;
-        const pendingClaims = claimsData.claims?.filter((c: Claim) => c.status === 'pending').length || 0;
-        const claimsApproved = claimsData.claims?.filter((c: Claim) => c.status === 'approved').length || 0;
-        
-        setStats(prev => ({
-          ...prev,
-          totalClaims,
-          pendingClaims,
-          claimsApproved
-        }));
+      } catch (claimError) {
+        console.warn('Insurance claims endpoint not available');
+        setClaims([]);
       }
       
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading dashboard data:', error);
     } finally {
       setLoading(false);

@@ -5,8 +5,8 @@
  * Alternative: Can also use Twilio Video (commented code included)
  */
 
-import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
+import { Hono } from 'hono';
+import * as kv from './kv_store';
 
 // Agora Credentials (using publicly available test credentials for now)
 // In production, these should come from environment variables

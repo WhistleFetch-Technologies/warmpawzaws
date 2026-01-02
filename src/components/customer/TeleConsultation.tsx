@@ -14,7 +14,7 @@ import {
   User
 } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 interface TeleConsultationProps {
   onBack: () => void;

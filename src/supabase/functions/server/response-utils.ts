@@ -1,6 +1,6 @@
 
-import { Context } from "npm:hono";
-import { ContentfulStatusCode } from "npm:hono/utils/http-status";
+import { Context } from "hono";
+import { ContentfulStatusCode } from "hono/utils/http-status";
 
 /**
  * Standardized Success Response

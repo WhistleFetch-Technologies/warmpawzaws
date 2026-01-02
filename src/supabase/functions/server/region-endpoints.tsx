@@ -1,12 +1,11 @@
 // Region Management Endpoints
 // Backend API for multi-region configuration
 
-import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
-import { tryGet, safeGetByPrefix } from './kv-safe.tsx';
-import { Region, REGION_TEMPLATES } from './region-types.tsx';
+import { Hono } from 'hono';
+import { getRegionsRepository } from '../../../supabase/lib/repositories/regions';
+import { Region, REGION_TEMPLATES } from './region-types';
 
-export function regionEndpoints(app: any, kvStore: any) {
+export function regionEndpoints(app: any) {
   try {
     console.log('🌍 [REGION] Registering region endpoints...');
     
@@ -24,13 +23,29 @@ export function regionEndpoints(app: any, kvStore: any) {
   app.get('/make-server-3dd53475/regions', async (c) => {
     try {
       console.log('🌍 [REGION] GET /regions called');
-      const regions = await safeGetByPrefix<Region>('region_', { timeout: 10000, limit: 500 });
-      console.log(`🌍 [REGION] Found ${regions?.length || 0} regions`);
+      // ✅ SQL: Get all regions from repository
+      const regionsRepo = getRegionsRepository();
+      const regions = await regionsRepo.findAll();
+      
+      // Map SQL schema to expected format
+      const mappedRegions = regions.map(r => ({
+        regionId: r.code,
+        regionName: r.name,
+        regionCode: r.code,
+        country: r.country || 'India',
+        serviceCatalog: r.region_config?.serviceCatalog || {},
+        isActive: r.is_active,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+        ...r.region_config
+      }));
+      
+      console.log(`🌍 [REGION] Found ${mappedRegions.length} regions`);
       
       return c.json({
         success: true,
-        regions: regions || [],
-        count: regions?.length || 0,
+        regions: mappedRegions,
+        count: mappedRegions.length,
       });
     } catch (error) {
       console.error('❌ [REGION] Error fetching regions:', error);
@@ -46,12 +61,26 @@ export function regionEndpoints(app: any, kvStore: any) {
   app.get('/make-server-3dd53475/regions/active', async (c) => {
     try {
       console.log('🌍 [REGION] GET /regions/active called');
-      const regions = await safeGetByPrefix<Region>('region_', { timeout: 10000, limit: 500 });
-      const activeRegions = regions?.filter(r => r.isActive) || [];
+      // ✅ SQL: Get active regions from repository
+      const regionsRepo = getRegionsRepository();
+      const regions = await regionsRepo.findActive();
+      
+      // Map SQL schema to expected format
+      const mappedRegions = regions.map(r => ({
+        regionId: r.code,
+        regionName: r.name,
+        regionCode: r.code,
+        country: r.country || 'India',
+        serviceCatalog: r.region_config?.serviceCatalog || {},
+        isActive: r.is_active,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+        ...r.region_config
+      }));
       
       return c.json({
         success: true,
-        regions: activeRegions,
+        regions: mappedRegions,
       });
     } catch (error) {
       console.error('Error fetching active regions:', error);
@@ -66,14 +95,29 @@ export function regionEndpoints(app: any, kvStore: any) {
   app.get('/make-server-3dd53475/regions/:regionId', async (c) => {
     try {
       const regionId = c.req.param('regionId');
-      const region = await tryGet<Region>(`region_${regionId}`, null, { timeout: 5000 });
+      // ✅ SQL: Get region from repository
+      const regionsRepo = getRegionsRepository();
+      const regionRaw = await regionsRepo.findByCode(regionId);
       
-      if (!region) {
+      if (!regionRaw) {
         return c.json({
           success: false,
           error: 'Region not found',
         }, 404);
       }
+      
+      // Map to expected format
+      const region: any = {
+        regionId: regionRaw.code,
+        regionName: regionRaw.name,
+        regionCode: regionRaw.code,
+        country: regionRaw.country || 'India',
+        serviceCatalog: regionRaw.region_config?.serviceCatalog || {},
+        isActive: regionRaw.is_active,
+        createdAt: regionRaw.created_at,
+        updatedAt: regionRaw.updated_at,
+        ...regionRaw.region_config
+      };
       
       return c.json({
         success: true,
@@ -92,20 +136,24 @@ export function regionEndpoints(app: any, kvStore: any) {
   app.get('/make-server-3dd53475/region-services', async (c) => {
     try {
       const regionId = c.req.query('regionId') || 'india';
-      const region = await kvStore.get<Region>(`region_${regionId}`);
+      // ✅ SQL: Get region from repository
+      const regionsRepo = getRegionsRepository();
+      const regionRaw = await regionsRepo.findByCode(regionId);
       
-      if (!region) {
+      if (!regionRaw) {
         return c.json({
           success: false,
           error: 'Region not found',
         }, 404);
       }
       
+      const serviceCatalog = regionRaw.region_config?.serviceCatalog || {};
+      
       return c.json({
         success: true,
-        services: region.serviceCatalog,
-        regionId: region.regionId,
-        regionName: region.regionName,
+        services: serviceCatalog,
+        regionId: regionRaw.code,
+        regionName: regionRaw.name,
       });
     } catch (error) {
       console.error('Error fetching region services:', error);
@@ -120,11 +168,26 @@ export function regionEndpoints(app: any, kvStore: any) {
   app.get('/make-server-3dd53475/admin/regions', async (c) => {
     try {
       console.log('🌍 [REGION] GET /admin/regions called');
-      const regions = await kvStore.getByPrefix<Region>('region_');
+      // ✅ SQL: Get all regions from repository
+      const regionsRepo = getRegionsRepository();
+      const regions = await regionsRepo.findAll();
+      
+      // Map to expected format
+      const mappedRegions = regions.map(r => ({
+        regionId: r.code,
+        regionName: r.name,
+        regionCode: r.code,
+        country: r.country || 'India',
+        serviceCatalog: r.region_config?.serviceCatalog || {},
+        isActive: r.is_active,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+        ...r.region_config
+      }));
       
       return c.json({
         success: true,
-        regions: regions || [],
+        regions: mappedRegions || [],
       });
     } catch (error) {
       console.error('Error fetching regions:', error);
@@ -148,8 +211,9 @@ export function regionEndpoints(app: any, kvStore: any) {
         }, 400);
       }
       
-      // Check if region already exists
-      const existing = await kvStore.get<Region>(`region_${regionId}`);
+      // ✅ SQL: Check if region already exists
+      const regionsRepo = getRegionsRepository();
+      const existing = await regionsRepo.findByCode(regionId);
       if (existing) {
         return c.json({
           success: false,
@@ -158,28 +222,46 @@ export function regionEndpoints(app: any, kvStore: any) {
       }
       
       // Get template or use provided data
-      let regionData: Region;
+      let regionConfig: any = {};
+      let regionData: any;
+      
       if (templateId && REGION_TEMPLATES[templateId]) {
+        const template = REGION_TEMPLATES[templateId];
+        regionConfig = template;
         regionData = {
-          ...REGION_TEMPLATES[templateId],
-          regionId,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        } as Region;
+          code: regionId,
+          name: template.regionName || regionId,
+          country: (template as any).country || 'India',
+          region_config: template,
+          is_active: template.isActive !== false,
+        };
       } else {
+        regionConfig = body;
         regionData = {
-          ...body,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
+          code: regionId,
+          name: body.name || body.regionName || regionId,
+          country: (body as any).country || 'India',
+          region_config: body,
+          is_active: body.isActive !== false,
         };
       }
       
-      // Save region
-      await kvStore.set(`region_${regionId}`, regionData);
+      // ✅ SQL: Create region using repository
+      const created = await regionsRepo.create(regionData);
       
       return c.json({
         success: true,
-        region: regionData,
+        region: {
+          regionId: created.code,
+          regionName: created.name,
+          regionCode: created.code,
+          country: created.country,
+          serviceCatalog: created.region_config?.serviceCatalog || {},
+          isActive: created.is_active,
+          createdAt: created.created_at,
+          updatedAt: created.updated_at,
+          ...created.region_config
+        },
         message: `Region ${regionId} created successfully`,
       });
     } catch (error) {
@@ -197,7 +279,9 @@ export function regionEndpoints(app: any, kvStore: any) {
       const regionId = c.req.param('regionId');
       const updates = await c.req.json();
       
-      const existing = await kvStore.get<Region>(`region_${regionId}`);
+      // ✅ SQL: Check if region exists
+      const regionsRepo = getRegionsRepository();
+      const existing = await regionsRepo.findByCode(regionId);
       if (!existing) {
         return c.json({
           success: false,
@@ -205,18 +289,27 @@ export function regionEndpoints(app: any, kvStore: any) {
         }, 404);
       }
       
-      const updated: Region = {
-        ...existing,
+      // ✅ SQL: Update region using repository
+      const updateData: any = {
         ...updates,
-        regionId, // Don't allow changing the ID
-        updatedAt: new Date().toISOString(),
+        region_config: updates.region_config || existing.region_config,
       };
       
-      await kvStore.set(`region_${regionId}`, updated);
+      const updated = await regionsRepo.update(regionId, updateData);
       
       return c.json({
         success: true,
-        region: updated,
+        region: {
+          regionId: updated.code,
+          regionName: updated.name,
+          regionCode: updated.code,
+          country: updated.country,
+          serviceCatalog: updated.region_config?.serviceCatalog || {},
+          isActive: updated.is_active,
+          createdAt: updated.created_at,
+          updatedAt: updated.updated_at,
+          ...updated.region_config
+        },
         message: `Region ${regionId} updated successfully`,
       });
     } catch (error) {
@@ -234,7 +327,9 @@ export function regionEndpoints(app: any, kvStore: any) {
       const regionId = c.req.param('regionId');
       const { isActive } = await c.req.json();
       
-      const existing = await kvStore.get<Region>(`region_${regionId}`);
+      // ✅ SQL: Update region status using repository
+      const regionsRepo = getRegionsRepository();
+      const existing = await regionsRepo.findByCode(regionId);
       if (!existing) {
         return c.json({
           success: false,
@@ -242,17 +337,21 @@ export function regionEndpoints(app: any, kvStore: any) {
         }, 404);
       }
       
-      const updated: Region = {
-        ...existing,
-        isActive,
-        updatedAt: new Date().toISOString(),
-      };
-      
-      await kvStore.set(`region_${regionId}`, updated);
+      const updated = await regionsRepo.setActive(regionId, isActive);
       
       return c.json({
         success: true,
-        region: updated,
+        region: {
+          regionId: updated.code,
+          regionName: updated.name,
+          regionCode: updated.code,
+          country: updated.country,
+          serviceCatalog: updated.region_config?.serviceCatalog || {},
+          isActive: updated.is_active,
+          createdAt: updated.created_at,
+          updatedAt: updated.updated_at,
+          ...updated.region_config
+        },
         message: `Region ${regionId} ${isActive ? 'activated' : 'deactivated'} successfully`,
       });
     } catch (error) {
@@ -301,34 +400,53 @@ export function regionEndpoints(app: any, kvStore: any) {
       
       const regionId = templateId; // Template ID is the region ID
       
-      // Check if region already exists
-      const existing = await kvStore.get<Region>(`region_${regionId}`);
+      // ✅ SQL: Check if region already exists
+      const regionsRepo = getRegionsRepository();
+      const existing = await regionsRepo.findByCode(regionId);
       if (existing) {
         return c.json({
           success: true,
           message: `${REGION_TEMPLATES[templateId].regionName} region already exists`,
-          region: existing,
+          region: {
+            regionId: existing.code,
+            regionName: existing.name,
+            regionCode: existing.code,
+            country: existing.country,
+            serviceCatalog: existing.region_config?.serviceCatalog || {},
+            isActive: existing.is_active,
+            createdAt: existing.created_at,
+            updatedAt: existing.updated_at,
+            ...existing.region_config
+          },
         });
       }
       
-      // Create region from template
-      const newRegion: Region = {
-        ...REGION_TEMPLATES[templateId],
-        regionId,
-        isActive: templateId === 'india', // Only India is active by default
-        launchDate: new Date().toISOString(),
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      } as Region;
-      
-      await kvStore.set(`region_${regionId}`, newRegion);
+      // ✅ SQL: Create region from template using repository
+      const template = REGION_TEMPLATES[templateId];
+      const created = await regionsRepo.create({
+        code: regionId,
+        name: template.regionName || regionId,
+        country: (template as any).country || 'India',
+        region_config: template,
+        is_active: templateId === 'india', // Only India is active by default
+      });
       
       console.log(`✅ Region ${regionId} initialized successfully`);
       
       return c.json({
         success: true,
-        message: `${newRegion.regionName} region initialized successfully`,
-        region: newRegion,
+        message: `${template.regionName} region initialized successfully`,
+        region: {
+          regionId: created.code,
+          regionName: created.name,
+          regionCode: created.code,
+          country: created.country,
+          serviceCatalog: created.region_config?.serviceCatalog || {},
+          isActive: created.is_active,
+          createdAt: created.created_at,
+          updatedAt: created.updated_at,
+          ...created.region_config
+        },
       });
     } catch (error) {
       console.error('Error initializing region:', error);
@@ -344,35 +462,38 @@ export function regionEndpoints(app: any, kvStore: any) {
     try {
       console.log('🌍 [REGION] POST /admin/regions/seed-all called');
       
-      const results = [];
+      const results: any[] = [];
       const templateKeys = Object.keys(REGION_TEMPLATES);
+      const regionsRepo = getRegionsRepository();
       
       for (const templateId of templateKeys) {
         const template = REGION_TEMPLATES[templateId];
-        const regionId = template.regionId; // e.g. 'india', 'singapore'
+        const regionId = template.regionId || templateId; // e.g. 'india', 'singapore'
         
-        // Check if exists
-        const existing = await kvStore.get<Region>(`region_${regionId}`);
-        
-        if (existing) {
-          results.push({ regionId, status: 'skipped', message: 'Already exists' });
-          continue;
+        try {
+          // ✅ SQL: Check if exists
+          const existing = await regionsRepo.findByCode(regionId);
+          
+          if (existing) {
+            results.push({ regionId, status: 'skipped', message: 'Already exists' });
+            continue;
+          }
+          
+          // ✅ SQL: Create from template using repository
+          await regionsRepo.create({
+            code: regionId,
+            name: template.regionName || regionId,
+            country: (template as any).country || 'India',
+            region_config: template,
+            is_active: templateId === 'india', // Ensure ONLY India is active by default
+          });
+          
+          results.push({ regionId, status: 'created', message: 'Seeded successfully' });
+          console.log(`✅ Region ${regionId} seeded.`);
+        } catch (err) {
+          results.push({ regionId, status: 'error', message: String(err) });
+          console.error(`❌ Error seeding region ${regionId}:`, err);
         }
-        
-        // Create from template
-        const newRegion: Region = {
-          ...template,
-          regionId,
-          // Ensure ONLY India is active by default
-          isActive: templateId === 'india',
-          launchDate: new Date().toISOString(),
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        } as Region;
-        
-        await kvStore.set(`region_${regionId}`, newRegion);
-        results.push({ regionId, status: 'created', message: 'Seeded successfully' });
-        console.log(`✅ Region ${regionId} seeded.`);
       }
       
       return c.json({

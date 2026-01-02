@@ -7,9 +7,13 @@
  * Customer sees: "Heart Care" → Staff/Center selects: "Heart Care"
  */
 
-import { Hono } from "npm:hono";
-import * as kv from './kv_store.tsx';
-import { getProblemGridByRole } from './problem-grid-catalog.tsx';
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from "hono";
+import { 
+  getVendorsRepository,
+  getStaffRepository
+} from '../../../supabase/lib/repositories/index';
+import { getProblemGridByRole } from './problem-grid-catalog';
 
 export function registerProblemGridSpecializationSystem(app: Hono) {
   
@@ -167,20 +171,23 @@ export function registerProblemGridSpecializationSystem(app: Hono) {
         return c.json({ error: 'Specializations must be an array of problem IDs' }, 400);
       }
       
-      // Load vendor
-      const vendor = await kv.get(`vendor:${vendorId}`);
+      // ✅ SQL: Load vendor from vendors table
+      const vendorsRepo = getVendorsRepository();
+      const vendor = await vendorsRepo.findById(vendorId);
       if (!vendor) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
       
-      // Update vendor with specializations
-      const updatedVendor: any = {
-        ...(vendor as any),
-        specializations,  // Array of problem IDs (e.g., ['surgery', 'cardiology', 'dermatology'])
-        updatedAt: new Date().toISOString()
-      };
+      // ✅ SQL: Update vendor with specializations
+      await vendorsRepo.update(vendorId, {
+        metadata: {
+          ...vendor.metadata,
+          specializations
+        },
+        updated_at: new Date().toISOString()
+      });
       
-      await kv.set(`vendor:${vendorId}`, updatedVendor);
+      const updatedVendor = await vendorsRepo.findById(vendorId);
       
       console.log(`✅ Updated vendor ${vendorId} specializations:`, specializations);
       
@@ -209,21 +216,22 @@ export function registerProblemGridSpecializationSystem(app: Hono) {
         return c.json({ error: 'Specializations must be an array of problem IDs' }, 400);
       }
       
-      // Load staff member
-      const staff = await kv.get(`vendor:${vendorId}:staff:${staffId}`);
-      if (!staff) {
+      // ✅ SQL: Load staff member from staff table
+      const staffRepo = getStaffRepository();
+      const staff = await staffRepo.findById(staffId);
+      if (!staff || staff.vendor_id !== vendorId) {
         return c.json({ error: 'Staff member not found' }, 404);
       }
       
-      // Load vendor to get roleId for validation
-      const vendor = await kv.get(`vendor:${vendorId}`);
+      // ✅ SQL: Load vendor to get roleId for validation
+      const vendorsRepo = getVendorsRepository();
+      const vendor = await vendorsRepo.findById(vendorId);
       if (!vendor) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
       
       // ✅ FIX: Use centralized getProblemGridByRole function
-      const vendorData = vendor as any;
-      const normalizedRoleId = (vendorData.roleId || '').replace(/^role_/, '').toLowerCase();
+      const normalizedRoleId = (vendor.role_id || '').replace(/^role_/, '').toLowerCase();
       const problemGrid = getProblemGridByRole(normalizedRoleId);
       
       // Get display names for selected specializations
@@ -237,18 +245,17 @@ export function registerProblemGridSpecializationSystem(app: Hono) {
         } : null;
       }).filter(Boolean);
       
-      // Update staff with specializations
-      const updatedStaff: any = {
-        ...(staff as any),
-        specializations,  // Array of problem IDs
-        specializationDetails,  // Full details for display
-        updatedAt: new Date().toISOString()
-      };
+      // ✅ SQL: Update staff with specializations
+      await staffRepo.update(staffId, {
+        metadata: {
+          ...staff.metadata,
+          specializations,  // Array of problem IDs
+          specializationDetails  // Full details for display
+        },
+        updated_at: new Date().toISOString()
+      });
       
-      await kv.set(`vendor:${vendorId}:staff:${staffId}`, updatedStaff);
-      
-      // Also store in staff: key for direct access
-      await kv.set(`staff:${staffId}`, updatedStaff);
+      const updatedStaff = await staffRepo.findById(staffId);
       
       console.log(`✅ Updated staff ${staffId} specializations:`, {
         specializations,
@@ -283,12 +290,13 @@ export function registerProblemGridSpecializationSystem(app: Hono) {
       // Normalize role ID
       const normalizedRoleId = roleId.replace(/^role_/, '').toLowerCase();
       
-      // Get all vendors for this role
-      const allVendors = await kv.getByPrefix('vendor:vendor_');
+      // ✅ SQL: Get all vendors for this role from vendors table
+      const vendorsRepo = getVendorsRepository();
+      const allVendors = await vendorsRepo.findAll({});
       
       // Filter vendors by role and specialization
       const matchingVendors = allVendors.filter((vendor: any) => {
-        const vendorRoleId = vendor.roleId.replace(/^role_/, '').toLowerCase();
+        const vendorRoleId = (vendor.role_id || '').replace(/^role_/, '').toLowerCase();
         
         // Check if vendor role matches
         const roleMatches = vendorRoleId === normalizedRoleId ||
@@ -300,38 +308,36 @@ export function registerProblemGridSpecializationSystem(app: Hono) {
         if (!roleMatches) return false;
         
         // Check if vendor is active and approved
-        if (vendor.status !== 'active' || !vendor.isActive) return false;
+        if (vendor.status !== 'approved' || !vendor.is_active) return false;
         
         // Check if vendor has this specialization
-        if (vendor.specializations && vendor.specializations.includes(problemId)) {
+        const vendorSpecializations = vendor.metadata?.specializations || [];
+        if (vendorSpecializations.includes(problemId)) {
           return true;
         }
         
         // Also check staff members
-        // This will be populated when we query staff
         return true;
       });
       
-      // Now get staff for matching vendors
+      // ✅ SQL: Now get staff for matching vendors
       const results: any[] = [];
+      const staffRepo = getStaffRepository();
       
-      for (const vendorItem of matchingVendors) {
-        const vendor = vendorItem.value || vendorItem;
-        const vendorId = (vendor as any).id || (vendorItem as any).key?.replace('vendor:vendor_', '') || '';
+      for (const vendor of matchingVendors) {
+        const vendorId = vendor.id;
         
-        if (!vendorId) continue;
-        
-        // Get vendor's staff
-        const staffMembers = await kv.getByPrefix(`vendor:${vendorId}:staff:`);
+        // ✅ SQL: Get vendor's staff from staff table
+        const staffMembers = await staffRepo.findByVendor(vendorId);
         
         // Filter staff by specialization
-        const matchingStaff = (staffMembers || []).filter((staffItem: any) => {
-          const staff = staffItem.value || staffItem;
-          return (staff as any).specializations && (staff as any).specializations.includes(problemId);
+        const matchingStaff = staffMembers.filter((staff: any) => {
+          const staffSpecializations = staff.metadata?.specializations || [];
+          return staffSpecializations.includes(problemId);
         });
         
         // If vendor has specialization OR has staff with specialization
-        const vendorSpecializations = (vendor as any).specializations || [];
+        const vendorSpecializations = vendor.metadata?.specializations || [];
         if (vendorSpecializations.includes(problemId) || matchingStaff.length > 0) {
           results.push({
             vendor,

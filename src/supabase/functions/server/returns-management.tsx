@@ -3,9 +3,9 @@
  * Handles return requests, logistics, and refunds
  */
 
-import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
-import { createReturnOrder as createShiprocketReturn } from './shiprocket-integration.tsx';
+import { Hono } from 'hono';
+import * as kv from './kv_store';
+import { createReturnOrder as createShiprocketReturn } from './shiprocket-integration';
 
 export interface ReturnPolicy {
   productId?: string;

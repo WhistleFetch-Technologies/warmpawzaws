@@ -3,8 +3,9 @@
  * Handles controlled substances inventory, compliance, and tracking
  */
 
-import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from 'hono';
+import { getDbClient } from '../../../supabase/lib/db';
 
 const app = new Hono();
 
@@ -80,7 +81,13 @@ app.get('/:vendorId', async (c) => {
   try {
     const vendorId = c.req.param('vendorId');
     
-    const substances = await kv.getByPrefix<ControlledSubstance>(`substance:${vendorId}:`);
+    // ✅ SQL: Get controlled substances for vendor
+    const db = getDbClient();
+    const { data: substances } = await db
+      .from('controlled_substances')
+      .select('*')
+      .eq('vendor_id', vendorId)
+      .order('created_at', { ascending: false });
     
     // Sort by schedule (most controlled first) then by name
     const scheduleOrder = { 'I': 1, 'II': 2, 'III': 3, 'IV': 4, 'V': 5 };
@@ -122,7 +129,14 @@ app.get('/:vendorId/:substanceId', async (c) => {
   try {
     const { vendorId, substanceId } = c.req.param();
     
-    const substance = await kv.get<ControlledSubstance>(`substance:${vendorId}:${substanceId}`);
+    // ✅ SQL: Get controlled substance
+    const db = getDbClient();
+    const { data: substance } = await db
+      .from('controlled_substances')
+      .select('*')
+      .eq('vendor_id', vendorId)
+      .eq('substance_id', substanceId)
+      .single();
     
     if (!substance) {
       return c.json({ 
@@ -179,7 +193,23 @@ app.post('/:vendorId', async (c) => {
       updatedAt: now
     };
     
-    await kv.set(`substance:${vendorId}:${substanceId}`, substance);
+    // ✅ SQL: Create controlled substance
+    await db.from('controlled_substances').insert({
+      substance_id: substanceId,
+      vendor_id: vendorId,
+      name: substance.name,
+      type: substance.type,
+      quantity: substance.quantity,
+      unit: substance.unit,
+      expiry_date: substance.expiryDate,
+      batch_number: substance.batchNumber,
+      manufacturer: substance.manufacturer,
+      license_number: substance.licenseNumber,
+      storage_location: substance.storageLocation,
+      status: substance.status || 'available',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    });
     
     // Log initial stock receipt
     const transactionId = `txn-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -197,7 +227,20 @@ app.post('/:vendorId', async (c) => {
       timestamp: now
     };
     
-    await kv.set(`substance:transaction:${vendorId}:${transactionId}`, transaction);
+    // ✅ SQL: Store transaction
+    await db.from('controlled_substance_transactions').insert({
+      transaction_id: transactionId,
+      vendor_id: vendorId,
+      substance_id: transaction.substanceId,
+      transaction_type: transaction.type,
+      quantity: transaction.quantity,
+      unit: transaction.unit,
+      reason: transaction.reason,
+      performed_by: transaction.performedBy,
+      performed_at: transaction.performedAt || new Date().toISOString(),
+      notes: transaction.notes,
+      created_at: new Date().toISOString()
+    });
     
     return c.json({
       success: true,
@@ -223,7 +266,14 @@ app.put('/:vendorId/:substanceId', async (c) => {
     const { vendorId, substanceId } = c.req.param();
     const body = await c.req.json();
     
-    const existing = await kv.get<ControlledSubstance>(`substance:${vendorId}:${substanceId}`);
+    // ✅ SQL: Get existing substance
+    const db = getDbClient();
+    const { data: existing } = await db
+      .from('controlled_substances')
+      .select('*')
+      .eq('vendor_id', vendorId)
+      .eq('substance_id', substanceId)
+      .single();
     
     if (!existing) {
       return c.json({ 
@@ -240,7 +290,15 @@ app.put('/:vendorId/:substanceId', async (c) => {
       updatedAt: new Date().toISOString()
     };
     
-    await kv.set(`substance:${vendorId}:${substanceId}`, updated);
+    // ✅ SQL: Update controlled substance
+    await db.from('controlled_substances')
+      .update({
+        quantity: updated.quantity,
+        status: updated.status,
+        updated_at: new Date().toISOString()
+      })
+      .eq('vendor_id', vendorId)
+      .eq('substance_id', substanceId);
     
     return c.json({
       success: true,
@@ -266,7 +324,14 @@ app.post('/:vendorId/:substanceId/dispense', async (c) => {
     const { vendorId, substanceId } = c.req.param();
     const body = await c.req.json();
     
-    const substance = await kv.get<ControlledSubstance>(`substance:${vendorId}:${substanceId}`);
+    // ✅ SQL: Get controlled substance
+    const db = getDbClient();
+    const { data: substance } = await db
+      .from('controlled_substances')
+      .select('*')
+      .eq('vendor_id', vendorId)
+      .eq('substance_id', substanceId)
+      .single();
     
     if (!substance) {
       return c.json({ 
@@ -292,7 +357,15 @@ app.post('/:vendorId/:substanceId/dispense', async (c) => {
       updatedAt: new Date().toISOString()
     };
     
-    await kv.set(`substance:${vendorId}:${substanceId}`, updated);
+    // ✅ SQL: Update controlled substance
+    await db.from('controlled_substances')
+      .update({
+        quantity: updated.quantity,
+        status: updated.status,
+        updated_at: new Date().toISOString()
+      })
+      .eq('vendor_id', vendorId)
+      .eq('substance_id', substanceId);
     
     // Log transaction
     const transactionId = `txn-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -316,7 +389,20 @@ app.post('/:vendorId/:substanceId/dispense', async (c) => {
       witnessId: body.witnessId
     };
     
-    await kv.set(`substance:transaction:${vendorId}:${transactionId}`, transaction);
+    // ✅ SQL: Store transaction
+    await db.from('controlled_substance_transactions').insert({
+      transaction_id: transactionId,
+      vendor_id: vendorId,
+      substance_id: transaction.substanceId,
+      transaction_type: transaction.type,
+      quantity: transaction.quantity,
+      unit: transaction.unit,
+      reason: transaction.reason,
+      performed_by: transaction.performedBy,
+      performed_at: transaction.performedAt || new Date().toISOString(),
+      notes: transaction.notes,
+      created_at: new Date().toISOString()
+    });
     
     return c.json({
       success: true,
@@ -342,7 +428,12 @@ app.get('/:vendorId/:substanceId/transactions', async (c) => {
   try {
     const { vendorId, substanceId } = c.req.param();
     
-    const allTransactions = await kv.getByPrefix<SubstanceTransaction>(`substance:transaction:${vendorId}:`);
+    // ✅ SQL: Get all transactions for vendor
+    const { data: allTransactions } = await db
+      .from('controlled_substance_transactions')
+      .select('*')
+      .eq('vendor_id', vendorId)
+      .order('performed_at', { ascending: false });
     const transactions = allTransactions.filter(t => t.substanceId === substanceId);
     
     // Sort by timestamp (most recent first)
@@ -371,7 +462,12 @@ app.get('/:vendorId/audit-history', async (c) => {
   try {
     const vendorId = c.req.param('vendorId');
     
-    const audits = await kv.getByPrefix<ComplianceAudit>(`substance:audit:${vendorId}:`);
+    // ✅ SQL: Get compliance audits
+    const { data: audits } = await db
+      .from('controlled_substance_audits')
+      .select('*')
+      .eq('vendor_id', vendorId)
+      .order('audit_date', { ascending: false });
     
     // Sort by date (most recent first)
     audits.sort((a, b) => new Date(b.auditDate).getTime() - new Date(a.auditDate).getTime());
@@ -400,7 +496,14 @@ app.delete('/:vendorId/:substanceId', async (c) => {
   try {
     const { vendorId, substanceId } = c.req.param();
     
-    const substance = await kv.get<ControlledSubstance>(`substance:${vendorId}:${substanceId}`);
+    // ✅ SQL: Get controlled substance
+    const db = getDbClient();
+    const { data: substance } = await db
+      .from('controlled_substances')
+      .select('*')
+      .eq('vendor_id', vendorId)
+      .eq('substance_id', substanceId)
+      .single();
     
     if (!substance) {
       return c.json({ 
@@ -410,15 +513,21 @@ app.delete('/:vendorId/:substanceId', async (c) => {
     }
     
     // Delete the substance
-    await kv.del(`substance:${vendorId}:${substanceId}`);
+    // ✅ SQL: Delete controlled substance
+    await db.from('controlled_substances')
+      .delete()
+      .eq('vendor_id', vendorId)
+      .eq('substance_id', substanceId);
     
     // Optionally: Delete all associated transactions (or keep for audit trail)
     // For compliance, we might want to keep transactions even after substance deletion
-    // const transactions = await kv.getByPrefix<SubstanceTransaction>(`substance:transaction:${vendorId}:`);
-    // const relatedTransactions = transactions.filter(t => t.substanceId === substanceId);
-    // for (const txn of relatedTransactions) {
-    //   await kv.del(`substance:transaction:${vendorId}:${txn.id}`);
-    // }
+    // ✅ SQL: Transactions are stored in controlled_substance_transactions table
+    // Related transactions can be deleted via cascade or explicitly if needed
+    // const db = getDbClient();
+    // await db.from('controlled_substance_transactions')
+    //   .delete()
+    //   .eq('vendor_id', vendorId)
+    //   .eq('substance_id', substanceId);
     
     console.log(`✅ Controlled substance deleted: ${substanceId}`);
     
@@ -460,7 +569,20 @@ app.post('/:vendorId/audit', async (c) => {
       nextAuditDate: body.nextAuditDate
     };
     
-    await kv.set(`substance:audit:${vendorId}:${auditId}`, audit);
+    // ✅ SQL: Store compliance audit
+    await db.from('controlled_substance_audits').insert({
+      audit_id: auditId,
+      vendor_id: vendorId,
+      audit_date: audit.auditDate,
+      auditor_name: audit.auditorName,
+      auditor_id: audit.auditorId,
+      findings: audit.findings || [],
+      discrepancies: audit.discrepancies || [],
+      status: audit.status,
+      notes: audit.notes,
+      next_audit_date: audit.nextAuditDate,
+      created_at: new Date().toISOString()
+    });
     
     return c.json({
       success: true,

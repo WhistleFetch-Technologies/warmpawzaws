@@ -1,13 +1,13 @@
 // ✅ MIGRATED TO SQL: All KV operations removed
-import { getOTPRequirements, isTrainerWalkerBehaviourist } from './service-category-helpers.tsx';
-import { getCustomersRepository } from '../../../supabase/lib/repositories/customers.ts';
-import { getPetsRepository } from '../../../supabase/lib/repositories/pets.ts';
-import { getVendorsRepository } from '../../../supabase/lib/repositories/vendors.ts';
-import { getServicesRepository } from '../../../supabase/lib/repositories/services.ts';
-import { getBookingsRepository } from '../../../supabase/lib/repositories/bookings.ts';
-import { getStaffRepository } from '../../../supabase/lib/repositories/staff.ts';
-import { getSchedulingRepository } from '../../../supabase/lib/repositories/scheduling.ts';
-import { getOtpRepository } from '../../../supabase/lib/repositories/otp.ts';
+import { getOTPRequirements, isTrainerWalkerBehaviourist } from './service-category-helpers';
+import { getCustomersRepository } from '../../../supabase/lib/repositories/customers';
+import { getPetsRepository } from '../../../supabase/lib/repositories/pets';
+import { getVendorsRepository } from '../../../supabase/lib/repositories/vendors';
+import { getServicesRepository } from '../../../supabase/lib/repositories/services';
+import { getBookingsRepository } from '../../../supabase/lib/repositories/bookings';
+import { getStaffRepository } from '../../../supabase/lib/repositories/staff';
+import { getSchedulingRepository } from '../../../supabase/lib/repositories/scheduling';
+import { getOtpRepository } from '../../../supabase/lib/repositories/otp';
 
 /**
  * PRODUCTION-GRADE BOOKING CREATION HANDLER

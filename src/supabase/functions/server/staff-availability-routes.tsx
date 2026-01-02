@@ -1,5 +1,7 @@
-import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from 'hono';
+import { getStaffRepository } from '../../../supabase/lib/repositories/index';
+import { getDbClient } from '../../../supabase/lib/db';
 
 const app = new Hono();
 
@@ -12,12 +14,21 @@ app.get('/:staffId/locations-with-availability', async (c) => {
   const { staffId } = c.req.param();
 
   try {
-    const locations = await kv.get(`staff:${staffId}:locations`) || [];
+    // ✅ SQL: Get staff locations
+    const db = getDbClient();
+    const { data: locations } = await db
+      .from('staff_locations')
+      .select('*')
+      .eq('staff_id', staffId);
 
-    // Load availability windows for each location
+    // ✅ SQL: Load availability windows for each location
     const locationsWithAvailability = await Promise.all(
-      locations.map(async (location: any) => {
-        const windows = await kv.get(`staff:${staffId}:location:${location.id}:availability`) || [];
+      (locations || []).map(async (location: any) => {
+        const { data: windows } = await db
+          .from('staff_location_availability')
+          .select('*')
+          .eq('staff_id', staffId)
+          .eq('location_id', location.id);
         return {
           ...location,
           availabilityWindows: windows
@@ -37,7 +48,12 @@ app.get('/:staffId/locations', async (c) => {
   const { staffId } = c.req.param();
 
   try {
-    const locations = await kv.get(`staff:${staffId}:locations`) || [];
+    // ✅ SQL: Get staff locations
+    const db = getDbClient();
+    const { data: locations } = await db
+      .from('staff_locations')
+      .select('*')
+      .eq('staff_id', staffId);
 
     return c.json({ success: true, locations });
   } catch (error) {
@@ -56,7 +72,12 @@ app.post('/:staffId/locations', async (c) => {
   }
 
   try {
-    const locations = await kv.get(`staff:${staffId}:locations`) || [];
+    // ✅ SQL: Get staff locations
+    const db = getDbClient();
+    const { data: locations } = await db
+      .from('staff_locations')
+      .select('*')
+      .eq('staff_id', staffId);
     
     const newLocation = {
       id: `loc_${Date.now()}_${Math.random().toString(36).substring(7)}`,
@@ -68,8 +89,18 @@ app.post('/:staffId/locations', async (c) => {
       createdAt: new Date().toISOString()
     };
 
-    locations.push(newLocation);
-    await kv.set(`staff:${staffId}:locations`, locations);
+    // ✅ SQL: Insert new location
+    const db = getDbClient();
+    await db.from('staff_locations').insert({
+      id: newLocation.id,
+      staff_id: staffId,
+      name: newLocation.name,
+      address: newLocation.address,
+      latitude: newLocation.latitude,
+      longitude: newLocation.longitude,
+      contact_number: newLocation.contactNumber,
+      created_at: newLocation.createdAt
+    });
 
     console.log(`✅ Location added for staff ${staffId}:`, newLocation);
 
@@ -85,13 +116,23 @@ app.delete('/:staffId/locations/:locationId', async (c) => {
   const { staffId, locationId } = c.req.param();
 
   try {
-    const locations = await kv.get(`staff:${staffId}:locations`) || [];
-    const updatedLocations = locations.filter((loc: any) => loc.id !== locationId);
-
-    await kv.set(`staff:${staffId}:locations`, updatedLocations);
+    // ✅ SQL: Get staff locations
+    const db = getDbClient();
+    const { data: locations } = await db
+      .from('staff_locations')
+      .select('*')
+      .eq('staff_id', staffId);
     
-    // Also delete availability windows for this location
-    await kv.del(`staff:${staffId}:location:${locationId}:availability`);
+    // ✅ SQL: Delete location and its availability windows
+    await db.from('staff_location_availability')
+      .delete()
+      .eq('staff_id', staffId)
+      .eq('location_id', locationId);
+    
+    await db.from('staff_locations')
+      .delete()
+      .eq('staff_id', staffId)
+      .eq('id', locationId);
 
     console.log(`✅ Location ${locationId} removed for staff ${staffId}`);
 
@@ -116,10 +157,18 @@ app.post('/:staffId/locations/:locationId/availability', async (c) => {
   }
 
   try {
-    const windows = await kv.get(`staff:${staffId}:location:${locationId}:availability`) || [];
+    // ✅ SQL: Get availability windows
+    const db = getDbClient();
+    const { data: windows } = await db
+      .from('staff_location_availability')
+      .select('*')
+      .eq('staff_id', staffId)
+      .eq('location_id', locationId);
+    
+    const windowsArray = windows || [];
     
     // Check for time conflicts on the same day
-    const hasConflict = windows.some((w: any) => {
+    const hasConflict = windowsArray.some((w: any) => {
       if (w.id === window.id) return false; // Skip self for edits
       if (w.dayOfWeek !== window.dayOfWeek) return false; // Different day
       
@@ -136,22 +185,32 @@ app.post('/:staffId/locations/:locationId/availability', async (c) => {
       return c.json({ error: 'Time conflict detected with existing window' }, 409);
     }
 
-    // Add or update window
-    const existingIndex = windows.findIndex((w: any) => w.id === window.id);
-    if (existingIndex >= 0) {
-      windows[existingIndex] = {
-        ...window,
-        updatedAt: new Date().toISOString()
-      };
+    // ✅ SQL: Add or update window
+    const windowId = window.id || `window_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    const windowData = {
+      id: windowId,
+      staff_id: staffId,
+      location_id: locationId,
+      day_of_week: window.dayOfWeek,
+      start_time: window.startTime,
+      end_time: window.endTime,
+      updated_at: new Date().toISOString(),
+      created_at: window.createdAt || new Date().toISOString()
+    };
+    
+    const { data: existing } = await db
+      .from('staff_location_availability')
+      .select('*')
+      .eq('id', windowId)
+      .single();
+    
+    if (existing) {
+      await db.from('staff_location_availability')
+        .update(windowData)
+        .eq('id', windowId);
     } else {
-      windows.push({
-        ...window,
-        id: window.id || `window_${Date.now()}_${Math.random().toString(36).substring(7)}`,
-        createdAt: new Date().toISOString()
-      });
+      await db.from('staff_location_availability').insert(windowData);
     }
-
-    await kv.set(`staff:${staffId}:location:${locationId}:availability`, windows);
 
     console.log(`✅ Availability window saved for staff ${staffId} at location ${locationId}`);
 
@@ -167,10 +226,21 @@ app.delete('/:staffId/locations/:locationId/availability/:windowId', async (c) =
   const { staffId, locationId, windowId } = c.req.param();
 
   try {
-    const windows = await kv.get(`staff:${staffId}:location:${locationId}:availability`) || [];
-    const updatedWindows = windows.filter((w: any) => w.id !== windowId);
-
-    await kv.set(`staff:${staffId}:location:${locationId}:availability`, updatedWindows);
+    // ✅ SQL: Get availability windows
+    const db = getDbClient();
+    const { data: windows } = await db
+      .from('staff_location_availability')
+      .select('*')
+      .eq('staff_id', staffId)
+      .eq('location_id', locationId);
+    
+    // ✅ SQL: Delete availability window
+    const db = getDbClient();
+    await db.from('staff_location_availability')
+      .delete()
+      .eq('staff_id', staffId)
+      .eq('location_id', locationId)
+      .eq('id', windowId);
 
     console.log(`✅ Availability window ${windowId} removed`);
 

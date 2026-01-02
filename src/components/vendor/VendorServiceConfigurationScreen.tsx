@@ -6,7 +6,7 @@ import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
 import { Label } from '../ui/label';
 import { Badge } from '../ui/badge';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { WARM_ORANGE } from '../../assets/design-tokens';
 import { useVendorCapabilities } from './hooks/useVendorCapabilities'; // ✅ NEW: Capability validation

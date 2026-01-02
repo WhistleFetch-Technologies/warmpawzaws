@@ -1,5 +1,5 @@
-import { Hono } from "npm:hono";
-import * as kv from "./kv_store.tsx";
+import { Hono } from "hono";
+import * as kv from "./kv_store";
 import { 
   ChimeSDKMeetingsClient, 
   CreateMeetingCommand, 
@@ -7,7 +7,7 @@ import {
   DeleteMeetingCommand,
   GetMeetingCommand,
   ListAttendeesCommand
-} from "npm:@aws-sdk/client-chime-sdk-meetings@3.450.0";
+} from "@aws-sdk/client-chime-sdk-meetings";
 
 /**
  * AWS Chime Video Integration

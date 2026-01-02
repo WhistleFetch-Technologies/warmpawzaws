@@ -6,14 +6,15 @@
  * - TASK 3: Conflict detection with 409 responses
  */
 
-import { Hono } from 'npm:hono';
-import { cors } from 'npm:hono/cors';
-import * as kv from './kv_store.tsx';
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from 'hono';
+import { cors } from "hono/cors";
+import { getStaffAvailabilityRepository } from '../../../supabase/lib/repositories/index';
 import { 
   validateAvailabilitySlot, 
   detectConflicts,
   validateConditionalFields 
-} from './staff-availability-validation.tsx';
+} from './staff-availability-validation';
 
 const app = new Hono();
 
@@ -79,8 +80,20 @@ app.post('/staff/:staffId/availability-slots', async (c) => {
     }
     slot.updatedAt = now;
 
-    // Save to KV store
-    await kv.set(`staff:${staffId}:availability:${slot.id}`, slot);
+    // ✅ SQL: Save to staff_availability table
+    const staffAvailabilityRepo = getStaffAvailabilityRepository();
+    await staffAvailabilityRepo.createOrUpdate({
+      id: slot.id,
+      staff_id: staffId,
+      date: slot.date || null,
+      day_of_week: slot.dayOfWeek,
+      start_time: slot.startTime,
+      end_time: slot.endTime,
+      is_active: slot.isActive !== false,
+      metadata: slot,
+      created_at: slot.createdAt || new Date().toISOString(),
+      updated_at: slot.updatedAt || new Date().toISOString()
+    });
 
     console.log('✅ Availability slot saved:', slot.id);
 
@@ -107,10 +120,21 @@ app.get('/staff/:staffId/availability-slots', async (c) => {
   try {
     const staffId = c.req.param('staffId');
 
-    const slotsData = await kv.getByPrefix(`staff:${staffId}:availability:`);
+    // ✅ SQL: Get all availability slots for staff from staff_availability table
+    const staffAvailabilityRepo = getStaffAvailabilityRepository();
+    const slotsData = await staffAvailabilityRepo.findByStaff(staffId);
     const slots = slotsData
-      .filter((item: any) => item.value)
-      .map((item: any) => item.value)
+      .map((item: any) => ({
+        ...item.metadata,
+        id: item.id,
+        staffId: item.staff_id,
+        dayOfWeek: item.day_of_week,
+        startTime: item.start_time,
+        endTime: item.end_time,
+        isActive: item.is_active,
+        createdAt: item.created_at,
+        updatedAt: item.updated_at
+      }))
       .sort((a: any, b: any) => {
         // Sort by day of week, then start time
         if (a.dayOfWeek !== b.dayOfWeek) {
@@ -147,13 +171,22 @@ app.put('/staff/:staffId/availability-slots/:slotId', async (c) => {
     const body = await c.req.json();
     const updates = body.slot;
 
-    // Get existing slot
-    const existingData = await kv.get(`staff:${staffId}:availability:${slotId}`);
-    if (!existingData || !existingData.value) {
+    // ✅ SQL: Get existing slot from staff_availability table
+    const staffAvailabilityRepo = getStaffAvailabilityRepository();
+    const existingSlotData = await staffAvailabilityRepo.findById(slotId);
+    if (!existingSlotData || existingSlotData.staff_id !== staffId) {
       return c.json({ error: 'Availability slot not found' }, 404);
     }
 
-    const existingSlot = existingData.value;
+    const existingSlot = {
+      ...existingSlotData.metadata,
+      id: existingSlotData.id,
+      staffId: existingSlotData.staff_id,
+      dayOfWeek: existingSlotData.day_of_week,
+      startTime: existingSlotData.start_time,
+      endTime: existingSlotData.end_time,
+      isActive: existingSlotData.is_active
+    };
 
     // Merge updates
     const updatedSlot = {
@@ -190,8 +223,18 @@ app.put('/staff/:staffId/availability-slots/:slotId', async (c) => {
       }, 400);
     }
 
-    // Save updates
-    await kv.set(`staff:${staffId}:availability:${slotId}`, updatedSlot);
+    // ✅ SQL: Save updates to staff_availability table
+    await staffAvailabilityRepo.createOrUpdate({
+      id: slotId,
+      staff_id: staffId,
+      date: updatedSlot.date || null,
+      day_of_week: updatedSlot.dayOfWeek,
+      start_time: updatedSlot.startTime,
+      end_time: updatedSlot.endTime,
+      is_active: updatedSlot.isActive !== false,
+      metadata: updatedSlot,
+      updated_at: updatedSlot.updatedAt || new Date().toISOString()
+    });
 
     console.log('✅ Availability slot updated:', slotId);
 
@@ -219,14 +262,15 @@ app.delete('/staff/:staffId/availability-slots/:slotId', async (c) => {
     const staffId = c.req.param('staffId');
     const slotId = c.req.param('slotId');
 
-    // Check if slot exists
-    const existingData = await kv.get(`staff:${staffId}:availability:${slotId}`);
-    if (!existingData || !existingData.value) {
+    // ✅ SQL: Check if slot exists and delete from staff_availability table
+    const staffAvailabilityRepo = getStaffAvailabilityRepository();
+    const existingSlotData = await staffAvailabilityRepo.findById(slotId);
+    if (!existingSlotData || existingSlotData.staff_id !== staffId) {
       return c.json({ error: 'Availability slot not found' }, 404);
     }
 
     // Delete the slot
-    await kv.del(`staff:${staffId}:availability:${slotId}`);
+    await staffAvailabilityRepo.delete(slotId);
 
     console.log('✅ Availability slot deleted:', slotId);
 
@@ -292,11 +336,20 @@ app.get('/staff/:staffId/availability-conflicts', async (c) => {
   try {
     const staffId = c.req.param('staffId');
 
-    // Get all slots
-    const slotsData = await kv.getByPrefix(`staff:${staffId}:availability:`);
+    // ✅ SQL: Get all active slots from staff_availability table
+    const staffAvailabilityRepo = getStaffAvailabilityRepository();
+    const slotsData = await staffAvailabilityRepo.findByStaff(staffId);
     const slots = slotsData
-      .filter((item: any) => item.value && item.value.isActive)
-      .map((item: any) => item.value);
+      .filter((item: any) => item.is_active)
+      .map((item: any) => ({
+        ...item.metadata,
+        id: item.id,
+        staffId: item.staff_id,
+        dayOfWeek: item.day_of_week,
+        startTime: item.start_time,
+        endTime: item.end_time,
+        isActive: item.is_active
+      }));
 
     const allConflicts = [];
 

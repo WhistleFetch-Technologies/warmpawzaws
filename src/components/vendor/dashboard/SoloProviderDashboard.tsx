@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { ModeSwitcherCompact, VendorMode } from './ModeSwitcher';
 import { CenterModeContent } from './CenterModeContent';
 import { StaffModeContent } from './StaffModeContent';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+// ✅ FIX: Removed Supabase imports - using API Gateway now
 
 interface SoloProviderDashboardProps {
   session: {
@@ -25,8 +25,6 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
   const [staff, setStaff] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
-
   // Fetch solo provider data
   useEffect(() => {
     fetchSoloProviderData();
@@ -37,28 +35,27 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
       setLoading(true);
       console.log('🔍 Fetching solo provider data:', session.vendorId);
 
-      const response = await fetch(
-        `${API_BASE}/vendor/${session.vendorId}/solo-info`,
-        {
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
-          }
-        }
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+
+      const soloData = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${session.vendorId}/solo-info`
       );
 
-      if (response.ok) {
-        const data = await response.json();
-        console.log('✅ Solo provider data:', data);
-        
-        if (data.success) {
-          setVendor(data.vendor);
-          setCenter(data.center);
-          setStaff(data.staff);
-        }
+      if (soloData.success) {
+        console.log('✅ Solo provider data:', soloData);
+        setVendor(soloData.vendor);
+        setCenter(soloData.center);
+        setStaff(soloData.staff);
       } else {
-        console.error('❌ Failed to fetch solo provider data');
+        console.error('❌ Failed to fetch solo provider data:', soloData.error);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Error fetching solo provider data:', error);
     } finally {
       setLoading(false);

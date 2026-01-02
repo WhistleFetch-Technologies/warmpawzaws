@@ -9,7 +9,7 @@ import {
   ArrowLeft, CreditCard, Check, AlertCircle, Settings, 
   Shield, Eye, EyeOff, Plus, Trash2, Save, RefreshCw
 } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
 import { copyTextToClipboard } from '../../../utils/shareUtils';
 

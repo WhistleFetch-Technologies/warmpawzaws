@@ -1,4 +1,4 @@
-import { Hono } from "npm:hono";
+import { Hono } from "hono";
 
 export function petEndpoints(app: Hono, kv: any) {
   

@@ -3,9 +3,7 @@ import {
   Plus, Search, Filter, Edit2, Trash2, Eye, Package,
   Grid, List, ChevronDown, X, Upload, DollarSign, Tag
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
-import { authenticatedPost, authenticatedPut, authenticatedDelete } from '../../../utils/authenticatedFetch'; // ✅ FIX: Add authenticated fetch
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { WARM_ORANGE } from '../../../assets/design-tokens';
 import {
   Table,
@@ -43,18 +41,25 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
   const loadProducts = async () => {
     try {
       setLoading(true);
-      const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/ecommerce/products?sellerId=${sellerId}`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/ecommerce/products?sellerId=${sellerId}`
       );
       
-      if (res.ok) {
-        const data = await res.json();
-        setProducts(data.products);
+      if (data.success) {
+        setProducts(data.products || data.data?.products || []);
+      } else {
+        toast.error(data.error || data.message || 'Failed to load products');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading products:', error);
-      toast.error('Failed to load products');
+      toast.error(error?.message || 'Failed to load products');
     } finally {
       setLoading(false);
     }
@@ -62,16 +67,21 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
 
   const loadCategories = async () => {
     try {
-      const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/ecommerce/categories`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/ecommerce/categories`
       );
       
-      if (res.ok) {
-        const data = await res.json();
-        setCategories(data.categories);
+      if (data.success) {
+        setCategories(data.categories || data.data?.categories || []);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading categories:', error);
     }
   };
@@ -80,16 +90,29 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
     if (!confirm('Are you sure you want to delete this product?')) return;
     
     try {
-      // ✅ FIX: Use authenticatedDelete instead of fetch with publicAnonKey
-      await authenticatedDelete(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/ecommerce/product/${productId}`
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/ecommerce/product/${productId}`,
+        {
+          method: 'DELETE'
+        }
       );
       
-      toast.success('Product deleted successfully');
-      loadProducts();
-    } catch (error) {
+      if (data.success) {
+        toast.success('Product deleted successfully');
+        await loadProducts();
+      } else {
+        toast.error(data.error || data.message || 'Failed to delete product');
+      }
+    } catch (error: any) {
       console.error('Error deleting product:', error);
-      toast.error('Failed to delete product');
+      toast.error(error?.message || 'Failed to delete product');
     }
   };
 
@@ -389,29 +412,39 @@ function ProductModal({ product, sellerId, categories, onClose, onSave }: any) {
     setSaving(true);
 
     try {
-      const url = product
-        ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/ecommerce/product/${product.id}`
-        : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/ecommerce/product`;
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
 
-      const res = await (product ? authenticatedPut : authenticatedPost)(url, {
-        ...formData,
-        sellerId,
-        price: parseFloat(formData.price),
-        originalPrice: formData.originalPrice ? parseFloat(formData.originalPrice) : null,
-        stock: parseInt(formData.stock),
-        lowStockThreshold: parseInt(formData.lowStockThreshold),
-        image: formData.images[0] || '' // Set primary image for backward compatibility
+      const url = product
+        ? `${API_GATEWAY_URL}/make-server-3dd53475/ecommerce/product/${product.id}`
+        : `${API_GATEWAY_URL}/make-server-3dd53475/ecommerce/product`;
+
+      const data = await apiCallJson<any>(url, {
+        method: product ? 'PUT' : 'POST',
+        body: JSON.stringify({
+          ...formData,
+          sellerId,
+          price: parseFloat(formData.price),
+          originalPrice: formData.originalPrice ? parseFloat(formData.originalPrice) : null,
+          stock: parseInt(formData.stock),
+          lowStockThreshold: parseInt(formData.lowStockThreshold),
+          image: formData.images[0] || '' // Set primary image for backward compatibility
+        })
       });
 
-      if (res.ok) {
+      if (data.success) {
         toast.success(product ? 'Product updated successfully' : 'Product created successfully');
         onSave();
       } else {
-        toast.error('Failed to save product');
+        toast.error(data.error || data.message || 'Failed to save product');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving product:', error);
-      toast.error('Failed to save product');
+      toast.error(error?.message || 'Failed to save product');
     } finally {
       setSaving(false);
     }

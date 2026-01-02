@@ -1,5 +1,10 @@
-import { Hono } from 'npm:hono@4';
-import * as kv from './kv_store.tsx';
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from 'hono';
+import { 
+  getStaffRepository,
+  getVendorServicesRepository
+} from '../../../supabase/lib/repositories/index';
+import { getDbClient } from '../../../supabase/lib/db';
 
 /**
  * BOOKING VALIDATION ENDPOINTS
@@ -35,7 +40,9 @@ app.post('/make-server-3dd53475/booking/validate', async (c) => {
     // ============================================
     
     if (staffId) {
-      const staff = await kv.get(`staff:${staffId}`);
+      // ✅ SQL: Get staff from staff table
+      const staffRepo = getStaffRepository();
+      const staff = await staffRepo.findById(staffId);
       
       if (!staff) {
         validationResult.valid = false;
@@ -48,7 +55,7 @@ app.post('/make-server-3dd53475/booking/validate', async (c) => {
         id: staff.id,
         name: staff.name,
         role: staff.role,
-        specialization: staff.specialization
+        specialization: staff.metadata?.specialization
       };
       
       console.log(`   ✅ Staff exists: ${staff.name}`);
@@ -58,7 +65,9 @@ app.post('/make-server-3dd53475/booking/validate', async (c) => {
       // ============================================
       
       if (serviceId) {
-        const staffServices = await kv.getByPrefix(`staff:${staffId}:service:`);
+        // ✅ SQL: Get staff services from vendor_services table
+        const vendorServicesRepo = getVendorServicesRepository();
+        const staffServices = await vendorServicesRepo.findByStaff(staffId);
         
         if (staffServices.length === 0) {
           validationResult.valid = false;
@@ -69,7 +78,7 @@ app.post('/make-server-3dd53475/booking/validate', async (c) => {
         
         // Check if staff has THIS specific service
         const hasService = staffServices.some((s: any) => {
-          if (s.serviceId === serviceId) return true;
+          if (s.service_id === serviceId) return true;
           if (s.id === serviceId) return true;
           return false;
         });
@@ -77,7 +86,7 @@ app.post('/make-server-3dd53475/booking/validate', async (c) => {
         if (!hasService) {
           validationResult.valid = false;
           validationResult.errors.push(
-            `Staff member is not assigned to this service. They offer: ${staffServices.map((s: any) => s.serviceName).join(', ')}`
+            `Staff member is not assigned to this service. They offer: ${staffServices.map((s: any) => s.service_name || s.name).join(', ')}`
           );
           
           return c.json(validationResult, 200);
@@ -87,12 +96,12 @@ app.post('/make-server-3dd53475/booking/validate', async (c) => {
         
         // Get service details
         const assignedService = staffServices.find((s: any) => 
-          s.serviceId === serviceId || s.id === serviceId
+          s.service_id === serviceId || s.id === serviceId
         );
         
         validationResult.serviceInfo = {
           id: assignedService.id,
-          name: assignedService.serviceName,
+          name: assignedService.service_name || assignedService.name,
           price: assignedService.price,
           duration: assignedService.duration,
           category: assignedService.category
@@ -104,7 +113,15 @@ app.post('/make-server-3dd53475/booking/validate', async (c) => {
       // ============================================
       
       if (serviceType) {
-        const stylePreferences = await kv.get(`staff:${staffId}:style_preferences`) || {};
+        // ✅ SQL: Get style preferences from staff_settings
+        const db = getDbClient();
+        const { data: settingsData } = await db
+          .from('staff_settings')
+          .select('style_preferences')
+          .eq('staff_id', staffId)
+          .single();
+        
+        const stylePreferences = settingsData?.style_preferences || {};
         const styleConfig = stylePreferences[serviceType];
         
         if (!styleConfig || !styleConfig.enabled || !styleConfig.available) {
@@ -151,7 +168,15 @@ app.post('/make-server-3dd53475/booking/validate', async (c) => {
       // CHECK STAFF VACATION MODE
       // ============================================
       
-      const staffSchedule = await kv.get(`staff:${staffId}:schedule`);
+      // ✅ SQL: Get staff schedule from staff_settings
+      const db = getDbClient();
+      const { data: scheduleData } = await db
+        .from('staff_settings')
+        .select('schedule')
+        .eq('staff_id', staffId)
+        .single();
+      
+      const staffSchedule = scheduleData?.schedule || {};
       
       if (staffSchedule?.vacationMode) {
         validationResult.valid = false;
@@ -184,7 +209,9 @@ app.get('/make-server-3dd53475/staff/:staffId/booking-eligibility', async (c) =>
   try {
     const { staffId } = c.req.param();
     
-    const staff = await kv.get(`staff:${staffId}`);
+    // ✅ SQL: Get staff from staff table
+    const staffRepo = getStaffRepository();
+    const staff = await staffRepo.findById(staffId);
     
     if (!staff) {
       return c.json({
@@ -193,8 +220,15 @@ app.get('/make-server-3dd53475/staff/:staffId/booking-eligibility', async (c) =>
       }, 404);
     }
     
-    // Check vacation mode
-    const schedule = await kv.get(`staff:${staffId}:schedule`);
+    // ✅ SQL: Check vacation mode from staff_settings
+    const db = getDbClient();
+    const { data: settingsData } = await db
+      .from('staff_settings')
+      .select('schedule, style_preferences')
+      .eq('staff_id', staffId)
+      .single();
+    
+    const schedule = settingsData?.schedule || {};
     if (schedule?.vacationMode) {
       return c.json({
         eligible: false,
@@ -203,8 +237,9 @@ app.get('/make-server-3dd53475/staff/:staffId/booking-eligibility', async (c) =>
       }, 200);
     }
     
-    // Check if has any services assigned
-    const services = await kv.getByPrefix(`staff:${staffId}:service:`);
+    // ✅ SQL: Check if has any services assigned
+    const vendorServicesRepo = getVendorServicesRepository();
+    const services = await vendorServicesRepo.findByStaff(staffId);
     if (services.length === 0) {
       return c.json({
         eligible: false,
@@ -213,7 +248,7 @@ app.get('/make-server-3dd53475/staff/:staffId/booking-eligibility', async (c) =>
     }
     
     // Check if any service style is enabled
-    const stylePreferences = await kv.get(`staff:${staffId}:style_preferences`) || {};
+    const stylePreferences = settingsData?.style_preferences || {};
     const hasEnabledStyle = Object.keys(stylePreferences).some((style: string) =>
       stylePreferences[style]?.enabled && stylePreferences[style]?.available
     );

@@ -1,5 +1,9 @@
 /**
- * RAZORPAY PAYMENT GATEWAY INTEGRATION
+ * ============================================================================
+ * RAZORPAY PAYMENT GATEWAY INTEGRATION - SQL-ONLY VERSION
+ * ============================================================================
+ * 
+ * ✅ MIGRATED TO SQL: NO KV STORE - All data from SQL
  * 
  * Status: ✅ PRODUCTION READY
  * Fulfills: P0 Critical Gap - Real Payment Gateway Integration
@@ -11,12 +15,25 @@
  * - Refund processing
  * - Payment capture
  * - Auto-settlement tracking
+ * 
+ * KV Operations: 23 → 0
+ * 
+ * RULES:
+ * ❌ NO KV imports allowed
+ * ✅ All operations use SQL only
  */
 
-import { Hono } from 'npm:hono';
-import { cors } from 'npm:hono/cors';
-import * as kv from './kv_store.tsx';
+import { Hono } from 'hono';
+import { cors } from "hono/cors";
 import { createHmac } from 'node:crypto';
+import { getPlatformSettingsRepository } from '../../../supabase/lib/repositories/platform-settings';
+import { getPaymentsRepository } from '../../../supabase/lib/repositories/payments';
+import { getBookingsRepository } from '../../../supabase/lib/repositories/bookings';
+import { getRefundsRepository } from '../../../supabase/lib/repositories/refunds';
+import { getVendorsRepository } from '../../../supabase/lib/repositories/vendors';
+import { getVendorEarningsRepository } from '../../../supabase/lib/repositories/vendor-earnings';
+import { calculateCommission } from '../../../supabase/lib/services/commission-calculator';
+import { getDbClient, selectQuery } from '../../../supabase/lib/db';
 
 const app = new Hono();
 app.use('*', cors());
@@ -32,16 +49,22 @@ interface RazorpayConfig {
 }
 
 async function getRazorpayConfig(): Promise<RazorpayConfig> {
-  const config = await kv.get('platform:integrations:razorpay');
+  // ✅ SQL: Get Razorpay config from platform_settings
+  const platformSettingsRepo = getPlatformSettingsRepository();
+  const configSetting = await platformSettingsRepo.findByKey('razorpay_config');
   
-  if (!config || !config.value) {
+  if (!configSetting || !configSetting.value) {
     throw new Error('Razorpay not configured. Please configure in Platform Settings.');
   }
 
+  const config = typeof configSetting.value === 'string' 
+    ? JSON.parse(configSetting.value) 
+    : configSetting.value;
+
   return {
-    keyId: config.value.keyId,
-    keySecret: config.value.keySecret,
-    webhookSecret: config.value.webhookSecret
+    keyId: config.keyId,
+    keySecret: config.keySecret,
+    webhookSecret: config.webhookSecret
   };
 }
 
@@ -69,13 +92,15 @@ app.post('/payments/razorpay/create-order', async (c) => {
     // Get Razorpay config
     const config = await getRazorpayConfig();
 
-    // Get booking details
-    const bookingData = await kv.get(`booking:${bookingId}`);
-    if (!bookingData || !bookingData.value) {
+    // ✅ SQL: Get booking details
+    const bookingsRepo = getBookingsRepository();
+    const booking = await bookingsRepo.findById(bookingId);
+    
+    if (!booking) {
       return c.json({ error: 'Booking not found' }, 404);
     }
 
-    const booking = bookingData.value;
+    const notes = typeof booking.notes === 'string' ? JSON.parse(booking.notes || '{}') : (booking.notes || {});
 
     // ✅ CREATE RAZORPAY ORDER
     const orderData = {
@@ -85,8 +110,8 @@ app.post('/payments/razorpay/create-order', async (c) => {
       notes: {
         bookingId,
         customerId,
-        serviceName: booking.serviceName,
-        vendorId: booking.vendorId
+        serviceName: notes.serviceName || 'Service',
+        vendorId: booking.vendor_id
       }
     };
 
@@ -104,31 +129,39 @@ app.post('/payments/razorpay/create-order', async (c) => {
       throw new Error(`Razorpay API error: ${error.error?.description || 'Unknown error'}`);
     }
 
-    const order = await response.json();
+    const razorpayOrder = await response.json();
 
-    // Store order details
-    await kv.set(`payment:razorpay:order:${order.id}`, {
-      orderId: order.id,
-      bookingId,
-      amount,
-      currency,
-      status: 'created',
-      createdAt: new Date().toISOString(),
-      razorpayOrder: order
+    // ✅ SQL: Create payment record
+    const paymentsRepo = getPaymentsRepository();
+    const payment = await paymentsRepo.create({
+      booking_id: bookingId,
+      customer_id: customerId || booking.customer_id,
+      vendor_id: booking.vendor_id || null,
+      amount: amount,
+      currency: currency,
+      payment_method: 'razorpay',
+      payment_status: 'pending',
+      razorpay_order_id: razorpayOrder.id,
+      transaction_id: razorpayOrder.id
     });
 
-    // Update booking with order ID
-    booking.razorpayOrderId = order.id;
-    booking.paymentStatus = 'pending';
-    await kv.set(`booking:${bookingId}`, booking);
+    // ✅ SQL: Update booking with order ID
+    await bookingsRepo.update(bookingId, {
+      payment_id: payment.id,
+      payment_status: 'pending',
+      notes: JSON.stringify({
+        ...notes,
+        razorpayOrderId: razorpayOrder.id
+      })
+    });
 
-    console.log(`✅ Razorpay order created: ${order.id} for booking ${bookingId}`);
+    console.log(`✅ Razorpay order created: ${razorpayOrder.id} for booking ${bookingId}`);
 
     return c.json({
       success: true,
-      orderId: order.id,
-      amount: order.amount,
-      currency: order.currency,
+      orderId: razorpayOrder.id,
+      amount: razorpayOrder.amount,
+      currency: razorpayOrder.currency,
       keyId: config.keyId, // Needed for frontend
       message: 'Order created successfully'
     });
@@ -186,14 +219,15 @@ app.post('/payments/razorpay/verify', async (c) => {
       }, 400);
     }
 
-    // Get order details
-    const orderData = await kv.get(`payment:razorpay:order:${razorpay_order_id}`);
-    if (!orderData || !orderData.value) {
+    // ✅ SQL: Get payment by Razorpay order ID
+    const paymentsRepo = getPaymentsRepository();
+    const payment = await paymentsRepo.findByRazorpayOrderId(razorpay_order_id);
+    
+    if (!payment) {
       return c.json({ error: 'Order not found' }, 404);
     }
 
-    const order = orderData.value;
-    const bookingId = order.bookingId;
+    const bookingId = payment.booking_id;
 
     // ✅ FETCH PAYMENT DETAILS FROM RAZORPAY
     const paymentResponse = await fetch(
@@ -209,30 +243,30 @@ app.post('/payments/razorpay/verify', async (c) => {
       throw new Error('Failed to fetch payment details from Razorpay');
     }
 
-    const payment = await paymentResponse.json();
+    const razorpayPayment = await paymentResponse.json();
 
-    // Update order status
-    order.status = 'verified';
-    order.paymentId = razorpay_payment_id;
-    order.signature = razorpay_signature;
-    order.verifiedAt = new Date().toISOString();
-    order.paymentDetails = payment;
-    await kv.set(`payment:razorpay:order:${razorpay_order_id}`, order);
+    // ✅ SQL: Update payment status
+    await paymentsRepo.update(payment.id, {
+      payment_status: 'completed',
+      razorpay_payment_id: razorpay_payment_id,
+      razorpay_signature: razorpay_signature,
+      completed_at: new Date().toISOString()
+    });
 
-    // ✅ UPDATE BOOKING STATUS
-    const bookingData = await kv.get(`booking:${bookingId}`);
-    if (bookingData && bookingData.value) {
-      const booking = bookingData.value;
-      booking.paymentStatus = 'completed';
-      booking.razorpayPaymentId = razorpay_payment_id;
-      booking.paidAmount = order.amount;
-      booking.paidAt = new Date().toISOString();
-      booking.status = 'confirmed';
+    // ✅ SQL: UPDATE BOOKING STATUS
+    const bookingsRepo = getBookingsRepository();
+    const booking = await bookingsRepo.findById(bookingId);
+    
+    if (booking) {
+      await bookingsRepo.update(bookingId, {
+        payment_status: 'paid',
+        status: 'confirmed'
+      });
 
-      await kv.set(`booking:${bookingId}`, booking);
-
-      // ✅ UPDATE VENDOR EARNINGS
-      await updateVendorEarnings(booking);
+      // ✅ SQL: UPDATE VENDOR EARNINGS
+      if (booking.vendor_id) {
+        await updateVendorEarnings(booking, payment.amount);
+      }
     }
 
     console.log(`✅ Payment verified: ${razorpay_payment_id} for order ${razorpay_order_id}`);
@@ -242,8 +276,8 @@ app.post('/payments/razorpay/verify', async (c) => {
       verified: true,
       paymentId: razorpay_payment_id,
       orderId: razorpay_order_id,
-      status: payment.status,
-      amount: payment.amount / 100,
+      status: razorpayPayment.status,
+      amount: razorpayPayment.amount / 100,
       message: 'Payment verified successfully'
     });
 
@@ -382,39 +416,55 @@ app.post('/payments/razorpay/refund', async (c) => {
       throw new Error(`Razorpay refund error: ${error.error?.description || 'Unknown error'}`);
     }
 
-    const refund = await response.json();
+    const razorpayRefund = await response.json();
 
-    // Store refund details
-    await kv.set(`payment:razorpay:refund:${refund.id}`, {
-      refundId: refund.id,
-      paymentId,
-      bookingId,
-      amount: refund.amount / 100,
-      status: refund.status,
-      createdAt: new Date().toISOString(),
-      razorpayRefund: refund
+    // ✅ SQL: Get payment by Razorpay payment ID
+    const paymentsRepo = getPaymentsRepository();
+    const payment = await paymentsRepo.findByRazorpayPaymentId(paymentId);
+    
+    if (!payment) {
+      return c.json({ error: 'Payment not found' }, 404);
+    }
+
+    // ✅ SQL: Create refund record
+    const refundsRepo = getRefundsRepository();
+    const refund = await refundsRepo.create({
+      payment_id: payment.id,
+      booking_id: bookingId || payment.booking_id || null,
+      customer_id: payment.customer_id,
+      vendor_id: payment.vendor_id || null,
+      amount: razorpayRefund.amount / 100,
+      refund_status: razorpayRefund.status,
+      reason: reason,
+      razorpay_refund_id: razorpayRefund.id
     });
 
-    // Update booking if provided
+    // ✅ SQL: Update booking if provided
     if (bookingId) {
-      const bookingData = await kv.get(`booking:${bookingId}`);
-      if (bookingData && bookingData.value) {
-        const booking = bookingData.value;
-        booking.refundStatus = refund.status;
-        booking.refundId = refund.id;
-        booking.refundAmount = refund.amount / 100;
-        booking.refundedAt = new Date().toISOString();
-        await kv.set(`booking:${bookingId}`, booking);
+      const bookingsRepo = getBookingsRepository();
+      const booking = await bookingsRepo.findById(bookingId);
+      
+      if (booking) {
+        const notes = typeof booking.notes === 'string' ? JSON.parse(booking.notes || '{}') : (booking.notes || {});
+        notes.refundStatus = razorpayRefund.status;
+        notes.refundId = refund.id;
+        notes.refundAmount = razorpayRefund.amount / 100;
+        notes.refundedAt = new Date().toISOString();
+        
+        await bookingsRepo.update(bookingId, {
+          payment_status: 'refunded',
+          notes: JSON.stringify(notes)
+        });
       }
     }
 
-    console.log(`✅ Refund created: ${refund.id} for payment ${paymentId}`);
+    console.log(`✅ Refund created: ${razorpayRefund.id} for payment ${paymentId}`);
 
     return c.json({
       success: true,
       refundId: refund.id,
-      amount: refund.amount / 100,
-      status: refund.status,
+      amount: razorpayRefund.amount / 100,
+      status: razorpayRefund.status,
       message: 'Refund initiated successfully'
     });
 
@@ -487,38 +537,42 @@ app.get('/payments/razorpay/:paymentId', async (c) => {
 async function handlePaymentCaptured(payment: any) {
   console.log(`✅ Payment captured: ${payment.id}`);
   
-  const orderId = payment.order_id;
-  const orderData = await kv.get(`payment:razorpay:order:${orderId}`);
+  // ✅ SQL: Update payment status
+  const paymentsRepo = getPaymentsRepository();
+  const paymentRecord = await paymentsRepo.findByRazorpayPaymentId(payment.id);
   
-  if (orderData && orderData.value) {
-    const order = orderData.value;
-    order.status = 'captured';
-    order.capturedAt = new Date().toISOString();
-    await kv.set(`payment:razorpay:order:${orderId}`, order);
+  if (paymentRecord) {
+    await paymentsRepo.update(paymentRecord.id, {
+      payment_status: 'completed',
+      completed_at: new Date().toISOString()
+    });
   }
 }
 
 async function handlePaymentFailed(payment: any) {
   console.error(`❌ Payment failed: ${payment.id}`);
   
-  const orderId = payment.order_id;
-  const orderData = await kv.get(`payment:razorpay:order:${orderId}`);
+  // ✅ SQL: Update payment status
+  const paymentsRepo = getPaymentsRepository();
+  const paymentRecord = await paymentsRepo.findByRazorpayPaymentId(payment.id);
   
-  if (orderData && orderData.value) {
-    const order = orderData.value;
-    order.status = 'failed';
-    order.failureReason = payment.error_description;
-    order.failedAt = new Date().toISOString();
-    await kv.set(`payment:razorpay:order:${orderId}`, order);
-
-    // Update booking
-    const bookingId = order.bookingId;
-    const bookingData = await kv.get(`booking:${bookingId}`);
-    if (bookingData && bookingData.value) {
-      const booking = bookingData.value;
-      booking.paymentStatus = 'failed';
-      booking.paymentFailureReason = payment.error_description;
-      await kv.set(`booking:${bookingId}`, booking);
+  if (paymentRecord) {
+    await paymentsRepo.fail(paymentRecord.id, payment.error_description || 'Payment failed');
+    
+    // ✅ SQL: Update booking
+    if (paymentRecord.booking_id) {
+      const bookingsRepo = getBookingsRepository();
+      const booking = await bookingsRepo.findById(paymentRecord.booking_id);
+      
+      if (booking) {
+        const notes = typeof booking.notes === 'string' ? JSON.parse(booking.notes || '{}') : (booking.notes || {});
+        notes.paymentFailureReason = payment.error_description;
+        
+        await bookingsRepo.update(paymentRecord.booking_id, {
+          payment_status: 'failed',
+          notes: JSON.stringify(notes)
+        });
+      }
     }
   }
 }
@@ -536,20 +590,31 @@ async function handleRefundCreated(refund: any) {
 async function handleRefundProcessed(refund: any) {
   console.log(`✅ Refund processed: ${refund.id}`);
   
-  const refundData = await kv.get(`payment:razorpay:refund:${refund.id}`);
-  if (refundData && refundData.value) {
-    const storedRefund = refundData.value;
-    storedRefund.status = 'processed';
-    storedRefund.processedAt = new Date().toISOString();
-    await kv.set(`payment:razorpay:refund:${refund.id}`, storedRefund);
+  // ✅ SQL: Update refund status
+  const refundsRepo = getRefundsRepository();
+  const refundRecords = await selectQuery<any>("refunds", 
+    { razorpay_refund_id: refund.id }, 
+    { limit: 1 }
+  );
+  
+  if (refundRecords.length > 0) {
+    await refundsRepo.update(refundRecords[0].id, {
+      refund_status: 'processed'
+    });
 
-    // Update booking
-    if (storedRefund.bookingId) {
-      const bookingData = await kv.get(`booking:${storedRefund.bookingId}`);
-      if (bookingData && bookingData.value) {
-        const booking = bookingData.value;
-        booking.refundStatus = 'processed';
-        await kv.set(`booking:${storedRefund.bookingId}`, booking);
+    // ✅ SQL: Update booking
+    if (refundRecords[0].booking_id) {
+      const bookingsRepo = getBookingsRepository();
+      const booking = await bookingsRepo.findById(refundRecords[0].booking_id);
+      
+      if (booking) {
+        const notes = typeof booking.notes === 'string' ? JSON.parse(booking.notes || '{}') : (booking.notes || {});
+        notes.refundStatus = 'processed';
+        
+        await bookingsRepo.update(refundRecords[0].booking_id, {
+          payment_status: 'refunded',
+          notes: JSON.stringify(notes)
+        });
       }
     }
   }
@@ -559,29 +624,36 @@ async function handleRefundProcessed(refund: any) {
 // HELPER FUNCTIONS
 // ============================================
 
-async function updateVendorEarnings(booking: any) {
-  const vendorId = booking.vendorId;
-  const amount = booking.paidAmount;
-  const commission = 0.15; // 15% platform commission
-  const vendorEarnings = amount * (1 - commission);
-
-  // Get vendor
-  const vendorData = await kv.get(`vendor:${vendorId}`);
-  if (!vendorData || !vendorData.value) {
-    console.error(`Vendor not found: ${vendorId}`);
+async function updateVendorEarnings(booking: any, amount: number) {
+  if (!booking.vendor_id) {
     return;
   }
 
-  const vendor = vendorData.value;
+  // ✅ SQL: Get vendor
+  const vendorsRepo = getVendorsRepository();
+  const vendor = await vendorsRepo.findById(booking.vendor_id);
+  
+  if (!vendor) {
+    console.error(`Vendor not found: ${booking.vendor_id}`);
+    return;
+  }
 
-  // Update earnings
-  vendor.totalEarnings = (vendor.totalEarnings || 0) + vendorEarnings;
-  vendor.pendingPayouts = (vendor.pendingPayouts || 0) + vendorEarnings;
-  vendor.lastEarningUpdate = new Date().toISOString();
+  // Calculate commission
+  const commission = calculateCommission(vendor, amount);
+  const vendorEarnings = amount - commission;
 
-  await kv.set(`vendor:${vendorId}`, vendor);
+  // ✅ SQL: Create vendor earnings record
+  const vendorEarningsRepo = getVendorEarningsRepository();
+  await vendorEarningsRepo.create({
+    vendor_id: booking.vendor_id,
+    booking_id: booking.id,
+    total_amount: amount,
+    commission_amount: commission,
+    vendor_payout: vendorEarnings,
+    settlement_status: 'pending'
+  });
 
-  console.log(`✅ Vendor earnings updated: ${vendorId} earned ₹${vendorEarnings.toFixed(2)}`);
+  console.log(`✅ Vendor earnings updated: ${booking.vendor_id} earned ₹${vendorEarnings.toFixed(2)}`);
 }
 
 export default app;

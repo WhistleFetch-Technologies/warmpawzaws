@@ -3,7 +3,7 @@ import { ArrowLeft, Send, Paperclip, Image as ImageIcon, X, FileText, Download }
 import { Button } from '../../ui/button';
 import { Card } from '../../ui/card';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { WARM_ORANGE } from '../../../assets/design-tokens';
 
 interface FollowUpChatProps {

@@ -11,21 +11,14 @@
  * Status: ✅ P1 IMPLEMENTATION
  */
 
-import { Hono } from "npm:hono";
-import * as kv from "./kv_store.tsx";
-import { createClient } from "jsr:@supabase/supabase-js@2.49.8";
-import { ensureBucket } from "./bucket-manager.tsx";
+// ✅ S3 MIGRATION: Supabase Storage replaced with AWS S3 (if used)
+import { Hono } from "hono";
+import * as kv from "./kv_store";
 
 export function registerGroomerGalleryEndpoints(app: Hono) {
   const BASE_PATH = "/make-server-3dd53475";
   
-  const GALLERY_BUCKET = 'make-3dd53475-groomer-gallery';
-
-  // Initialize gallery bucket (non-blocking, fire-and-forget)
-  ensureBucket(GALLERY_BUCKET, {
-    public: true,
-    fileSizeLimit: 10485760 // 10MB
-  }).catch(err => console.warn('⚠️ Gallery bucket init warning:', err));
+  // S3 bucket is configured via PlatformSettingsRepository (if needed)
   
   // Helper: Generate gallery photo ID
   function generateGalleryPhotoId() {

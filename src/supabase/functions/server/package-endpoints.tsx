@@ -1,4 +1,4 @@
-import { Hono } from 'npm:hono@4';
+import { Hono } from 'hono';
 
 /**
  * PACKAGE & MEMBERSHIP SYSTEM

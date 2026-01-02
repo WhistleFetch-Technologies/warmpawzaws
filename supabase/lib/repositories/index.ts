@@ -128,4 +128,10 @@ export * from "./optimization-tasks.ts";
 export { getOptimizationTasksRepository } from "./optimization-tasks.ts";
 export * from "./scheduling.ts";
 export { getSchedulingRepository } from "./scheduling.ts";
+export * from "./support-tickets.ts";
+export { getSupportTicketsRepository } from "./support-tickets.ts";
+export * from "./onboarding-forms.ts";
+export { getOnboardingFormsRepository } from "./onboarding-forms.ts";
+export * from "../storage/s3-helper";
+export { getS3Helper, uploadToS3 } from "../storage/s3-helper";
 

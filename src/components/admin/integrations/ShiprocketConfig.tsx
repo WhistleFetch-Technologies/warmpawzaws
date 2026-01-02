@@ -6,7 +6,7 @@ import { Switch } from '../../ui/switch';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
 import { LoadingState } from '../../ui/states';
 import { CheckCircle, AlertCircle, Save, Globe, Mail, Key } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 interface ShiprocketConfig {
   enabled: boolean;

@@ -28,9 +28,10 @@ import { ApplicationDetailModal } from './ApplicationDetailModal';
 import { VendorSettingsTab } from './VendorSettingsTab';
 import { ClarificationRequestedTab } from './ClarificationRequestedTab';
 import { UnifiedAdminSidebar } from './layout/UnifiedAdminSidebar';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { RejectVendorModal } from './RejectVendorModal';
 import { RequestInfoModal } from './RequestInfoModal';
+import { TableSkeleton } from '../ui/skeletons';
 
 interface VendorStats {
   activeVendors: { count: number; percentage: number };
@@ -869,14 +870,39 @@ export function AdminVendorManagement({ onNavigate }: AdminVendorManagementProps
     );
   }
 
-  // ✅ ADD: Loading Display
+  // ✅ ADD: Loading Display with TableSkeleton
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-4 mx-auto mb-6" style={{ borderColor: `${WARM_ORANGE} transparent ${WARM_ORANGE} ${WARM_ORANGE}` }}></div>
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Loading Vendor Data...</h2>
-          <p className="text-gray-600">Please wait while we fetch the latest information</p>
+      <div className="min-h-screen bg-gray-50 flex">
+        {/* Unified Sidebar */}
+        <UnifiedAdminSidebar 
+          activeView="vendor-admin" 
+          onNavigate={(view) => onNavigate?.(view)} 
+        />
+        
+        {/* Main Content with Skeleton */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Top Bar Skeleton */}
+          <div className="bg-white border-b border-gray-200 px-6 py-4">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <div className="h-7 w-64 bg-gray-200 rounded animate-pulse mb-2"></div>
+                <div className="h-4 w-96 bg-gray-200 rounded animate-pulse"></div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="h-9 w-32 bg-gray-200 rounded animate-pulse"></div>
+                <div className="h-9 w-24 bg-gray-200 rounded animate-pulse"></div>
+              </div>
+            </div>
+          </div>
+          
+          {/* Content Area with Table Skeleton */}
+          <div className="flex-1 overflow-y-auto p-6">
+            <div className="mb-6">
+              <div className="h-8 w-48 bg-gray-200 rounded animate-pulse mb-4"></div>
+              <TableSkeleton rows={8} cols={6} />
+            </div>
+          </div>
         </div>
       </div>
     );

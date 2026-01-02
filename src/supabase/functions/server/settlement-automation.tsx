@@ -1,6 +1,6 @@
-import { Hono } from "npm:hono";
-import * as kv from './kv_store.tsx';
-import { generateId } from './database-schema.tsx';
+import { Hono } from "hono";
+import * as kv from './kv_store';
+import { generateId } from './database-schema';
 
 /**
  * SETTLEMENT AUTOMATION
@@ -221,10 +221,12 @@ export function registerSettlementAutomation(app: Hono) {
         throw new Error('Vendor not found');
       }
 
-      // Get Razorpay credentials
-      const paymentSettings = await kv.get('admin:settings:payment') || {};
-      const razorpayKeyId = paymentSettings.razorpay?.keyId || Deno.env.get('RAZORPAY_KEY_ID');
-      const razorpayKeySecret = paymentSettings.razorpay?.keySecret || Deno.env.get('RAZORPAY_KEY_SECRET');
+      // ✅ Lambda: Get Razorpay credentials from PlatformSettingsRepository
+      const { getPlatformSettingsRepository } = await import('../../../supabase/lib/repositories/index');
+      const platformSettingsRepo = getPlatformSettingsRepository();
+      const paymentSettings = await platformSettingsRepo.getPaymentGatewaySettings('razorpay') || {};
+      const razorpayKeyId = paymentSettings?.key_id || paymentSettings?.keyId || '';
+      const razorpayKeySecret = paymentSettings?.key_secret || paymentSettings?.keySecret || '';
 
       if (!razorpayKeyId || !razorpayKeySecret) {
         console.error('[TRANSFER] Razorpay credentials not configured');
@@ -358,7 +360,7 @@ export function registerSettlementAutomation(app: Hono) {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        account_number: Deno.env.get('RAZORPAY_ACCOUNT_NUMBER'), // Your Razorpay account
+        account_number: paymentSettings?.account_number || process.env.RAZORPAY_ACCOUNT_NUMBER || '', // ✅ Lambda: Get from settings or env
         fund_account_id: fundAccountId,
         amount: amountInPaise,
         currency: 'INR',

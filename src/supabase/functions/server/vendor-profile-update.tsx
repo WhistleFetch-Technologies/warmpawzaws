@@ -1,5 +1,5 @@
-import { Hono } from "npm:hono";
-import * as kv from "./kv_store.tsx";
+import { Hono } from "hono";
+import * as kv from "./kv_store";
 
 /**
  * VENDOR PROFILE UPDATE ENDPOINTS
@@ -32,9 +32,9 @@ export function registerVendorProfileUpdateEndpoints(app: Hono) {
       
       console.log(`📝 [PROFILE-UPDATE] Vendor ${vendorId} updating profile`);
       
-      // Get existing vendor profile
-      const vendorKey = `vendor:${vendorId}`;
-      const vendor = await kv.get(vendorKey);
+      // ✅ SQL: Get existing vendor profile using repository
+      const vendorsRepo = getVendorsRepository();
+      const vendor = await vendorsRepo.findById(vendorId);
       
       if (!vendor) {
         return c.json({ error: 'Vendor not found' }, 404);
@@ -48,9 +48,22 @@ export function registerVendorProfileUpdateEndpoints(app: Hono) {
       let criticalFieldsChanged = false;
       const changedFields: string[] = [];
       
+      // Map SQL field names to expected field names
+      const fieldMapping: Record<string, string> = {
+        'businessName': 'business_name',
+        'fullName': 'owner_name',
+        'gstNumber': 'gst_number',
+        'panNumber': 'pan_number',
+        'address': 'address'
+      };
+      
       for (const field of CRITICAL_FIELDS) {
-        if (updates[field] !== undefined && 
-            JSON.stringify(updates[field]) !== JSON.stringify(vendor[field])) {
+        const sqlField = fieldMapping[field] || field;
+        const currentValue = vendor[sqlField as keyof typeof vendor];
+        const newValue = updates[field];
+        
+        if (newValue !== undefined && 
+            JSON.stringify(newValue) !== JSON.stringify(currentValue)) {
           criticalFieldsChanged = true;
           changedFields.push(field);
         }
@@ -59,38 +72,45 @@ export function registerVendorProfileUpdateEndpoints(app: Hono) {
       console.log(`🔍 [PROFILE-UPDATE] Critical fields changed: ${criticalFieldsChanged}`);
       console.log(`📋 [PROFILE-UPDATE] Changed fields: ${changedFields.join(', ')}`);
       
-      // Update the vendor profile
-      const updatedVendor = {
-        ...vendor,
-        ...updates,
-        updatedAt: new Date().toISOString(),
-        lastModified: new Date().toISOString()
-      };
+      // ✅ SQL: Map updates to SQL field names
+      const sqlUpdates: any = {};
+      for (const [key, value] of Object.entries(updates)) {
+        const sqlField = fieldMapping[key] || key;
+        sqlUpdates[sqlField] = value;
+      }
+      sqlUpdates.updated_at = new Date().toISOString();
       
       // If critical fields changed and vendor was approved, require re-approval
       if (criticalFieldsChanged && wasApproved) {
         console.log(`⚠️ [PROFILE-UPDATE] Critical fields changed - requiring re-approval`);
         
-        updatedVendor.status = 'pending';
-        updatedVendor.previousStatus = previousStatus;
-        updatedVendor.wasApprovedBefore = true;
-        updatedVendor.reapprovalReason = `Critical profile fields updated: ${changedFields.join(', ')}`;
-        updatedVendor.reapprovalRequestedAt = new Date().toISOString();
+        sqlUpdates.status = 'pending';
+        sqlUpdates.metadata = {
+          ...(vendor.metadata || {}),
+          previousStatus: previousStatus,
+          wasApprovedBefore: true,
+          reapprovalReason: `Critical profile fields updated: ${changedFields.join(', ')}`,
+          reapprovalRequestedAt: new Date().toISOString()
+        };
         
-        // Create a notification for admin
-        const notificationId = `admin_notification:profile_update:${vendorId}:${Date.now()}`;
-        await kv.set(notificationId, {
+        // ✅ SQL: Create a notification for admin
+        const notificationsRepo = getNotificationsRepository();
+        await notificationsRepo.create({
+          recipient_id: 'admin', // Admin notification
+          recipient_type: 'admin',
           type: 'profile_update_review',
-          vendorId: vendorId,
-          vendorName: updatedVendor.fullName || updatedVendor.businessName,
-          changedFields: changedFields,
-          message: `Approved vendor "${updatedVendor.fullName || updatedVendor.businessName}" updated their profile. Re-approval required.`,
-          createdAt: new Date().toISOString(),
-          isRead: false,
+          title: 'Vendor Profile Update - Re-approval Required',
+          message: `Approved vendor "${vendor.owner_name || vendor.business_name}" updated their profile. Re-approval required.`,
+          metadata: {
+            vendorId: vendorId,
+            vendorName: vendor.owner_name || vendor.business_name,
+            changedFields: changedFields
+          },
           priority: 'medium'
         });
         
-        await kv.set(vendorKey, updatedVendor);
+        // ✅ SQL: Update vendor
+        await vendorsRepo.update(vendorId, sqlUpdates);
         
         return c.json({
           success: true,
@@ -103,7 +123,8 @@ export function registerVendorProfileUpdateEndpoints(app: Hono) {
         // Non-critical fields only - no re-approval needed
         console.log(`✅ [PROFILE-UPDATE] Non-critical fields updated - no re-approval needed`);
         
-        await kv.set(vendorKey, updatedVendor);
+        // ✅ SQL: Update vendor (non-critical fields only)
+        await vendorsRepo.update(vendorId, sqlUpdates);
         
         return c.json({
           success: true,
@@ -127,8 +148,9 @@ export function registerVendorProfileUpdateEndpoints(app: Hono) {
     try {
       const { vendorId } = c.req.param();
       
-      const vendorKey = `vendor:${vendorId}`;
-      const vendor = await kv.get(vendorKey);
+      // ✅ SQL: Get vendor using repository
+      const vendorsRepo = getVendorsRepository();
+      const vendor = await vendorsRepo.findById(vendorId);
       
       if (!vendor) {
         return c.json({ error: 'Vendor not found' }, 404);

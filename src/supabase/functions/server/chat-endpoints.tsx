@@ -1,7 +1,7 @@
-import { Hono } from 'npm:hono';
-import { streamSSE } from "npm:hono/streaming";
-import * as kv from './kv_store.tsx';
-import { sendSuccess, sendError } from './response-utils.ts';
+import { Hono } from 'hono';
+import { streamSSE } from "hono/streaming";
+import * as kv from './kv_store';
+import { sendSuccess, sendError } from './response-utils';
 
 export function registerChatEndpoints(app: Hono) {
 

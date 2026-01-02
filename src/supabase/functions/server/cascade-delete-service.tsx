@@ -1,4 +1,4 @@
-import * as kv from './kv_store.tsx';
+import * as kv from './kv_store';
 
 /**
  * ✅ GAP #14 FIX: CASCADE DELETE SERVICE

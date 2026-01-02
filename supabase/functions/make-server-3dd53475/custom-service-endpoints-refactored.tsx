@@ -14,7 +14,8 @@
  * - Admin: Approve/reject custom services
  * - Get published custom services (customer view)
  * 
- * RESTRICTION: Only available for serviceStyle = 'at_center' or 'both'
+ * RESTRICTION: Only available for serviceStyle = 'at_center'
+ * Note: Vendors supporting multiple service styles should be handled separately
  * 
  * CHANGES:
  * - Removed `kv` parameter from function signature
@@ -68,8 +69,9 @@ export function customServiceEndpoints(app: Hono) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
       
-      // ✅ CRITICAL: Check service style restriction
-      if (vendor.service_style !== 'at_center' && vendor.service_style !== 'both') {
+      // ✅ CRITICAL: Check service style restriction (Technical Standards 10.1)
+      // Only allow 'at_center' - vendors with multiple styles need separate handling
+      if (vendor.service_style !== 'at_center') {
         console.log(`❌ Custom services NOT allowed for service style: ${vendor.service_style}`);
         
         let errorMessage = 'Custom services are only available for center-based vendors';

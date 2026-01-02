@@ -1,6 +1,6 @@
-import { Hono } from "npm:hono";
-import * as kv from './kv_store.tsx';
-import { generateId } from './database-schema.tsx';
+import { Hono } from "hono";
+import * as kv from './kv_store';
+import { generateId } from './database-schema';
 
 /**
  * ✅ GAP #3 FIX: CUSTOMER PACKAGE DISCOVERY & BOOKING

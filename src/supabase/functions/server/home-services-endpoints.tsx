@@ -4,8 +4,8 @@
  * Supports: Regular home services, walker sessions, emergency reassignment
  */
 
-import { Hono } from 'npm:hono@4';
-import * as kv from './kv_store.tsx';
+import { Hono } from 'hono';
+import * as kv from './kv_store';
 
 // Helper function to calculate distance between two coordinates (Haversine formula)
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {

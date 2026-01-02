@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Camera, Upload, X, Image as ImageIcon, Trash2, Star, Eye, Download, Grid3x3, List } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+// ✅ FIX: Removed Supabase imports - using API Gateway now
+import { toast } from 'sonner';
 
 interface GalleryImage {
   id: string;
@@ -39,8 +39,6 @@ export function VendorGalleryManagement({ vendorId, vendorData, onBack }: Vendor
     isFeatured: false
   });
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
-
   useEffect(() => {
     fetchGallery();
   }, [vendorId]);
@@ -48,24 +46,36 @@ export function VendorGalleryManagement({ vendorId, vendorData, onBack }: Vendor
   const fetchGallery = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_BASE}/groomer-gallery/${vendorId}`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        // ✅ FIX: Handle standardized response format
-        // Response format: { success: true, images: [...], total: ... }
-        setGallery(data.images || data.data?.images || []);
-      } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-        console.error('Failed to fetch gallery:', errorData);
-        toast.error(errorData.error || 'Failed to load gallery');
+      
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      // TODO: Create gallery endpoint if it doesn't exist
+      // For now, using placeholder - would need: GET /vendor/gallery/:vendorId
+      try {
+        const galleryData = await apiCallJson<any>(
+          `${API_GATEWAY_URL}/make-server-3dd53475/vendor/gallery/${vendorId}`
+        );
+        
+        if (galleryData.success) {
+          setGallery(galleryData.images || galleryData.data?.images || []);
+        } else {
+          setGallery([]);
+        }
+      } catch (galleryError) {
+        console.warn('Gallery endpoint not available yet');
+        setGallery([]);
       }
     } catch (error: any) {
       console.error('Error fetching gallery:', error);
       const errorMessage = error?.message || 'Failed to load gallery. Please try again.';
       toast.error(errorMessage);
+      setGallery([]);
     } finally {
       setLoading(false);
     }
@@ -94,30 +104,54 @@ export function VendorGalleryManagement({ vendorId, vendorData, onBack }: Vendor
       reader.onload = async () => {
         const base64Image = reader.result as string;
 
-        const response = await fetch(`${API_BASE}/groomer-gallery/${vendorId}`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            image: base64Image,
-            caption: uploadForm.caption,
-            category: uploadForm.category,
-            isFeatured: uploadForm.isFeatured
-          })
-        });
-
-        if (response.ok) {
-          const result = await response.json();
-          toast.success('Image uploaded successfully');
-          setUploadModalOpen(false);
-          setUploadForm({ caption: '', category: 'work_showcase', isFeatured: false });
-          await fetchGallery(); // ✅ Ensure gallery reloads
+        // ✅ FIX: Use API Gateway URL instead of Supabase
+        const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+        if (!API_GATEWAY_URL) {
+          throw new Error('API Gateway URL not configured');
+        }
+        
+        const { apiCallJson } = await import('@warmpawz/api-client/http');
+        
+        // Upload image to S3 first, then save gallery entry
+        const formData = new FormData();
+        formData.append('files', file);
+        formData.append('vendorId', vendorId);
+        
+        const uploadData = await apiCallJson<any>(
+          `${API_GATEWAY_URL}/make-server-3dd53475/media/upload-batch`,
+          {
+            method: 'POST',
+            body: formData
+          }
+        );
+        
+        if (uploadData.success && uploadData.uploads && uploadData.uploads[0]?.url) {
+          const imageUrl = uploadData.uploads[0].url;
+          
+          // Create gallery entry
+          const galleryData = await apiCallJson<any>(
+            `${API_GATEWAY_URL}/make-server-3dd53475/vendor/gallery/${vendorId}`,
+            {
+              method: 'POST',
+              body: JSON.stringify({
+                imageUrl,
+                caption: uploadForm.caption,
+                category: uploadForm.category,
+                isFeatured: uploadForm.isFeatured
+              })
+            }
+          );
+          
+          if (galleryData.success) {
+            toast.success('Image uploaded successfully');
+            setUploadModalOpen(false);
+            setUploadForm({ caption: '', category: 'work_showcase', isFeatured: false });
+            await fetchGallery(); // ✅ Ensure gallery reloads
+          } else {
+            toast.error(galleryData.error || galleryData.message || 'Failed to save gallery entry');
+          }
         } else {
-          const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
-          const errorMessage = errorData.error || errorData.message || 'Upload failed. Please try again.';
-          toast.error(errorMessage);
+          toast.error('Failed to upload image to storage');
         }
       };
 
@@ -141,18 +175,26 @@ export function VendorGalleryManagement({ vendorId, vendorData, onBack }: Vendor
     }
 
     try {
-      const response = await fetch(`${API_BASE}/groomer-gallery/${vendorId}/${imageId}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-      });
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      const deleteData = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/gallery/${vendorId}/${imageId}`,
+        {
+          method: 'DELETE'
+        }
+      );
 
-      if (response.ok) {
+      if (deleteData.success) {
         toast.success('Image deleted successfully');
         await fetchGallery(); // ✅ Ensure gallery reloads
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
-        const errorMessage = errorData.error || errorData.message || 'Failed to delete image';
-        toast.error(errorMessage);
+        toast.error(deleteData.error || deleteData.message || 'Failed to delete image');
       }
     } catch (error: any) {
       console.error('Error deleting image:', error);
@@ -163,24 +205,31 @@ export function VendorGalleryManagement({ vendorId, vendorData, onBack }: Vendor
 
   const toggleFeatured = async (imageId: string, currentStatus: boolean) => {
     try {
-      const response = await fetch(`${API_BASE}/groomer-gallery/${vendorId}/${imageId}/featured`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ isFeatured: !currentStatus })
-      });
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      const featuredData = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/gallery/${vendorId}/${imageId}/featured`,
+        {
+          method: 'PUT',
+          body: JSON.stringify({ isFeatured: !currentStatus })
+        }
+      );
 
-      if (response.ok) {
+      if (featuredData.success) {
         toast.success(currentStatus ? 'Removed from featured' : 'Added to featured');
         fetchGallery();
       } else {
-        toast.error('Failed to update featured status');
+        toast.error(featuredData.error || featuredData.message || 'Failed to update featured status');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error updating featured:', error);
-      toast.error('Failed to update');
+      toast.error(error?.message || 'Failed to update');
     }
   };
 

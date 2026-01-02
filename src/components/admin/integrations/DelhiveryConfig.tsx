@@ -7,7 +7,7 @@ import { Switch } from '../../ui/switch';
 import { Badge } from '../../ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../ui/tabs';
 import { Truck, CheckCircle, XCircle, Package, MapPin, Shield, AlertCircle } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
 
 export function DelhiveryConfig() {

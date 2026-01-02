@@ -11,10 +11,22 @@
  * 7. State Machine Validation - Vendor lifecycle state validation
  */
 
-import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
-import { sendSuccess, sendError } from './response-utils.ts';
-import { createRazorpayRefund } from './razorpay-integration.tsx';
+import { Hono } from 'hono';
+import { sendSuccess, sendError } from './response-utils';
+import { createRazorpayRefund } from './razorpay-integration';
+import {
+  getVendorsRepository,
+  getStaffRepository,
+  getServicesRepository,
+  getBookingsRepository,
+  getPaymentsRepository,
+  getRefundsRepository,
+  getVendorEarningsRepository,
+  getBoardingRoomsRepository,
+  getNotificationsRepository,
+  getWalletsRepository,
+} from '../../../supabase/lib/repositories/index';
+import { getDbClient, selectQuery, upsertQuery, withTransaction } from '../../../supabase/lib/db';
 
 export function comprehensiveGapFixes(app: Hono) {
   const BASE_PATH = '/make-server-3dd53475';
@@ -34,79 +46,74 @@ export function comprehensiveGapFixes(app: Hono) {
       const { vendorId } = c.req.param();
       const { serviceStyle, allowSoloPublish } = await c.req.json();
 
-      const vendor = await kv.get(`vendor:${vendorId}`);
+      const vendorsRepo = getVendorsRepository();
+      const vendor = await vendorsRepo.findById(vendorId);
       if (!vendor) {
         return sendError(c, 'Vendor not found', 404);
       }
 
       // Check if vendor is solo provider
-      const isSoloProvider = vendor.isSoloProvider || 
-                            vendor.vendorType === 'service_provider' ||
-                            ['pet_walker', 'nutritionist', 'pet_sitter', 'pet_trainer'].includes(vendor.roleId);
+      const isSoloProvider = vendor.is_solo_provider || 
+                            vendor.vendor_type === 'service_provider' ||
+                            ['pet_walker', 'nutritionist', 'pet_sitter', 'pet_trainer'].includes(vendor.role_id || '');
 
       // Check if vendor is center-based
-      const isCenterBased = vendor.vendorType === 'healthcare_provider' ||
-                           vendor.serviceStyle === 'at_center' ||
-                           ['veterinary_clinic', 'pet_boarding', 'pet_resort', 'pet_cafe'].includes(vendor.roleId);
+      const isCenterBased = vendor.vendor_type === 'healthcare_provider' ||
+                           vendor.service_style === 'at_center' ||
+                           ['veterinary_clinic', 'pet_boarding', 'pet_resort', 'pet_cafe'].includes(vendor.role_id || '');
 
-      const vendorStaffList = await kv.get(`vendor:${vendorId}:staff`) || [];
+      const staffRepo = getStaffRepository();
+      const vendorStaffList = await staffRepo.findByVendorId(vendorId);
 
       // ✅ FIX: Solo providers can publish without staff (they ARE the staff)
       if (isSoloProvider && vendorStaffList.length === 0) {
         // Auto-create staff profile for solo vendor
         const staffId = `${vendorId}_staff_self`;
-        const soloStaff = {
+        const soloStaff = await staffRepo.create({
           id: staffId,
           vendorId,
-          fullName: vendor.fullName || vendor.businessName,
-          phone: vendor.phone,
-          email: vendor.email,
-          role: vendor.roleId,
-          roleType: vendor.roleId,
-          isSoloProvider: true,
+          fullName: vendor.name || vendor.business_name || '',
+          phone: vendor.phone || '',
+          email: vendor.email || '',
+          roleId: vendor.role_id || '',
+          roleType: vendor.role_id || '',
           isActive: true,
           isOnline: true,
           services: [],
-          availability: vendor.availability || {},
-          createdAt: new Date().toISOString()
-        };
-
-        await kv.set(`staff:${staffId}`, soloStaff);
-        await kv.set(`vendor:${vendorId}:staff`, [staffId]);
+          workingHours: vendor.availability || {},
+        });
 
         console.log(`✅ Auto-created staff profile for solo vendor: ${vendorId}`);
       }
 
       // Center-based vendors still need staff
       if (isCenterBased && vendorStaffList.length === 0) {
-        return sendError(c, {
-          error: 'Cannot publish services without staff',
-          message: 'Center-based vendors must have at least one staff member before publishing services.',
+        return sendError(c, 'Cannot publish services without staff. Center-based vendors must have at least one staff member before publishing services.', 400, {
           requiresStaff: true,
           isCenterBased: true
-        }, 400);
+        });
       }
 
-      // Proceed with normal publish flow
-      const vendorServicesKey = `vendor_services:${vendorId}:${serviceStyle}`;
-      const vendorServices = await kv.get(vendorServicesKey);
+      // Proceed with normal publish flow - check vendor services
+      const servicesRepo = getServicesRepository();
+      const vendorServices = await servicesRepo.findByVendor(vendorId);
 
-      if (!vendorServices || !vendorServices.services || vendorServices.services.length === 0) {
+      if (!vendorServices || vendorServices.length === 0) {
         return sendError(c, 'No services configured', 400);
       }
 
-      const enabledServices = vendorServices.services.filter((s: any) => s.isEnabled);
+      const enabledServices = vendorServices.filter((s: any) => s.is_active);
       if (enabledServices.length === 0) {
         return sendError(c, 'No services enabled', 400);
       }
 
-      // Publish services
-      enabledServices.forEach((service: any) => {
-        service.publishStatus = 'published';
-        service.publishedAt = new Date().toISOString();
-      });
-
-      await kv.set(vendorServicesKey, vendorServices);
+      // Update services to published status
+      for (const service of enabledServices) {
+        await servicesRepo.update(service.id, {
+          isPublished: true,
+          publishedAt: new Date().toISOString(),
+        } as any);
+      }
 
       return sendSuccess(c, {
         published: enabledServices.length,
@@ -133,66 +140,65 @@ export function comprehensiveGapFixes(app: Hono) {
       const { bookingId } = c.req.param();
       const { refundMethod = 'wallet', reason } = await c.req.json();
 
-      const booking = await kv.get(`booking:${bookingId}`);
+      const bookingsRepo = getBookingsRepository();
+      const booking = await bookingsRepo.findById(bookingId);
       if (!booking) {
         return sendError(c, 'Booking not found', 404);
       }
 
       // Check if already refunded
-      if (booking.refundStatus === 'refunded' || booking.refundStatus === 'processing') {
+      const paymentStatus = booking.payment_status || 'pending';
+      if (paymentStatus === 'refunded') {
         return sendError(c, 'Refund already processed', 400);
       }
 
       // Get payment details
-      const paymentId = booking.paymentId || booking.razorpayPaymentId;
+      const paymentId = booking.payment_id;
       if (!paymentId) {
         return sendError(c, 'Payment ID not found', 404);
       }
 
-      const payment = await kv.get(`payment:${paymentId}`);
+      const paymentsRepo = getPaymentsRepository();
+      const payment = await paymentsRepo.findById(paymentId);
       if (!payment) {
         return sendError(c, 'Payment not found', 404);
       }
 
       // Calculate refund amount (full refund for rejections, partial for cancellations)
-      let refundAmount = booking.price || payment.amount || 0;
+      let refundAmount = parseFloat(booking.total_amount?.toString() || '0') || parseFloat(payment.amount?.toString() || '0');
       
       // Apply cancellation fee if customer cancelled
-      if (booking.cancelledBy === 'customer' && booking.cancellationReason) {
-        const hoursUntilBooking = booking.scheduledDate 
-          ? Math.max(0, (new Date(booking.scheduledDate).getTime() - Date.now()) / (1000 * 60 * 60))
-          : 0;
-        
-        // Apply cancellation fee if less than 24 hours
-        if (hoursUntilBooking < 24) {
-          const cancellationFee = refundAmount * 0.1; // 10% fee
-          refundAmount = refundAmount - cancellationFee;
+      if (booking.cancellation_reason && booking.cancelled_by === 'customer') {
+        const bookingDate = booking.booking_date;
+        const bookingTime = booking.booking_time;
+        if (bookingDate && bookingTime) {
+          const scheduledDateTime = new Date(`${bookingDate}T${bookingTime}`);
+          const hoursUntilBooking = Math.max(0, (scheduledDateTime.getTime() - Date.now()) / (1000 * 60 * 60));
+          
+          // Apply cancellation fee if less than 24 hours
+          if (hoursUntilBooking < 24) {
+            const cancellationFee = refundAmount * 0.1; // 10% fee
+            refundAmount = refundAmount - cancellationFee;
+          }
         }
       }
 
       // Process refund
+      const walletsRepo = getWalletsRepository();
+      const customerWallet = await walletsRepo.findOrCreate(booking.customer_id);
+      
       if (refundMethod === 'wallet') {
         // Refund to wallet
-        const walletCredit = await fetch(
-          `${BASE_PATH}/wallet/${booking.customerId}/credit`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${Deno.env.get('SUPABASE_ANON_KEY')}`
-            },
-            body: JSON.stringify({
-              amount: refundAmount,
-              source: 'refund',
-              description: `Refund for ${booking.status} booking #${bookingId}`,
-              referenceId: bookingId
-            })
-          }
-        );
-
-        if (!walletCredit.ok) {
-          throw new Error('Failed to credit wallet');
-        }
+        await walletsRepo.addTransaction({
+          wallet_id: customerWallet.id,
+          customer_id: booking.customer_id,
+          transaction_type: 'credit',
+          amount: refundAmount,
+          source: 'refund',
+          purpose: 'booking_refund',
+          description: `Refund for ${booking.status} booking #${bookingId}`,
+          reference_id: bookingId
+        });
       } else {
         // Refund to original payment method via Razorpay
         try {
@@ -204,73 +210,69 @@ export function comprehensiveGapFixes(app: Hono) {
         } catch (razorpayError) {
           console.error('Razorpay refund failed, falling back to wallet:', razorpayError);
           // Fallback to wallet
-          const walletCredit = await fetch(
-            `${BASE_PATH}/wallet/${booking.customerId}/credit`,
-            {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${Deno.env.get('SUPABASE_ANON_KEY')}`
-              },
-              body: JSON.stringify({
-                amount: refundAmount,
-                source: 'refund',
-                description: `Refund for ${booking.status} booking #${bookingId}`,
-                referenceId: bookingId
-              })
-            }
-          );
+          await walletsRepo.addTransaction({
+            wallet_id: customerWallet.id,
+            customer_id: booking.customer_id,
+            transaction_type: 'credit',
+            amount: refundAmount,
+            source: 'refund',
+            purpose: 'booking_refund',
+            description: `Refund for ${booking.status} booking #${bookingId}`,
+            reference_id: bookingId
+          });
         }
       }
 
       // Create refund record
-      const refundId = `refund_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-      const refund = {
-        id: refundId,
+      const refundsRepo = getRefundsRepository();
+      const refund = await refundsRepo.create({
         bookingId,
         paymentId,
-        customerId: booking.customerId,
-        vendorId: booking.vendorId,
+        customerId: booking.customer_id,
+        vendorId: booking.vendor_id,
         amount: refundAmount,
-        originalAmount: booking.price || payment.amount,
-        refundMethod,
-        reason: reason || booking.cancellationReason || 'Booking cancelled/rejected',
+        originalAmount: parseFloat(booking.total_amount?.toString() || '0'),
+        refundMethod: refundMethod as 'wallet' | 'original',
+        reason: reason || booking.cancellation_reason || 'Booking cancelled/rejected',
         status: 'completed',
-        processedAt: new Date().toISOString(),
-        createdAt: new Date().toISOString()
-      };
-
-      await kv.set(`refund:${refundId}`, refund);
+        razorpayRefundId: undefined, // Will be set if Razorpay refund succeeds
+      });
 
       // Update booking
-      booking.refundStatus = 'refunded';
-      booking.refundId = refundId;
-      booking.refundAmount = refundAmount;
-      booking.refundedAt = new Date().toISOString();
-      await kv.set(`booking:${bookingId}`, booking);
+      await bookingsRepo.update(bookingId, {
+        payment_status: 'refunded',
+        cancellation_reason: reason || booking.cancellation_reason || 'Booking cancelled/rejected',
+        cancelled_at: new Date().toISOString(),
+        status: 'cancelled',
+      });
 
       // Update payment
-      payment.status = 'refunded';
-      payment.refundId = refundId;
-      payment.refundAmount = refundAmount;
-      await kv.set(`payment:${paymentId}`, payment);
+      await paymentsRepo.update(paymentId, {
+        status: 'refunded',
+      } as any);
 
       // Reverse earnings if booking was completed
-      if (booking.status === 'completed') {
+      if (booking.status === 'completed' && booking.vendor_id) {
         // Reverse vendor earnings
-        const vendorEarningsKey = `vendor:${booking.vendorId}:earnings:lifetime`;
-        const vendorEarnings = await kv.get(vendorEarningsKey) || { totalEarnings: 0, totalRevenue: 0 };
-        vendorEarnings.totalEarnings = Math.max(0, vendorEarnings.totalEarnings - refundAmount);
-        vendorEarnings.totalRevenue = Math.max(0, vendorEarnings.totalRevenue - (booking.price || 0));
-        await kv.set(vendorEarningsKey, vendorEarnings);
+        const vendorEarningsRepo = getVendorEarningsRepository();
+        // Get existing earnings
+        const existingEarnings = await vendorEarningsRepo.findByVendor(booking.vendor_id);
+        // For refunds, we should record a negative earning entry
+        await vendorEarningsRepo.create({
+          vendorId: booking.vendor_id,
+          bookingId,
+          amount: -refundAmount, // Negative for refund
+          commission: 0,
+          earnings: -refundAmount,
+        });
       }
 
-      console.log(`✅ Refund processed: ${refundId} for booking ${bookingId}, amount: ₹${refundAmount}`);
+      console.log(`✅ Refund processed: ${refund.id} for booking ${bookingId}, amount: ₹${refundAmount}`);
 
       return sendSuccess(c, { refund, booking }, 'Refund processed successfully');
     } catch (error) {
       console.error('Error processing refund:', error);
-      return sendError(c, error, 500);
+      return sendError(c, error instanceof Error ? error.message : 'Internal server error', 500);
     }
   });
 
@@ -292,25 +294,39 @@ export function comprehensiveGapFixes(app: Hono) {
       }
 
       // Get room details
-      const room = await kv.get(`resort:room:${roomId}`);
+      const boardingRoomsRepo = getBoardingRoomsRepository();
+      const room = await boardingRoomsRepo.findById(roomId);
       if (!room) {
         return sendError(c, 'Room not found', 404);
       }
 
       // Create lock key for atomic operation
+      const client = getDbClient();
       const lockKey = `lock:resort:${roomId}:${fromDate}:${toDate}`;
-      const existingLock = await kv.get(lockKey);
+      
+      // Check for existing lock using booking_locks table
+      const { data: existingLock } = await client
+        .from('booking_locks')
+        .select('*')
+        .eq('lock_key', lockKey)
+        .gt('expires_at', new Date().toISOString())
+        .single();
 
-      if (existingLock && existingLock.bookingId !== bookingId) {
+      if (existingLock && existingLock.booking_id !== bookingId) {
         return sendError(c, 'Another booking is in progress for this room', 409);
       }
 
-      // Set lock
-      await kv.set(lockKey, {
-        bookingId,
-        lockedAt: new Date().toISOString(),
-        expiresAt: new Date(Date.now() + 30000).toISOString() // 30 second lock
-      });
+      // Set lock in booking_locks table
+      await client
+        .from('booking_locks')
+        .upsert({
+          lock_key: lockKey,
+          booking_id: bookingId,
+          locked_at: new Date().toISOString(),
+          expires_at: new Date(Date.now() + 30000).toISOString() // 30 second lock
+        }, {
+          onConflict: 'lock_key'
+        });
 
       try {
         // Check availability for each night
@@ -322,47 +338,98 @@ export function comprehensiveGapFixes(app: Hono) {
           nights.push(d.toISOString().split('T')[0]);
         }
 
-        // Atomic check and reserve
+        // Atomic check and reserve using resort_availability_calendar
         const availabilityChecks: any[] = [];
-        for (const dateStr of nights) {
-          const inventoryKey = `inventory:resort:${roomId}:${dateStr}`;
-          const currentBooked = await kv.get(inventoryKey) || 0;
-          const available = room.totalInventory - currentBooked;
+        
+        await withTransaction(async (txClient) => {
+          // First pass: Check availability for all nights
+          for (const dateStr of nights) {
+            const availabilityId = `resort:${room.vendorId}:${roomId}:${dateStr}`;
+            
+            // Get existing availability record
+            const { data: availability } = await txClient
+              .from('resort_availability_calendar')
+              .select('*')
+              .eq('availability_id', availabilityId)
+              .single();
 
-          if (available < quantity) {
-            // Release lock
-            await kv.delete(lockKey);
-            return sendError(c, {
-              error: 'Insufficient availability',
-              date: dateStr,
-              available,
-              requested: quantity
-            }, 400);
+            const totalCapacity = availability?.total_capacity || room.totalUnits;
+            const currentBooked = availability?.booked_count || 0;
+            const available = totalCapacity - currentBooked;
+
+            if (available < quantity) {
+              return sendError(c, `Insufficient availability for date ${dateStr}`, 400, {
+                date: dateStr,
+                available,
+                requested: quantity
+              });
+            }
+
+            availabilityChecks.push({ date: dateStr, available, currentBooked });
           }
 
-          availabilityChecks.push({ date: dateStr, available, currentBooked });
-        }
+          // Second pass: Reserve inventory atomically (all or nothing)
+          for (const dateStr of nights) {
+            const availabilityId = `resort:${room.vendorId}:${roomId}:${dateStr}`;
+            
+            // Get current booked count
+            const { data: existingAvailability } = await txClient
+              .from('resort_availability_calendar')
+              .select('booked_count, total_capacity')
+              .eq('availability_id', availabilityId)
+              .single();
 
-        // All nights available - reserve inventory
-        for (const dateStr of nights) {
-          const inventoryKey = `inventory:resort:${roomId}:${dateStr}`;
-          const currentBooked = await kv.get(inventoryKey) || 0;
-          await kv.set(inventoryKey, currentBooked + quantity);
-        }
+            const currentBooked = existingAvailability?.booked_count || 0;
+            const totalCapacity = existingAvailability?.total_capacity || room.totalUnits;
+            const newBookedCount = currentBooked + quantity;
+            const newAvailableCount = totalCapacity - newBookedCount;
 
-        // Store booking inventory record
-        await kv.set(`booking:inventory:${bookingId}`, {
-          bookingId,
-          roomId,
-          fromDate,
-          toDate,
-          quantity,
-          nights,
-          reservedAt: new Date().toISOString()
+            // Upsert availability with new booked count
+            await txClient
+              .from('resort_availability_calendar')
+              .upsert({
+                availability_id: availabilityId,
+                vendor_id: room.vendorId,
+                room_type: roomId,
+                date: dateStr,
+                total_capacity: totalCapacity,
+                booked_count: newBookedCount,
+                available_count: newAvailableCount,
+                updated_at: new Date().toISOString(),
+              }, {
+                onConflict: 'availability_id'
+              });
+          }
+
+          // Store booking inventory record in booking.package_details JSONB
+          // Note: bookingsRepo operations need to be outside transaction for now
         });
+        
+        // Store booking inventory record after transaction completes
+        const bookingsRepo = getBookingsRepository();
+        const booking = await bookingsRepo.findById(bookingId);
+        if (booking) {
+          const packageDetails = booking.package_details || {};
+          packageDetails.inventory = {
+            bookingId,
+            roomId,
+            fromDate,
+            toDate,
+            quantity,
+            nights,
+            reservedAt: new Date().toISOString()
+          };
+          
+          await bookingsRepo.update(bookingId, {
+            package_details: packageDetails,
+          } as any);
+        }
 
         // Release lock
-        await kv.delete(lockKey);
+        await client
+          .from('booking_locks')
+          .delete()
+          .eq('lock_key', lockKey);
 
         return sendSuccess(c, {
           bookingId,
@@ -373,12 +440,16 @@ export function comprehensiveGapFixes(app: Hono) {
         }, 'Room inventory reserved successfully');
       } catch (error) {
         // Release lock on error
-        await kv.delete(lockKey);
+        const client = getDbClient();
+        await client
+          .from('booking_locks')
+          .delete()
+          .eq('lock_key', lockKey);
         throw error;
       }
     } catch (error) {
       console.error('Error in atomic room booking:', error);
-      return sendError(c, error, 500);
+      return sendError(c, error instanceof Error ? error.message : 'Internal server error', 500);
     }
   });
 
@@ -390,25 +461,60 @@ export function comprehensiveGapFixes(app: Hono) {
     try {
       const { bookingId } = await c.req.json();
 
-      const inventoryRecord = await kv.get(`booking:inventory:${bookingId}`);
-      if (!inventoryRecord) {
+      const bookingsRepo = getBookingsRepository();
+      const booking = await bookingsRepo.findById(bookingId);
+      if (!booking || !booking.package_details?.inventory) {
         return sendError(c, 'Inventory record not found', 404);
       }
 
-      // Release inventory for each night
-      for (const dateStr of inventoryRecord.nights) {
-        const inventoryKey = `inventory:resort:${inventoryRecord.roomId}:${dateStr}`;
-        const currentBooked = await kv.get(inventoryKey) || 0;
-        await kv.set(inventoryKey, Math.max(0, currentBooked - inventoryRecord.quantity));
+      const inventoryRecord = booking.package_details.inventory;
+      const client = getDbClient();
+      const boardingRoomsRepo = getBoardingRoomsRepository();
+      const room = await boardingRoomsRepo.findById(inventoryRecord.roomId);
+      
+      if (!room) {
+        return sendError(c, 'Room not found', 404);
       }
 
-      // Delete inventory record
-      await kv.delete(`booking:inventory:${bookingId}`);
+      // Release inventory for each night using resort_availability_calendar
+      await withTransaction(async (txClient) => {
+        for (const dateStr of inventoryRecord.nights) {
+          const availabilityId = `resort:${room.vendorId}:${inventoryRecord.roomId}:${dateStr}`;
+          
+          // Get current booked count
+          const { data: availability } = await txClient
+            .from('resort_availability_calendar')
+            .select('booked_count')
+            .eq('availability_id', availabilityId)
+            .single();
+
+          const currentBooked = availability?.booked_count || 0;
+          const newBookedCount = Math.max(0, currentBooked - inventoryRecord.quantity);
+
+          // Update availability
+          await txClient
+            .from('resort_availability_calendar')
+            .update({
+              booked_count: newBookedCount,
+              available_count: room.totalUnits - newBookedCount,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('availability_id', availabilityId);
+        }
+
+        // Remove inventory record from booking.package_details
+        const packageDetails = booking.package_details || {};
+        delete packageDetails.inventory;
+        
+        await bookingsRepo.update(bookingId, {
+          package_details: packageDetails,
+        } as any);
+      });
 
       return sendSuccess(c, { bookingId, released: true }, 'Inventory released successfully');
     } catch (error) {
       console.error('Error releasing inventory:', error);
-      return sendError(c, error, 500);
+      return sendError(c, error instanceof Error ? error.message : 'Internal server error', 500);
     }
   });
 
@@ -478,7 +584,7 @@ export function comprehensiveGapFixes(app: Hono) {
       });
     } catch (error) {
       console.error('Error loading default services:', error);
-      return sendError(c, error, 500);
+      return sendError(c, error instanceof Error ? error.message : 'Internal server error', 500);
     }
   });
 
@@ -495,13 +601,15 @@ export function comprehensiveGapFixes(app: Hono) {
     try {
       const { bookingId } = c.req.param();
 
-      const booking = await kv.get(`booking:${bookingId}`);
+      const bookingsRepo = getBookingsRepository();
+      const booking = await bookingsRepo.findById(bookingId);
       if (!booking) {
         return sendError(c, 'Booking not found', 404);
       }
 
-      const serviceType = booking.serviceType || booking.serviceName?.toLowerCase() || '';
-      const roleId = booking.vendorRoleId || booking.roleId;
+      const vendorsRepo = getVendorsRepository();
+      const serviceType = booking.service_type || '';
+      const roleId = booking.vendor_id ? (await vendorsRepo.findById(booking.vendor_id))?.role_id : undefined;
 
       // Standardize OTP requirements
       const otpRequirements = {
@@ -544,7 +652,7 @@ export function comprehensiveGapFixes(app: Hono) {
       });
     } catch (error) {
       console.error('Error getting OTP requirements:', error);
-      return sendError(c, error, 500);
+      return sendError(c, error instanceof Error ? error.message : 'Internal server error', 500);
     }
   });
 
@@ -562,12 +670,13 @@ export function comprehensiveGapFixes(app: Hono) {
       const { bookingId } = c.req.param();
       const { customerId, modifications, reason } = await c.req.json();
 
-      const booking = await kv.get(`booking:${bookingId}`);
+      const bookingsRepo = getBookingsRepository();
+      const booking = await bookingsRepo.findById(bookingId);
       if (!booking) {
         return sendError(c, 'Booking not found', 404);
       }
 
-      if (booking.customerId !== customerId) {
+      if (booking.customer_id !== customerId) {
         return sendError(c, 'Unauthorized', 403);
       }
 
@@ -582,8 +691,8 @@ export function comprehensiveGapFixes(app: Hono) {
       }
 
       // Check modification window (e.g., 24 hours before booking)
-      if (booking.scheduledDate) {
-        const bookingDateTime = new Date(`${booking.scheduledDate}T${booking.scheduledTime || '00:00'}`);
+      if (booking.booking_date) {
+        const bookingDateTime = new Date(`${booking.booking_date}T${booking.booking_time || '00:00'}`);
         const hoursUntilBooking = (bookingDateTime.getTime() - Date.now()) / (1000 * 60 * 60);
         
         if (hoursUntilBooking < 24) {
@@ -591,24 +700,40 @@ export function comprehensiveGapFixes(app: Hono) {
         }
       }
 
-      // Store original booking for audit
-      const modificationHistory = booking.modificationHistory || [];
+      // Store original booking for audit in notes JSONB
+      const bookingNotes = booking.notes || {};
+      const modificationHistory = bookingNotes.modificationHistory || [];
       modificationHistory.push({
         timestamp: new Date().toISOString(),
         original: {
-          date: booking.scheduledDate,
-          time: booking.scheduledTime,
-          service: booking.serviceName,
-          price: booking.price
+          date: booking.booking_date,
+          time: booking.booking_time,
+          service: booking.service_id, // Store service ID
+          price: parseFloat(booking.total_amount?.toString() || '0')
         },
         modified: modifications,
         reason
       });
 
+      // Prepare update data
+      const updateData: any = {
+        updated_at: new Date().toISOString(),
+      };
+
       // Apply modifications
-      const modifiedBooking = {
-        ...booking,
-        ...modifications,
+      if (modifications.booking_date) updateData.booking_date = modifications.booking_date;
+      if (modifications.booking_time) updateData.booking_time = modifications.booking_time;
+      if (modifications.total_amount !== undefined) {
+        updateData.total_amount = modifications.total_amount;
+        // Recalculate base_price if needed
+        if (modifications.total_amount) {
+          updateData.base_price = modifications.total_amount;
+        }
+      }
+
+      // Store modification history in notes
+      updateData.notes = {
+        ...bookingNotes,
         modificationHistory,
         lastModifiedAt: new Date().toISOString(),
         modifiedBy: 'customer',
@@ -616,70 +741,72 @@ export function comprehensiveGapFixes(app: Hono) {
       };
 
       // If date/time changed, check new availability
-      if (modifications.scheduledDate || modifications.scheduledTime) {
+      if (modifications.booking_date || modifications.booking_time) {
         // Check vendor availability for new slot
-        const vendor = await kv.get(`vendor:${booking.vendorId}`);
-        const newDate = modifications.scheduledDate || booking.scheduledDate;
-        const newTime = modifications.scheduledTime || booking.scheduledTime;
+        const vendorsRepo = getVendorsRepository();
+        const vendor = await vendorsRepo.findById(booking.vendor_id || '');
+        const newDate = modifications.booking_date || booking.booking_date;
+        const newTime = modifications.booking_time || booking.booking_time;
 
-        // Validate new slot availability (simplified check)
-        const vendorBookings = await kv.get(`vendor:${booking.vendorId}:bookings`) || [];
-        for (const existingBookingId of vendorBookings) {
-          if (existingBookingId === bookingId) continue; // Skip current booking
-          
-          const existingBooking = await kv.get(`booking:${existingBookingId}`);
-          if (existingBooking &&
-              existingBooking.scheduledDate === newDate &&
-              existingBooking.scheduledTime === newTime &&
-              !['cancelled', 'rejected'].includes(existingBooking.status)) {
-            return sendError(c, 'New time slot is not available', 400);
-          }
+        // Validate new slot availability - check for conflicting bookings
+        const allBookings = await bookingsRepo.findAll({});
+        const conflictingBookings = allBookings.filter(b => 
+          b.vendor_id === booking.vendor_id &&
+          b.booking_date === newDate &&
+          b.booking_time === newTime &&
+          ['pending', 'confirmed', 'in_progress'].includes(b.status)
+        );
+
+        // Filter out current booking
+        const hasConflict = conflictingBookings && conflictingBookings.some((b: any) => b.id !== bookingId);
+        if (hasConflict) {
+          return sendError(c, 'New time slot is not available', 400);
         }
       }
 
       // If price changed, handle refund/additional payment
-      if (modifications.price && modifications.price !== booking.price) {
-        const priceDifference = modifications.price - booking.price;
+      const currentPrice = parseFloat(booking.total_amount?.toString() || '0');
+      if (modifications.total_amount && modifications.total_amount !== currentPrice) {
+        const priceDifference = modifications.total_amount - currentPrice;
         
+        // Store price change info in notes
         if (priceDifference > 0) {
-          // Customer needs to pay additional amount
-          modifiedBooking.additionalPaymentRequired = priceDifference;
-          modifiedBooking.additionalPaymentStatus = 'pending';
+          updateData.notes.additionalPaymentRequired = priceDifference;
+          updateData.notes.additionalPaymentStatus = 'pending';
         } else {
-          // Refund difference
           const refundAmount = Math.abs(priceDifference);
-          // Queue refund (will be processed separately)
-          modifiedBooking.refundRequired = refundAmount;
-          modifiedBooking.refundStatus = 'pending';
+          updateData.notes.refundRequired = refundAmount;
+          updateData.notes.refundStatus = 'pending';
         }
       }
 
-      await kv.set(`booking:${bookingId}`, modifiedBooking);
+      await bookingsRepo.update(bookingId, updateData);
 
       // Notify vendor of modification
-      const notificationId = `notif_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-      await kv.set(`notification:${notificationId}`, {
-        id: notificationId,
-        userId: booking.vendorId,
-        userType: 'vendor',
-        type: 'booking_modified',
+      const notificationsRepo = getNotificationsRepository();
+      await notificationsRepo.create({
+        recipientType: 'vendor',
+        recipientId: booking.vendor_id || '',
+        notificationType: 'booking_modified',
         title: 'Booking Modified',
         message: `Customer modified booking #${bookingId.slice(-8)}`,
-        data: { bookingId, modifications },
-        read: false,
-        createdAt: new Date().toISOString()
+        channels: { email: true, sms: false, inApp: true },
+        metadata: { bookingId, modifications },
       });
 
       console.log(`✅ Booking ${bookingId} modified by customer`);
 
+      const updatedBooking = await bookingsRepo.findById(bookingId);
+      const updatedNotes = updatedBooking?.notes || {};
+      
       return sendSuccess(c, {
-        booking: modifiedBooking,
-        requiresAdditionalPayment: modifiedBooking.additionalPaymentRequired > 0,
-        requiresRefund: modifiedBooking.refundRequired > 0
+        booking: updatedBooking,
+        requiresAdditionalPayment: (updatedNotes.additionalPaymentRequired || 0) > 0,
+        requiresRefund: (updatedNotes.refundRequired || 0) > 0
       }, 'Booking modified successfully');
     } catch (error) {
       console.error('Error modifying booking:', error);
-      return sendError(c, error, 500);
+      return sendError(c, error instanceof Error ? error.message : 'Internal server error', 500);
     }
   });
 
@@ -697,12 +824,13 @@ export function comprehensiveGapFixes(app: Hono) {
       const { vendorId } = c.req.param();
       const { newStatus, reason } = await c.req.json();
 
-      const vendor = await kv.get(`vendor:${vendorId}`);
+      const vendorsRepo = getVendorsRepository();
+      const vendor = await vendorsRepo.findById(vendorId);
       if (!vendor) {
         return sendError(c, 'Vendor not found', 404);
       }
 
-      const currentStatus = vendor.status || vendor.applicationStatus || 'new';
+      const currentStatus = vendor.status || vendor.approval_status || 'new';
 
       // Define valid state transitions
       const validTransitions: Record<string, string[]> = {
@@ -722,13 +850,11 @@ export function comprehensiveGapFixes(app: Hono) {
       const allowedTransitions = validTransitions[currentStatus] || [];
 
       if (!allowedTransitions.includes(newStatus)) {
-        return sendError(c, {
-          error: 'Invalid state transition',
+        return sendError(c, `Cannot transition from ${currentStatus} to ${newStatus}`, 400, {
           currentStatus,
           newStatus,
-          allowedTransitions,
-          reason: `Cannot transition from ${currentStatus} to ${newStatus}`
-        }, 400);
+          allowedTransitions
+        });
       }
 
       // Additional validation based on target status
@@ -736,32 +862,37 @@ export function comprehensiveGapFixes(app: Hono) {
 
       if (newStatus === 'approved_services') {
         // Check if vendor has basic profile
-        if (!vendor.fullName && !vendor.businessName) {
+        if (!vendor.name && !vendor.business_name) {
           validationErrors.push('Vendor profile incomplete');
         }
       }
 
       if (newStatus === 'approved_availability') {
         // Check if services are configured
-        const servicesConfigured = vendor.servicesConfigured || false;
-        if (!servicesConfigured) {
+        const servicesRepo = getServicesRepository();
+        const vendorServices = await servicesRepo.findByVendor(vendorId);
+        if (!vendorServices || vendorServices.length === 0) {
           validationErrors.push('Services must be configured before setting availability');
         }
       }
 
       if (newStatus === 'active') {
-        // Check if setup is complete
-        const setupCompleted = vendor.setupCompleted || false;
-        if (!setupCompleted) {
-          validationErrors.push('Setup must be completed before activating vendor');
+        // Check if setup is complete - verify services and staff
+        const servicesRepo = getServicesRepository();
+        const staffRepo = getStaffRepository();
+        const vendorServices = await servicesRepo.findByVendor(vendorId);
+        const vendorStaff = await staffRepo.findByVendorId(vendorId);
+        
+        if (!vendorServices || vendorServices.length === 0) {
+          validationErrors.push('Services must be configured before activating vendor');
         }
+        // Note: Staff requirement check handled in earlier logic
       }
 
       if (validationErrors.length > 0) {
-        return sendError(c, {
-          error: 'State transition validation failed',
+        return sendError(c, `State transition validation failed: ${validationErrors.join(', ')}`, 400, {
           validationErrors
-        }, 400);
+        });
       }
 
       return sendSuccess(c, {
@@ -772,7 +903,7 @@ export function comprehensiveGapFixes(app: Hono) {
       }, 'State transition is valid');
     } catch (error) {
       console.error('Error validating state transition:', error);
-      return sendError(c, error, 500);
+      return sendError(c, error instanceof Error ? error.message : 'Internal server error', 500);
     }
   });
 

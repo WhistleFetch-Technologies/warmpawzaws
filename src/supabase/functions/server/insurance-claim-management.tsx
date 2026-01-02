@@ -13,10 +13,10 @@
  * Status: ✅ P1 IMPLEMENTATION
  */
 
-import { Hono } from "npm:hono";
-import * as kv from "./kv_store.tsx";
-import { createClient } from "jsr:@supabase/supabase-js@2.49.8";
-import { ensureBucket } from "./bucket-manager.tsx";
+import { Hono } from "hono";
+import * as kv from "./kv_store";
+import { createClient } from "@supabase/supabase-js";
+import { ensureBucket } from "./bucket-manager";
 
 export function registerInsuranceClaimEndpoints(app: Hono) {
   const BASE_PATH = "/make-server-3dd53475";

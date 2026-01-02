@@ -8,10 +8,10 @@
  * - at_home/tele services → Returns STAFF (customer selects individual provider)
  */
 
-import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
-import { getPrimarySpecialization, getAllSpecializations } from './specialization-mapping.tsx';
-import { calculateDistance } from './schedule-utils.tsx';
+import { Hono } from 'hono';
+import * as kv from './kv_store';
+import { getPrimarySpecialization, getAllSpecializations } from './specialization-mapping';
+import { calculateDistance } from './schedule-utils';
 
 /**
  * ✅ DYNAMIC ROLE MAPPING: Load role configurations from KV store

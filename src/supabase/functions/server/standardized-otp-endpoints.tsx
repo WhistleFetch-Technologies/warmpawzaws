@@ -5,9 +5,15 @@
  * Creates wrapper endpoints matching exact paths from handoff checklist
  */
 
-import { Hono } from 'npm:hono';
-import { cors } from 'npm:hono/cors';
-import * as kv from './kv_store.tsx';
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from 'hono';
+import { cors } from "hono/cors";
+import {
+  getBookingsRepository,
+  getCustomersRepository,
+  getPetsRepository
+} from '../../../supabase/lib/repositories/index';
+import { getDbClient } from '../../../supabase/lib/db';
 
 const app = new Hono();
 app.use('*', cors());
@@ -29,33 +35,37 @@ app.post('/bookings/:bookingId/generate-otp', async (c) => {
     const bookingId = c.req.param('bookingId');
     const { sessionNumber = 1, action = 'start' } = await c.req.json();
 
-    // Get booking
-    const bookingData = await kv.get(`booking:${bookingId}`);
-    if (!bookingData || !bookingData.value) {
+    // ✅ SQL: Get booking
+    const bookingsRepo = getBookingsRepository();
+    const booking = await bookingsRepo.findById(bookingId);
+    if (!booking) {
       return c.json({ error: 'Booking not found' }, 404);
     }
-
-    const booking = bookingData.value;
 
     // Generate 6-digit OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const now = new Date();
     const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24 hours
 
-    // Store OTP
-    const otpKey = `booking:${bookingId}:otp:session${sessionNumber}:${action}`;
-    await kv.set(otpKey, {
-      otp,
-      sessionNumber,
-      action,
-      generatedAt: now.toISOString(),
-      expiresAt: expiresAt.toISOString(),
-      verified: false,
-      attempts: 0
-    });
+    // ✅ SQL: Store OTP in bookings table
+    const db = getDbClient();
+    await db
+      .from('bookings')
+      .update({
+        otp: otp,
+        otp_session_number: sessionNumber,
+        otp_action: action,
+        otp_generated_at: now.toISOString(),
+        otp_expires_at: expiresAt.toISOString(),
+        otp_verified: false,
+        otp_attempts: 0,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', bookingId);
 
     // Send OTP (would integrate with SMS/push notification service)
-    const customer = await getCustomerDetails(booking.customerId);
+    const customerId = booking.customer_id || booking.customerId;
+    const customer = await getCustomerDetails(customerId);
     const sentTo = await sendOTP(customer, otp, action);
 
     console.log(`✅ Generated OTP for booking ${bookingId}, session ${sessionNumber}, action ${action}: ${otp}`);
@@ -97,18 +107,26 @@ app.post('/bookings/:bookingId/verify-otp', async (c) => {
       return c.json({ error: 'Invalid OTP format' }, 400);
     }
 
-    // Get stored OTP
-    const otpKey = `booking:${bookingId}:otp:session${sessionNumber}:${action}`;
-    const otpData = await kv.get(otpKey);
-
-    if (!otpData || !otpData.value) {
+    // ✅ SQL: Get stored OTP from booking
+    const bookingsRepo = getBookingsRepository();
+    const bookingData = await bookingsRepo.findById(bookingId);
+    
+    if (!bookingData || !bookingData.otp) {
       return c.json({ 
         error: 'OTP not found',
         message: 'Please generate a new OTP'
       }, 400);
     }
 
-    const storedOtp = otpData.value;
+    const storedOtp = {
+      otp: bookingData.otp,
+      sessionNumber: bookingData.otp_session_number,
+      action: bookingData.otp_action,
+      generatedAt: bookingData.otp_generated_at,
+      expiresAt: bookingData.otp_expires_at,
+      verified: bookingData.otp_verified || false,
+      attempts: bookingData.otp_attempts || 0
+    };
 
     // Check expiry
     if (new Date() > new Date(storedOtp.expiresAt)) {
@@ -128,25 +146,32 @@ app.post('/bookings/:bookingId/verify-otp', async (c) => {
 
     // Verify OTP
     if (otp !== storedOtp.otp) {
-      storedOtp.attempts += 1;
-      await kv.set(otpKey, storedOtp);
+      const newAttempts = storedOtp.attempts + 1;
+      // ✅ SQL: Update OTP attempts
+      await bookingsRepo.update(bookingId, {
+        otp_attempts: newAttempts,
+        updated_at: new Date().toISOString()
+      });
 
       return c.json({
         success: false,
         verified: false,
         message: 'Invalid OTP',
-        remainingAttempts: 3 - storedOtp.attempts
+        remainingAttempts: 3 - newAttempts
       }, 400);
     }
 
     // OTP verified successfully
-    storedOtp.verified = true;
-    storedOtp.verifiedAt = new Date().toISOString();
-    await kv.set(otpKey, storedOtp);
+    const verifiedAt = new Date().toISOString();
+    // ✅ SQL: Update OTP as verified
+    await bookingsRepo.update(bookingId, {
+      otp_verified: true,
+      otp_verified_at: verifiedAt,
+      updated_at: verifiedAt
+    });
 
-    // Get booking
-    const bookingData = await kv.get(`booking:${bookingId}`);
-    const booking = bookingData.value;
+    // ✅ SQL: Get booking
+    const booking = await bookingsRepo.findById(bookingId);
 
     // Update session based on action
     let sessionStatus = '';
@@ -161,9 +186,13 @@ app.post('/bookings/:bookingId/verify-otp', async (c) => {
       sessionStatus = 'active';
       const startTime = new Date().toISOString();
 
-      booking.sessionStatus = sessionStatus;
-      booking.sessionStartTime = startTime;
-      booking.sessionNumber = sessionNumber;
+      // ✅ SQL: Update booking session status
+      await bookingsRepo.update(bookingId, {
+        session_status: sessionStatus,
+        session_start_time: startTime,
+        session_number: sessionNumber,
+        updated_at: startTime
+      });
 
       response.sessionStatus = sessionStatus;
       response.startTime = startTime;
@@ -176,20 +205,23 @@ app.post('/bookings/:bookingId/verify-otp', async (c) => {
       sessionStatus = 'completed';
       const endTime = new Date().toISOString();
 
-      booking.sessionStatus = sessionStatus;
-      booking.sessionEndTime = endTime;
+      // ✅ SQL: Update booking session end
+      await bookingsRepo.update(bookingId, {
+        session_status: sessionStatus,
+        session_end_time: endTime,
+        updated_at: endTime
+      });
 
       response.sessionStatus = sessionStatus;
       response.endTime = endTime;
       response.message = 'Session completed successfully';
 
-      // TRIGGER S3 UPLOAD (async)
-      setTimeout(() => uploadSessionToS3(bookingId, sessionNumber, booking), 1000);
+      // TRIGGER S3 UPLOAD (async) - Get updated booking data
+      const updatedBooking = await bookingsRepo.findById(bookingId);
+      setTimeout(() => uploadSessionToS3(bookingId, sessionNumber, updatedBooking), 1000);
 
       console.log(`✅ Session ${sessionNumber} completed for booking ${bookingId}`);
     }
-
-    await kv.set(`booking:${bookingId}`, booking);
 
     return c.json(response);
 
@@ -221,10 +253,12 @@ async function uploadSessionToS3(bookingId: string, sessionNumber: number, booki
     // In production, use actual S3 upload
     const s3Url = `s3://warmpawz-sessions/sessions/${new Date().toISOString().split('T')[0]}/${sessionLog.sessionId}.json`;
     
-    await kv.set(`session:${sessionLog.sessionId}:s3`, {
-      url: s3Url,
-      uploaded: true,
-      uploadedAt: sessionLog.uploadedAt
+    // ✅ SQL: Store session S3 URL in bookings table
+    const bookingsRepo = getBookingsRepository();
+    await bookingsRepo.update(bookingId, {
+      session_s3_url: s3Url,
+      session_uploaded_at: sessionLog.uploadedAt,
+      updated_at: new Date().toISOString()
     });
 
     // Update pet profile
@@ -241,13 +275,13 @@ async function updatePetProfile(petId: string, sessionLog: any, s3Url: string) {
   if (!petId) return;
 
   try {
-    const petData = await kv.get(`pet:${petId}`);
-    if (!petData || !petData.value) return;
+    // ✅ SQL: Get and update pet profile
+    const petsRepo = getPetsRepository();
+    const pet = await petsRepo.findById(petId);
+    if (!pet) return;
 
-    const pet = petData.value;
-    if (!pet.serviceHistory) pet.serviceHistory = [];
-
-    pet.serviceHistory.push({
+    const serviceHistory = pet.service_history || pet.serviceHistory || [];
+    serviceHistory.push({
       sessionId: sessionLog.sessionId,
       bookingId: sessionLog.bookingId,
       sessionDate: sessionLog.startTime,
@@ -256,7 +290,11 @@ async function updatePetProfile(petId: string, sessionLog: any, s3Url: string) {
       notes: 'Session completed'
     });
 
-    await kv.set(`pet:${petId}`, pet);
+    await petsRepo.update(petId, {
+      service_history: serviceHistory,
+      serviceHistory: serviceHistory, // Backward compatibility
+      updated_at: new Date().toISOString()
+    });
     console.log(`✅ Pet profile updated with session record`);
 
   } catch (error) {
@@ -272,8 +310,10 @@ function calculateDuration(startTime: string, endTime: string): number {
 
 async function getCustomerDetails(customerId: string) {
   try {
-    const data = await kv.get(`customer:${customerId}`);
-    return data?.value || {};
+    // ✅ SQL: Get customer details
+    const customersRepo = getCustomersRepository();
+    const customer = await customersRepo.findById(customerId);
+    return customer || {};
   } catch {
     return {};
   }

@@ -16,7 +16,7 @@ import {
   Building2, Hospital, Home, Hotel, Store,
   
   // Training Icons
-  Target, Award, Whistle, BookOpen, TrendingUp, GraduationCap, Trophy,
+  Target, Award, BookOpen, TrendingUp, GraduationCap, Trophy,
   
   // Walking Icons
   Footprints, TreePine, MapPin, Clock, Sun, Compass, Map,

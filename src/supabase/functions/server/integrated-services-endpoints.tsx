@@ -1,4 +1,4 @@
-import { createShiprocketOrder } from './shiprocket-integration.tsx';
+import { createShiprocketOrder } from './shiprocket-integration';
 
 // Helper to send SMS (duplicated from notification-system to ensure standalone functionality within this module)
 async function sendSMS(kvStore: any, phone: string, message: string) {

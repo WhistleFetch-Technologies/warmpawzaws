@@ -11,7 +11,7 @@ import { Badge } from '../ui/badge';
 import { Switch } from '../ui/switch';
 import { Checkbox } from '../ui/checkbox';
 import { Card } from '../ui/card';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 
 interface ServicePublishFormProps {

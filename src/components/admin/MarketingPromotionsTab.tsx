@@ -43,7 +43,7 @@ import {
   Image as ImageIcon
 } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { CouponManagement } from './marketing/CouponManagement';
 import { AdvancedPromotionsEngine } from './marketing/AdvancedPromotionsEngine';
 import { BannerAdmin } from './ecommerce/BannerAdmin';

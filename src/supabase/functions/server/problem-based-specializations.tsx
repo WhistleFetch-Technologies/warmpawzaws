@@ -11,7 +11,7 @@ import {
   walkingNeeds, 
   behavioralIssues, 
   boardingNeeds 
-} from './problem-grid-catalog.tsx';
+} from './problem-grid-catalog';
 
 /**
  * Get problem-based specializations for a vendor role

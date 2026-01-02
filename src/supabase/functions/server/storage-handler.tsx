@@ -1,18 +1,11 @@
-import { Hono } from "npm:hono";
-import * as kv from "./kv_store.tsx";
-import { createClient } from "jsr:@supabase/supabase-js@2.49.8";
-import { ensureBucket } from "./bucket-manager.tsx";
+// ✅ S3 MIGRATION: Supabase Storage replaced with AWS S3
+import { Hono } from "hono";
+import { getS3Helper, uploadToS3 } from '../../../supabase/lib/storage/s3-helper';
 
 export function registerStorageEndpoints(app: Hono) {
   const BASE_PATH = "/make-server-3dd53475";
   
-  const BUCKET_NAME = 'make-3dd53475-general-storage';
-
-  // Initialize storage bucket (non-blocking, fire-and-forget)
-  ensureBucket(BUCKET_NAME, {
-    public: false,
-    fileSizeLimit: 10485760 // 10MB
-  }).catch(err => console.warn('⚠️ Storage bucket init warning:', err));
+  // S3 bucket is configured via PlatformSettingsRepository
 
   // Upload document endpoint
   app.post(`${BASE_PATH}/storage/upload`, async (c) => {
@@ -28,49 +21,31 @@ export function registerStorageEndpoints(app: Hono) {
 
       console.log(`📤 Uploading file: ${file.name} for vendor: ${vendorId}`);
       
-      const supabase = createClient(
-        Deno.env.get('SUPABASE_URL')!,
-        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+      // ✅ S3: Generate unique filename
+      const timestamp = Date.now();
+      const fileExt = file.name.split('.').pop() || 'bin';
+      const s3Key = `storage/vendors/${vendorId}/${documentType}_${timestamp}.${fileExt}`;
+
+      // ✅ S3: Upload to S3
+      const s3 = getS3Helper();
+      const uploadResult = await uploadToS3(
+        file,
+        `storage/vendors/${vendorId}`,
+        `${documentType}_${timestamp}.${fileExt}`,
+        {
+          contentType: file.type,
+          acl: 'private', // Private files with signed URLs
+        }
       );
 
-      // Generate unique filename
-      const timestamp = Date.now();
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${vendorId}/${documentType}_${timestamp}.${fileExt}`;
-
-      // Convert File to ArrayBuffer
-      const arrayBuffer = await file.arrayBuffer();
-      const uint8Array = new Uint8Array(arrayBuffer);
-
-      // Upload to Supabase Storage
-      const { data, error } = await supabase.storage
-        .from(BUCKET_NAME)
-        .upload(fileName, uint8Array, {
-          contentType: file.type,
-          upsert: true
-        });
-
-      if (error) {
-        console.error('❌ Upload error:', error);
-        return c.json({ error: error.message }, 500);
-      }
-
-      console.log('✅ File uploaded successfully:', fileName);
-
-      // Generate signed URL (valid for 1 year)
-      const { data: signedUrlData } = await supabase.storage
-        .from(BUCKET_NAME)
-        .createSignedUrl(fileName, 31536000); // 1 year in seconds
-
-      if (!signedUrlData) {
-        return c.json({ error: 'Failed to generate signed URL' }, 500);
-      }
+      console.log('✅ File uploaded successfully:', s3Key);
 
       return c.json({
         success: true,
-        fileName: fileName,
-        url: signedUrlData.signedUrl,
-        publicUrl: signedUrlData.signedUrl
+        fileName: s3Key.split('/').pop(),
+        key: s3Key,
+        url: uploadResult.signedUrl || uploadResult.url,
+        publicUrl: uploadResult.signedUrl || uploadResult.url
       });
 
     } catch (error) {
@@ -89,11 +64,7 @@ export function registerStorageEndpoints(app: Hono) {
         return c.json({ error: 'Vendor ID is required' }, 400);
       }
 
-      const supabase = createClient(
-        Deno.env.get('SUPABASE_URL')!,
-        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-      );
-
+      const s3 = getS3Helper();
       const uploadResults = [];
       const entries = Array.from(formData.entries());
 
@@ -106,47 +77,39 @@ export function registerStorageEndpoints(app: Hono) {
           
           // Generate unique filename
           const timestamp = Date.now();
-          const random = Math.random().toString(36).substr(2, 9);
-          const fileExt = file.name.split('.').pop();
-          const fileName = `${vendorId}/${documentType}_${timestamp}_${random}.${fileExt}`;
+          const random = Math.random().toString(36).substring(7);
+          const fileExt = file.name.split('.').pop() || 'bin';
+          const s3Key = `storage/vendors/${vendorId}/${documentType}_${timestamp}_${random}.${fileExt}`;
 
-          // Convert File to ArrayBuffer
-          const arrayBuffer = await file.arrayBuffer();
-          const uint8Array = new Uint8Array(arrayBuffer);
+          try {
+            // ✅ S3: Upload to S3
+            const uploadResult = await uploadToS3(
+              file,
+              `storage/vendors/${vendorId}`,
+              `${documentType}_${timestamp}_${random}.${fileExt}`,
+              {
+                contentType: file.type,
+                acl: 'private',
+              }
+            );
 
-          // Upload to Supabase Storage
-          const { data, error } = await supabase.storage
-            .from(BUCKET_NAME)
-            .upload(fileName, uint8Array, {
-              contentType: file.type,
-              upsert: true
+            uploadResults.push({
+              documentType,
+              success: true,
+              fileName: s3Key.split('/').pop(),
+              key: s3Key,
+              originalName: file.name,
+              url: uploadResult.signedUrl || uploadResult.url,
+              type: file.type.startsWith('image/') ? 'image' : 'document'
             });
-
-          if (error) {
+            console.log(`✅ Uploaded: ${documentType}`);
+          } catch (error: any) {
             console.error(`❌ Upload error for ${documentType}:`, error);
             uploadResults.push({
               documentType,
               success: false,
-              error: error.message
+              error: error.message || String(error)
             });
-            continue;
-          }
-
-          // Generate signed URL (valid for 1 year)
-          const { data: signedUrlData } = await supabase.storage
-            .from(BUCKET_NAME)
-            .createSignedUrl(fileName, 31536000);
-
-          if (signedUrlData) {
-            uploadResults.push({
-              documentType,
-              success: true,
-              fileName: fileName,
-              originalName: file.name,
-              url: signedUrlData.signedUrl,
-              type: file.type.startsWith('image/') ? 'image' : 'document'
-            });
-            console.log(`✅ Uploaded: ${documentType}`);
           }
         }
       }
@@ -169,25 +132,21 @@ export function registerStorageEndpoints(app: Hono) {
     try {
       const { vendorId, fileName } = c.req.param();
       
-      const supabase = createClient(
-        Deno.env.get('SUPABASE_URL')!,
-        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-      );
-
-      const filePath = `${vendorId}/${fileName}`;
+      const s3 = getS3Helper();
+      const s3Key = `storage/vendors/${vendorId}/${fileName}`;
       
-      // Generate new signed URL
-      const { data: signedUrlData, error } = await supabase.storage
-        .from(BUCKET_NAME)
-        .createSignedUrl(filePath, 31536000);
-
-      if (error || !signedUrlData) {
+      // ✅ S3: Check if file exists and generate signed URL
+      const fileExists = await s3.fileExists(s3Key);
+      if (!fileExists) {
         return c.json({ error: 'File not found' }, 404);
       }
+      
+      // Generate new signed URL (valid for 1 year)
+      const signedUrl = await s3.getSignedUrl(s3Key, 31536000);
 
       return c.json({
         success: true,
-        url: signedUrlData.signedUrl
+        url: signedUrl
       });
 
     } catch (error) {
@@ -206,11 +165,7 @@ export function registerStorageEndpoints(app: Hono) {
         return c.json({ error: 'Vendor ID is required' }, 400);
       }
 
-      const supabase = createClient(
-        Deno.env.get('SUPABASE_URL')!,
-        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-      );
-
+      const s3 = getS3Helper();
       const uploadResults = [];
       const entries = Array.from(formData.entries());
       let photoCount = 0;
@@ -224,44 +179,36 @@ export function registerStorageEndpoints(app: Hono) {
           
           // Generate unique filename for facility photos
           const timestamp = Date.now();
-          const random = Math.random().toString(36).substr(2, 9);
-          const fileExt = file.name.split('.').pop();
-          const fileName = `${vendorId}/facility_photos/photo_${timestamp}_${random}.${fileExt}`;
+          const random = Math.random().toString(36).substring(7);
+          const fileExt = file.name.split('.').pop() || 'jpg';
+          const s3Key = `storage/vendors/${vendorId}/facility_photos/photo_${timestamp}_${random}.${fileExt}`;
 
-          // Convert File to ArrayBuffer
-          const arrayBuffer = await file.arrayBuffer();
-          const uint8Array = new Uint8Array(arrayBuffer);
+          try {
+            // ✅ S3: Upload to S3
+            const uploadResult = await uploadToS3(
+              file,
+              `storage/vendors/${vendorId}/facility_photos`,
+              `photo_${timestamp}_${random}.${fileExt}`,
+              {
+                contentType: file.type,
+                acl: 'public-read', // Facility photos should be public
+              }
+            );
 
-          // Upload to Supabase Storage
-          const { data, error } = await supabase.storage
-            .from(BUCKET_NAME)
-            .upload(fileName, uint8Array, {
-              contentType: file.type,
-              upsert: true
+            uploadResults.push({
+              success: true,
+              fileName: s3Key.split('/').pop(),
+              key: s3Key,
+              originalName: file.name,
+              url: uploadResult.signedUrl || uploadResult.url
             });
-
-          if (error) {
+            console.log(`✅ Uploaded facility photo ${photoCount}`);
+          } catch (error: any) {
             console.error(`❌ Upload error for photo ${photoCount}:`, error);
             uploadResults.push({
               success: false,
-              error: error.message
+              error: error.message || String(error)
             });
-            continue;
-          }
-
-          // Generate signed URL (valid for 1 year)
-          const { data: signedUrlData } = await supabase.storage
-            .from(BUCKET_NAME)
-            .createSignedUrl(fileName, 31536000);
-
-          if (signedUrlData) {
-            uploadResults.push({
-              success: true,
-              fileName: fileName,
-              originalName: file.name,
-              url: signedUrlData.signedUrl
-            });
-            console.log(`✅ Uploaded facility photo ${photoCount}`);
           }
         }
       }

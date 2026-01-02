@@ -1,6 +1,11 @@
-import { Hono } from "npm:hono";
-import * as kv from "./kv_store.tsx";
-import { sendSuccess, sendError } from "./response-utils.ts";
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from "hono";
+import { sendSuccess, sendError } from "./response-utils";
+import {
+  getPetsRepository,
+  getPetProfilePublishingRepository
+} from '../../../supabase/lib/repositories/index';
+import { getDbClient } from '../../../supabase/lib/db';
 
 /**
  * PET SUGGESTION SYSTEM
@@ -39,13 +44,19 @@ export function registerPetSuggestionSystem(app: Hono) {
         experience // 'first_time' | 'experienced'
       } = questionnaireData;
 
-      // Get all available pets (from breeders and adoption centers)
-      const allPets = await kv.getByPrefix('pet_profile:') || [];
-      const vendorPets = await kv.getByPrefix('vendor:pet:') || [];
-      const adoptionPets = await kv.getByPrefix('adoption:pet:') || [];
-
-      // Combine all pets
-      const combinedPets = [...allPets, ...vendorPets, ...adoptionPets];
+      // ✅ SQL: Get all available pets (from breeders and adoption centers)
+      const petsRepo = getPetsRepository();
+      const allPets = await petsRepo.findAll();
+      
+      // Get published pet profiles
+      const db = getDbClient();
+      const { data: publishedPets } = await db
+        .from('pet_profiles')
+        .select('*')
+        .eq('status', 'available')
+        .eq('is_active', true);
+      
+      const combinedPets = [...allPets, ...(publishedPets || [])];
 
       // Score and match pets based on questionnaire
       const scoredPets = [];
@@ -181,13 +192,14 @@ export function registerPetSuggestionSystem(app: Hono) {
         createdAt: new Date().toISOString()
       };
 
-      await kv.set(`pet_suggestion:${suggestionId}`, suggestionRecord);
-
-      // Index by phone
-      const phoneSuggestionsKey = `customer:${phone}:pet_suggestions`;
-      const phoneSuggestions = await kv.get(phoneSuggestionsKey) || [];
-      phoneSuggestions.push(suggestionId);
-      await kv.set(phoneSuggestionsKey, phoneSuggestions);
+      // ✅ SQL: Store suggestion
+      await db.from('pet_suggestions').insert({
+        id: suggestionId,
+        customer_phone: phone,
+        questionnaire_data: questionnaireData,
+        matches: topMatches.map(p => ({ petId: p.id, score: p.matchScore })),
+        created_at: new Date().toISOString()
+      });
 
       return sendSuccess(c, {
         suggestions: topMatches,
@@ -208,7 +220,14 @@ export function registerPetSuggestionSystem(app: Hono) {
     try {
       const { suggestionId } = c.req.param();
 
-      const suggestion = await kv.get(`pet_suggestion:${suggestionId}`);
+      // ✅ SQL: Get suggestion
+      const db = getDbClient();
+      const { data: suggestion } = await db
+        .from('pet_suggestions')
+        .select('*')
+        .eq('id', suggestionId)
+        .single();
+      
       if (!suggestion) {
         return sendError(c, 'Suggestion not found', 404);
       }
@@ -216,9 +235,18 @@ export function registerPetSuggestionSystem(app: Hono) {
       // Fetch full pet details for matches
       const matchesWithDetails = [];
       for (const match of suggestion.matches || []) {
-        const pet = await kv.get(`pet_profile:${match.petId}`) ||
-                   await kv.get(`vendor:pet:${match.petId}`) ||
-                   await kv.get(`adoption:pet:${match.petId}`);
+        // ✅ SQL: Get pet details
+        const petsRepo = getPetsRepository();
+        let pet = await petsRepo.findById(match.petId);
+        
+        if (!pet) {
+          const { data: publishedPet } = await db
+            .from('pet_profiles')
+            .select('*')
+            .eq('id', match.petId)
+            .single();
+          pet = publishedPet;
+        }
         if (pet) {
           matchesWithDetails.push({
             ...pet,
@@ -247,21 +275,15 @@ export function registerPetSuggestionSystem(app: Hono) {
     try {
       const { phone } = c.req.param();
 
-      const phoneSuggestionsKey = `customer:${phone}:pet_suggestions`;
-      const suggestionIds = await kv.get(phoneSuggestionsKey) || [];
+      // ✅ SQL: Get all suggestions for customer
+      const db = getDbClient();
+      const { data: suggestions } = await db
+        .from('pet_suggestions')
+        .select('*')
+        .eq('customer_phone', phone)
+        .order('created_at', { ascending: false });
 
-      const suggestions = [];
-      for (const suggestionId of suggestionIds) {
-        const suggestion = await kv.get(`pet_suggestion:${suggestionId}`);
-        if (suggestion) {
-          suggestions.push(suggestion);
-        }
-      }
-
-      // Sort by creation date (newest first)
-      suggestions.sort((a, b) => 
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      );
+      // Suggestions already sorted by SQL query
 
       return sendSuccess(c, {
         suggestions,

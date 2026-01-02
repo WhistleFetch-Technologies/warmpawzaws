@@ -44,6 +44,24 @@ export const colors = {
   // Gradient colors
   gradientStart: '#FF8C42',
   gradientEnd: '#FF6B35',
+  
+  // Branded design colors (fine-tuned to match reference)
+  orangeGradientStart: '#FFF5ED', // Slightly warmer orange-50
+  orangeGradientEnd: '#FFFFFF',
+  orangeGradientMid: '#FFE8D6', // Mid-point for smoother gradient
+  peachHeader: '#F5E6D3', // Light peach/beige for onboarding headers
+  peachHeaderLight: '#FAF0E6',
+  peachHeaderDark: '#E8D4C0', // Slightly darker for depth
+  
+  // Logo colors
+  logoYellow: '#FFD700', // Yellow for "Warmpawz" text
+  logoOrange: '#FF8C42',
+  logoOrangeDark: '#E67A35', // Darker orange for logo circle
+  
+  // Enhanced gradient colors for better visual match
+  gradientOrange50: '#FFF5ED',
+  gradientOrange100: '#FFE8D6',
+  gradientOrange200: '#FFD4B8',
 };
 
 export const spacing = {

@@ -52,7 +52,7 @@ export const regionApi = {
   updateCatalog: (id: string, data: any) => apiCall(`/regions/${id}/catalog`, { method: 'POST', body: data }),
 };
 
-// Service Catalog APIs
+// Service Catalog APIs (Legacy - for backward compatibility)
 export const catalogApi = {
   getServices: () => apiCall('/catalog/services'),
   getServiceById: (id: string) => apiCall(`/catalog/services/${id}`),
@@ -61,6 +61,23 @@ export const catalogApi = {
   deleteService: (id: string) => apiCall(`/catalog/services/${id}`, { method: 'DELETE' }),
   getCategories: () => apiCall('/catalog/categories'),
   createCategory: (data: any) => apiCall('/catalog/categories', { method: 'POST', body: data }),
+};
+
+// ✅ NEW: Admin Catalog API (SQL-migrated endpoints - matches backend)
+export const adminCatalogApi = {
+  getProducts: () => apiCall('/admin/catalog/products'),
+  getProductById: (productId: string) => apiCall(`/admin/catalog/products/${productId}`),
+  createProduct: (data: any) => apiCall('/admin/catalog/products/create', { method: 'POST', body: data }),
+  updateProduct: (productId: string, data: any) => apiCall(`/admin/catalog/products/${productId}`, { method: 'PUT', body: data }),
+  deleteProduct: (productId: string) => apiCall(`/admin/catalog/products/${productId}`, { method: 'DELETE' }),
+  getPricing: () => apiCall('/admin/catalog/pricing'),
+  getBulkOperations: () => apiCall('/admin/catalog/bulk-operations'),
+  createBulkOperation: (data: any) => apiCall('/admin/catalog/bulk-operations/create', { method: 'POST', body: data }),
+  exportCategories: (data: any) => apiCall('/admin/catalog/export/categories', { method: 'POST', body: data }),
+  createSubcategory: (data: any) => apiCall('/admin/catalog/subcategories/create', { method: 'POST', body: data }),
+  // Additional admin catalog endpoints
+  getCategories: () => apiCall('/admin/catalog/categories'),
+  getStats: () => apiCall('/admin/catalog/stats'),
 };
 
 // Booking APIs
@@ -261,6 +278,23 @@ export const staffDiscoveryApi = {
   },
   discoverStaffByVendor: (vendorId: string) => 
     apiCall(`/customer/discover-staff-by-vendor?vendorId=${vendorId}`),
+};
+
+// ✅ NEW: Staff Schedule API (SQL-migrated endpoints)
+export const staffScheduleApi = {
+  getBreaks: (staffId: string) => apiCall(`/staff/${staffId}/breaks`),
+  createBreak: (staffId: string, data: any) => 
+    apiCall(`/staff/${staffId}/breaks`, { method: 'POST', body: data }),
+  updateBreak: (staffId: string, breakId: string, data: any) => 
+    apiCall(`/staff/${staffId}/breaks/${breakId}`, { method: 'PUT', body: data }),
+  deleteBreak: (staffId: string, breakId: string) => 
+    apiCall(`/staff/${staffId}/breaks/${breakId}`, { method: 'DELETE' }),
+  getPreferences: (staffId: string) => apiCall(`/staff/${staffId}/preferences`),
+  updatePreferences: (staffId: string, data: any) => 
+    apiCall(`/staff/${staffId}/preferences`, { method: 'PUT', body: data }),
+  getHolidays: (staffId: string) => apiCall(`/staff/${staffId}/holidays`),
+  createHoliday: (staffId: string, data: any) => 
+    apiCall(`/staff/${staffId}/holidays`, { method: 'POST', body: data }),
 };
 
 // ✅ NEW: System Health API (Batch 14 SQL-migrated endpoints)
@@ -755,6 +789,17 @@ export const vendorCatalogApi = {
     apiCall(`/service-catalog/role/${roleId}`),
   getCatalogDebug: () => apiCall('/service-catalog/debug'),
   getCatalogRawDump: () => apiCall('/service-catalog/raw-dump'),
+};
+
+// ✅ NEW: Vendor Services API (for vendor portal components)
+export const vendorServicesApi = {
+  getServiceCatalog: () => apiCall('/admin/service-catalog'),
+  getVendorServices: (vendorId: string, serviceStyle?: string) => {
+    const query = serviceStyle ? `?serviceStyle=${serviceStyle}` : '';
+    return apiCall(`/vendor/services/${vendorId}${query}`);
+  },
+  publishServices: (vendorId: string, services: any) => 
+    apiCall(`/vendor/${vendorId}/services/publish`, { method: 'POST', body: services }),
 };
 
 // ✅ NEW: Settlement Tier System API (Batch 11 SQL-migrated endpoints)

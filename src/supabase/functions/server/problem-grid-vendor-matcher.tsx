@@ -4,13 +4,14 @@
  * Handles multiple service storage formats and role ID variations
  */
 
-import * as kv from './kv_store.tsx';
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { getDbClient } from '../../../supabase/lib/db';
 import { 
   buildApplicableRolesSet as buildRolesUniversal,
   filterVendorsByRole,
   vendorRoleMatchesApplicableRoles,
   normalizeRoleId as normalizeRole
-} from './role-id-normalizer.tsx';
+} from './role-id-normalizer';
 
 export interface VendorServiceMatchResult {
   vendor: any;
@@ -60,21 +61,30 @@ export async function vendorHasMatchingServices(
   let matchCount = 0;
   let debugInfo = '';
   
-  // Method 1: Check NEW structure - vendor_services:${vendorId}:${serviceStyle}
+  // ✅ SQL: Method 1: Check NEW structure - vendor_services table
+  const db = getDbClient();
   for (const serviceStyle of ['at_home', 'at_center', 'tele']) {
-    const vendorServicesData = await kv.get(`vendor_services:${vendor.vendorId}:${serviceStyle}`);
+    const { data: vendorServicesData } = await db
+      .from('vendor_services')
+      .select('*')
+      .eq('vendor_id', vendor.vendorId)
+      .eq('service_style', serviceStyle)
+      .eq('is_enabled', true)
+      .in('publish_status', ['published', 'auto_published']);
     
-    if (vendorServicesData && vendorServicesData.services && Array.isArray(vendorServicesData.services)) {
-      const allServices = vendorServicesData.services;
+    if (vendorServicesData && vendorServicesData.length > 0) {
+      const allServices = vendorServicesData;
       debugInfo += `${serviceStyle}:${allServices.length} `;
       
-      // Filter to only enabled and published services
-      const publishedServices = allServices.filter((s: any) => 
-        s.isEnabled === true && (
-          s.publishStatus === 'published' || 
-          s.publishStatus === 'auto_published'
-        )
-      );
+      // Services are already filtered by SQL query, no need to filter again
+      const publishedServices = allServices.map((s: any) => ({
+        serviceId: s.service_id,
+        serviceName: s.service_name,
+        id: s.id,
+        name: s.service_name,
+        isEnabled: s.is_enabled,
+        publishStatus: s.publish_status
+      }));
       
       if (publishedServices.length > 0) {
         // Match by service ID or name
@@ -98,11 +108,17 @@ export async function vendorHasMatchingServices(
     }
   }
   
-  // Method 2: Check LEGACY structure - vendor:${vendorId}:services (array of IDs)
+  // ✅ SQL: Method 2: Check services table (legacy support)
   if (!hasMatch) {
-    const enabledServiceIds = await kv.get(`vendor:${vendor.vendorId}:services`);
+    const { data: legacyServices } = await db
+      .from('services')
+      .select('id')
+      .eq('vendor_id', vendor.vendorId)
+      .eq('is_active', true);
     
-    if (enabledServiceIds && Array.isArray(enabledServiceIds) && enabledServiceIds.length > 0) {
+    const enabledServiceIds = legacyServices?.map((s: any) => s.id) || [];
+    
+    if (enabledServiceIds.length > 0) {
       debugInfo += `legacy:${enabledServiceIds.length} `;
       
       // Check if any enabled service IDs match our target service IDs

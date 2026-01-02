@@ -4,7 +4,7 @@ import { X, Camera, Upload } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { LOGO_CIRCULAR_ORANGE, WARM_ORANGE } from '../../assets/design-tokens';
 import { WarmpawzButton } from '../shared/design-system/WarmpawzButton';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 const logoImage = LOGO_CIRCULAR_ORANGE;
 

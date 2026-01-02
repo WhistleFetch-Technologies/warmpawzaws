@@ -3,10 +3,11 @@
  * Routes orders to appropriate logistics partners based on delivery rules
  */
 
-import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
-import { createShiprocketOrder, getAvailableCouriers as getShiprocketCouriers } from './shiprocket-integration.tsx';
-import { createDelhiveryShipment, checkDelhiveryServiceability } from './delhivery-integration.tsx';
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from 'hono';
+import { getPlatformSettingsRepository } from '../../../supabase/lib/repositories/index';
+import { createShiprocketOrder, getAvailableCouriers as getShiprocketCouriers } from './shiprocket-integration';
+import { createDelhiveryShipment, checkDelhiveryServiceability } from './delhivery-integration';
 
 // Delivery rule types
 export interface DeliveryRule {
@@ -178,8 +179,10 @@ export async function findBestLogisticsPartner(order: OrderRoutingInput): Promis
   courierInfo?: any;
 }> {
   try {
-    // Get all delivery rules
-    const rules: DeliveryRule[] = await kv.get('admin:settings:delivery_rules') || [];
+    // ✅ SQL: Get all delivery rules from platform_settings
+    const platformSettingsRepo = getPlatformSettingsRepository();
+    const deliveryRulesConfig = await platformSettingsRepo.getDeliveryRules();
+    const rules: DeliveryRule[] = deliveryRulesConfig || [];
     const activeRules = rules.filter(r => r.enabled).sort((a, b) => a.priority - b.priority);
 
     // Calculate distance if coordinates available
@@ -268,13 +271,19 @@ export async function createShipmentWithPartner(
  */
 export async function trackUniversalShipment(trackingId: string, partnerId?: string): Promise<any> {
   try {
-    // If partner not specified, try to find from stored shipments
-    if (!partnerId) {
-      const shipment = await kv.get(`shipment:${trackingId}`);
-      if (shipment) {
-        partnerId = shipment.partner;
+      // ✅ SQL: If partner not specified, try to find from shipments table
+      if (!partnerId) {
+        const db = getDbClient();
+        const { data: shipmentData } = await db
+          .from('shipments')
+          .select('partner_id')
+          .eq('tracking_id', trackingId)
+          .single();
+        
+        if (shipmentData) {
+          partnerId = shipmentData.partner_id;
+        }
       }
-    }
 
     if (!partnerId) {
       throw new Error('Partner ID required for tracking');
@@ -341,13 +350,18 @@ export function registerLogisticsRoutingEndpoints(app: Hono) {
       
       const result = await createShipmentWithPartner(selectedPartner, order);
       
-      // Store shipment info
-      await kv.set(`shipment:${result.shipmentId || result.order_id}`, {
-        orderId: order.orderId,
-        partner: selectedPartner,
-        trackingId: result.awb || result.waybill,
-        createdAt: new Date().toISOString()
-      });
+      // ✅ SQL: Store shipment info in shipments table
+      const db = getDbClient();
+      await db
+        .from('shipments')
+        .insert({
+          id: result.shipmentId || result.order_id,
+          order_id: order.orderId,
+          partner_id: selectedPartner,
+          tracking_id: result.awb || result.waybill,
+          status: 'created',
+          created_at: new Date().toISOString()
+        });
       
       return c.json({
         success: true,
@@ -387,8 +401,10 @@ export function registerLogisticsRoutingEndpoints(app: Hono) {
    */
   app.get('/make-server-3dd53475/logistics/delivery-rules', async (c) => {
     try {
-      const rules = await kv.get('admin:settings:delivery_rules') || [];
-      return c.json({ success: true, rules });
+      // ✅ SQL: Get delivery rules from platform_settings
+      const platformSettingsRepo = getPlatformSettingsRepository();
+      const rules = await platformSettingsRepo.getDeliveryRules();
+      return c.json({ success: true, rules: rules || [] });
     } catch (error: any) {
       return c.json({ error: error.message }, 500);
     }
@@ -396,8 +412,18 @@ export function registerLogisticsRoutingEndpoints(app: Hono) {
 
   app.post('/make-server-3dd53475/logistics/delivery-rules', async (c) => {
     try {
+      // ✅ SQL: Save delivery rules to platform_settings
       const rules: DeliveryRule[] = await c.req.json();
-      await kv.set('admin:settings:delivery_rules', rules);
+      const db = getDbClient();
+      await db
+        .from('platform_settings')
+        .upsert({
+          setting_key: 'delivery_rules',
+          setting_value: rules,
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'setting_key'
+        });
       return c.json({ success: true });
     } catch (error: any) {
       return c.json({ error: error.message }, 500);
@@ -413,8 +439,9 @@ export function registerLogisticsRoutingEndpoints(app: Hono) {
       const order: OrderRoutingInput = await c.req.json();
       const result = await findBestLogisticsPartner(order);
       
-      // Also fetch all rules to show matching logic
-      const rules: DeliveryRule[] = await kv.get('admin:settings:delivery_rules') || [];
+      // ✅ SQL: Also fetch all rules to show matching logic
+      const platformSettingsRepo = getPlatformSettingsRepository();
+      const rules: DeliveryRule[] = await platformSettingsRepo.getDeliveryRules() || [];
       
       return c.json({
         success: true,

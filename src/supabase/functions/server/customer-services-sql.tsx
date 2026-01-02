@@ -15,11 +15,11 @@
  * ============================================================================
  */
 
-import { Hono } from 'npm:hono';
-import { sendSuccess, sendError } from "./response-utils.ts";
-import { getServicesRepository } from "../../lib/repositories/services.ts";
-import { getVendorsRepository } from "../../lib/repositories/vendors.ts";
-import { getDbClient } from "../../lib/db.ts";
+import { Hono } from 'hono';
+import { sendSuccess, sendError } from "./response-utils";
+import { getServicesRepository } from "../../lib/repositories/services";
+import { getVendorsRepository } from "../../lib/repositories/vendors";
+import { getDbClient } from "../../lib/db";
 
 export function registerCustomerServicesSQL(app: Hono) {
   const servicesRepo = getServicesRepository();

@@ -7,8 +7,9 @@ import { Checkbox } from '../ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Upload, MapPin, AlertCircle, CheckCircle2, ArrowLeft, X, User, Check } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+// ✅ FIX: Removed Supabase imports - using API Gateway now
+import { toast } from 'sonner';
+import { FormSkeleton } from '../ui/skeletons';
 
 interface FormField {
   id: string;
@@ -88,8 +89,8 @@ export function DynamicVendorOnboardingForm({
   // Map location
   const [coordinates, setCoordinates] = useState<{ lat: number; lng: number } | null>(null);
   const mapRef = useRef<HTMLDivElement>(null);
-  const googleMapRef = useRef<google.maps.Map | null>(null);
-  const markerRef = useRef<google.maps.Marker | null>(null);
+  const googleMapRef = useRef<any>(null);
+  const markerRef = useRef<any>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [detectingLocation, setDetectingLocation] = useState(false);
   const [googleMapsApiKey, setGoogleMapsApiKey] = useState<string>('');
@@ -100,7 +101,14 @@ export function DynamicVendorOnboardingForm({
   const [loadingSpecializations, setLoadingSpecializations] = useState(false);
   const [showSpecializationDialog, setShowSpecializationDialog] = useState(false);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  // ✅ FIX: Use API Gateway URL instead of Supabase
+  const getApiBase = () => {
+    const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+    if (!API_GATEWAY_URL) {
+      throw new Error('API Gateway URL not configured');
+    }
+    return `${API_GATEWAY_URL}/make-server-3dd53475`;
+  };
 
   useEffect(() => {
     if (initialData) {
@@ -125,12 +133,12 @@ export function DynamicVendorOnboardingForm({
     
     // ✅ FIX: Safely access environment variable with fallback
     console.log('🔍 [ENV] Checking for environment variable...');
-    console.log('🔍 [ENV] import.meta exists:', typeof import.meta !== 'undefined');
-    console.log('🔍 [ENV] import.meta.env exists:', !!(import.meta && import.meta.env));
+    console.log('🔍 [ENV] import.meta exists:', typeof process !== "undefined");
+    console.log('🔍 [ENV] process.env exists:', !!(import.meta && process.env));
     
-    const envApiKey = typeof import.meta !== 'undefined' && 
-                      import.meta.env && 
-                      import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+    const envApiKey = typeof process !== "undefined" && 
+                      process.env && 
+                      process.env.VITE_GOOGLE_MAPS_API_KEY;
     
     console.log('🔍 [ENV] envApiKey exists:', !!envApiKey);
     console.log('🔍 [ENV] envApiKey value:', envApiKey ? `${envApiKey.substring(0, 10)}...` : 'null/undefined');
@@ -153,33 +161,23 @@ export function DynamicVendorOnboardingForm({
       setLoadingSpecializations(true);
       console.log('[DYNAMIC FORM] Loading specializations for roleId:', roleId);
       
-      const response = await fetch(
-        `${API_BASE}/vendor/problem-grid-specializations/${roleId}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
-          }
-        }
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_BASE = getApiBase();
+      
+      const data = await apiCallJson<any>(
+        `${API_BASE}/vendor/problem-grid-specializations/${roleId}`
       );
       
-      console.log('[DYNAMIC FORM] Specializations response status:', response.status);
+      console.log('[DYNAMIC FORM] Specializations loaded:', data);
+      setAvailableSpecializations(data.specializations || []);
       
-      if (response.ok) {
-        const data = await response.json();
-        console.log('[DYNAMIC FORM] Specializations loaded:', data);
-        setAvailableSpecializations(data.specializations || []);
-        
-        // Pre-select specializations from initialData if editing
-        if (initialData?.specializations) {
-          setSelectedSpecializations(initialData.specializations);
-        }
-      } else {
-        const errorText = await response.text();
-        console.error('[DYNAMIC FORM] Failed to load specializations:', errorText);
-        // Don't show error toast - specializations might not be applicable for this role
+      // Pre-select specializations from initialData if editing
+      if (initialData?.specializations) {
+        setSelectedSpecializations(initialData.specializations);
       }
     } catch (error) {
       console.error('[DYNAMIC FORM] Error loading specializations:', error);
+      // Don't show error toast - specializations might not be applicable for this role
     } finally {
       setLoadingSpecializations(false);
     }
@@ -199,27 +197,23 @@ export function DynamicVendorOnboardingForm({
   const fetchGoogleMapsKey = async () => {
     console.log('🔑 [API KEY] Fetching Google Maps API key from backend...');
     try {
-      const response = await fetch(`${API_BASE}/admin/integrations/settings`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-      });
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_BASE = getApiBase();
       
-      console.log('🔑 [API KEY] Response status:', response.status);
+      const data = await apiCallJson<any>(
+        `${API_BASE}/admin/integrations/settings`
+      );
       
-      if (response.ok) {
-        const data = await response.json();
-        console.log('🔑 [API KEY] Response data:', data);
-        
-        if (data.settings?.googleMaps?.apiKey) {
-          console.log('✅ [API KEY] Found API key in backend settings');
-          console.log('🔑 [API KEY] Key length:', data.settings.googleMaps.apiKey.length);
-          setGoogleMapsApiKey(data.settings.googleMaps.apiKey);
-        } else {
-          console.warn('⚠️ [API KEY] No Google Maps API key found in backend settings');
-          console.warn('⚠️ [API KEY] Settings structure:', JSON.stringify(data.settings, null, 2));
-          toast.warning('Google Maps not configured. Please contact administrator.');
-        }
+      console.log('🔑 [API KEY] Response data:', data);
+      
+      if (data.settings?.googleMaps?.apiKey) {
+        console.log('✅ [API KEY] Found API key in backend settings');
+        console.log('🔑 [API KEY] Key length:', data.settings.googleMaps.apiKey.length);
+        setGoogleMapsApiKey(data.settings.googleMaps.apiKey);
       } else {
-        console.error('❌ [API KEY] Failed to fetch settings, status:', response.status);
+        console.warn('⚠️ [API KEY] No Google Maps API key found in backend settings');
+        console.warn('⚠️ [API KEY] Settings structure:', JSON.stringify(data.settings, null, 2));
+        toast.warning('Google Maps not configured. Please contact administrator.');
       }
     } catch (error) {
       console.error('❌ [API KEY] Error fetching Google Maps key:', error);
@@ -248,21 +242,14 @@ export function DynamicVendorOnboardingForm({
   const checkServerHealth = async () => {
     try {
       console.log('[DYNAMIC FORM] 🏥 Checking server health...');
-      const response = await fetch(`${API_BASE}/health`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-      });
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_BASE = getApiBase();
       
-      if (response.ok) {
-        const data = await response.json();
-        console.log('[DYNAMIC FORM] ✅ Server is healthy:', data);
-      } else {
-        console.error('[DYNAMIC FORM] ⚠️ Server health check failed:', response.status);
-        toast.error('Backend server may not be running. Please check deployment.');
-      }
+      const data = await apiCallJson<any>(`${API_BASE}/health`);
+      console.log('[DYNAMIC FORM] ✅ Server is healthy:', data);
     } catch (error) {
       console.error('[DYNAMIC FORM] ❌ Server unreachable:', error);
-      console.error('[DYNAMIC FORM] 💡 Tip: Edge Function may not be deployed to Supabase');
-      toast.error('Cannot connect to backend server. Please check Supabase Edge Functions.');
+      toast.error('Cannot connect to backend server. Please check API Gateway configuration.');
     }
   };
 
@@ -270,57 +257,45 @@ export function DynamicVendorOnboardingForm({
     try {
       setLoading(true);
       console.log('[DYNAMIC FORM] Fetching form for roleId:', roleId);
-      console.log('[DYNAMIC FORM] API URL:', `${API_BASE}/vendor/onboarding-form/${roleId}`);
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_BASE = getApiBase();
       
       // ✅ CRITICAL: Add cache-busting to ensure we get the latest published version
       const timestamp = Date.now();
-      const response = await fetch(`${API_BASE}/vendor/onboarding-form/${roleId}?t=${timestamp}&v=latest`, {
-        headers: { 
-          'Authorization': `Bearer ${publicAnonKey}`
-          // ✅ Removed cache-control headers to avoid CORS issues - using query params for cache-busting instead
-        }
-      });
-
-      console.log('[DYNAMIC FORM] Response status:', response.status);
-
-      if (response.ok) {
-        const data = await response.json();
-        console.log('[DYNAMIC FORM] ✅ Form loaded:', data);
-        console.log('[DYNAMIC FORM] 📋 Version:', data.form?.version, 'Status:', data.form?.status);
-        
-        // ✅ CRITICAL: Verify version is present and is a number
-        if (data.form && (!data.form.version || typeof data.form.version !== 'number')) {
-          console.error('[DYNAMIC FORM] ⚠️ WARNING: Form version is missing or invalid!', {
-            version: data.form.version,
-            version_type: typeof data.form.version
-          });
-          // Set default version if missing
-          data.form.version = data.form.version || 1;
-        }
-        
-        // ✅ CRITICAL: Log version for debugging
-        console.log('[DYNAMIC FORM] ✅ Loaded form version:', data.form?.version);
-        
-        if (data.autoGenerated) {
-          console.log('[DYNAMIC FORM] 🎉 Auto-generated active form received from backend');
-          toast.success('Onboarding form loaded successfully');
-        }
-        
-        setForm(data.form);
-      } else {
-        const errorText = await response.text();
-        console.error('[DYNAMIC FORM] ❌ Failed to load form. Status:', response.status);
-        console.error('[DYNAMIC FORM] ❌ Error response:', errorText);
-        toast.error(`Failed to load form: ${response.status}`);
+      const data = await apiCallJson<any>(
+        `${API_BASE}/vendor/onboarding-form/${roleId}?t=${timestamp}&v=latest`
+      );
+      
+      console.log('[DYNAMIC FORM] ✅ Form loaded:', data);
+      console.log('[DYNAMIC FORM] 📋 Version:', data.form?.version, 'Status:', data.form?.status);
+      
+      // ✅ CRITICAL: Verify version is present and is a number
+      if (data.form && (!data.form.version || typeof data.form.version !== 'number')) {
+        console.error('[DYNAMIC FORM] ⚠️ WARNING: Form version is missing or invalid!', {
+          version: data.form.version,
+          version_type: typeof data.form.version
+        });
+        // Set default version if missing
+        data.form.version = data.form.version || 1;
       }
+      
+      // ✅ CRITICAL: Log version for debugging
+      console.log('[DYNAMIC FORM] ✅ Loaded form version:', data.form?.version);
+      
+      if (data.autoGenerated) {
+        console.log('[DYNAMIC FORM] 🎉 Auto-generated active form received from backend');
+        toast.success('Onboarding form loaded successfully');
+      }
+      
+      setForm(data.form);
     } catch (error) {
       console.error('[DYNAMIC FORM] ❌ Fetch Error:', error);
       console.error('[DYNAMIC FORM] ❌ Error details:', {
         message: error instanceof Error ? error.message : String(error),
-        roleId,
-        apiBase: API_BASE
+        roleId
       });
-      toast.error('Cannot connect to backend server. Please check Supabase Edge Functions.');
+      toast.error('Cannot connect to backend server. Please check API Gateway configuration.');
     } finally {
       setLoading(false);
     }
@@ -793,29 +768,28 @@ export function DynamicVendorOnboardingForm({
   };
 
   // Helper to upload a single file
-  const uploadFile = async (file: File, path: string = 'uploads'): Promise<string> => {
+  const uploadFile = async (file: File, folder: string = 'uploads'): Promise<string> => {
+    const { apiCallJson } = await import('@warmpawz/api-client/http');
+    const API_BASE = getApiBase();
+    
+    // ✅ FIX: Use S3 media upload endpoint instead of Supabase
     const formData = new FormData();
-    formData.append('file', file);
-    formData.append('path', path);
-
-    const response = await fetch(`${API_BASE}/upload/unified`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${publicAnonKey}`
-      },
-      body: formData
-    });
-
-    if (!response.ok) {
-      throw new Error(`Upload failed: ${response.statusText}`);
+    formData.append('files', file);
+    formData.append('folder', folder);
+    
+    const uploadData = await apiCallJson<any>(
+      `${API_BASE}/media/upload-batch`,
+      {
+        method: 'POST',
+        body: formData
+      }
+    );
+    
+    if (uploadData.success && uploadData.uploads && uploadData.uploads[0]?.url) {
+      return uploadData.uploads[0].url;
+    } else {
+      throw new Error(uploadData.error || 'Upload failed');
     }
-
-    const data = await response.json();
-    if (!data.success) {
-      throw new Error(data.error || 'Upload failed');
-    }
-
-    return data.url;
   };
 
   const handleSubmit = async () => {
@@ -866,7 +840,7 @@ export function DynamicVendorOnboardingForm({
       
       // Store coordinates in field-specific location if map_pin field exists
       if (mapPinField && coordinates) {
-        enhancedFormData[mapPinField.name] = coordinates;
+        (enhancedFormData as any)[mapPinField.name] = coordinates;
       }
       
       const submissionData = {
@@ -1098,10 +1072,21 @@ export function DynamicVendorOnboardingForm({
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#FFF5F1] w-full max-w-[430px] mx-auto flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42] mx-auto mb-4"></div>
-          <p className="text-gray-600 font-medium">Loading...</p>
+      <div className="min-h-screen bg-[#FFF5F1] w-full max-w-[430px] mx-auto flex flex-col">
+        {/* Header Skeleton */}
+        <div className="pt-8 pb-8 px-6 text-center relative">
+          {onBack && (
+            <div className="absolute top-8 left-6 w-9 h-9 bg-gray-200 rounded-full animate-pulse"></div>
+          )}
+          <div className="w-20 h-20 bg-gray-200 rounded-full mx-auto mb-4 animate-pulse"></div>
+          <div className="h-7 w-48 bg-gray-200 rounded mx-auto mb-2 animate-pulse"></div>
+          <div className="h-4 w-32 bg-gray-200 rounded mx-auto animate-pulse"></div>
+        </div>
+
+        {/* Form Content Skeleton */}
+        <div className="bg-white rounded-t-[40px] px-6 py-8 flex-1 shadow-[0_-10px_40px_rgba(0,0,0,0.03)]">
+          <div className="h-4 w-64 bg-gray-200 rounded mx-auto mb-8 animate-pulse"></div>
+          <FormSkeleton fields={6} showSubmit={true} />
         </div>
       </div>
     );
@@ -1151,9 +1136,9 @@ export function DynamicVendorOnboardingForm({
   }
 
   return (
-    <div className="min-h-screen bg-[#FFF5F1] w-full max-w-[430px] mx-auto flex flex-col">
+    <div className="min-h-screen bg-[#FFF5F1] w-full max-w-[430px] lg:max-w-[600px] mx-auto flex flex-col">
       {/* Header Section */}
-      <div className="pt-8 pb-8 px-6 text-center relative">
+      <div className="pt-8 pb-8 px-6 lg:px-8 text-center relative">
         {onBack && (
           <button 
             onClick={onBack} 
@@ -1174,17 +1159,17 @@ export function DynamicVendorOnboardingForm({
       </div>
 
       {/* Main Content Card */}
-      <div className="bg-white rounded-t-[40px] px-6 py-8 flex-1 shadow-[0_-10px_40px_rgba(0,0,0,0.03)] min-h-[calc(100vh-220px)]">
+      <div className="bg-white rounded-t-[40px] lg:rounded-t-[50px] px-6 lg:px-8 py-8 lg:py-10 flex-1 shadow-[0_-10px_40px_rgba(0,0,0,0.03)] min-h-[calc(100vh-220px)]">
         
         {/* Intro Text */}
-        <div className="text-center mb-8 px-4">
-           <p className="text-sm text-gray-600 leading-relaxed">
+        <div className="text-center mb-8 lg:mb-10 px-4">
+           <p className="text-sm lg:text-base text-gray-600 leading-relaxed">
              Please complete the following details to register your business on Warmpawz.
            </p>
         </div>
 
         {/* Form Sections */}
-        <div className="space-y-8 pb-32">
+        <div className="space-y-8 lg:space-y-10 pb-32 lg:pb-40">
           {form.sections.filter(s => s.isActive).map((section) => (
             <div key={section.id} className="space-y-6">
               {/* Section Header */}

@@ -13,9 +13,9 @@ import {
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Badge } from '../ui/badge';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
-import { authenticatedFetch } from '../../utils/session-manager';
+// ✅ FIX: Removed Supabase imports - using API Gateway now
+import { vendorServicesApi } from '../../utils/api/client';
+import { toast } from 'sonner';
 import { useVendorCapabilities } from './hooks/useVendorCapabilities';
 
 interface VendorServiceCatalogViewProps {
@@ -103,16 +103,9 @@ export function VendorServiceCatalogView({
 
       console.log('📚 [CATALOG] Loading service catalog...');
 
-      // Load all services from admin catalog API
-      const servicesRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/service-catalog`,
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
-
-      if (servicesRes.ok) {
-        const data = await servicesRes.json();
+      // ✅ FIX: Use vendorServicesApi instead of direct fetch
+      try {
+        const data = await vendorServicesApi.getServiceCatalog();
         console.log('📚 [CATALOG] Loaded services:', data);
         // ✅ FIX: Handle standardized response format
         // Response format: { success: true, services: [...], total: ... }
@@ -126,22 +119,14 @@ export function VendorServiceCatalogView({
           console.warn('⚠️ [CATALOG] No services in catalog!');
           // Don't show error toast on initial load - just log
         }
-      } else {
-        const errorData = await servicesRes.json().catch(() => ({ error: 'Unknown error' }));
-        console.error('❌ [CATALOG] Failed to load:', errorData);
+      } catch (error) {
+        console.error('❌ [CATALOG] Failed to load:', error);
         // Don't show error toast on initial load - just log
       }
 
-      // Load vendor's enabled services
-      const vendorServicesRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/services/${vendorId}`,
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
-
-      if (vendorServicesRes.ok) {
-        const data = await vendorServicesRes.json();
+      // ✅ FIX: Use vendorServicesApi instead of direct fetch
+      try {
+        const data = await vendorServicesApi.getVendorServices(vendorId);
         console.log('✅ [VENDOR] Loaded vendor services:', data);
         
         // ✅ FIX: Handle standardized response format
@@ -170,23 +155,32 @@ export function VendorServiceCatalogView({
         
         console.log('✅ [VENDOR] Parsed vendor services:', vendorServicesList.length);
         setVendorServices(vendorServicesList);
+      } catch (error) {
+        console.error('❌ [VENDOR] Failed to load vendor services:', error);
+        // Don't show error toast on initial load - just log
       }
 
-      // Load roles
-      const rolesRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/config/roles`,
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      try {
+        const { apiCallJson } = await import('@warmpawz/api-client/http');
+        const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+        if (!API_GATEWAY_URL) {
+          throw new Error('API Gateway URL not configured');
         }
-      );
+        
+        const data = await apiCallJson<any>(
+          `${API_GATEWAY_URL}/make-server-3dd53475/config/roles`
+        );
 
-      if (rolesRes.ok) {
-        const data = await rolesRes.json();
         // ✅ FIX: Handle standardized response format
-        setRoles(data.roles || data.data?.roles || []);
-      } else {
-        const errorData = await rolesRes.json().catch(() => ({ error: 'Unknown error' }));
-        console.error('Failed to load roles:', errorData);
+        if (data.success) {
+          setRoles(data.roles || data.data?.roles || []);
+        } else {
+          console.error('Failed to load roles:', data.error || data.message);
+          // Don't show error toast - roles are not critical
+        }
+      } catch (error) {
+        console.error('Failed to load roles:', error);
         // Don't show error toast - roles are not critical
       }
 
@@ -316,14 +310,18 @@ export function VendorServiceCatalogView({
 
     // Check if vendor's role is in the service's applicable roles
     // Handle both string and array cases
-    let applicableRoles = service.applicableRoles;
-    if (typeof applicableRoles === 'string') {
-      try {
-        applicableRoles = JSON.parse(applicableRoles);
-      } catch {
-        applicableRoles = [applicableRoles];
-      }
-    }
+    let applicableRoles: string[] = Array.isArray(service.applicableRoles) 
+      ? service.applicableRoles 
+      : (typeof service.applicableRoles === 'string' 
+          ? (() => {
+              try {
+                const parsed = JSON.parse(service.applicableRoles as any);
+                return Array.isArray(parsed) ? parsed : [service.applicableRoles as any];
+              } catch {
+                return [service.applicableRoles as any];
+              }
+            })()
+          : []);
 
     const isRoleApplicable = applicableRoles.includes(vendorRoleId);
     
@@ -356,14 +354,18 @@ export function VendorServiceCatalogView({
       if (service.applicableRoles && service.applicableRoles.length > 0) {
         const vendorRoleId = vendorData?.roleId;
         if (vendorRoleId) {
-          let applicableRoles = service.applicableRoles;
-          if (typeof applicableRoles === 'string') {
-            try {
-              applicableRoles = JSON.parse(applicableRoles);
-            } catch {
-              applicableRoles = [applicableRoles];
-            }
-          }
+          let applicableRoles: string[] = Array.isArray(service.applicableRoles) 
+            ? service.applicableRoles 
+            : (typeof service.applicableRoles === 'string' 
+                ? (() => {
+                    try {
+                      const parsed = JSON.parse(service.applicableRoles as any);
+                      return Array.isArray(parsed) ? parsed : [service.applicableRoles as any];
+                    } catch {
+                      return [service.applicableRoles as any];
+                    }
+                  })()
+                : []);
           if (!applicableRoles.includes(vendorRoleId)) {
             return false; // Role mismatch, not capability issue
           }
@@ -450,8 +452,14 @@ export function VendorServiceCatalogView({
     try {
       setAdding(true);
 
-      const response = await authenticatedFetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/services/add`,
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const result = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/services/add`,
         {
           method: 'POST',
           body: JSON.stringify({
@@ -475,8 +483,7 @@ export function VendorServiceCatalogView({
         }
       );
 
-      if (response.ok) {
-        const result = await response.json();
+      if (result.success) {
         console.log('✅ Service added:', result);
         toast.success(`Added ${service.serviceName}`);
         
@@ -489,9 +496,7 @@ export function VendorServiceCatalogView({
           onSelectService(service);
         }
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
-        const errorMessage = errorData.error || errorData.message || 'Failed to add service';
-        toast.error(errorMessage);
+        toast.error(result.error || result.message || 'Failed to add service');
       }
     } catch (error: any) {
       console.error('Error adding service:', error);

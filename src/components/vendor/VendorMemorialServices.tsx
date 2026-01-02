@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Heart, Plus, Calendar, Package, Image as ImageIcon, Edit2, Trash2, Eye, CheckCircle, Clock, XCircle } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 
@@ -91,8 +91,6 @@ export function VendorMemorialServices({ vendorId, vendorData, onBack }: VendorM
   const [editingService, setEditingService] = useState<MemorialService | null>(null);
   const [editingProduct, setEditingProduct] = useState<MemorialProduct | null>(null);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/memorial`;
-
   useEffect(() => {
     loadData();
   }, [vendorId, activeTab]);
@@ -100,93 +98,100 @@ export function VendorMemorialServices({ vendorId, vendorData, onBack }: VendorM
   const loadData = async () => {
     try {
       setLoading(true);
-      if (activeTab === 'services') {
-        await loadServices();
-      } else if (activeTab === 'tributes') {
-        await loadTributes();
-      } else if (activeTab === 'products') {
-        await loadProducts();
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
       }
-    } catch (error) {
+
+      if (activeTab === 'services') {
+        await loadServices(API_GATEWAY_URL);
+      } else if (activeTab === 'tributes') {
+        await loadTributes(API_GATEWAY_URL);
+      } else if (activeTab === 'products') {
+        await loadProducts(API_GATEWAY_URL);
+      }
+    } catch (error: any) {
       console.error('Error loading data:', error);
-      toast.error('Failed to load data');
+      toast.error(error?.message || 'Failed to load data');
     } finally {
       setLoading(false);
     }
   };
 
-  const loadServices = async () => {
-    const response = await fetch(`${API_BASE}/${vendorId}/services`, {
-      headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-    });
-    if (response.ok) {
-      const data = await response.json();
-      setServices(data.services || []);
+  const loadServices = async (API_GATEWAY_URL: string) => {
+    try {
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/memorial/${vendorId}/services`
+      );
+      if (data.success) {
+        setServices(data.services || data.data?.services || []);
+      }
+    } catch (error: any) {
+      console.error('Error loading services:', error);
     }
   };
 
-  const loadTributes = async () => {
+  const loadTributes = async (API_GATEWAY_URL: string) => {
     try {
-      const response = await fetch(`${API_BASE}/${vendorId}/tributes`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        // ✅ FIX: Handle standardized response format
-        // Response format: { success: true, tributes: [...], total: ... }
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/memorial/${vendorId}/tributes`
+      );
+      if (data.success) {
         setTributes(data.tributes || data.data?.tributes || []);
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-        console.error('Failed to load tributes:', errorData);
-        // Don't show error toast on initial load - just log
+        console.error('Failed to load tributes:', data.error || data.message);
       }
     } catch (error: any) {
       console.error('Error loading tributes:', error);
-      // Don't show error toast on initial load - just log
     }
   };
 
-  const loadProducts = async () => {
+  const loadProducts = async (API_GATEWAY_URL: string) => {
     try {
-      const response = await fetch(`${API_BASE}/${vendorId}/products`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-      });
-      if (response.ok) {
-        const data = await response.json();
-        // ✅ FIX: Handle standardized response format
-        // Response format: { success: true, products: [...], total: ... }
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/memorial/${vendorId}/products`
+      );
+      if (data.success) {
         setProducts(data.products || data.data?.products || []);
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-        console.error('Failed to load products:', errorData);
-        // Don't show error toast on initial load - just log
+        console.error('Failed to load products:', data.error || data.message);
       }
     } catch (error: any) {
       console.error('Error loading products:', error);
-      // Don't show error toast on initial load - just log
     }
   };
 
   const handleStatusUpdate = async (serviceId: string, status: string) => {
     try {
-      const response = await fetch(`${API_BASE}/${vendorId}/services/${serviceId}/status`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ status })
-      });
-
-      if (response.ok) {
-        toast.success('Status updated successfully');
-        loadServices();
-      } else {
-        toast.error('Failed to update status');
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
       }
-    } catch (error) {
+
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/memorial/${vendorId}/services/${serviceId}/status`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ status })
+        }
+      );
+
+      if (data.success) {
+        toast.success('Status updated successfully');
+        await loadServices(API_GATEWAY_URL);
+      } else {
+        toast.error(data.error || data.message || 'Failed to update status');
+      }
+    } catch (error: any) {
       console.error('Error updating status:', error);
-      toast.error('Failed to update status');
+      toast.error(error?.message || 'Failed to update status');
     }
   };
 
@@ -199,18 +204,25 @@ export function VendorMemorialServices({ vendorId, vendorData, onBack }: VendorM
     }
 
     try {
-      const response = await fetch(`${API_BASE}/${vendorId}/products/${productId}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-      });
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
 
-      if (response.ok) {
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/memorial/${vendorId}/products/${productId}`,
+        {
+          method: 'DELETE'
+        }
+      );
+
+      if (data.success) {
         toast.success(`Product "${productName}" deleted successfully`);
-        await loadProducts(); // ✅ Ensure products reload
+        await loadProducts(API_GATEWAY_URL);
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
-        const errorMessage = errorData.error || errorData.message || 'Failed to delete product';
-        toast.error(errorMessage);
+        toast.error(data.error || data.message || 'Failed to delete product');
       }
     } catch (error: any) {
       console.error('Error deleting product:', error);

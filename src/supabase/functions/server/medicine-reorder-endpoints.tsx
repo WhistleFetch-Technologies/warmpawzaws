@@ -1,6 +1,6 @@
 // Medicine Reorder System - Integration with Medicine Delivery Vendors
-import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
+import { Hono } from 'hono';
+import * as kv from './kv_store';
 
 const app = new Hono();
 

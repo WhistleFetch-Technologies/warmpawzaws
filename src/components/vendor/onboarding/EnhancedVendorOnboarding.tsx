@@ -3,7 +3,7 @@ import { BusinessTypeSelector } from './BusinessTypeSelector';
 import { SoloProviderOnboarding } from './SoloProviderOnboarding';
 import { DynamicVendorOnboardingForm } from '../DynamicVendorOnboardingForm';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 interface EnhancedVendorOnboardingProps {
   onComplete: (data: any) => void;

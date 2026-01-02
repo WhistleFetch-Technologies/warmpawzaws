@@ -5,7 +5,7 @@
  * ╚═══════════════════════════════════════════════════════════════════════════╝
  */
 
-import type { BookingRecord, RefundCalculation } from './db-schema-documentation.tsx';
+import type { BookingRecord, RefundCalculation } from './db-schema-documentation';
 
 /**
  * Validation Result Interface

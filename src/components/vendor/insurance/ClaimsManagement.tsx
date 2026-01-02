@@ -5,8 +5,8 @@ import { Badge } from '../../ui/badge';
 import { Card } from '../../ui/card';
 import { Textarea } from '../../ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../../ui/dialog';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+// ✅ FIX: Removed Supabase imports - using API Gateway now
+import { toast } from 'sonner';
 
 interface Claim {
   id: string;
@@ -59,22 +59,23 @@ export function ClaimsManagement({
   const loadClaimDetails = async () => {
     try {
       setLoading(true);
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/insurance/claims/${claimId}`,
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/insurance/claims/${claimId}`
       );
 
-      if (response.ok) {
-        const data = await response.json();
-        // ✅ FIX: Handle standardized response format
-        // Response format: { success: true, claim: {...}, ... }
+      // ✅ FIX: Handle standardized response format
+      // Response format: { success: true, claim: {...}, ... }
+      if (data.success) {
         setClaim(data.claim || data.data?.claim);
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-        console.error('Failed to load claim:', errorData);
-        toast.error(errorData.error || 'Failed to load claim details');
+        toast.error(data.error || data.message || 'Failed to load claim details');
       }
     } catch (error: any) {
       console.error('Error loading claim:', error);
@@ -94,14 +95,16 @@ export function ClaimsManagement({
     try {
       setProcessing(true);
 
-      const apiResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/insurance/claims/${claimId}/action`,
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/insurance/claims/${claimId}/action`,
         {
           method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify({
             action: selectedAction,
             response: response.trim()
@@ -109,16 +112,14 @@ export function ClaimsManagement({
         }
       );
 
-      if (apiResponse.ok) {
+      if (data.success) {
         const actionLabel = selectedAction.replace('_', ' ');
         toast.success(`Claim ${actionLabel} successfully`);
         setActionDialogOpen(false);
         setResponse(''); // Clear response field
         await loadClaimDetails(); // ✅ Ensure claim details reload
       } else {
-        const errorData = await apiResponse.json().catch(() => ({ error: 'Unknown error occurred' }));
-        const errorMessage = errorData.error || errorData.message || 'Failed to process claim action';
-        toast.error(errorMessage);
+        toast.error(data.error || data.message || 'Failed to process claim action');
       }
     } catch (error: any) {
       console.error('Error processing claim:', error);
@@ -312,7 +313,7 @@ export function ClaimsManagement({
 
             <Button
               onClick={() => {
-                setSelectedAction('info_requested');
+                setSelectedAction('request_info' as any);
                 setActionDialogOpen(true);
               }}
               className="w-full bg-blue-600 hover:bg-blue-700 text-white"
@@ -357,7 +358,7 @@ export function ClaimsManagement({
               <label className="text-sm font-medium">
                 {selectedAction === 'approve' && 'Approval Notes'}
                 {selectedAction === 'reject' && 'Rejection Reason'}
-                {selectedAction === 'info_requested' && 'Information Needed'}
+                {selectedAction === 'request_info' && 'Information Needed'}
               </label>
               <Textarea
                 value={response}

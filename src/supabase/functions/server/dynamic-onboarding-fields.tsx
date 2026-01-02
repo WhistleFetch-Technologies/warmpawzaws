@@ -1,5 +1,7 @@
-import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from 'hono';
+import { getRolesRepository } from '../../../supabase/lib/repositories/index';
+import { getDbClient } from '../../../supabase/lib/db';
 
 const app = new Hono();
 
@@ -8,11 +10,14 @@ app.get('/admin/onboarding-fields/:roleId', async (c) => {
   try {
     const roleId = c.req.param('roleId');
     
-    const fields = await kv.get(`onboarding_fields:${roleId}`);
+    // ✅ SQL: Get onboarding fields from roles.config or onboarding_fields table
+    const rolesRepo = getRolesRepository();
+    const role = await rolesRepo.findById(roleId);
+    const fields = role?.config?.onboardingFields || role?.onboardingFields || [];
     
     return c.json({
       success: true,
-      fields: fields || []
+      fields: Array.isArray(fields) ? fields : []
     });
   } catch (error) {
     console.error('Error fetching custom onboarding fields:', error);
@@ -31,8 +36,14 @@ app.post('/admin/onboarding-fields/:roleId', async (c) => {
       return c.json({ success: false, message: 'Field name and label are required' }, 400);
     }
 
-    // Get existing fields
-    const existingFields = await kv.get(`onboarding_fields:${roleId}`) || [];
+    // ✅ SQL: Get existing fields from role config
+    const rolesRepo = getRolesRepository();
+    const role = await rolesRepo.findById(roleId);
+    if (!role) {
+      return c.json({ success: false, message: 'Role not found' }, 404);
+    }
+    
+    const existingFields = role.config?.onboardingFields || role.onboardingFields || [];
     
     let updatedFields;
     
@@ -46,11 +57,16 @@ app.post('/admin/onboarding-fields/:roleId', async (c) => {
       updatedFields = [...existingFields, field];
     }
     
-    // Save updated fields
-    await kv.set(`onboarding_fields:${roleId}`, updatedFields);
+    // ✅ SQL: Save updated fields to role config
+    await rolesRepo.update(roleId, {
+      config: {
+        ...(role.config || {}),
+        onboardingFields: updatedFields
+      }
+    });
 
-    // Also maintain a schema registry for dynamic form generation
-    await updateFieldSchema(roleId, field);
+    // ✅ SQL: Update field schema registry
+    await updateFieldSchema(roleId, field, updatedFields);
 
     return c.json({
       success: true,
@@ -69,14 +85,23 @@ app.delete('/admin/onboarding-fields/:roleId/:fieldId', async (c) => {
     const roleId = c.req.param('roleId');
     const fieldId = c.req.param('fieldId');
 
-    // Get existing fields
-    const existingFields = await kv.get(`onboarding_fields:${roleId}`) || [];
+    // ✅ SQL: Get existing fields and remove field
+    const rolesRepo = getRolesRepository();
+    const role = await rolesRepo.findById(roleId);
+    if (!role) {
+      return c.json({ success: false, message: 'Role not found' }, 404);
+    }
     
-    // Remove the field
+    const existingFields = role.config?.onboardingFields || role.onboardingFields || [];
     const updatedFields = existingFields.filter((f: any) => f.id !== fieldId);
     
-    // Save updated fields
-    await kv.set(`onboarding_fields:${roleId}`, updatedFields);
+    // ✅ SQL: Save updated fields to role config
+    await rolesRepo.update(roleId, {
+      config: {
+        ...(role.config || {}),
+        onboardingFields: updatedFields
+      }
+    });
 
     return c.json({
       success: true,
@@ -100,8 +125,19 @@ app.post('/admin/onboarding-fields/:roleId/reorder', async (c) => {
       return c.json({ success: false, message: 'Fields array is required' }, 400);
     }
 
-    // Save reordered fields
-    await kv.set(`onboarding_fields:${roleId}`, fields);
+    // ✅ SQL: Save reordered fields to role config
+    const rolesRepo = getRolesRepository();
+    const role = await rolesRepo.findById(roleId);
+    if (!role) {
+      return c.json({ success: false, message: 'Role not found' }, 404);
+    }
+    
+    await rolesRepo.update(roleId, {
+      config: {
+        ...(role.config || {}),
+        onboardingFields: fields
+      }
+    });
 
     return c.json({
       success: true,
@@ -114,12 +150,14 @@ app.post('/admin/onboarding-fields/:roleId/reorder', async (c) => {
   }
 });
 
-// Helper function to update field schema registry
-async function updateFieldSchema(roleId: string, field: any) {
+// ✅ SQL: Helper function to update field schema registry in role config
+async function updateFieldSchema(roleId: string, field: any, allFields?: any[]) {
   try {
-    // Maintain a schema registry for easy access
-    const schemaKey = `onboarding_schema:${roleId}`;
-    const schema = await kv.get(schemaKey) || { fields: {}, documentFields: [] };
+    const rolesRepo = getRolesRepository();
+    const role = await rolesRepo.findById(roleId);
+    if (!role) return;
+    
+    const schema = role.config?.onboardingSchema || { fields: {}, documentFields: [] };
     
     // Add field to schema
     schema.fields[field.fieldName] = {
@@ -148,7 +186,14 @@ async function updateFieldSchema(roleId: string, field: any) {
       }
     }
 
-    await kv.set(schemaKey, schema);
+    // ✅ SQL: Save schema to role config
+    await rolesRepo.update(roleId, {
+      config: {
+        ...(role.config || {}),
+        onboardingSchema: schema,
+        onboardingFields: allFields || role.config?.onboardingFields || []
+      }
+    });
   } catch (error) {
     console.error('Error updating field schema:', error);
   }

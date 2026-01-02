@@ -21,7 +21,7 @@ import { getReviewsRepository } from '../../lib/repositories/reviews.ts';
 import { getSchedulingRepository } from '../../lib/repositories/scheduling.ts';
 import { getDbClient } from '../../lib/db.ts';
 import { getPrimarySpecialization, getAllSpecializations } from './specialization-mapping.tsx';
-import { calculateDistance } from './schedule-utils.tsx';
+import { calculateDistance } from './schedule-utils-sql.tsx'; // ✅ FIXED: Updated to SQL version
 
 /**
  * Generate time slots from a time window

@@ -4,7 +4,12 @@
  * Identical endpoints to web app
  */
 
-import { API_BASE_URL, publicAnonKey } from '../config/supabase';
+import { API_BASE_URL } from '../config/aws';
+
+// Validate API Base URL is configured
+if (!API_BASE_URL || API_BASE_URL.includes('api.warmpawz.com')) {
+  console.warn('⚠️ API_BASE_URL is not properly configured. Please set AWS_API_GATEWAY_URL environment variable.');
+}
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const SESSION_TOKEN_KEY = 'warmpawz_session_token';
@@ -14,7 +19,7 @@ export class ApiService {
     const token = await AsyncStorage.getItem(SESSION_TOKEN_KEY);
     return {
       'Content-Type': 'application/json',
-      'Authorization': token ? `Bearer ${token}` : `Bearer ${publicAnonKey}`,
+      'Authorization': token ? `Bearer ${token}` : '',
     };
   }
 
@@ -96,11 +101,32 @@ export class ApiService {
 // Customer-specific API methods
 export const CustomerApi = {
   // Profile
-  getProfile: (phone: string) => ApiService.get(`/customer/profile/${phone}`),
-  updateProfile: (phone: string, data: any) => ApiService.put(`/customer/profile/${phone}`, data),
+  getProfile: async (identifier: string) => {
+    // Support both phone and customerId
+    const response = await ApiService.get(`/customer-by-phone/${identifier}`).catch(() => 
+      ApiService.get(`/customer/${identifier}`)
+    );
+    return response.customer || response.profile || response;
+  },
+  updateProfile: (identifier: string, data: any) => {
+    // Support both phone and customerId
+    return ApiService.put(`/customer/${identifier}`, data).catch(() =>
+      ApiService.put(`/customer/profile/${identifier}`, data)
+    );
+  },
+  getCustomerByPhone: async (phone: string) => {
+    const response = await ApiService.get(`/customer-by-phone/${phone}`);
+    return response.customer || response;
+  },
   
   // Pets
-  getPets: (phone: string) => ApiService.get(`/customer/pets/${phone}`),
+  getPets: async (identifier: string) => {
+    // Support both phone and customerId
+    const response = await ApiService.get(`/customer/pets/${identifier}`).catch(() =>
+      ApiService.get(`/customer/pets?phone=${identifier}`)
+    );
+    return response.pets || response;
+  },
   addPet: (phone: string, petData: any) => ApiService.post(`/customer/pets`, { phone, pets: [petData] }),
   updatePet: (petId: string, petData: any) => ApiService.put(`/pet/${petId}`, petData),
   deletePet: (petId: string) => ApiService.delete(`/pet/${petId}`),
@@ -113,19 +139,259 @@ export const CustomerApi = {
     return ApiService.get(`/customer/services${query}`);
   },
   getVendorDetails: (vendorId: string) => ApiService.get(`/vendor/${vendorId}`),
+  getVendorServices: (vendorId: string) => ApiService.get(`/vendor/${vendorId}/services`),
+  getProblemGrid: (roleId: string) => ApiService.get(`/vendor/problem-grid-specializations/${roleId}`),
+  getVendorPackages: (vendorId: string, serviceType?: string) => {
+    const query = serviceType ? `?serviceType=${serviceType}` : '';
+    return ApiService.get(`/vendor/${vendorId}/packages${query}`);
+  },
+  
+  // Adoption
+  submitAdoptionApplication: (applicationData: any) => ApiService.post('/customer/adoption-application', applicationData),
   
   // Bookings
   createBooking: (bookingData: any) => ApiService.post('/bookings/create', bookingData),
-  getBookings: (phone: string) => ApiService.get(`/bookings/${phone}`),
-  getBookingDetails: (bookingId: string) => ApiService.get(`/booking/${bookingId}`),
+  getBookings: async (identifier: string) => {
+    // Support both phone and customerId
+    const response = await ApiService.get(`/customer/${identifier}/bookings`).catch(() =>
+      ApiService.get(`/bookings/${identifier}`)
+    );
+    return response.bookings || response;
+  },
+  getBookingDetails: (bookingId: string) => ApiService.get(`/bookings/${bookingId}`),
   cancelBooking: (bookingId: string, reason?: string) => 
-    ApiService.post(`/booking/${bookingId}/cancel`, { reason }),
+    ApiService.post(`/bookings/${bookingId}/cancel`, { reason }),
   rescheduleBooking: (bookingId: string, newDate: string, newTime: string, reason?: string) =>
     ApiService.post(`/bookings/${bookingId}/reschedule`, { newDate, newTimeSlot: newTime, reason }),
+  
+  // Orders (E-commerce)
+  getOrders: async (identifier: string) => {
+    // Support both phone and customerId
+    const response = await ApiService.get(`/customer/${identifier}/orders`).catch(() =>
+      ApiService.get(`/orders/customer/${identifier}`)
+    );
+    return response.orders || response;
+  },
+  getOrderDetails: (orderId: string) => ApiService.get(`/customer/shop/orders/${orderId}`),
+  getOrderTracking: (orderId: string) => ApiService.get(`/customer/shop/orders/${orderId}/track`),
+  cancelOrder: (orderId: string, reason?: string) => 
+    ApiService.post(`/customer/shop/orders/${orderId}/cancel`, { reason }),
+  
+  // Support Tickets
+  getSupportTickets: (phone: string) => ApiService.get(`/crm/tickets?customerPhone=${phone}`),
+  createSupportTicket: (phone: string, ticketData: any) => 
+    ApiService.post('/crm/tickets', { customerPhone: phone, ...ticketData }),
+  
+  // Pet Bookings
+  getPetBookings: (phone: string, petId: string) => 
+    ApiService.get(`/customer/bookings/pet/${phone}/${petId}`),
   
   // OTP
   generateOtp: (phone: string) => ApiService.post('/otp/generate', { phone }),
   verifyOtp: (phone: string, otp: string) => ApiService.post('/otp/verify', { phone, otp }),
+  
+  // Notifications
+  getNotifications: (customerId: string) => ApiService.get(`/customer/notifications/${customerId}`),
+  markNotificationAsRead: (notificationId: string) => 
+    ApiService.put(`/notification/${notificationId}/read`, {}),
+  markAllNotificationsAsRead: (customerId: string) => 
+    ApiService.put(`/customer/notifications/${customerId}/mark-all-read`, {}),
+  markNotificationRead: (notificationId: string) => ApiService.post(`/notifications/${notificationId}/read`, {}),
+  deleteNotification: (notificationId: string) => ApiService.delete(`/notification/${notificationId}`),
+  clearAllNotifications: (customerId: string) => 
+    ApiService.delete(`/customer/notifications/${customerId}/clear-all`),
+  registerPushToken: (userId: string, token: string, deviceType: 'ios' | 'android') => 
+    ApiService.post('/notifications/push/register', { userId, token, deviceType, userType: 'customer' }),
+  
+  // Booking Operations
+  checkInBooking: (bookingId: string, checkInData: { latitude: number; longitude: number; timestamp: string }) =>
+    ApiService.post(`/bookings/${bookingId}/checkin`, checkInData),
+  submitFeedback: (bookingId: string, feedbackData: { rating: number; feedback: string; customerId?: string }) =>
+    ApiService.post(`/bookings/${bookingId}/feedback`, feedbackData),
+  getBookingReceipt: (bookingId: string) => ApiService.get(`/bookings/${bookingId}/receipt`),
+  
+  // Address Management
+  getAddresses: async (identifier: string) => {
+    // Support both phone and customerId
+    const response = await ApiService.get(`/customer/${identifier}/addresses`).catch(() =>
+      ApiService.get(`/customer/addresses?customerId=${identifier}`)
+    );
+    return response.addresses || response;
+  },
+  addAddress: (addressData: any) => ApiService.post('/customer/addresses', addressData),
+  updateAddress: (addressId: string, addressData: any) => ApiService.put(`/customer/addresses/${addressId}`, addressData),
+  deleteAddress: (addressId: string) => ApiService.delete(`/customer/addresses/${addressId}`),
+  
+  // Shopping Cart
+  getCart: (customerId: string) => ApiService.get(`/customer/shop/cart/${customerId}`),
+  addToCart: (customerId: string, productId: string, quantity: number) => 
+    ApiService.post(`/customer/shop/cart/${customerId}`, { productId, quantity }),
+  updateCartItem: (customerId: string, itemId: string, quantity: number) =>
+    ApiService.put(`/customer/shop/cart/${customerId}/items/${itemId}`, { quantity }),
+  deleteCartItem: (customerId: string, itemId: string) =>
+    ApiService.delete(`/customer/shop/cart/${customerId}/items/${itemId}`),
+  
+  // Checkout
+  checkout: (customerId: string, paymentMethod: string, addressId: string, promoCode?: string) =>
+    ApiService.post('/customer/shop/checkout', { customerId, paymentMethod, addressId, promoCode }),
+  
+  // Coupons
+  validateCoupon: (couponCode: string, cartTotal: number, customerId: string) =>
+    ApiService.post('/customer/shop/coupons/validate', { couponCode, cartTotal, customerId }),
+  getAvailableCoupons: (customerId: string) =>
+    ApiService.get(`/customer/shop/coupons/available?customerId=${customerId}`),
+  
+  // Shop
+  getShopHomeData: () => ApiService.get('/customer/shop/home'),
+  searchProducts: (query: string, category?: string) => {
+    const params = new URLSearchParams({ q: query });
+    if (category) params.append('category', category);
+    return ApiService.get(`/customer/shop/products?${params}`);
+  },
+  getProductDetails: (productId: string) => ApiService.get(`/customer/shop/products/${productId}`),
+  
+  // Profile Management
+  changePassword: (passwordData: { currentPassword: string; newPassword: string; customerId: string }) =>
+    ApiService.post('/customer/change-password', passwordData),
+  
+  // Wishlist
+  getWishlist: (customerId: string) => ApiService.get(`/customer/${customerId}/wishlist`),
+  addToWishlist: (customerId: string, productId: string) => ApiService.post(`/customer/${customerId}/wishlist`, { productId }),
+  removeFromWishlist: (wishlistItemId: string) => ApiService.delete(`/customer/wishlist/${wishlistItemId}`),
+  
+  // Order Operations
+  getOrderInvoice: (orderId: string) => ApiService.get(`/orders/${orderId}/invoice`),
+  reorder: (orderId: string, customerId: string) => 
+    ApiService.post(`/customer/shop/orders/${orderId}/reorder`, { customerId }),
+  
+  // Events
+  getEvents: (vendorId?: string) => {
+    const query = vendorId ? `?vendorId=${vendorId}` : '';
+    return ApiService.get(`/customer/events${query}`);
+  },
+  getEvent: (eventId: string) => ApiService.get(`/customer/events/${eventId}`),
+  registerForEvent: (eventId: string, customerId: string, attendeesCount: number) =>
+    ApiService.post(`/customer/events/${eventId}/register`, { customerId, attendeesCount }),
+  
+  // Memorial Services
+  getMemorialServices: (vendorId?: string) => {
+    const query = vendorId ? `?vendorId=${vendorId}` : '';
+    return ApiService.get(`/customer/memorial/services${query}`);
+  },
+  getMemorialProducts: (vendorId?: string) => {
+    const query = vendorId ? `?vendorId=${vendorId}` : '';
+    return ApiService.get(`/customer/memorial/products${query}`);
+  },
+  
+  // Donation Campaigns
+  getDonationCampaigns: (vendorId?: string) => {
+    const query = vendorId ? `?vendorId=${vendorId}` : '';
+    return ApiService.get(`/customer/donations/campaigns${query}`);
+  },
+  makeDonation: (campaignId: string, amount: number, message?: string, customerId?: string) =>
+    ApiService.post(`/customer/donations/${campaignId}/donate`, { amount, message, customerId }),
+  
+  // Counseling Sessions
+  getCounselingSessions: (vendorId?: string) => {
+    const url = vendorId ? `/vendor/counseling/${vendorId}` : '/customer/counseling/sessions';
+    return ApiService.get(url);
+  },
+  bookCounselingSession: (vendorId: string, sessionData: any) =>
+    ApiService.post(`/customer/counseling/${vendorId}/book`, sessionData),
+  
+  // Diet Charts
+  getDietCharts: (customerId: string) => ApiService.get(`/nutritionist/customer/${customerId}/diet-plans`),
+  
+  // Food/Nutritionist Products
+  getNutritionistProducts: (vendorId: string) => ApiService.get(`/nutritionist/${vendorId}/menu`),
+  
+  // Pharmacy Products
+  getPharmacyProducts: (vendorId?: string) => {
+    if (vendorId) {
+      return ApiService.get(`/vendor/${vendorId}/pharmacy/inventory`);
+    }
+    // Fallback to shop products with pharmacy category
+    return ApiService.get('/customer/shop/products?category=pharmacy');
+  },
+  
+  // Insurance
+  getInsurancePlans: (type?: string) => {
+    const query = type ? `?type=${type}` : '';
+    return ApiService.get(`/insurance/plans${query}`);
+  },
+  calculateInsurancePremium: (planId: string, petAge: number, petBreed: string, coverageAmount: number) =>
+    ApiService.post('/insurance/calculate-premium', { planId, petAge, petBreed, coverageAmount }),
+  purchaseInsurance: (planId: string, customerId: string, petId: string, premiumAmount: number) =>
+    ApiService.post('/insurance/purchase', { planId, customerId, petId, premiumAmount }),
+  
+  // Packages
+  getPackages: (vendorId?: string, category?: string) => {
+    const params = new URLSearchParams();
+    if (vendorId) params.append('vendorId', vendorId);
+    if (category) params.append('category', category);
+    return ApiService.get(`/customer/packages${params.toString() ? `?${params.toString()}` : ''}`);
+  },
+  getPackageDetails: (packageId: string) => ApiService.get(`/customer/packages/${packageId}`),
+  
+  // Clinic/Facility Details
+  getClinicDetails: async (clinicId: string) => {
+    try {
+      return await ApiService.get(`/customer/facility/${clinicId}`);
+    } catch {
+      // Fallback to clinic endpoint
+      return await ApiService.get(`/clinic/${clinicId}`);
+    }
+  },
+  
+  // Media Upload
+  uploadMedia: async (file: File | any, folder: string = 'general', fileName?: string) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('folder', folder);
+    if (fileName) formData.append('fileName', fileName);
+    
+    const response = await ApiService.post('/media/upload', formData);
+    return (response as any).url || '';
+  },
+  
+  // Payment Methods
+  getPaymentMethods: (customerId: string) => ApiService.get(`/customer/${customerId}/payment-methods`),
+  addPaymentMethod: (customerId: string, paymentMethodData: any) => 
+    ApiService.post(`/customer/${customerId}/payment-methods`, paymentMethodData),
+  setDefaultPaymentMethod: (customerId: string, methodId: string) => 
+    ApiService.put(`/customer/${customerId}/payment-methods/${methodId}/set-default`, {}),
+  deletePaymentMethod: (methodId: string) => 
+    ApiService.delete(`/customer/payment-methods/${methodId}`),
+};
+
+// ✅ Payment API - Razorpay Integration
+export const PaymentApi = {
+  // Create Razorpay order
+  createRazorpayOrder: (orderData: {
+    amount: number;
+    currency?: string;
+    receipt: string;
+    notes?: any;
+    bookingId?: string;
+    customerId?: string;
+    vendorId?: string;
+  }) => ApiService.post('/payment/razorpay/create-order', orderData),
+  
+  // Verify Razorpay payment
+  verifyRazorpayPayment: (paymentData: {
+    razorpayOrderId: string;
+    razorpayPaymentId: string;
+    razorpaySignature: string;
+    bookingId?: string;
+    customerId?: string;
+  }) => ApiService.post('/payment/razorpay/verify', paymentData),
+  
+  // Get payment status
+  getPaymentStatus: (paymentId: string) => ApiService.get(`/payment/${paymentId}/status`),
+  
+  // Request refund
+  requestRefund: (paymentId: string, amount?: number, reason?: string) =>
+    ApiService.post('/payment/refund', { paymentId, amount, reason }),
 };
 
 // ✅ NEW: Appointment API (SQL-migrated endpoints)

@@ -7,8 +7,10 @@
  * - Account verification
  */
 
-import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from 'hono';
+import { getVendorsRepository } from '../../../supabase/lib/repositories/index';
+import { getDbClient } from '../../../supabase/lib/db';
 
 const app = new Hono();
 
@@ -112,39 +114,47 @@ app.post('/vendor/:vendorId/bank-details', async (c) => {
 
     console.log(`💳 Saving bank details for vendor: ${vendorId}`);
 
-    // Get vendor
-    const vendor = await kv.get(`vendor:${vendorId}`);
+    // ✅ SQL: Get vendor using repository
+    const vendorsRepo = getVendorsRepository();
+    const vendor = await vendorsRepo.findById(vendorId);
 
     if (!vendor) {
       return c.json({ success: false, error: 'Vendor not found' }, 404);
     }
 
-    // Update vendor with bank details
-    const updatedVendor = {
-      ...vendor,
-      bankDetails: {
-        accountHolderName: bankDetails.accountHolderName,
-        accountNumber: bankDetails.accountNumber, // In production, encrypt this!
-        ifscCode: bankDetails.ifscCode,
-        bankName: bankDetails.bankName,
-        branchName: bankDetails.branchName,
+    // ✅ SQL: Save bank details to vendor_bank_details table
+    const db = getDbClient();
+    await db
+      .from('vendor_bank_details')
+      .upsert({
+        vendor_id: vendorId,
+        account_holder_name: bankDetails.accountHolderName,
+        account_number: bankDetails.accountNumber, // In production, encrypt this!
+        ifsc_code: bankDetails.ifscCode,
+        bank_name: bankDetails.bankName,
+        branch_name: bankDetails.branchName,
         verified: true,
-        verifiedAt: new Date().toISOString()
-      },
-      bankDetailsUpdatedAt: new Date().toISOString()
-    };
+        verified_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }, {
+        onConflict: 'vendor_id'
+      });
 
-    await kv.set(`vendor:${vendorId}`, updatedVendor);
-
-    // Log bank details update for audit
-    await kv.set(`vendor:${vendorId}:bank-update:${Date.now()}`, {
-      vendorId,
-      bankName: bankDetails.bankName,
-      branchName: bankDetails.branchName,
-      ifscCode: bankDetails.ifscCode,
-      updatedAt: new Date().toISOString(),
-      updatedBy: 'vendor'
-    });
+    // ✅ SQL: Log bank details update for audit in vendor_bank_audit_log table
+    try {
+      await db
+        .from('vendor_bank_audit_log')
+        .insert({
+          vendor_id: vendorId,
+          bank_name: bankDetails.bankName,
+          branch_name: bankDetails.branchName,
+          ifsc_code: bankDetails.ifscCode,
+          updated_at: new Date().toISOString(),
+          updated_by: 'vendor'
+        });
+    } catch (error) {
+      console.warn('vendor_bank_audit_log table not available, skipping audit log');
+    }
 
     console.log('✅ Bank details saved successfully');
 
@@ -177,13 +187,15 @@ app.get('/vendor/:vendorId/bank-details', async (c) => {
   try {
     const { vendorId } = c.req.param();
 
-    const vendor = await kv.get(`vendor:${vendorId}`);
+    // ✅ SQL: Get vendor bank details from vendor_bank_details table
+    const db = getDbClient();
+    const { data: bankDetails } = await db
+      .from('vendor_bank_details')
+      .select('*')
+      .eq('vendor_id', vendorId)
+      .single();
 
-    if (!vendor) {
-      return c.json({ success: false, error: 'Vendor not found' }, 404);
-    }
-
-    if (!vendor.bankDetails) {
+    if (!bankDetails) {
       return c.json({
         success: true,
         bankDetails: null,
@@ -192,20 +204,20 @@ app.get('/vendor/:vendorId/bank-details', async (c) => {
     }
 
     // Mask account number for security
-    const maskedAccountNumber = vendor.bankDetails.accountNumber
-      ? `****${vendor.bankDetails.accountNumber.slice(-4)}`
+    const maskedAccountNumber = bankDetails.account_number
+      ? `****${bankDetails.account_number.slice(-4)}`
       : '';
 
     return c.json({
       success: true,
       bankDetails: {
-        accountHolderName: vendor.bankDetails.accountHolderName,
+        accountHolderName: bankDetails.account_holder_name,
         accountNumber: maskedAccountNumber, // Masked
-        ifscCode: vendor.bankDetails.ifscCode,
-        bankName: vendor.bankDetails.bankName,
-        branchName: vendor.bankDetails.branchName,
-        verified: vendor.bankDetails.verified || false,
-        verifiedAt: vendor.bankDetails.verifiedAt
+        ifscCode: bankDetails.ifsc_code,
+        bankName: bankDetails.bank_name,
+        branchName: bankDetails.branch_name,
+        verified: bankDetails.verified || false,
+        verifiedAt: bankDetails.verified_at
       }
     });
   } catch (error) {

@@ -3,11 +3,11 @@
  * NO KV STORE - All data from SQL
  */
 
-import { Hono } from 'npm:hono@4';
-import { getDbClient } from '../../../supabase/lib/db.ts';
-import { getBookingsRepository } from '../../../supabase/lib/repositories/bookings.ts';
-import { getEmergencyQueueService } from '../../../supabase/lib/services/emergency-queue-service.ts';
-import { calculateDistance } from '../../../supabase/lib/utils/schedule-utils-sql.ts';
+import { Hono } from 'hono';
+import { getDbClient } from '../../../supabase/lib/db';
+import { getBookingsRepository } from '../../../supabase/lib/repositories/bookings';
+import { getEmergencyQueueService } from '../../../supabase/lib/services/emergency-queue-service';
+import { calculateDistance } from '../../../supabase/lib/utils/schedule-utils-sql';
 
 export function homeServicesEndpointsSQL(app: Hono) {
   

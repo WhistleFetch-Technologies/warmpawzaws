@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { ImageWithFallback } from '../figma/ImageWithFallback';
 import { Tag, Clock, ChevronRight, Percent, DollarSign, Gift, Truck, Zap } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 interface Promotion {
   id: string;

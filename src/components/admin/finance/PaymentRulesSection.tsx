@@ -6,7 +6,7 @@ import { Switch } from '../../ui/switch';
 import { Checkbox } from '../../ui/checkbox';
 import { Save, RotateCcw, CreditCard, Plus, Edit, Trash2, Check, X } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 // Hardcoded vendor types - these are the categories for rules
 const VENDOR_TYPES = [

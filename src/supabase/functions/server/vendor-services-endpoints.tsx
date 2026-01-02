@@ -1,7 +1,7 @@
-import { sendSuccess, sendError } from "./response-utils.ts";
-import { cascadeDeleteVendorService, checkSafeDelete } from "./cascade-delete-service.tsx"; // ✅ GAP #14 FIX
-import * as kv from './kv_store.tsx';
-import { getProblemGridByRole } from "./problem-grid-catalog.tsx";
+import { sendSuccess, sendError } from "./response-utils";
+import { cascadeDeleteVendorService, checkSafeDelete } from "./cascade-delete-service"; // ✅ GAP #14 FIX
+import * as kv from './kv_store';
+import { getProblemGridByRole } from "./problem-grid-catalog";
 
 export function registerVendorServiceEndpoints(app: Hono) {
   

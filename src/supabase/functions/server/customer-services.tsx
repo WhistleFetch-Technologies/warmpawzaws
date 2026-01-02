@@ -1,7 +1,12 @@
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
 // Customer-facing service discovery endpoints
-import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
-import { sendSuccess, sendError } from "./response-utils.ts";
+import { Hono } from 'hono';
+import { sendSuccess, sendError } from "./response-utils";
+import {
+  getVendorsRepository,
+  getVendorServicesRepository,
+  getDbClient
+} from '../../../supabase/lib/repositories/index';
 
 export function registerCustomerServices(app: Hono) {
   /**
@@ -19,96 +24,93 @@ export function registerCustomerServices(app: Hono) {
     console.log('🛍️ [CUSTOMER-SERVICES] Fetching published services');
     console.log(`   Filters: category=${category}, style=${serviceStyle}, petType=${petType}, roleId=${roleId}`);
     
-    // Get all vendors with published services
-    const allVendors = await kv.getByPrefix('vendor:vendor_');
+    // ✅ SQL: Get all approved vendors with published services
+    const vendorsRepo = getVendorsRepository();
+    const allVendors = await vendorsRepo.findAll();
     
-    // Accept vendors who are:
-    // 1. Approved (applicationStatus === 'approved') - from onboarding
-    // 2. Active (status === 'active') - fully setup with services
+    // Accept vendors who are approved and active
     const activeVendors = allVendors.filter((v: any) => {
-      const isApproved = v.applicationStatus === 'approved' || v.status === 'approved';
-      return isApproved;
+      const isApproved = v.application_status === 'approved' || v.status === 'approved';
+      return isApproved && v.is_active !== false;
     });
     
     console.log(`   Found ${activeVendors.length} approved vendors out of ${allVendors.length} total`);
     
     const allServices: any[] = [];
+    const servicesRepo = getVendorServicesRepository();
     
     // Iterate through each vendor to get their published services
     for (const vendor of activeVendors) {
-      const vendorId = vendor.id || vendor.vendorId;
-      const serviceStyles = ['at_home', 'at_center', 'tele'];
+      const vendorId = vendor.id;
       
-      for (const style of serviceStyles) {
-        // Skip if filtering by service style and this doesn't match
-        if (serviceStyle && style !== serviceStyle) continue;
-        
-        const vendorServicesKey = `vendor_services:${vendorId}:${style}`;
-        const vendorServices = await kv.get(vendorServicesKey);
-        
-        if (vendorServices && vendorServices.services) {
-          // Filter only published services
-          const publishedServices = vendorServices.services.filter(
-            (s: any) => s.publishStatus === 'published' && s.isEnabled
-          );
+      // ✅ SQL: Get all published services for this vendor
+      const vendorServices = await servicesRepo.findByVendor(vendorId, {
+        publish_status: 'published',
+        is_enabled: true
+      });
+      
+      // Filter by service style if specified
+      const filteredServices = serviceStyle 
+        ? vendorServices.filter(s => (s.service_style || s.serviceStyle) === serviceStyle)
+        : vendorServices;
+      
+      // Enrich services with vendor information
+      for (const service of filteredServices) {
           
-          // Enrich services with vendor information
-          for (const service of publishedServices) {
-            const enrichedService = {
-              // Service details
-              id: service.id || service.serviceId,
-              serviceName: service.serviceName || service.name,
-              description: service.description || service.customDescription,
-              price: service.customPrice || service.price,
-              duration: service.customDuration || service.duration,
-              categoryName: service.categoryName,
-              subCategoryName: service.subCategoryName,
-              serviceStyle: style,
-              
-              // Package details
-              isPackage: service.isPackage || false,
-              packageDetails: service.packageDetails,
-              whatIncluded: service.whatIncluded || [],
-              whatNotIncluded: service.whatNotIncluded || [],
-              
-              // Vendor details
-              vendorId,
-              vendorName: vendor.businessName || vendor.fullName,
-              vendorRating: vendor.rating || 4.5,
-              vendorReviewCount: vendor.reviewCount || 0,
-              vendorLocation: vendor.location || vendor.address,
-              vendorProfileImage: vendor.profileImage,
-              vendorType: vendor.vendorType,
-              vendorRoleId: vendor.roleId, // NEW: Include vendor role ID for filtering
-              vendorRoleName: vendor.roleName, // NEW: Include vendor role name
-              
-              // Metadata
-              publishedAt: service.publishedAt,
-              approvedBy: service.approvedBy
-            };
-            
-            // Apply filters
-            let includeService = true;
-            
-            // Category filter
-            if (category && service.categoryName !== category) {
-              includeService = false;
-            }
-            
-            // Pet type filter
-            if (petType && service.petTypes && !service.petTypes.includes(petType)) {
-              includeService = false;
-            }
-            
-            // Role ID filter
-            if (roleId && vendor.roleId !== roleId) {
-              includeService = false;
-            }
-            
-            if (includeService) {
-              allServices.push(enrichedService);
-            }
-          }
+        const enrichedService = {
+          // Service details
+          id: service.id,
+          serviceName: service.service_name || service.name,
+          description: service.description || service.custom_description,
+          price: service.custom_price || service.price || 0,
+          duration: service.custom_duration || service.duration || 30,
+          categoryName: service.category_name || service.categoryName,
+          subCategoryName: service.sub_category_name || service.subCategoryName,
+          serviceStyle: service.service_style || service.serviceStyle,
+          
+          // Package details
+          isPackage: service.is_package || service.isPackage || false,
+          packageDetails: service.package_details || service.packageDetails,
+          whatIncluded: service.what_included || service.whatIncluded || [],
+          whatNotIncluded: service.what_not_included || service.whatNotIncluded || [],
+          
+          // Vendor details
+          vendorId,
+          vendorName: vendor.business_name || vendor.full_name || vendor.businessName || vendor.fullName,
+          vendorRating: vendor.rating || 4.5,
+          vendorReviewCount: vendor.review_count || vendor.reviewCount || 0,
+          vendorLocation: vendor.location || vendor.address,
+          vendorProfileImage: vendor.profile_image || vendor.profileImage,
+          vendorType: vendor.vendor_type || vendor.vendorType,
+          vendorRoleId: vendor.role_id || vendor.roleId,
+          vendorRoleName: vendor.role_name || vendor.roleName,
+          
+          // Metadata
+          publishedAt: service.published_at || service.publishedAt,
+          approvedBy: service.approved_by || service.approvedBy
+        };
+        
+        // Apply filters
+        let includeService = true;
+        
+        // Category filter
+        if (category && enrichedService.categoryName !== category) {
+          includeService = false;
+        }
+        
+        // Pet type filter
+        const petTypes = service.pet_types || service.petTypes || [];
+        if (petType && petTypes.length > 0 && !petTypes.includes(petType)) {
+          includeService = false;
+        }
+        
+        // Role ID filter
+        if (roleId && enrichedService.vendorRoleId !== roleId) {
+          includeService = false;
+        }
+        
+        if (includeService) {
+          allServices.push(enrichedService);
         }
       }
     }
@@ -152,66 +154,30 @@ app.get("/make-server-3dd53475/customer/services/:serviceId", async (c) => {
     
     console.log(`🔍 [CUSTOMER-SERVICES] Fetching service details: ${serviceId}`);
     
-    // Check if it's a published service
-    const publishedServices = await kv.getByPrefix('published_service:');
-    const service = publishedServices.find((s: any) => s.id === serviceId || s.serviceId === serviceId);
+    // ✅ SQL: Get published service from vendor_services table
+    const servicesRepo = getVendorServicesRepository();
+    const service = await servicesRepo.findById(serviceId);
     
-    if (service) {
-      // Get vendor details
-      const vendor = await kv.get(`vendor:${service.vendorId}`);
+    if (service && service.publish_status === 'published' && service.is_enabled) {
+      // ✅ SQL: Get vendor details
+      const vendorsRepo = getVendorsRepository();
+      const vendor = await vendorsRepo.findById(service.vendor_id);
       
       return c.json({
         success: true,
         service: {
           ...service,
           vendorDetails: vendor ? {
-            id: vendor.id || vendor.vendorId,
-            businessName: vendor.businessName,
+            id: vendor.id,
+            businessName: vendor.business_name || vendor.businessName,
             rating: vendor.rating || 4.5,
-            reviewCount: vendor.reviewCount || 0,
+            reviewCount: vendor.review_count || vendor.reviewCount || 0,
             location: vendor.location || vendor.address,
-            contact: vendor.contact,
-            businessHours: vendor.businessHours
+            contact: vendor.contact || vendor.contact_number,
+            businessHours: vendor.operating_hours || vendor.businessHours
           } : null
         }
       });
-    }
-    
-    // Fallback: Search in vendor_services
-    const allVendors = await kv.getByPrefix('vendor:');
-    
-    for (const vendor of allVendors) {
-      const vendorId = vendor.id || vendor.vendorId;
-      const serviceStyles = ['at_home', 'at_center', 'tele'];
-      
-      for (const style of serviceStyles) {
-        const vendorServicesKey = `vendor_services:${vendorId}:${style}`;
-        const vendorServices = await kv.get(vendorServicesKey);
-        
-        if (vendorServices && vendorServices.services) {
-          const foundService = vendorServices.services.find(
-            (s: any) => (s.id === serviceId || s.serviceId === serviceId) && s.publishStatus === 'published'
-          );
-          
-          if (foundService) {
-            return c.json({
-              success: true,
-              service: {
-                ...foundService,
-                vendorDetails: {
-                  id: vendorId,
-                  businessName: vendor.businessName || vendor.fullName,
-                  rating: vendor.rating || 4.5,
-                  reviewCount: vendor.reviewCount || 0,
-                  location: vendor.location || vendor.address,
-                  contact: vendor.contact,
-                  businessHours: vendor.businessHours
-                }
-              }
-            });
-          }
-        }
-      }
     }
     
     return c.json({ error: 'Service not found or not published' }, 404);
@@ -230,45 +196,45 @@ app.get("/make-server-3dd53475/customer/packages", async (c) => {
   try {
     console.log('📦 [CUSTOMER-SERVICES] Fetching published packages');
     
-    const allVendors = await kv.getByPrefix('vendor:');
+    // ✅ SQL: Get all approved vendors with published packages
+    const vendorsRepo = getVendorsRepository();
+    const allVendors = await vendorsRepo.findAll();
     const activeVendors = allVendors.filter((v: any) => 
-      v.status === 'active' && v.approvalStatus === 'approved'
+      (v.status === 'active' || v.application_status === 'approved') && v.is_active !== false
     );
     
     const allPackages: any[] = [];
+    const servicesRepo = getVendorServicesRepository();
     
     for (const vendor of activeVendors) {
-      const vendorId = vendor.id || vendor.vendorId;
-      const serviceStyles = ['at_home', 'at_center', 'tele'];
+      const vendorId = vendor.id;
       
-      for (const style of serviceStyles) {
-        const vendorServicesKey = `vendor_services:${vendorId}:${style}`;
-        const vendorServices = await kv.get(vendorServicesKey);
-        
-        if (vendorServices && vendorServices.services) {
-          const publishedPackages = vendorServices.services.filter(
-            (s: any) => s.publishStatus === 'published' && s.isEnabled && s.isPackage === true
-          );
-          
-          for (const pkg of publishedPackages) {
-            allPackages.push({
-              ...pkg,
-              serviceStyle: style,
-              vendorId,
-              vendorName: vendor.businessName || vendor.fullName,
-              vendorRating: vendor.rating || 4.5,
-              vendorReviewCount: vendor.reviewCount || 0,
-              vendorLocation: vendor.location || vendor.address
-            });
-          }
-        }
+      // ✅ SQL: Get published packages for this vendor
+      const vendorPackages = await servicesRepo.findByVendor(vendorId, {
+        publish_status: 'published',
+        is_enabled: true,
+        is_package: true
+      });
+      
+      for (const pkg of vendorPackages) {
+        allPackages.push({
+          ...pkg,
+          serviceStyle: pkg.service_style || pkg.serviceStyle,
+          vendorId,
+          vendorName: vendor.business_name || vendor.full_name || vendor.businessName || vendor.fullName,
+          vendorRating: vendor.rating || 4.5,
+          vendorReviewCount: vendor.review_count || vendor.reviewCount || 0,
+          vendorLocation: vendor.location || vendor.address
+        });
       }
     }
     
     // Sort by savings (best deals first)
     allPackages.sort((a, b) => {
-      const savingsA = a.packageDetails?.pricing?.savings || 0;
-      const savingsB = b.packageDetails?.pricing?.savings || 0;
+      const packageDetailsA = a.package_details || a.packageDetails || {};
+      const packageDetailsB = b.package_details || b.packageDetails || {};
+      const savingsA = packageDetailsA.pricing?.savings || 0;
+      const savingsB = packageDetailsB.pricing?.savings || 0;
       return savingsB - savingsA;
     });
     
@@ -296,42 +262,37 @@ app.get("/make-server-3dd53475/customer/vendors/:vendorId/services", async (c) =
     
     console.log(`🏪 [CUSTOMER-SERVICES] Fetching services for vendor: ${vendorId}`);
     
-    const vendor = await kv.get(`vendor:${vendorId}`);
-    if (!vendor || vendor.status !== 'active') {
+    // ✅ SQL: Get vendor and their published services
+    const vendorsRepo = getVendorsRepository();
+    const vendor = await vendorsRepo.findById(vendorId);
+    if (!vendor || (vendor.status !== 'active' && vendor.application_status !== 'approved') || vendor.is_active === false) {
       return c.json({ error: 'Vendor not found or inactive' }, 404);
     }
     
-    const allServices: any[] = [];
-    const serviceStyles = ['at_home', 'at_center', 'tele'];
+    // ✅ SQL: Get all published services for this vendor
+    const servicesRepo = getVendorServicesRepository();
+    const allServices = await servicesRepo.findByVendor(vendorId, {
+      publish_status: 'published',
+      is_enabled: true
+    });
     
-    for (const style of serviceStyles) {
-      const vendorServicesKey = `vendor_services:${vendorId}:${style}`;
-      const vendorServices = await kv.get(vendorServicesKey);
-      
-      if (vendorServices && vendorServices.services) {
-        const publishedServices = vendorServices.services.filter(
-          (s: any) => s.publishStatus === 'published' && s.isEnabled
-        );
-        
-        allServices.push(...publishedServices.map((s: any) => ({
-          ...s,
-          serviceStyle: style
-        })));
-      }
-    }
+    const enrichedServices = allServices.map((s: any) => ({
+      ...s,
+      serviceStyle: s.service_style || s.serviceStyle
+    }));
     
     return c.json({
       success: true,
       vendor: {
         id: vendorId,
-        businessName: vendor.businessName || vendor.fullName,
+        businessName: vendor.business_name || vendor.full_name || vendor.businessName || vendor.fullName,
         rating: vendor.rating || 4.5,
-        reviewCount: vendor.reviewCount || 0,
+        reviewCount: vendor.review_count || vendor.reviewCount || 0,
         location: vendor.location || vendor.address,
-        profileImage: vendor.profileImage
+        profileImage: vendor.profile_image || vendor.profileImage
       },
-      services: allServices,
-      total: allServices.length
+      services: enrichedServices,
+      total: enrichedServices.length
     });
     
   } catch (error) {

@@ -407,13 +407,13 @@ export const CapabilityHelper = {
       .map(([capability, _]) => capability);
   },
 
-  hasAnyCapability: (capabilities?: VendorCapabilities | null, capabilityList: string[]): boolean => {
+  hasAnyCapability: (capabilityList: string[], capabilities?: VendorCapabilities | null): boolean => {
     if (!capabilities) return false;
     
     return capabilityList.some(cap => (capabilities as any)[cap] === true);
   },
 
-  hasAllCapabilities: (capabilities?: VendorCapabilities | null, capabilityList: string[]): boolean => {
+  hasAllCapabilities: (capabilityList: string[], capabilities?: VendorCapabilities | null): boolean => {
     if (!capabilities) return false;
     
     return capabilityList.every(cap => (capabilities as any)[cap] === true);

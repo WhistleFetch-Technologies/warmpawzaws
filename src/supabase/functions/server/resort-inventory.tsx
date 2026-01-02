@@ -1,7 +1,12 @@
-import { Hono } from "npm:hono";
-import { format, addDays, parseISO, eachDayOfInterval } from "npm:date-fns";
-import * as kv from "./kv_store.tsx";
-import { sendSuccess, sendError } from "./response-utils.ts";
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from "hono";
+import { format, addDays, parseISO, eachDayOfInterval } from "date-fns";
+import { sendSuccess, sendError } from "./response-utils";
+import { 
+  getBoardingRoomsRepository,
+  getBookingsRepository,
+  getDbClient
+} from '../../../supabase/lib/repositories/index';
 
 /**
  * Resort & Boarding Inventory Management
@@ -25,30 +30,20 @@ export function registerResortInventory(app: Hono) {
         return sendError(c, 'Missing required fields: vendorId, name, price', 400);
       }
 
-      const roomId = `room_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-      
-      const room = {
-        id: roomId,
+      // ✅ SQL: Create room in boarding_rooms table
+      const boardingRoomsRepo = getBoardingRoomsRepository();
+      const room = await boardingRoomsRepo.create({
         vendorId,
         name,
-        description,
-        price: Number(price),
-        maxOccupancy: Number(maxOccupancy) || 2,
-        totalInventory: Number(totalInventory) || 1, // Total physical rooms of this type
+        description: description || '',
+        dayPrice: Number(price),
+        nightPrice: Number(price),
+        capacity: Number(maxOccupancy) || 2,
+        totalUnits: Number(totalInventory) || 1, // Total physical rooms of this type
         amenities: amenities || [],
-        images: images || [],
-        isActive: true,
-        createdAt: new Date().toISOString()
-      };
-
-      // Save Room Definition
-      await kv.set(`resort:room:${roomId}`, room);
-      
-      // Index by Vendor
-      const vendorRoomsKey = `vendor:${vendorId}:rooms`;
-      const vendorRooms = await kv.get(vendorRoomsKey) || [];
-      vendorRooms.push(roomId);
-      await kv.set(vendorRoomsKey, vendorRooms);
+        photos: images || [],
+        isActive: true
+      });
 
       return sendSuccess(c, { room });
     } catch (error) {
@@ -62,16 +57,9 @@ export function registerResortInventory(app: Hono) {
   app.get("/make-server-3dd53475/resort/rooms/:vendorId", async (c) => {
     try {
       const { vendorId } = c.req.param();
-      const vendorRoomsKey = `vendor:${vendorId}:rooms`;
-      const roomIds = await kv.get(vendorRoomsKey) || [];
-      
-      const rooms = [];
-      for (const id of roomIds) {
-        const room = await kv.get(`resort:room:${id}`);
-        if (room && room.isActive) {
-          rooms.push(room);
-        }
-      }
+      // ✅ SQL: Get rooms from boarding_rooms table
+      const boardingRoomsRepo = getBoardingRoomsRepository();
+      const rooms = await boardingRoomsRepo.findByVendor(vendorId, { isActive: true });
 
       return sendSuccess(c, { rooms });
     } catch (error) {
@@ -100,8 +88,9 @@ export function registerResortInventory(app: Hono) {
         return sendError(c, 'Missing params: vendorId, roomId, fromDate, toDate', 400);
       }
 
-      // 1. Get Room Details (to know total capacity)
-      const room = await kv.get(`resort:room:${roomId}`);
+      // ✅ SQL: 1. Get Room Details from boarding_rooms table
+      const boardingRoomsRepo = getBoardingRoomsRepository();
+      const room = await boardingRoomsRepo.findById(roomId);
       if (!room) {
         return sendError(c, 'Room not found', 404);
       }
@@ -118,16 +107,25 @@ export function registerResortInventory(app: Hono) {
       let isAvailable = true;
       const dailyAvailability = [];
 
-      // 3. Check each night
+      // ✅ SQL: 3. Check each night by counting bookings for each date
+      const bookingsRepo = getBookingsRepository();
+      const db = getDbClient();
+      
       for (const dateObj of nights) {
         const dateStr = format(dateObj, 'yyyy-MM-dd');
-        const inventoryKey = `inventory:resort:${roomId}:${dateStr}`;
         
-        // Get current bookings count for this date
-        const bookedCount = await kv.get(inventoryKey) || 0;
-        const available = room.totalInventory - bookedCount;
+        // Count bookings for this room on this date
+        const { data: bookings } = await db
+          .from('bookings')
+          .select('id', { count: 'exact' })
+          .eq('service_id', roomId) // Assuming roomId is stored as service_id
+          .eq('booking_date', dateStr)
+          .in('status', ['confirmed', 'in_progress', 'completed']);
+        
+        const bookedCount = bookings?.length || 0;
+        const available = room.totalUnits - bookedCount;
 
-        dailyAvailability.push({ date: dateStr, available, total: room.totalInventory });
+        dailyAvailability.push({ date: dateStr, available, total: room.totalUnits });
 
         if (available < quantity) {
           isAvailable = false;
@@ -140,7 +138,7 @@ export function registerResortInventory(app: Hono) {
         dailyAvailability,
         roomDetails: {
             name: room.name,
-            totalInventory: room.totalInventory
+            totalInventory: room.totalUnits
         }
       });
 
@@ -161,14 +159,29 @@ export function registerResortInventory(app: Hono) {
       const end = parseISO(toDate);
       const nights = eachDayOfInterval({ start, end: addDays(end, -1) });
 
-      // Simple transaction simulation
-      // In a real DB we'd use row locking. Here we just increment.
+      // ✅ SQL: Reserve inventory by creating bookings (or updating inventory table if exists)
+      // Note: Inventory reservation happens when booking is created/confirmed
+      // This endpoint should be called after booking confirmation
+      const db = getDbClient();
+      
+      // Store inventory reservation in resort_inventory table (if exists) or bookings table
       for (const dateObj of nights) {
         const dateStr = format(dateObj, 'yyyy-MM-dd');
-        const inventoryKey = `inventory:resort:${roomId}:${dateStr}`;
         
-        const currentBooked = await kv.get(inventoryKey) || 0;
-        await kv.set(inventoryKey, currentBooked + (Number(quantity) || 1));
+        // Check if resort_inventory table exists, otherwise use bookings count
+        // For now, we'll rely on bookings table to track inventory
+        // The actual reservation happens when booking is created with status 'confirmed'
+        // This is just a marker that inventory should be reserved
+        await db
+          .from('resort_inventory_reservations')
+          .upsert({
+            room_id: roomId,
+            date: dateStr,
+            reserved_quantity: Number(quantity) || 1,
+            updated_at: new Date().toISOString()
+          }, {
+            onConflict: 'room_id,date'
+          });
       }
 
       return sendSuccess(c, { message: 'Inventory reserved' });

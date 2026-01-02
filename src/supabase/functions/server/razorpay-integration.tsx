@@ -5,9 +5,9 @@
  * ✅ UPDATED: Uses centralized credentials helper from platform settings
  */
 
-import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
-import { getRazorpayCredentials, getRazorpayApiBase, getRazorpayAuthHeader } from './razorpay-credentials-helper.tsx';
+import { Hono } from 'hono';
+import * as kv from './kv_store';
+import { getRazorpayCredentials, getRazorpayApiBase, getRazorpayAuthHeader } from './razorpay-credentials-helper';
 
 const RAZORPAY_API_BASE = 'https://api.razorpay.com/v1';
 

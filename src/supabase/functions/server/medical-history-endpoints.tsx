@@ -1,29 +1,18 @@
-import { Hono } from "npm:hono";
-import * as kv from "./kv_store.tsx";
-import { createClient } from "jsr:@supabase/supabase-js@2.49.8";
-import { ensureBucket } from "./bucket-manager.tsx";
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+// ✅ S3 MIGRATION: Supabase Storage replaced with AWS S3
+import { Hono } from "hono";
+import { getS3Helper } from '../../../supabase/lib/storage/s3-helper';
+import {
+  getBookingsRepository,
+  getPetsRepository,
+  getPrescriptionsRepository
+} from '../../../supabase/lib/repositories/index';
+import { getDbClient } from '../../../supabase/lib/db';
 
 export function registerMedicalHistoryEndpoints(app: Hono) {
   const BASE_PATH = "/make-server-3dd53475";
   
-  const MEDICAL_RECORDS_BUCKET = 'make-3dd53475-medical-records';
-
-  // Initialize medical records bucket on module load (non-blocking)
-  const initializeMedicalRecordsBucket = async () => {
-    try {
-      await ensureBucket(MEDICAL_RECORDS_BUCKET, {
-        public: false,
-        fileSizeLimit: 20971520 // 20MB limit
-      });
-    } catch (error) {
-      console.error('❌ Non-critical: Failed to initialize medical records bucket:', error);
-    }
-  };
-
-  // Initialize bucket (fire and forget)
-  initializeMedicalRecordsBucket().catch(err => 
-    console.error('❌ Bucket init error (non-critical):', err)
-  );
+  // S3 bucket is configured via PlatformSettingsRepository
 
   // ==========================================================================
   // GET MEDICAL HISTORY BY APPOINTMENT (WITH STRICT ACCESS CONTROL)
@@ -36,8 +25,9 @@ export function registerMedicalHistoryEndpoints(app: Hono) {
 
       console.log(`[MEDICAL HISTORY] Request for appointment: ${appointmentId} by ${requesterRole}: ${requesterId}`);
 
-      // 🔒 SECURITY CHECK 1: Verify appointment exists
-      const appointment = await kv.get(`booking:${appointmentId}`);
+      // ✅ SQL: 🔒 SECURITY CHECK 1: Verify appointment exists
+      const bookingsRepo = getBookingsRepository();
+      const appointment = await bookingsRepo.findById(appointmentId);
       
       if (!appointment) {
         console.log(`❌ Appointment not found: ${appointmentId}`);
@@ -51,9 +41,11 @@ export function registerMedicalHistoryEndpoints(app: Hono) {
       }
 
       // 🔒 SECURITY CHECK 3: Verify requester is assigned to this appointment
+      const vendorId = appointment.vendor_id || appointment.vendorId;
+      const staffId = appointment.staff_id || appointment.staffId;
       const isAuthorized = 
-        appointment.vendorId === requesterId || 
-        appointment.staffId === requesterId;
+        vendorId === requesterId || 
+        staffId === requesterId;
 
       if (!isAuthorized) {
         console.log(`❌ Unauthorized access attempt by ${requesterId} to appointment ${appointmentId}`);
@@ -61,7 +53,7 @@ export function registerMedicalHistoryEndpoints(app: Hono) {
       }
 
       // ✅ Authorization passed - fetch medical records
-      const petId = appointment.petIds?.[0] || appointment.petId;
+      const petId = appointment.pet_ids?.[0] || appointment.petIds?.[0] || appointment.pet_id || appointment.petId;
       
       if (!petId) {
         return c.json({ error: 'No pet associated with this appointment' }, 400);
@@ -69,24 +61,28 @@ export function registerMedicalHistoryEndpoints(app: Hono) {
 
       console.log(`✅ Access granted - Fetching records for pet: ${petId}`);
 
-      // Fetch pet profile
-      const petProfile = await kv.get(`pet:${petId}`);
+      // ✅ SQL: Fetch pet profile
+      const petsRepo = getPetsRepository();
+      const petProfile = await petsRepo.findById(petId);
 
-      // 1. Fetch medical records from our records store
-      const allMedicalRecords = await kv.getByPrefix('medical_record:');
-      const petMedicalRecords = allMedicalRecords.filter((r: any) => r.petId === petId);
+      // ✅ SQL: 1. Fetch medical records
+      const db = getDbClient();
+      const { data: allMedicalRecords } = await db
+        .from('medical_records')
+        .select('*')
+        .eq('pet_id', petId);
+      const petMedicalRecords = allMedicalRecords || [];
 
-      // 2. Fetch prescriptions
-      const allPrescriptions = await kv.getByPrefix('prescription:');
-      const petPrescriptions = allPrescriptions.filter((p: any) => p.petId === petId);
+      // ✅ SQL: 2. Fetch prescriptions
+      const prescriptionsRepo = getPrescriptionsRepository();
+      const petPrescriptions = await prescriptionsRepo.findByPet(petId);
 
-      // 3. Fetch vet summaries from past appointments
-      const allBookings = await kv.getByPrefix('booking:');
-      const pastBookingsWithSummaries = allBookings.filter((b: any) => 
-        b.petId === petId && 
-        b.status === 'completed' &&
+      // ✅ SQL: 3. Fetch vet summaries from past appointments
+      const pastBookings = await bookingsRepo.findByPet(petId);
+      const pastBookingsWithSummaries = pastBookings.filter((b: any) => 
         b.id !== appointmentId && // Exclude current appointment
-        (b.vetSummary || b.diagnosis || b.notes)
+        b.status === 'completed' &&
+        (b.vet_summary || b.vetSummary || b.diagnosis || b.notes)
       );
 
       // 4. User-uploaded documents from pet profile
@@ -97,14 +93,14 @@ export function registerMedicalHistoryEndpoints(app: Hono) {
         // A. Medical Records
         ...petMedicalRecords.map((r: any) => ({
           id: r.id,
-          type: r.recordType,
+          type: r.record_type || r.recordType,
           title: r.title,
           description: r.description,
-          date: r.uploadDate,
-          uploadedBy: r.uploaderRole === 'customer' ? 'Owner' : r.metadata?.doctorName || 'Vet',
-          url: r.fileUrl,
-          fileName: r.fileName,
-          fileType: r.fileType,
+          date: r.upload_date || r.uploadDate,
+          uploadedBy: (r.uploader_role || r.uploaderRole) === 'customer' ? 'Owner' : (r.metadata?.doctorName || 'Vet'),
+          url: r.file_url || r.fileUrl,
+          fileName: r.file_name || r.fileName,
+          fileType: r.file_type || r.fileType,
           metadata: r.metadata
         })),
 
@@ -114,10 +110,10 @@ export function registerMedicalHistoryEndpoints(app: Hono) {
           type: 'prescription',
           title: `Prescription: ${p.diagnosis || 'General Care'}`,
           description: `${p.medications} - ${p.dosage} for ${p.duration}`,
-          date: p.createdAt,
-          uploadedBy: p.doctorName || 'Vet',
-          clinicName: p.clinicName,
-          url: p.pdfUrl,
+          date: p.created_at || p.createdAt,
+          uploadedBy: p.doctor_name || p.doctorName || 'Vet',
+          clinicName: p.clinic_name || p.clinicName,
+          url: p.pdf_url || p.pdfUrl,
           metadata: {
             diagnosis: p.diagnosis,
             medications: p.medications,
@@ -131,18 +127,18 @@ export function registerMedicalHistoryEndpoints(app: Hono) {
         ...pastBookingsWithSummaries.map((b: any) => ({
           id: `summary-${b.id}`,
           type: 'vet_summary',
-          title: `Consultation: ${b.serviceName}`,
-          description: b.vetSummary?.summary || b.diagnosis || b.notes,
-          date: b.date || b.scheduledDate,
-          uploadedBy: b.staffName || b.vendorName || 'Vet',
-          clinicName: b.vendorBusinessName,
+          title: `Consultation: ${b.service_name || b.serviceName}`,
+          description: (b.vet_summary?.summary || b.vetSummary?.summary) || b.diagnosis || b.notes,
+          date: b.scheduled_date || b.scheduledDate,
+          uploadedBy: b.staff_name || b.staffName || b.vendor_name || b.vendorName || 'Vet',
+          clinicName: b.vendor_business_name || b.vendorBusinessName,
           metadata: {
             diagnosis: b.diagnosis,
-            symptoms: b.vetSummary?.symptoms,
-            vitalSigns: b.vetSummary?.vitalSigns,
-            treatmentPlan: b.vetSummary?.treatmentPlan,
-            followUpDate: b.vetSummary?.followUpDate,
-            followUpInstructions: b.vetSummary?.followUpInstructions
+            symptoms: (b.vet_summary?.symptoms || b.vetSummary?.symptoms),
+            vitalSigns: (b.vet_summary?.vital_signs || b.vetSummary?.vitalSigns),
+            treatmentPlan: (b.vet_summary?.treatment_plan || b.vetSummary?.treatmentPlan),
+            followUpDate: (b.vet_summary?.follow_up_date || b.vetSummary?.followUpDate),
+            followUpInstructions: (b.vet_summary?.follow_up_instructions || b.vetSummary?.followUpInstructions)
           }
         })),
 
@@ -165,27 +161,25 @@ export function registerMedicalHistoryEndpoints(app: Hono) {
       // Sort by date descending (newest first)
       records.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-      // Refresh signed URLs for stored files (ensure they're not expired)
-      const supabase = createClient(
-        Deno.env.get('SUPABASE_URL')!,
-        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-      );
-
+      // ✅ S3: Refresh signed URLs for stored files (ensure they're not expired)
+      const s3 = getS3Helper();
       for (const record of records) {
-        if (record.url && record.url.includes(MEDICAL_RECORDS_BUCKET)) {
-          // Extract file path from URL
-          const urlParts = record.url.split('/');
-          const filePathIndex = urlParts.findIndex(part => part === MEDICAL_RECORDS_BUCKET);
-          if (filePathIndex !== -1) {
-            const filePath = urlParts.slice(filePathIndex + 1).join('/').split('?')[0];
-            
-            // Generate fresh signed URL (1 hour expiry)
-            const { data: signedUrlData } = await supabase.storage
-              .from(MEDICAL_RECORDS_BUCKET)
-              .createSignedUrl(filePath, 3600);
-
-            if (signedUrlData) {
-              record.url = signedUrlData.signedUrl;
+        if (record.url && (record.url.includes('medical-records') || record.fileName)) {
+          // Extract S3 key from URL or use fileName
+          let s3Key = '';
+          if (record.url.includes('medical-records/')) {
+            const urlParts = record.url.split('medical-records/');
+            s3Key = urlParts[1]?.split('?')[0] || '';
+          } else if (record.fileName) {
+            s3Key = `medical-records/${record.fileName}`;
+          }
+          
+          if (s3Key) {
+            try {
+              const signedUrl = await s3.getSignedUrl(s3Key, 3600);
+              record.url = signedUrl;
+            } catch (err) {
+              console.warn('Warning: Could not refresh URL for', s3Key);
             }
           }
         }
@@ -195,8 +189,8 @@ export function registerMedicalHistoryEndpoints(app: Hono) {
         success: true,
         appointmentId,
         petId,
-        petName: petProfile?.name || appointment.petName,
-        petPhoto: petProfile?.profilePhoto,
+        petName: petProfile?.name || appointment.pet_name || appointment.petName,
+        petPhoto: petProfile?.profile_photo_url || petProfile?.profilePhoto,
         petSpecies: petProfile?.species,
         petBreed: petProfile?.breed,
         totalRecords: records.length,
@@ -230,64 +224,46 @@ export function registerMedicalHistoryEndpoints(app: Hono) {
 
       console.log(`📤 Uploading medical document for pet: ${petId}, type: ${recordType}`);
 
-      const supabase = createClient(
-        Deno.env.get('SUPABASE_URL')!,
-        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-      );
-
-      // Generate unique filename organized by pet
+      // ✅ S3: Generate unique filename and upload
+      const s3 = getS3Helper();
       const timestamp = Date.now();
       const random = Math.random().toString(36).substring(7);
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${petId}/${recordType}_${timestamp}_${random}.${fileExt}`;
+      const fileExt = file.name.split('.').pop() || 'bin';
+      const s3Key = `medical-records/${petId}/${recordType}_${timestamp}_${random}.${fileExt}`;
 
-      // Convert File to ArrayBuffer
+      // Convert File to Buffer
       const arrayBuffer = await file.arrayBuffer();
-      const uint8Array = new Uint8Array(arrayBuffer);
+      const buffer = new Uint8Array(arrayBuffer);
 
-      // Upload to Supabase Storage
-      const { data, error } = await supabase.storage
-        .from(MEDICAL_RECORDS_BUCKET)
-        .upload(fileName, uint8Array, {
-          contentType: file.type,
-          upsert: false
-        });
+      // Upload to S3
+      const uploadResult = await s3.uploadFile(s3Key, buffer, {
+        contentType: file.type,
+        acl: 'private',
+      });
 
-      if (error) {
-        console.error('❌ Upload error:', error);
-        return c.json({ error: error.message }, 500);
-      }
-
-      // Generate signed URL (1 hour expiry for security)
-      const { data: signedUrlData } = await supabase.storage
-        .from(MEDICAL_RECORDS_BUCKET)
-        .createSignedUrl(fileName, 3600);
-
-      if (!signedUrlData) {
-        return c.json({ error: 'Failed to generate signed URL' }, 500);
-      }
-
-      // Store medical record metadata in KV
+      // ✅ SQL: Store medical record metadata
+      const db = getDbClient();
       const recordId = generateId('medical_record');
-      const medicalRecord: MedicalRecord = {
-        id: recordId,
-        petId,
-        appointmentId: appointmentId || undefined,
-        recordType: recordType as any,
-        title: title || file.name,
-        description,
-        fileUrl: signedUrlData.signedUrl,
-        fileName: file.name,
-        fileType: file.type.startsWith('image/') ? 'image' : 'document',
-        uploadedBy,
-        uploaderRole: uploaderRole as any,
-        uploadDate: new Date().toISOString(),
-        metadata: {},
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-
-      await kv.set(`medical_record:${recordId}`, medicalRecord);
+      await db
+        .from('medical_records')
+        .insert({
+          id: recordId,
+          pet_id: petId,
+          appointment_id: appointmentId || null,
+          record_type: recordType,
+          title: title || file.name,
+          description: description || null,
+          file_url: uploadResult.signedUrl || uploadResult.url,
+          file_path: s3Key,
+          file_name: file.name,
+          file_type: file.type.startsWith('image/') ? 'image' : 'document',
+          uploaded_by: uploadedBy,
+          uploader_role: uploaderRole,
+          upload_date: new Date().toISOString(),
+          metadata: {},
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
 
       console.log(`✅ Medical document uploaded: ${recordId}`);
 
@@ -295,7 +271,8 @@ export function registerMedicalHistoryEndpoints(app: Hono) {
         success: true,
         recordId,
         fileName: file.name,
-        url: signedUrlData.signedUrl
+        key: s3Key,
+        url: uploadResult.signedUrl || uploadResult.url
       });
 
     } catch (error) {
@@ -316,16 +293,19 @@ export function registerMedicalHistoryEndpoints(app: Hono) {
 
       console.log(`[VET SUMMARY] Adding summary to appointment: ${appointmentId}`);
 
-      // 🔒 SECURITY CHECK: Verify appointment and authorization
-      const appointment = await kv.get(`booking:${appointmentId}`);
+      // ✅ SQL: 🔒 SECURITY CHECK: Verify appointment and authorization
+      const bookingsRepo = getBookingsRepository();
+      const appointment = await bookingsRepo.findById(appointmentId);
       
       if (!appointment) {
         return c.json({ error: 'Appointment not found' }, 404);
       }
 
+      const vendorId = appointment.vendor_id || appointment.vendorId;
+      const staffId = appointment.staff_id || appointment.staffId;
       const isAuthorized = 
-        appointment.vendorId === requesterId || 
-        appointment.staffId === requesterId;
+        vendorId === requesterId || 
+        staffId === requesterId;
 
       if (!isAuthorized) {
         return c.json({ error: 'Access Denied: You are not assigned to this appointment' }, 403);
@@ -344,32 +324,34 @@ export function registerMedicalHistoryEndpoints(app: Hono) {
         addedAt: new Date().toISOString()
       };
 
-      appointment.vetSummary = vetSummary;
-      appointment.diagnosis = body.diagnosis; // Legacy field
-      appointment.updatedAt = new Date().toISOString();
+      // ✅ SQL: Update appointment with vet summary
+      await bookingsRepo.update(appointmentId, {
+        vet_summary: vetSummary,
+        diagnosis: body.diagnosis,
+        updated_at: new Date().toISOString()
+      });
 
-      await kv.set(`booking:${appointmentId}`, appointment);
-
-      // Also create a medical record entry for searchability
-      const petId = appointment.petIds?.[0] || appointment.petId;
+      // ✅ SQL: Also create a medical record entry for searchability
+      const petId = appointment.pet_ids?.[0] || appointment.petIds?.[0] || appointment.pet_id || appointment.petId;
       if (petId) {
+        const db = getDbClient();
         const recordId = generateId('medical_record');
-        const medicalRecord: MedicalRecord = {
-          id: recordId,
-          petId,
-          appointmentId,
-          recordType: 'vet_summary',
-          title: `Consultation: ${appointment.serviceName}`,
-          description: body.summary,
-          uploadedBy: requesterId,
-          uploaderRole: requesterRole as any,
-          uploadDate: new Date().toISOString(),
-          metadata: vetSummary,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        };
-
-        await kv.set(`medical_record:${recordId}`, medicalRecord);
+        await db
+          .from('medical_records')
+          .insert({
+            id: recordId,
+            pet_id: petId,
+            appointment_id: appointmentId,
+            record_type: 'vet_summary',
+            title: `Consultation: ${appointment.service_name || appointment.serviceName}`,
+            description: body.summary,
+            uploaded_by: requesterId,
+            uploader_role: requesterRole,
+            upload_date: new Date().toISOString(),
+            metadata: vetSummary,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          });
       }
 
       console.log(`✅ Vet summary added to appointment: ${appointmentId}`);
@@ -393,32 +375,40 @@ export function registerMedicalHistoryEndpoints(app: Hono) {
     try {
       const { prescriptionId } = c.req.param();
       
-      const prescription = await kv.get(`prescription:${prescriptionId}`);
+      // ✅ SQL: Get prescription
+      const prescriptionsRepo = getPrescriptionsRepository();
+      const prescription = await prescriptionsRepo.findById(prescriptionId);
       
       if (!prescription) {
         return c.json({ error: 'Prescription not found' }, 404);
       }
 
-      // Refresh signed URL if it exists
-      if (prescription.pdfUrl) {
-        const supabase = createClient(
-          Deno.env.get('SUPABASE_URL')!,
-          Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-        );
-
-        // Extract file path and refresh signed URL
-        const urlParts = prescription.pdfUrl.split('/');
-        const filePathIndex = urlParts.findIndex((part: string) => part.includes('make-3dd53475'));
-        if (filePathIndex !== -1) {
-          const filePath = urlParts.slice(filePathIndex + 1).join('/').split('?')[0];
-          const bucketName = urlParts[filePathIndex];
+      // ✅ S3: Refresh signed URL if it exists
+      if (prescription.pdfUrl || prescription.pdf_url) {
+        const s3 = getS3Helper();
+        const pdfUrl = prescription.pdf_url || prescription.pdfUrl;
+        
+        if (pdfUrl) {
+          // Extract S3 key from URL
+          let s3Key = '';
+          if (pdfUrl.includes('medical-records/')) {
+            const urlParts = pdfUrl.split('medical-records/');
+            s3Key = urlParts[1]?.split('?')[0] || '';
+            if (s3Key) {
+              s3Key = `medical-records/${s3Key}`;
+            }
+          } else if (prescription.file_path) {
+            s3Key = prescription.file_path;
+          }
           
-          const { data: signedUrlData } = await supabase.storage
-            .from(bucketName)
-            .createSignedUrl(filePath, 3600);
-
-          if (signedUrlData) {
-            prescription.pdfUrl = signedUrlData.signedUrl;
+          if (s3Key) {
+            try {
+              const signedUrl = await s3.getSignedUrl(s3Key, 3600);
+              prescription.pdfUrl = signedUrl;
+              prescription.pdf_url = signedUrl;
+            } catch (err) {
+              console.warn('Warning: Could not refresh prescription PDF URL', s3Key);
+            }
           }
         }
       }
@@ -445,44 +435,49 @@ export function registerMedicalHistoryEndpoints(app: Hono) {
 
       console.log(`[PRESCRIPTION] Creating for appointment: ${appointmentId}`);
 
-      // Verify appointment
-      const appointment = await kv.get(`booking:${appointmentId}`);
+      // ✅ SQL: Verify appointment
+      const bookingsRepo = getBookingsRepository();
+      const appointment = await bookingsRepo.findById(appointmentId);
       
       if (!appointment) {
         return c.json({ error: 'Appointment not found' }, 404);
       }
 
+      const vendorId = appointment.vendor_id || appointment.vendorId;
+      const staffId = appointment.staff_id || appointment.staffId;
       const isAuthorized = 
-        appointment.vendorId === requesterId || 
-        appointment.staffId === requesterId;
+        vendorId === requesterId || 
+        staffId === requesterId;
 
       if (!isAuthorized) {
         return c.json({ error: 'Access Denied' }, 403);
       }
 
-      const petId = appointment.petIds?.[0] || appointment.petId;
+      const petId = appointment.pet_ids?.[0] || appointment.petIds?.[0] || appointment.pet_id || appointment.petId;
       const prescriptionId = generateId('prescription');
       
-      const prescription: Prescription = {
+      // ✅ SQL: Create prescription
+      const prescriptionsRepo = getPrescriptionsRepository();
+      await prescriptionsRepo.create({
         id: prescriptionId,
-        appointmentId,
-        petId,
-        customerId: appointment.customerId,
-        vendorId: appointment.vendorId,
-        staffId: appointment.staffId,
+        appointment_id: appointmentId,
+        pet_id: petId,
+        customer_id: appointment.customer_id || appointment.customerId,
+        vendor_id: appointment.vendor_id || appointment.vendorId,
+        staff_id: appointment.staff_id || appointment.staffId,
         diagnosis: body.diagnosis,
         medications: body.medications,
         dosage: body.dosage,
         duration: body.duration,
         instructions: body.instructions,
-        doctorName: body.doctorName || appointment.staffName,
-        clinicName: body.clinicName || appointment.vendorBusinessName,
-        pdfUrl: body.pdfUrl, // If PDF was generated
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-
-      await kv.set(`prescription:${prescriptionId}`, prescription);
+        doctor_name: body.doctorName || appointment.staff_name || appointment.staffName,
+        clinic_name: body.clinicName || appointment.vendor_business_name || appointment.vendorBusinessName,
+        pdf_url: body.pdfUrl || null, // If PDF was generated
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
+      
+      const prescription = await prescriptionsRepo.findById(prescriptionId);
 
       console.log(`✅ Prescription created: ${prescriptionId}`);
 

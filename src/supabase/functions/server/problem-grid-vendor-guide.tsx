@@ -4,7 +4,7 @@
  * when creating custom services to ensure they appear in problem grid searches
  */
 
-import { Hono } from "npm:hono";
+import { Hono } from "hono";
 
 export function problemGridVendorGuideEndpoints(app: Hono) {
   

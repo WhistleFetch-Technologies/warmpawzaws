@@ -1,23 +1,40 @@
-// Comprehensive Vet Services Booking Endpoints
-import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
+/**
+ * VET BOOKING ENDPOINTS - SQL VERSION
+ * ✅ MIGRATED TO SQL: NO KV STORE - All data from SQL
+ * 
+ * Comprehensive vet services booking endpoints
+ * 
+ * Status: ✅ SQL-ONLY IMPLEMENTATION
+ * KV Operations: 38 → 0
+ */
 
+import { Hono } from 'hono';
+import { getDbClient } from '../../../supabase/lib/db';
+import { getBookingsRepository } from '../../../supabase/lib/repositories/bookings';
+import { getVendorsRepository } from '../../../supabase/lib/repositories/vendors';
+import { getServicesRepository } from '../../../supabase/lib/repositories/services';
+import { getPrescriptionsRepository } from '../../../supabase/lib/repositories/prescriptions';
+import { getDiagnosticBookingsRepository } from '../../../supabase/lib/repositories/diagnostic-bookings';
+import { getReviewsRepository } from '../../../supabase/lib/repositories/reviews';
+import { getSchedulingRepository } from '../../../supabase/lib/repositories/scheduling';
+
+const client = getDbClient();
 const app = new Hono();
 
 /**
  * GET /make-server-3dd53475/vet/services
  * Get all published vet services grouped by service type
+ * ✅ SQL-ONLY: Uses vendor_services table and VendorsRepository
  */
 app.get("/make-server-3dd53475/vet/services", async (c) => {
   try {
     console.log('🏥 [VET-SERVICES] Fetching all vet services');
     
-    // Get all active vet vendors
-    const allVendors = await kv.getByPrefix('vendor:');
+    // ✅ SQL: Get all active vet vendors
+    const vendorsRepo = getVendorsRepository();
+    const allVendors = await vendorsRepo.findAll({ status: 'approved', isActive: true });
     const vetVendors = allVendors.filter((v: any) => 
-      v.vendorType === 'vet_clinic' && 
-      v.status === 'active' && 
-      v.approvalStatus === 'approved'
+      v.role_id === 'veterinary_clinic' || v.category === 'vet_clinic' || v.vendorType === 'vet_clinic'
     );
     
     console.log(`   Found ${vetVendors.length} active vet vendors`);
@@ -30,68 +47,66 @@ app.get("/make-server-3dd53475/vet/services", async (c) => {
       medicine_delivery: []
     };
     
-    // Iterate through each vet vendor to get their services
+    // ✅ SQL: Get vendor services from vendor_services table
     for (const vendor of vetVendors) {
-      const vendorId = vendor.id || vendor.vendorId;
-      const serviceStyles = ['at_center', 'at_home', 'tele'];
+      const vendorId = vendor.id || vendor.vendor_id;
       
-      for (const style of serviceStyles) {
-        const vendorServicesKey = `vendor_services:${vendorId}:${style}`;
-        const vendorServices = await kv.get(vendorServicesKey);
+      // Query vendor_services table
+      const { data: vendorServices, error } = await client
+        .from('vendor_services')
+        .select('*')
+        .eq('vendor_id', vendorId)
+        .eq('publish_status', 'published')
+        .eq('is_enabled', true);
+      
+      if (error || !vendorServices) continue;
+      
+      for (const service of vendorServices) {
+        const enrichedService = {
+          id: service.id || service.service_id,
+          serviceName: service.service_name || service.name,
+          description: service.custom_description || service.description,
+          price: service.custom_price || service.price,
+          duration: service.custom_duration || service.duration_minutes,
+          categoryName: service.category,
+          subCategoryName: service.sub_category,
+          serviceStyle: service.service_style,
+          vendorId,
+          vendorName: vendor.business_name || vendor.owner_name,
+          vendorRating: vendor.rating || 4.5,
+          vendorReviewCount: vendor.review_count || 0,
+          vendorLocation: vendor.address,
+          vendorPhone: vendor.phone,
+          vendorEmail: vendor.email,
+          specialization: vendor.specialization,
+          experience: vendor.experience_years,
+          hasMedicines: vendor.has_medicines || false,
+          hasLabFacility: vendor.has_lab_facility || false
+        };
         
-        if (vendorServices && vendorServices.services) {
-          const publishedServices = vendorServices.services.filter(
-            (s: any) => s.publishStatus === 'published' && s.isEnabled
-          );
-          
-          for (const service of publishedServices) {
-            const enrichedService = {
-              id: service.id || service.serviceId,
-              serviceName: service.serviceName || service.name,
-              description: service.description || service.customDescription,
-              price: service.customPrice || service.price,
-              duration: service.customDuration || service.duration,
-              categoryName: service.categoryName,
-              subCategoryName: service.subCategoryName,
-              serviceStyle: style,
-              vendorId,
-              vendorName: vendor.businessName || vendor.fullName,
-              vendorRating: vendor.rating || 4.5,
-              vendorReviewCount: vendor.reviewCount || 0,
-              vendorLocation: vendor.location || vendor.address,
-              vendorPhone: vendor.phone,
-              vendorEmail: vendor.email,
-              specialization: vendor.specialization,
-              experience: vendor.experience,
-              hasMedicines: vendor.hasMedicines || false,
-              hasLabFacility: vendor.hasLabFacility || false
-            };
-            
-            // Categorize by service type
-            const subCat = service.subCategoryName?.toLowerCase();
-            if (style === 'tele' || subCat?.includes('tele')) {
-              servicesByType.tele_consultation.push(enrichedService);
-            } else if (style === 'at_center' || subCat?.includes('clinic')) {
-              servicesByType.clinic_visit.push(enrichedService);
-            } else if (style === 'at_home' || subCat?.includes('home')) {
-              servicesByType.home_visit.push(enrichedService);
-            }
-            
-            // Lab services
-            if (subCat?.includes('lab') || subCat?.includes('test') || subCat?.includes('diagnostic')) {
-              servicesByType.lab_collection.push(enrichedService);
-            }
-            
-            // Medicine delivery
-            if (vendor.hasMedicines) {
-              servicesByType.medicine_delivery.push({
-                ...enrichedService,
-                serviceName: 'Medicine Delivery',
-                categoryName: 'Medicine',
-                subCategoryName: 'Delivery'
-              });
-            }
-          }
+        // Categorize by service type
+        const subCat = service.sub_category?.toLowerCase();
+        if (service.service_style === 'tele' || subCat?.includes('tele')) {
+          servicesByType.tele_consultation.push(enrichedService);
+        } else if (service.service_style === 'at_center' || subCat?.includes('clinic')) {
+          servicesByType.clinic_visit.push(enrichedService);
+        } else if (service.service_style === 'at_home' || subCat?.includes('home')) {
+          servicesByType.home_visit.push(enrichedService);
+        }
+        
+        // Lab services
+        if (subCat?.includes('lab') || subCat?.includes('test') || subCat?.includes('diagnostic')) {
+          servicesByType.lab_collection.push(enrichedService);
+        }
+        
+        // Medicine delivery
+        if (vendor.has_medicines) {
+          servicesByType.medicine_delivery.push({
+            ...enrichedService,
+            serviceName: 'Medicine Delivery',
+            categoryName: 'Medicine',
+            subCategoryName: 'Delivery'
+          });
         }
       }
     }
@@ -113,6 +128,7 @@ app.get("/make-server-3dd53475/vet/services", async (c) => {
 /**
  * GET /make-server-3dd53475/vet/doctors
  * Get all available vet doctors with filters
+ * ✅ SQL-ONLY: Uses VendorsRepository
  */
 app.get("/make-server-3dd53475/vet/doctors", async (c) => {
   try {
@@ -121,28 +137,28 @@ app.get("/make-server-3dd53475/vet/doctors", async (c) => {
     
     console.log('👨‍⚕️ [VET-DOCTORS] Fetching available doctors');
     
-    const allVendors = await kv.getByPrefix('vendor:');
+    // ✅ SQL: Get all active vet vendors
+    const vendorsRepo = getVendorsRepository();
+    const allVendors = await vendorsRepo.findAll({ status: 'approved', isActive: true });
     const vetDoctors = allVendors.filter((v: any) => 
-      v.vendorType === 'vet_clinic' && 
-      v.status === 'active' && 
-      v.approvalStatus === 'approved'
+      v.role_id === 'veterinary_clinic' || v.category === 'vet_clinic' || v.vendorType === 'vet_clinic'
     );
     
     let doctors = vetDoctors.map((vendor: any) => ({
-      id: vendor.id || vendor.vendorId,
-      name: vendor.fullName || vendor.businessName,
-      businessName: vendor.businessName,
+      id: vendor.id || vendor.vendor_id,
+      name: vendor.owner_name || vendor.business_name,
+      businessName: vendor.business_name,
       specialization: vendor.specialization || 'General Veterinarian',
-      experience: vendor.experience || '5+ years',
+      experience: vendor.experience_years || '5+ years',
       rating: vendor.rating || 4.5,
-      reviewCount: vendor.reviewCount || 0,
-      consultationFee: vendor.consultationFee || 500,
-      location: vendor.location || vendor.address,
-      profileImage: vendor.profileImage,
+      reviewCount: vendor.review_count || 0,
+      consultationFee: vendor.consultation_fee || 500,
+      location: vendor.address,
+      profileImage: vendor.profile_image,
       availableForTele: true,
       availableForClinic: true,
-      availableForHome: vendor.homeVisitAvailable || false,
-      nextAvailableSlot: vendor.nextAvailableSlot || new Date().toISOString()
+      availableForHome: vendor.home_visit_available || false,
+      nextAvailableSlot: vendor.next_available_slot || new Date().toISOString()
     }));
     
     // Apply filters
@@ -180,6 +196,7 @@ app.get("/make-server-3dd53475/vet/doctors", async (c) => {
 /**
  * GET /make-server-3dd53475/vet/clinics
  * Get all vet clinics with location data
+ * ✅ SQL-ONLY: Uses VendorsRepository
  */
 app.get("/make-server-3dd53475/vet/clinics", async (c) => {
   try {
@@ -188,35 +205,35 @@ app.get("/make-server-3dd53475/vet/clinics", async (c) => {
     
     console.log('🏥 [VET-CLINICS] Fetching clinics');
     
-    const allVendors = await kv.getByPrefix('vendor:');
-    const clinics = allVendors
-      .filter((v: any) => 
-        v.vendorType === 'vet_clinic' && 
-        v.status === 'active' && 
-        v.approvalStatus === 'approved'
-      )
-      .map((vendor: any) => ({
-        id: vendor.id || vendor.vendorId,
-        name: vendor.businessName || vendor.fullName,
-        address: vendor.address || vendor.location,
-        location: vendor.location,
-        coordinates: vendor.coordinates || { lat: 12.9716, lng: 77.5946 }, // Default Bangalore
-        rating: vendor.rating || 4.5,
-        reviewCount: vendor.reviewCount || 0,
-        phone: vendor.phone,
-        email: vendor.email,
-        businessHours: vendor.businessHours || '9 AM - 9 PM',
-        services: vendor.services || [],
-        hasEmergency: vendor.hasEmergency || true,
-        hasLabFacility: vendor.hasLabFacility || false,
-        hasMedicines: vendor.hasMedicines || false,
-        distance: lat && lng ? calculateDistance(
-          parseFloat(lat), 
-          parseFloat(lng), 
-          vendor.coordinates?.lat || 12.9716,
-          vendor.coordinates?.lng || 77.5946
-        ) : null
-      }));
+    // ✅ SQL: Get all active vet vendors
+    const vendorsRepo = getVendorsRepository();
+    const allVendors = await vendorsRepo.findAll({ status: 'approved', isActive: true });
+    const vetVendors = allVendors.filter((v: any) => 
+      v.role_id === 'veterinary_clinic' || v.category === 'vet_clinic' || v.vendorType === 'vet_clinic'
+    );
+    
+    const clinics = vetVendors.map((vendor: any) => ({
+      id: vendor.id || vendor.vendor_id,
+      name: vendor.business_name || vendor.owner_name,
+      address: vendor.address,
+      location: vendor.address,
+      coordinates: { lat: vendor.latitude || 12.9716, lng: vendor.longitude || 77.5946 },
+      rating: vendor.rating || 4.5,
+      reviewCount: vendor.review_count || 0,
+      phone: vendor.phone,
+      email: vendor.email,
+      businessHours: vendor.operating_hours || '9 AM - 9 PM',
+      services: vendor.services || [],
+      hasEmergency: vendor.has_emergency || true,
+      hasLabFacility: vendor.has_lab_facility || false,
+      hasMedicines: vendor.has_medicines || false,
+      distance: lat && lng ? calculateDistance(
+        parseFloat(lat), 
+        parseFloat(lng), 
+        vendor.latitude || 12.9716,
+        vendor.longitude || 77.5946
+      ) : null
+    }));
     
     // Sort by distance if location provided
     if (lat && lng) {
@@ -242,6 +259,7 @@ app.get("/make-server-3dd53475/vet/clinics", async (c) => {
 /**
  * GET /make-server-3dd53475/vet/slots
  * Get available time slots for a doctor/clinic
+ * ✅ SQL-ONLY: Uses BookingsRepository and SchedulingRepository
  */
 app.get("/make-server-3dd53475/vet/slots", async (c) => {
   try {
@@ -255,9 +273,9 @@ app.get("/make-server-3dd53475/vet/slots", async (c) => {
     
     console.log(`📅 [VET-SLOTS] Fetching slots for vendor: ${vendorId}, date: ${date}`);
     
-    // Get existing bookings for this vendor on this date
-    const bookingsKey = `bookings:vendor:${vendorId}:${date}`;
-    const existingBookings = await kv.get(bookingsKey) || { slots: [] };
+    // ✅ SQL: Get existing bookings for this vendor on this date
+    const bookingsRepo = getBookingsRepository();
+    const existingBookings = await bookingsRepo.findByVendor(vendorId, { date });
     
     // Generate time slots (9 AM to 9 PM, 30-minute intervals)
     const slots = [];
@@ -269,7 +287,11 @@ app.get("/make-server-3dd53475/vet/slots", async (c) => {
         const timeStr = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
         const slotId = `${date}-${timeStr}`;
         
-        const isBooked = existingBookings.slots.some((b: any) => b.slotId === slotId);
+        // Check if slot is booked
+        const isBooked = existingBookings.some((b: any) => {
+          const bookingTime = b.booking_time || b.scheduled_time;
+          return bookingTime && bookingTime.startsWith(timeStr);
+        });
         
         slots.push({
           id: slotId,
@@ -299,6 +321,7 @@ app.get("/make-server-3dd53475/vet/slots", async (c) => {
 /**
  * POST /make-server-3dd53475/vet/booking
  * Create a new vet booking (tele, clinic, home visit)
+ * ✅ SQL-ONLY: Uses BookingsRepository
  */
 app.post("/make-server-3dd53475/vet/booking", async (c) => {
   try {
@@ -324,51 +347,41 @@ app.post("/make-server-3dd53475/vet/booking", async (c) => {
       return c.json({ error: 'Missing required fields' }, 400);
     }
     
-    // Generate booking ID
-    const bookingId = `booking:${Date.now()}:${Math.random().toString(36).substr(2, 9)}`;
+    // ✅ SQL: Create booking using repository
+    const bookingsRepo = getBookingsRepository();
+    const vendorsRepo = getVendorsRepository();
     
-    // Create booking object
-    const booking = {
-      id: bookingId,
-      customerId,
-      petId,
-      vendorId,
-      serviceId,
-      serviceType,
-      slotId,
-      date,
-      time,
-      price,
-      address,
-      notes,
-      status: 'confirmed',
-      paymentStatus: 'pending',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+    // Resolve vendor ID (handles both UUID and vendor_id string)
+    const vendor = await vendorsRepo.findById(vendorId) || await vendorsRepo.findByVendorId(vendorId);
+    if (!vendor) {
+      return c.json({ error: 'Vendor not found' }, 404);
+    }
+    
+    // Map serviceType to service_type enum
+    const serviceTypeMap: Record<string, string> = {
+      'tele': 'online',
+      'clinic': 'at_vendor',
+      'home_visit': 'at_home'
     };
     
-    // Save booking
-    await kv.set(bookingId, booking);
+    const booking = await bookingsRepo.create({
+      customer_id: customerId,
+      vendor_id: vendor.id,
+      service_id: serviceId || '', // Service ID required
+      booking_date: date,
+      booking_time: time,
+      scheduled_date: date,
+      scheduled_time: time,
+      status: 'confirmed',
+      service_type: serviceTypeMap[serviceType] || 'at_vendor',
+      address: address || null,
+      base_price: price || 0,
+      total_amount: price || 0,
+      payment_status: 'pending',
+      notes: notes || null,
+    });
     
-    // Add to customer's bookings
-    const customerBookingsKey = `customer:${customerId}:bookings`;
-    const customerBookings = await kv.get(customerBookingsKey) || { bookings: [] };
-    customerBookings.bookings.unshift(bookingId);
-    await kv.set(customerBookingsKey, customerBookings);
-    
-    // Add to vendor's bookings
-    const vendorBookingsKey = `vendor:${vendorId}:bookings`;
-    const vendorBookings = await kv.get(vendorBookingsKey) || { bookings: [] };
-    vendorBookings.bookings.unshift(bookingId);
-    await kv.set(vendorBookingsKey, vendorBookings);
-    
-    // Mark slot as booked
-    const bookingsKey = `bookings:vendor:${vendorId}:${date}`;
-    const existingBookings = await kv.get(bookingsKey) || { slots: [] };
-    existingBookings.slots.push({ slotId, bookingId });
-    await kv.set(bookingsKey, existingBookings);
-    
-    console.log(`✅ [VET-BOOKING] Booking created: ${bookingId}`);
+    console.log(`✅ [VET-BOOKING] Booking created: ${booking.id}`);
     
     return c.json({
       success: true,
@@ -385,6 +398,7 @@ app.post("/make-server-3dd53475/vet/booking", async (c) => {
 /**
  * GET /make-server-3dd53475/customer/:customerId/bookings
  * Get all bookings for a customer
+ * ✅ SQL-ONLY: Uses BookingsRepository
  */
 app.get("/make-server-3dd53475/customer/:customerId/bookings", async (c) => {
   try {
@@ -393,34 +407,41 @@ app.get("/make-server-3dd53475/customer/:customerId/bookings", async (c) => {
     
     console.log(`📋 [CUSTOMER-BOOKINGS] Fetching bookings for: ${customerId}`);
     
-    const customerBookingsKey = `customer:${customerId}:bookings`;
-    const customerBookings = await kv.get(customerBookingsKey) || { bookings: [] };
+    // ✅ SQL: Get all bookings for customer
+    const bookingsRepo = getBookingsRepository();
+    const vendorsRepo = getVendorsRepository();
+    let bookings = await bookingsRepo.findByCustomer(customerId);
     
-    const bookings = [];
-    for (const bookingId of customerBookings.bookings) {
-      const booking = await kv.get(bookingId);
-      if (booking) {
-        // Get vendor details
-        const vendor = await kv.get(`vendor:${booking.vendorId}`);
-        
-        // Filter by type if provided
-        if (!type || booking.serviceType === type) {
-          bookings.push({
-            ...booking,
-            vendorName: vendor?.businessName || vendor?.fullName,
-            vendorRating: vendor?.rating || 4.5,
-            vendorLocation: vendor?.location
-          });
-        }
-      }
+    // Filter by type if provided
+    if (type) {
+      bookings = bookings.filter((b: any) => {
+        if (type === 'tele') return b.service_type === 'online';
+        if (type === 'clinic') return b.service_type === 'at_vendor';
+        if (type === 'home') return b.service_type === 'at_home';
+        return true;
+      });
     }
     
-    console.log(`✅ [CUSTOMER-BOOKINGS] Returning ${bookings.length} bookings`);
+    // Enrich with vendor details
+    const enrichedBookings = await Promise.all(bookings.map(async (booking: any) => {
+      if (booking.vendor_id) {
+        const vendor = await vendorsRepo.findById(booking.vendor_id);
+        return {
+          ...booking,
+          vendorName: vendor?.business_name || vendor?.owner_name,
+          vendorRating: vendor?.rating || 4.5,
+          vendorLocation: vendor?.address
+        };
+      }
+      return booking;
+    }));
+    
+    console.log(`✅ [CUSTOMER-BOOKINGS] Returning ${enrichedBookings.length} bookings`);
     
     return c.json({
       success: true,
-      bookings,
-      total: bookings.length
+      bookings: enrichedBookings,
+      total: enrichedBookings.length
     });
     
   } catch (error) {
@@ -432,6 +453,7 @@ app.get("/make-server-3dd53475/customer/:customerId/bookings", async (c) => {
 /**
  * POST /make-server-3dd53475/vet/prescription
  * Create or upload prescription
+ * ✅ SQL-ONLY: Uses PrescriptionsRepository
  */
 app.post("/make-server-3dd53475/vet/prescription", async (c) => {
   try {
@@ -444,45 +466,30 @@ app.post("/make-server-3dd53475/vet/prescription", async (c) => {
       medicines,
       instructions,
       followUpDate,
-      prescriptionUrl
+      prescriptionUrl,
+      createdBy,
+      createdByRole
     } = body;
     
     console.log(`💊 [PRESCRIPTION] Creating prescription for booking: ${bookingId}`);
     
-    const prescriptionId = `prescription:${Date.now()}:${Math.random().toString(36).substr(2, 9)}`;
+    // ✅ SQL: Create prescription using repository
+    const prescriptionsRepo = getPrescriptionsRepository();
     
-    const prescription = {
-      id: prescriptionId,
-      bookingId,
-      vendorId,
-      customerId,
-      petId,
-      medicines: medicines || [],
-      instructions,
-      followUpDate,
-      prescriptionUrl,
-      createdAt: new Date().toISOString()
-    };
+    const prescription = await prescriptionsRepo.create({
+      booking_id: bookingId,
+      pet_id: petId,
+      customer_id: customerId,
+      vendor_id: vendorId,
+      medications: medicines || [],
+      general_notes: instructions,
+      follow_up_date: followUpDate,
+      prescription_file_url: prescriptionUrl,
+      created_by: createdBy || vendorId,
+      created_by_role: (createdByRole || 'vendor') as 'vendor' | 'staff' | 'admin',
+    });
     
-    await kv.set(prescriptionId, prescription);
-    
-    // Link to booking
-    if (bookingId) {
-      const booking = await kv.get(bookingId);
-      if (booking) {
-        booking.prescriptionId = prescriptionId;
-        booking.updatedAt = new Date().toISOString();
-        await kv.set(bookingId, booking);
-      }
-    }
-    
-    // Add to pet's health records
-    const petRecordsKey = `pet:${petId}:health_records`;
-    const records = await kv.get(petRecordsKey) || { prescriptions: [] };
-    records.prescriptions.unshift(prescriptionId);
-    await kv.set(petRecordsKey, records);
-    
-    console.log(`✅ [PRESCRIPTION] Created: ${prescriptionId}`);
+    console.log(`✅ [PRESCRIPTION] Created: ${prescription.id}`);
     
     return c.json({
       success: true,
@@ -499,24 +506,35 @@ app.post("/make-server-3dd53475/vet/prescription", async (c) => {
 /**
  * GET /make-server-3dd53475/vet/prescription/:prescriptionId
  * Get prescription details
+ * ✅ SQL-ONLY: Uses PrescriptionsRepository
  */
 app.get("/make-server-3dd53475/vet/prescription/:prescriptionId", async (c) => {
   try {
     const { prescriptionId } = c.req.param();
+    const actorId = c.req.query('actorId') || '';
+    const actorRole = c.req.query('actorRole') || 'customer';
     
-    const prescription = await kv.get(prescriptionId);
+    // ✅ SQL: Get prescription with access control
+    const prescriptionsRepo = getPrescriptionsRepository();
+    const prescription = await prescriptionsRepo.getById(
+      prescriptionId,
+      actorId,
+      actorRole as 'vendor' | 'staff' | 'admin' | 'customer'
+    );
+    
     if (!prescription) {
-      return c.json({ error: 'Prescription not found' }, 404);
+      return c.json({ error: 'Prescription not found or access denied' }, 404);
     }
     
     // Get vendor details
-    const vendor = await kv.get(`vendor:${prescription.vendorId}`);
+    const vendorsRepo = getVendorsRepository();
+    const vendor = await vendorsRepo.findById(prescription.vendor_id);
     
     return c.json({
       success: true,
       prescription: {
         ...prescription,
-        vendorName: vendor?.businessName || vendor?.fullName,
+        vendorName: vendor?.business_name || vendor?.owner_name,
         vendorSpecialization: vendor?.specialization
       }
     });
@@ -530,6 +548,7 @@ app.get("/make-server-3dd53475/vet/prescription/:prescriptionId", async (c) => {
 /**
  * POST /make-server-3dd53475/vet/lab-test
  * Create lab test booking
+ * ✅ SQL-ONLY: Uses DiagnosticBookingsRepository
  */
 app.post("/make-server-3dd53475/vet/lab-test", async (c) => {
   try {
@@ -548,42 +567,28 @@ app.post("/make-server-3dd53475/vet/lab-test", async (c) => {
     
     console.log(`🔬 [LAB-TEST] Creating lab test booking for customer: ${customerId}`);
     
-    const labTestId = `labtest:${Date.now()}:${Math.random().toString(36).substr(2, 9)}`;
+    // ✅ SQL: Create diagnostic booking
+    const diagnosticBookingsRepo = getDiagnosticBookingsRepository();
     
-    const labTest = {
-      id: labTestId,
-      customerId,
-      petId,
-      vendorId,
-      testType,
+    // Generate booking number
+    const bookingNumber = `LAB-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+    
+    const labTest = await diagnosticBookingsRepo.create({
+      customer_id: customerId,
+      pet_id: petId,
+      vendor_id: vendorId,
+      booking_number: bookingNumber,
       tests: tests || [],
-      collectionDate,
-      collectionTime,
-      address,
-      notes,
-      status: 'scheduled', // scheduled, collected, processing, completed
-      technicianId: null,
-      technicianName: null,
-      reportUrl: null,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
+      booking_type: address ? 'home_collection' : 'center_visit',
+      scheduled_date: collectionDate,
+      scheduled_time: collectionTime,
+      collection_address: address ? { address, notes } : null,
+      special_instructions: notes,
+      total_amount: 0, // Will be calculated by pharmacy/vendor
+      payment_status: 'pending',
+    });
     
-    await kv.set(labTestId, labTest);
-    
-    // Add to customer's lab tests
-    const customerLabTestsKey = `customer:${customerId}:lab_tests`;
-    const customerTests = await kv.get(customerLabTestsKey) || { tests: [] };
-    customerTests.tests.unshift(labTestId);
-    await kv.set(customerLabTestsKey, customerTests);
-    
-    // Add to vendor's lab tests
-    const vendorLabTestsKey = `vendor:${vendorId}:lab_tests`;
-    const vendorTests = await kv.get(vendorLabTestsKey) || { tests: [] };
-    vendorTests.tests.unshift(labTestId);
-    await kv.set(vendorLabTestsKey, vendorTests);
-    
-    console.log(`✅ [LAB-TEST] Created: ${labTestId}`);
+    console.log(`✅ [LAB-TEST] Created: ${labTest.id}`);
     
     return c.json({
       success: true,
@@ -600,6 +605,7 @@ app.post("/make-server-3dd53475/vet/lab-test", async (c) => {
 /**
  * POST /make-server-3dd53475/vet/medicine-order
  * Create medicine delivery order
+ * ✅ SQL-ONLY: Store in orders table or booking package_details
  */
 app.post("/make-server-3dd53475/vet/medicine-order", async (c) => {
   try {
@@ -609,55 +615,59 @@ app.post("/make-server-3dd53475/vet/medicine-order", async (c) => {
       petId,
       vendorId, // pharmacy vendor
       prescriptionId,
-      prescriptionUrl, // uploaded prescription
-      medicines, // array of medicine items
+      prescriptionUrl,
+      medicines,
       deliveryAddress,
       notes
     } = body;
     
     console.log(`💊 [MEDICINE-ORDER] Creating order for customer: ${customerId}`);
     
-    const orderId = `medicine_order:${Date.now()}:${Math.random().toString(36).substr(2, 9)}`;
+    // ✅ SQL: Store medicine order in orders table or booking package_details
+    // For now, we'll create a booking with package_details for medicine orders
+    const bookingsRepo = getBookingsRepository();
+    const vendorsRepo = getVendorsRepository();
     
-    const order = {
-      id: orderId,
-      customerId,
-      petId,
-      vendorId,
-      prescriptionId,
-      prescriptionUrl,
-      medicines: medicines || [],
-      deliveryAddress,
-      notes,
-      status: 'pending_verification', // pending_verification, verified, confirmed, shipped, delivered
-      totalAmount: null,
-      estimatedDelivery: null,
-      trackingId: null,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-    
-    await kv.set(orderId, order);
-    
-    // Add to customer's medicine orders
-    const customerOrdersKey = `customer:${customerId}:medicine_orders`;
-    const customerOrders = await kv.get(customerOrdersKey) || { orders: [] };
-    customerOrders.orders.unshift(orderId);
-    await kv.set(customerOrdersKey, customerOrders);
-    
-    // Add to vendor's medicine orders
-    if (vendorId) {
-      const vendorOrdersKey = `vendor:${vendorId}:medicine_orders`;
-      const vendorOrders = await kv.get(vendorOrdersKey) || { orders: [] };
-      vendorOrders.orders.unshift(orderId);
-      await kv.set(vendorOrdersKey, vendorOrders);
+    const vendor = await vendorsRepo.findById(vendorId) || await vendorsRepo.findByVendorId(vendorId);
+    if (!vendor) {
+      return c.json({ error: 'Pharmacy vendor not found' }, 404);
     }
     
-    console.log(`✅ [MEDICINE-ORDER] Created: ${orderId}`);
+    // Create order as a booking with special type
+    const order = await bookingsRepo.create({
+      customer_id: customerId,
+      vendor_id: vendor.id,
+      service_id: '', // Medicine delivery service
+      booking_date: new Date().toISOString().split('T')[0],
+      booking_time: '12:00:00',
+      scheduled_date: new Date().toISOString().split('T')[0],
+      scheduled_time: '12:00:00',
+      status: 'pending_verification',
+      service_type: 'at_home',
+      address: deliveryAddress,
+      base_price: 0, // Will be calculated after verification
+      total_amount: 0,
+      payment_status: 'pending',
+      notes: notes || null,
+      package_details: {
+        orderType: 'medicine',
+        prescriptionId,
+        prescriptionUrl,
+        medicines: medicines || [],
+        status: 'pending_verification'
+      }
+    });
+    
+    console.log(`✅ [MEDICINE-ORDER] Created: ${order.id}`);
     
     return c.json({
       success: true,
-      order,
+      order: {
+        id: order.id,
+        ...order.package_details,
+        createdAt: order.created_at,
+        updatedAt: order.updated_at
+      },
       message: 'Medicine order created successfully. Pharmacy will verify and confirm charges.'
     });
     
@@ -670,12 +680,21 @@ app.post("/make-server-3dd53475/vet/medicine-order", async (c) => {
 /**
  * GET /make-server-3dd53475/tracking/:bookingId
  * Get live tracking info for home visits or lab collection
+ * ✅ SQL-ONLY: Store tracking in booking package_details
  */
 app.get("/make-server-3dd53475/tracking/:bookingId", async (c) => {
   try {
     const { bookingId } = c.req.param();
     
-    const tracking = await kv.get(`tracking:${bookingId}`) || {
+    // ✅ SQL: Get booking and extract tracking from package_details
+    const bookingsRepo = getBookingsRepository();
+    const booking = await bookingsRepo.findById(bookingId);
+    
+    if (!booking) {
+      return c.json({ error: 'Booking not found' }, 404);
+    }
+    
+    const tracking = booking.package_details?.tracking || {
       status: 'scheduled',
       currentLocation: null,
       estimatedArrival: null,
@@ -698,6 +717,7 @@ app.get("/make-server-3dd53475/tracking/:bookingId", async (c) => {
 /**
  * POST /make-server-3dd53475/vet/feedback
  * Submit feedback after service
+ * ✅ SQL-ONLY: Uses ReviewsRepository and VendorsRepository
  */
 app.post("/make-server-3dd53475/vet/feedback", async (c) => {
   try {
@@ -715,44 +735,48 @@ app.post("/make-server-3dd53475/vet/feedback", async (c) => {
     
     console.log(`⭐ [FEEDBACK] Submitting feedback for booking: ${bookingId}`);
     
-    const feedbackId = `feedback:${Date.now()}:${Math.random().toString(36).substr(2, 9)}`;
+    // ✅ SQL: Create review
+    const reviewsRepo = getReviewsRepository();
+    const bookingsRepo = getBookingsRepository();
+    const vendorsRepo = getVendorsRepository();
     
-    const feedback = {
-      id: feedbackId,
-      bookingId,
-      vendorId,
-      customerId,
-      rating,
-      review,
-      serviceQuality,
-      punctuality,
-      cleanliness,
-      createdAt: new Date().toISOString()
-    };
+    const feedback = await reviewsRepo.create({
+      booking_id: bookingId,
+      customer_id: customerId,
+      vendor_id: vendorId,
+      rating: rating,
+      comment: review || null,
+    });
     
-    await kv.set(feedbackId, feedback);
+    // Update booking with feedback reference
+    await bookingsRepo.update(bookingId, {
+      status: 'completed',
+      completed_at: new Date().toISOString()
+    });
     
-    // Update booking
-    const booking = await kv.get(bookingId);
-    if (booking) {
-      booking.feedbackId = feedbackId;
-      booking.status = 'completed';
-      await kv.set(bookingId, booking);
-    }
-    
-    // Update vendor rating
-    const vendor = await kv.get(`vendor:${vendorId}`);
+    // ✅ SQL: Update vendor rating
+    const vendor = await vendorsRepo.findById(vendorId);
     if (vendor) {
-      const currentRating = vendor.rating || 0;
-      const currentCount = vendor.reviewCount || 0;
-      const newRating = ((currentRating * currentCount) + rating) / (currentCount + 1);
+      // Get all reviews for vendor to calculate average
+      const allReviews = await reviewsRepo.findByVendor(vendorId);
+      const totalRating = allReviews.reduce((sum, r) => sum + r.rating, 0);
+      const averageRating = allReviews.length > 0 ? totalRating / allReviews.length : rating;
       
-      vendor.rating = Math.round(newRating * 10) / 10;
-      vendor.reviewCount = currentCount + 1;
-      await kv.set(`vendor:${vendorId}`, vendor);
+      // Update vendor metadata with new rating
+      const metadata = (vendor as any).metadata || {};
+      await vendorsRepo.update(vendorId, {
+        metadata: {
+          ...metadata,
+          rating: Math.round(averageRating * 10) / 10,
+          reviewCount: allReviews.length,
+          serviceQuality,
+          punctuality,
+          cleanliness
+        }
+      });
     }
     
-    console.log(`✅ [FEEDBACK] Submitted: ${feedbackId}`);
+    console.log(`✅ [FEEDBACK] Submitted: ${feedback.id}`);
     
     return c.json({
       success: true,

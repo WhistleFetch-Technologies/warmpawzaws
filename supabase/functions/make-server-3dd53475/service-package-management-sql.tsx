@@ -94,7 +94,7 @@ export function registerServicePackageManagement(app: Hono) {
         sessionFrequency: body.sessionFrequency || '',
         price: parseFloat(body.price),
         discountPercent: body.discountPercent || 0,
-        serviceStyle: body.serviceStyle || 'both',
+        serviceStyle: body.serviceStyle || 'at_center', // Standard default (Technical Standards 10.1)
         includes: body.includes || [],
         requirements: body.requirements || [],
         validityDays: body.validityDays || 90,

@@ -1,4 +1,4 @@
-import { Hono } from "npm:hono";
+import { Hono } from "hono";
 
 /**
  * GOOGLE PLACES API SERVICE

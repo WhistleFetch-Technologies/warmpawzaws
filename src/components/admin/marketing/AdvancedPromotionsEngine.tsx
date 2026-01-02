@@ -12,7 +12,7 @@ import {
   ArrowLeft, Plus, Zap, Gift, TrendingUp, Target, Percent, Tag,
   Calendar, Users, Package, Edit, Trash2, Copy, BarChart, Clock
 } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
 
 interface AdvancedPromotionsEngineProps {

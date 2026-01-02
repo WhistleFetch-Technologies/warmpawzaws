@@ -1,5 +1,13 @@
-import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from 'hono';
+import { 
+  getBookingsRepository,
+  getOrdersRepository,
+  getPaymentsRepository,
+  getCustomersRepository,
+  getVendorsRepository
+} from '../../../supabase/lib/repositories/index';
+import { getDbClient } from '../../../supabase/lib/db';
 
 export function analyticsAggregationEndpoints(app: Hono) {
   
@@ -395,31 +403,63 @@ export function analyticsAggregationEndpoints(app: Hono) {
     };
   }
   
+  // ✅ SQL: Get bookings in date range from bookings table
   async function getBookingsInRange(start: string, end: string): Promise<any[]> {
-    const allBookings = await kv.getByPrefix('booking:');
-    return allBookings.filter((b: any) => {
-      if (!b.id || b.id.includes(':') || typeof b !== 'object') return false;
-      const bookingDate = b.createdAt || b.bookingDate;
+    const bookingsRepo = getBookingsRepository();
+    const bookings = await bookingsRepo.findAll({});
+    return bookings.filter((b: any) => {
+      const bookingDate = b.created_at || b.service_date;
       return bookingDate >= start && bookingDate <= end;
-    });
+    }).map((b: any) => ({
+      id: b.id,
+      customerId: b.customer_id,
+      vendorId: b.vendor_id,
+      totalAmount: b.total_amount || 0,
+      createdAt: b.created_at,
+      bookingDate: b.service_date,
+      status: b.status,
+      serviceCategory: b.service_type,
+      category: b.service_type,
+      serviceName: b.service_name,
+      serviceType: b.service_type,
+      location: b.location,
+      city: b.city,
+      platformFee: b.platform_fee || 0
+    }));
   }
   
+  // ✅ SQL: Get orders in date range from orders table
   async function getOrdersInRange(start: string, end: string): Promise<any[]> {
-    const allOrders = await kv.getByPrefix('order:');
-    return allOrders.filter((o: any) => {
-      if (!o.id || o.id.includes(':') || typeof o !== 'object') return false;
-      const orderDate = o.createdAt || o.orderDate;
+    const ordersRepo = getOrdersRepository();
+    const orders = await ordersRepo.findAll({});
+    return orders.filter((o: any) => {
+      const orderDate = o.created_at;
       return orderDate >= start && orderDate <= end;
-    });
+    }).map((o: any) => ({
+      id: o.id,
+      customerId: o.customer_id,
+      totalAmount: o.total_amount || 0,
+      createdAt: o.created_at,
+      orderDate: o.created_at,
+      category: o.category || 'E-Commerce',
+      platformFee: o.metadata?.platformFee || 0
+    }));
   }
   
+  // ✅ SQL: Get transactions in date range from payments table
   async function getTransactionsInRange(start: string, end: string): Promise<any[]> {
-    const allPayments = await kv.getByPrefix('payment:');
-    return allPayments.filter((p: any) => {
-      if (!p.id || p.id.includes(':') || typeof p !== 'object') return false;
-      const paymentDate = p.createdAt || p.paidAt;
+    const paymentsRepo = getPaymentsRepository();
+    const payments = await paymentsRepo.findAll({});
+    return payments.filter((p: any) => {
+      const paymentDate = p.created_at || p.paid_at;
       return paymentDate >= start && paymentDate <= end && p.status === 'completed';
-    });
+    }).map((p: any) => ({
+      id: p.id,
+      amount: p.amount || 0,
+      platformCommission: p.platform_commission || 0,
+      createdAt: p.created_at,
+      paidAt: p.paid_at
+    }));
   }
   
   async function getVisitorsInRange(start: string, end: string): Promise<number> {
@@ -433,14 +473,16 @@ export function analyticsAggregationEndpoints(app: Hono) {
     return bookings.length + orders.length;
   }
 
+  // ✅ SQL: Get customer bookings from bookings table
   async function getCustomerBookings(customerId: string): Promise<any[]> {
-    const allBookings = await kv.getByPrefix('booking:');
-    return allBookings.filter((b: any) => b.customerId === customerId && !b.id.includes(':'));
+    const bookingsRepo = getBookingsRepository();
+    return await bookingsRepo.findByCustomer(customerId);
   }
 
+  // ✅ SQL: Get customer orders from orders table
   async function getCustomerOrders(customerId: string): Promise<any[]> {
-    const allOrders = await kv.getByPrefix('order:');
-    return allOrders.filter((o: any) => o.customerId === customerId && !o.id.includes(':'));
+    const ordersRepo = getOrdersRepository();
+    return await ordersRepo.findByCustomer(customerId);
   }
   
   function getPreviousPeriod(start: string, end: string): { start: string; end: string } {
@@ -540,13 +582,15 @@ export function analyticsAggregationEndpoints(app: Hono) {
     
     const result = await Promise.all(
       Object.entries(vendorRevenue).map(async ([vendorId, data]) => {
-        const vendor = await kv.get(`vendor:${vendorId}`);
+        // ✅ SQL: Get vendor from vendors table
+        const vendorsRepo = getVendorsRepository();
+        const vendor = await vendorsRepo.findById(vendorId);
         return {
           vendorId,
-          vendorName: vendor?.businessName || vendor?.fullName || 'Unknown',
+          vendorName: vendor?.business_name || vendor?.full_name || 'Unknown',
           revenue: Math.round(data.revenue),
           bookings: data.bookings,
-          avgRating: vendor?.averageRating || 0
+          avgRating: vendor?.average_rating || vendor?.metadata?.averageRating || 0
         };
       })
     );
@@ -575,15 +619,15 @@ export function analyticsAggregationEndpoints(app: Hono) {
     })).sort((a, b) => b.revenue - a.revenue);
   }
 
+  // ✅ SQL: Get cohort analysis from customers table
   async function getCohortAnalysis(period: string): Promise<any> {
-    // Simplified cohort analysis
-    const customers = await kv.getByPrefix('customer:');
-    const validCustomers = customers.filter((c: any) => !c.id.includes(':'));
+    const customersRepo = getCustomersRepository();
+    const customers = await customersRepo.findAll({});
     
     const cohorts: Record<string, { total: number; retained: number }> = {};
     
-    validCustomers.forEach((c: any) => {
-      const joinDate = new Date(c.createdAt);
+    customers.forEach((c: any) => {
+      const joinDate = new Date(c.created_at);
       const cohortKey = `${joinDate.getFullYear()}-${String(joinDate.getMonth() + 1).padStart(2, '0')}`;
       
       if (!cohorts[cohortKey]) {
@@ -592,7 +636,8 @@ export function analyticsAggregationEndpoints(app: Hono) {
       cohorts[cohortKey].total += 1;
       
       // Check if customer is still active
-      if (c.lastActivityAt && new Date(c.lastActivityAt) > new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)) {
+      const lastActivityAt = c.last_activity_at || c.updated_at;
+      if (lastActivityAt && new Date(lastActivityAt) > new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)) {
         cohorts[cohortKey].retained += 1;
       }
     });
@@ -624,9 +669,11 @@ export function analyticsAggregationEndpoints(app: Hono) {
     };
   }
 
+  // ✅ SQL: Get vendor performance metrics from vendors table
   async function getVendorPerformanceMetrics(start: string, end: string): Promise<any[]> {
-    const vendors = await kv.getByPrefix('vendor:');
-    const validVendors = vendors.filter((v: any) => v.id && !v.id.includes(':') && v.status === 'approved');
+    const vendorsRepo = getVendorsRepository();
+    const vendors = await vendorsRepo.findAll({});
+    const validVendors = vendors.filter((v: any) => v.status === 'approved');
     
     const metrics = await Promise.all(
       validVendors.map(async (vendor: any) => {
@@ -636,11 +683,11 @@ export function analyticsAggregationEndpoints(app: Hono) {
         
         return {
           vendorId: vendor.id,
-          vendorName: vendor.businessName || vendor.fullName,
-          category: vendor.serviceCategory,
+          vendorName: vendor.business_name || vendor.full_name,
+          category: vendor.service_category || vendor.metadata?.serviceCategory,
           bookings: vendorBookings.length,
           revenue: Math.round(revenue),
-          avgRating: vendor.averageRating || 0,
+          avgRating: vendor.average_rating || vendor.metadata?.averageRating || 0,
           avgResponseTime,
           completionRate: calculateCompletionRate(vendorBookings)
         };
@@ -727,6 +774,7 @@ export function analyticsAggregationEndpoints(app: Hono) {
     };
   }
 
+  // ✅ SQL: Get vendor bookings (already uses getBookingsInRange which is SQL-based)
   async function getVendorBookings(vendorId: string, start: string, end: string): Promise<any[]> {
     const bookings = await getBookingsInRange(start, end);
     return bookings.filter(b => b.vendorId === vendorId);

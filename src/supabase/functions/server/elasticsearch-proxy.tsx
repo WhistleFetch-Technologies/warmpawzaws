@@ -1,6 +1,6 @@
-import { Hono } from "npm:hono";
-import { sendSuccess, sendError } from "./response-utils.ts";
-import Fuse from "npm:fuse.js";
+import { Hono } from "hono";
+import { sendSuccess, sendError } from "./response-utils";
+import Fuse from "fuse.js";
 
 /**
  * 🔍 ELASTICSEARCH PROXY / ENHANCED SEARCH SYSTEM
@@ -25,7 +25,14 @@ interface SearchIndexItem {
   rating?: number;
 }
 
-export function elasticsearchProxyEndpoints(app: Hono, kv: any) {
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { getDbClient } from '../../../supabase/lib/db';
+import {
+  getVendorServicesRepository,
+  getVendorsRepository
+} from '../../../supabase/lib/repositories/index';
+
+export function elasticsearchProxyEndpoints(app: Hono) {
   const BASE_PATH = "/make-server-3dd53475";
 
   // ========================================
@@ -36,41 +43,47 @@ export function elasticsearchProxyEndpoints(app: Hono, kv: any) {
       const query = c.req.query('q') || '';
       const type = c.req.query('type') || 'all';
 
-      // 1. Fetch Data
-      // In a real ES setup, we'd query the cluster. Here, we fetch cached indices from KV.
-      // We assume an index exists at 'search_index_master'. If not, we build it on the fly (expensive but functional).
-      let searchData: SearchIndexItem[] = await kv.get('search_index_master');
+      // ✅ SQL: 1. Fetch Data from SQL tables and build search index
+      const db = getDbClient();
+      const servicesRepo = getVendorServicesRepository();
+      const vendorsRepo = getVendorsRepository();
       
-      if (!searchData) {
-        // Fallback: Fetch from specific collections and build index
-        // This is a simplified simulation
-        const services = (await kv.getByPrefix('service_'))?.map((i: any) => ({
-            id: i.value.id,
-            type: 'service',
-            title: i.value.name,
-            description: i.value.description,
-            tags: [i.value.category, ...(i.value.tags || [])],
-            popularity: i.value.popularity || 0,
-            image: i.value.image,
-            price: i.value.price,
-            rating: i.value.rating
-        })) || [];
-        
-        const vendors = (await kv.getByPrefix('vendor_'))?.map((i: any) => ({
-             id: i.value.id,
-             type: 'center', // or staff
-             title: i.value.businessName || i.value.fullName,
-             description: i.value.bio || '',
-             tags: i.value.services || [],
-             popularity: i.value.rating || 0,
-             image: i.value.profilePhoto,
-             rating: i.value.rating
-        })) || [];
+      // Fetch all published services
+      const { data: servicesData } = await db
+        .from('vendor_services')
+        .select('*')
+        .eq('publish_status', 'published')
+        .eq('is_enabled', true);
+      
+      // Fetch all active vendors
+      const vendors = await vendorsRepo.findAll();
+      const activeVendors = vendors.filter(v => v.is_active !== false && (v.application_status === 'approved' || v.status === 'approved'));
+      
+      // Build search index items
+      const services = (servicesData || []).map((s: any) => ({
+        id: s.id,
+        type: 'service' as const,
+        title: s.service_name || s.name,
+        description: s.description || '',
+        tags: [s.category_name || s.category, ...(s.tags || [])],
+        popularity: s.popularity || 0,
+        image: s.image || s.photo,
+        price: s.price || s.custom_price || 0,
+        rating: s.rating || 0
+      }));
+      
+      const centers = activeVendors.map((v: any) => ({
+        id: v.id,
+        type: 'center' as const,
+        title: v.business_name || v.full_name || v.businessName || v.fullName,
+        description: v.bio || v.description || '',
+        tags: v.services || [],
+        popularity: v.rating || 0,
+        image: v.profile_image || v.profile_photo || v.profilePhoto,
+        rating: v.rating || 0
+      }));
 
-        searchData = [...services, ...vendors];
-        // Cache it for future
-        await kv.set('search_index_master', searchData);
-      }
+      const searchData: SearchIndexItem[] = [...services, ...centers];
 
       if (!query) {
           return sendSuccess(c, { results: [], total: 0 });
@@ -95,9 +108,9 @@ export function elasticsearchProxyEndpoints(app: Hono, kv: any) {
           results = results.filter(r => r.type === type);
       }
 
-      // 3. Log Query for Analytics
+      // ✅ SQL: 3. Log Query for Analytics
       // Fire and forget
-      logSearchQuery(kv, query);
+      logSearchQuery(query);
 
       return sendSuccess(c, {
           results: results.slice(0, 20), // Pagination simulation
@@ -119,11 +132,16 @@ export function elasticsearchProxyEndpoints(app: Hono, kv: any) {
           const query = c.req.query('q') || '';
           if (!query || query.length < 2) return sendSuccess(c, { suggestions: [] });
 
-          // Fetch popular searches + index titles
-          const history = await kv.get('search_history_trie') || [];
-          const matches = history
-            .filter((term: string) => term.toLowerCase().includes(query.toLowerCase()))
-            .slice(0, 5);
+          // ✅ SQL: Fetch popular searches from search_history table
+          const db = getDbClient();
+          const { data: history } = await db
+            .from('search_history')
+            .select('search_query')
+            .ilike('search_query', `%${query}%`)
+            .order('created_at', { ascending: false })
+            .limit(5);
+          
+          const matches = history?.map(h => h.search_query) || [];
           
           return sendSuccess(c, { suggestions: matches });
       } catch (error) {
@@ -135,30 +153,49 @@ export function elasticsearchProxyEndpoints(app: Hono, kv: any) {
   // RE-INDEX (Admin Trigger)
   // ========================================
   app.post(`${BASE_PATH}/search/index`, async (c) => {
-      // In a real app, this would trigger a batch job
-      // Here we just clear the cache to force rebuild on next search
-      await kv.del('search_index_master');
+      // ✅ SQL: In a real app, this would trigger a batch job
+      // Here we just return success - index will rebuild on next search from SQL tables
       return sendSuccess(c, { message: 'Index flush triggered. Will rebuild on next query.' });
   });
 
-  async function logSearchQuery(kv: any, query: string) {
+  async function logSearchQuery(query: string) {
       try {
           const normalized = query.toLowerCase().trim();
           if (normalized.length < 3) return;
 
-          // Update search history list for autocomplete
-          let history = await kv.get('search_history_trie') || [];
-          if (!history.includes(normalized)) {
-              history.push(normalized);
-              if (history.length > 500) history.shift(); // Keep size manageable
-              await kv.set('search_history_trie', history);
-          }
+          // ✅ SQL: Log search query in search_history table
+          const db = getDbClient();
+          await db
+            .from('search_history')
+            .insert({
+              search_query: normalized,
+              results_count: 0,
+              created_at: new Date().toISOString()
+            });
 
-          // Update analytics count
+          // ✅ SQL: Update search analytics in search_analytics table
           const today = new Date().toISOString().split('T')[0];
-          const key = `search_stats_${today}_${normalized}`;
-          const current = await kv.get(key) || 0;
-          await kv.set(key, current + 1);
+          const { data: existing } = await db
+            .from('search_analytics')
+            .select('*')
+            .eq('query', normalized)
+            .eq('date', today)
+            .single();
+
+          if (existing) {
+            await db
+              .from('search_analytics')
+              .update({ search_count: (existing.search_count || 0) + 1 })
+              .eq('id', existing.id);
+          } else {
+            await db
+              .from('search_analytics')
+              .insert({
+                query: normalized,
+                date: today,
+                search_count: 1
+              });
+          }
 
       } catch (err) {
           console.error('Search logging failed', err);

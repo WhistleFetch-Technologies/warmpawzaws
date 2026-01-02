@@ -1,4 +1,4 @@
-import { Hono } from "npm:hono";
+import { Hono } from "hono";
 
 /**
  * Vendor Settings Multi-Rule Management Endpoints

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { X, Plus, MapPin, DollarSign, Save, Edit2, Trash2, Navigation, Calculator } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 interface DistancePricingProps {
   vendorId: string;

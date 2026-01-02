@@ -3,7 +3,7 @@ import {
   Package, ShoppingCart, TrendingUp, AlertCircle, 
   DollarSign, Eye, Percent, ArrowUp, ArrowDown, Clock
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { toast } from 'sonner';
 
 interface SellerDashboardProps {
   sellerId: string;
@@ -23,29 +23,39 @@ export function SellerDashboard({ sellerId, sellerName }: SellerDashboardProps) 
     try {
       setLoading(true);
       
-      // Load analytics
-      const analyticsRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/ecommerce/analytics/seller/${sellerId}`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
-      );
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
       
-      if (analyticsRes.ok) {
-        const data = await analyticsRes.json();
-        setAnalytics(data);
+      // Load analytics
+      try {
+        const analyticsData = await apiCallJson<any>(
+          `${API_GATEWAY_URL}/make-server-3dd53475/ecommerce/analytics/seller/${sellerId}`
+        );
+        if (analyticsData.success) {
+          setAnalytics(analyticsData.data || analyticsData);
+        }
+      } catch (error: any) {
+        console.error('Error loading analytics:', error);
       }
       
       // Load recent orders
-      const ordersRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/ecommerce/orders?sellerId=${sellerId}`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
-      );
-      
-      if (ordersRes.ok) {
-        const ordersData = await ordersRes.json();
-        setRecentOrders(ordersData.orders.slice(0, 5));
+      try {
+        const ordersData = await apiCallJson<any>(
+          `${API_GATEWAY_URL}/make-server-3dd53475/ecommerce/orders?sellerId=${sellerId}`
+        );
+        if (ordersData.success) {
+          setRecentOrders((ordersData.orders || ordersData.data?.orders || []).slice(0, 5));
+        }
+      } catch (error: any) {
+        console.error('Error loading orders:', error);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading dashboard:', error);
+      toast.error(error?.message || 'Failed to load dashboard');
     } finally {
       setLoading(false);
     }

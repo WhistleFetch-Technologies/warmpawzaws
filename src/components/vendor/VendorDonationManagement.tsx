@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Heart, Users, TrendingUp, Award, Plus, Download, Calendar } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { toast } from 'react-toastify';
+import { toast } from 'sonner';
 
 interface Donation {
   id: string;
@@ -85,24 +84,24 @@ export function VendorDonationManagement({ vendorId, vendorData, onBack }: Vendo
 
   const loadDashboard = async () => {
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/donation-management/${vendorId}/dashboard`,
-        {
-          headers: { Authorization: `Bearer ${publicAnonKey}` }
-        }
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/donation-management/${vendorId}/dashboard`
       );
-      const data = await response.json();
-      // ✅ FIX: Handle standardized response format
+
       if (data.success) {
         setStats(data.stats || data.data?.stats);
       } else {
-        const errorData = data.error || data.message || 'Unknown error';
-        console.error('Failed to load dashboard:', errorData);
-        // Don't show error toast on initial load - just log
+        console.error('Failed to load dashboard:', data.error || data.message);
       }
     } catch (error: any) {
       console.error('Error loading dashboard:', error);
-      // Don't show error toast on initial load - just log
     }
   };
 
@@ -125,66 +124,68 @@ export function VendorDonationManagement({ vendorId, vendorData, onBack }: Vendo
 
   const loadDonations = async () => {
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/donation-management/${vendorId}/list`,
-        {
-          headers: { Authorization: `Bearer ${publicAnonKey}` }
-        }
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/donation-management/${vendorId}/list`
       );
-      const data = await response.json();
-      // ✅ FIX: Handle standardized response format
-      // Response format: { success: true, donations: [...], stats: {...}, total: ... }
+
       if (data.success) {
         setDonations(data.donations || data.data?.donations || []);
         setStats(data.stats || data.data?.stats);
       } else {
-        const errorData = data.error || data.message || 'Unknown error';
-        console.error('Failed to load donations:', errorData);
-        // Don't show error toast on initial load - just log
+        console.error('Failed to load donations:', data.error || data.message);
       }
     } catch (error: any) {
       console.error('Error loading donations:', error);
-      // Don't show error toast on initial load - just log
     }
   };
 
   const loadDonors = async () => {
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/donation-management/${vendorId}/donors`,
-        {
-          headers: { Authorization: `Bearer ${publicAnonKey}` }
-        }
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/donation-management/${vendorId}/donors`
       );
-      const data = await response.json();
-      // ✅ FIX: Handle standardized response format
-      // Response format: { success: true, donors: [...], total: ... }
+
       if (data.success) {
         setDonors(data.donors || data.data?.donors || []);
       } else {
-        const errorData = data.error || data.message || 'Unknown error';
-        console.error('Failed to load donors:', errorData);
-        // Don't show error toast on initial load - just log
+        console.error('Failed to load donors:', data.error || data.message);
       }
     } catch (error: any) {
       console.error('Error loading donors:', error);
-      // Don't show error toast on initial load - just log
     }
   };
 
   const loadCampaigns = async () => {
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/donation-management/${vendorId}/campaigns`,
-        {
-          headers: { Authorization: `Bearer ${publicAnonKey}` }
-        }
-      );
-      const data = await response.json();
-      if (data.success) {
-        setCampaigns(data.campaigns);
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
       }
-    } catch (error) {
+
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/donation-management/${vendorId}/campaigns`
+      );
+
+      if (data.success) {
+        setCampaigns(data.campaigns || data.data?.campaigns || []);
+      }
+    } catch (error: any) {
       console.error('Error loading campaigns:', error);
     }
   };
@@ -192,14 +193,17 @@ export function VendorDonationManagement({ vendorId, vendorData, onBack }: Vendo
   const handleAddDonation = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/donation-management/${vendorId}/create`,
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/donation-management/${vendorId}/create`,
         {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`
-          },
           body: JSON.stringify({
             ...donationForm,
             amount: donationForm.amount ? parseFloat(donationForm.amount) : undefined,
@@ -214,8 +218,9 @@ export function VendorDonationManagement({ vendorId, vendorData, onBack }: Vendo
           })
         }
       );
-      const data = await response.json();
+
       if (data.success) {
+        toast.success('Donation added successfully');
         setShowAddDonation(false);
         setDonationForm({
           donorName: '',
@@ -227,33 +232,40 @@ export function VendorDonationManagement({ vendorId, vendorData, onBack }: Vendo
           taxBenefit: false,
           items: []
         });
-        loadDonations();
-        loadDashboard();
+        await loadDonations();
+        await loadDashboard();
+      } else {
+        toast.error(data.error || data.message || 'Failed to add donation');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error adding donation:', error);
+      toast.error(error?.message || 'Failed to add donation');
     }
   };
 
   const handleAddCampaign = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/donation-management/${vendorId}/campaigns`,
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/donation-management/${vendorId}/campaigns`,
         {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`
-          },
           body: JSON.stringify({
             ...campaignForm,
             goalAmount: parseFloat(campaignForm.goalAmount)
           })
         }
       );
-      const data = await response.json();
+
       if (data.success) {
+        toast.success('Campaign created successfully');
         setShowAddCampaign(false);
         setCampaignForm({
           name: '',
@@ -262,33 +274,43 @@ export function VendorDonationManagement({ vendorId, vendorData, onBack }: Vendo
           startDate: new Date().toISOString().split('T')[0],
           endDate: ''
         });
-        loadCampaigns();
+        await loadCampaigns();
+      } else {
+        toast.error(data.error || data.message || 'Failed to create campaign');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error adding campaign:', error);
+      toast.error(error?.message || 'Failed to create campaign');
     }
   };
 
   const updateDonationStatus = async (donationId: string, status: Donation['status']) => {
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/donation-management/${vendorId}/${donationId}/status`,
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/donation-management/${vendorId}/${donationId}/status`,
         {
           method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`
-          },
           body: JSON.stringify({ status })
         }
       );
-      const data = await response.json();
+
       if (data.success) {
-        loadDonations();
-        loadDashboard();
+        toast.success('Donation status updated successfully');
+        await loadDonations();
+        await loadDashboard();
+      } else {
+        toast.error(data.error || data.message || 'Failed to update donation status');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error updating donation status:', error);
+      toast.error(error?.message || 'Failed to update donation status');
     }
   };
 
@@ -299,23 +321,26 @@ export function VendorDonationManagement({ vendorId, vendorData, onBack }: Vendo
     }
 
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/donation-management/${vendorId}/${donationId}`,
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/donation-management/${vendorId}/${donationId}`,
         {
-          method: 'DELETE',
-          headers: {
-            Authorization: `Bearer ${publicAnonKey}`
-          }
+          method: 'DELETE'
         }
       );
 
-      const data = await response.json();
       if (data.success) {
         toast.success('Donation deleted successfully');
-        loadDonations();
-        loadDashboard();
+        await loadDonations();
+        await loadDashboard();
       } else {
-        toast.error(data.error || 'Failed to delete donation');
+        toast.error(data.error || data.message || 'Failed to delete donation');
       }
     } catch (error) {
       console.error('Error deleting donation:', error);

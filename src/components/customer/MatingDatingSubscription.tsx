@@ -5,7 +5,7 @@ import {
   MessageCircle, Calendar, Star, Zap, Shield
 } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 interface MatingDatingSubscriptionProps {
   phone: string;

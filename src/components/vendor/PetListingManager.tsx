@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Plus, Edit, Trash2, Save, Upload, Heart, DollarSign } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+// ✅ FIX: Removed Supabase imports - using API Gateway now
 import { toast } from 'sonner';
 import { Button } from '../ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
@@ -52,17 +52,35 @@ export function PetListingManager({ vendorId, vendorName, vendorType, onBack }: 
   const loadListings = async () => {
     try {
       setLoading(true);
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/pet-listings`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        setListings(data.listings || []);
+      
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
       }
-    } catch (error) {
-      toast.error('Failed to load listings');
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      // TODO: Create pet listings endpoint if it doesn't exist
+      // For now, using placeholder - would need: GET /vendor/:vendorId/pet-listings
+      try {
+        const listingsData = await apiCallJson<any>(
+          `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/pet-listings`
+        );
+        
+        if (listingsData.success && listingsData.listings) {
+          setListings(listingsData.listings);
+        } else {
+          setListings([]);
+        }
+      } catch (listError) {
+        console.warn('Pet listings endpoint not available yet');
+        setListings([]);
+      }
+    } catch (error: any) {
+      console.error('Error loading listings:', error);
+      toast.error(error?.message || 'Failed to load listings');
+      setListings([]);
     } finally {
       setLoading(false);
     }
@@ -91,31 +109,56 @@ export function PetListingManager({ vendorId, vendorName, vendorType, onBack }: 
     }
 
     try {
-      const endpoint = editingListing
-        ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/pet-listings/${editingListing.id}`
-        : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/pet-listings`;
-
-      const response = await fetch(endpoint, {
-        method: editingListing ? 'PUT' : 'POST',
-        headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(formData)
-      });
-
-      if (response.ok) {
-        toast.success(editingListing ? 'Listing updated' : 'Listing created');
-        setShowAddModal(false);
-        setEditingListing(null);
-        resetForm();
-        loadListings();
-      } else {
-        const error = await response.json();
-        toast.error(error.error || 'Operation failed');
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
       }
-    } catch (error) {
-      toast.error('Network error');
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      if (editingListing) {
+        // Update existing listing
+        const updateData = await apiCallJson<any>(
+          `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/pet-listings/${editingListing.id}`,
+          {
+            method: 'PUT',
+            body: JSON.stringify(formData)
+          }
+        );
+        
+        if (updateData.success) {
+          toast.success('Listing updated');
+          setShowAddModal(false);
+          setEditingListing(null);
+          resetForm();
+          loadListings();
+        } else {
+          toast.error(updateData.error || updateData.message || 'Failed to update listing');
+        }
+      } else {
+        // Create new listing
+        const createData = await apiCallJson<any>(
+          `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/pet-listings`,
+          {
+            method: 'POST',
+            body: JSON.stringify(formData)
+          }
+        );
+        
+        if (createData.success) {
+          toast.success('Listing created');
+          setShowAddModal(false);
+          setEditingListing(null);
+          resetForm();
+          loadListings();
+        } else {
+          toast.error(createData.error || createData.message || 'Failed to create listing');
+        }
+      }
+    } catch (error: any) {
+      console.error('Error saving listing:', error);
+      toast.error(error?.message || 'Network error');
     }
   };
 

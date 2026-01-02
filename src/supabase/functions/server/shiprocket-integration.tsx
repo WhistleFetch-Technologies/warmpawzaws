@@ -3,8 +3,8 @@
  * Handles order fulfillment and logistics for marketplace vendors
  */
 
-import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
+import { Hono } from 'hono';
+import * as kv from './kv_store';
 
 // Shiprocket credentials from environment
 const SHIPROCKET_EMAIL = Deno.env.get('SHIPROCKET_EMAIL') || '';

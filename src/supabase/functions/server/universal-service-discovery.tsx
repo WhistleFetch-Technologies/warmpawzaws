@@ -1,5 +1,16 @@
-import { Hono } from "npm:hono";
-import * as kv from './kv_store.tsx';
+import { Hono } from "hono";
+import { 
+  getVendorsRepository,
+  getServicesRepository,
+  getStaffRepository,
+  getReviewsRepository,
+  getPackagesRepository,
+  getBoardingRoomsRepository,
+  getMealPlansRepository,
+  getAdoptionRepository,
+  getProductsRepository
+} from '../../../../supabase/lib/repositories/index';
+import { getDbClient, selectQuery } from '../../../../supabase/lib/db';
 
 /**
  * UNIVERSAL SERVICE DISCOVERY
@@ -31,9 +42,28 @@ export function registerUniversalServiceDiscovery(app: Hono) {
 
       console.log(`[DISCOVERY] Search - category: ${category}, location: ${location}`);
 
-      // Get all active vendors
-      const allVendors = await kv.getByPrefix('vendor:');
-      const activeVendors = allVendors.filter((v: any) => v.isActive);
+      // ✅ SQL: Get all active vendors from repository
+      const vendorsRepo = getVendorsRepository();
+      const allVendorsRaw = await vendorsRepo.findAllActive();
+      const activeVendors = allVendorsRaw.map((v: any) => ({
+        id: v.id,
+        vendorId: v.id,
+        roleId: v.role_id,
+        businessName: v.business_name,
+        ownerName: v.owner_name,
+        address: v.address,
+        city: v.city,
+        location: v.location,
+        isActive: v.is_active,
+        rating: v.rating || 0,
+        description: v.description,
+        phone: v.phone,
+        email: v.email,
+        logo: v.logo,
+        image: v.image,
+        operatingHours: v.operating_hours,
+        ...v
+      }));
 
       let vendors: any[] = [];
 
@@ -81,68 +111,163 @@ export function registerUniversalServiceDiscovery(app: Hono) {
         // Get services/offerings
         let offerings: any[] = [];
         
-        // ✅ GAP #1 FIX: Fetch both vendor services AND staff services
+        // ✅ SQL: GAP #1 FIX: Fetch both vendor services AND staff services
         if (vendor.roleId === 'vet_clinic') {
-          // Get vendor-level services
-          const vendorServiceIds = await kv.get(`vendor:${vendor.id}:services`) || [];
-          const vendorServices = await Promise.all(
-            vendorServiceIds.map(async (sid: string) => {
-              const service = await kv.get(`service:${sid}`);
-              return service || null;
-            })
-          );
+          // ✅ SQL: Get vendor-level services from vendor_services table
+          const db = getDbClient();
+          const { data: vendorServicesData } = await db
+            .from('vendor_services')
+            .select('*')
+            .eq('vendor_id', vendor.id)
+            .eq('publish_status', 'published')
+            .eq('is_enabled', true);
           
-          // ✅ NEW: Get staff-level services for this vendor
+          const vendorServices = (vendorServicesData || []).map((s: any) => ({
+            id: s.service_id,
+            serviceId: s.service_id,
+            serviceName: s.service_name,
+            name: s.service_name,
+            category: s.category,
+            categoryName: s.category,
+            price: parseFloat(s.price || s.custom_price || '0'),
+            duration: s.duration_minutes || s.custom_duration || 30,
+            serviceStyle: s.service_style,
+            isActive: s.is_enabled,
+            type: s.service_style
+          }));
+          
+          // ✅ SQL: Get staff-level services for this vendor
           // First, get all staff members for this vendor
-          const vendorStaff = await kv.get(`vendor:${vendor.id}:staff`) || [];
+          const staffRepo = getStaffRepository();
+          const vendorStaff = await staffRepo.findByVendorId(vendor.id);
           
-          // Get services for each staff member
-          const staffServicesPromises = vendorStaff.map(async (staffId: string) => {
-            const staffServices = await kv.getByPrefix(`staff:${staffId}:service:`);
-            return staffServices || [];
+          // ✅ SQL: Get services for each staff member from staff_services table
+          const staffServicesPromises = vendorStaff.map(async (staff: any) => {
+            const { data: staffServicesData } = await db
+              .from('staff_services')
+              .select(`
+                *,
+                services (*)
+              `)
+              .eq('staff_id', staff.id)
+              .eq('is_active', true);
+            
+            return (staffServicesData || []).map((ss: any) => ({
+              id: ss.service_id,
+              serviceId: ss.service_id,
+              serviceName: ss.services?.name || ss.service_name || 'Service',
+              name: ss.services?.name || ss.service_name || 'Service',
+              category: ss.services?.category || ss.category || '',
+              categoryName: ss.services?.category || ss.category || '',
+              price: parseFloat(ss.price || ss.services?.price || '0'),
+              duration: ss.duration_minutes || ss.services?.duration_minutes || 30,
+              serviceStyle: ss.service_style || 'at_center',
+              isActive: ss.is_active,
+              staffId: staff.id,
+              type: ss.service_style || 'at_center'
+            }));
           });
           
           const allStaffServicesArrays = await Promise.all(staffServicesPromises);
-          const vendorStaffServices = allStaffServicesArrays
-            .flat()
-            .filter((s: any) => s && s.isActive);
+          const vendorStaffServices = allStaffServicesArrays.flat();
           
           // Merge vendor services and staff services
           offerings = [
-            ...vendorServices.filter(Boolean),
+            ...vendorServices,
             ...vendorStaffServices
           ];
           
-          console.log(`[DISCOVERY] Vendor ${vendor.id}: ${vendorServices.filter(Boolean).length} vendor services + ${vendorStaffServices.length} staff services = ${offerings.length} total`);
+          console.log(`[DISCOVERY] Vendor ${vendor.id}: ${vendorServices.length} vendor services + ${vendorStaffServices.length} staff services = ${offerings.length} total`);
           
         } else if (['grooming_salon', 'trainer', 'dog_walker'].includes(vendor.roleId)) {
-          offerings = await kv.get(`vendor:${vendor.id}:service_packages`) || [];
+          // ✅ SQL: Get service packages
+          const packagesRepo = getPackagesRepository();
+          const packages = await packagesRepo.getVendorPackages(vendor.id);
+          offerings = packages.map((p: any) => ({
+            id: p.id,
+            name: p.name,
+            serviceName: p.name,
+            price: p.price,
+            dayPrice: p.pricePerSession,
+            isActive: p.isActive
+          }));
         } else if (vendor.roleId === 'boarding_resort') {
-          offerings = await kv.get(`vendor:${vendor.id}:boarding_rooms`) || [];
+          // ✅ SQL: Get boarding rooms
+          const boardingRoomsRepo = getBoardingRoomsRepository();
+          const rooms = await boardingRoomsRepo.findByVendor(vendor.id, { isActive: true });
+          offerings = rooms.map((r: any) => ({
+            id: r.id,
+            name: r.name,
+            price: r.dayPrice,
+            dayPrice: r.dayPrice,
+            nightPrice: r.nightPrice,
+            isActive: r.isActive
+          }));
         } else if (vendor.roleId === 'nutritionist') {
-          offerings = await kv.get(`vendor:${vendor.id}:meal_products`) || [];
+          // ✅ SQL: Get meal plans
+          const mealPlansRepo = getMealPlansRepository();
+          const meals = await mealPlansRepo.findByVendor(vendor.id);
+          offerings = meals.filter((m: any) => m.is_active).map((m: any) => ({
+            id: m.id,
+            name: m.plan_name,
+            serviceName: m.plan_name,
+            price: 0, // Meal plans may not have direct price
+            isActive: m.is_active
+          }));
         } else if (['ngo', 'shelter', 'breeder'].includes(vendor.roleId)) {
-          offerings = await kv.get(`vendor:${vendor.id}:pet_listings`) || [];
+          // ✅ SQL: Get pet listings (adoption)
+          const adoptionRepo = getAdoptionRepository();
+          const listings = await adoptionRepo.getAllListings({ 
+            vendorId: vendor.id, 
+            status: 'available' 
+          });
+          offerings = listings.map((l: any) => ({
+            id: l.listingId || l.id,
+            name: l.petName,
+            serviceName: l.petName,
+            price: l.adoptionFee || 0,
+            isActive: l.status === 'available',
+            status: l.status
+          }));
         } else if (vendor.roleId === 'pet_store') {
-          offerings = await kv.get(`vendor:${vendor.id}:marketplace_products`) || [];
+          // ✅ SQL: Get marketplace products
+          const productsRepo = getProductsRepository();
+          const products = await productsRepo.findByVendor(vendor.id, { isActive: true });
+          offerings = products.map((p: any) => ({
+            id: p.id,
+            name: p.name,
+            serviceName: p.name,
+            price: p.price,
+            isActive: p.is_active
+          }));
         }
 
-        // Calculate availability score
+        // ✅ SQL: Calculate availability score from vendor_schedule_slots
         let availabilityScore = 0;
-        const schedules = await kv.get(`vendor:${vendor.id}:staff_schedules`) || [];
+        const db = getDbClient();
+        const { data: scheduleSlots } = await db
+          .from('vendor_schedule_slots')
+          .select('*')
+          .eq('vendor_id', vendor.id)
+          .eq('is_available', true)
+          .limit(10);
         
-        if (schedules.length > 0) {
-          const today = new Date().toISOString().split('T')[0];
-          const todaySchedules = schedules.filter((s: any) => 
-            !s.vacationMode && s.isActive
-          );
-          availabilityScore = todaySchedules.length > 0 ? 100 : 50;
+        if (scheduleSlots && scheduleSlots.length > 0) {
+          // Check if there are any active time windows
+          const hasActiveWindows = scheduleSlots.some((slot: any) => {
+            if (slot.time_windows && Array.isArray(slot.time_windows)) {
+              return slot.time_windows.some((w: any) => w.is_enabled === true);
+            }
+            return slot.is_available === true;
+          });
+          availabilityScore = hasActiveWindows ? 100 : 50;
         }
 
-        // Get reviews
-        const reviews = await kv.get(`vendor:${vendor.id}:reviews`) || [];
+        // ✅ SQL: Get reviews
+        const reviewsRepo = getReviewsRepository();
+        const reviews = await reviewsRepo.findByVendor(vendor.id);
         const avgRating = reviews.length > 0
-          ? reviews.reduce((sum: number, r: any) => sum + r.rating, 0) / reviews.length
+          ? reviews.reduce((sum: number, r: any) => sum + (r.rating || 0), 0) / reviews.length
           : 0;
 
         return {
@@ -232,33 +357,124 @@ export function registerUniversalServiceDiscovery(app: Hono) {
 
       console.log(`[DISCOVERY] Fetching vendor profile: ${vendorId}`);
 
-      const vendor = await kv.get(`vendor:${vendorId}`);
-      if (!vendor) {
+      // ✅ SQL: Get vendor from repository
+      const vendorsRepo = getVendorsRepository();
+      const vendorRaw = await vendorsRepo.findById(vendorId);
+      if (!vendorRaw) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
+      
+      // Map vendor to expected format
+      const vendor: any = {
+        ...vendorRaw,
+        id: vendorRaw.id,
+        vendorId: vendorRaw.id,
+        businessName: vendorRaw.business_name,
+        roleId: vendorRaw.role_id,
+        description: (vendorRaw as any).description || '',
+        website: (vendorRaw as any).website || null,
+        location: (vendorRaw as any).location || null,
+        logo: (vendorRaw as any).logo || null,
+        images: (vendorRaw as any).images || [],
+        operatingHours: (vendorRaw as any).operating_hours || null,
+        emergencyAvailable: (vendorRaw as any).emergency_available || false,
+        socialMedia: (vendorRaw as any).social_media || {}
+      };
 
-      // Get all vendor data
+      // ✅ SQL: Get all vendor data in parallel
+      const db = getDbClient();
       const [
-        services,
-        packages,
-        rooms,
-        meals,
-        listings,
-        products,
-        staff,
-        reviews,
-        schedules
+        vendorServicesData,
+        packagesData,
+        roomsData,
+        mealsData,
+        listingsData,
+        productsData,
+        staffData,
+        reviewsData,
+        scheduleSlotsData
       ] = await Promise.all([
-        kv.get(`vendor:${vendorId}:services`) || [],
-        kv.get(`vendor:${vendorId}:service_packages`) || [],
-        kv.get(`vendor:${vendorId}:boarding_rooms`) || [],
-        kv.get(`vendor:${vendorId}:meal_products`) || [],
-        kv.get(`vendor:${vendorId}:pet_listings`) || [],
-        kv.get(`vendor:${vendorId}:marketplace_products`) || [],
-        kv.get(`vendor:${vendorId}:staff`) || [],
-        kv.get(`vendor:${vendorId}:reviews`) || [],
-        kv.get(`vendor:${vendorId}:staff_schedules`) || []
+        // Services from vendor_services table
+        db.from('vendor_services')
+          .select('*')
+          .eq('vendor_id', vendorId)
+          .eq('publish_status', 'published')
+          .eq('is_enabled', true),
+        // Service packages
+        getPackagesRepository().getVendorPackages(vendorId),
+        // Boarding rooms
+        getBoardingRoomsRepository().findByVendor(vendorId, { isActive: true }),
+        // Meal plans
+        getMealPlansRepository().findByVendor(vendorId),
+        // Pet listings (adoption)
+        getAdoptionRepository().getAllListings({ vendorId }),
+        // Marketplace products
+        getProductsRepository().findByVendor(vendorId, { isActive: true }),
+        // Staff
+        getStaffRepository().findByVendorId(vendorId),
+        // Reviews
+        getReviewsRepository().findByVendor(vendorId),
+        // Schedules from vendor_schedule_slots
+        db.from('vendor_schedule_slots')
+          .select('*')
+          .eq('vendor_id', vendorId)
+          .eq('is_available', true)
       ]);
+      
+      // Map data to expected format
+      const services = (vendorServicesData.data || []).map((s: any) => ({
+        id: s.service_id,
+        serviceId: s.service_id,
+        serviceName: s.service_name,
+        name: s.service_name,
+        category: s.category,
+        price: parseFloat(s.price || s.custom_price || '0'),
+        duration: s.duration_minutes || s.custom_duration || 30,
+        serviceStyle: s.service_style,
+        isActive: s.is_enabled
+      }));
+      
+      const packages = packagesData.map((p: any) => ({
+        ...p,
+        isActive: p.isActive
+      }));
+      
+      const rooms = roomsData.map((r: any) => ({
+        ...r,
+        isActive: r.isActive
+      }));
+      
+      const meals = mealsData.filter((m: any) => m.is_active).map((m: any) => ({
+        ...m,
+        isActive: m.is_active
+      }));
+      
+      const listings = listingsData.map((l: any) => ({
+        ...l,
+        isActive: l.status === 'available',
+        status: l.status
+      }));
+      
+      const products = productsData.map((p: any) => ({
+        ...p,
+        isActive: p.is_active
+      }));
+      
+      const staff = staffData.map((s: any) => ({
+        id: s.id,
+        name: s.full_name || s.name,
+        role: s.role,
+        specialization: s.specialization,
+        photo: s.photo || s.image
+      }));
+      
+      const reviews = reviewsData;
+      
+      const schedules = (scheduleSlotsData.data || []).map((s: any) => ({
+        ...s,
+        isActive: s.is_available,
+        vacationMode: false
+      }));
 
       // Calculate ratings breakdown
       const ratingBreakdown = {
@@ -277,19 +493,37 @@ export function registerUniversalServiceDiscovery(app: Hono) {
       let offerings: any[] = [];
       
       if (vendor.roleId === 'vet_clinic') {
-        // ✅ GAP #1 FIX: Include both vendor services AND staff services in profile
+        // ✅ SQL: GAP #1 FIX: Include both vendor services AND staff services in profile
         const vendorServices = services.filter((s: any) => s.isActive);
         
-        // Get staff-level services
-        const staffServicesPromises = staff.map(async (staffId: string) => {
-          const staffServices = await kv.getByPrefix(`staff:${staffId}:service:`);
-          return staffServices || [];
+        // ✅ SQL: Get staff-level services from staff_services table
+        const db = getDbClient();
+        const staffServicesPromises = staff.map(async (staffMember: any) => {
+          const { data: staffServicesData } = await db
+            .from('staff_services')
+            .select(`
+              *,
+              services (*)
+            `)
+            .eq('staff_id', staffMember.id)
+            .eq('is_active', true);
+          
+          return (staffServicesData || []).map((ss: any) => ({
+            id: ss.service_id,
+            serviceId: ss.service_id,
+            serviceName: ss.services?.name || ss.service_name || 'Service',
+            name: ss.services?.name || ss.service_name || 'Service',
+            category: ss.services?.category || ss.category || '',
+            price: parseFloat(ss.price || ss.services?.price || '0'),
+            duration: ss.duration_minutes || ss.services?.duration_minutes || 30,
+            serviceStyle: ss.service_style || 'at_center',
+            isActive: ss.is_active,
+            staffId: staffMember.id
+          }));
         });
         
         const allStaffServicesArrays = await Promise.all(staffServicesPromises);
-        const staffServices = allStaffServicesArrays
-          .flat()
-          .filter((s: any) => s && s.isActive);
+        const staffServices = allStaffServicesArrays.flat();
         
         // Merge both
         offerings = [...vendorServices, ...staffServices];

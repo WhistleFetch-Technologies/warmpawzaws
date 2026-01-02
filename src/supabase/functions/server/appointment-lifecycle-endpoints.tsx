@@ -1,5 +1,14 @@
-import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from 'hono';
+import {
+  getBookingsRepository,
+  getVendorsRepository,
+  getStaffRepository,
+  getCustomersRepository,
+  getRefundPoliciesRepository,
+  getWalletsRepository
+} from '../../../supabase/lib/repositories/index';
+import { getDbClient } from '../../../supabase/lib/db';
 
 const app = new Hono();
 
@@ -9,23 +18,26 @@ const app = new Hono();
 
 // Helper: Get refund policy from admin settings
 async function getRefundPolicy(vendorRoleId: string, serviceStyle: string) {
-  const refundSettings = await kv.get('platform:refund_settings') || {
-    policies: {},
-    cancellationFees: {},
-    vendorPenalties: {}
-  };
-
-  // Get policy for this vendor role and service style
-  const policyKey = `${vendorRoleId}_${serviceStyle}`;
-  const policy = refundSettings.policies[policyKey] || refundSettings.policies[vendorRoleId] || {
-    // Default policy
+  // ✅ SQL: Get refund policy from platform settings
+  const refundPoliciesRepo = getRefundPoliciesRepository();
+  const policy = await refundPoliciesRepo.findByRoleAndStyle(vendorRoleId, serviceStyle);
+  
+  // Default policy if not found
+  const defaultPolicy = {
     allowRefund: true,
     refundPercentage: 100,
     cancellationWindow: 24, // hours before appointment
     cancellationFeePercentage: 10
   };
 
-  return { policy, refundSettings };
+  return { 
+    policy: policy || defaultPolicy, 
+    refundSettings: { 
+      policies: policy ? { [vendorRoleId]: policy } : {},
+      cancellationFees: {},
+      vendorPenalties: {}
+    } 
+  };
 }
 
 // Helper: Calculate refund amount
@@ -69,26 +81,41 @@ app.get('/:appointmentId', async (c) => {
   const { appointmentId } = c.req.param();
 
   try {
-    const appointment = await kv.get(`appointment:${appointmentId}`);
+    // ✅ SQL: Get appointment (booking)
+    const bookingsRepo = getBookingsRepository();
+    const appointment = await bookingsRepo.findById(appointmentId);
     
     if (!appointment) {
       return c.json({ error: 'Appointment not found' }, 404);
     }
 
-    // Get vendor details
-    const vendor = await kv.get(`vendor:${appointment.vendorId}`);
+    // ✅ SQL: Get vendor details
+    const vendorsRepo = getVendorsRepository();
+    const vendorId = appointment.vendor_id || appointment.vendorId;
+    const vendor = vendorId ? await vendorsRepo.findById(vendorId) : null;
     
-    // Get staff details
-    const staff = await kv.get(`staff:${appointment.staffId}`);
+    // ✅ SQL: Get staff details
+    const staffRepo = getStaffRepository();
+    const staffId = appointment.staff_id || appointment.staffId;
+    const staff = staffId ? await staffRepo.findById(staffId) : null;
 
-    // Get customer details
-    const customer = await kv.get(`customer:${appointment.customerId}`);
+    // ✅ SQL: Get customer details
+    const customersRepo = getCustomersRepository();
+    const customerId = appointment.customer_id || appointment.customerId;
+    const customer = customerId ? await customersRepo.findById(customerId) : null;
 
-    // Get location details if applicable
+    // ✅ SQL: Get location details if applicable
     let location = null;
-    if (appointment.locationId) {
-      const locations = await kv.get(`vendor:${appointment.vendorId}:locations`) || [];
-      location = locations.find((loc: any) => loc.id === appointment.locationId);
+    const locationId = appointment.location_id || appointment.locationId;
+    if (locationId && vendorId) {
+      const db = getDbClient();
+      const { data: locations } = await db
+        .from('vendor_locations')
+        .select('*')
+        .eq('vendor_id', vendorId)
+        .eq('id', locationId)
+        .single();
+      location = locations;
     }
 
     return c.json({
@@ -115,7 +142,9 @@ app.post('/:appointmentId/reschedule', async (c) => {
   }
 
   try {
-    const appointment = await kv.get(`appointment:${appointmentId}`);
+    // ✅ SQL: Get appointment
+    const bookingsRepo = getBookingsRepository();
+    const appointment = await bookingsRepo.findById(appointmentId);
     
     if (!appointment) {
       return c.json({ error: 'Appointment not found' }, 404);
@@ -139,10 +168,15 @@ app.post('/:appointmentId/reschedule', async (c) => {
     }
 
     // Check if staff is available at new time
+    // ✅ Lambda: Use relative path or API Gateway URL for internal calls
+    const apiBaseUrl = process.env.API_GATEWAY_URL || 'https://api.warmpawz.com';
     const staffSlotCheck = await fetch(
-      `https://${Deno.env.get('SUPABASE_URL')}/functions/v1/make-server-3dd53475/staff/${appointment.staffId}/available-slots?date=${newDate}&duration=${appointment.duration}&serviceStyle=${appointment.serviceStyle}`,
+      `${apiBaseUrl}/make-server-3dd53475/staff/${appointment.staffId}/available-slots?date=${newDate}&duration=${appointment.duration}&serviceStyle=${appointment.serviceStyle}`,
       {
-        headers: { 'Authorization': `Bearer ${Deno.env.get('SUPABASE_ANON_KEY')}` }
+        headers: { 
+          'Authorization': `Bearer ${process.env.API_KEY || ''}`,
+          'Content-Type': 'application/json'
+        }
       }
     );
 
@@ -159,29 +193,33 @@ app.post('/:appointmentId/reschedule', async (c) => {
     const oldDate = appointment.date;
     const oldTime = appointment.startTime;
 
-    // Update appointment
-    appointment.date = newDate;
-    appointment.startTime = newTime;
-    appointment.rescheduleCount = (appointment.rescheduleCount || 0) + 1;
-    appointment.rescheduleHistory = [
-      ...(appointment.rescheduleHistory || []),
-      {
-        oldDate,
-        oldTime,
-        newDate,
-        newTime,
-        rescheduledAt: new Date().toISOString()
-      }
-    ];
-
-    await kv.set(`appointment:${appointmentId}`, appointment);
+    // ✅ SQL: Update appointment
+    const bookingsRepo = getBookingsRepository();
+    const rescheduleHistory = appointment.reschedule_history || appointment.rescheduleHistory || [];
+    rescheduleHistory.push({
+      oldDate,
+      oldTime,
+      newDate,
+      newTime,
+      rescheduledAt: new Date().toISOString()
+    });
+    
+    await bookingsRepo.update(appointmentId, {
+      scheduled_date: newDate,
+      scheduled_time: newTime,
+      reschedule_count: (appointment.reschedule_count || appointment.rescheduleCount || 0) + 1,
+      reschedule_history: rescheduleHistory,
+      updated_at: new Date().toISOString()
+    });
+    
+    const updatedAppointment = await bookingsRepo.findById(appointmentId);
 
     console.log(`✅ Appointment ${appointmentId} rescheduled from ${oldDate} ${oldTime} to ${newDate} ${newTime}`);
 
     return c.json({
       success: true,
       message: 'Appointment rescheduled successfully',
-      appointment
+      appointment: updatedAppointment
     });
   } catch (error) {
     console.error(`❌ Error rescheduling appointment ${appointmentId}:`, error);
@@ -203,7 +241,9 @@ app.post('/:appointmentId/cancel', async (c) => {
   }
 
   try {
-    const appointment = await kv.get(`appointment:${appointmentId}`);
+    // ✅ SQL: Get appointment
+    const bookingsRepo = getBookingsRepository();
+    const appointment = await bookingsRepo.findById(appointmentId);
     
     if (!appointment) {
       return c.json({ error: 'Appointment not found' }, 404);
@@ -228,12 +268,12 @@ app.post('/:appointmentId/cancel', async (c) => {
 
     // Get refund policy
     const { policy, refundSettings } = await getRefundPolicy(
-      appointment.vendorRoleId || 'veterinarian',
-      appointment.serviceStyle || 'at_center'
+      appointment.vendor_role_id || appointment.vendorRoleId || 'veterinarian',
+      appointment.service_style || appointment.serviceStyle || 'at_center'
     );
 
     // Calculate hours until appointment
-    const appointmentDateTime = new Date(`${appointment.date}T${appointment.startTime}:00`);
+    const appointmentDateTime = new Date(`${appointment.scheduled_date || appointment.date}T${appointment.scheduled_time || appointment.startTime}:00`);
     const now = new Date();
     const hoursUntilAppointment = (appointmentDateTime.getTime() - now.getTime()) / (1000 * 60 * 60);
 
@@ -242,63 +282,58 @@ app.post('/:appointmentId/cancel', async (c) => {
 
     // Calculate refund
     const refundCalculation = calculateRefundAmount(
-      appointment.amount || 0,
+      appointment.total_amount || appointment.amount || 0,
       policy,
       hoursUntilAppointment,
       refundToWallet
     );
 
-    // Process refund to wallet
-    if (refundCalculation.refundAmount > 0) {
-      const walletCredit = await fetch(
-        `https://${Deno.env.get('SUPABASE_URL')}/functions/v1/make-server-3dd53475/wallet/${appointment.customerId}/credit`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${Deno.env.get('SUPABASE_ANON_KEY')}`
-          },
-          body: JSON.stringify({
-            amount: refundToWallet ? refundCalculation.refundAmount : 0,
-            source: 'refund',
-            description: `Refund for cancelled appointment #${appointmentId}`,
-            referenceId: appointmentId
-          })
-        }
-      );
-
-      if (!walletCredit.ok) {
-        console.error('Failed to credit wallet for refund');
-      }
+    // ✅ SQL: Process refund to wallet
+    if (refundCalculation.refundAmount > 0 && refundToWallet) {
+      const walletsRepo = getWalletsRepository();
+      const customerId = appointment.customer_id || appointment.customerId;
+      await walletsRepo.credit({
+        customer_id: customerId,
+        amount: refundCalculation.refundAmount,
+        source: 'refund',
+        description: `Refund for cancelled appointment #${appointmentId}`,
+        reference_id: appointmentId
+      });
     }
 
-    // Apply vendor penalty if vendor cancelled
+    // ✅ SQL: Apply vendor penalty if vendor cancelled
     if (cancelledBy === 'vendor') {
-      const vendorPenaltyPercentage = refundSettings.vendorPenalties?.[appointment.vendorRoleId] || 5;
-      const vendorPenalty = (appointment.amount || 0) * (vendorPenaltyPercentage / 100);
+      const vendorPenaltyPercentage = refundSettings.vendorPenalties?.[appointment.vendor_role_id || appointment.vendorRoleId] || 5;
+      const vendorPenalty = (appointment.total_amount || appointment.amount || 0) * (vendorPenaltyPercentage / 100);
       
-      // Record vendor penalty (for later deduction from vendor earnings)
-      const vendorPenalties = await kv.get(`vendor:${appointment.vendorId}:penalties`) || [];
-      vendorPenalties.push({
-        appointmentId,
+      // ✅ SQL: Record vendor penalty
+      const db = getDbClient();
+      const vendorId = appointment.vendor_id || appointment.vendorId;
+      await db.from('vendor_penalties').insert({
+        id: `${appointmentId}_penalty_${Date.now()}`,
+        vendor_id: vendorId,
+        appointment_id: appointmentId,
         amount: vendorPenalty,
         reason: 'Appointment cancelled by vendor',
-        timestamp: new Date().toISOString()
+        created_at: new Date().toISOString()
       });
-      await kv.set(`vendor:${appointment.vendorId}:penalties`, vendorPenalties);
     }
 
-    // Update appointment status
-    appointment.status = 'cancelled';
-    appointment.cancelledBy = cancelledBy;
-    appointment.cancellationReason = reason || 'No reason provided';
-    appointment.cancelledAt = new Date().toISOString();
-    appointment.refundAmount = refundCalculation.refundAmount;
-    appointment.cancellationFee = refundCalculation.cancellationFee;
-    appointment.refundMethod = refundToWallet ? 'wallet' : 'original';
-    appointment.refundStatus = refundToWallet ? 'completed' : 'pending';
-
-    await kv.set(`appointment:${appointmentId}`, appointment);
+    // ✅ SQL: Update appointment status
+    const bookingsRepo = getBookingsRepository();
+    await bookingsRepo.update(appointmentId, {
+      status: 'cancelled',
+      cancelled_by: cancelledBy,
+      cancellation_reason: reason || 'No reason provided',
+      cancelled_at: new Date().toISOString(),
+      refund_amount: refundCalculation.refundAmount,
+      cancellation_fee: refundCalculation.cancellationFee,
+      refund_method: refundToWallet ? 'wallet' : 'original',
+      refund_status: refundToWallet ? 'completed' : 'pending',
+      updated_at: new Date().toISOString()
+    });
+    
+    const cancelledAppointment = await bookingsRepo.findById(appointmentId);
 
     console.log(`✅ Appointment ${appointmentId} cancelled by ${cancelledBy}`);
     console.log(`   Refund: ₹${refundCalculation.refundAmount} (${refundCalculation.refundPercentage}%)`);
@@ -308,7 +343,7 @@ app.post('/:appointmentId/cancel', async (c) => {
     return c.json({
       success: true,
       message: 'Appointment cancelled successfully',
-      appointment,
+      appointment: cancelledAppointment,
       refund: {
         amount: refundCalculation.refundAmount,
         cancellationFee: refundCalculation.cancellationFee,
@@ -329,19 +364,16 @@ app.get('/customer/:customerId', async (c) => {
   const status = c.req.query('status'); // upcoming, completed, cancelled, all
 
   try {
-    const allAppointments = await kv.getByPrefix('appointment:') || [];
-    
-    // Filter appointments for this customer
-    let customerAppointments = allAppointments.filter((apt: any) => 
-      apt.customerId === customerId
-    );
+    // ✅ SQL: Get customer appointments
+    const bookingsRepo = getBookingsRepository();
+    let customerAppointments = await bookingsRepo.findByCustomer(customerId);
 
     // Filter by status if provided
     if (status && status !== 'all') {
       if (status === 'upcoming') {
         const now = new Date();
         customerAppointments = customerAppointments.filter((apt: any) => {
-          const aptDate = new Date(`${apt.date}T${apt.startTime}:00`);
+          const aptDate = new Date(`${apt.scheduled_date || apt.date}T${apt.scheduled_time || apt.startTime}:00`);
           return apt.status !== 'cancelled' && apt.status !== 'completed' && aptDate >= now;
         });
       } else {
@@ -353,8 +385,8 @@ app.get('/customer/:customerId', async (c) => {
 
     // Sort by date (newest first)
     customerAppointments.sort((a: any, b: any) => {
-      const dateA = new Date(`${a.date}T${a.startTime}:00`);
-      const dateB = new Date(`${b.date}T${b.startTime}:00`);
+      const dateA = new Date(`${a.scheduled_date || a.date}T${a.scheduled_time || a.startTime}:00`);
+      const dateB = new Date(`${b.scheduled_date || b.date}T${b.scheduled_time || b.startTime}:00`);
       return dateB.getTime() - dateA.getTime();
     });
 

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { X, Shield, Plus, Edit2, Trash2, Search, DollarSign, Calendar, CheckCircle } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 interface PolicyManagementProps {
   vendorId: string;

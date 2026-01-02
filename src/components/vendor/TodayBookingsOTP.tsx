@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { RefreshCw, Clock, Phone, MapPin, CheckCircle, Play, Square, AlertCircle } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { toast } from 'sonner';
 import { Button } from '../ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
@@ -31,20 +30,25 @@ export function TodayBookingsOTP({ vendorId, vendorName }: TodayBookingsOTPProps
     try {
       setLoading(true);
 
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/today-bookings`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/today-bookings`
       );
 
-      if (response.ok) {
-        const data = await response.json();
+      if (data.success) {
         setBookings(data.bookings || []);
       } else {
-        toast.error('Failed to load bookings');
+        toast.error(data.error || data.message || 'Failed to load bookings');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error:', error);
-      toast.error('Network error');
+      toast.error(error?.message || 'Network error');
     } finally {
       setLoading(false);
     }
@@ -76,12 +80,19 @@ export function TodayBookingsOTP({ vendorId, vendorName }: TodayBookingsOTPProps
     try {
       setSubmitting(true);
 
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+
       let endpoint: string;
       let body: any;
 
       if (otpAction === 'start') {
         // Start OTP - use existing endpoint
-        endpoint = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/bookings/${selectedBooking.id}/verify-start`;
+        endpoint = `${API_GATEWAY_URL}/make-server-3dd53475/bookings/${selectedBooking.id}/verify-start`;
         body = {
           otp: otpInput,
           vendorId,
@@ -89,29 +100,22 @@ export function TodayBookingsOTP({ vendorId, vendorName }: TodayBookingsOTPProps
         };
       } else {
         // ✅ MIGRATION: End OTP - use new complete lifecycle endpoint
-        endpoint = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/booking/${selectedBooking.id}/verify-otp-complete`;
+        endpoint = `${API_GATEWAY_URL}/make-server-3dd53475/bookings/${selectedBooking.id}/verify-end`;
         body = {
           otp: otpInput,
-          action: 'end', // 'end' or 'complete'
           vendorId,
           completionNotes: notes
         };
       }
 
-      const response = await fetch(endpoint, {
+      const data = await apiCallJson<any>(endpoint, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
-          'Content-Type': 'application/json'
-        },
         body: JSON.stringify(body)
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        
+      if (data.success) {
         // Show enhanced success message for end OTP with lifecycle info
-        if (otpAction === 'end' && data.success && data.earnings) {
+        if (otpAction === 'end' && data.earnings) {
           const earningsInfo = ` Earnings: ₹${data.earnings.vendorEarnings}`;
           const settlementInfo = data.settlement ? ` Settlement: ${data.settlement.status}` : '';
           toast.success(`✅ Service completed!${earningsInfo}${settlementInfo}`);
@@ -125,12 +129,11 @@ export function TodayBookingsOTP({ vendorId, vendorName }: TodayBookingsOTPProps
         setNotes('');
         loadTodayBookings();
       } else {
-        const error = await response.json();
-        toast.error(error.error || error.message || 'Invalid OTP');
+        toast.error(data.error || data.message || 'Invalid OTP');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error:', error);
-      toast.error('Network error. Please check your connection and try again.');
+      toast.error(error?.message || 'Network error. Please check your connection and try again.');
     } finally {
       setSubmitting(false);
     }

@@ -4,70 +4,127 @@
  * Complete auth flow for all three portals
  */
 
-import { Hono } from 'npm:hono';
-import * as authService from './auth-service.tsx';
-import { generateId } from './database-schema.tsx';
-import * as kv from './kv_store.tsx';
-import { SNSClient, PublishCommand } from "npm:@aws-sdk/client-sns";
-import { sendSuccess, sendError } from './response-utils.ts';
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+// ✅ COGNITO MIGRATION: AWS SNS OTP replaced with Cognito SMS MFA
+import { Hono } from 'hono';
+import * as authService from './auth-service';
+import { generateId } from './database-schema';
+// ✅ SQL: Replace KV with SQL repositories
+import { 
+  getOtpRepository,
+  getPlatformSettingsRepository,
+  getVendorsRepository,
+  getCustomersRepository
+} from '../../../supabase/lib/repositories/index';
+import { SNSClient, PublishCommand } from "@aws-sdk/client-sns";
+import { sendSuccess, sendError } from './response-utils';
+import { sendCognitoOTP, verifyCognitoOTP } from './cognito-auth-helper';
 
 export function registerAuthEndpoints(app: Hono) {
   
   // ============================================
-  // OTP SERVICE (SNS)
+  // OTP SERVICE (COGNITO SMS MFA)
   // ============================================
   app.post("/make-server-3dd53475/auth/send-otp", async (c) => {
     try {
-      const { phone } = await c.req.json();
-      const otp = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digit OTP
+      const { phone, role = 'customer' } = await c.req.json();
       
-      console.log(`🔐 [AUTH] Generating OTP for ${phone}: ${otp}`);
-      
-      // 1. Store OTP in KV (expires in 5 mins)
-      // We store it with a prefix to verify later
-      await kv.set(`otp:${phone}`, { code: otp, expiresAt: Date.now() + 5 * 60 * 1000 });
+      if (!phone) {
+        return sendError(c, 'Phone number required', 400);
+      }
 
-      // 2. Fetch AWS Settings
-      const awsSettings = await kv.get('admin:settings:aws');
-      
-      if (awsSettings?.sns?.enabled && awsSettings?.credentials?.accessKeyId) {
-        try {
-          console.log('📨 [AUTH] Sending SMS via AWS SNS...');
-          const client = new SNSClient({
-            region: awsSettings.sns.region || 'ap-south-1',
-            credentials: {
-              accessKeyId: awsSettings.credentials.accessKeyId,
-              secretAccessKey: awsSettings.credentials.secretAccessKey
-            }
-          });
-          
-          const command = new PublishCommand({
-            PhoneNumber: phone,
-            Message: `Your Warmpawz verification code is: ${otp}. Valid for 5 minutes.`,
-            MessageAttributes: {
-              'AWS.SNS.SMS.SMSType': {
-                DataType: 'String',
-                StringValue: 'Transactional'
-              }
-            }
-          });
-          
-          await client.send(command);
-          console.log('✅ [AUTH] SMS sent successfully via SNS');
-          return sendSuccess(c, {}, 'OTP sent via SMS');
-          
-        } catch (err) {
-          console.error('❌ [AUTH] SNS failed, falling back to mock:', err);
-        }
+      // Validate role
+      if (!['customer', 'vendor'].includes(role)) {
+        return sendError(c, 'Invalid role. Must be customer or vendor', 400);
       }
       
-      // Fallback / Mock
-      console.log('⚠️ [AUTH] SNS disabled or failed. OTP logged to console only.');
-      return sendSuccess(c, { debug_otp: otp }, 'OTP sent (Mock Mode)');
+      console.log(`🔐 [AUTH] Sending Cognito OTP for ${phone} (${role})`);
+      
+      // ✅ COGNITO: Send OTP via Cognito SMS MFA
+      try {
+        const cognitoResult = await sendCognitoOTP(phone, role as 'customer' | 'vendor');
+        
+        if (cognitoResult.success) {
+          console.log('✅ [AUTH] Cognito OTP sent successfully');
+          
+          // Store session in OTP repository for verification (temporary, expires with OTP)
+          const otpRepo = getOtpRepository();
+          await otpRepo.create({
+            phone,
+            otp_code: cognitoResult.session, // Store Cognito session instead of OTP
+            otp_type: `cognito_${role}_login`,
+            expires_in_minutes: 10, // Cognito sessions are typically longer
+            max_attempts: 3,
+          });
+          
+          return sendSuccess(c, {
+            session: cognitoResult.session,
+            challengeName: cognitoResult.challengeName,
+          }, 'OTP sent via Cognito SMS');
+        } else {
+          throw new Error('Failed to send Cognito OTP');
+        }
+      } catch (cognitoError: any) {
+        console.error('❌ [AUTH] Cognito OTP failed:', cognitoError);
+        
+        // Fallback to SNS if Cognito is not configured
+        console.log('⚠️ [AUTH] Falling back to AWS SNS...');
+        
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        
+        const otpRepo = getOtpRepository();
+        await otpRepo.create({
+          phone,
+          otp_code: otp,
+          otp_type: 'login',
+          expires_in_minutes: 5,
+          max_attempts: 3,
+        });
+
+        const platformSettingsRepo = getPlatformSettingsRepository();
+        const awsSettingsData = await platformSettingsRepo.getAWSSettings();
+        const awsSettings = awsSettingsData ? {
+          sns: awsSettingsData.sns_config || {},
+          credentials: awsSettingsData.credentials || {},
+        } : null;
+        
+        if (awsSettings?.sns?.enabled && awsSettings?.credentials?.accessKeyId) {
+          try {
+            const client = new SNSClient({
+              region: awsSettings.sns.region || 'ap-south-1',
+              credentials: {
+                accessKeyId: awsSettings.credentials.accessKeyId,
+                secretAccessKey: awsSettings.credentials.secretAccessKey
+              }
+            });
+            
+            const command = new PublishCommand({
+              PhoneNumber: phone,
+              Message: `Your Warmpawz verification code is: ${otp}. Valid for 5 minutes.`,
+              MessageAttributes: {
+                'AWS.SNS.SMS.SMSType': {
+                  DataType: 'String',
+                  StringValue: 'Transactional'
+                }
+              }
+            });
+            
+            await client.send(command);
+            console.log('✅ [AUTH] SMS sent successfully via SNS (fallback)');
+            return sendSuccess(c, {}, 'OTP sent via SMS');
+          } catch (err) {
+            console.error('❌ [AUTH] SNS fallback also failed:', err);
+          }
+        }
+        
+        // Final fallback - mock mode
+        console.log('⚠️ [AUTH] All OTP methods failed. Using mock mode.');
+        return sendSuccess(c, { debug_otp: otp }, 'OTP sent (Mock Mode - Cognito not configured)');
+      }
       
     } catch (error) {
       console.error('❌ [AUTH] Send OTP error:', error);
-      return sendError(c, error, 500);
+      return sendError(c, error instanceof Error ? error.message : 'Failed to send OTP', 500);
     }
   });
 
@@ -77,44 +134,26 @@ export function registerAuthEndpoints(app: Hono) {
   
   app.get("/make-server-3dd53475/auth/diagnostic/all-vendors", async (c) => {
     try {
-      // Get ALL vendor-related data
-      const users = await kv.getByPrefix('user:');
-      const vendorProfiles = await kv.getByPrefix('vendor:profile:');
-      const vendorVendors = await kv.getByPrefix('vendor:vendor_');
-      const vendorApplications = await kv.getByPrefix('vendor:application:');
+      // ✅ SQL: Get ALL vendor-related data from SQL repositories
+      const vendorsRepo = getVendorsRepository();
+      const allVendors = await vendorsRepo.findAll({});
+      
+      // Transform to match expected format
+      const vendorVendors = allVendors.map((v: any) => ({
+        id: v.id || v.vendor_id,
+        phone: v.phone,
+        ownerName: v.owner_name || v.full_name,
+        businessName: v.business_name,
+        email: v.email,
+        status: v.status
+      }));
       
       return sendSuccess(c, {
         data: {
-          users: users.map((u: any) => ({
-            userId: u.userId,
-            phone: u.phone,
-            role: u.role,
-            name: u.name,
-            email: u.email
-          })),
-          vendorProfiles: vendorProfiles.map((vp: any) => ({
-            id: vp.id,
-            phone: vp.phone,
-            ownerName: vp.ownerName,
-            businessName: vp.businessName,
-            email: vp.email,
-            status: vp.status
-          })),
-          vendorVendors: vendorVendors.map((vv: any) => ({
-            id: vv.id || vv.vendorId,
-            phone: vv.phone,
-            ownerName: vv.ownerName,
-            businessName: vv.businessName,
-            email: vv.email,
-            status: vv.status
-          })),
-          applications: vendorApplications.map((va: any) => ({
-            applicationId: va.applicationId,
-            vendorId: va.vendorId,
-            phone: va.phone,
-            status: va.status,
-            submittedAt: va.submittedAt
-          }))
+          users: [], // Users are managed separately via auth-service
+          vendorProfiles: vendorVendors, // Same as vendors
+          vendorVendors: vendorVendors,
+          applications: [] // Applications should be in separate table if needed
         }
       });
     } catch (error) {
@@ -185,16 +224,17 @@ export function registerAuthEndpoints(app: Hono) {
           state: currentState
         });
         
-        // DEBUG: If no vendor found, let's check what's in the database
+        // ✅ SQL: Debug vendor lookup using SQL repository
         if (!vendorState.vendor) {
           console.log(`❌ NO VENDOR FOUND - Checking database...`);
-          const allVendors = await kv.getByPrefix('vendor:vendor_');
+          const vendorsRepo = getVendorsRepository();
+          const allVendors = await vendorsRepo.findAll({});
           console.log(`📋 Total vendors in database: ${allVendors.length}`);
           
           if (allVendors.length > 0) {
             console.log(`📋 First 5 vendors:`);
             allVendors.slice(0, 5).forEach((v: any, idx: number) => {
-              console.log(`   ${idx + 1}. ID: ${v.id}, Phone: ${v.phone}, Name: ${v.fullName}, Status: ${v.status}`);
+              console.log(`   ${idx + 1}. ID: ${v.id}, Phone: ${v.phone}, Name: ${v.business_name || v.owner_name}, Status: ${v.status}`);
             });
             
             // Check if any match the login phone
@@ -240,28 +280,25 @@ export function registerAuthEndpoints(app: Hono) {
         state: currentState
       };
       
-      // DEBUG: If state is "new" for vendor, add debug information
+      // ✅ SQL: Debug vendor lookup using SQL repository
       if ((user.role === 'vendor' || portal === 'vendor') && currentState === 'new') {
-        const kv = await import('./kv_store.tsx');
-        
-        // Get all vendor profiles for debugging
-        const vendorProfileEntries = await kv.getByPrefix('vendor:profile:');
-        const vendorVendorEntries = await kv.getByPrefix('vendor:vendor_');
+        const vendorsRepo = getVendorsRepository();
+        const allVendors = await vendorsRepo.findAll({});
         
         const debugInfo = {
           searchedPhone: user.phone,
-          vendorProfileCount: vendorProfileEntries.length,
-          vendorVendorCount: vendorVendorEntries.length,
-          vendorProfiles: vendorProfileEntries.map((p: any) => ({
+          vendorProfileCount: allVendors.length,
+          vendorVendorCount: allVendors.length,
+          vendorProfiles: allVendors.map((p: any) => ({
             id: p.id,
             phone: p.phone,
-            ownerName: p.ownerName || p.fullName,
+            ownerName: p.owner_name || p.full_name,
             email: p.email
           })),
-          vendorVendors: vendorVendorEntries.map((v: any) => ({
-            id: v.id || v.vendorId,
+          vendorVendors: allVendors.map((v: any) => ({
+            id: v.id || v.vendor_id,
             phone: v.phone,
-            ownerName: v.ownerName || v.fullName,
+            ownerName: v.owner_name || v.full_name,
             email: v.email
           }))
         };
@@ -482,85 +519,56 @@ export function registerAuthEndpoints(app: Hono) {
       
       console.log(`🔍 DEBUG: Checking vendor with phone ${cleanedPhone}`);
       
-      // Import KV directly to bypass any potential issues
-      const kvModule = await import('./kv_store.tsx');
-      
-      // Check all possible locations
+      // ✅ SQL: Check all possible locations using SQL repositories
       const results: any = {
         phone: cleanedPhone,
         timestamp: new Date().toISOString(),
         checks: {}
       };
       
-      // 1. Check user:phone: format
+      // 1-2. Users are managed via auth-service (SQL-based)
       try {
-        const userByPhone = await kvModule.get(`user:phone:${cleanedPhone}`);
-        results.checks.userByPhone = { found: !!userByPhone, data: userByPhone };
+        const user = await authService.getUserByPhone(cleanedPhone);
+        results.checks.userByPhone = { found: !!user, data: user };
+        results.checks.allUsers = { total: 0, found: !!user, data: user };
       } catch (e) {
         results.checks.userByPhone = { error: String(e) };
-      }
-      
-      // 2. Check all user: keys
-      try {
-        const allUsers = await kvModule.getByPrefix('user:user_');
-        const matchingUser = allUsers.find((u: any) => u.phone && u.phone.replace(/[^0-9]/g, '') === cleanedPhone);
-        results.checks.allUsers = {
-          total: allUsers.length,
-          found: !!matchingUser,
-          data: matchingUser
-        };
-      } catch (e) {
         results.checks.allUsers = { error: String(e) };
       }
       
-      // 3. Check vendor:phone: format
+      // 3-5. Check vendors using SQL repository
       try {
-        const vendorByPhone = await kvModule.get(`vendor:phone:${cleanedPhone}`);
-        results.checks.vendorByPhone = { found: !!vendorByPhone, data: vendorByPhone };
-      } catch (e) {
-        results.checks.vendorByPhone = { error: String(e) };
-      }
-      
-      // 4. Check vendor:profile: format (old format)
-      try {
-        const oldProfiles = await kvModule.getByPrefix('vendor:profile:');
-        const matchingProfile = oldProfiles.find((p: any) => p.phone && p.phone.replace(/[^0-9]/g, '') === cleanedPhone);
-        results.checks.oldProfiles = {
-          total: oldProfiles.length,
-          found: !!matchingProfile,
-          data: matchingProfile,
-          allProfiles: oldProfiles.map((p: any) => ({ phone: p.phone, fullName: p.fullName, id: p.id }))
-        };
-      } catch (e) {
-        results.checks.oldProfiles = { error: String(e) };
-      }
-      
-      // 5. Check vendor:vendor_ format
-      try {
-        const allVendors = await kvModule.getByPrefix('vendor:vendor_');
+        const vendorsRepo = getVendorsRepository();
+        const vendorByPhone = await vendorsRepo.findByPhone(cleanedPhone);
+        const allVendors = await vendorsRepo.findAll({});
         const matchingVendor = allVendors.find((v: any) => v.phone && v.phone.replace(/[^0-9]/g, '') === cleanedPhone);
+        
+        results.checks.vendorByPhone = { found: !!vendorByPhone, data: vendorByPhone };
+        results.checks.oldProfiles = {
+          total: allVendors.length,
+          found: !!matchingVendor,
+          data: matchingVendor,
+          allProfiles: allVendors.map((p: any) => ({ phone: p.phone, fullName: p.business_name || p.owner_name, id: p.id }))
+        };
         results.checks.allVendors = {
           total: allVendors.length,
           found: !!matchingVendor,
           data: matchingVendor,
-          allVendors: allVendors.map((v: any) => ({ phone: v.phone, ownerName: v.ownerName, id: v.id || v.vendorId }))
+          allVendors: allVendors.map((v: any) => ({ phone: v.phone, ownerName: v.owner_name, id: v.id || v.vendor_id }))
         };
       } catch (e) {
+        results.checks.vendorByPhone = { error: String(e) };
+        results.checks.oldProfiles = { error: String(e) };
         results.checks.allVendors = { error: String(e) };
       }
       
-      // 6. Check application: keys
-      try {
-        const allApplications = await kvModule.getByPrefix('application:');
-        const matchingApp = allApplications.find((a: any) => a.phone && a.phone.replace(/[^0-9]/g, '') === cleanedPhone);
-        results.checks.applications = {
-          total: allApplications.length,
-          found: !!matchingApp,
-          data: matchingApp
-        };
-      } catch (e) {
-        results.checks.applications = { error: String(e) };
-      }
+      // 6. Applications should be in separate table if needed
+      results.checks.applications = {
+        total: 0,
+        found: false,
+        data: null,
+        note: 'Applications should be stored in applications table'
+      };
       
       return sendSuccess(c, results);
       
@@ -576,60 +584,25 @@ export function registerAuthEndpoints(app: Hono) {
    */
   app.post("/make-server-3dd53475/auth/admin/fix-vendor-indexes", async (c) => {
     try {
-      console.log('🔧 MIGRATION: Fixing vendor indexes...');
+      console.log('🔧 MIGRATION: Vendor phone indexes are now handled by SQL database indexes');
       
-      // Get all vendors
-      const allVendors = await kv.getByPrefix('vendor:vendor_');
-      console.log(`Found ${allVendors.length} vendors to process`);
+      // ✅ SQL: Phone indexes are automatically handled by database unique constraints
+      // No need for manual KV indexes - database handles this via phone column
+      const vendorsRepo = getVendorsRepository();
+      const allVendors = await vendorsRepo.findAll({});
       
-      let fixed = 0;
-      let skipped = 0;
-      const results: any[] = [];
-      
-      for (const vendor of allVendors) {
-        const vendorId = vendor.id || vendor.vendorId;
-        const phone = vendor.phone;
-        
-        if (!phone) {
-          console.log(`⚠️ Vendor ${vendorId} has no phone number`);
-          skipped++;
-          continue;
-        }
-        
-        // Clean phone
-        const cleanedPhone = phone.replace(/[^0-9]/g, '');
-        
-        // Check if index already exists
-        const existingIndex = await kv.get(`vendor:phone:${cleanedPhone}`);
-        
-        if (existingIndex) {
-          console.log(`✓ Vendor ${vendorId} already has phone index`);
-          skipped++;
-        } else {
-          // Create phone index
-          await kv.set(`vendor:phone:${cleanedPhone}`, vendorId);
-          console.log(`✅ Created phone index: vendor:phone:${cleanedPhone} → ${vendorId}`);
-          fixed++;
-          
-          results.push({
-            vendorId,
-            phone: cleanedPhone,
-            fullName: vendor.fullName || vendor.ownerName,
-            status: vendor.status
-          });
-        }
-      }
-      
-      console.log(`✅ Migration complete: ${fixed} fixed, ${skipped} skipped`);
+      console.log(`✅ Found ${allVendors.length} vendors in database`);
+      console.log(`✅ Phone lookups are handled by database indexes (no manual index needed)`);
       
       return sendSuccess(c, {
         stats: {
           total: allVendors.length,
-          fixed,
-          skipped
+          fixed: 0,
+          skipped: allVendors.length,
+          note: 'Phone indexes are handled automatically by database'
         },
-        fixed: results
-      }, 'Vendor indexes fixed');
+        fixed: []
+      }, 'Vendor phone lookups use database indexes');
       
     } catch (error) {
       console.error('❌ Migration error:', error);

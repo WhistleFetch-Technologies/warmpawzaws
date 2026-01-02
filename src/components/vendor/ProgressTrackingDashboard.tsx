@@ -13,8 +13,7 @@ import {
   Search, Filter, Download, Upload, Video, Image as ImageIcon,
   Edit, Trash2
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 interface ProgressTracker {
   id: string;
@@ -152,27 +151,24 @@ export function ProgressTrackingDashboard({ vendorId, roleType }: { vendorId: st
   const loadTrackers = async () => {
     try {
       setLoading(true);
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/progress-trackers`,
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/progress-trackers`
       );
 
-      if (response.ok) {
-        const data = await response.json();
-        // ✅ FIX: Handle standardized response format
-        // Response format: { success: true, trackers: [...], total: ... }
+      if (data.success) {
         setTrackers(data.trackers || data.data?.trackers || []);
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-        console.error('Failed to load trackers:', errorData);
-        // Don't show error toast on initial load - just log
+        console.error('Failed to load trackers:', data.error || data.message);
       }
     } catch (error: any) {
       console.error('Error loading trackers:', error);
-      const errorMessage = error?.message || 'Failed to load trackers. Please try again.';
-      // Don't show error toast on initial load - just log
     } finally {
       setLoading(false);
     }
@@ -204,14 +200,17 @@ export function ProgressTrackingDashboard({ vendorId, roleType }: { vendorId: st
     if (!selectedTracker) return;
 
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/progress-trackers/${selectedTracker.id}/notes`,
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/progress-trackers/${selectedTracker.id}/notes`,
         {
           method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify({
             ...newNote,
             sessionNumber: selectedTracker.sessionsCompleted + 1,
@@ -220,9 +219,9 @@ export function ProgressTrackingDashboard({ vendorId, roleType }: { vendorId: st
         }
       );
 
-      if (response.ok) {
+      if (data.success) {
         toast.success('Progress note added successfully');
-        await loadTrackers(); // ✅ Ensure trackers reload
+        await loadTrackers();
         setShowAddNoteModal(false);
         setNewNote({
           title: '',
@@ -234,14 +233,11 @@ export function ProgressTrackingDashboard({ vendorId, roleType }: { vendorId: st
           rating: 3
         });
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
-        const errorMessage = errorData.error || errorData.message || 'Failed to add progress note';
-        toast.error(errorMessage);
+        toast.error(data.error || data.message || 'Failed to add progress note');
       }
     } catch (error: any) {
       console.error('Error adding note:', error);
-      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
-      toast.error(errorMessage);
+      toast.error(error?.message || 'Network error. Please check your connection and try again.');
     }
   };
 
@@ -249,14 +245,17 @@ export function ProgressTrackingDashboard({ vendorId, roleType }: { vendorId: st
     if (!selectedTracker) return;
 
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/progress-trackers/${selectedTracker.id}/milestones`,
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/progress-trackers/${selectedTracker.id}/milestones`,
         {
           method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify({
             ...newMilestone,
             status: 'pending'
@@ -264,19 +263,16 @@ export function ProgressTrackingDashboard({ vendorId, roleType }: { vendorId: st
         }
       );
 
-      if (response.ok) {
+      if (data.success) {
         toast.success('Milestone added successfully');
-        await loadTrackers(); // ✅ Ensure trackers reload
+        await loadTrackers();
         setShowAddMilestoneModal(false);
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
-        const errorMessage = errorData.error || errorData.message || 'Failed to add milestone';
-        toast.error(errorMessage);
+        toast.error(data.error || data.message || 'Failed to add milestone');
       }
     } catch (error: any) {
       console.error('Error adding milestone:', error);
-      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
-      toast.error(errorMessage);
+      toast.error(error?.message || 'Network error. Please check your connection and try again.');
     }
   };
 
@@ -284,14 +280,17 @@ export function ProgressTrackingDashboard({ vendorId, roleType }: { vendorId: st
     if (!selectedTracker) return;
 
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/progress-trackers/${selectedTracker.id}/measurements`,
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/progress-trackers/${selectedTracker.id}/measurements`,
         {
           method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify({
             ...newMeasurement,
             date: new Date().toISOString()
@@ -299,19 +298,16 @@ export function ProgressTrackingDashboard({ vendorId, roleType }: { vendorId: st
         }
       );
 
-      if (response.ok) {
+      if (data.success) {
         toast.success('Measurement recorded successfully');
-        await loadTrackers(); // ✅ Ensure trackers reload
+        await loadTrackers();
         setShowAddMeasurementModal(false);
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
-        const errorMessage = errorData.error || errorData.message || 'Failed to record measurement';
-        toast.error(errorMessage);
+        toast.error(data.error || data.message || 'Failed to record measurement');
       }
     } catch (error: any) {
       console.error('Error adding measurement:', error);
-      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
-      toast.error(errorMessage);
+      toast.error(error?.message || 'Network error. Please check your connection and try again.');
     }
   };
 
@@ -320,47 +316,41 @@ export function ProgressTrackingDashboard({ vendorId, roleType }: { vendorId: st
     if (!selectedTracker || !editingNote) return;
 
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/progress-trackers/${selectedTracker.id}/notes/${editingNote.id}`,
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/progress-trackers/${selectedTracker.id}/notes/${editingNote.id}`,
         {
           method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify(newNote)
         }
       );
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success || data.tracker) {
-          toast.success('Progress note updated successfully');
-          await loadTrackers(); // ✅ Ensure trackers reload
-          setShowEditNoteModal(false);
-          setEditingNote(null);
-          setNewNote({
-            title: '',
-            observations: '',
-            improvements: [],
-            challenges: [],
-            recommendations: '',
-            nextSteps: '',
-            rating: 3
-          });
-        } else {
-          const errorMessage = data.error || data.message || 'Failed to update progress note';
-          toast.error(errorMessage);
-        }
+      if (data.success) {
+        toast.success('Progress note updated successfully');
+        await loadTrackers();
+        setShowEditNoteModal(false);
+        setEditingNote(null);
+        setNewNote({
+          title: '',
+          observations: '',
+          improvements: [],
+          challenges: [],
+          recommendations: '',
+          nextSteps: '',
+          rating: 3
+        });
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
-        const errorMessage = errorData.error || errorData.message || 'Failed to update progress note';
-        toast.error(errorMessage);
+        toast.error(data.error || data.message || 'Failed to update progress note');
       }
     } catch (error: any) {
       console.error('Error updating note:', error);
-      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
-      toast.error(errorMessage);
+      toast.error(error?.message || 'Network error. Please check your connection and try again.');
     }
   };
 
@@ -376,34 +366,29 @@ export function ProgressTrackingDashboard({ vendorId, roleType }: { vendorId: st
     }
 
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/progress-trackers/${selectedTracker.id}/notes/${noteId}`,
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/progress-trackers/${selectedTracker.id}/notes/${noteId}`,
         {
-          method: 'DELETE',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
-          }
+          method: 'DELETE'
         }
       );
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success || data.tracker) {
-          toast.success(`Note "${noteTitle}" deleted successfully`);
-          await loadTrackers(); // ✅ Ensure trackers reload
-        } else {
-          const errorMessage = data.error || data.message || 'Failed to delete progress note';
-          toast.error(errorMessage);
-        }
+      if (data.success) {
+        toast.success(`Note "${noteTitle}" deleted successfully`);
+        await loadTrackers();
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
-        const errorMessage = errorData.error || errorData.message || 'Failed to delete progress note';
-        toast.error(errorMessage);
+        toast.error(data.error || data.message || 'Failed to delete progress note');
       }
     } catch (error: any) {
       console.error('Error deleting note:', error);
-      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
-      toast.error(errorMessage);
+      toast.error(error?.message || 'Network error. Please check your connection and try again.');
     }
   };
 
@@ -412,44 +397,38 @@ export function ProgressTrackingDashboard({ vendorId, roleType }: { vendorId: st
     if (!selectedTracker || !editingMilestone) return;
 
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/progress-trackers/${selectedTracker.id}/milestones/${editingMilestone.id}`,
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/progress-trackers/${selectedTracker.id}/milestones/${editingMilestone.id}`,
         {
           method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify(newMilestone)
         }
       );
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success || data.tracker) {
-          toast.success('Milestone updated successfully');
-          await loadTrackers(); // ✅ Ensure trackers reload
-          setShowEditMilestoneModal(false);
-          setEditingMilestone(null);
-          setNewMilestone({
-            title: '',
-            description: '',
-            targetDate: '',
-            category: ''
-          });
-        } else {
-          const errorMessage = data.error || data.message || 'Failed to update milestone';
-          toast.error(errorMessage);
-        }
+      if (data.success) {
+        toast.success('Milestone updated successfully');
+        await loadTrackers();
+        setShowEditMilestoneModal(false);
+        setEditingMilestone(null);
+        setNewMilestone({
+          title: '',
+          description: '',
+          targetDate: '',
+          category: ''
+        });
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
-        const errorMessage = errorData.error || errorData.message || 'Failed to update milestone';
-        toast.error(errorMessage);
+        toast.error(data.error || data.message || 'Failed to update milestone');
       }
     } catch (error: any) {
       console.error('Error updating milestone:', error);
-      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
-      toast.error(errorMessage);
+      toast.error(error?.message || 'Network error. Please check your connection and try again.');
     }
   };
 
@@ -465,34 +444,29 @@ export function ProgressTrackingDashboard({ vendorId, roleType }: { vendorId: st
     }
 
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/progress-trackers/${selectedTracker.id}/milestones/${milestoneId}`,
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/progress-trackers/${selectedTracker.id}/milestones/${milestoneId}`,
         {
-          method: 'DELETE',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
-          }
+          method: 'DELETE'
         }
       );
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success || data.tracker) {
-          toast.success(`Milestone "${milestoneTitle}" deleted successfully`);
-          await loadTrackers(); // ✅ Ensure trackers reload
-        } else {
-          const errorMessage = data.error || data.message || 'Failed to delete milestone';
-          toast.error(errorMessage);
-        }
+      if (data.success) {
+        toast.success(`Milestone "${milestoneTitle}" deleted successfully`);
+        await loadTrackers();
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
-        const errorMessage = errorData.error || errorData.message || 'Failed to delete milestone';
-        toast.error(errorMessage);
+        toast.error(data.error || data.message || 'Failed to delete milestone');
       }
     } catch (error: any) {
       console.error('Error deleting milestone:', error);
-      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
-      toast.error(errorMessage);
+      toast.error(error?.message || 'Network error. Please check your connection and try again.');
     }
   };
 
@@ -501,44 +475,38 @@ export function ProgressTrackingDashboard({ vendorId, roleType }: { vendorId: st
     if (!selectedTracker || !editingMeasurement) return;
 
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/progress-trackers/${selectedTracker.id}/measurements/${editingMeasurement.id}`,
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/progress-trackers/${selectedTracker.id}/measurements/${editingMeasurement.id}`,
         {
           method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
-            'Content-Type': 'application/json'
-          },
           body: JSON.stringify(newMeasurement)
         }
       );
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success || data.tracker) {
-          toast.success('Measurement updated successfully');
-          await loadTrackers(); // ✅ Ensure trackers reload
-          setShowEditMeasurementModal(false);
-          setEditingMeasurement(null);
-          setNewMeasurement({
-            type: 'weight',
-            value: 0,
-            unit: 'kg',
-            notes: ''
-          });
-        } else {
-          const errorMessage = data.error || data.message || 'Failed to update measurement';
-          toast.error(errorMessage);
-        }
+      if (data.success) {
+        toast.success('Measurement updated successfully');
+        await loadTrackers();
+        setShowEditMeasurementModal(false);
+        setEditingMeasurement(null);
+        setNewMeasurement({
+          type: 'weight',
+          value: 0,
+          unit: 'kg',
+          notes: ''
+        });
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
-        const errorMessage = errorData.error || errorData.message || 'Failed to update measurement';
-        toast.error(errorMessage);
+        toast.error(data.error || data.message || 'Failed to update measurement');
       }
     } catch (error: any) {
       console.error('Error updating measurement:', error);
-      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
-      toast.error(errorMessage);
+      toast.error(error?.message || 'Network error. Please check your connection and try again.');
     }
   };
 
@@ -554,34 +522,29 @@ export function ProgressTrackingDashboard({ vendorId, roleType }: { vendorId: st
     }
 
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/progress-trackers/${selectedTracker.id}/measurements/${measurementId}`,
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+
+      const data = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/progress-trackers/${selectedTracker.id}/measurements/${measurementId}`,
         {
-          method: 'DELETE',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
-          }
+          method: 'DELETE'
         }
       );
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success || data.tracker) {
-          toast.success('Measurement deleted successfully');
-          await loadTrackers(); // ✅ Ensure trackers reload
-        } else {
-          const errorMessage = data.error || data.message || 'Failed to delete measurement';
-          toast.error(errorMessage);
-        }
+      if (data.success) {
+        toast.success('Measurement deleted successfully');
+        await loadTrackers();
       } else {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
-        const errorMessage = errorData.error || errorData.message || 'Failed to delete measurement';
-        toast.error(errorMessage);
+        toast.error(data.error || data.message || 'Failed to delete measurement');
       }
     } catch (error: any) {
       console.error('Error deleting measurement:', error);
-      const errorMessage = error?.message || 'Network error. Please check your connection and try again.';
-      toast.error(errorMessage);
+      toast.error(error?.message || 'Network error. Please check your connection and try again.');
     }
   };
 

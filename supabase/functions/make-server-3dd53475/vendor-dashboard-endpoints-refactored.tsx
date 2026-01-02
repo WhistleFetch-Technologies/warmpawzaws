@@ -66,7 +66,7 @@ export function vendorDashboardEndpoints(app: Hono) {
             fullName: 'Vendor',
             businessName: null,
             vendorType: 'service_provider',
-            serviceStyle: 'both',
+            serviceStyle: 'at_center', // Standard default (Technical Standards 10.1)
             address: 'Location not set',
             isActive: false
           },
@@ -181,7 +181,7 @@ export function vendorDashboardEndpoints(app: Hono) {
           fullName: vendor.owner_name || vendor.full_name || 'Vendor',
           businessName: vendor.business_name || vendor.businessName,
           vendorType: vendor.category || vendor.vendor_type || 'service_provider',
-          serviceStyle: vendor.service_style || 'both',
+          serviceStyle: vendor.service_style || 'at_center', // Standard default (Technical Standards 10.1)
           address: vendor.address || '',
           phone: vendor.phone || '',
           email: vendor.email || '',

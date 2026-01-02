@@ -3,7 +3,7 @@ import { BookOpen, Plus, TrendingUp, AlertCircle, Calendar, Tag } from 'lucide-r
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 interface BehaviorJournalProps {
   petId: string;

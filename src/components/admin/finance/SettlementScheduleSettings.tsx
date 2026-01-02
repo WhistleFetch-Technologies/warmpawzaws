@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Badge } from '../../ui/badge';
 import { Separator } from '../../ui/separator';
 import { Clock, Calendar, DollarSign, Settings as SettingsIcon, Play, Pause, CheckCircle2, AlertCircle } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
 
 interface SettlementSchedule {

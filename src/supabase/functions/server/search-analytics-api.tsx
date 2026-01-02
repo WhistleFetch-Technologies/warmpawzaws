@@ -1,5 +1,5 @@
-import { Hono } from "npm:hono";
-import { sendSuccess, sendError } from "./response-utils.ts";
+import { Hono } from "hono";
+import { sendSuccess, sendError } from "./response-utils";
 
 /**
  * 📊 SEARCH ANALYTICS API
@@ -41,7 +41,10 @@ interface SearchAnalyticsEvent {
   };
 }
 
-export function searchAnalyticsAPI(app: Hono, kv: any) {
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { getDbClient } from '../../../supabase/lib/db';
+
+export function searchAnalyticsAPI(app: Hono) {
   const BASE_PATH = "/make-server-3dd53475";
 
   // ========================================
@@ -81,7 +84,23 @@ export function searchAnalyticsAPI(app: Hono, kv: any) {
         }
       };
 
-      await kv.set(`search_analytics_${eventId}`, event);
+      // ✅ SQL: Store search analytics event in search_analytics table
+      const db = getDbClient();
+      await db
+        .from('search_analytics')
+        .insert({
+          id: eventId,
+          query: event.query,
+          user_id: event.userId || null,
+          results_count: event.results.count,
+          top_results: event.results.topResults || [],
+          source: event.metadata.source,
+          device_type: event.metadata.deviceType || null,
+          clicked_result_id: null,
+          converted: false,
+          time_to_click: null,
+          created_at: event.timestamp
+        });
 
       console.log(`📊 Tracked search: "${query}" (${event.results.count} results)`);
 
@@ -101,19 +120,27 @@ export function searchAnalyticsAPI(app: Hono, kv: any) {
         return sendError(c, 'eventId and clicked are required', 400);
       }
 
-      const event = await kv.get(`search_analytics_${eventId}`);
+      // ✅ SQL: Get and update search analytics event from search_analytics table
+      const db = getDbClient();
+      const { data: event } = await db
+        .from('search_analytics')
+        .select('*')
+        .eq('id', eventId)
+        .single();
       
       if (!event) {
         return sendError(c, 'Search event not found', 404);
       }
 
-      event.userAction = {
-        clicked,
-        timeToClick,
-        converted: false
-      };
-
-      await kv.set(`search_analytics_${eventId}`, event);
+      await db
+        .from('search_analytics')
+        .update({
+          clicked_result_id: clicked,
+          time_to_click: timeToClick || null,
+          converted: false,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', eventId);
 
       console.log(`👆 Click tracked for search: ${eventId}`);
 
@@ -133,19 +160,25 @@ export function searchAnalyticsAPI(app: Hono, kv: any) {
         return sendError(c, 'eventId is required', 400);
       }
 
-      const event = await kv.get(`search_analytics_${eventId}`);
+      // ✅ SQL: Update search analytics event conversion status in search_analytics table
+      const db = getDbClient();
+      const { data: event } = await db
+        .from('search_analytics')
+        .select('id')
+        .eq('id', eventId)
+        .single();
       
       if (!event) {
         return sendError(c, 'Search event not found', 404);
       }
 
-      if (!event.userAction) {
-        event.userAction = {};
-      }
-
-      event.userAction.converted = true;
-
-      await kv.set(`search_analytics_${eventId}`, event);
+      await db
+        .from('search_analytics')
+        .update({
+          converted: true,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', eventId);
 
       console.log(`✅ Conversion tracked for search: ${eventId}`);
 
@@ -169,7 +202,12 @@ export function searchAnalyticsAPI(app: Hono, kv: any) {
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - days);
 
-      const analyticsData = await kv.getByPrefix('search_analytics_');
+      // ✅ SQL: Get analytics data from search_analytics table
+      const db = getDbClient();
+      const { data: analyticsData } = await db
+        .from('search_analytics')
+        .select('*')
+        .gte('created_at', cutoffDate.toISOString());
       
       if (!analyticsData || analyticsData.length === 0) {
         return sendSuccess(c, { popular: [] });
@@ -183,12 +221,7 @@ export function searchAnalyticsAPI(app: Hono, kv: any) {
         conversions: number;
       }> = {};
 
-      analyticsData.forEach((item: any) => {
-        const event = item.value || item;
-        const eventDate = new Date(event.timestamp);
-
-        if (eventDate < cutoffDate) return;
-
+      analyticsData.forEach((event: any) => {
         const query = event.query;
         
         if (!queryFrequency[query]) {
@@ -201,13 +234,13 @@ export function searchAnalyticsAPI(app: Hono, kv: any) {
         }
 
         queryFrequency[query].count++;
-        queryFrequency[query].totalResults += event.results.count || 0;
+        queryFrequency[query].totalResults += event.results_count || 0;
         
-        if (event.userAction?.clicked) {
+        if (event.clicked_result_id) {
           queryFrequency[query].clicks++;
         }
         
-        if (event.userAction?.converted) {
+        if (event.converted) {
           queryFrequency[query].conversions++;
         }
       });
@@ -239,13 +272,18 @@ export function searchAnalyticsAPI(app: Hono, kv: any) {
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - days);
 
-      const analyticsData = await kv.getByPrefix('search_analytics_');
+      // ✅ SQL: Get analytics data from search_analytics table
+      const db = getDbClient();
+      const { data: analyticsData } = await db
+        .from('search_analytics')
+        .select('*')
+        .gte('created_at', cutoffDate.toISOString());
       
       if (!analyticsData || analyticsData.length === 0) {
         return sendSuccess(c, { trends: [] });
       }
 
-      // Group by date
+      // ✅ SQL: Group by date from search_analytics table
       const trendsByDate: Record<string, {
         totalSearches: number;
         uniqueQueries: Set<string>;
@@ -253,12 +291,8 @@ export function searchAnalyticsAPI(app: Hono, kv: any) {
         conversions: number;
       }> = {};
 
-      analyticsData.forEach((item: any) => {
-        const event = item.value || item;
-        const eventDate = new Date(event.timestamp);
-
-        if (eventDate < cutoffDate) return;
-
+      analyticsData.forEach((event: any) => {
+        const eventDate = new Date(event.created_at);
         const dateKey = eventDate.toISOString().split('T')[0];
 
         if (!trendsByDate[dateKey]) {
@@ -273,11 +307,11 @@ export function searchAnalyticsAPI(app: Hono, kv: any) {
         trendsByDate[dateKey].totalSearches++;
         trendsByDate[dateKey].uniqueQueries.add(event.query);
         
-        if (event.userAction?.clicked) {
+        if (event.clicked_result_id) {
           trendsByDate[dateKey].clicks++;
         }
         
-        if (event.userAction?.converted) {
+        if (event.converted) {
           trendsByDate[dateKey].conversions++;
         }
       });
@@ -309,22 +343,22 @@ export function searchAnalyticsAPI(app: Hono, kv: any) {
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - days);
 
-      const analyticsData = await kv.getByPrefix('search_analytics_');
+      // ✅ SQL: Get analytics data from search_analytics table
+      const db = getDbClient();
+      const { data: analyticsData } = await db
+        .from('search_analytics')
+        .select('*')
+        .gte('created_at', cutoffDate.toISOString());
       
       if (!analyticsData || analyticsData.length === 0) {
         return sendSuccess(c, { failed: [] });
       }
 
-      // Find searches with no results
+      // ✅ SQL: Find searches with no results from search_analytics table
       const failedSearches: Record<string, number> = {};
 
-      analyticsData.forEach((item: any) => {
-        const event = item.value || item;
-        const eventDate = new Date(event.timestamp);
-
-        if (eventDate < cutoffDate) return;
-
-        if (event.results.count === 0) {
+      analyticsData.forEach((event: any) => {
+        if (event.results_count === 0) {
           const query = event.query;
           failedSearches[query] = (failedSearches[query] || 0) + 1;
         }
@@ -351,7 +385,12 @@ export function searchAnalyticsAPI(app: Hono, kv: any) {
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - days);
 
-      const analyticsData = await kv.getByPrefix('search_analytics_');
+      // ✅ SQL: Get analytics data from search_analytics table
+      const db = getDbClient();
+      const { data: analyticsData } = await db
+        .from('search_analytics')
+        .select('*')
+        .gte('created_at', cutoffDate.toISOString());
       
       if (!analyticsData || analyticsData.length === 0) {
         return sendSuccess(c, {
@@ -367,19 +406,14 @@ export function searchAnalyticsAPI(app: Hono, kv: any) {
       let totalTimeToClick = 0;
       let clickCount = 0;
 
-      analyticsData.forEach((item: any) => {
-        const event = item.value || item;
-        const eventDate = new Date(event.timestamp);
-
-        if (eventDate < cutoffDate) return;
-
+      analyticsData.forEach((event: any) => {
         totalSearches++;
 
-        if (event.userAction?.clicked) {
+        if (event.clicked_result_id) {
           searchesWithClicks++;
           
-          if (event.userAction.timeToClick) {
-            totalTimeToClick += event.userAction.timeToClick;
+          if (event.time_to_click) {
+            totalTimeToClick += event.time_to_click;
             clickCount++;
           }
         }
@@ -408,7 +442,12 @@ export function searchAnalyticsAPI(app: Hono, kv: any) {
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - days);
 
-      const analyticsData = await kv.getByPrefix('search_analytics_');
+      // ✅ SQL: Get analytics data from search_analytics table
+      const db = getDbClient();
+      const { data: analyticsData } = await db
+        .from('search_analytics')
+        .select('*')
+        .gte('created_at', cutoffDate.toISOString());
       
       if (!analyticsData || analyticsData.length === 0) {
         return sendSuccess(c, {
@@ -433,24 +472,19 @@ export function searchAnalyticsAPI(app: Hono, kv: any) {
       const queryFreq: Record<string, number> = {};
       const failedQueries: Record<string, number> = {};
 
-      analyticsData.forEach((item: any) => {
-        const event = item.value || item;
-        const eventDate = new Date(event.timestamp);
-
-        if (eventDate < cutoffDate) return;
-
+      analyticsData.forEach((event: any) => {
         totalSearches++;
         uniqueQueries.add(event.query);
-        totalResults += event.results.count || 0;
+        totalResults += event.results_count || 0;
 
         queryFreq[event.query] = (queryFreq[event.query] || 0) + 1;
 
-        if (event.results.count === 0) {
+        if (event.results_count === 0) {
           failedQueries[event.query] = (failedQueries[event.query] || 0) + 1;
         }
 
-        if (event.userAction?.clicked) clicks++;
-        if (event.userAction?.converted) conversions++;
+        if (event.clicked_result_id) clicks++;
+        if (event.converted) conversions++;
       });
 
       const overview = {

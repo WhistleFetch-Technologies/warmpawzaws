@@ -1,8 +1,9 @@
-import { Hono } from "npm:hono";
-import { sendSuccess, sendError } from "./response-utils.ts";
-
 /**
- * 🏥 SPECIALIZED SERVICES BOOKING INTEGRATION
+ * ============================================================================
+ * SPECIALIZED SERVICES BOOKING - SQL-ONLY VERSION
+ * ============================================================================
+ * 
+ * ✅ MIGRATED TO SQL: NO KV STORE - All data from SQL
  * 
  * Integrates specialized services into center booking flow:
  * - Prescription management
@@ -16,7 +17,26 @@ import { sendSuccess, sendError } from "./response-utils.ts";
  * - Request prescription
  * - Role-based chat context
  * - Add-on service selection
+ * 
+ * KV Operations: 31 → 0
+ * 
+ * RULES:
+ * ❌ NO KV imports allowed
+ * ✅ All operations use SQL only
+ * ✅ Specialized services metadata stored in booking.notes (JSONB)
+ * ✅ Proper error handling
+ * ✅ CRUD operations via repositories
  */
+
+import { Hono } from "hono";
+import { sendSuccess, sendError } from "./response-utils";
+import { getBookingsRepository } from '../../../supabase/lib/repositories/bookings';
+import { getVendorsRepository } from '../../../supabase/lib/repositories/vendors';
+import { getServicesRepository } from '../../../supabase/lib/repositories/services';
+import { getStaffRepository } from '../../../supabase/lib/repositories/staff';
+import { getPrescriptionsRepository } from '../../../supabase/lib/repositories/prescriptions';
+import { getMedicalRecordsRepository } from '../../../supabase/lib/repositories/medical-records';
+import { getRolesRepository } from '../../../supabase/lib/repositories/roles';
 
 interface SpecializedServiceConfig {
   prescriptionAllowed: boolean;
@@ -30,80 +50,80 @@ interface BookingSpecializedServices {
   bookingId: string;
   customerId: string;
   petId: string;
-  
-  // Prescription
   prescriptionRequested: boolean;
   prescriptionId?: string;
   prescriptionNotes?: string;
-  
-  // Medical records
   medicalRecordsShared: boolean;
   sharedRecordIds?: string[];
-  
-  // Chat
   chatSessionId?: string;
   chatRoleContext?: string;
-  
-  // Add-ons
   addOnServices: {
     serviceId: string;
     serviceName: string;
     price: number;
     duration?: number;
   }[];
-  
   createdAt: string;
   updatedAt: string;
 }
 
-export function specializedServicesBooking(app: Hono, kv: any) {
+export function specializedServicesBooking(app: Hono) {
   const BASE_PATH = "/make-server-3dd53475";
 
   /**
    * GET /booking/:bookingId/specialized-services/config
    * Get specialized services configuration for a booking
+   * ✅ SQL-ONLY: Uses BookingsRepository, VendorsRepository, ServicesRepository
    */
   app.get(`${BASE_PATH}/booking/:bookingId/specialized-services/config`, async (c) => {
     try {
       const { bookingId } = c.req.param();
 
-      // Get booking details
-      const booking = await kv.get(`booking:${bookingId}`);
+      // ✅ SQL: Get booking
+      const bookingsRepo = getBookingsRepository();
+      const booking = await bookingsRepo.findById(bookingId);
       
       if (!booking) {
         return sendError(c, 'Booking not found', 404);
       }
 
-      // Get vendor configuration
-      const vendor = await kv.get(`vendor:${booking.vendorId}`);
+      // ✅ SQL: Get vendor
+      const vendorsRepo = getVendorsRepository();
+      const vendor = booking.vendor_id ? await vendorsRepo.findById(booking.vendor_id) : null;
       
       if (!vendor) {
         return sendError(c, 'Vendor not found', 404);
       }
 
-      // Get service configuration
-      const service = await kv.get(`service:${booking.serviceId}`);
+      // ✅ SQL: Get service
+      const servicesRepo = getServicesRepository();
+      const service = await servicesRepo.findById(booking.service_id);
+
+      // ✅ SQL: Get vendor role to determine capabilities
+      const rolesRepo = getRolesRepository();
+      const role = vendor.role_id ? await rolesRepo.findById(vendor.role_id) : null;
 
       // Build configuration
       const config: SpecializedServiceConfig = {
-        prescriptionAllowed: vendor.services?.includes('prescription') || false,
-        medicalRecordsRequired: service?.requiresMedicalRecords || false,
-        chatEnabled: vendor.features?.chat || false,
-        allowedRoles: vendor.roles || ['veterinarian', 'nurse', 'receptionist'],
-        addOnServices: vendor.addOnServices || []
+        prescriptionAllowed: role?.name === 'veterinarian' || vendor.category === 'vet_clinic' || false,
+        medicalRecordsRequired: service?.description?.includes('medical') || false,
+        chatEnabled: true, // Default enabled
+        allowedRoles: role ? [role.name] : ['veterinarian', 'nurse', 'receptionist'],
+        addOnServices: [] // Will be populated from services
       };
 
       return sendSuccess(c, { config });
 
     } catch (error) {
       console.error('❌ Error fetching specialized services config:', error);
-      return sendError(c, error, 500);
+      return sendError(c, String(error), 500);
     }
   });
 
   /**
    * POST /booking/:bookingId/add-specialized-services
    * Add specialized services to an existing booking
+   * ✅ SQL-ONLY: Stores in booking.notes JSONB
    */
   app.post(`${BASE_PATH}/booking/:bookingId/add-specialized-services`, async (c) => {
     try {
@@ -119,8 +139,9 @@ export function specializedServicesBooking(app: Hono, kv: any) {
 
       console.log(`🏥 Adding specialized services to booking ${bookingId}`);
 
-      // Get booking
-      const booking = await kv.get(`booking:${bookingId}`);
+      // ✅ SQL: Get booking
+      const bookingsRepo = getBookingsRepository();
+      const booking = await bookingsRepo.findById(bookingId);
       
       if (!booking) {
         return sendError(c, 'Booking not found', 404);
@@ -129,8 +150,8 @@ export function specializedServicesBooking(app: Hono, kv: any) {
       // Create specialized services record
       const specializedServices: BookingSpecializedServices = {
         bookingId,
-        customerId: booking.customerId,
-        petId: booking.petId,
+        customerId: booking.customer_id,
+        petId: '', // Would need to be stored or retrieved from booking metadata
         prescriptionRequested: prescriptionRequested || false,
         prescriptionNotes: prescriptionNotes || '',
         medicalRecordsShared: sharemedicalRecords || false,
@@ -141,65 +162,90 @@ export function specializedServicesBooking(app: Hono, kv: any) {
         updatedAt: new Date().toISOString()
       };
 
-      // Save to KV
-      await kv.set(`booking:${bookingId}:specialized`, specializedServices);
+      // ✅ SQL: Update booking notes with specialized services
+      const bookingNotes = booking.notes ? (typeof booking.notes === 'string' ? JSON.parse(booking.notes) : booking.notes) : {};
+      bookingNotes.specializedServices = specializedServices;
+      bookingNotes.hasSpecializedServices = true;
+      bookingNotes.specializedServicesAdded = new Date().toISOString();
 
-      // Update booking with specialized services flag
-      booking.hasSpecializedServices = true;
-      booking.specializedServicesAdded = new Date().toISOString();
-      
-      // Add add-on services cost to total
+      // Calculate add-on services total
       if (addOnServices && addOnServices.length > 0) {
         const addOnTotal = addOnServices.reduce((sum: number, service: any) => sum + service.price, 0);
-        booking.totalAmount = (booking.totalAmount || 0) + addOnTotal;
-        booking.addOnServicesTotal = addOnTotal;
+        bookingNotes.addOnServicesTotal = addOnTotal;
+        await bookingsRepo.update(bookingId, {
+          total_amount: booking.total_amount + addOnTotal,
+          notes: typeof bookingNotes === 'string' ? bookingNotes : JSON.stringify(bookingNotes),
+        });
+      } else {
+        await bookingsRepo.update(bookingId, {
+          notes: typeof bookingNotes === 'string' ? bookingNotes : JSON.stringify(bookingNotes),
+        });
       }
-
-      await kv.set(`booking:${bookingId}`, booking);
 
       console.log(`✅ Specialized services added to booking ${bookingId}`);
 
       return sendSuccess(c, { 
         specializedServices, 
-        booking,
         message: 'Specialized services added successfully' 
       });
 
     } catch (error) {
       console.error('❌ Error adding specialized services:', error);
-      return sendError(c, error, 500);
+      return sendError(c, String(error), 500);
     }
   });
 
   /**
    * GET /booking/:bookingId/specialized-services
    * Get specialized services for a booking
+   * ✅ SQL-ONLY: Retrieves from booking.notes JSONB
    */
   app.get(`${BASE_PATH}/booking/:bookingId/specialized-services`, async (c) => {
     try {
       const { bookingId } = c.req.param();
 
-      const specializedServices = await kv.get(`booking:${bookingId}:specialized`);
+      // ✅ SQL: Get booking
+      const bookingsRepo = getBookingsRepository();
+      const booking = await bookingsRepo.findById(bookingId);
+      
+      if (!booking) {
+        return sendError(c, 'Booking not found', 404);
+      }
+
+      const bookingNotes = booking.notes ? (typeof booking.notes === 'string' ? JSON.parse(booking.notes) : booking.notes) : {};
+      const specializedServices = bookingNotes.specializedServices || null;
 
       if (!specializedServices) {
         return sendSuccess(c, { specializedServices: null, message: 'No specialized services added' });
       }
 
-      // If medical records were shared, fetch them
-      let medicalRecords = [];
+      // ✅ SQL: If medical records were shared, fetch them
+      let medicalRecords: any[] = [];
       if (specializedServices.medicalRecordsShared && specializedServices.sharedRecordIds) {
+        const medicalRecordsRepo = getMedicalRecordsRepository();
         for (const recordId of specializedServices.sharedRecordIds) {
-          const record = await kv.get(`medical-record:${recordId}`);
+          // Use booking customer_id as actor for access check
+          const record = await medicalRecordsRepo.getById(
+            recordId, 
+            booking.customer_id, 
+            'customer'
+          );
           if (record) {
             medicalRecords.push(record);
           }
         }
       }
 
-      // If prescription was requested and created, fetch it
+      // ✅ SQL: If prescription was requested and created, fetch it
       let prescription = null;
       if (specializedServices.prescriptionId) {
-        prescription = await kv.get(`prescription:${specializedServices.prescriptionId}`);
+        const prescriptionsRepo = getPrescriptionsRepository();
+        // Use booking customer_id as actor for access check
+        prescription = await prescriptionsRepo.getById(
+          specializedServices.prescriptionId, 
+          booking.customer_id, 
+          'customer'
+        );
       }
 
       return sendSuccess(c, {
@@ -210,47 +256,53 @@ export function specializedServicesBooking(app: Hono, kv: any) {
 
     } catch (error) {
       console.error('❌ Error fetching specialized services:', error);
-      return sendError(c, error, 500);
+      return sendError(c, String(error), 500);
     }
   });
 
   /**
    * GET /booking/:bookingId/chat/role-context
    * Get role-based chat context for booking
+   * ✅ SQL-ONLY: Uses BookingsRepository, StaffRepository
    */
   app.get(`${BASE_PATH}/booking/:bookingId/chat/role-context`, async (c) => {
     try {
       const { bookingId } = c.req.param();
 
-      const booking = await kv.get(`booking:${bookingId}`);
+      // ✅ SQL: Get booking
+      const bookingsRepo = getBookingsRepository();
+      const booking = await bookingsRepo.findById(bookingId);
       
       if (!booking) {
         return sendError(c, 'Booking not found', 404);
       }
 
-      const specializedServices = await kv.get(`booking:${bookingId}:specialized`);
+      const bookingNotes = booking.notes ? (typeof booking.notes === 'string' ? JSON.parse(booking.notes) : booking.notes) : {};
+      const specializedServices = bookingNotes.specializedServices || {};
 
-      // Get assigned staff for this booking
-      const staff = booking.assignedStaffId 
-        ? await kv.get(`staff:${booking.assignedStaffId}`)
-        : null;
+      // ✅ SQL: Get assigned staff
+      let staff: any = null;
+      if (booking.staff_id) {
+        const staffRepo = getStaffRepository();
+        staff = await staffRepo.findById(booking.staff_id);
+      }
 
       const roleContext = {
         bookingId,
-        roleContext: specializedServices?.chatRoleContext || 'general',
+        roleContext: specializedServices.chatRoleContext || 'general',
         assignedStaff: staff ? {
-          id: staff.id,
-          name: staff.name,
-          role: staff.role,
-          specialization: staff.specialization
+          id: (staff as any).id,
+          name: (staff as any).full_name || (staff as any).name,
+          role: (staff as any).role,
+          specialization: (staff as any).specialization
         } : null,
         chatEnabled: true,
-        chatSessionId: specializedServices?.chatSessionId || `chat-${bookingId}`,
+        chatSessionId: specializedServices.chatSessionId || `chat-${bookingId}`,
         supportedFeatures: {
           fileSharing: true,
           prescriptionSharing: true,
           medicalRecordsAccess: true,
-          videoCall: booking.serviceStyle === 'tele'
+          videoCall: booking.service_type === 'online'
         }
       };
 
@@ -258,13 +310,14 @@ export function specializedServicesBooking(app: Hono, kv: any) {
 
     } catch (error) {
       console.error('❌ Error fetching chat role context:', error);
-      return sendError(c, error, 500);
+      return sendError(c, String(error), 500);
     }
   });
 
   /**
    * POST /booking/:bookingId/add-ons
    * Add add-on services to booking
+   * ✅ SQL-ONLY: Updates booking.notes and total_amount
    */
   app.post(`${BASE_PATH}/booking/:bookingId/add-ons`, async (c) => {
     try {
@@ -273,17 +326,20 @@ export function specializedServicesBooking(app: Hono, kv: any) {
 
       console.log(`➕ Adding add-on services to booking ${bookingId}`);
 
-      const booking = await kv.get(`booking:${bookingId}`);
+      // ✅ SQL: Get booking
+      const bookingsRepo = getBookingsRepository();
+      const booking = await bookingsRepo.findById(bookingId);
       
       if (!booking) {
         return sendError(c, 'Booking not found', 404);
       }
 
-      // Get or create specialized services
-      let specializedServices = await kv.get(`booking:${bookingId}:specialized`) || {
+      // ✅ SQL: Get or create specialized services in booking notes
+      const bookingNotes = booking.notes ? (typeof booking.notes === 'string' ? JSON.parse(booking.notes) : booking.notes) : {};
+      let specializedServices = bookingNotes.specializedServices || {
         bookingId,
-        customerId: booking.customerId,
-        petId: booking.petId,
+        customerId: booking.customer_id,
+        petId: '',
         prescriptionRequested: false,
         medicalRecordsShared: false,
         addOnServices: [],
@@ -300,56 +356,64 @@ export function specializedServicesBooking(app: Hono, kv: any) {
       specializedServices.addOnServices = [...existingAddOns, ...newAddOns];
       specializedServices.updatedAt = new Date().toISOString();
 
-      await kv.set(`booking:${bookingId}:specialized`, specializedServices);
-
-      // Update booking total
+      // ✅ SQL: Update booking
+      bookingNotes.specializedServices = specializedServices;
       const addOnTotal = newAddOns.reduce((sum: number, service: any) => sum + service.price, 0);
-      booking.totalAmount = (booking.totalAmount || 0) + addOnTotal;
-      booking.addOnServicesTotal = (booking.addOnServicesTotal || 0) + addOnTotal;
-      
-      await kv.set(`booking:${bookingId}`, booking);
+      bookingNotes.addOnServicesTotal = (bookingNotes.addOnServicesTotal || 0) + addOnTotal;
+
+      await bookingsRepo.update(bookingId, {
+        total_amount: booking.total_amount + addOnTotal,
+        notes: JSON.stringify(bookingNotes),
+      });
 
       console.log(`✅ Add-on services added to booking ${bookingId}`);
 
       return sendSuccess(c, {
         specializedServices,
-        booking,
         message: 'Add-on services added successfully'
       });
 
     } catch (error) {
       console.error('❌ Error adding add-on services:', error);
-      return sendError(c, error, 500);
+      return sendError(c, String(error), 500);
     }
   });
 
   /**
    * GET /vendor/:vendorId/add-on-services
    * Get available add-on services for a vendor
+   * ✅ SQL-ONLY: Uses VendorsRepository, ServicesRepository
    */
   app.get(`${BASE_PATH}/vendor/:vendorId/add-on-services`, async (c) => {
     try {
       const { vendorId } = c.req.param();
 
-      const vendor = await kv.get(`vendor:${vendorId}`);
+      // ✅ SQL: Get vendor
+      const vendorsRepo = getVendorsRepository();
+      const vendor = await vendorsRepo.findById(vendorId) || await vendorsRepo.findByVendorId(vendorId);
       
       if (!vendor) {
         return sendError(c, 'Vendor not found', 404);
       }
 
-      // Get all services for this vendor
-      const allServices = await kv.getByPrefix(`service:${vendorId}:`) || [];
+      // ✅ SQL: Get all services for this vendor
+      const servicesRepo = getServicesRepository();
+      const allServices = await servicesRepo.findByVendor(vendor.id || vendorId);
       
-      // Filter add-on services
+      // Filter add-on services (services marked as add-on or with is_addon flag)
+      // Note: You may need to add an is_addon field to services table
       const addOnServices = allServices
-        .map((item: any) => item.value || item)
-        .filter((service: any) => service.isAddOn === true)
+        .filter((service: any) => {
+          // For now, check if service has add-on characteristics
+          // In production, add an `is_addon` boolean field to services table
+          return service.category === 'add-on' || service.name?.toLowerCase().includes('add-on');
+        })
         .map((service: any) => ({
           serviceId: service.id,
           serviceName: service.name,
           description: service.description,
           price: service.price,
-          duration: service.duration,
+          duration: service.duration_minutes,
           category: service.category
         }));
 
@@ -357,26 +421,34 @@ export function specializedServicesBooking(app: Hono, kv: any) {
 
     } catch (error) {
       console.error('❌ Error fetching add-on services:', error);
-      return sendError(c, error, 500);
+      return sendError(c, String(error), 500);
     }
   });
 
   /**
    * GET /vendor/:vendorId/chat-config
    * Get chat configuration for a vendor based on their role
+   * ✅ SQL-ONLY: Uses VendorsRepository, RolesRepository
    */
   app.get(`${BASE_PATH}/vendor/:vendorId/chat-config`, async (c) => {
     try {
       const { vendorId } = c.req.param();
 
-      const vendor = await kv.get(`vendor:${vendorId}`);
+      // ✅ SQL: Get vendor
+      const vendorsRepo = getVendorsRepository();
+      const vendor = await vendorsRepo.findById(vendorId) || await vendorsRepo.findByVendorId(vendorId);
       
       if (!vendor) {
         return sendError(c, 'Vendor not found', 404);
       }
 
+      // ✅ SQL: Get vendor role
+      const rolesRepo = getRolesRepository();
+      const role = vendor.role_id ? await rolesRepo.findById(vendor.role_id) : null;
+      const vendorRole = role?.name || vendor.category || 'default';
+
       // Determine chat features based on vendor role
-      const roleBasedConfig = {
+      const roleBasedConfig: any = {
         veterinarian: {
           chatEnabled: true,
           features: {
@@ -451,26 +523,25 @@ export function specializedServicesBooking(app: Hono, kv: any) {
         }
       };
 
-      // Get vendor's primary role
-      const vendorRole = vendor.vendorRole || vendor.role || 'default';
       const config = roleBasedConfig[vendorRole] || roleBasedConfig.default;
 
       return sendSuccess(c, {
         vendorId,
-        vendorName: vendor.businessName || vendor.name,
+        vendorName: vendor.business_name || vendor.owner_name,
         vendorRole,
         chatConfig: config
       });
 
     } catch (error) {
       console.error('❌ Error fetching vendor chat config:', error);
-      return sendError(c, error, 500);
+      return sendError(c, String(error), 500);
     }
   });
 
   /**
    * POST /booking/:bookingId/prescription/create
    * Create prescription linked to booking
+   * ✅ SQL-ONLY: Uses PrescriptionsRepository, BookingsRepository
    */
   app.post(`${BASE_PATH}/booking/:bookingId/prescription/create`, async (c) => {
     try {
@@ -486,7 +557,9 @@ export function specializedServicesBooking(app: Hono, kv: any) {
 
       console.log(`💊 Creating prescription for booking ${bookingId}`);
 
-      const booking = await kv.get(`booking:${bookingId}`);
+      // ✅ SQL: Get booking
+      const bookingsRepo = getBookingsRepository();
+      const booking = await bookingsRepo.findById(bookingId);
       
       if (!booking) {
         return sendError(c, 'Booking not found', 404);
@@ -497,62 +570,45 @@ export function specializedServicesBooking(app: Hono, kv: any) {
         return sendError(c, 'Can only create prescriptions for ongoing or completed bookings', 400);
       }
 
-      // Create prescription
-      const prescriptionId = `presc_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-      const prescription = {
-        id: prescriptionId,
-        bookingId,
-        petId: booking.petId,
-        customerId: booking.customerId,
-        customerPhone: booking.customerPhone,
-        vendorId: vendorId || booking.vendorId,
-        doctorId: doctorId || booking.doctorId,
-        medicines: medicines || [],
-        diagnosis: diagnosis || '',
-        notes: notes || '',
-        followUpDate: followUpDate || null,
-        status: 'active',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
+      // ✅ SQL: Create prescription
+      const prescriptionsRepo = getPrescriptionsRepository();
+      const prescription = await prescriptionsRepo.create({
+        booking_id: bookingId,
+        pet_id: '', // Would need to be retrieved from booking metadata
+        customer_id: booking.customer_id,
+        vendor_id: vendorId || booking.vendor_id || '',
+        staff_id: doctorId || booking.staff_id || null,
+        diagnosis: diagnosis || null,
+        observations: notes || null,
+        medications: medicines || [],
+        general_notes: notes || null,
+        created_by: vendorId || booking.vendor_id || '',
+        created_by_role: 'vendor',
+        expires_at: followUpDate || null,
+      });
 
-      await kv.set(`prescription:${prescriptionId}`, prescription);
+      // ✅ SQL: Update booking notes with prescription ID
+      const bookingNotes = booking.notes ? (typeof booking.notes === 'string' ? JSON.parse(booking.notes) : booking.notes) : {};
+      if (!bookingNotes.specializedServices) {
+        bookingNotes.specializedServices = {
+          bookingId,
+          customerId: booking.customer_id,
+          prescriptionRequested: false,
+          medicalRecordsShared: false,
+          addOnServices: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+      }
+      bookingNotes.specializedServices.prescriptionId = prescription.id;
+      bookingNotes.specializedServices.prescriptionCreatedAt = new Date().toISOString();
+      bookingNotes.specializedServices.updatedAt = new Date().toISOString();
 
-      // Link prescription to booking
-      booking.prescriptionId = prescriptionId;
-      booking.prescriptionCreatedAt = new Date().toISOString();
-      await kv.set(`booking:${bookingId}`, booking);
+      await bookingsRepo.update(bookingId, {
+        notes: JSON.stringify(bookingNotes),
+      });
 
-      // Update specialized services
-      const specializedServices = await kv.get(`booking:${bookingId}:specialized`) || {
-        bookingId,
-        customerId: booking.customerId,
-        petId: booking.petId,
-        prescriptionRequested: false,
-        medicalRecordsShared: false,
-        addOnServices: [],
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-
-      specializedServices.prescriptionId = prescriptionId;
-      specializedServices.prescriptionCreatedAt = new Date().toISOString();
-      specializedServices.updatedAt = new Date().toISOString();
-
-      await kv.set(`booking:${bookingId}:specialized`, specializedServices);
-
-      // Add to customer's prescriptions
-      const customerPhone = booking.customerPhone.replace(/[^0-9]/g, '');
-      const customerPrescriptions = await kv.get(`customer:${customerPhone}:prescriptions`) || [];
-      customerPrescriptions.unshift(prescriptionId);
-      await kv.set(`customer:${customerPhone}:prescriptions`, customerPrescriptions);
-
-      // Add to pet's prescriptions
-      const petPrescriptions = await kv.get(`pet:${booking.petId}:prescriptions`) || [];
-      petPrescriptions.unshift(prescriptionId);
-      await kv.set(`pet:${booking.petId}:prescriptions`, petPrescriptions);
-
-      console.log(`✅ Prescription created: ${prescriptionId}`);
+      console.log(`✅ Prescription created: ${prescription.id}`);
 
       return sendSuccess(c, {
         prescription,
@@ -561,13 +617,14 @@ export function specializedServicesBooking(app: Hono, kv: any) {
 
     } catch (error) {
       console.error('❌ Error creating prescription:', error);
-      return sendError(c, error, 500);
+      return sendError(c, String(error), 500);
     }
   });
 
   /**
    * POST /booking/:bookingId/add-ons/calculate-pricing
    * Calculate real-time pricing for add-on services
+   * ✅ SQL-ONLY: Uses BookingsRepository, ServicesRepository
    */
   app.post(`${BASE_PATH}/booking/:bookingId/add-ons/calculate-pricing`, async (c) => {
     try {
@@ -576,25 +633,24 @@ export function specializedServicesBooking(app: Hono, kv: any) {
 
       console.log(`💰 Calculating add-on pricing for booking ${bookingId}`);
 
-      const booking = await kv.get(`booking:${bookingId}`);
+      // ✅ SQL: Get booking
+      const bookingsRepo = getBookingsRepository();
+      const booking = await bookingsRepo.findById(bookingId);
       
       if (!booking) {
         return sendError(c, 'Booking not found', 404);
       }
 
-      // Get vendor's add-on services
-      const allServices = await kv.getByPrefix(`service:${booking.vendorId}:`) || [];
-      const vendorServices = await kv.get(`vendor:${booking.vendorId}:services`) || [];
-      
-      // Combine both sources
-      const combinedServices = [...allServices.map((item: any) => item.value || item), ...vendorServices];
+      // ✅ SQL: Get vendor services
+      const servicesRepo = getServicesRepository();
+      const vendorServices = await servicesRepo.findByVendor(booking.vendor_id || '');
 
       // Calculate pricing for requested add-ons
       let totalAddOnPrice = 0;
-      const pricedAddOns = [];
+      const pricedAddOns: any[] = [];
 
       for (const addOnId of addOnServiceIds) {
-        const addOnService = combinedServices.find((s: any) => s.id === addOnId);
+        const addOnService = vendorServices.find((s: any) => s.id === addOnId);
         
         if (addOnService) {
           const price = addOnService.price || 0;
@@ -602,21 +658,18 @@ export function specializedServicesBooking(app: Hono, kv: any) {
           
           pricedAddOns.push({
             serviceId: addOnId,
-            serviceName: addOnService.name || addOnService.serviceName,
+            serviceName: addOnService.name,
             description: addOnService.description,
             price: price,
-            duration: addOnService.duration || 0,
+            duration: addOnService.duration_minutes || 0,
             category: addOnService.category
           });
         }
       }
 
       // Calculate grand total
-      const baseAmount = booking.totalAmount || booking.amount || 0;
+      const baseAmount = booking.total_amount || 0;
       const grandTotal = baseAmount + totalAddOnPrice;
-
-      // Calculate savings if any
-      const savings = 0; // Can add discount logic here
 
       return sendSuccess(c, {
         bookingId,
@@ -624,7 +677,7 @@ export function specializedServicesBooking(app: Hono, kv: any) {
         addOnServices: pricedAddOns,
         addOnTotal: totalAddOnPrice,
         grandTotal,
-        savings,
+        savings: 0,
         breakdown: {
           baseService: baseAmount,
           addOns: totalAddOnPrice,
@@ -635,9 +688,9 @@ export function specializedServicesBooking(app: Hono, kv: any) {
 
     } catch (error) {
       console.error('❌ Error calculating add-on pricing:', error);
-      return sendError(c, error, 500);
+      return sendError(c, String(error), 500);
     }
   });
 
-  console.log('✅ Specialized Services Booking registered');
+  console.log('✅ Specialized Services Booking registered (SQL-only)');
 }

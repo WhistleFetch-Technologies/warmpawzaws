@@ -65,12 +65,13 @@ import {
 } from 'lucide-react';
 import { supabase } from '../../utils/supabase/client';
 import { projectId } from '../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 import { MarketingPromotionsTab } from './MarketingPromotionsTab';
 import { EnterpriseLogicTab } from './EnterpriseLogicTab';
 import { AdminAnalyticsDashboard } from './analytics/AdminAnalyticsDashboard'; // ✅ NEW
 import { UnifiedAdminSidebar } from './layout/UnifiedAdminSidebar';
+import { NotificationBellWrapper } from '../common/NotificationBellWrapper';
 
 interface AdminDashboardProps {
   session: any;
@@ -326,9 +327,19 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
                 <Plus className="w-4 h-4" />
                 Add Vendor
               </Button>
-              <button className="p-2 hover:bg-gray-100 rounded-lg">
-                <Bell className="w-5 h-5 text-gray-600" />
-              </button>
+              <NotificationBellWrapper
+                className="p-2 hover:bg-gray-100 rounded-lg"
+                fetchNotifications={async () => {
+                  // TODO: Replace with actual API call when backend is ready
+                  // Fetch admin notifications
+                  return [];
+                }}
+                onNotificationClick={(notification) => {
+                  if (notification.actionUrl && onNavigate) {
+                    onNavigate(notification.actionUrl);
+                  }
+                }}
+              />
               <button className="p-2 hover:bg-gray-100 rounded-lg">
                 <MessageSquare className="w-5 h-5 text-gray-600" />
               </button>

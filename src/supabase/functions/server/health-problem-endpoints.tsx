@@ -11,8 +11,9 @@
  * - Links to service catalog tags
  */
 
-import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from 'hono';
+import { getDbClient } from '../../../supabase/lib/db';
 
 const app = new Hono();
 
@@ -23,18 +24,20 @@ app.get('/make-server-3dd53475/health-problems', async (c) => {
   try {
     console.log('🏥 [HEALTH-PROBLEMS] Fetching all health problems');
     
-    const healthProblems = await kv.getByPrefix('health_problem:');
-    
-    // Sort by displayOrder
-    const sorted = healthProblems.sort((a: any, b: any) => 
-      (a.displayOrder || 999) - (b.displayOrder || 999)
-    );
-    
-    // Filter active only by default
+    // ✅ SQL: Get health problems from health_problems table
+    const db = getDbClient();
     const status = c.req.query('status');
-    const filtered = status === 'all' 
-      ? sorted 
-      : sorted.filter((hp: any) => hp.status === 'active');
+    
+    const query = db
+      .from('health_problems')
+      .select('*')
+      .order('display_order', { ascending: true });
+    
+    if (status !== 'all') {
+      query.eq('status', 'active');
+    }
+    
+    const { data: filtered } = await query;
     
     console.log(`✅ Found ${filtered.length} health problems (status: ${status || 'active'})`);
     
@@ -60,7 +63,13 @@ app.get('/make-server-3dd53475/health-problems/:id', async (c) => {
     const id = c.req.param('id');
     console.log(`🏥 [HEALTH-PROBLEMS] Fetching health problem: ${id}`);
     
-    const healthProblem = await kv.get(`health_problem:${id}`);
+    // ✅ SQL: Get health problem from health_problems table
+    const db = getDbClient();
+    const { data: healthProblem } = await db
+      .from('health_problems')
+      .select('*')
+      .eq('id', id)
+      .single();
     
     if (!healthProblem) {
       return c.json({ 
@@ -95,8 +104,14 @@ app.post('/make-server-3dd53475/admin/health-problems', async (c) => {
     // Generate ID from name
     const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '_');
     
-    // Check if already exists
-    const existing = await kv.get(`health_problem:${id}`);
+    // ✅ SQL: Check if already exists in health_problems table
+    const db = getDbClient();
+    const { data: existing } = await db
+      .from('health_problems')
+      .select('id')
+      .eq('id', id)
+      .single();
+    
     if (existing) {
       return c.json({ 
         success: false, 
@@ -104,22 +119,25 @@ app.post('/make-server-3dd53475/admin/health-problems', async (c) => {
       }, 400);
     }
     
-    const healthProblem = {
-      id,
-      name,
-      displayName: displayName || name,
-      icon: icon || '🏥',
-      description: description || '',
-      displayOrder: displayOrder || 999,
-      status: 'active',
-      keywords: keywords || [],
-      relatedServiceCategories: [],
-      relatedServiceSubCategories: [],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-    
-    await kv.set(`health_problem:${id}`, healthProblem);
+    // ✅ SQL: Create health problem in health_problems table
+    const { data: healthProblem } = await db
+      .from('health_problems')
+      .insert({
+        id,
+        name,
+        display_name: displayName || name,
+        icon: icon || '🏥',
+        description: description || '',
+        display_order: displayOrder || 999,
+        status: 'active',
+        keywords: keywords || [],
+        related_service_categories: [],
+        related_service_sub_categories: [],
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .select()
+      .single();
     
     console.log(`✅ Created health problem: ${id}`);
     
@@ -145,7 +163,14 @@ app.put('/make-server-3dd53475/admin/health-problems/:id', async (c) => {
     const body = await c.req.json();
     console.log(`🏥 [HEALTH-PROBLEMS] Updating health problem: ${id}`, body);
     
-    const existing = await kv.get(`health_problem:${id}`);
+    // ✅ SQL: Get and update health problem in health_problems table
+    const db = getDbClient();
+    const { data: existing } = await db
+      .from('health_problems')
+      .select('*')
+      .eq('id', id)
+      .single();
+    
     if (!existing) {
       return c.json({ 
         success: false, 
@@ -153,14 +178,26 @@ app.put('/make-server-3dd53475/admin/health-problems/:id', async (c) => {
       }, 404);
     }
     
-    const updated = {
-      ...existing,
-      ...body,
-      id, // Preserve ID
-      updatedAt: new Date().toISOString()
+    const updateData: any = {
+      updated_at: new Date().toISOString()
     };
     
-    await kv.set(`health_problem:${id}`, updated);
+    if (body.name) updateData.name = body.name;
+    if (body.displayName) updateData.display_name = body.displayName;
+    if (body.icon) updateData.icon = body.icon;
+    if (body.description !== undefined) updateData.description = body.description;
+    if (body.displayOrder !== undefined) updateData.display_order = body.displayOrder;
+    if (body.status) updateData.status = body.status;
+    if (body.keywords) updateData.keywords = body.keywords;
+    if (body.relatedServiceCategories) updateData.related_service_categories = body.relatedServiceCategories;
+    if (body.relatedServiceSubCategories) updateData.related_service_sub_categories = body.relatedServiceSubCategories;
+    
+    const { data: updated } = await db
+      .from('health_problems')
+      .update(updateData)
+      .eq('id', id)
+      .select()
+      .single();
     
     console.log(`✅ Updated health problem: ${id}`);
     
@@ -185,7 +222,14 @@ app.delete('/make-server-3dd53475/admin/health-problems/:id', async (c) => {
     const id = c.req.param('id');
     console.log(`🏥 [HEALTH-PROBLEMS] Deleting health problem: ${id}`);
     
-    const existing = await kv.get(`health_problem:${id}`);
+    // ✅ SQL: Soft delete health problem (set status to inactive) in health_problems table
+    const db = getDbClient();
+    const { data: existing } = await db
+      .from('health_problems')
+      .select('id')
+      .eq('id', id)
+      .single();
+    
     if (!existing) {
       return c.json({ 
         success: false, 
@@ -193,14 +237,10 @@ app.delete('/make-server-3dd53475/admin/health-problems/:id', async (c) => {
       }, 404);
     }
     
-    // Soft delete by setting status to inactive
-    const updated = {
-      ...existing,
-      status: 'inactive',
-      updatedAt: new Date().toISOString()
-    };
-    
-    await kv.set(`health_problem:${id}`, updated);
+    await db
+      .from('health_problems')
+      .update({ status: 'inactive', updated_at: new Date().toISOString() })
+      .eq('id', id);
     
     console.log(`✅ Deleted (soft) health problem: ${id}`);
     
@@ -329,22 +369,39 @@ app.post('/make-server-3dd53475/admin/health-problems/seed', async (c) => {
     let created = 0;
     let skipped = 0;
     
+    // ✅ SQL: Seed health problems in health_problems table
+    const db = getDbClient();
+    
     for (const hp of initialHealthProblems) {
-      const existing = await kv.get(`health_problem:${hp.id}`);
+      const { data: existing } = await db
+        .from('health_problems')
+        .select('id')
+        .eq('id', hp.id)
+        .single();
+      
       if (existing) {
         console.log(`⏭️ Skipped existing: ${hp.id}`);
         skipped++;
         continue;
       }
       
-      const healthProblem = {
-        ...hp,
-        status: 'active',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
+      await db
+        .from('health_problems')
+        .insert({
+          id: hp.id,
+          name: hp.name,
+          display_name: hp.displayName,
+          icon: hp.icon,
+          description: hp.description,
+          display_order: hp.displayOrder,
+          status: 'active',
+          keywords: hp.keywords,
+          related_service_categories: hp.relatedServiceCategories,
+          related_service_sub_categories: hp.relatedServiceSubCategories,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
       
-      await kv.set(`health_problem:${hp.id}`, healthProblem);
       console.log(`✅ Created: ${hp.id}`);
       created++;
     }

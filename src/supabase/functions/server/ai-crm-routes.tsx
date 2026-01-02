@@ -1,9 +1,18 @@
-import { Hono } from "npm:hono";
-import * as kv from "./kv_store.tsx";
-import { BedrockRuntimeClient, InvokeModelCommand } from "npm:@aws-sdk/client-bedrock-runtime";
-import { NodeHttpHandler } from "npm:@smithy/node-http-handler";
+import { Hono } from "hono";
+import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
+import { NodeHttpHandler } from "@smithy/node-http-handler";
+import {
+  getPlatformSettingsRepository,
+  getVendorsRepository,
+  getSupportTicketsRepository,
+  getCustomersRepository,
+  getOrdersRepository,
+  getBookingsRepository,
+  getNotificationsRepository,
+} from '../../../supabase/lib/repositories/index';
+import { getDbClient, selectQuery } from '../../../supabase/lib/db';
 
-export function registerAICRMRoutes(app: Hono, kvStore: any) {
+export function registerAICRMRoutes(app: Hono) {
   
   // ------------------------------------------------------------------
   // AI CHAT BOT (Bedrock + Simulation Fallback)
@@ -15,19 +24,22 @@ export function registerAICRMRoutes(app: Hono, kvStore: any) {
       console.log('🤖 [AI] Request received:', { customerId, messageLength: message?.length });
 
       // Fetch AWS Settings
-      const awsSettings = await kv.get('admin:settings:aws');
+      const platformSettingsRepo = getPlatformSettingsRepository();
+      const awsSettingsData = await platformSettingsRepo.getByKey('aws_config');
+      const awsSettings = awsSettingsData?.value || null;
       
       // Fetch Vendors for Context
       let vendorContext = "No specific vendor data available.";
       try {
-        const allVendors = await kv.getByPrefix('vendor:') || [];
-        const activeVendors = allVendors.filter((v: any) => v.status === 'approved' && !v.deactivated);
+        const vendorsRepo = getVendorsRepository();
+        const allVendors = await vendorsRepo.findAll({ status: 'approved', is_active: true });
+        const activeVendors = allVendors.filter((v: any) => !v.deactivated);
         
         if (activeVendors.length > 0) {
             const vendorList = activeVendors.slice(0, 10).map((v: any) => {
-                const name = v.businessName || v.fullName || 'Unknown Vendor';
-                const services = v.services ? v.services.join(', ') : 'General';
-                const loc = v.address || 'Unknown Location';
+                const name = v.business_name || v.name || 'Unknown Vendor';
+                const services = (v.services || []).length > 0 ? (v.services || []).join(', ') : 'General';
+                const loc = v.address || v.city || 'Unknown Location';
                 const rating = v.rating ? `⭐${v.rating}` : '';
                 return `- ${name} (${services}) at ${loc} ${rating}`;
             }).join('\n');
@@ -316,7 +328,9 @@ export function registerAICRMRoutes(app: Hono, kvStore: any) {
       const body = await c.req.json();
       
       // prioritize body params (from UI test), fallback to DB settings
-      awsSettings = await kv.get('admin:settings:aws') || { bedrock: {} };
+      const platformSettingsRepo = getPlatformSettingsRepository();
+      const awsSettingsData = await platformSettingsRepo.getByKey('aws_config');
+      awsSettings = awsSettingsData?.value || { bedrock: {} };
       if (!awsSettings.bedrock) awsSettings.bedrock = {};
       
       // If credentials provided in body, use them (allows testing before saving)
@@ -570,32 +584,18 @@ export function registerAICRMRoutes(app: Hono, kvStore: any) {
     try {
       const { customerId, subject, description, source } = await c.req.json();
       
-      const ticketId = `T-${Date.now()}`;
-      const ticket = {
-        id: ticketId,
+      const ticketsRepo = getSupportTicketsRepository();
+      const ticket = await ticketsRepo.createTicket({
         customerId,
         subject,
         description,
-        status: 'open',
+        category: source || 'chat',
         priority: 'medium',
-        source: source || 'chat',
-        createdAt: new Date().toISOString(),
-        messages: []
-      };
+        status: 'open',
+        internalNotes: JSON.stringify({ messages: [], source: source || 'chat' })
+      });
 
-      // Store in KV
-      await kv.set(`ticket:${ticketId}`, ticket);
-      
-      // Add to list
-      const list = await kv.get('tickets:list') || [];
-      await kv.set('tickets:list', [ticketId, ...list]);
-      
-      // Add to vendor/support ticket list (using separate prefix to avoid collision)
-      const supportTickets = await kv.get('support:tickets:all') || [];
-      supportTickets.unshift(ticketId);
-      await kv.set('support:tickets:all', supportTickets);
-
-      return c.json({ success: true, ticketId });
+      return c.json({ success: true, ticketId: ticket.ticketId || ticket.id });
     } catch (error) {
       console.error('Create ticket error:', error);
       return c.json({ error: String(error) }, 500);
@@ -605,21 +605,24 @@ export function registerAICRMRoutes(app: Hono, kvStore: any) {
   // List Tickets
   app.get("/make-server-3dd53475/crm/tickets", async (c) => {
     try {
-      // Try both lists just in case
-      const list1 = await kv.get('tickets:list') || [];
-      const list2 = await kv.get('support:tickets:all') || [];
-      const uniqueIds = [...new Set([...list1, ...list2])];
+      const ticketsRepo = getSupportTicketsRepository();
+      const tickets = await ticketsRepo.getAllTickets();
       
-      const tickets = [];
-      for (const id of uniqueIds.slice(0, 50)) { // Limit 50
-        const t = await kv.get(`ticket:${id}`);
-        if (t) tickets.push(t);
-      }
-      
-      // Sort by date desc
-      tickets.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      // Map to expected format and limit to 50
+      const mappedTickets = tickets.slice(0, 50).map((t: any) => ({
+        id: t.ticketId || t.id,
+        ticketId: t.ticketId || t.id,
+        customerId: t.customerId,
+        subject: t.subject,
+        description: t.description,
+        status: t.status,
+        priority: t.priority,
+        messages: t.messages || [],
+        createdAt: t.createdAt,
+        updatedAt: t.updatedAt
+      }));
 
-      return c.json({ tickets });
+      return c.json({ tickets: mappedTickets });
     } catch (error) {
       console.error('List tickets error:', error);
       return c.json({ error: String(error) }, 500);
@@ -631,7 +634,8 @@ export function registerAICRMRoutes(app: Hono, kvStore: any) {
     try {
       const { ticketId, message, agentName } = await c.req.json();
       
-      const ticket = await kv.get(`ticket:${ticketId}`);
+      const ticketsRepo = getSupportTicketsRepository();
+      const ticket = await ticketsRepo.getTicketById(ticketId);
       if (!ticket) return c.json({ error: "Ticket not found" }, 404);
       
       const newMsg = {
@@ -639,13 +643,11 @@ export function registerAICRMRoutes(app: Hono, kvStore: any) {
         sender: agentName || 'Support Agent',
         content: message,
         timestamp: new Date().toISOString(),
-        role: 'agent'
+        role: 'agent' as const
       };
       
-      ticket.messages = [...(ticket.messages || []), newMsg];
-      ticket.status = 'in_progress';
-      
-      await kv.set(`ticket:${ticketId}`, ticket);
+      await ticketsRepo.addMessage(ticketId, newMsg);
+      await ticketsRepo.updateTicket(ticketId, { status: 'in_progress' });
       
       return c.json({ success: true });
     } catch (error) {
@@ -659,11 +661,14 @@ export function registerAICRMRoutes(app: Hono, kvStore: any) {
     try {
       const { ticketId } = await c.req.json();
       
-      const ticket = await kv.get(`ticket:${ticketId}`);
+      const ticketsRepo = getSupportTicketsRepository();
+      const ticket = await ticketsRepo.getTicketById(ticketId);
       if (!ticket) return c.json({ error: "Ticket not found" }, 404);
       
-      ticket.status = 'resolved';
-      await kv.set(`ticket:${ticketId}`, ticket);
+      await ticketsRepo.updateTicket(ticketId, { 
+        status: 'resolved',
+        resolvedAt: new Date().toISOString()
+      });
       
       return c.json({ success: true });
     } catch (error) {
@@ -676,11 +681,26 @@ export function registerAICRMRoutes(app: Hono, kvStore: any) {
   app.get("/make-server-3dd53475/crm/tickets/:ticketId", async (c) => {
     try {
       const ticketId = c.req.param('ticketId');
-      const ticket = await kv.get(`ticket:${ticketId}`);
+      const ticketsRepo = getSupportTicketsRepository();
+      const ticket = await ticketsRepo.getTicketById(ticketId);
       
       if (!ticket) return c.json({ error: "Ticket not found" }, 404);
       
-      return c.json({ ticket });
+      // Map to expected format
+      const mappedTicket = {
+        id: ticket.ticketId || ticket.id,
+        ticketId: ticket.ticketId || ticket.id,
+        customerId: ticket.customerId,
+        subject: ticket.subject,
+        description: ticket.description,
+        status: ticket.status,
+        priority: ticket.priority,
+        messages: (ticket as any).messages || [],
+        createdAt: ticket.createdAt,
+        updatedAt: ticket.updatedAt
+      };
+      
+      return c.json({ ticket: mappedTicket });
     } catch (error) {
       console.error('Get ticket error:', error);
       return c.json({ error: String(error) }, 500);
@@ -692,7 +712,8 @@ export function registerAICRMRoutes(app: Hono, kvStore: any) {
     try {
       const { ticketId, action, amount, reason, note, assignTo } = await c.req.json();
       
-      const ticket = await kv.get(`ticket:${ticketId}`);
+      const ticketsRepo = getSupportTicketsRepository();
+      const ticket = await ticketsRepo.getTicketById(ticketId);
       if (!ticket) return c.json({ error: "Ticket not found" }, 404);
       
       const actionMsg = {
@@ -705,46 +726,46 @@ export function registerAICRMRoutes(app: Hono, kvStore: any) {
         metadata: { amount, reason, note, assignTo }
       };
 
+      const updateData: any = {};
+
       switch (action) {
         case 'refund':
           actionMsg.content = `Full refund of ₹${amount} processed. ${reason || ''}`;
-          ticket.status = 'resolved';
-          ticket.resolvedAt = new Date().toISOString();
+          updateData.status = 'resolved';
+          updateData.resolvedAt = new Date().toISOString();
           break;
         case 'partial_refund':
           actionMsg.content = `Partial refund of ₹${amount} processed. ${reason || ''}`;
-          ticket.status = 'in_progress';
+          updateData.status = 'in_progress';
           break;
         case 'escalate':
           actionMsg.content = `Ticket escalated. ${reason || ''}`;
-          ticket.status = 'escalated';
-          ticket.priority = 'high';
+          updateData.status = 'escalated';
+          updateData.priority = 'high';
           break;
         case 'resolve':
           actionMsg.content = `Ticket marked as resolved. ${reason || ''}`;
-          ticket.status = 'resolved';
-          ticket.resolvedAt = new Date().toISOString();
+          updateData.status = 'resolved';
+          updateData.resolvedAt = new Date().toISOString();
           break;
         case 'reopen':
           actionMsg.content = `Ticket reopened. ${reason || ''}`;
-          ticket.status = 'open';
+          updateData.status = 'open';
           break;
         case 'assign':
           actionMsg.content = `Ticket assigned to ${assignTo}.`;
-          ticket.assignedTo = assignTo;
-          ticket.assignedAgent = assignTo;
+          updateData.assignedTo = assignTo;
           break;
         case 'add_note':
           actionMsg.content = `Note added: ${note}`;
           break;
       }
 
-      ticket.messages = [...(ticket.messages || []), actionMsg];
-      ticket.updatedAt = new Date().toISOString();
+      await ticketsRepo.addMessage(ticketId, actionMsg);
+      await ticketsRepo.updateTicket(ticketId, updateData);
       
-      await kv.set(`ticket:${ticketId}`, ticket);
-      
-      return c.json({ success: true, message: 'Action completed successfully', ticket });
+      const updatedTicket = await ticketsRepo.getTicketById(ticketId);
+      return c.json({ success: true, message: 'Action completed successfully', ticket: updatedTicket });
     } catch (error) {
       console.error('Action error:', error);
       return c.json({ error: String(error) }, 500);
@@ -757,38 +778,41 @@ export function registerAICRMRoutes(app: Hono, kvStore: any) {
       const customerId = c.req.param('customerId');
       
       // Fetch customer data
-      const customer = await kv.get(`customer:${customerId}`);
+      const customersRepo = getCustomersRepository();
+      const customer = await customersRepo.findById(customerId);
       
       // Fetch orders
-      const orders = await kv.getByPrefix(`order:customer:${customerId}:`) || [];
+      const ordersRepo = getOrdersRepository();
+      const orders = await ordersRepo.findByCustomer(customerId);
       const recentOrders = orders
         .slice(0, 5)
         .map((o: any) => ({
-          id: o.id || o.orderId,
-          date: o.createdAt || o.orderDate,
-          amount: o.totalAmount || o.amount || 0,
-          status: o.status || 'unknown'
+          id: o.id || o.order_number,
+          date: o.created_at || o.createdAt,
+          amount: o.total_amount || o.totalAmount || 0,
+          status: o.order_status || o.status || 'unknown'
         }));
 
       // Fetch bookings
-      const bookings = await kv.getByPrefix(`booking:customer:${customerId}:`) || [];
+      const bookingsRepo = getBookingsRepository();
+      const bookings = await bookingsRepo.findByCustomer(customerId);
       const recentBookings = bookings
         .slice(0, 5)
         .map((b: any) => ({
           id: b.id || b.bookingId,
-          date: b.createdAt || b.bookingDate,
-          service: b.serviceName || b.serviceType || 'Service',
+          date: b.created_at || b.createdAt || b.booking_date,
+          service: b.service_name || b.serviceType || 'Service',
           status: b.status || 'unknown'
         }));
 
       const context = {
         id: customerId,
-        name: customer?.name || customer?.fullName,
-        phone: customer?.phone || customer?.phoneNumber,
+        name: customer?.name || customer?.full_name || customer?.fullName,
+        phone: customer?.phone || customer?.phone_number || customer?.phoneNumber,
         email: customer?.email,
         totalOrders: orders.length,
-        totalSpent: orders.reduce((sum: number, o: any) => sum + (o.totalAmount || o.amount || 0), 0),
-        lastOrderDate: orders[0]?.createdAt || orders[0]?.orderDate,
+        totalSpent: orders.reduce((sum: number, o: any) => sum + (o.total_amount || o.totalAmount || 0), 0),
+        lastOrderDate: orders[0]?.created_at || orders[0]?.createdAt,
         recentOrders,
         recentBookings
       };
@@ -804,13 +828,27 @@ export function registerAICRMRoutes(app: Hono, kvStore: any) {
   app.get("/make-server-3dd53475/ai-chatbot/conversation/:conversationId", async (c) => {
     try {
       const conversationId = c.req.param('conversationId');
-      const conversation = await kv.get(`ai_conversation:${conversationId}`);
+      const client = getDbClient();
       
-      if (!conversation) {
+      const { data, error } = await client
+        .from('ai_chat_history')
+        .select('*')
+        .eq('conversation_id', conversationId)
+        .order('created_at', { ascending: true })
+        .limit(100);
+
+      if (error || !data || data.length === 0) {
         return c.json({ messages: [] });
       }
 
-      return c.json({ messages: conversation.messages || [] });
+      const messages = data.map((msg: any) => ({
+        id: msg.id,
+        role: msg.role || 'user',
+        content: msg.message || msg.content,
+        timestamp: msg.created_at
+      }));
+
+      return c.json({ messages });
     } catch (error) {
       console.error('Get AI conversation error:', error);
       return c.json({ messages: [], error: String(error) }, 500);
@@ -820,15 +858,8 @@ export function registerAICRMRoutes(app: Hono, kvStore: any) {
   // Get Support Stats
   app.get("/make-server-3dd53475/crm/stats", async (c) => {
     try {
-      const list1 = await kv.get('tickets:list') || [];
-      const list2 = await kv.get('support:tickets:all') || [];
-      const uniqueIds = [...new Set([...list1, ...list2])];
-      
-      const tickets = [];
-      for (const id of uniqueIds) {
-        const t = await kv.get(`ticket:${id}`);
-        if (t) tickets.push(t);
-      }
+      const ticketsRepo = getSupportTicketsRepository();
+      const tickets = await ticketsRepo.getAllTickets();
 
       const stats = {
         open: tickets.filter((t: any) => t.status === 'open').length,
@@ -851,14 +882,16 @@ export function registerAICRMRoutes(app: Hono, kvStore: any) {
     try {
       const { ticketId, amount, reason, orderId, paymentId } = await c.req.json();
       
-      const ticket = await kv.get(`ticket:${ticketId}`);
+      const ticketsRepo = getSupportTicketsRepository();
+      const ticket = await ticketsRepo.getTicketById(ticketId);
       if (!ticket) return c.json({ error: "Ticket not found" }, 404);
 
       // Get order to find payment ID
       let actualPaymentId = paymentId;
       if (orderId && !actualPaymentId) {
-        const order = await kv.get(`order:${orderId}`);
-        actualPaymentId = order?.razorpayPaymentId || order?.paymentId;
+        const ordersRepo = getOrdersRepository();
+        const order = await ordersRepo.findById(orderId);
+        actualPaymentId = order?.payment_id || undefined;
       }
 
       if (!actualPaymentId) {
@@ -866,9 +899,11 @@ export function registerAICRMRoutes(app: Hono, kvStore: any) {
       }
 
       // Get payment settings
-      const paymentSettings = await kv.get('admin:settings:payment') || {};
-      const razorpayKeyId = paymentSettings.razorpay?.keyId || Deno.env.get('RAZORPAY_KEY_ID');
-      const razorpayKeySecret = paymentSettings.razorpay?.keySecret || Deno.env.get('RAZORPAY_KEY_SECRET');
+      const platformSettingsRepo = getPlatformSettingsRepository();
+      const paymentSettingsData = await platformSettingsRepo.getByKey('razorpay_config');
+      const paymentSettings = paymentSettingsData?.value || {};
+      const razorpayKeyId = paymentSettings?.keyId || paymentSettings?.razorpay?.keyId;
+      const razorpayKeySecret = paymentSettings?.keySecret || paymentSettings?.razorpay?.keySecret;
 
       if (!razorpayKeyId || !razorpayKeySecret) {
         return c.json({ error: "Payment gateway not configured" }, 500);
@@ -898,17 +933,28 @@ export function registerAICRMRoutes(app: Hono, kvStore: any) {
 
       const refundData = await refundResponse.json();
 
-      // Update ticket with refund info
-      ticket.refund = {
-        status: 'processing',
-        razorpayRefundId: refundData.id,
-        amount: amount,
-        processedAt: new Date().toISOString()
-      };
-      await kv.set(`ticket:${ticketId}`, ticket);
+      // Update ticket with refund info (store in internal_notes JSONB)
+      const ticketsRepo = getSupportTicketsRepository();
+      const currentTicket = await ticketsRepo.getTicketById(ticketId);
+      if (currentTicket) {
+        const notes = typeof currentTicket.internalNotes === 'string' 
+          ? JSON.parse(currentTicket.internalNotes || '{}') 
+          : (currentTicket.internalNotes || {});
+        
+        notes.refund = {
+          status: 'processing',
+          razorpayRefundId: refundData.id,
+          amount: amount,
+          processedAt: new Date().toISOString()
+        };
+        
+        await ticketsRepo.updateTicket(ticketId, {
+          internalNotes: JSON.stringify(notes)
+        } as any);
+      }
 
       // Send email notification
-      await sendTicketNotification(kv, {
+      await sendTicketNotification({
         ticketId,
         type: 'refund_processed',
         customerEmail: ticket.customerEmail,
@@ -929,19 +975,39 @@ export function registerAICRMRoutes(app: Hono, kvStore: any) {
     try {
       const { ticketId, rating, feedback } = await c.req.json();
       
-      const ticket = await kv.get(`ticket:${ticketId}`);
+      const ticketsRepo = getSupportTicketsRepository();
+      const ticket = await ticketsRepo.getTicketById(ticketId);
       if (!ticket) return c.json({ error: "Ticket not found" }, 404);
 
-      ticket.satisfactionRating = rating;
-      ticket.satisfactionFeedback = feedback;
-      ticket.surveySubmittedAt = new Date().toISOString();
-      await kv.set(`ticket:${ticketId}`, ticket);
+      // Store satisfaction data in internal_notes JSONB
+      const notes = typeof ticket.internalNotes === 'string' 
+        ? JSON.parse(ticket.internalNotes || '{}') 
+        : (ticket.internalNotes || {});
+      
+      notes.satisfactionRating = rating;
+      notes.satisfactionFeedback = feedback;
+      notes.surveySubmittedAt = new Date().toISOString();
+      
+      await ticketsRepo.updateTicket(ticketId, {
+        internalNotes: JSON.stringify(notes)
+      } as any);
 
       // Update stats
-      const allTickets = await kv.getByPrefix('ticket:') || [];
-      const ratedTickets = allTickets.filter((t: any) => t.satisfactionRating);
+      const allTickets = await ticketsRepo.getAllTickets();
+      const ratedTickets = allTickets.filter((t: any) => {
+        const tNotes = typeof t.internalNotes === 'string' 
+          ? JSON.parse(t.internalNotes || '{}') 
+          : (t.internalNotes || {});
+        return tNotes.satisfactionRating;
+      });
+      
       const avgRating = ratedTickets.length > 0
-        ? Math.round((ratedTickets.reduce((sum: number, t: any) => sum + (t.satisfactionRating || 0), 0) / ratedTickets.length) * 20)
+        ? Math.round((ratedTickets.reduce((sum: number, t: any) => {
+            const tNotes = typeof t.internalNotes === 'string' 
+              ? JSON.parse(t.internalNotes || '{}') 
+              : (t.internalNotes || {});
+            return sum + (tNotes.satisfactionRating || 0);
+          }, 0) / ratedTickets.length) * 20)
         : 0;
 
       return c.json({ success: true, averageRating: avgRating });
@@ -954,13 +1020,14 @@ export function registerAICRMRoutes(app: Hono, kvStore: any) {
   // Get Agent Performance Metrics
   app.get("/make-server-3dd53475/crm/analytics/agents", async (c) => {
     try {
-      const allTickets = await kv.getByPrefix('ticket:') || [];
+      const ticketsRepo = getSupportTicketsRepository();
+      const allTickets = await ticketsRepo.getAllTickets();
       
       // Group by agent
       const agentStats: Record<string, any> = {};
       
       allTickets.forEach((ticket: any) => {
-        const agentId = ticket.assignedAgent || ticket.assignedTo || 'unassigned';
+        const agentId = ticket.assignedTo || 'unassigned';
         if (!agentStats[agentId]) {
           agentStats[agentId] = {
             agentId,
@@ -978,7 +1045,13 @@ export function registerAICRMRoutes(app: Hono, kvStore: any) {
         if (ticket.status === 'resolved') {
           agentStats[agentId].resolved++;
         }
-        if (ticket.satisfactionRating) {
+        
+        // Get satisfaction from internal_notes
+        const notes = typeof ticket.internalNotes === 'string' 
+          ? JSON.parse(ticket.internalNotes || '{}') 
+          : (ticket.internalNotes || {});
+        
+        if (notes.satisfactionRating) {
           // Track satisfaction ratings separately from resolved count
           if (!agentStats[agentId].satisfactionCount) {
             agentStats[agentId].satisfactionCount = 0;
@@ -987,7 +1060,7 @@ export function registerAICRMRoutes(app: Hono, kvStore: any) {
           
           const currentAvg = agentStats[agentId].satisfaction || 0;
           const count = agentStats[agentId].satisfactionCount;
-          agentStats[agentId].satisfaction = Math.round(((currentAvg * (count - 1)) + (ticket.satisfactionRating * 20)) / count);
+          agentStats[agentId].satisfaction = Math.round(((currentAvg * (count - 1)) + (notes.satisfactionRating * 20)) / count);
         }
       });
 
@@ -1010,14 +1083,17 @@ export function registerAICRMRoutes(app: Hono, kvStore: any) {
     try {
       const { ticketId } = await c.req.json();
       
-      const ticket = await kv.get(`ticket:${ticketId}`);
+      const ticketsRepo = getSupportTicketsRepository();
+      const ticket = await ticketsRepo.getTicketById(ticketId);
       if (!ticket) return c.json({ error: "Ticket not found" }, 404);
 
       // Routing logic based on category and priority
       let assignedAgent = null;
       
-      // Get available agents
-      const agents = await kv.get('support:agents') || [
+      // Get available agents from platform settings
+      const platformSettingsRepo = getPlatformSettingsRepository();
+      const agentsData = await platformSettingsRepo.getByKey('support_agents');
+      const agents = agentsData?.value || [
         { id: 'agent_1', name: 'Support Agent 1', specialties: ['general', 'billing'], workload: 0 },
         { id: 'agent_2', name: 'Support Agent 2', specialties: ['technical', 'order'], workload: 0 },
         { id: 'agent_3', name: 'Support Agent 3', specialties: ['refund', 'billing'], workload: 0 }
@@ -1040,13 +1116,13 @@ export function registerAICRMRoutes(app: Hono, kvStore: any) {
       }
 
       // Update ticket
-      ticket.assignedTo = assignedAgent.id;
-      ticket.assignedAgent = assignedAgent.name;
-      ticket.status = 'in_progress';
-      await kv.set(`ticket:${ticketId}`, ticket);
+      await ticketsRepo.updateTicket(ticketId, {
+        assignedTo: assignedAgent.id,
+        status: 'in_progress'
+      });
 
       // Send notification to agent
-      await sendTicketNotification(kv, {
+      await sendTicketNotification({
         ticketId,
         type: 'ticket_assigned',
         agentId: assignedAgent.id,
@@ -1061,7 +1137,7 @@ export function registerAICRMRoutes(app: Hono, kvStore: any) {
   });
 
   // Helper: Send Ticket Notifications
-  async function sendTicketNotification(kv: any, data: {
+  async function sendTicketNotification(data: {
     ticketId: string;
     type: string;
     customerEmail?: string;
@@ -1072,27 +1148,50 @@ export function registerAICRMRoutes(app: Hono, kvStore: any) {
     refundId?: string;
   }) {
     try {
-      const notificationId = `NOTIF-${Date.now()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
+      const notificationsRepo = getNotificationsRepository();
       
-      const notification = {
-        id: notificationId,
-        ticketId: data.ticketId,
-        type: data.type,
-        recipientEmail: data.customerEmail || data.agentEmail,
-        recipientPhone: data.customerPhone,
+      // Get ticket to determine recipient
+      const ticketsRepo = getSupportTicketsRepository();
+      const ticket = await ticketsRepo.getTicketById(data.ticketId);
+      
+      if (!ticket) {
+        console.error(`Ticket ${data.ticketId} not found for notification`);
+        return;
+      }
+
+      // Determine recipient
+      let recipientId: string | undefined;
+      let recipientType: 'customer' | 'vendor' | 'staff' | 'admin' = 'customer';
+      
+      if (data.agentId) {
+        recipientId = data.agentId;
+        recipientType = 'admin'; // Assuming agents are admin type
+      } else if (ticket.customerId) {
+        recipientId = ticket.customerId;
+        recipientType = 'customer';
+      }
+
+      if (!recipientId) {
+        console.error(`No recipient found for notification on ticket ${data.ticketId}`);
+        return;
+      }
+
+      await notificationsRepo.create({
+        recipientType,
+        recipientId,
+        notificationType: data.type,
+        title: `Ticket ${data.ticketId}`,
+        message: `Notification for ticket ${data.ticketId}`,
         channels: { email: true, sms: !!data.customerPhone, inApp: true },
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-        data: {
+        metadata: {
+          ticketId: data.ticketId,
           amount: data.amount,
           refundId: data.refundId
         }
-      };
-
-      await kv.set(`notification:${notificationId}`, notification);
+      });
       
       // Queue for email/SMS sending (would integrate with actual notification service)
-      console.log(`📧 Notification queued: ${notificationId} for ticket ${data.ticketId}`);
+      console.log(`📧 Notification queued for ticket ${data.ticketId}`);
     } catch (error) {
       console.error('Failed to send notification:', error);
     }

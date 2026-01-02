@@ -4,8 +4,12 @@
  * Enables intelligent staff-to-problem matching
  */
 
-import { Hono } from "npm:hono";
-import * as kv from './kv_store.tsx';
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from "hono";
+import { 
+  getStaffRepository,
+  getVendorsRepository
+} from '../../../supabase/lib/repositories/index';
 
 export function staffSpecializationEndpoints(app: Hono) {
   
@@ -91,10 +95,11 @@ export function staffSpecializationEndpoints(app: Hono) {
       
       console.log(`🎯 Updating specializations for staff ${staffId}:`, specializations);
       
-      // Load staff member
-      const staff = await kv.get(`vendor:${vendorId}:staff:${staffId}`);
+      // ✅ SQL: Load staff member from staff table
+      const staffRepo = getStaffRepository();
+      const staff = await staffRepo.findById(staffId);
       
-      if (!staff) {
+      if (!staff || staff.vendor_id !== vendorId) {
         return c.json({ error: 'Staff member not found' }, 404);
       }
       
@@ -105,15 +110,17 @@ export function staffSpecializationEndpoints(app: Hono) {
         return names[0];
       }).filter(Boolean);
       
-      // Update staff with specializations
-      const updatedStaff = {
-        ...staff,
-        specializations,
-        specializationNames,
-        updatedAt: new Date().toISOString()
-      };
+      // ✅ SQL: Update staff with specializations
+      await staffRepo.update(staffId, {
+        metadata: {
+          ...staff.metadata,
+          specializations,
+          specializationNames
+        },
+        updated_at: new Date().toISOString()
+      });
       
-      await kv.set(`vendor:${vendorId}:staff:${staffId}`, updatedStaff);
+      const updatedStaff = await staffRepo.findById(staffId);
       
       console.log(`✅ Updated staff specializations:`, {
         staffId,
@@ -155,38 +162,41 @@ export function staffSpecializationEndpoints(app: Hono) {
       console.log(`   Problem: "${problem.displayName}"`);
       console.log(`   Mapped subcategories:`, problem.mappedSubCategories);
       
-      // Get all vendors of this role
-      const allVendors = await kv.getByPrefix('vendor:');
+      // ✅ SQL: Get all vendors of this role from vendors table
+      const vendorsRepo = getVendorsRepository();
+      const allVendors = await vendorsRepo.findAll({});
       const roleVendors = allVendors.filter((v: any) => {
-        const vendorRoleId = v.roleId?.replace('role_', '');
+        const vendorRoleId = v.role_id?.replace('role_', '');
         const targetRoleId = roleId.replace('role_', '');
         return vendorRoleId === targetRoleId && 
                v.status === 'approved' && 
-               v.isActive !== false;
+               v.is_active !== false;
       });
       
       console.log(`   Found ${roleVendors.length} approved vendors with role ${roleId}`);
       
-      // Find staff with matching specializations
+      // ✅ SQL: Find staff with matching specializations
+      const staffRepo = getStaffRepository();
       const matchingStaff: any[] = [];
       
       for (const vendor of roleVendors) {
-        const staffMembers = await kv.getByPrefix(`vendor:${vendor.vendorId}:staff:`);
+        const staffMembers = await staffRepo.findByVendor(vendor.id);
         
         for (const staff of staffMembers) {
+          const staffSpecializations = staff.metadata?.specializations || [];
           // Check if staff has specializations matching the problem
-          const hasMatchingSpecialization = staff.specializations?.some((specId: string) =>
+          const hasMatchingSpecialization = staffSpecializations.some((specId: string) =>
             problem.mappedSubCategories.includes(specId)
           );
           
           if (hasMatchingSpecialization) {
             matchingStaff.push({
               ...staff,
-              vendorId: vendor.vendorId,
-              vendorName: vendor.businessName || vendor.fullName,
-              vendorAddress: vendor.location?.address,
+              vendorId: vendor.id,
+              vendorName: vendor.business_name || vendor.full_name,
+              vendorAddress: vendor.location?.address || vendor.address,
               vendorPhone: vendor.phone,
-              matchedSpecializations: staff.specializations.filter((specId: string) =>
+              matchedSpecializations: staffSpecializations.filter((specId: string) =>
                 problem.mappedSubCategories.includes(specId)
               )
             });
@@ -217,13 +227,16 @@ export function staffSpecializationEndpoints(app: Hono) {
     try {
       const { vendorId } = c.req.param();
       
-      const vendor = await kv.get(`vendor:${vendorId}`);
+      // ✅ SQL: Get vendor from vendors table
+      const vendorsRepo = getVendorsRepository();
+      const vendor = await vendorsRepo.findById(vendorId);
       if (!vendor) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
       
-      const roleId = vendor.roleId;
-      const staffMembers = await kv.getByPrefix(`vendor:${vendorId}:staff:`);
+      const roleId = vendor.role_id;
+      const staffRepo = getStaffRepository();
+      const staffMembers = await staffRepo.findByVendor(vendorId);
       
       console.log(`🔄 Migrating ${staffMembers.length} staff members for vendor ${vendorId}`);
       
@@ -236,7 +249,8 @@ export function staffSpecializationEndpoints(app: Hono) {
       
       for (const staff of staffMembers) {
         // Skip if already has specializations
-        if (staff.specializations && staff.specializations.length > 0) {
+        const existingSpecializations = staff.metadata?.specializations || [];
+        if (existingSpecializations.length > 0) {
           continue;
         }
         
@@ -246,14 +260,15 @@ export function staffSpecializationEndpoints(app: Hono) {
           return names[0];
         }).filter(Boolean);
         
-        const updatedStaff = {
-          ...staff,
-          specializations: defaultSpecializations,
-          specializationNames,
-          migratedAt: new Date().toISOString()
-        };
-        
-        await kv.set(staff.key || `vendor:${vendorId}:staff:${staff.staffId}`, updatedStaff);
+        // ✅ SQL: Update staff with specializations
+        await staffRepo.update(staff.id, {
+          metadata: {
+            ...staff.metadata,
+            specializations: defaultSpecializations,
+            specializationNames,
+            migratedAt: new Date().toISOString()
+          }
+        });
         migratedCount++;
       }
       

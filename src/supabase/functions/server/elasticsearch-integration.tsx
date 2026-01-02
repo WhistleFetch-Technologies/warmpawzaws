@@ -1,5 +1,5 @@
-import { Hono } from "npm:hono";
-import { sendSuccess, sendError } from "./response-utils.ts";
+import { Hono } from "hono";
+import { sendSuccess, sendError } from "./response-utils";
 
 /**
  * 🔍 ELASTICSEARCH INTEGRATION
@@ -449,17 +449,27 @@ class SearchAnalytics {
     const timestamp = new Date().toISOString();
     const logKey = `search-log:${Date.now()}`;
 
-    // Log individual search
-    await kv.set(logKey, {
-      query,
-      results,
-      responseTime,
-      filters,
-      timestamp
-    });
+    // ✅ SQL: Log individual search in search_logs table
+    const db = getDbClient();
+    await db
+      .from('search_logs')
+      .insert({
+        id: logKey,
+        query,
+        results_count: results,
+        response_time_ms: responseTime,
+        filters: filters,
+        created_at: timestamp
+      });
 
-    // Update aggregated analytics
-    const analytics = await kv.get('search-analytics') || {
+    // ✅ SQL: Update aggregated analytics in search_analytics table
+    const { data: analyticsData } = await db
+      .from('platform_settings')
+      .select('setting_value')
+      .eq('setting_key', 'search-analytics')
+      .single();
+    
+    const analytics = analyticsData?.setting_value || {
       topSearches: {},
       zeroResultSearches: {},
       totalSearches: 0,
@@ -483,11 +493,27 @@ class SearchAnalytics {
         (analytics.searchesByCategory[filters.category] || 0) + 1;
     }
 
-    await kv.set('search-analytics', analytics);
+    await db
+      .from('platform_settings')
+      .upsert({
+        setting_key: 'search-analytics',
+        setting_value: analytics,
+        updated_at: new Date().toISOString()
+      }, {
+        onConflict: 'setting_key'
+      });
   }
 
-  static async getAnalytics(kv: any) {
-    const analytics = await kv.get('search-analytics') || {
+  static async getAnalytics() {
+    // ✅ SQL: Get analytics from platform_settings table
+    const db = getDbClient();
+    const { data: analyticsData } = await db
+      .from('platform_settings')
+      .select('setting_value')
+      .eq('setting_key', 'search-analytics')
+      .single();
+    
+    const analytics = analyticsData?.setting_value || {
       topSearches: {},
       zeroResultSearches: {},
       totalSearches: 0,
@@ -523,7 +549,11 @@ class SearchAnalytics {
 }
 
 // Main registration function
-export function elasticsearchIntegration(app: Hono, kv: any) {
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { getVendorsRepository, getStaffRepository } from '../../../supabase/lib/repositories/index';
+import { getDbClient } from '../../../supabase/lib/db';
+
+export function elasticsearchIntegration(app: Hono) {
   const BASE_PATH = "/make-server-3dd53475";
   const es = new ElasticsearchClient();
 
@@ -585,8 +615,9 @@ export function elasticsearchIntegration(app: Hono, kv: any) {
     try {
       const { centerId } = c.req.param();
       
-      // Get center data from KV store
-      const center = await kv.get(`vendor:${centerId}`);
+      // ✅ SQL: Get center data from vendors table
+      const vendorsRepo = getVendorsRepository();
+      const center = await vendorsRepo.findById(centerId);
       
       if (!center) {
         return sendError(c, 'Center not found', 404);
@@ -594,8 +625,8 @@ export function elasticsearchIntegration(app: Hono, kv: any) {
 
       // Prepare document for indexing
       const document = {
-        vendorId: center.vendorId || centerId,
-        businessName: center.businessName || center.fullName,
+        vendorId: center.id,
+        businessName: center.business_name || center.full_name,
         services: center.services || [],
         location: center.location ? {
           lat: center.location.lat,
@@ -606,14 +637,14 @@ export function elasticsearchIntegration(app: Hono, kv: any) {
         city: center.city || '',
         state: center.state || '',
         pincode: center.pincode || '',
-        isActive: center.isActive !== false,
-        description: center.description || '',
+        isActive: center.is_active !== false,
+        description: center.description || center.metadata?.description || '',
         phone: center.phone || '',
         email: center.email || '',
-        openingHours: center.openingHours || {},
-        amenities: center.amenities || [],
-        createdAt: center.createdAt || new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        openingHours: center.metadata?.openingHours || {},
+        amenities: center.metadata?.amenities || [],
+        createdAt: center.created_at || new Date().toISOString(),
+        updatedAt: center.updated_at || new Date().toISOString()
       };
 
       const indexName = `${INDEX_PREFIX}_centers`;
@@ -637,31 +668,33 @@ export function elasticsearchIntegration(app: Hono, kv: any) {
     try {
       const { staffId } = c.req.param();
       
-      const staff = await kv.get(`staff:${staffId}`);
+      // ✅ SQL: Get staff from staff table
+      const staffRepo = getStaffRepository();
+      const staff = await staffRepo.findById(staffId);
       
       if (!staff) {
         return sendError(c, 'Staff not found', 404);
       }
 
       const document = {
-        staffId: staff.staffId || staffId,
-        name: staff.name || '',
+        staffId: staff.id,
+        name: staff.name || staff.full_name || '',
         role: staff.role || '',
-        specializations: staff.specializations || [],
-        vendorId: staff.vendorId || '',
-        rating: staff.rating || 0,
-        isAvailable: staff.isAvailable !== false,
+        specializations: staff.metadata?.specializations || [],
+        vendorId: staff.vendor_id || '',
+        rating: staff.metadata?.rating || 0,
+        isAvailable: staff.is_active !== false,
         location: staff.location ? {
           lat: staff.location.lat,
           lon: staff.location.lng
         } : null,
-        experience: staff.experience || 0,
-        qualifications: staff.qualifications || '',
-        bio: staff.bio || '',
-        languages: staff.languages || [],
-        serviceStyle: staff.serviceStyle || [],
-        createdAt: staff.createdAt || new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        experience: staff.metadata?.experience || 0,
+        qualifications: staff.metadata?.qualifications || '',
+        bio: staff.metadata?.bio || '',
+        languages: staff.metadata?.languages || [],
+        serviceStyle: staff.metadata?.serviceStyle || [],
+        createdAt: staff.created_at || new Date().toISOString(),
+        updatedAt: staff.updated_at || new Date().toISOString()
       };
 
       const indexName = `${INDEX_PREFIX}_staff`;
@@ -802,7 +835,7 @@ export function elasticsearchIntegration(app: Hono, kv: any) {
    */
   app.get(`${BASE_PATH}/elasticsearch/analytics`, async (c) => {
     try {
-      const analytics = await SearchAnalytics.getAnalytics(kv);
+      const analytics = await SearchAnalytics.getAnalytics();
       return sendSuccess(c, { analytics });
     } catch (error) {
       console.error('❌ Error fetching analytics:', error);
@@ -825,53 +858,50 @@ export function elasticsearchIntegration(app: Hono, kv: any) {
         products: 0
       };
 
-      // Reindex centers (vendors)
-      const vendors = await kv.getByPrefix('vendor:') || [];
+      // ✅ SQL: Reindex centers (vendors) from vendors table
+      const vendorsRepo = getVendorsRepository();
+      const vendors = await vendorsRepo.findAll({});
       if (vendors.length > 0) {
-        const centerDocs = vendors.map((item: any) => {
-          const vendor = item.value || item;
-          return {
-            id: vendor.vendorId,
-            vendorId: vendor.vendorId,
-            businessName: vendor.businessName || vendor.fullName,
-            services: vendor.services || [],
-            location: vendor.location ? {
-              lat: vendor.location.lat,
-              lon: vendor.location.lng
-            } : null,
-            rating: vendor.rating || 0,
-            address: vendor.address || '',
-            city: vendor.city || '',
-            state: vendor.state || '',
-            pincode: vendor.pincode || '',
-            isActive: vendor.isActive !== false,
-            description: vendor.description || '',
-            phone: vendor.phone || '',
-            email: vendor.email || '',
-            createdAt: vendor.createdAt || new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-          };
-        });
+        const centerDocs = vendors.map((vendor: any) => ({
+          id: vendor.id,
+          vendorId: vendor.id,
+          businessName: vendor.business_name || vendor.full_name,
+          services: vendor.metadata?.services || [],
+          location: vendor.location ? {
+            lat: vendor.location.lat,
+            lon: vendor.location.lng
+          } : null,
+          rating: vendor.average_rating || 0,
+          address: vendor.address || '',
+          city: vendor.city || '',
+          state: vendor.state || '',
+          pincode: vendor.pincode || '',
+          isActive: vendor.is_active !== false,
+          description: vendor.description || vendor.metadata?.description || '',
+          phone: vendor.phone || '',
+          email: vendor.email || '',
+          createdAt: vendor.created_at || new Date().toISOString(),
+          updatedAt: vendor.updated_at || new Date().toISOString()
+        }));
 
         await es.bulkIndex(`${INDEX_PREFIX}_centers`, centerDocs);
         results.centers = centerDocs.length;
         console.log(`✅ Indexed ${centerDocs.length} centers`);
       }
 
-      // Reindex staff
-      const staff = await kv.getByPrefix('staff:') || [];
+      // ✅ SQL: Reindex staff from staff table
+      const staffRepo = getStaffRepository();
+      const staff = await staffRepo.findAll({});
       if (staff.length > 0) {
-        const staffDocs = staff.map((item: any) => {
-          const s = item.value || item;
-          return {
-            id: s.staffId,
-            staffId: s.staffId,
-            name: s.name || '',
-            role: s.role || '',
-            specializations: s.specializations || [],
-            vendorId: s.vendorId || '',
-            rating: s.rating || 0,
-            isAvailable: s.isAvailable !== false,
+        const staffDocs = staff.map((s: any) => ({
+          id: s.id,
+          staffId: s.id,
+          name: s.name || s.full_name || '',
+          role: s.role || '',
+          specializations: s.metadata?.specializations || [],
+          vendorId: s.vendor_id || '',
+          rating: s.metadata?.rating || 0,
+          isAvailable: s.is_active !== false,
             location: s.location ? {
               lat: s.location.lat,
               lon: s.location.lng

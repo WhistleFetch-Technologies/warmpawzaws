@@ -4,13 +4,19 @@
  * ✅ SECURITY FIX: Validates session tokens for all write operations
  * 
  * Usage:
- * import { requireAuth } from './auth-middleware.tsx';
+ * import { requireAuth } from './auth-middleware';
  * app.post('/vendor/services/add', requireAuth, async (c) => { ... });
  */
 
-import { Context } from 'npm:hono';
-import * as kv from './kv_store.tsx';
-import { sendError } from './response-utils.ts';
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Context } from 'hono';
+import { sendError } from './response-utils';
+import { 
+  getAccessTokensRepository,
+  getSessionsRepository,
+  getCustomersRepository,
+  getVendorsRepository
+} from '../../../supabase/lib/repositories/index';
 
 /**
  * Validate authentication token from Authorization header
@@ -38,8 +44,9 @@ export async function requireAuth(c: Context, next: () => Promise<void>) {
     
     console.log('🔐 [AUTH] Validating token:', token.substring(0, 20) + '...');
     
-    // ✅ FIX: Look up token in the token system (not session system!)
-    const tokenData = await kv.get(`token:${token}`);
+    // ✅ SQL: Look up token in access_tokens table
+    const accessTokensRepo = getAccessTokensRepository();
+    const tokenData = await accessTokensRepo.findByToken(token);
     
     if (!tokenData) {
       console.log('❌ [AUTH] Invalid token - no matching token found');
@@ -48,49 +55,54 @@ export async function requireAuth(c: Context, next: () => Promise<void>) {
     }
     
     console.log('✅ [AUTH] Token found:', {
-      userId: tokenData.userId,
+      userId: tokenData.user_id,
       phone: tokenData.phone,
       role: tokenData.role,
-      expiresAt: tokenData.expiresAt
+      expiresAt: tokenData.expires_at
     });
     
     // Check if token is expired
-    if (new Date(tokenData.expiresAt) < new Date()) {
-      console.log('❌ [AUTH] Token expired:', tokenData.expiresAt);
-      // Clean up expired token
-      await kv.del(`token:${token}`);
-      await kv.del(`token:user:${tokenData.userId}`);
+    if (new Date(tokenData.expires_at) < new Date()) {
+      console.log('❌ [AUTH] Token expired:', tokenData.expires_at);
+      // ✅ SQL: Clean up expired token
+      await accessTokensRepo.delete(token);
       return sendError(c, 'Session expired - please login again', 401);
     }
     
-    // Get user data using phone (more reliable than userId for vendors)
+    // ✅ SQL: Get user data using phone (more reliable than userId for vendors)
     const { normalizePhone } = await import('./phone-utils.tsx');
     const normalizedPhone = normalizePhone(tokenData.phone);
-    let user = await kv.get(`user:phone:${normalizedPhone}`);
+    const customersRepo = getCustomersRepository();
+    let user = await customersRepo.findByPhone(normalizedPhone);
     
     // Fallback: try userId if phone lookup fails
     if (!user) {
       console.log('⚠️ [AUTH] User not found by phone, trying userId...');
-      user = await kv.get(`user:id:${tokenData.userId}`);
+      user = await customersRepo.findById(tokenData.user_id);
     }
     
     if (!user) {
-      console.log('❌ [AUTH] User not found for token:', tokenData.userId);
+      console.log('❌ [AUTH] User not found for token:', tokenData.user_id);
       return sendError(c, 'User not found', 404);
     }
     
     console.log('✅ [AUTH] Token validated for user:', {
-      userId: user.userId,
+      userId: user.id,
       phone: user.phone,
-      role: user.role
+      role: tokenData.role || user.role
     });
     
     // Attach auth data to context for use in route handlers
-    c.set('token', tokenData);
+    c.set('token', {
+      userId: tokenData.user_id,
+      phone: tokenData.phone,
+      role: tokenData.role,
+      expiresAt: tokenData.expires_at
+    });
     c.set('user', user);
-    c.set('userId', user.userId);
+    c.set('userId', user.id);
     c.set('userPhone', user.phone);
-    c.set('userRole', user.role);
+    c.set('userRole', tokenData.role || user.role);
     
     // Continue to next middleware/handler
     await next();
@@ -123,18 +135,19 @@ export async function optionalAuth(c: Context, next: () => Promise<void>) {
       return;
     }
     
-    // Find session by token
-    const allSessions = await kv.getByPrefix('session:session_');
-    const matchingSession = allSessions.find((s: any) => s.token === token);
+    // ✅ SQL: Find session by token from sessions table
+    const sessionsRepo = getSessionsRepository();
+    const matchingSession = await sessionsRepo.findByToken(token);
     
-    if (matchingSession && new Date(matchingSession.expiresAt) >= new Date()) {
-      // Valid session - attach user data
-      const user = await kv.get(`user:id:${matchingSession.userId}`);
+    if (matchingSession && new Date(matchingSession.expires_at) >= new Date()) {
+      // ✅ SQL: Valid session - attach user data
+      const customersRepo = getCustomersRepository();
+      const user = await customersRepo.findById(matchingSession.user_id);
       
       if (user) {
         c.set('session', matchingSession);
         c.set('user', user);
-        c.set('userId', user.userId);
+        c.set('userId', user.id);
         c.set('userPhone', user.phone);
         c.set('userRole', user.role);
       }
@@ -196,17 +209,18 @@ export async function requireVendorOwnership(c: Context, next: () => Promise<voi
       return sendError(c, 'Vendor ID required', 400);
     }
     
-    // Get vendor's userId
-    const vendor = await kv.get(`vendor:${vendorId}`);
+    // ✅ SQL: Get vendor's user_id from vendors table
+    const vendorsRepo = getVendorsRepository();
+    const vendor = await vendorsRepo.findById(vendorId);
     
     if (!vendor) {
       console.log('❌ [AUTH] Vendor not found:', vendorId);
       return sendError(c, 'Vendor not found', 404);
     }
     
-    if (vendor.userId !== userId) {
+    if (vendor.user_id !== userId) {
       console.log('❌ [AUTH] Vendor ownership mismatch:', {
-        vendorUserId: vendor.userId,
+        vendorUserId: vendor.user_id,
         requestUserId: userId
       });
       return sendError(c, 'You do not own this vendor', 403);

@@ -6,8 +6,15 @@
  * Returns combined slots from all active staff members
  */
 
-import { Hono } from "npm:hono@4";
-import * as kv from "./kv_store.tsx";
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from "hono";
+import { 
+  getVendorsRepository,
+  getStaffRepository,
+  getStaffAvailabilityRepository,
+  getBookingsRepository
+} from '../../../supabase/lib/repositories/index';
+import { getDbClient } from '../../../supabase/lib/db';
 
 const app = new Hono();
 
@@ -24,14 +31,17 @@ app.get('/make-server-3dd53475/vendor/:vendorId/availability/:date', async (c) =
       return c.json({ success: false, error: 'Invalid date format. Use YYYY-MM-DD' }, 400);
     }
     
-    // Get vendor
-    const vendor = await kv.get(`vendor:${vendorId}`);
+    // ✅ SQL: Get vendor from vendors table
+    const vendorsRepo = getVendorsRepository();
+    const vendor = await vendorsRepo.findById(vendorId);
     if (!vendor) {
       return c.json({ success: false, error: 'Vendor not found' }, 404);
     }
     
-    // Get all staff for this vendor
-    const staffIds = await kv.get(`vendor:${vendorId}:staff`) || [];
+    // ✅ SQL: Get all staff for this vendor from staff table
+    const staffRepo = getStaffRepository();
+    const staffMembers = await staffRepo.findByVendor(vendorId);
+    const staffIds = staffMembers.map(s => s.id);
     console.log(`👥 Found ${staffIds.length} staff members for ${vendor.businessName || vendor.fullName}`);
     
     if (staffIds.length === 0) {
@@ -48,23 +58,27 @@ app.get('/make-server-3dd53475/vendor/:vendorId/availability/:date', async (c) =
     let totalAvailable = 0;
     
     for (const staffId of staffIds) {
-      const staff = await kv.get(`staff:${staffId}`);
-      if (!staff || !staff.isActive) {
+      // ✅ SQL: Get staff from staff table
+      const staff = await staffRepo.findById(staffId);
+      if (!staff || !staff.is_active) {
         console.log(`⏭️  Skipping inactive staff: ${staffId}`);
         continue;
       }
       
-      console.log(`   Processing staff: ${staff.fullName || staff.name}`);
+      console.log(`   Processing staff: ${staff.full_name || staff.name}`);
       
-      // Get staff schedule - try multiple key patterns
-      let schedule = await kv.get(`doctor:${staffId}:availability:${date}`) ||
-                     await kv.get(`staff:${staffId}:availability:${date}`) ||
-                     await kv.get(`groomer:${staffId}:availability:${date}`) ||
-                     await kv.get(`trainer:${staffId}:availability:${date}`);
+      // ✅ SQL: Get staff schedule from staff_availability table
+      const staffAvailabilityRepo = getStaffAvailabilityRepository();
+      const availabilityData = await staffAvailabilityRepo.findByStaffAndDate(staffId, date);
       
-      if (!schedule || !schedule.slots) {
+      let schedule = availabilityData ? {
+        date: availabilityData.date,
+        slots: availabilityData.slots || []
+      } : null;
+      
+      if (!schedule || !schedule.slots || schedule.slots.length === 0) {
         // Generate default slots based on working hours
-        const workingHours = staff.workingHours || { start: '09:00', end: '18:00' };
+        const workingHours = staff.metadata?.workingHours || { start: '09:00', end: '18:00' };
         schedule = {
           date,
           slots: generateDefaultSlots(date, workingHours)
@@ -72,11 +86,10 @@ app.get('/make-server-3dd53475/vendor/:vendorId/availability/:date', async (c) =
         console.log(`   Generated ${schedule.slots.length} default slots`);
       }
       
-      // Get all bookings for this staff on this date
-      const allBookings = await kv.getByPrefix(`booking:`);
-      const staffBookings = allBookings.filter((b: any) =>
-        (b.staffId === staffId || b.assignedStaffId === staffId) &&
-        b.scheduledDate === date &&
+      // ✅ SQL: Get all bookings for this staff on this date from bookings table
+      const bookingsRepo = getBookingsRepository();
+      const allBookingsData = await bookingsRepo.findByStaffAndDate(staffId, date);
+      const staffBookings = allBookingsData.filter((b: any) =>
         ['scheduled', 'in_progress', 'start_otp_pending', 'end_otp_pending'].includes(b.status)
       );
       
@@ -91,8 +104,8 @@ app.get('/make-server-3dd53475/vendor/:vendorId/availability/:date', async (c) =
           time: slot.time,
           status: booking ? 'booked' : (slot.status || 'available'),
           staffId,
-          staffName: staff.fullName || staff.name,
-          staffPhoto: staff.photo || null,
+          staffName: staff.full_name || staff.name,
+          staffPhoto: staff.photo || staff.metadata?.photo || null,
           bookingId: booking?.id,
           slotId: slot.slotId || `slot_${staffId}_${date}_${slot.time.replace(':', '')}`
         };
@@ -102,8 +115,8 @@ app.get('/make-server-3dd53475/vendor/:vendorId/availability/:date', async (c) =
       
       staffAvailability.push({
         staffId,
-        staffName: staff.fullName || staff.name,
-        staffPhoto: staff.photo || null,
+        staffName: staff.full_name || staff.name,
+        staffPhoto: staff.photo || staff.metadata?.photo || null,
         slots: processedSlots,
         availableCount,
         totalCount: processedSlots.length
@@ -114,7 +127,7 @@ app.get('/make-server-3dd53475/vendor/:vendorId/availability/:date', async (c) =
       allSlots.push(...availableSlots);
       totalAvailable += availableCount;
       
-      console.log(`   Available slots for ${staff.fullName || staff.name}: ${availableCount}`);
+      console.log(`   Available slots for ${staff.full_name || staff.name}: ${availableCount}`);
     }
     
     // Deduplicate slots by time (in case multiple staff have same time available)
@@ -148,7 +161,7 @@ app.get('/make-server-3dd53475/vendor/:vendorId/availability/:date', async (c) =
       success: true,
       date,
       vendorId,
-      vendorName: vendor.businessName || vendor.fullName,
+      vendorName: vendor.business_name || vendor.full_name,
       slots: uniqueSlots,
       staffAvailability,
       availableCount: uniqueSlots.length,

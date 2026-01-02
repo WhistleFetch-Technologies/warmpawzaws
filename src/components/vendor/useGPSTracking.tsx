@@ -147,32 +147,31 @@ export function useGPSTracking(options: UseGPSTrackingOptions): UseGPSTrackingRe
       setCurrentLocation(initialLocation);
 
       // ✅ FIX: Use Batch 14 SQL-migrated GPS tracking start endpoint
-      const response = await fetch(`${API_BASE}/bookings/${bookingId}/start-tracking`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
-        },
-        body: JSON.stringify({
-          location: {
-            latitude: initialLocation.lat,
-            longitude: initialLocation.lng,
-            timestamp: initialLocation.timestamp,
-            accuracy: initialLocation.accuracy
-          }
-        })
-      });
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_BASE = getApiBase();
+      
+      const data = await apiCallJson<any>(
+        `${API_BASE}/bookings/${bookingId}/start-tracking`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            location: {
+              latitude: initialLocation.lat,
+              longitude: initialLocation.lng,
+              timestamp: initialLocation.timestamp,
+              accuracy: initialLocation.accuracy
+            }
+          })
+        }
+      );
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
-        const errorMessage = errorData.error || errorData.message || 'Failed to start tracking session';
-        throw new Error(errorMessage);
-      }
-
-      const data = await response.json();
       // ✅ FIX: Handle standardized response format
       // Response format: { success: true, session: {...}, ... }
-      setSession(data.session || data.data?.session);
+      if (data.success) {
+        setSession(data.session || data.data?.session);
+      } else {
+        throw new Error(data.error || data.message || 'Failed to start tracking session');
+      }
       setIsTracking(true);
       setError(null);
 
@@ -208,24 +207,23 @@ export function useGPSTracking(options: UseGPSTrackingOptions): UseGPSTrackingRe
       }
 
       // ✅ FIX: Use Batch 14 SQL-migrated GPS tracking stop endpoint
-      const response = await fetch(`${API_BASE}/bookings/${bookingId}/stop-tracking`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_BASE = getApiBase();
+      
+      const data = await apiCallJson<any>(
+        `${API_BASE}/bookings/${bookingId}/stop-tracking`,
+        {
+          method: 'POST'
         }
-      });
+      );
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error occurred' }));
-        const errorMessage = errorData.error || errorData.message || 'Failed to stop tracking session';
-        throw new Error(errorMessage);
-      }
-
-      const data = await response.json();
       // ✅ FIX: Handle standardized response format
       // Response format: { success: true, session: {...}, ... }
-      setSession(data.session || data.data?.session);
+      if (data.success) {
+        setSession(data.session || data.data?.session);
+      } else {
+        throw new Error(data.error || data.message || 'Failed to stop tracking session');
+      }
       setIsTracking(false);
 
       console.log('✅ GPS tracking stopped:', bookingId);
@@ -280,28 +278,38 @@ export function useGPSTracking(options: UseGPSTrackingOptions): UseGPSTrackingRe
 
   /**
    * Update location on server
+   * ✅ FIXED: Uses new GPS tracking endpoint from booking-settlement-automation fixes
    */
   const updateLocationOnServer = async (location: LocationPoint) => {
     try {
-      // ✅ FIX: Use Batch 14 SQL-migrated GPS tracking endpoint
-      await fetch(`${API_BASE}/bookings/${bookingId}/update-location`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
-        },
-        body: JSON.stringify({
-          location: {
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        console.warn('⚠️ [GPS] API_GATEWAY_URL not configured');
+        return;
+      }
+
+      // ✅ Use new GPS tracking endpoint: POST /vendor/tracking/:bookingId/update
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      const API_BASE = getApiBase();
+      
+      await apiCallJson<any>(
+        `${API_BASE}/vendor/tracking/${bookingId}/update`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
             latitude: location.lat,
             longitude: location.lng,
-            timestamp: location.timestamp,
-            accuracy: location.accuracy
-          },
-          sessionNumber: options.sessionNumber || 1
-        })
-      });
+            accuracy: location.accuracy || null,
+            heading: location.heading || null,
+            speed: location.speed || null,
+            timestamp: location.timestamp
+          })
+        }
+      );
+
+      console.log('✅ [GPS] Location updated on server');
     } catch (err) {
-      console.error('Failed to update location on server:', err);
+      console.error('❌ [GPS] Failed to update location on server:', err);
     }
   };
 

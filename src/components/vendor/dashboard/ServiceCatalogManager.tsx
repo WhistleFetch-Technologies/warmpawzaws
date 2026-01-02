@@ -8,8 +8,8 @@ import { Input } from '../../ui/input';
 import { Label } from '../../ui/label';
 import { Textarea } from '../../ui/textarea';
 import { Switch } from '../../ui/switch';
-import { toast } from 'sonner@2.0.3';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { toast } from 'sonner';
+// ✅ FIX: Removed Supabase imports - using API Gateway now
 
 interface Service {
   id: string;
@@ -42,7 +42,6 @@ export function ServiceCatalogManager({ centerId, center, isSoloProvider, onUpda
   const [formData, setFormData] = useState({ name: '', description: '', price: 0, duration: 30, category: '' });
   const [submitting, setSubmitting] = useState(false);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
   const vendorId = center?.vendorId || center?.vendor_id;
 
   useEffect(() => {
@@ -54,22 +53,29 @@ export function ServiceCatalogManager({ centerId, center, isSoloProvider, onUpda
     
     setLoading(true);
     try {
-      const response = await fetch(
-        `${API_BASE}/vendor/services/${vendorId}`,
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      const servicesData = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/services/${vendorId}`
       );
 
-      if (response.ok) {
-        const data = await response.json();
+      if (servicesData.success) {
         // Flatten services from all styles
-        const allServices = data.allServices || [];
+        const allServices = servicesData.allServices || servicesData.services || [];
         setServices(allServices);
+      } else {
+        setServices([]);
       }
     } catch (error) {
       console.error('Error loading services:', error);
       toast.error('Failed to load services');
+      setServices([]);
     } finally {
       setLoading(false);
     }
@@ -94,16 +100,20 @@ export function ServiceCatalogManager({ centerId, center, isSoloProvider, onUpda
 
     setSubmitting(true);
     try {
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
       if (editingService) {
         // Update existing service
-        const response = await fetch(
-          `${API_BASE}/vendor/services/${editingService.service_id || editingService.id}`,
+        const updateData = await apiCallJson<any>(
+          `${API_GATEWAY_URL}/make-server-3dd53475/vendor/services/${editingService.service_id || editingService.id}`,
           {
             method: 'PUT',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${publicAnonKey}`
-            },
             body: JSON.stringify({
               name: formData.name,
               description: formData.description,
@@ -113,24 +123,20 @@ export function ServiceCatalogManager({ centerId, center, isSoloProvider, onUpda
           }
         );
 
-        if (response.ok) {
+        if (updateData.success) {
           toast.success('Service updated successfully!');
           setModalOpen(false);
           await loadServices();
           onUpdate();
         } else {
-          throw new Error('Failed to update service');
+          throw new Error(updateData.error || updateData.message || 'Failed to update service');
         }
       } else {
         // Publish new service using SQL endpoint
-        const response = await fetch(
-          `${API_BASE}/vendor/services/publish`,
+        const publishData = await apiCallJson<any>(
+          `${API_GATEWAY_URL}/make-server-3dd53475/vendor/services/publish`,
           {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${publicAnonKey}`
-            },
             body: JSON.stringify({
               vendorId,
               serviceName: formData.name,
@@ -147,9 +153,8 @@ export function ServiceCatalogManager({ centerId, center, isSoloProvider, onUpda
           }
         );
 
-        if (response.ok) {
-          const result = await response.json();
-          if (result.isLive) {
+        if (publishData.success) {
+          if (publishData.isLive) {
             toast.success('Service published and is now live!');
           } else {
             toast.success('Service submitted for approval');
@@ -158,8 +163,7 @@ export function ServiceCatalogManager({ centerId, center, isSoloProvider, onUpda
           await loadServices();
           onUpdate();
         } else {
-          const error = await response.json();
-          throw new Error(error.error || 'Failed to publish service');
+          throw new Error(publishData.error || publishData.message || 'Failed to publish service');
         }
       }
     } catch (error) {
@@ -172,27 +176,30 @@ export function ServiceCatalogManager({ centerId, center, isSoloProvider, onUpda
   const handleToggleLive = async (service: Service) => {
     const serviceId = service.service_id || service.id;
     try {
-      const response = await fetch(
-        `${API_BASE}/vendor/services/${serviceId}/toggle-live`,
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      const toggleData = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/services/${serviceId}/toggle-live`,
         {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
-          }
+          method: 'POST'
         }
       );
 
-      if (response.ok) {
-        const result = await response.json();
-        toast.success(result.message);
+      if (toggleData.success) {
+        toast.success(toggleData.message || 'Service status updated');
         await loadServices();
         onUpdate();
       } else {
-        const error = await response.json();
-        toast.error(error.error || 'Failed to toggle live status');
+        toast.error(toggleData.error || toggleData.message || 'Failed to toggle live status');
       }
-    } catch (error) {
-      toast.error(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } catch (error: any) {
+      toast.error(error?.message || 'Failed to toggle live status');
     }
   };
 
@@ -200,26 +207,30 @@ export function ServiceCatalogManager({ centerId, center, isSoloProvider, onUpda
     if (!confirm('Are you sure you want to delete this service?')) return;
 
     try {
-      // Use SQL endpoint for deletion
-      const response = await fetch(
-        `${API_BASE}/vendor/services/${serviceId}`,
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      const deleteData = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/services/${serviceId}`,
         {
-          method: 'DELETE',
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
-          }
+          method: 'DELETE'
         }
       );
 
-      if (response.ok) {
+      if (deleteData.success) {
         toast.success('Service deleted successfully!');
         await loadServices();
         onUpdate();
       } else {
-        throw new Error('Failed to delete service');
+        throw new Error(deleteData.error || deleteData.message || 'Failed to delete service');
       }
-    } catch (error) {
-      toast.error(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } catch (error: any) {
+      toast.error(error?.message || 'Failed to delete service');
     }
   };
 

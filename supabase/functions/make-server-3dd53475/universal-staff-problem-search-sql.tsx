@@ -25,7 +25,7 @@ import { Hono } from 'npm:hono';
 import { getStaffRepository } from '../../lib/repositories/staff.ts';
 import { getVendorsRepository } from '../../lib/repositories/vendors.ts';
 import { getDbClient } from '../../lib/db.ts';
-import { calculateDistance } from './schedule-utils.tsx';
+import { calculateDistance } from './schedule-utils-sql.tsx'; // ✅ FIXED: Updated to SQL version
 import { getPrimarySpecialization, getAllSpecializations } from './specialization-mapping.tsx';
 
 const app = new Hono();

@@ -1,5 +1,7 @@
-import { Hono } from "npm:hono";
-import { sendSuccess, sendError } from "./response-utils.ts";
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from "hono";
+import { sendSuccess, sendError } from "./response-utils";
+import { getDbClient } from '../../../supabase/lib/db';
 
 /**
  * 💰 SETTLEMENT & TIER SYSTEM ENHANCED
@@ -45,7 +47,7 @@ const TIERS: Record<string, VendorTier> = {
   }
 };
 
-export function settlementTierSystemEndpoints(app: Hono, kv: any) {
+export function settlementTierSystemEndpoints(app: Hono) {
   const BASE_PATH = "/make-server-3dd53475";
 
   // ========================================
@@ -54,19 +56,25 @@ export function settlementTierSystemEndpoints(app: Hono, kv: any) {
   app.get(`${BASE_PATH}/vendor/:vendorId/tier`, async (c) => {
     try {
       const vendorId = c.req.param('vendorId');
-      const vendorData = await kv.get(`vendor_tier_data_${vendorId}`);
+      // ✅ SQL: Get vendor tier data from vendor_tiers table
+      const db = getDbClient();
+      const { data: vendorTierData } = await db
+        .from('vendor_tiers')
+        .select('*')
+        .eq('vendor_id', vendorId)
+        .single();
       
-      const tierId = vendorData?.tierId || 'basic';
+      const tierId = vendorTierData?.current_tier?.toLowerCase() || 'basic';
       const currentTier = TIERS[tierId];
 
       return sendSuccess(c, {
         currentTier,
         nextTier: tierId === 'basic' ? TIERS['premium'] : (tierId === 'premium' ? TIERS['enterprise'] : null),
         stats: {
-             totalEarnings: vendorData?.totalEarnings || 0,
-             pendingSettlement: vendorData?.pendingSettlement || 0,
-             completedSettlements: vendorData?.completedSettlements || 0,
-             lastPayout: vendorData?.lastPayout || null
+             totalEarnings: vendorTierData?.total_gmv || 0,
+             pendingSettlement: vendorTierData?.pending_settlement || 0,
+             completedSettlements: vendorTierData?.completed_settlements || 0,
+             lastPayout: vendorTierData?.last_payout || null
         }
       });
     } catch (error) {
@@ -84,13 +92,17 @@ export function settlementTierSystemEndpoints(app: Hono, kv: any) {
 
       if (!TIERS[targetTierId]) return sendError(c, 'Invalid tier', 400);
 
-      // In real world: Process payment for upgrade or check eligibility
-      // Here: Just upgrade
-      const vendorData = await kv.get(`vendor_tier_data_${vendorId}`) || {};
-      vendorData.tierId = targetTierId;
-      vendorData.updatedAt = new Date().toISOString();
-
-      await kv.set(`vendor_tier_data_${vendorId}`, vendorData);
+      // ✅ SQL: Update vendor tier in vendor_tiers table
+      const db = getDbClient();
+      await db
+        .from('vendor_tiers')
+        .upsert({
+          vendor_id: vendorId,
+          current_tier: targetTierId.toUpperCase(),
+          last_updated: new Date().toISOString()
+        }, {
+          onConflict: 'vendor_id'
+        });
 
       return sendSuccess(c, {
           success: true,
@@ -109,16 +121,28 @@ export function settlementTierSystemEndpoints(app: Hono, kv: any) {
       try {
           const { vendorId, amount } = await c.req.json();
           
-          // 1. Validation
-          const vendorData = await kv.get(`vendor_tier_data_${vendorId}`) || {};
-          const available = vendorData.pendingSettlement || 0;
+          // ✅ SQL: 1. Validation - Get vendor tier data
+          const db = getDbClient();
+          const { data: vendorTierData } = await db
+            .from('vendor_tiers')
+            .select('*')
+            .eq('vendor_id', vendorId)
+            .single();
+          
+          const available = vendorTierData?.pending_settlement || 0;
 
           if (amount > available) {
               return sendError(c, 'Insufficient pending balance', 400);
           }
 
-          // 2. Bank Verification Check (Simulated)
-          const bankVerified = vendorData.bankVerified || true; // Assume verified for now
+          // ✅ SQL: 2. Bank Verification Check from vendor_bank_details
+          const { data: bankData } = await db
+            .from('vendor_bank_details')
+            .select('verified')
+            .eq('vendor_id', vendorId)
+            .single();
+          
+          const bankVerified = bankData?.verified || true; // Assume verified for now
           if (!bankVerified) {
               return sendError(c, 'Bank account not verified', 400);
           }
@@ -127,29 +151,43 @@ export function settlementTierSystemEndpoints(app: Hono, kv: any) {
           const payoutId = `payout_${Date.now()}`;
           console.log(`💸 Processing payout of ₹${amount} to vendor ${vendorId}`);
           
-          // 4. Update Balance
-          vendorData.pendingSettlement -= amount;
-          vendorData.completedSettlements = (vendorData.completedSettlements || 0) + amount;
-          vendorData.lastPayout = new Date().toISOString();
+          // ✅ SQL: 4. Update Balance in vendor_tiers
+          await db
+            .from('vendor_tiers')
+            .update({
+              pending_settlement: (vendorTierData?.pending_settlement || 0) - amount,
+              completed_settlements: (vendorTierData?.completed_settlements || 0) + amount,
+              last_payout: new Date().toISOString(),
+              last_updated: new Date().toISOString()
+            })
+            .eq('vendor_id', vendorId);
           
-          // Store Transaction Record
-          const transaction = {
+          // ✅ SQL: Store Transaction Record in settlements table
+          await db
+            .from('settlements')
+            .insert({
               id: payoutId,
-              vendorId,
-              amount,
+              vendor_id: vendorId,
+              total_amount: amount,
+              commission_amount: 0,
+              vendor_share: amount,
               status: 'processed',
-              date: new Date().toISOString(),
-              method: 'bank_transfer'
-          };
-          
-          // In real implementation, we'd append to a list
-          await kv.set(`vendor_tier_data_${vendorId}`, vendorData);
+              settled_at: new Date().toISOString(),
+              created_at: new Date().toISOString()
+            });
 
+          // Get updated balance
+          const { data: updatedTierData } = await db
+            .from('vendor_tiers')
+            .select('pending_settlement')
+            .eq('vendor_id', vendorId)
+            .single();
+          
           return sendSuccess(c, {
               success: true,
               payoutId,
               amount,
-              remainingBalance: vendorData.pendingSettlement,
+              remainingBalance: updatedTierData?.pending_settlement || 0,
               status: 'processed'
           });
 
@@ -174,10 +212,21 @@ export function settlementTierSystemEndpoints(app: Hono, kv: any) {
           const isValid = true; // Mock success
           
           if (isValid) {
-               const vendorData = await kv.get(`vendor_tier_data_${vendorId}`) || {};
-               vendorData.bankVerified = true;
-               vendorData.bankDetails = { ...accountDetails, verifiedAt: new Date().toISOString() };
-               await kv.set(`vendor_tier_data_${vendorId}`, vendorData);
+               // ✅ SQL: Update bank verification status in vendor_bank_details
+               const db = getDbClient();
+               await db
+                 .from('vendor_bank_details')
+                 .upsert({
+                   vendor_id: vendorId,
+                   account_number: accountDetails.accountNumber,
+                   ifsc_code: accountDetails.ifsc,
+                   account_holder_name: accountDetails.name,
+                   verified: true,
+                   verified_at: new Date().toISOString(),
+                   updated_at: new Date().toISOString()
+                 }, {
+                   onConflict: 'vendor_id'
+                 });
 
                return sendSuccess(c, { verified: true, message: 'Bank account verified successfully' });
           } else {

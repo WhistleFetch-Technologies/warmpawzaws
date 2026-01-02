@@ -17,7 +17,7 @@ import { Input } from '../ui/input';
 import { Badge } from '../ui/badge';
 import { Coins, User, Calendar, Wallet, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 interface TestStep {
   id: string;

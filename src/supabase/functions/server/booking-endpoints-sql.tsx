@@ -15,15 +15,15 @@
  * ============================================================================
  */
 
-import { Hono } from "npm:hono";
-import { sendSuccess, sendError } from "./response-utils.ts";
-import { getBookingsRepository } from "../../lib/repositories/bookings.ts";
-import { getVendorsRepository } from "../../lib/repositories/vendors.ts";
-import { getServicesRepository } from "../../lib/repositories/services.ts";
-import { getCustomersRepository } from "../../lib/repositories/customers.ts";
-import { getSchedulingService } from "../../lib/services/scheduling-service.ts";
-import { withTransaction, getDbClient } from "../../lib/db.ts";
-import { createProductionBookingSQL } from "./booking-creation-sql.tsx";
+import { Hono } from "hono";
+import { sendSuccess, sendError } from "./response-utils";
+import { getBookingsRepository } from "../../lib/repositories/bookings";
+import { getVendorsRepository } from "../../lib/repositories/vendors";
+import { getServicesRepository } from "../../lib/repositories/services";
+import { getCustomersRepository } from "../../lib/repositories/customers";
+import { getSchedulingService } from "../../lib/services/scheduling-service";
+import { withTransaction, getDbClient } from "../../lib/db";
+import { createProductionBookingSQL } from "./booking-creation-sql";
 
 export function bookingEndpointsSQL(app: Hono) {
   const bookingsRepo = getBookingsRepository();

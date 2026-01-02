@@ -15,8 +15,8 @@ import {
   MapPin,
   Settings
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+// ✅ FIX: Removed Supabase imports - using API Gateway now
+import { toast } from 'sonner';
 
 interface VendorScheduleManagementProps {
   vendorId: string;
@@ -111,8 +111,6 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
     endTime: '17:00'
   });
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
-
   // Fetch vendor status and availability
   useEffect(() => {
     loadScheduleData();
@@ -123,25 +121,33 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
       setLoading(true);
       console.log('📥 Loading schedule data for vendor:', vendorId);
 
-      // Fetch vendor status
-      const statusRes = await fetch(`${API_BASE}/vendor/status/${vendorId}`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-      });
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
 
-      if (statusRes.ok) {
-        const statusData = await statusRes.json();
-        if (statusData.success) {
+      // Fetch vendor status
+      try {
+        const statusData = await apiCallJson<any>(
+          `${API_GATEWAY_URL}/make-server-3dd53475/vendor/status/${vendorId}`
+        );
+        
+        if (statusData.success && statusData.status) {
           setIsOnline(statusData.status.isOnline);
         }
+      } catch (statusError) {
+        console.warn('Vendor status endpoint not available');
       }
 
       // Fetch availability (new format)
-      const availRes = await fetch(`${API_BASE}/vendor/availability-v2/${vendorId}`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-      });
+      try {
+        const availData = await apiCallJson<any>(
+          `${API_GATEWAY_URL}/make-server-3dd53475/vendor/availability-v2/${vendorId}`
+        );
 
-      if (availRes.ok) {
-        const availData = await availRes.json();
         console.log('📊 Availability API response:', availData);
         if (availData.success && availData.availability && Array.isArray(availData.availability) && availData.availability.length > 0) {
           console.log('✅ Setting availability from API:', availData.availability);
@@ -160,7 +166,7 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
           console.log('✅ Setting default availability:', defaultAvail);
           setAvailability(defaultAvail);
         }
-      } else {
+      } catch (availError) {
         // Initialize default availability for all days
         console.log('⚠️ API call failed, initializing defaults');
         const defaultAvail = initializeDefaultAvailability();
@@ -170,47 +176,37 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
 
       // Fetch vendor's service styles - handle 404 gracefully
       try {
-        const vendorRes = await fetch(`${API_BASE}/vendor/${vendorId}`, {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        });
+        const vendorData = await apiCallJson<any>(
+          `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}`
+        );
 
-        if (vendorRes.ok) {
-          const vendorData = await vendorRes.json();
-          if (vendorData.vendor) {
-            // Get service styles from vendor profile
-            const servicesRes = await fetch(`${API_BASE}/vendor/${vendorId}/services`, {
-              headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        if (vendorData.success && vendorData.vendor) {
+          // Get service styles from vendor profile
+          const servicesData = await apiCallJson<any>(
+            `${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/services`
+          );
+
+          // Services are returned as an object with keys: at_home, at_center, tele
+          // Each containing { services: [], publishedCount: 0 }
+          const allServices: string[] = [];
+          
+          if (servicesData.success && servicesData.services && typeof servicesData.services === 'object') {
+            // Extract service styles from the services object
+            Object.keys(servicesData.services).forEach(style => {
+              const styleData = servicesData.services[style];
+              if (styleData && styleData.services && Array.isArray(styleData.services) && styleData.services.length > 0) {
+                allServices.push(style);
+              }
             });
-
-            if (servicesRes.ok) {
-              const servicesData = await servicesRes.json();
-              // Services are returned as an object with keys: at_home, at_center, tele
-              // Each containing { services: [], publishedCount: 0 }
-              const allServices: string[] = [];
-              
-              if (servicesData.services && typeof servicesData.services === 'object') {
-                // Extract service styles from the services object
-                Object.keys(servicesData.services).forEach(style => {
-                  const styleData = servicesData.services[style];
-                  if (styleData && styleData.services && Array.isArray(styleData.services) && styleData.services.length > 0) {
-                    allServices.push(style);
-                  }
-                });
-              }
-              
-              // If no services configured, default to all service types for demo purposes
-              if (allServices.length === 0) {
-                console.log('⚠️ No services configured for vendor, enabling all service types for schedule management');
-                allServices.push('at_center', 'at_home', 'tele');
-              }
-              
-              setVendorServiceStyles(allServices);
-            }
           }
-        } else {
-          // Vendor not found, default to all service types
-          console.log('⚠️ Vendor not found (404), enabling all service types for schedule management');
-          setVendorServiceStyles(['at_center', 'at_home', 'tele']);
+          
+          // If no services configured, default to all service types for demo purposes
+          if (allServices.length === 0) {
+            console.log('⚠️ No services configured for vendor, enabling all service types for schedule management');
+            allServices.push('at_center', 'at_home', 'tele');
+          }
+          
+          setVendorServiceStyles(allServices);
         }
       } catch (vendorError) {
         console.log('⚠️ Error fetching vendor details, enabling all service types:', vendorError);
@@ -232,23 +228,31 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
     try {
       const newStatus = !isOnline;
       
-      const res = await fetch(`${API_BASE}/vendor/status/${vendorId}`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ isOnline: newStatus })
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          setIsOnline(newStatus);
-        }
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
       }
-    } catch (error) {
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      const statusData = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/status/${vendorId}`,
+        {
+          method: 'PUT',
+          body: JSON.stringify({ isOnline: newStatus })
+        }
+      );
+
+      if (statusData.success) {
+        setIsOnline(newStatus);
+        toast.success(newStatus ? 'You are now online' : 'You are now offline');
+      } else {
+        toast.error(statusData.error || statusData.message || 'Failed to update status');
+      }
+    } catch (error: any) {
       console.error('Error toggling online status:', error);
+      toast.error(error?.message || 'Failed to update status');
     }
   };
 
@@ -260,32 +264,31 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
       
       setSaving(true);
 
-      const res = await fetch(`${API_BASE}/vendor/availability-v2/${vendorId}`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ availability })
-      });
-
-      console.log('📡 Save API response status:', res.status);
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
       
-      if (res.ok) {
-        const data = await res.json();
-        console.log('📊 Save API response data:', data);
-        // ✅ FIX: Handle standardized response format
-        if (data.success || data.data?.success) {
-          toast.success('Schedule saved and published to customer app');
-          setHasPublishedSchedule(true);
-          setIsEditMode(false);
-        } else {
-          const errorMessage = data.error || data.message || 'Failed to save schedule';
-          toast.error(errorMessage);
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+
+      const saveData = await apiCallJson<any>(
+        `${API_GATEWAY_URL}/make-server-3dd53475/vendor/availability-v2/${vendorId}`,
+        {
+          method: 'PUT',
+          body: JSON.stringify({ availability })
         }
+      );
+
+      console.log('📊 Save API response data:', saveData);
+      
+      // ✅ FIX: Handle standardized response format
+      if (saveData.success || saveData.data?.success) {
+        toast.success('Schedule saved and published to customer app');
+        setHasPublishedSchedule(true);
+        setIsEditMode(false);
       } else {
-        const errorData = await res.json().catch(() => ({ error: 'Unknown error occurred' }));
-        const errorMessage = errorData.error || errorData.message || `Failed to save schedule (${res.status})`;
+        const errorMessage = saveData.error || saveData.message || 'Failed to save schedule';
         console.error('❌ Save API error response:', errorMessage);
         toast.error(errorMessage);
       }
@@ -445,11 +448,11 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
   const currentDayAvail = getCurrentDayAvailability();
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="w-full max-w-[430px] mx-auto bg-white min-h-screen pb-24">
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center py-4 lg:py-8">
+      <div className="w-full max-w-[430px] lg:max-w-[900px] mx-auto bg-white min-h-[calc(100vh-2rem)] lg:min-h-[600px] rounded-2xl lg:shadow-xl pb-24 lg:pb-8">
         {/* Header */}
         <div className="sticky top-0 z-10 bg-white border-b border-gray-200">
-          <div className="p-4">
+          <div className="p-4 lg:p-6">
             <div className="flex items-center justify-between mb-4">
               <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
                 <ChevronLeft className="w-6 h-6" />
@@ -490,8 +493,8 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
         </div>
 
         {/* Day Selector */}
-        <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
-          <div className="flex gap-2 overflow-x-auto pb-2 hide-scrollbar">
+        <div className="px-4 lg:px-6 py-3 bg-gray-50 border-b border-gray-200">
+          <div className="flex gap-2 lg:gap-3 overflow-x-auto pb-2 hide-scrollbar">
             {DAYS.map(day => (
               <button
                 key={day.value}
@@ -524,7 +527,7 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
         </div>
 
         {/* Schedule Configuration */}
-        <div className="p-4">
+        <div className="p-4 lg:p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-semibold text-gray-900">{DAYS.find(d => d.value === selectedDay)?.label} Schedule</h2>
             <Button
@@ -757,7 +760,7 @@ function AddTimeWindowModal({
 }) {
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl w-full max-w-[400px]">
+      <div className="bg-white rounded-2xl w-full max-w-[400px] lg:max-w-[500px]">
         <div className="p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Add Time Window</h2>
 
@@ -832,7 +835,7 @@ function AddServiceConfigModal({
   if (availableStyles.length === 0) {
     return (
       <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl w-full max-w-[400px]">
+        <div className="bg-white rounded-2xl w-full max-w-[400px] lg:max-w-[500px]">
           <div className="p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">Add Service Configuration</h2>
             <p className="text-sm text-gray-600 mb-6">All service types have been configured for this day.</p>

@@ -12,21 +12,19 @@
  * Status: ✅ P2 IMPLEMENTATION (5%)
  */
 
-import { Hono } from "npm:hono";
-import * as kv from "./kv_store.tsx";
-import { createClient } from "jsr:@supabase/supabase-js@2.49.8";
-import { ensureBucket } from "./bucket-manager.tsx";
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+// ✅ S3 MIGRATION: Supabase Storage replaced with AWS S3
+import { Hono } from "hono";
+import { getS3Helper, uploadToS3 } from '../../../supabase/lib/storage/s3-helper';
+import {
+  getCustomersRepository,
+  getPetsRepository
+} from '../../../supabase/lib/repositories/index';
 
 export function registerProfilePhotoEndpoints(app: Hono) {
   const BASE_PATH = "/make-server-3dd53475";
   
-  const PROFILE_PHOTOS_BUCKET = 'make-3dd53475-profile-photos';
-
-  // Initialize profile photos bucket (non-blocking, fire-and-forget)
-  ensureBucket(PROFILE_PHOTOS_BUCKET, {
-    public: true,
-    fileSizeLimit: 5242880 // 5MB
-  }).catch(err => console.warn('⚠️ Profile photos bucket init warning:', err));
+  // S3 bucket is configured via PlatformSettingsRepository
   
   // ==========================================================================
   // CUSTOMER PROFILE PHOTO
@@ -48,63 +46,48 @@ export function registerProfilePhotoEndpoints(app: Hono) {
         }, 400);
       }
       
-      // Get customer
-      const customer = await kv.get(`customer:${customerId}`);
+      // ✅ SQL: Get customer
+      const customersRepo = getCustomersRepository();
+      const customer = await customersRepo.findById(customerId);
       if (!customer) {
         return c.json({ error: 'Customer not found' }, 404);
       }
       
-      const supabase = createClient(
-        Deno.env.get('SUPABASE_URL')!,
-        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-      );
-      
-      // Convert base64 to buffer
+      // ✅ S3: Convert base64 to buffer
       const base64Data = photoBase64.replace(/^data:image\/\w+;base64,/, '');
       const buffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
       
       // Generate unique filename
       const fileExtension = fileName?.split('.').pop() || 'jpg';
       const uniqueFileName = `customer_${customerId}_${Date.now()}.${fileExtension}`;
-      const filePath = `customers/${uniqueFileName}`;
+      const s3Key = `profile-photos/customers/${uniqueFileName}`;
       
-      // Delete old photo if exists
-      if (customer.profilePhoto) {
-        const oldPath = customer.profilePhoto.replace(
-          `${Deno.env.get('SUPABASE_URL')}/storage/v1/object/public/${PROFILE_PHOTOS_BUCKET}/`,
-          ''
-        );
-        await supabase.storage.from(PROFILE_PHOTOS_BUCKET).remove([oldPath]);
+      // ✅ S3: Delete old photo if exists
+      const oldPhotoPath = customer.profile_photo_path || customer.profilePhotoPath;
+      if (oldPhotoPath) {
+        const s3 = getS3Helper();
+        try {
+          await s3.deleteFile(oldPhotoPath);
+        } catch (err) {
+          console.warn('Warning: Could not delete old photo:', err);
+        }
       }
       
-      // Upload to Supabase Storage
-      const { data, error } = await supabase.storage
-        .from(PROFILE_PHOTOS_BUCKET)
-        .upload(filePath, buffer, {
-          contentType: `image/${fileExtension}`,
-          upsert: false
-        });
+      // ✅ S3: Upload to S3
+      const s3 = getS3Helper();
+      const uploadResult = await s3.uploadFile(s3Key, buffer, {
+        contentType: `image/${fileExtension}`,
+        acl: 'public-read', // Profile photos should be public
+      });
       
-      if (error) {
-        console.error('Error uploading photo:', error);
-        return c.json({
-          error: 'Failed to upload photo',
-          details: error.message
-        }, 500);
-      }
+      const photoUrl = uploadResult.signedUrl || uploadResult.url;
       
-      // Get public URL
-      const { data: publicUrlData } = supabase.storage
-        .from(PROFILE_PHOTOS_BUCKET)
-        .getPublicUrl(filePath);
-      
-      const photoUrl = publicUrlData.publicUrl;
-      
-      // Update customer profile
-      customer.profilePhoto = photoUrl;
-      customer.profilePhotoPath = filePath;
-      customer.updatedAt = new Date().toISOString();
-      await kv.set(`customer:${customerId}`, customer);
+      // ✅ SQL: Update customer profile
+      await customersRepo.update(customerId, {
+        profile_photo_url: photoUrl,
+        profile_photo_path: s3Key,
+        updated_at: new Date().toISOString()
+      });
       
       console.log(`📸 Profile photo uploaded for customer ${customerId}`);
       
@@ -128,34 +111,36 @@ export function registerProfilePhotoEndpoints(app: Hono) {
     try {
       const customerId = c.req.param('customerId');
       
-      const customer = await kv.get(`customer:${customerId}`);
+      // ✅ SQL: Get customer
+      const customersRepo = getCustomersRepository();
+      const customer = await customersRepo.findById(customerId);
       if (!customer) {
         return c.json({ error: 'Customer not found' }, 404);
       }
       
-      if (!customer.profilePhoto) {
+      const photoPath = customer.profile_photo_path || customer.profilePhotoPath;
+      if (!photoPath && !customer.profile_photo_url && !customer.profilePhoto) {
         return c.json({
           error: 'No profile photo to delete'
         }, 400);
       }
       
-      const supabase = createClient(
-        Deno.env.get('SUPABASE_URL')!,
-        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-      );
-      
-      // Delete from storage
-      if (customer.profilePhotoPath) {
-        await supabase.storage
-          .from(PROFILE_PHOTOS_BUCKET)
-          .remove([customer.profilePhotoPath]);
+      // ✅ S3: Delete from S3
+      if (photoPath) {
+        const s3 = getS3Helper();
+        try {
+          await s3.deleteFile(photoPath);
+        } catch (err) {
+          console.warn('Warning: Could not delete customer photo from S3:', err);
+        }
       }
       
-      // Update customer profile
-      customer.profilePhoto = null;
-      customer.profilePhotoPath = null;
-      customer.updatedAt = new Date().toISOString();
-      await kv.set(`customer:${customerId}`, customer);
+      // ✅ SQL: Update customer profile
+      await customersRepo.update(customerId, {
+        profile_photo_url: null,
+        profile_photo_path: null,
+        updated_at: new Date().toISOString()
+      });
       
       console.log(`🗑️ Profile photo deleted for customer ${customerId}`);
       
@@ -190,69 +175,56 @@ export function registerProfilePhotoEndpoints(app: Hono) {
         }, 400);
       }
       
-      // Get pet
-      const pet = await kv.get(`pet:${petId}`);
+      // ✅ SQL: Get pet
+      const petsRepo = getPetsRepository();
+      const pet = await petsRepo.findById(petId);
       if (!pet) {
         return c.json({ error: 'Pet not found' }, 404);
       }
       
       // Verify ownership
-      if (pet.customerId !== customerId) {
+      const petCustomerId = pet.customer_id || pet.customerId;
+      if (petCustomerId !== customerId) {
         return c.json({
           error: 'Unauthorized: Pet does not belong to this customer'
         }, 403);
       }
       
-      const supabase = createClient(
-        Deno.env.get('SUPABASE_URL')!,
-        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-      );
-      
-      // Convert base64 to buffer
+      // ✅ S3: Convert base64 to buffer
       const base64Data = photoBase64.replace(/^data:image\/\w+;base64,/, '');
       const buffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
       
       // Generate unique filename
       const fileExtension = fileName?.split('.').pop() || 'jpg';
       const uniqueFileName = `pet_${petId}_${Date.now()}.${fileExtension}`;
-      const filePath = `pets/${uniqueFileName}`;
+      const s3Key = `profile-photos/pets/${uniqueFileName}`;
       
-      // Delete old photo if exists
-      if (pet.profilePhoto) {
-        const oldPath = pet.profilePhotoPath;
-        if (oldPath) {
-          await supabase.storage.from(PROFILE_PHOTOS_BUCKET).remove([oldPath]);
+      // ✅ S3: Delete old photo if exists
+      const oldPetPhotoPath = pet.profile_photo_path || pet.profilePhotoPath;
+      if (oldPetPhotoPath) {
+        const s3 = getS3Helper();
+        try {
+          await s3.deleteFile(oldPetPhotoPath);
+        } catch (err) {
+          console.warn('Warning: Could not delete old pet photo:', err);
         }
       }
       
-      // Upload to Supabase Storage
-      const { data, error } = await supabase.storage
-        .from(PROFILE_PHOTOS_BUCKET)
-        .upload(filePath, buffer, {
-          contentType: `image/${fileExtension}`,
-          upsert: false
-        });
+      // ✅ S3: Upload to S3
+      const s3 = getS3Helper();
+      const uploadResult = await s3.uploadFile(s3Key, buffer, {
+        contentType: `image/${fileExtension}`,
+        acl: 'public-read',
+      });
       
-      if (error) {
-        console.error('Error uploading pet photo:', error);
-        return c.json({
-          error: 'Failed to upload photo',
-          details: error.message
-        }, 500);
-      }
+      const photoUrl = uploadResult.signedUrl || uploadResult.url;
       
-      // Get public URL
-      const { data: publicUrlData } = supabase.storage
-        .from(PROFILE_PHOTOS_BUCKET)
-        .getPublicUrl(filePath);
-      
-      const photoUrl = publicUrlData.publicUrl;
-      
-      // Update pet profile
-      pet.profilePhoto = photoUrl;
-      pet.profilePhotoPath = filePath;
-      pet.updatedAt = new Date().toISOString();
-      await kv.set(`pet:${petId}`, pet);
+      // ✅ SQL: Update pet profile
+      await petsRepo.update(petId, {
+        profile_photo_url: photoUrl,
+        profile_photo_path: s3Key,
+        updated_at: new Date().toISOString()
+      });
       
       console.log(`📸 Profile photo uploaded for pet ${petId}`);
       
@@ -284,39 +256,42 @@ export function registerProfilePhotoEndpoints(app: Hono) {
         }, 400);
       }
       
-      const pet = await kv.get(`pet:${petId}`);
+      // ✅ SQL: Get pet
+      const petsRepo = getPetsRepository();
+      const pet = await petsRepo.findById(petId);
       if (!pet) {
         return c.json({ error: 'Pet not found' }, 404);
       }
       
       // Verify ownership
-      if (pet.customerId !== customerId) {
+      const petCustomerId = pet.customer_id || pet.customerId;
+      if (petCustomerId !== customerId) {
         return c.json({ error: 'Unauthorized' }, 403);
       }
       
-      if (!pet.profilePhoto) {
+      const photoPath = pet.profile_photo_path || pet.profilePhotoPath;
+      if (!photoPath && !pet.profile_photo_url && !pet.profilePhoto) {
         return c.json({
           error: 'No profile photo to delete'
         }, 400);
       }
       
-      const supabase = createClient(
-        Deno.env.get('SUPABASE_URL')!,
-        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-      );
-      
-      // Delete from storage
-      if (pet.profilePhotoPath) {
-        await supabase.storage
-          .from(PROFILE_PHOTOS_BUCKET)
-          .remove([pet.profilePhotoPath]);
+      // ✅ S3: Delete from S3
+      if (photoPath) {
+        const s3 = getS3Helper();
+        try {
+          await s3.deleteFile(photoPath);
+        } catch (err) {
+          console.warn('Warning: Could not delete pet photo from S3:', err);
+        }
       }
       
-      // Update pet profile
-      pet.profilePhoto = null;
-      pet.profilePhotoPath = null;
-      pet.updatedAt = new Date().toISOString();
-      await kv.set(`pet:${petId}`, pet);
+      // ✅ SQL: Update pet profile
+      await petsRepo.update(petId, {
+        profile_photo_url: null,
+        profile_photo_path: null,
+        updated_at: new Date().toISOString()
+      });
       
       console.log(`🗑️ Profile photo deleted for pet ${petId}`);
       
@@ -347,65 +322,55 @@ export function registerProfilePhotoEndpoints(app: Hono) {
         }, 400);
       }
       
-      // Get pet
-      const pet = await kv.get(`pet:${petId}`);
+      // ✅ SQL: Get pet
+      const petsRepo = getPetsRepository();
+      const pet = await petsRepo.findById(petId);
       if (!pet) {
         return c.json({ error: 'Pet not found' }, 404);
       }
       
       // Verify ownership
-      if (pet.customerId !== customerId) {
+      const petCustomerId = pet.customer_id || pet.customerId;
+      if (petCustomerId !== customerId) {
         return c.json({ error: 'Unauthorized' }, 403);
       }
       
-      const supabase = createClient(
-        Deno.env.get('SUPABASE_URL')!,
-        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-      );
-      
-      // Convert base64 to buffer
+      // ✅ S3: Convert base64 to buffer
       const base64Data = photoBase64.replace(/^data:image\/\w+;base64,/, '');
       const buffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
       
       // Generate unique filename
       const fileExtension = fileName?.split('.').pop() || 'jpg';
       const uniqueFileName = `pet_gallery_${petId}_${Date.now()}.${fileExtension}`;
-      const filePath = `pets/gallery/${uniqueFileName}`;
+      const s3Key = `profile-photos/pets/gallery/${uniqueFileName}`;
       
-      // Upload to Supabase Storage
-      const { data, error } = await supabase.storage
-        .from(PROFILE_PHOTOS_BUCKET)
-        .upload(filePath, buffer, {
-          contentType: `image/${fileExtension}`,
-          upsert: false
-        });
-      
-      if (error) {
-        return c.json({
-          error: 'Failed to upload photo',
-          details: error.message
-        }, 500);
-      }
-      
-      // Get public URL
-      const { data: publicUrlData } = supabase.storage
-        .from(PROFILE_PHOTOS_BUCKET)
-        .getPublicUrl(filePath);
-      
-      const photoUrl = publicUrlData.publicUrl;
-      
-      // Add to pet gallery
-      pet.gallery = pet.gallery || [];
-      pet.gallery.push({
-        id: `gallery_${Date.now()}`,
-        url: photoUrl,
-        path: filePath,
-        caption: caption || '',
-        uploadedAt: new Date().toISOString()
+      // ✅ S3: Upload to S3
+      const s3 = getS3Helper();
+      const uploadResult = await s3.uploadFile(s3Key, buffer, {
+        contentType: `image/${fileExtension}`,
+        acl: 'public-read',
       });
       
-      pet.updatedAt = new Date().toISOString();
-      await kv.set(`pet:${petId}`, pet);
+      const photoUrl = uploadResult.signedUrl || uploadResult.url;
+      
+      // ✅ SQL: Add to pet gallery
+      const currentGallery = pet.gallery || pet.photo_gallery || [];
+      const updatedGallery = [
+        ...currentGallery,
+        {
+          id: `gallery_${Date.now()}`,
+          url: photoUrl,
+          path: s3Key,
+          caption: caption || '',
+          uploadedAt: new Date().toISOString()
+        }
+      ];
+      
+      await petsRepo.update(petId, {
+        photo_gallery: updatedGallery,
+        gallery: updatedGallery, // Backward compatibility
+        updated_at: new Date().toISOString()
+      });
       
       console.log(`📸 Photo added to gallery for pet ${petId}`);
       
@@ -430,15 +395,19 @@ export function registerProfilePhotoEndpoints(app: Hono) {
     try {
       const petId = c.req.param('petId');
       
-      const pet = await kv.get(`pet:${petId}`);
+      // ✅ SQL: Get pet
+      const petsRepo = getPetsRepository();
+      const pet = await petsRepo.findById(petId);
       if (!pet) {
         return c.json({ error: 'Pet not found' }, 404);
       }
       
+      const gallery = pet.gallery || pet.photo_gallery || [];
+      
       return c.json({
         success: true,
-        gallery: pet.gallery || [],
-        count: (pet.gallery || []).length
+        gallery,
+        count: gallery.length
       });
       
     } catch (error) {

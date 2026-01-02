@@ -5,7 +5,7 @@ import { VendorVideoCallContainer } from './VendorVideoCallContainer';
 import { VendorTeleConsultationEnded } from './VendorTeleConsultationEnded';
 import { VendorConsultationNotes } from './VendorConsultationNotes';
 import { VendorPrescriptionForm } from './VendorPrescriptionForm';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 interface VendorTeleConsultationFlowProps {
   vendorData: any;

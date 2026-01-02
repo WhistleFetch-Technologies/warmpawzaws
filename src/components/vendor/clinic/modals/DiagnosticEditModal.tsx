@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { X, Microscope, Save } from 'lucide-react';
 import { Button } from '../../../ui/button';
 import { Input } from '../../../ui/input';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 interface DiagnosticTest {
   id: string;

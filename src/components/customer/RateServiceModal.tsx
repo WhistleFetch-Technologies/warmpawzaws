@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { X, Star, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { Button } from '../ui/button';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { awardReviewPoints } from '../../utils/loyalty-helper'; // ✅ NEW
 
 interface RateServiceModalProps {

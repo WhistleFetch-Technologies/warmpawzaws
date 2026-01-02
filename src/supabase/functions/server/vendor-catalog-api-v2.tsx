@@ -10,8 +10,8 @@
  * - Vendor App filters services by applicableRoles
  */
 
-import type { Hono } from "npm:hono@4.6.14";
-import * as kv from "./kv_store.tsx";
+import type { Hono } from "hono";
+import * as kv from "./kv_store";
 
 export function registerVendorCatalogAPIV2(app: Hono) {
   

@@ -4,7 +4,7 @@ import { ProblemGridSelector } from './ProblemGridSelector';
 import { VendorDiscoveryByProblem } from './VendorDiscoveryByProblem';
 import { BookingFlowDispatcher } from './BookingFlowDispatcher';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 type ViewType = 
   | 'landing'

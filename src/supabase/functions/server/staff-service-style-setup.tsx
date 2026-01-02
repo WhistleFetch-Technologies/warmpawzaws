@@ -11,8 +11,14 @@
  * Can be called via: POST /make-server-3dd53475/admin/setup-staff-service-styles
  */
 
-import { Hono } from 'npm:hono@4';
-import * as kv from './kv_store.tsx';
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from 'hono';
+import {
+  getVendorsRepository,
+  getStaffRepository,
+  getVendorServicesRepository,
+  getStaffSettingsRepository
+} from '../../../supabase/lib/repositories/index';
 
 interface StylePreferences {
   staffId: string;
@@ -267,20 +273,39 @@ async function createStaffFromVendor(vendor: any): Promise<string> {
     createdBy: 'system_setup'
   };
   
-  // Save staff member
-  await kv.set(`staff:${staffId}`, staffMember);
+  // ✅ SQL: Save staff member
+  const staffRepo = getStaffRepository();
+  await staffRepo.create({
+    id: staffId,
+    vendor_id: vendor.id || vendor.vendorId,
+    full_name: vendor.fullName,
+    phone: vendor.phone,
+    email: vendor.email,
+    photo_url: vendor.profilePhoto || null,
+    role_type: vendor.roleId,
+    role_name: vendor.roleName,
+    specializations: vendor.specializations || [],
+    experience_years: parseInt(vendor.experience) || 0,
+    qualifications: vendor.qualifications || [],
+    is_active: true,
+    is_online: false,
+    status: 'active',
+    location: vendor.coordinates ? JSON.stringify({
+      latitude: vendor.coordinates.lat,
+      longitude: vendor.coordinates.lng,
+      address: vendor.address,
+      updatedAt: new Date().toISOString()
+    }) : null,
+    rating: vendor.rating || 4.5,
+    review_count: vendor.totalReviews || 0,
+    completed_bookings: vendor.completedBookings || 0,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    created_by: 'system_setup'
+  });
   
-  // Create indexes
-  const cleanPhone = vendor.phone.replace(/[^0-9]/g, '');
-  await kv.set(`staff:phone:${cleanPhone}`, staffId);
-  
-  // Add to vendor's staff list
-  const vendorStaffKey = `vendor:${vendor.id || vendor.vendorId}:staff`;
-  const vendorStaff = await kv.get(vendorStaffKey) || [];
-  if (!vendorStaff.includes(staffId)) {
-    vendorStaff.push(staffId);
-    await kv.set(vendorStaffKey, vendorStaff);
-  }
+  // ✅ SQL: Create phone index (handled by VendorPhoneIndexRepository or staff table)
+  // Phone index is now in the staff table directly
   
   console.log(`  ✅ Created staff: ${staffId} (${staffMember.fullName})`);
   
@@ -338,7 +363,25 @@ async function createServicesForStaff(
         createdBy: 'system_setup'
       };
       
-      await kv.set(`staff:${staffId}:service:${serviceId}`, service);
+      // ✅ SQL: Create service
+      const servicesRepo = getVendorServicesRepository();
+      await servicesRepo.create({
+        id: serviceId,
+        staff_id: staffId,
+        vendor_id: vendorId,
+        service_name: template.serviceName,
+        category_name: template.categoryName,
+        sub_category_name: template.subCategoryName,
+        description: template.description,
+        price: template.price,
+        duration: template.duration,
+        service_style: serviceStyle,
+        is_active: true,
+        is_available: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        created_by: 'system_setup'
+      });
       servicesCreated++;
     }
   }
@@ -373,9 +416,12 @@ export function staffServiceStyleSetupEndpoints(app: Hono) {
         errors: [] as any[]
       };
       
-      // Step 1: Get all approved vendors
-      const allVendors = await kv.getByPrefix('vendor:vendor_');
-      const approvedVendors = allVendors.filter((v: any) => v.applicationStatus === 'approved');
+      // ✅ SQL: Get all approved vendors
+      const vendorsRepo = getVendorsRepository();
+      const allVendors = await vendorsRepo.findAll();
+      const approvedVendors = allVendors.filter((v: any) => 
+        v.application_status === 'approved' || v.applicationStatus === 'approved'
+      );
       
       console.log(`📊 Found ${approvedVendors.length} approved vendors`);
       
@@ -385,36 +431,42 @@ export function staffServiceStyleSetupEndpoints(app: Hono) {
           console.log(`\n📦 Processing: ${vendor.fullName} (${vendor.roleId})`);
           results.vendorsProcessed++;
           
-          // Check if vendor already has staff
-          const vendorStaffKey = `vendor:${vendor.id || vendor.vendorId}:staff`;
-          let vendorStaff = await kv.get(vendorStaffKey) || [];
+          // ✅ SQL: Check if vendor already has staff
+          const staffRepo = getStaffRepository();
+          const existingStaff = await staffRepo.findByVendor(vendor.id || vendor.vendorId);
           
           let staffId: string;
           
-          if (vendorStaff.length === 0) {
+          if (existingStaff.length === 0) {
             // Create staff member from vendor
             console.log(`  🆕 No staff found, creating staff member...`);
             staffId = await createStaffFromVendor(vendor);
             results.staffCreated++;
           } else {
             // Use existing staff
-            staffId = vendorStaff[0];
+            staffId = existingStaff[0].id;
             console.log(`  ℹ️  Using existing staff: ${staffId}`);
             results.staffUpdated++;
           }
           
-          // Step 3: Get or create style preferences
-          const prefsKey = `staff:${staffId}:style_preferences`;
-          let existingPrefs = await kv.get(prefsKey);
+          // ✅ SQL: Get or create style preferences
+          const staffSettingsRepo = getStaffSettingsRepository();
+          let existingPrefs = await staffSettingsRepo.findByStaff(staffId);
           
-          if (!existingPrefs) {
+          if (!existingPrefs || existingPrefs.length === 0) {
             console.log(`  🔧 Creating service style preferences...`);
             
             // Determine which styles to enable based on vendor's serviceStyles
             const vendorStyles = vendor.serviceStyles || [vendor.serviceStyle || 'at_center'];
             const preferences = createStylePreferences(staffId, vendorStyles);
             
-            await kv.set(prefsKey, preferences);
+            await staffSettingsRepo.create({
+              staff_id: staffId,
+              setting_type: 'style_preferences',
+              setting_value: preferences,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            });
             console.log(`  ✅ Style preferences created:`, {
               at_center: preferences.at_center.enabled,
               at_home: preferences.at_home.enabled,
@@ -488,7 +540,9 @@ export function staffServiceStyleSetupEndpoints(app: Hono) {
    */
   app.get('/make-server-3dd53475/admin/staff-style-status', async (c) => {
     try {
-      const allStaff = await kv.getByPrefix('staff:staff_');
+      // ✅ SQL: Get all staff
+      const staffRepo = getStaffRepository();
+      const allStaff = await staffRepo.findAll();
       
       const stats = {
         totalStaff: allStaff.length,
@@ -502,8 +556,10 @@ export function staffServiceStyleSetupEndpoints(app: Hono) {
         byRole: {} as Record<string, any>
       };
       
+      const staffSettingsRepo = getStaffSettingsRepository();
       for (const staff of allStaff) {
-        const prefs = await kv.get(`staff:${staff.id}:style_preferences`);
+        const prefsData = await staffSettingsRepo.findByStaff(staff.id);
+        const prefs = prefsData && prefsData.length > 0 ? prefsData[0].setting_value : null;
         
         if (prefs) {
           stats.withPreferences++;
@@ -516,7 +572,7 @@ export function staffServiceStyleSetupEndpoints(app: Hono) {
         }
         
         // Track by role
-        const roleType = staff.roleType;
+        const roleType = staff.role_type || staff.roleType;
         if (!stats.byRole[roleType]) {
           stats.byRole[roleType] = {
             total: 0,

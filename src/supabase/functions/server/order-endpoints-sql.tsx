@@ -12,10 +12,10 @@
  * ============================================================================
  */
 
-import { Hono } from "npm:hono";
-import { sendSuccess, sendError } from "./response-utils.ts";
-import { getDbClient, withTransaction } from "../../lib/db.ts";
-import { getPaymentsRepository } from "../../lib/repositories/payments.ts";
+import { Hono } from "hono";
+import { sendSuccess, sendError } from "./response-utils";
+import { getDbClient, withTransaction } from "../../lib/db";
+import { getPaymentsRepository } from "../../lib/repositories/payments";
 
 export function orderEndpointsSQL(app: Hono) {
   const client = getDbClient();

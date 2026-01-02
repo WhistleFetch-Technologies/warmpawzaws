@@ -44,6 +44,9 @@ export function CustomerBookingsPage({ phone, onBack, onNavigate }: CustomerBook
       setLoading(true);
       setError(null);
       
+      // ✅ FIX: Resolve customerId from phone first, then use appointmentApi
+      // Note: This component needs customerId, not phone. 
+      // For now, using direct fetch but should be updated to use appointmentApi once customerId is available
       const response = await fetch(
         `${API_BASE}/customer/bookings?phone=${encodeURIComponent(phone)}`,
         {

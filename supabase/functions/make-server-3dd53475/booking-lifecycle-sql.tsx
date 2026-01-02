@@ -26,7 +26,7 @@ import { sendSuccess, sendError } from "./response-utils.ts";
 import { getBookingsRepository } from "../../lib/repositories/bookings.ts";
 import { getCustomersRepository } from "../../lib/repositories/customers.ts";
 import { getNotificationsRepository } from "../../lib/repositories/notifications.ts";
-import { triggerBookingNotification } from "./sms-notification-service-enhanced.tsx";
+import { triggerBookingNotification } from "./sms-notification-service-enhanced-sql.tsx"; // ✅ FIXED: Updated to SQL version
 
 export function registerBookingLifecycleEndpoints(app: Hono) {
 

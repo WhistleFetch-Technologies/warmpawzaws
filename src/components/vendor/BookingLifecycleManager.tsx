@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
 import { CheckCircle2, Clock, PlayCircle, XCircle, Key, Copy, Check } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { copyTextToClipboard } from '../../utils/shareUtils';
 import { projectId, publicAnonKey } from '../../utils/supabase/info'; // ✅ FIX: Add missing imports
 

@@ -7,8 +7,8 @@ import { Badge } from '../ui/badge';
 import { Separator } from '../ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { Crown, Building2, Wallet, CheckCircle2, AlertCircle, ChevronRight, Edit2, Landmark, Settings as SettingsIcon } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { toast } from 'sonner';
+// ✅ FIX: Removed Supabase imports - using API Gateway now
 import { TierUpgradeModal } from './TierUpgradeModal';
 import { BankAccountValidation } from './BankAccountValidation';
 import { CenterProfileManager } from './CenterProfileManager';
@@ -33,9 +33,7 @@ export function VendorPaymentSettings({ vendorId, vendorData }: VendorPaymentSet
 
   // 🔌 Load capabilities to determine if vendor has facility management
   const { capabilities } = useVendorCapabilities(vendorData?.roleId);
-  const hasFacilityCapability = capabilities.facility || false;
-
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const hasFacilityCapability = (capabilities as any).facility || capabilities.facility_management || false;
 
   useEffect(() => {
     loadData();
@@ -44,27 +42,32 @@ export function VendorPaymentSettings({ vendorId, vendorData }: VendorPaymentSet
   const loadData = async () => {
     setLoading(true);
     try {
-      const [tierRes, bankRes, earningsRes] = await Promise.all([
-        fetch(`${API_BASE}/vendor/${vendorId}/payment-tier`, { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }),
-        fetch(`${API_BASE}/vendor/${vendorId}/bank-details`, { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }),
-        fetch(`${API_BASE}/ecommerce/payments/vendor/${vendorId}/earnings`, { headers: { 'Authorization': `Bearer ${publicAnonKey}` } })
+      // ✅ FIX: Use API Gateway URL instead of Supabase
+      const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '';
+      if (!API_GATEWAY_URL) {
+        throw new Error('API Gateway URL not configured');
+      }
+      
+      const { apiCallJson } = await import('@warmpawz/api-client/http');
+      
+      const [tierData, bankData, earningsData] = await Promise.allSettled([
+        apiCallJson<any>(`${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/payment-tier`),
+        apiCallJson<any>(`${API_GATEWAY_URL}/make-server-3dd53475/vendor/${vendorId}/bank-details`),
+        apiCallJson<any>(`${API_GATEWAY_URL}/make-server-3dd53475/ecommerce/payments/vendor/${vendorId}/earnings`)
       ]);
 
-      if (tierRes.ok) {
-        const data = await tierRes.json();
-        setTier(data.tier);
+      if (tierData.status === 'fulfilled' && tierData.value.success) {
+        setTier(tierData.value.tier);
       }
-      if (bankRes.ok) {
-        const data = await bankRes.json();
-        setBankDetails(data.bankDetails || {});
+      if (bankData.status === 'fulfilled' && bankData.value.success) {
+        setBankDetails(bankData.value.bankDetails || {});
       }
-      if (earningsRes.ok) {
-        const data = await earningsRes.json();
-        setEarnings(data.earnings || { total: 0, pending: 0, paidOut: 0 });
+      if (earningsData.status === 'fulfilled' && earningsData.value.success) {
+        setEarnings(earningsData.value.earnings || { total: 0, pending: 0, paidOut: 0 });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading payment data:', error);
-      toast.error('Failed to load payment settings');
+      toast.error(error?.message || 'Failed to load payment settings');
     } finally {
       setLoading(false);
     }

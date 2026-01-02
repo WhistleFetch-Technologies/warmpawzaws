@@ -14,7 +14,7 @@ import {
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '../../ui/sheet';
 import { Card } from '../../ui/card';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 interface GroomingCenterListViewProps {
   phone: string;

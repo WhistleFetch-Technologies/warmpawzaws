@@ -12,8 +12,8 @@
  * - System alerts
  */
 
-import type { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
+import type { Hono } from 'hono';
+import * as kv from './kv_store';
 
 const BASE_PATH = '/make-server-3dd53475';
 

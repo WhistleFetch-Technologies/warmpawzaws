@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Package, AlertTriangle, TrendingUp, Search, Download, Edit2, Check, Upload } from 'lucide-react';
 import { projectId, publicAnonKey } from '../../../utils/supabase/info';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 interface InventoryManagementProps {
   sellerId: string;

@@ -4,7 +4,7 @@
  * Each service in a package is a "milestone" that requires customer OTP for completion
  */
 
-import { Hono } from 'npm:hono@4';
+import { Hono } from 'hono';
 
 export function packageMilestoneEndpoints(app: Hono, kvStore: any) {
   

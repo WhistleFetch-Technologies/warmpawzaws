@@ -1,17 +1,17 @@
-import { Hono } from 'npm:hono';
-import { broadcastOrderUpdate } from './websocket-server.tsx';
-import { getProductsRepository } from '../../../supabase/lib/repositories/products.ts';
-import { getEcommerceCategoriesRepository } from '../../../supabase/lib/repositories/ecommerce-categories.ts';
-import { getEcommerceCommissionSettingsRepository } from '../../../supabase/lib/repositories/ecommerce-commission-settings.ts';
-import { getPromotionsRepository } from '../../../supabase/lib/repositories/promotions.ts';
-import { getVendorsRepository } from '../../../supabase/lib/repositories/vendors.ts';
-import { getOrdersRepository } from '../../../supabase/lib/repositories/orders.ts';
-import { getWalletsRepository } from '../../../supabase/lib/repositories/wallets.ts';
-import { getReturnsRepository } from '../../../supabase/lib/repositories/returns.ts';
-import { getAdvertisingRepository } from '../../../supabase/lib/repositories/advertising.ts';
-import { getDisputesRepository } from '../../../supabase/lib/repositories/disputes.ts';
-import { getDbClient } from '../../../supabase/lib/db.ts';
-import { sendSuccess, sendError } from '../make-server-3dd53475/response-utils.ts';
+import { Hono } from 'hono';
+import { broadcastOrderUpdate } from './websocket-server';
+import { getProductsRepository } from '../../../supabase/lib/repositories/products';
+import { getEcommerceCategoriesRepository } from '../../../supabase/lib/repositories/ecommerce-categories';
+import { getEcommerceCommissionSettingsRepository } from '../../../supabase/lib/repositories/ecommerce-commission-settings';
+import { getPromotionsRepository } from '../../../supabase/lib/repositories/promotions';
+import { getVendorsRepository } from '../../../supabase/lib/repositories/vendors';
+import { getOrdersRepository } from '../../../supabase/lib/repositories/orders';
+import { getWalletsRepository } from '../../../supabase/lib/repositories/wallets';
+import { getReturnsRepository } from '../../../supabase/lib/repositories/returns';
+import { getAdvertisingRepository } from '../../../supabase/lib/repositories/advertising';
+import { getDisputesRepository } from '../../../supabase/lib/repositories/disputes';
+import { getDbClient } from '../../../supabase/lib/db';
+import { sendSuccess, sendError } from '../make-server-3dd53475/response-utils';
 
 const ecommerce = new Hono();
 

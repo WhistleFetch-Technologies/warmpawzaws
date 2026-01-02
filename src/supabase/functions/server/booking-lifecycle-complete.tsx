@@ -12,20 +12,20 @@
  * 6. Payout scheduled based on admin policies
  */
 
-import { Hono } from "npm:hono";
-import { sendSuccess, sendError } from "./response-utils.ts";
-import { TIER_CONFIG } from "./tier-system.tsx";
-import { getOTPRequirements } from "./service-category-helpers.tsx";
-import { createNotificationHelper } from "./notification-system.tsx";
-import { createRazorpayPayout } from "./razorpay-marketplace-payout.tsx";
+import { Hono } from "hono";
+import { sendSuccess, sendError } from "./response-utils";
+import { TIER_CONFIG } from "./tier-system";
+import { getOTPRequirements } from "./service-category-helpers";
+import { createNotificationHelper } from "./notification-system";
+import { createRazorpayPayout } from "./razorpay-marketplace-payout";
 // ✅ SQL Repositories
-import { getBookingsRepository } from "../../../supabase/lib/repositories/bookings.ts";
-import { getCustomersRepository } from "../../../supabase/lib/repositories/customers.ts";
-import { getVendorsRepository } from "../../../supabase/lib/repositories/vendors.ts";
-import { getSettlementsRepository } from "../../../supabase/lib/repositories/settlements.ts";
-import { getVendorEarningsRepository } from "../../../supabase/lib/repositories/vendor-earnings.ts";
-import { getPayoutsRepository } from "../../../supabase/lib/repositories/payouts.ts";
-import { getDbClient, withTransaction } from "../../../supabase/lib/db.ts";
+import { getBookingsRepository } from "../../../supabase/lib/repositories/bookings";
+import { getCustomersRepository } from "../../../supabase/lib/repositories/customers";
+import { getVendorsRepository } from "../../../supabase/lib/repositories/vendors";
+import { getSettlementsRepository } from "../../../supabase/lib/repositories/settlements";
+import { getVendorEarningsRepository } from "../../../supabase/lib/repositories/vendor-earnings";
+import { getPayoutsRepository } from "../../../supabase/lib/repositories/payouts";
+import { getDbClient, withTransaction } from "../../../supabase/lib/db";
 // ✅ Note: Razorpay credentials now fetched from platform settings via createRazorpayPayout
 
 export function bookingLifecycleCompleteEndpoints(app: Hono) {
@@ -196,13 +196,15 @@ export function bookingLifecycleCompleteEndpoints(app: Hono) {
           }
 
           // Award loyalty points
+          // ✅ Lambda: Use relative path or API Gateway URL for internal calls
+          const apiBaseUrl = process.env.API_GATEWAY_URL || 'https://api.warmpawz.com';
           const loyaltyResponse = await fetch(
-            `${Deno.env.get('SUPABASE_URL')}/functions/v1/make-server-3dd53475/loyalty/process-action`,
+            `${apiBaseUrl}/make-server-3dd53475/loyalty/process-action`,
             {
               method: 'POST',
               headers: { 
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`
+                'Authorization': `Bearer ${process.env.API_KEY || ''}`
               },
               body: JSON.stringify({
                 userId: booking.customer_id,

@@ -1,5 +1,5 @@
-import { Hono } from "npm:hono";
-import { sendSuccess, sendError } from "./response-utils.ts";
+import { Hono } from "hono";
+import { sendSuccess, sendError } from "./response-utils";
 
 /**
  * 🏦 AUTOMATED BANK VERIFICATION (RAZORPAY)
@@ -29,7 +29,14 @@ interface BankVerification {
   updatedAt: string;
 }
 
-export function automatedBankVerificationEndpoints(app: Hono, kv: any) {
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import {
+  getBankAccountsRepository,
+  getVendorBankAuditRepository,
+  getDbClient
+} from '../../../supabase/lib/repositories/index';
+
+export function automatedBankVerificationEndpoints(app: Hono) {
   const BASE_PATH = "/make-server-3dd53475";
 
   // ========================================
@@ -63,17 +70,30 @@ export function automatedBankVerificationEndpoints(app: Hono, kv: any) {
         updatedAt: new Date().toISOString(),
       };
 
-      await kv.set(`bank_verification_${accountId}`, verification);
-      await kv.set(`bank_verification_vendor_${vendorId}`, accountId);
+      // ✅ SQL: Store bank verification in vendor_bank_details table
+      const bankAccountsRepo = getBankAccountsRepository();
+      await bankAccountsRepo.create({
+        vendor_id: vendorId,
+        account_holder_name: accountHolderName,
+        account_number: accountNumber,
+        ifsc_code: ifscCode,
+        account_type: 'savings',
+        is_primary: false,
+        verification_status: 'pending'
+      });
 
       // Simulate Razorpay verification (in production, call Razorpay API)
       setTimeout(async () => {
-        verification.verificationStatus = 'verified';
-        verification.verifiedAt = new Date().toISOString();
-        verification.razorpayFundAccountId = `fa_${Math.random().toString(36).substr(2, 15)}`;
-        verification.updatedAt = new Date().toISOString();
-        
-        await kv.set(`bank_verification_${accountId}`, verification);
+        // ✅ SQL: Update verification status in vendor_bank_details table
+        const bankAccountsRepo = getBankAccountsRepository();
+        const accounts = await bankAccountsRepo.findByVendor(vendorId);
+        const account = accounts.find(acc => acc.account_number === accountNumber);
+        if (account) {
+          await bankAccountsRepo.update(account.id, {
+            verification_status: 'verified',
+            razorpay_account_id: `fa_${Math.random().toString(36).substr(2, 15)}`
+          });
+        }
       }, 2000);
 
       console.log(`✅ Bank verification initiated: ${accountId}`);
@@ -92,11 +112,26 @@ export function automatedBankVerificationEndpoints(app: Hono, kv: any) {
     try {
       const accountId = c.req.param('accountId');
 
-      const verification = await kv.get(`bank_verification_${accountId}`);
+      // ✅ SQL: Get verification status from vendor_bank_details table
+      const bankAccountsRepo = getBankAccountsRepository();
+      const account = await bankAccountsRepo.findById(accountId);
 
-      if (!verification) {
+      if (!account) {
         return sendError(c, 'Bank verification not found', 404);
       }
+
+      const verification = {
+        accountId: account.id,
+        vendorId: account.vendor_id,
+        accountNumber: account.account_number_masked,
+        ifscCode: account.ifsc_code,
+        accountHolderName: account.account_holder_name,
+        verificationStatus: account.verification_status,
+        razorpayFundAccountId: account.razorpay_account_id,
+        verifiedAt: account.last_verification_attempt,
+        createdAt: account.created_at,
+        updatedAt: account.updated_at
+      };
 
       return sendSuccess(c, { verification });
     } catch (error) {
@@ -119,9 +154,11 @@ export function automatedBankVerificationEndpoints(app: Hono, kv: any) {
         return sendError(c, 'accountId is required', 400);
       }
 
-      const verification = await kv.get(`bank_verification_${accountId}`);
+      // ✅ SQL: Get verification from vendor_bank_details table
+      const bankAccountsRepo = getBankAccountsRepository();
+      const account = await bankAccountsRepo.findById(accountId);
 
-      if (!verification) {
+      if (!account) {
         return sendError(c, 'Bank verification not found', 404);
       }
 
@@ -129,13 +166,29 @@ export function automatedBankVerificationEndpoints(app: Hono, kv: any) {
       const pennyDropAmount = amount || (Math.random() * 0.99 + 0.01).toFixed(2);
       const pennyDropReference = `PD${Date.now()}`;
 
-      verification.pennyDropAmount = parseFloat(pennyDropAmount);
-      verification.pennyDropReference = pennyDropReference;
-      verification.verificationStatus = 'verified';
-      verification.verifiedAt = new Date().toISOString();
-      verification.updatedAt = new Date().toISOString();
+      // ✅ SQL: Update verification status
+      await bankAccountsRepo.update(accountId, {
+        verification_status: 'verified',
+        verification_method: 'penny_drop',
+        verification_details: {
+          pennyDropAmount: parseFloat(pennyDropAmount),
+          pennyDropReference
+        }
+      });
 
-      await kv.set(`bank_verification_${accountId}`, verification);
+      const verification = {
+        accountId: account.id,
+        vendorId: account.vendor_id,
+        accountNumber: account.account_number_masked,
+        ifscCode: account.ifsc_code,
+        accountHolderName: account.account_holder_name,
+        verificationStatus: 'verified',
+        pennyDropAmount: parseFloat(pennyDropAmount),
+        pennyDropReference,
+        verifiedAt: new Date().toISOString(),
+        createdAt: account.created_at,
+        updatedAt: new Date().toISOString()
+      };
 
       console.log(`✅ Penny drop completed: ${accountId} - ₹${pennyDropAmount}`);
 
@@ -153,13 +206,26 @@ export function automatedBankVerificationEndpoints(app: Hono, kv: any) {
     try {
       const vendorId = c.req.param('vendorId');
 
-      const accountId = await kv.get(`bank_verification_vendor_${vendorId}`);
+      // ✅ SQL: Get vendor's primary bank account from vendor_bank_details table
+      const bankAccountsRepo = getBankAccountsRepository();
+      const account = await bankAccountsRepo.findPrimaryByVendor(vendorId);
 
-      if (!accountId) {
+      if (!account) {
         return sendSuccess(c, { verification: null });
       }
 
-      const verification = await kv.get(`bank_verification_${accountId}`);
+      const verification = {
+        accountId: account.id,
+        vendorId: account.vendor_id,
+        accountNumber: account.account_number_masked,
+        ifscCode: account.ifsc_code,
+        accountHolderName: account.account_holder_name,
+        verificationStatus: account.verification_status,
+        razorpayFundAccountId: account.razorpay_account_id,
+        verifiedAt: account.last_verification_attempt,
+        createdAt: account.created_at,
+        updatedAt: account.updated_at
+      };
 
       return sendSuccess(c, { verification });
     } catch (error) {
@@ -176,27 +242,46 @@ export function automatedBankVerificationEndpoints(app: Hono, kv: any) {
       const accountId = c.req.param('accountId');
       const updates = await c.req.json();
 
-      const verification = await kv.get(`bank_verification_${accountId}`);
+      // ✅ SQL: Get verification from vendor_bank_details table
+      const bankAccountsRepo = getBankAccountsRepository();
+      const account = await bankAccountsRepo.findById(accountId);
 
-      if (!verification) {
+      if (!account) {
         return sendError(c, 'Bank verification not found', 404);
       }
 
-      // Only allow updating certain fields
-      if (updates.accountNumber) verification.accountNumber = updates.accountNumber;
-      if (updates.ifscCode) verification.ifscCode = updates.ifscCode;
-      if (updates.accountHolderName) verification.accountHolderName = updates.accountHolderName;
+      // Build update data
+      const updateData: any = {
+        updated_at: new Date().toISOString()
+      };
+
+      if (updates.accountNumber) updateData.account_number = updates.accountNumber;
+      if (updates.ifscCode) updateData.ifsc_code = updates.ifscCode;
+      if (updates.accountHolderName) updateData.account_holder_name = updates.accountHolderName;
 
       // If account details changed, reset verification
       if (updates.accountNumber || updates.ifscCode) {
-        verification.verificationStatus = 'pending';
-        verification.verifiedAt = undefined;
-        verification.razorpayFundAccountId = undefined;
+        updateData.verification_status = 'pending';
+        updateData.razorpay_account_id = null;
+        updateData.last_verification_attempt = null;
       }
 
-      verification.updatedAt = new Date().toISOString();
+      await bankAccountsRepo.update(accountId, updateData);
 
-      await kv.set(`bank_verification_${accountId}`, verification);
+      // Get updated account
+      const updatedAccount = await bankAccountsRepo.findById(accountId);
+      const verification = {
+        accountId: updatedAccount!.id,
+        vendorId: updatedAccount!.vendor_id,
+        accountNumber: updatedAccount!.account_number_masked,
+        ifscCode: updatedAccount!.ifsc_code,
+        accountHolderName: updatedAccount!.account_holder_name,
+        verificationStatus: updatedAccount!.verification_status,
+        razorpayFundAccountId: updatedAccount!.razorpay_account_id,
+        verifiedAt: updatedAccount!.last_verification_attempt,
+        createdAt: updatedAccount!.created_at,
+        updatedAt: updatedAccount!.updated_at
+      };
 
       console.log(`✅ Bank account updated: ${accountId}`);
 

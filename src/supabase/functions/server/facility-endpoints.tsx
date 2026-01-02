@@ -1,5 +1,11 @@
-import { Hono } from 'npm:hono';
-import * as kv from './kv_store.tsx';
+// ✅ SQL MIGRATION: All KV operations replaced with SQL repositories
+import { Hono } from 'hono';
+import { getDbClient } from '../../../supabase/lib/db';
+import {
+  getVendorsRepository,
+  getVendorServicesRepository,
+  getReviewsRepository
+} from '../../../supabase/lib/repositories/index';
 
 const app = new Hono();
 
@@ -15,13 +21,24 @@ app.get('/vendor/facility/:vendorId', async (c) => {
       return c.json({ success: false, error: 'Vendor ID is required' }, 400);
     }
 
-    // Get facility data from KV store
-    const facilityKey = `facility:${vendorId}`;
-    const facilityData = await kv.get(facilityKey);
+    // ✅ SQL: Get facility data from vendor_center_settings or vendors table
+    const db = getDbClient();
+    const { data: facilityData } = await db
+      .from('vendor_center_settings')
+      .select('*')
+      .eq('vendor_id', vendorId)
+      .single();
 
     return c.json({
       success: true,
-      facility: facilityData || {
+      facility: facilityData ? {
+        description: facilityData.description || '',
+        address: facilityData.address || '',
+        operatingHours: facilityData.operating_hours || '',
+        amenities: facilityData.amenities || [],
+        customAmenities: facilityData.custom_amenities || [],
+        photos: facilityData.photos || []
+      } : {
         description: '',
         address: '',
         operatingHours: '',
@@ -76,39 +93,42 @@ app.put('/vendor/facility/:vendorId', async (c) => {
       }, 400);
     }
 
-    // Save facility data
-    const facilityKey = `facility:${vendorId}`;
-    const facilityData = {
-      description: description || '',
-      address,
-      operatingHours: operatingHours || '',
-      amenities: amenities || [],
-      customAmenities: customAmenities || [],
-      photos: photos || [],
-      specializations: specializations || [],
-      location: location || null,    // ✅ SAVE
-      city: city || null,            // ✅ SAVE
-      state: state || null,          // ✅ SAVE
-      pincode: pincode || null,      // ✅ SAVE
-      updatedAt: new Date().toISOString()
-    };
+    // ✅ SQL: Save facility data to vendor_center_settings
+    const db = getDbClient();
+    const now = new Date().toISOString();
     
-    await kv.set(facilityKey, facilityData);
+    await db
+      .from('vendor_center_settings')
+      .upsert({
+        vendor_id: vendorId,
+        description: description || '',
+        address,
+        operating_hours: operatingHours || '',
+        amenities: amenities || [],
+        custom_amenities: customAmenities || [],
+        photos: photos || [],
+        specializations: specializations || [],
+        latitude: location?.lat || null,
+        longitude: location?.lng || null,
+        city: city || null,
+        state: state || null,
+        pincode: pincode || null,
+        updated_at: now
+      }, {
+        onConflict: 'vendor_id'
+      });
 
-    // ✅ CRITICAL: Also update vendor record with facility location for search
-    const vendorKey = `vendor:${vendorId}`;
-    const vendor = await kv.get(vendorKey);
-    if (vendor && location) {
-      vendor.location = location;
-      vendor.city = city;
-      vendor.state = state;
-      vendor.pincode = pincode;
-      // Keep vendor's original address but add facility address as facilityAddress
-      if (address !== vendor.address) {
-        vendor.facilityAddress = address;
-      }
-      vendor.updatedAt = new Date().toISOString();
-      await kv.set(vendorKey, vendor);
+    // ✅ SQL: Also update vendor record with facility location for search
+    const vendorsRepo = getVendorsRepository();
+    if (location) {
+      await vendorsRepo.update(vendorId, {
+        latitude: location.lat,
+        longitude: location.lng,
+        city: city || null,
+        state: state || null,
+        pincode: pincode || null,
+        updated_at: now
+      });
       console.log(`✅ Updated vendor ${vendorId} with facility location`);
     }
 
@@ -134,25 +154,29 @@ app.get('/customer/facility/:vendorId', async (c) => {
       return c.json({ success: false, error: 'Vendor ID is required' }, 400);
     }
 
-    // Get vendor data
-    const vendorKey = `vendor:${vendorId}`;
-    const vendorData = await kv.get(vendorKey);
+    // ✅ SQL: Get vendor data
+    const vendorsRepo = getVendorsRepository();
+    const vendorData = await vendorsRepo.findById(vendorId);
 
     if (!vendorData) {
       return c.json({ success: false, error: 'Vendor not found' }, 404);
     }
 
-    // Get facility data
-    const facilityKey = `facility:${vendorId}`;
-    const facilityData = await kv.get(facilityKey);
+    // ✅ SQL: Get facility data
+    const db = getDbClient();
+    const { data: facilityData } = await db
+      .from('vendor_center_settings')
+      .select('*')
+      .eq('vendor_id', vendorId)
+      .single();
 
-    // Get vendor services
-    const servicesPrefix = `service:${vendorId}:`;
-    const services = await kv.getByPrefix(servicesPrefix);
+    // ✅ SQL: Get vendor services
+    const servicesRepo = getVendorServicesRepository();
+    const services = await servicesRepo.findByVendor(vendorId);
 
-    // Calculate average rating from reviews
-    const reviewsPrefix = `review:vendor:${vendorId}:`;
-    const reviews = await kv.getByPrefix(reviewsPrefix);
+    // ✅ SQL: Calculate average rating from reviews
+    const reviewsRepo = getReviewsRepository();
+    const reviews = await reviewsRepo.findByVendor(vendorId);
     
     let avgRating = 0;
     let totalReviews = 0;
@@ -166,15 +190,22 @@ app.get('/customer/facility/:vendorId', async (c) => {
     return c.json({
       success: true,
       vendor: {
-        vendorId: vendorData.vendorId,
-        businessName: vendorData.businessName,
-        fullName: vendorData.fullName,
-        roleId: vendorData.roleId,
+        vendorId: vendorData.id || vendorData.vendorId,
+        businessName: vendorData.business_name || vendorData.businessName,
+        fullName: vendorData.owner_name || vendorData.fullName,
+        roleId: vendorData.role_id || vendorData.roleId,
         phone: vendorData.phone,
         email: vendorData.email,
-        status: vendorData.status
+        status: vendorData.status || vendorData.application_status
       },
-      facility: facilityData || {
+      facility: facilityData ? {
+        description: facilityData.description || '',
+        address: facilityData.address || vendorData.address || '',
+        operatingHours: facilityData.operating_hours || '',
+        amenities: facilityData.amenities || [],
+        customAmenities: facilityData.custom_amenities || [],
+        photos: facilityData.photos || []
+      } : {
         description: '',
         address: vendorData.address || '',
         operatingHours: '',
@@ -219,31 +250,24 @@ app.post('/customer/facility/:vendorId/review', async (c) => {
       return c.json({ success: false, error: 'Rating must be between 1 and 5' }, 400);
     }
 
-    // Create review
-    const reviewId = `review_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    const reviewKey = `review:vendor:${vendorId}:${reviewId}`;
-
-    await kv.set(reviewKey, {
-      reviewId,
-      vendorId,
-      customerId,
-      bookingId: bookingId || null,
+    // ✅ SQL: Create review
+    const reviewsRepo = getReviewsRepository();
+    const review = await reviewsRepo.create({
+      vendor_id: vendorId,
+      customer_id: customerId,
+      booking_id: bookingId || null,
       rating,
       comment: comment || '',
-      facilityRating: facilityRating || rating,
-      serviceRating: serviceRating || rating,
-      staffRating: staffRating || rating,
-      createdAt: new Date().toISOString()
+      facility_rating: facilityRating || rating,
+      service_rating: serviceRating || rating,
+      staff_rating: staffRating || rating,
+      created_at: new Date().toISOString()
     });
-
-    // Also index by customer for easy lookup
-    const customerReviewKey = `review:customer:${customerId}:${reviewId}`;
-    await kv.set(customerReviewKey, reviewId);
 
     return c.json({
       success: true,
       message: 'Review submitted successfully',
-      reviewId
+      reviewId: review.id
     });
   } catch (error) {
     console.error('Error submitting review:', error);
@@ -265,14 +289,16 @@ app.get('/customer/facility/:vendorId/reviews', async (c) => {
       return c.json({ success: false, error: 'Vendor ID is required' }, 400);
     }
 
-    // Get all reviews for this vendor
-    const reviewsPrefix = `review:vendor:${vendorId}:`;
-    const allReviews = await kv.getByPrefix(reviewsPrefix);
+    // ✅ SQL: Get all reviews for this vendor
+    const reviewsRepo = getReviewsRepository();
+    const allReviews = await reviewsRepo.findByVendor(vendorId, {
+      limit: limit + offset,
+      orderBy: 'created_at',
+      orderDirection: 'desc'
+    });
 
-    // Sort by date (newest first)
-    const sortedReviews = (allReviews || []).sort((a, b) => 
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
+    // Sort by date (newest first) - already sorted by SQL
+    const sortedReviews = allReviews || [];
 
     // Paginate
     const paginatedReviews = sortedReviews.slice(offset, offset + limit);
@@ -280,7 +306,7 @@ app.get('/customer/facility/:vendorId/reviews', async (c) => {
     // Calculate statistics
     const totalReviews = sortedReviews.length;
     const avgRating = totalReviews > 0
-      ? sortedReviews.reduce((sum, r) => sum + r.rating, 0) / totalReviews
+      ? sortedReviews.reduce((sum, r) => sum + (r.rating || 0), 0) / totalReviews
       : 0;
 
     // Calculate rating distribution
