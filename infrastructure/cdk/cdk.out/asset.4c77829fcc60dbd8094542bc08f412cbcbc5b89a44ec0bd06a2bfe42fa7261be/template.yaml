@@ -1,0 +1,47 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Warmpawz Lambda Functions - Local Development Template
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 512
+    Runtime: nodejs20.x
+    Environment:
+      Variables:
+        NODE_ENV: development
+        DATABASE_URL: ${DATABASE_URL}
+        S3_ENDPOINT: ${S3_ENDPOINT}
+        AWS_REGION: ap-south-1
+
+Resources:
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: dist/src/handler.handler
+      CodeUri: .
+      Runtime: nodejs20.x
+      Timeout: 30
+      MemorySize: 512
+      Environment:
+        Variables:
+          NODE_ENV: production
+          ALLOW_ORIGIN: "*"
+      Events:
+        ApiGateway:
+          Type: Api
+          Properties:
+            Path: /{proxy+}
+            Method: ANY
+        HealthCheck:
+          Type: Api
+          Properties:
+            Path: /health
+            Method: GET
+
+
+Outputs:
+  ApiGatewayUrl:
+    Description: API Gateway endpoint URL
+    Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod'
+

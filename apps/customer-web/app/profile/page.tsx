@@ -1,0 +1,250 @@
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { apiClient } from '@/lib/api-client';
+
+interface CustomerProfile {
+  id: string;
+  phone: string;
+  email: string;
+  full_name: string;
+  date_of_birth?: string;
+  gender?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
+  profile_photo_url?: string;
+}
+
+export default function ProfilePage() {
+  const router = useRouter();
+  const [profile, setProfile] = useState<CustomerProfile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [editData, setEditData] = useState<Partial<CustomerProfile>>({});
+
+  useEffect(() => {
+    const phone = localStorage.getItem('customerPhone');
+    if (!phone) {
+      router.push('/auth');
+      return;
+    }
+    loadProfile();
+  }, [router]);
+
+  const loadProfile = async () => {
+    try {
+      const customerId = localStorage.getItem('customerId');
+      if (customerId) {
+        const response = await apiClient.get<CustomerProfile>(`/customer/${customerId}/profile`);
+        setProfile(response);
+        setEditData(response);
+      }
+    } catch (err) {
+      console.error('Error loading profile:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSave = async () => {
+    try {
+      const customerId = localStorage.getItem('customerId');
+      await apiClient.put(`/customer/${customerId}/profile`, editData);
+      setProfile({ ...profile, ...editData } as CustomerProfile);
+      setEditing(false);
+    } catch (err) {
+      console.error('Error saving profile:', err);
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('customerPhone');
+    localStorage.removeItem('customerId');
+    localStorage.removeItem('authToken');
+    router.push('/auth');
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50 p-6">
+      <div className="max-w-2xl mx-auto">
+        <h1 className="text-3xl font-bold text-gray-800 mb-6">My Profile</h1>
+
+        <div className="bg-white rounded-xl shadow-sm p-6">
+          <div className="flex items-center gap-4 mb-6 pb-6 border-b">
+            <div className="w-20 h-20 rounded-full bg-orange-100 flex items-center justify-center text-3xl">
+              {profile?.full_name?.charAt(0) || '👤'}
+            </div>
+            <div>
+              <h2 className="text-xl font-semibold">{profile?.full_name || 'User'}</h2>
+              <p className="text-gray-500">{profile?.phone}</p>
+            </div>
+          </div>
+
+          {editing ? (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm text-gray-500 mb-1">Full Name</label>
+                <input
+                  type="text"
+                  value={editData.full_name || ''}
+                  onChange={(e) => setEditData({ ...editData, full_name: e.target.value })}
+                  className="w-full p-3 border rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-500 mb-1">Email</label>
+                <input
+                  type="email"
+                  value={editData.email || ''}
+                  onChange={(e) => setEditData({ ...editData, email: e.target.value })}
+                  className="w-full p-3 border rounded-lg"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-gray-500 mb-1">City</label>
+                  <input
+                    type="text"
+                    value={editData.city || ''}
+                    onChange={(e) => setEditData({ ...editData, city: e.target.value })}
+                    className="w-full p-3 border rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-500 mb-1">State</label>
+                  <input
+                    type="text"
+                    value={editData.state || ''}
+                    onChange={(e) => setEditData({ ...editData, state: e.target.value })}
+                    className="w-full p-3 border rounded-lg"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm text-gray-500 mb-1">Address</label>
+                <textarea
+                  value={editData.address || ''}
+                  onChange={(e) => setEditData({ ...editData, address: e.target.value })}
+                  className="w-full p-3 border rounded-lg"
+                  rows={3}
+                />
+              </div>
+              <div className="flex gap-3 mt-6">
+                <button
+                  onClick={() => setEditing(false)}
+                  className="flex-1 p-3 border rounded-lg hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSave}
+                  className="flex-1 p-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex justify-between py-3 border-b">
+                <span className="text-gray-500">Email</span>
+                <span className="font-medium">{profile?.email || 'Not set'}</span>
+              </div>
+              <div className="flex justify-between py-3 border-b">
+                <span className="text-gray-500">Phone</span>
+                <span className="font-medium">{profile?.phone}</span>
+              </div>
+              <div className="flex justify-between py-3 border-b">
+                <span className="text-gray-500">City</span>
+                <span className="font-medium">{profile?.city || 'Not set'}</span>
+              </div>
+              <div className="flex justify-between py-3 border-b">
+                <span className="text-gray-500">Address</span>
+                <span className="font-medium">{profile?.address || 'Not set'}</span>
+              </div>
+
+              <button
+                onClick={() => setEditing(true)}
+                className="w-full p-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600 mt-4"
+              >
+                Edit Profile
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="mt-6 space-y-3">
+          <button
+            onClick={() => router.push('/pets')}
+            className="w-full p-4 bg-white rounded-xl shadow-sm flex items-center justify-between hover:shadow-md transition"
+          >
+            <span className="flex items-center gap-3">
+              <span className="text-2xl">🐾</span>
+              <span className="font-medium">My Pets</span>
+            </span>
+            <span className="text-gray-400">→</span>
+          </button>
+          <button
+            onClick={() => router.push('/bookings')}
+            className="w-full p-4 bg-white rounded-xl shadow-sm flex items-center justify-between hover:shadow-md transition"
+          >
+            <span className="flex items-center gap-3">
+              <span className="text-2xl">📅</span>
+              <span className="font-medium">My Bookings</span>
+            </span>
+            <span className="text-gray-400">→</span>
+          </button>
+          <button
+            onClick={() => router.push('/orders')}
+            className="w-full p-4 bg-white rounded-xl shadow-sm flex items-center justify-between hover:shadow-md transition"
+          >
+            <span className="flex items-center gap-3">
+              <span className="text-2xl">📦</span>
+              <span className="font-medium">Order History</span>
+            </span>
+            <span className="text-gray-400">→</span>
+          </button>
+          <button
+            onClick={() => router.push('/wallet')}
+            className="w-full p-4 bg-white rounded-xl shadow-sm flex items-center justify-between hover:shadow-md transition"
+          >
+            <span className="flex items-center gap-3">
+              <span className="text-2xl">💰</span>
+              <span className="font-medium">Wallet</span>
+            </span>
+            <span className="text-gray-400">→</span>
+          </button>
+          <button
+            onClick={() => router.push('/settings')}
+            className="w-full p-4 bg-white rounded-xl shadow-sm flex items-center justify-between hover:shadow-md transition"
+          >
+            <span className="flex items-center gap-3">
+              <span className="text-2xl">⚙️</span>
+              <span className="font-medium">Settings</span>
+            </span>
+            <span className="text-gray-400">→</span>
+          </button>
+          <button
+            onClick={handleLogout}
+            className="w-full p-4 bg-red-50 text-red-600 rounded-xl flex items-center justify-center gap-2 hover:bg-red-100 transition mt-6"
+          >
+            <span>🚪</span>
+            <span className="font-medium">Logout</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+

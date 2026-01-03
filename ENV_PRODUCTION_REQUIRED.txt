@@ -1,0 +1,103 @@
+# ============================================================================
+# WARMPAWZ ENVIRONMENT VARIABLES - PRODUCTION DEPLOYMENT
+# ============================================================================
+# Date: 2026-01-02
+# Post-Audit Fix: Added critical security and authentication variables
+# ============================================================================
+
+# ============================================================================
+# DATABASE (AWS RDS PostgreSQL)
+# ============================================================================
+DB_HOST=<your-rds-endpoint>.rds.amazonaws.com
+DB_PORT=5432
+DB_NAME=warmpawz_production
+DB_USER=warmpawz_admin
+DB_PASSWORD=<secure-password-here>
+DB_SSL=true
+
+# Alternative naming (for compatibility)
+RDS_HOSTNAME=${DB_HOST}
+RDS_DB_NAME=${DB_NAME}
+RDS_USERNAME=${DB_USER}
+RDS_PASSWORD=${DB_PASSWORD}
+
+# ============================================================================
+# AWS COGNITO (REQUIRED - Critical Fix #3)
+# ============================================================================
+COGNITO_USER_POOL_ID=<region>_<pool-id>
+COGNITO_CLIENT_ID=<client-id>
+COGNITO_PASSWORD_SECRET=<strong-secret-for-password-hmac>
+
+# Note: Get these values after deploying cognito-stack.ts:
+# aws cognito-idp list-user-pools --max-results 10
+
+# ============================================================================
+# RAZORPAY (CRITICAL - Security Fix #2)
+# ============================================================================
+RAZORPAY_KEY_ID=rzp_live_<your-key-id>
+RAZORPAY_KEY_SECRET=<your-key-secret>
+RAZORPAY_WEBHOOK_SECRET=<webhook-secret-from-razorpay-dashboard>
+
+# Note: Get webhook secret from:
+# https://dashboard.razorpay.com/app/webhooks
+
+# ============================================================================
+# AWS SERVICES
+# ============================================================================
+AWS_REGION=ap-south-1
+AWS_ACCOUNT_ID=<your-account-id>
+
+# S3
+S3_BUCKET_NAME=warmpawz-uploads-prod
+S3_DOCUMENT_BUCKET=warmpawz-documents-prod
+
+# SNS (for SMS and notifications)
+SNS_TOPIC_ARN=arn:aws:sns:ap-south-1:<account>:warmpawz-notifications
+SETTLEMENT_CREATED_TOPIC_ARN=arn:aws:sns:ap-south-1:<account>:warmpawz-settlements
+
+# SQS (for async processing)
+SQS_QUEUE_URL=https://sqs.ap-south-1.amazonaws.com/<account>/warmpawz-queue
+
+# OpenSearch/Elasticsearch
+OPENSEARCH_ENDPOINT=https://<domain>.ap-south-1.es.amazonaws.com
+OPENSEARCH_INDEX=warmpawz-search
+
+# Chime (for video calls)
+CHIME_REGION=us-east-1
+
+# Bedrock (for AI features)
+BEDROCK_REGION=us-east-1
+BEDROCK_MODEL_ID=anthropic.claude-v2
+
+# ============================================================================
+# API CONFIGURATION
+# ============================================================================
+NODE_ENV=production
+API_BASE_URL=https://api.warmpawz.com
+
+# ============================================================================
+# FRONTEND CONFIGURATION (Next.js apps)
+# ============================================================================
+NEXT_PUBLIC_API_BASE_URL=https://api.warmpawz.com
+NEXT_PUBLIC_COGNITO_USER_POOL_ID=${COGNITO_USER_POOL_ID}
+NEXT_PUBLIC_COGNITO_CLIENT_ID=${COGNITO_CLIENT_ID}
+NEXT_PUBLIC_AWS_REGION=${AWS_REGION}
+
+# ============================================================================
+# DEPLOYMENT CHECKLIST
+# ============================================================================
+# 
+# Before deploying to production:
+# 
+# [ ] Set RAZORPAY_WEBHOOK_SECRET (from Razorpay dashboard)
+# [ ] Set COGNITO_PASSWORD_SECRET (generate strong random string)
+# [ ] Deploy Cognito stack first: cdk deploy CognitoStack
+# [ ] Copy Cognito pool IDs to this file
+# [ ] Deploy Lambda stack: cdk deploy LambdaStack
+# [ ] Deploy API Gateway stack: cdk deploy ApiGatewayStack
+# [ ] Update frontend apps with NEXT_PUBLIC_* variables
+# [ ] Test webhook signature verification
+# [ ] Test Cognito authentication flow
+#
+# ============================================================================
+

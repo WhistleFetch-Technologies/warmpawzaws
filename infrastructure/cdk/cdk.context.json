@@ -1,0 +1,38 @@
+{
+  "vpc-provider:account=023394150666:filter.isDefault=true:region=ap-south-1:returnAsymmetricSubnets=true": {
+    "vpcId": "vpc-0aea1d1063c79f1c0",
+    "vpcCidrBlock": "172.31.0.0/16",
+    "ownerAccountId": "023394150666",
+    "availabilityZones": [],
+    "subnetGroups": [
+      {
+        "name": "Public",
+        "type": "Public",
+        "subnets": [
+          {
+            "subnetId": "subnet-0523027c38775a9e5",
+            "cidr": "172.31.32.0/20",
+            "availabilityZone": "ap-south-1a",
+            "routeTableId": "rtb-0fabf6ec3d44a1241"
+          },
+          {
+            "subnetId": "subnet-0702b52e47b12fd09",
+            "cidr": "172.31.0.0/20",
+            "availabilityZone": "ap-south-1b",
+            "routeTableId": "rtb-0fabf6ec3d44a1241"
+          },
+          {
+            "subnetId": "subnet-017d54f5a53c80988",
+            "cidr": "172.31.16.0/20",
+            "availabilityZone": "ap-south-1c",
+            "routeTableId": "rtb-0fabf6ec3d44a1241"
+          }
+        ]
+      }
+    ]
+  },
+  "hosted-zone:account=023394150666:domainName=warmpawz.com:region=ap-south-1": {
+    "Id": "/hostedzone/Z05490792J3QDVPVIG5UA",
+    "Name": "warmpawz.com."
+  }
+}
