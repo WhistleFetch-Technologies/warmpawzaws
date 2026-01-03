@@ -28,6 +28,11 @@ output "api_endpoint" {
   value       = module.api_gateway.stage_invoke_url
 }
 
+output "api_custom_domain" {
+  description = "API custom domain"
+  value       = "https://dev.api.warmpawz.com"
+}
+
 output "cognito_user_pool_id" {
   description = "Cognito User Pool ID"
   value       = module.cognito.user_pool_id
@@ -58,3 +63,80 @@ output "opensearch_endpoint" {
   value       = var.enable_opensearch ? module.opensearch[0].domain_endpoint : null
 }
 
+# Frontend Deployment Outputs
+
+output "cloudfront_admin_distribution_id" {
+  description = "CloudFront distribution ID for admin app"
+  value       = module.cloudfront.distribution_ids["admin"]
+}
+
+output "cloudfront_vendor_distribution_id" {
+  description = "CloudFront distribution ID for vendor app"
+  value       = module.cloudfront.distribution_ids["vendor"]
+}
+
+output "cloudfront_customer_distribution_id" {
+  description = "CloudFront distribution ID for customer app"
+  value       = module.cloudfront.distribution_ids["customer"]
+}
+
+output "s3_admin_bucket" {
+  description = "S3 bucket for admin frontend"
+  value       = module.cloudfront.bucket_names["admin"]
+}
+
+output "s3_vendor_bucket" {
+  description = "S3 bucket for vendor frontend"
+  value       = module.cloudfront.bucket_names["vendor"]
+}
+
+output "s3_customer_bucket" {
+  description = "S3 bucket for customer frontend"
+  value       = module.cloudfront.bucket_names["customer"]
+}
+
+# Domain URLs
+
+output "admin_url" {
+  description = "Admin dashboard URL"
+  value       = "https://dev.admin.warmpawz.com"
+}
+
+output "vendor_url" {
+  description = "Vendor portal URL"
+  value       = "https://dev.vendor.warmpawz.com"
+}
+
+output "customer_url" {
+  description = "Customer app URL"
+  value       = "https://dev.customer.warmpawz.com"
+}
+
+# SNS Topics for Push Notifications
+
+output "sns_android_customer_arn" {
+  description = "SNS platform application ARN for Android customer app"
+  value       = module.secrets.sns_android_customer_arn
+}
+
+output "sns_android_vendor_arn" {
+  description = "SNS platform application ARN for Android vendor app"
+  value       = module.secrets.sns_android_vendor_arn
+}
+
+# Secrets ARNs
+
+output "razorpay_secret_arn" {
+  description = "Razorpay secret ARN"
+  value       = module.secrets.razorpay_secret_arn
+}
+
+output "google_maps_secret_arn" {
+  description = "Google Maps secret ARN"
+  value       = module.secrets.google_maps_secret_arn
+}
+
+output "shiprocket_secret_arn" {
+  description = "Shiprocket secret ARN"
+  value       = module.secrets.shiprocket_secret_arn
+}
