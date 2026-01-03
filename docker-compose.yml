@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: warmpawz-db
+    environment:
+      POSTGRES_USER: warmpawz
+      POSTGRES_PASSWORD: warmpawz
+      POSTGRES_DB: warmpawz
+    ports:
+      - "5432:5432"
+    volumes:
+      - warmpawz_data:/var/lib/postgresql/data
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+      - ./db/migrations:/docker-entrypoint-initdb.d/migrations
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U warmpawz"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  warmpawz_data:
+

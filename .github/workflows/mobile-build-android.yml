@@ -1,0 +1,195 @@
+name: Build Android APKs
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'apps/WarmpawzCustomer/**'
+      - 'apps/WarmpawzVendor/**'
+  workflow_dispatch:
+    inputs:
+      app:
+        description: 'Which app to build'
+        required: true
+        default: 'both'
+        type: choice
+        options:
+          - customer
+          - vendor
+          - both
+      build_type:
+        description: 'Build type'
+        required: true
+        default: 'release'
+        type: choice
+        options:
+          - debug
+          - release
+
+env:
+  NODE_VERSION: '18'
+  JAVA_VERSION: '17'
+
+jobs:
+  build-customer-android:
+    name: Build Customer App (Android)
+    runs-on: ubuntu-latest
+    if: github.event.inputs.app != 'vendor'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: apps/WarmpawzCustomer/package-lock.json
+
+      - name: Install dependencies
+        working-directory: apps/WarmpawzCustomer
+        run: npm ci
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Build Android APK
+        working-directory: apps/WarmpawzCustomer/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assemble${{ github.event.inputs.build_type == 'release' && 'Release' || 'Debug' }}
+
+      - name: Sign APK (Release only)
+        if: github.event.inputs.build_type == 'release'
+        working-directory: apps/WarmpawzCustomer/android
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > release.keystore
+          jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 \
+            -keystore release.keystore \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -keypass "$KEY_PASSWORD" \
+            app/build/outputs/apk/release/app-release-unsigned.apk "$KEY_ALIAS"
+          zipalign -v 4 app/build/outputs/apk/release/app-release-unsigned.apk \
+            app/build/outputs/apk/release/warmpawz-customer-release.apk
+
+      - name: Upload Customer APK to S3
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1
+      
+      - name: Upload to S3
+        run: |
+          BUILD_TYPE=${{ github.event.inputs.build_type || 'debug' }}
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+          if [ "$BUILD_TYPE" = "release" ]; then
+            APK_PATH="apps/WarmpawzCustomer/android/app/build/outputs/apk/release/warmpawz-customer-release.apk"
+          else
+            APK_PATH="apps/WarmpawzCustomer/android/app/build/outputs/apk/debug/app-debug.apk"
+          fi
+          aws s3 cp "$APK_PATH" "s3://warmpawz-builds/android/customer/${BUILD_TYPE}/warmpawz-customer-${TIMESTAMP}.apk"
+          aws s3 cp "$APK_PATH" "s3://warmpawz-builds/android/customer/${BUILD_TYPE}/warmpawz-customer-latest.apk"
+          echo "📱 APK uploaded to S3!"
+          echo "Download URL: https://warmpawz-builds.s3.ap-south-1.amazonaws.com/android/customer/${BUILD_TYPE}/warmpawz-customer-latest.apk"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: customer-android-${{ github.event.inputs.build_type || 'debug' }}
+          path: |
+            apps/WarmpawzCustomer/android/app/build/outputs/apk/**/*.apk
+
+  build-vendor-android:
+    name: Build Vendor App (Android)
+    runs-on: ubuntu-latest
+    if: github.event.inputs.app != 'customer'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: apps/WarmpawzVendor/package-lock.json
+
+      - name: Install dependencies
+        working-directory: apps/WarmpawzVendor
+        run: npm ci
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Build Android APK
+        working-directory: apps/WarmpawzVendor/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assemble${{ github.event.inputs.build_type == 'release' && 'Release' || 'Debug' }}
+
+      - name: Sign APK (Release only)
+        if: github.event.inputs.build_type == 'release'
+        working-directory: apps/WarmpawzVendor/android
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > release.keystore
+          jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 \
+            -keystore release.keystore \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -keypass "$KEY_PASSWORD" \
+            app/build/outputs/apk/release/app-release-unsigned.apk "$KEY_ALIAS"
+          zipalign -v 4 app/build/outputs/apk/release/app-release-unsigned.apk \
+            app/build/outputs/apk/release/warmpawz-vendor-release.apk
+
+      - name: Upload Vendor APK to S3
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1
+      
+      - name: Upload to S3
+        run: |
+          BUILD_TYPE=${{ github.event.inputs.build_type || 'debug' }}
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+          if [ "$BUILD_TYPE" = "release" ]; then
+            APK_PATH="apps/WarmpawzVendor/android/app/build/outputs/apk/release/warmpawz-vendor-release.apk"
+          else
+            APK_PATH="apps/WarmpawzVendor/android/app/build/outputs/apk/debug/app-debug.apk"
+          fi
+          aws s3 cp "$APK_PATH" "s3://warmpawz-builds/android/vendor/${BUILD_TYPE}/warmpawz-vendor-${TIMESTAMP}.apk"
+          aws s3 cp "$APK_PATH" "s3://warmpawz-builds/android/vendor/${BUILD_TYPE}/warmpawz-vendor-latest.apk"
+          echo "📱 APK uploaded to S3!"
+          echo "Download URL: https://warmpawz-builds.s3.ap-south-1.amazonaws.com/android/vendor/${BUILD_TYPE}/warmpawz-vendor-latest.apk"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vendor-android-${{ github.event.inputs.build_type || 'debug' }}
+          path: |
+            apps/WarmpawzVendor/android/app/build/outputs/apk/**/*.apk
+
