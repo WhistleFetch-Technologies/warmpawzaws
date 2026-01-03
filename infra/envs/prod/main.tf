@@ -203,6 +203,18 @@ module "api_gateway" {
       integration_key = "api-handler"
       require_auth    = false
     }
+    # Catch-all route to forward ALL requests to Lambda (Hono handles internal routing)
+    proxy = {
+      route_key       = "ANY /{proxy+}"
+      integration_key = "api-handler"
+      require_auth    = false
+    }
+    # Root path handler
+    root = {
+      route_key       = "ANY /"
+      integration_key = "api-handler"
+      require_auth    = false
+    }
   }
 
   # Custom domain (optional)
