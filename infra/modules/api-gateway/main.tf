@@ -114,8 +114,9 @@ resource "aws_apigatewayv2_route" "routes" {
   route_key = each.value.route_key
   target    = "integrations/${aws_apigatewayv2_integration.lambda[each.value.integration_key].id}"
 
-  authorization_type = lookup(each.value, "require_auth", false) ? "JWT" : "NONE"
-  authorizer_id      = lookup(each.value, "require_auth", false) && var.cognito_user_pool_arn != null ? aws_apigatewayv2_authorizer.cognito[0].id : null
+  # Authorization temporarily disabled until Cognito authorizer is added
+  authorization_type = "NONE"
+  authorizer_id      = null
 }
 
 # Custom Domain (optional)
