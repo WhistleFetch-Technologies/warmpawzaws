@@ -67,19 +67,19 @@ resource "aws_apigatewayv2_stage" "main" {
 }
 
 # API Gateway Authorizer (Cognito)
-resource "aws_apigatewayv2_authorizer" "cognito" {
-  count = var.cognito_user_pool_arn != null ? 1 : 0
-
-  api_id           = aws_apigatewayv2_api.main.id
-  authorizer_type  = "JWT"
-  identity_sources = ["$request.header.Authorization"]
-  name             = "cognito-authorizer"
-
-  jwt_configuration {
-    audience = [var.cognito_user_pool_client_id]
-    issuer   = "https://cognito-idp.${var.aws_region}.amazonaws.com/${var.cognito_user_pool_id}"
-  }
-}
+# Temporarily disabled to avoid circular dependency
+# Will be added in a future deployment
+# resource "aws_apigatewayv2_authorizer" "cognito" {
+#   api_id           = aws_apigatewayv2_api.main.id
+#   authorizer_type  = "JWT"
+#   identity_sources = ["$request.header.Authorization"]
+#   name             = "cognito-authorizer"
+#   
+#   jwt_configuration {
+#     audience = [var.cognito_user_pool_client_id]
+#     issuer   = "https://cognito-idp.${var.aws_region}.amazonaws.com/${var.cognito_user_pool_id}"
+#   }
+# }
 
 # Lambda Integrations
 resource "aws_apigatewayv2_integration" "lambda" {
