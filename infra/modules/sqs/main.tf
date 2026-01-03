@@ -1,6 +1,6 @@
 # SQS Module - Message queues for async processing
 
-# Dead Letter Queue
+# Dead Letter Queue (Standard)
 resource "aws_sqs_queue" "dlq" {
   name                       = "warmpawz-${var.environment}-dlq"
   message_retention_seconds  = 1209600 # 14 days
@@ -8,6 +8,19 @@ resource "aws_sqs_queue" "dlq" {
 
   tags = {
     Name        = "warmpawz-${var.environment}-dlq"
+    Environment = var.environment
+  }
+}
+
+# Dead Letter Queue (FIFO) - for FIFO queues
+resource "aws_sqs_queue" "dlq_fifo" {
+  name                       = "warmpawz-${var.environment}-dlq.fifo"
+  fifo_queue                 = true
+  message_retention_seconds  = 1209600 # 14 days
+  visibility_timeout_seconds = 300
+
+  tags = {
+    Name        = "warmpawz-${var.environment}-dlq-fifo"
     Environment = var.environment
   }
 }
@@ -124,7 +137,7 @@ resource "aws_sqs_queue" "order_processing" {
   visibility_timeout_seconds  = 300
 
   redrive_policy = jsonencode({
-    deadLetterTargetArn = aws_sqs_queue.dlq.arn
+    deadLetterTargetArn = aws_sqs_queue.dlq_fifo.arn
     maxReceiveCount     = 3
   })
 
@@ -184,6 +197,28 @@ resource "aws_cloudwatch_metric_alarm" "sqs_dlq_messages" {
 
   tags = {
     Name        = "warmpawz-${var.environment}-sqs-dlq-messages"
+    Environment = var.environment
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "sqs_dlq_fifo_messages" {
+  alarm_name          = "warmpawz-${var.environment}-sqs-dlq-fifo-messages"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "1"
+  metric_name         = "ApproximateNumberOfMessagesVisible"
+  namespace           = "AWS/SQS"
+  period              = "300"
+  statistic           = "Sum"
+  threshold           = "10"
+  alarm_description   = "Messages in FIFO DLQ"
+  alarm_actions       = var.alarm_actions
+
+  dimensions = {
+    QueueName = aws_sqs_queue.dlq_fifo.name
+  }
+
+  tags = {
+    Name        = "warmpawz-${var.environment}-sqs-dlq-fifo-messages"
     Environment = var.environment
   }
 }

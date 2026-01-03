@@ -85,8 +85,9 @@ resource "aws_rds_cluster_parameter_group" "main" {
   description = "Cluster parameter group for Aurora PostgreSQL 15"
 
   parameter {
-    name  = "shared_preload_libraries"
-    value = "pg_stat_statements,pgaudit"
+    name         = "shared_preload_libraries"
+    value        = "pg_stat_statements,pgaudit"
+    apply_method = "pending-reboot"
   }
 
   parameter {
