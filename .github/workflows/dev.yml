@@ -153,26 +153,38 @@ jobs:
       - name: Terraform Plan
         id: plan
         working-directory: infra/envs/dev
+        shell: bash
         run: |
-          # Try to run plan, if it fails due to lock, force unlock and retry
-          if ! terraform plan \
+          set +e  # Don't exit on error, we want to handle it
+          
+          # Try to run plan
+          terraform plan \
             -var="opensearch_master_password=${{ secrets.DEV_OPENSEARCH_PASSWORD }}" \
-            -out=tfplan 2>&1 | tee plan.log; then
-            
-            # Check if it's a lock error
+            -out=tfplan 2>&1 | tee plan.log
+          PLAN_EXIT=$?
+          
+          # If plan failed, check if it's a lock error
+          if [ $PLAN_EXIT -ne 0 ]; then
             if grep -q "Error acquiring the state lock" plan.log; then
-              echo "State is locked, attempting to force unlock..."
-              LOCK_ID=$(grep "ID:" plan.log | awk '{print $2}')
+              echo "⚠️  State is locked, attempting to force unlock..."
+              LOCK_ID=$(grep "ID:" plan.log | awk '{print $2}' | head -1)
               echo "Lock ID: $LOCK_ID"
-              terraform force-unlock -force "$LOCK_ID" || true
-              sleep 5
               
-              echo "Retrying plan..."
-              terraform plan \
-                -var="opensearch_master_password=${{ secrets.DEV_OPENSEARCH_PASSWORD }}" \
-                -out=tfplan
+              if [ -n "$LOCK_ID" ]; then
+                terraform force-unlock -force "$LOCK_ID" || true
+                sleep 5
+                
+                echo "🔄 Retrying plan..."
+                terraform plan \
+                  -var="opensearch_master_password=${{ secrets.DEV_OPENSEARCH_PASSWORD }}" \
+                  -out=tfplan
+              else
+                echo "❌ Could not extract lock ID"
+                exit 1
+              fi
             else
-              exit 1
+              echo "❌ Plan failed for a non-lock reason"
+              exit $PLAN_EXIT
             fi
           fi
 
@@ -224,22 +236,34 @@ jobs:
 
       - name: Terraform Apply
         working-directory: infra/envs/dev
+        shell: bash
         run: |
-          # Try to apply, if it fails due to lock, force unlock and retry
-          if ! terraform apply -auto-approve tfplan 2>&1 | tee apply.log; then
-            
-            # Check if it's a lock error
+          set +e  # Don't exit on error, we want to handle it
+          
+          # Try to apply
+          terraform apply -auto-approve tfplan 2>&1 | tee apply.log
+          APPLY_EXIT=$?
+          
+          # If apply failed, check if it's a lock error
+          if [ $APPLY_EXIT -ne 0 ]; then
             if grep -q "Error acquiring the state lock" apply.log; then
-              echo "State is locked, attempting to force unlock..."
-              LOCK_ID=$(grep "ID:" apply.log | awk '{print $2}')
+              echo "⚠️  State is locked, attempting to force unlock..."
+              LOCK_ID=$(grep "ID:" apply.log | awk '{print $2}' | head -1)
               echo "Lock ID: $LOCK_ID"
-              terraform force-unlock -force "$LOCK_ID" || true
-              sleep 5
               
-              echo "Retrying apply..."
-              terraform apply -auto-approve tfplan
+              if [ -n "$LOCK_ID" ]; then
+                terraform force-unlock -force "$LOCK_ID" || true
+                sleep 5
+                
+                echo "🔄 Retrying apply..."
+                terraform apply -auto-approve tfplan
+              else
+                echo "❌ Could not extract lock ID"
+                exit 1
+              fi
             else
-              exit 1
+              echo "❌ Apply failed for a non-lock reason"
+              exit $APPLY_EXIT
             fi
           fi
 
