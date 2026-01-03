@@ -113,7 +113,7 @@ resource "aws_iam_role_policy" "lambda_custom" {
           "sqs:DeleteMessage",
           "sqs:GetQueueAttributes"
         ]
-        Resource = var.sqs_arns
+        Resource = concat(var.sqs_arns, ["arn:aws:sqs:${var.aws_region}:*:warmpawz-${var.environment}-*"])
       },
       {
         Effect = "Allow"
