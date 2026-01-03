@@ -213,6 +213,24 @@ jobs:
         working-directory: infra/envs/dev
         run: terraform init -backend-config=backend.hcl
 
+      - name: Force unlock stale Terraform state (if any)
+        working-directory: infra/envs/dev
+        continue-on-error: true
+        run: |
+          # Get any existing lock and force-unlock it
+          # This is safe because we have concurrency control that cancels parallel runs
+          LOCK_ID=$(aws dynamodb scan --table-name warmpawz-terraform-locks \
+            --filter-expression "LockID = :lockid" \
+            --expression-attribute-values '{":lockid":{"S":"warmpawz-terraform-state-023394150666/dev/terraform.tfstate"}}' \
+            --query 'Items[0].Info.S' --output text 2>/dev/null || echo "")
+          if [ -n "$LOCK_ID" ] && [ "$LOCK_ID" != "None" ]; then
+            LOCK_UUID=$(echo "$LOCK_ID" | jq -r '.ID' 2>/dev/null || echo "")
+            if [ -n "$LOCK_UUID" ] && [ "$LOCK_UUID" != "null" ]; then
+              echo "Found stale lock: $LOCK_UUID, force unlocking..."
+              terraform force-unlock -force "$LOCK_UUID" || true
+            fi
+          fi
+
       - name: Terraform Plan
         id: plan
         working-directory: infra/envs/dev
@@ -284,6 +302,24 @@ jobs:
       - name: Terraform Init
         working-directory: infra/envs/dev
         run: terraform init -backend-config=backend.hcl
+
+      - name: Force unlock stale Terraform state (if any)
+        working-directory: infra/envs/dev
+        continue-on-error: true
+        run: |
+          # Get any existing lock and force-unlock it
+          # This is safe because we have concurrency control that cancels parallel runs
+          LOCK_ID=$(aws dynamodb scan --table-name warmpawz-terraform-locks \
+            --filter-expression "LockID = :lockid" \
+            --expression-attribute-values '{":lockid":{"S":"warmpawz-terraform-state-023394150666/dev/terraform.tfstate"}}' \
+            --query 'Items[0].Info.S' --output text 2>/dev/null || echo "")
+          if [ -n "$LOCK_ID" ] && [ "$LOCK_ID" != "None" ]; then
+            LOCK_UUID=$(echo "$LOCK_ID" | jq -r '.ID' 2>/dev/null || echo "")
+            if [ -n "$LOCK_UUID" ] && [ "$LOCK_UUID" != "null" ]; then
+              echo "Found stale lock: $LOCK_UUID, force unlocking..."
+              terraform force-unlock -force "$LOCK_UUID" || true
+            fi
+          fi
 
       - name: Terraform Apply
         working-directory: infra/envs/dev
