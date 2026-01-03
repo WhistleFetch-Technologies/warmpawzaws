@@ -76,7 +76,8 @@ jobs:
         working-directory: backend/lambda
         run: |
           npm ci
-          npm run build || echo "Build completed"
+          npm run build
+          ls -lh api-handler.zip  # Verify ZIP was created
 
       - name: Upload Lambda artifact
         uses: actions/upload-artifact@v4
@@ -84,6 +85,7 @@ jobs:
           name: lambda-handlers
           path: backend/lambda/api-handler.zip
           retention-days: 1
+          if-no-files-found: error
 
   # ============================================
   # BUILD FRONTEND APPS
