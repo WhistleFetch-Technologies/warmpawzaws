@@ -242,7 +242,7 @@ resource "aws_lambda_function" "functions" {
 resource "aws_lambda_function_url" "functions" {
   for_each = {
     for k, v in var.lambda_functions : k => v
-    if lookup(v, "enable_function_url", false)
+    if try(v.enable_function_url, false) == true
   }
 
   function_name      = aws_lambda_function.functions[each.key].function_name
