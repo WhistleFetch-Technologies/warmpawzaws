@@ -169,11 +169,30 @@ jobs:
         run: terraform init -backend-config=backend.hcl
 
       - name: Terraform Plan
+        id: plan
         working-directory: infra/envs/dev
         run: |
-          terraform plan \
+          # Try to run plan, if it fails due to lock, force unlock and retry
+          if ! terraform plan \
             -var="opensearch_master_password=${{ secrets.DEV_OPENSEARCH_PASSWORD }}" \
-            -out=tfplan
+            -out=tfplan 2>&1 | tee plan.log; then
+            
+            # Check if it's a lock error
+            if grep -q "Error acquiring the state lock" plan.log; then
+              echo "State is locked, attempting to force unlock..."
+              LOCK_ID=$(grep "ID:" plan.log | awk '{print $2}')
+              echo "Lock ID: $LOCK_ID"
+              terraform force-unlock -force "$LOCK_ID" || true
+              sleep 5
+              
+              echo "Retrying plan..."
+              terraform plan \
+                -var="opensearch_master_password=${{ secrets.DEV_OPENSEARCH_PASSWORD }}" \
+                -out=tfplan
+            else
+              exit 1
+            fi
+          fi
 
       - name: Upload Terraform plan
         uses: actions/upload-artifact@v4
@@ -228,7 +247,24 @@ jobs:
 
       - name: Terraform Apply
         working-directory: infra/envs/dev
-        run: terraform apply -auto-approve tfplan
+        run: |
+          # Try to apply, if it fails due to lock, force unlock and retry
+          if ! terraform apply -auto-approve tfplan 2>&1 | tee apply.log; then
+            
+            # Check if it's a lock error
+            if grep -q "Error acquiring the state lock" apply.log; then
+              echo "State is locked, attempting to force unlock..."
+              LOCK_ID=$(grep "ID:" apply.log | awk '{print $2}')
+              echo "Lock ID: $LOCK_ID"
+              terraform force-unlock -force "$LOCK_ID" || true
+              sleep 5
+              
+              echo "Retrying apply..."
+              terraform apply -auto-approve tfplan
+            else
+              exit 1
+            fi
+          fi
 
       - name: Export outputs
         id: tf-outputs
