@@ -133,3 +133,37 @@ coverage/
 # Build artifacts
 *.tsbuildinfo
 
+# ============================================================================
+# MOBILE APP SENSITIVE FILES
+# ============================================================================
+# Keystores directory (for release keystores)
+keystores/
+
+# Android keystores and signing configs
+*.keystore
+!**/debug.keystore
+keystore.properties
+*.jks
+
+# iOS provisioning profiles and certificates
+*.mobileprovision
+*.p12
+*.cer
+*.p8
+
+# ============================================================================
+# LEGACY DIRECTORIES - DO NOT RE-ADD (Migration to AWS Lambda complete)
+# ============================================================================
+# These directories contained Supabase/KV/Deno code that has been migrated
+# to AWS Lambda (backend/lambda/). Deleted on 2026-01-02 as part of cleanup.
+# DO NOT recreate these directories.
+supabase/
+Warmpawzecodev/
+archive/
+src/
+lib/
+packages/
+deno.json
+vite.config.ts
+
+infrastructure/terraform-cleanup/.terraform/

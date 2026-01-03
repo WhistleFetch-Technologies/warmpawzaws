@@ -6,8 +6,19 @@ react {
     /* Autolinking */
 }
 
-def enableProguardInReleaseBuilds = false
+def enableProguardInReleaseBuilds = true
 def jscFlavor = 'org.webkit:android-jsc:+'
+
+// ============================================================================
+// KEYSTORE CONFIGURATION
+// ============================================================================
+// Load keystore properties from file if it exists
+// This allows for secure handling of signing credentials
+def keystorePropertiesFile = rootProject.file("keystore.properties")
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
 
 android {
     ndkVersion rootProject.ext.ndkVersion
@@ -20,7 +31,11 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0.0"
+        
+        // Build config fields for environment configuration
+        buildConfigField "String", "API_BASE_URL", '"https://api.warmpawz.com"'
     }
+
     signingConfigs {
         debug {
             storeFile file('debug.keystore')
@@ -29,22 +44,64 @@ android {
             keyPassword 'android'
         }
         release {
-            if (project.hasProperty('MYAPP_RELEASE_STORE_FILE')) {
+            // Priority 1: Load from keystore.properties file
+            if (keystorePropertiesFile.exists()) {
+                storeFile file(keystoreProperties['MYAPP_RELEASE_STORE_FILE'] ?: 'release.keystore')
+                storePassword keystoreProperties['MYAPP_RELEASE_STORE_PASSWORD'] ?: ''
+                keyAlias keystoreProperties['MYAPP_RELEASE_KEY_ALIAS'] ?: 'warmpawz-customer'
+                keyPassword keystoreProperties['MYAPP_RELEASE_KEY_PASSWORD'] ?: ''
+            }
+            // Priority 2: Load from gradle.properties or command line
+            else if (project.hasProperty('MYAPP_RELEASE_STORE_FILE')) {
                 storeFile file(MYAPP_RELEASE_STORE_FILE)
                 storePassword MYAPP_RELEASE_STORE_PASSWORD
                 keyAlias MYAPP_RELEASE_KEY_ALIAS
                 keyPassword MYAPP_RELEASE_KEY_PASSWORD
             }
+            // Priority 3: Load from environment variables (CI/CD)
+            else if (System.getenv('ANDROID_KEYSTORE_FILE')) {
+                storeFile file(System.getenv('ANDROID_KEYSTORE_FILE'))
+                storePassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('ANDROID_KEY_ALIAS') ?: 'warmpawz-customer'
+                keyPassword System.getenv('ANDROID_KEY_PASSWORD')
+            }
         }
     }
+
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
+            applicationIdSuffix ".debug"
+            versionNameSuffix "-debug"
+            buildConfigField "String", "API_BASE_URL", '"http://localhost:3000"'
         }
         release {
             signingConfig signingConfigs.release
             minifyEnabled enableProguardInReleaseBuilds
-            proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
+            shrinkResources enableProguardInReleaseBuilds
+            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
+            buildConfigField "String", "API_BASE_URL", '"https://api.warmpawz.com"'
+        }
+    }
+
+    // Flavor dimensions for different environments
+    flavorDimensions "environment"
+    productFlavors {
+        dev {
+            dimension "environment"
+            applicationIdSuffix ".dev"
+            versionNameSuffix "-dev"
+            buildConfigField "String", "API_BASE_URL", '"https://dev.api.warmpawz.com"'
+        }
+        staging {
+            dimension "environment"
+            applicationIdSuffix ".staging"
+            versionNameSuffix "-staging"
+            buildConfigField "String", "API_BASE_URL", '"https://staging.api.warmpawz.com"'
+        }
+        production {
+            dimension "environment"
+            buildConfigField "String", "API_BASE_URL", '"https://api.warmpawz.com"'
         }
     }
 }

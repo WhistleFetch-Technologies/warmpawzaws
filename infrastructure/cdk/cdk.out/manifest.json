@@ -1,0 +1,4310 @@
+{
+  "version": "48.0.0",
+  "artifacts": {
+    "WarmpawzStack-dev.assets": {
+      "type": "cdk:asset-manifest",
+      "properties": {
+        "file": "WarmpawzStack-dev.assets.json",
+        "requiresBootstrapStackVersion": 6,
+        "bootstrapStackVersionSsmParameter": "/cdk-bootstrap/hnb659fds/version"
+      }
+    },
+    "WarmpawzStack-dev": {
+      "type": "aws:cloudformation:stack",
+      "environment": "aws://023394150666/ap-south-1",
+      "properties": {
+        "templateFile": "WarmpawzStack-dev.template.json",
+        "terminationProtection": false,
+        "tags": {
+          "Environment": "dev",
+          "ManagedBy": "CDK",
+          "Project": "Warmpawz"
+        },
+        "validateOnSynth": false,
+        "assumeRoleArn": "arn:${AWS::Partition}:iam::023394150666:role/cdk-hnb659fds-deploy-role-023394150666-ap-south-1",
+        "cloudFormationExecutionRoleArn": "arn:${AWS::Partition}:iam::023394150666:role/cdk-hnb659fds-cfn-exec-role-023394150666-ap-south-1",
+        "stackTemplateAssetObjectUrl": "s3://cdk-hnb659fds-assets-023394150666-ap-south-1/d2a55f2f2b7c5700331d24e054f2b972b3fa5aff26c2e6d31421f57a478c346e.json",
+        "requiresBootstrapStackVersion": 6,
+        "bootstrapStackVersionSsmParameter": "/cdk-bootstrap/hnb659fds/version",
+        "additionalDependencies": [
+          "WarmpawzStack-dev.assets"
+        ],
+        "lookupRole": {
+          "arn": "arn:${AWS::Partition}:iam::023394150666:role/cdk-hnb659fds-lookup-role-023394150666-ap-south-1",
+          "requiresBootstrapStackVersion": 8,
+          "bootstrapStackVersionSsmParameter": "/cdk-bootstrap/hnb659fds/version"
+        },
+        "stackName": "WarmpawzStack-dev-v2"
+      },
+      "dependencies": [
+        "WarmpawzStack-dev.assets"
+      ],
+      "metadata": {
+        "/WarmpawzStack-dev": [
+          {
+            "type": "aws:cdk:stack-tags",
+            "data": [
+              {
+                "Key": "Environment",
+                "Value": "dev"
+              },
+              {
+                "Key": "ManagedBy",
+                "Value": "CDK"
+              },
+              {
+                "Key": "Project",
+                "Value": "Warmpawz"
+              }
+            ]
+          }
+        ],
+        "/WarmpawzStack-dev/AuroraStack/AuroraSecret/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraStackAuroraSecret2E11B886"
+          }
+        ],
+        "/WarmpawzStack-dev/AuroraStack/AuroraSecret/Attachment/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraStackAuroraSecretAttachment5041D1AD"
+          }
+        ],
+        "/WarmpawzStack-dev/AuroraStack/AuroraSecurityGroup/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraStackAuroraSecurityGroup28BA76D3"
+          }
+        ],
+        "/WarmpawzStack-dev/AuroraStack/AuroraSecurityGroup/from WarmpawzStackdevAuroraStackAuroraSecurityGroup5705D70D:{IndirectPort}": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraStackAuroraSecurityGroupfromWarmpawzStackdevAuroraStackAuroraSecurityGroup5705D70DIndirectPortCE0F7BFD"
+          }
+        ],
+        "/WarmpawzStack-dev/AuroraStack/AuroraSecurityGroup/to WarmpawzStackdevAuroraStackAuroraSecurityGroup5705D70D:{IndirectPort}": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraStackAuroraSecurityGrouptoWarmpawzStackdevAuroraStackAuroraSecurityGroup5705D70DIndirectPortB404042F"
+          }
+        ],
+        "/WarmpawzStack-dev/AuroraStack/AuroraCluster/Subnets/Default": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraStackAuroraClusterSubnetsD6C77014"
+          }
+        ],
+        "/WarmpawzStack-dev/AuroraStack/AuroraCluster/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraStackAuroraCluster0A30E50A"
+          }
+        ],
+        "/WarmpawzStack-dev/AuroraStack/AuroraCluster/writer/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraStackAuroraClusterwriter15FEB042"
+          }
+        ],
+        "/WarmpawzStack-dev/AuroraStack/AuroraProxy/IAMRole/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraStackAuroraProxyIAMRoleD0FA893E"
+          }
+        ],
+        "/WarmpawzStack-dev/AuroraStack/AuroraProxy/IAMRole/DefaultPolicy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraStackAuroraProxyIAMRoleDefaultPolicy5CBE0CF0"
+          }
+        ],
+        "/WarmpawzStack-dev/AuroraStack/AuroraProxy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraStackAuroraProxyEB6DC6B7"
+          }
+        ],
+        "/WarmpawzStack-dev/AuroraStack/AuroraProxy/ProxyTargetGroup": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraStackAuroraProxyProxyTargetGroupD03E5434"
+          }
+        ],
+        "/WarmpawzStack-dev/CognitoStack/CustomerUserPool/smsRole/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CognitoStackCustomerUserPoolsmsRole2E079065"
+          }
+        ],
+        "/WarmpawzStack-dev/CognitoStack/CustomerUserPool/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CognitoStackCustomerUserPoolCB3F3B8A"
+          }
+        ],
+        "/WarmpawzStack-dev/CognitoStack/CustomerUserPool/CustomerWebClient/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CognitoStackCustomerUserPoolCustomerWebClient357C429B"
+          }
+        ],
+        "/WarmpawzStack-dev/CognitoStack/VendorUserPool/smsRole/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CognitoStackVendorUserPoolsmsRoleCF64B5E7"
+          }
+        ],
+        "/WarmpawzStack-dev/CognitoStack/VendorUserPool/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CognitoStackVendorUserPoolFD3AACBE"
+          }
+        ],
+        "/WarmpawzStack-dev/CognitoStack/VendorUserPool/VendorWebClient/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CognitoStackVendorUserPoolVendorWebClientDC01E110"
+          }
+        ],
+        "/WarmpawzStack-dev/CognitoStack/AdminUserPool/smsRole/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CognitoStackAdminUserPoolsmsRole737F90FD"
+          }
+        ],
+        "/WarmpawzStack-dev/CognitoStack/AdminUserPool/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CognitoStackAdminUserPool2B5416C2"
+          }
+        ],
+        "/WarmpawzStack-dev/CognitoStack/AdminUserPool/AdminWebClient/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CognitoStackAdminUserPoolAdminWebClient04B63C90"
+          }
+        ],
+        "/WarmpawzStack-dev/SecurityStack/LambdaSecurityGroup/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SecurityStackLambdaSecurityGroupE5CA1F78"
+          }
+        ],
+        "/WarmpawzStack-dev/SecurityStack/ApiSecurityGroup/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SecurityStackApiSecurityGroup6ADCE8A7"
+          }
+        ],
+        "/WarmpawzStack-dev/S3Stack/StorageBucket/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "S3StackStorageBucket59522327"
+          }
+        ],
+        "/WarmpawzStack-dev/S3Stack/UploadsBucket/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "S3StackUploadsBucketF13EC11E"
+          }
+        ],
+        "/WarmpawzStack-dev/S3Stack/AssetsBucket/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "S3StackAssetsBucket9CB49E63"
+          }
+        ],
+        "/WarmpawzStack-dev/S3Stack/AssetsBucket/Policy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "S3StackAssetsBucketPolicyF5650C69"
+          }
+        ],
+        "/WarmpawzStack-dev/S3Stack/AssetsDistribution/Origin1/S3Origin/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "S3StackAssetsDistributionOrigin1S3OriginEF691C1A"
+          }
+        ],
+        "/WarmpawzStack-dev/S3Stack/AssetsDistribution/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "S3StackAssetsDistribution3582A8BC"
+          }
+        ],
+        "/WarmpawzStack-dev/S3Stack/LogsBucket/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "S3StackLogsBucket02C3EB3A"
+          }
+        ],
+        "/WarmpawzStack-dev/S3Stack/ApkBucket/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "S3StackApkBucket1AED656F"
+          }
+        ],
+        "/WarmpawzStack-dev/S3Stack/ApkBucket/Policy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "S3StackApkBucketPolicy0D134C92"
+          }
+        ],
+        "/WarmpawzStack-dev/S3Stack/ApkDistribution/Origin1/S3Origin/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "S3StackApkDistributionOrigin1S3Origin955A0888"
+          }
+        ],
+        "/WarmpawzStack-dev/S3Stack/ApkDistribution/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "S3StackApkDistribution984CD1FF"
+          }
+        ],
+        "/WarmpawzStack-dev/IamStack/LambdaExecutionRole/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "IamStackLambdaExecutionRole9AF0381A"
+          }
+        ],
+        "/WarmpawzStack-dev/IamStack/LambdaExecutionRole/DefaultPolicy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "IamStackLambdaExecutionRoleDefaultPolicy1B284C67"
+          }
+        ],
+        "/WarmpawzStack-dev/SqsStack/NotificationDLQ/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackNotificationDLQ0AA77695"
+          }
+        ],
+        "/WarmpawzStack-dev/SqsStack/NotificationQueue/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackNotificationQueueCDC9E5EE"
+          }
+        ],
+        "/WarmpawzStack-dev/SqsStack/NotificationQueue/Policy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackNotificationQueuePolicy16225D01"
+          }
+        ],
+        "/WarmpawzStack-dev/SqsStack/NotificationQueue/WarmpawzStackdevSnsStackBookingCreatedTopic74C5F02A/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackNotificationQueueWarmpawzStackdevSnsStackBookingCreatedTopic74C5F02AA916EF31"
+          }
+        ],
+        "/WarmpawzStack-dev/SqsStack/NotificationQueue/WarmpawzStackdevSnsStackPaymentProcessedTopic70A528CE/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackNotificationQueueWarmpawzStackdevSnsStackPaymentProcessedTopic70A528CE79A6F7DE"
+          }
+        ],
+        "/WarmpawzStack-dev/SqsStack/NotificationQueue/WarmpawzStackdevSnsStackVendorApprovedTopic93CD179A/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackNotificationQueueWarmpawzStackdevSnsStackVendorApprovedTopic93CD179A25DA8D9F"
+          }
+        ],
+        "/WarmpawzStack-dev/SqsStack/NotificationQueue/WarmpawzStackdevSnsStackNotificationTopicEEA581F5/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackNotificationQueueWarmpawzStackdevSnsStackNotificationTopicEEA581F51CD7E7F1"
+          }
+        ],
+        "/WarmpawzStack-dev/SqsStack/EmailDLQ/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackEmailDLQ5B7065DD"
+          }
+        ],
+        "/WarmpawzStack-dev/SqsStack/EmailQueue/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackEmailQueue23349431"
+          }
+        ],
+        "/WarmpawzStack-dev/SqsStack/SmsDLQ/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackSmsDLQ770F1E2D"
+          }
+        ],
+        "/WarmpawzStack-dev/SqsStack/SmsQueue/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackSmsQueue7579FE7A"
+          }
+        ],
+        "/WarmpawzStack-dev/SqsStack/AnalyticsDLQ/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackAnalyticsDLQ692D26DF"
+          }
+        ],
+        "/WarmpawzStack-dev/SqsStack/AnalyticsQueue/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackAnalyticsQueueEC085EA1"
+          }
+        ],
+        "/WarmpawzStack-dev/SqsStack/AnalyticsQueue/Policy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackAnalyticsQueuePolicy0EEAC6F9"
+          }
+        ],
+        "/WarmpawzStack-dev/SqsStack/AnalyticsQueue/WarmpawzStackdevSnsStackPaymentProcessedTopic70A528CE/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackAnalyticsQueueWarmpawzStackdevSnsStackPaymentProcessedTopic70A528CE20A7423D"
+          }
+        ],
+        "/WarmpawzStack-dev/SqsStack/AnalyticsQueue/WarmpawzStackdevSnsStackAnalyticsTopic574EC487/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackAnalyticsQueueWarmpawzStackdevSnsStackAnalyticsTopic574EC48745C62EFF"
+          }
+        ],
+        "/WarmpawzStack-dev/SqsStack/SettlementDLQ/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackSettlementDLQ36EB3BDC"
+          }
+        ],
+        "/WarmpawzStack-dev/SqsStack/SettlementQueue/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackSettlementQueueE715B1BA"
+          }
+        ],
+        "/WarmpawzStack-dev/SnsStack/BookingCreatedTopic/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SnsStackBookingCreatedTopicB7C02FB2"
+          }
+        ],
+        "/WarmpawzStack-dev/SnsStack/BookingCreatedTopic/Policy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SnsStackBookingCreatedTopicPolicy5C66A051"
+          }
+        ],
+        "/WarmpawzStack-dev/SnsStack/PaymentProcessedTopic/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SnsStackPaymentProcessedTopicABCFD806"
+          }
+        ],
+        "/WarmpawzStack-dev/SnsStack/PaymentProcessedTopic/Policy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SnsStackPaymentProcessedTopicPolicyA02CC53D"
+          }
+        ],
+        "/WarmpawzStack-dev/SnsStack/VendorApprovedTopic/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SnsStackVendorApprovedTopicA3E62696"
+          }
+        ],
+        "/WarmpawzStack-dev/SnsStack/VendorApprovedTopic/Policy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SnsStackVendorApprovedTopicPolicyDC917707"
+          }
+        ],
+        "/WarmpawzStack-dev/SnsStack/NotificationTopic/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SnsStackNotificationTopic8FDAC809"
+          }
+        ],
+        "/WarmpawzStack-dev/SnsStack/AnalyticsTopic/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SnsStackAnalyticsTopic7094CF54"
+          }
+        ],
+        "/WarmpawzStack-dev/DynamoDbStack/LogsTable": [
+          {
+            "type": "aws:cdk:hasPhysicalName",
+            "data": {
+              "Ref": "DynamoDbStackLogsTable96BE4B9D"
+            }
+          }
+        ],
+        "/WarmpawzStack-dev/DynamoDbStack/LogsTable/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DynamoDbStackLogsTable96BE4B9D"
+          }
+        ],
+        "/WarmpawzStack-dev/DynamoDbStack/AnalyticsTable": [
+          {
+            "type": "aws:cdk:hasPhysicalName",
+            "data": {
+              "Ref": "DynamoDbStackAnalyticsTable19FB8467"
+            }
+          }
+        ],
+        "/WarmpawzStack-dev/DynamoDbStack/AnalyticsTable/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DynamoDbStackAnalyticsTable19FB8467"
+          }
+        ],
+        "/WarmpawzStack-dev/DynamoDbStack/ReportsTable": [
+          {
+            "type": "aws:cdk:hasPhysicalName",
+            "data": {
+              "Ref": "DynamoDbStackReportsTableB844EC92"
+            }
+          }
+        ],
+        "/WarmpawzStack-dev/DynamoDbStack/ReportsTable/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DynamoDbStackReportsTableB844EC92"
+          }
+        ],
+        "/WarmpawzStack-dev/DynamoDbStack/ChatMessagesTable": [
+          {
+            "type": "aws:cdk:hasPhysicalName",
+            "data": {
+              "Ref": "DynamoDbStackChatMessagesTable8D237DC2"
+            }
+          }
+        ],
+        "/WarmpawzStack-dev/DynamoDbStack/ChatMessagesTable/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DynamoDbStackChatMessagesTable8D237DC2"
+          }
+        ],
+        "/WarmpawzStack-dev/DynamoDbStack/AiConversationsTable": [
+          {
+            "type": "aws:cdk:hasPhysicalName",
+            "data": {
+              "Ref": "DynamoDbStackAiConversationsTable8F2402AA"
+            }
+          }
+        ],
+        "/WarmpawzStack-dev/DynamoDbStack/AiConversationsTable/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DynamoDbStackAiConversationsTable8F2402AA"
+          }
+        ],
+        "/WarmpawzStack-dev/ChimeStack/ChimeRole/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ChimeStackChimeRole4A0C6A8C"
+          }
+        ],
+        "/WarmpawzStack-dev/ChimeStack/ChimeRole/DefaultPolicy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ChimeStackChimeRoleDefaultPolicy3FF13B50"
+          }
+        ],
+        "/WarmpawzStack-dev/ChimeStack/ChimeAppInstanceArn": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ChimeStackChimeAppInstanceArn4FBD7509"
+          }
+        ],
+        "/WarmpawzStack-dev/ChimeStack/ChimeRoleArn": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ChimeStackChimeRoleArn34D55819"
+          }
+        ],
+        "/WarmpawzStack-dev/EventBridgeStack/WarmpawzEventBus/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "EventBridgeStackWarmpawzEventBus2B15753F"
+          }
+        ],
+        "/WarmpawzStack-dev/EventBridgeStack/BookingEventRule/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "EventBridgeStackBookingEventRuleF50BB7D3"
+          }
+        ],
+        "/WarmpawzStack-dev/EventBridgeStack/PaymentEventRule/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "EventBridgeStackPaymentEventRule01796980"
+          }
+        ],
+        "/WarmpawzStack-dev/EventBridgeStack/VendorEventRule/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "EventBridgeStackVendorEventRule483F9704"
+          }
+        ],
+        "/WarmpawzStack-dev/EventBridgeStack/AnalyticsEventRule/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "EventBridgeStackAnalyticsEventRuleA69E042D"
+          }
+        ],
+        "/WarmpawzStack-dev/EventBridgeStack/NotificationEventRule/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "EventBridgeStackNotificationEventRuleC1ECE6FA"
+          }
+        ],
+        "/WarmpawzStack-dev/LambdaStack/SharedLayer/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "LambdaStackSharedLayerEA8C1C60"
+          }
+        ],
+        "/WarmpawzStack-dev/LambdaStack/ApiFunction/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "LambdaStackApiFunctionC985920A"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiE5093081"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/DefaultStage/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiDefaultStage0F758123"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/GET--{proxy+}/LambdaIntegration/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiGETproxyLambdaIntegrationEDDD3B82"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/GET--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiGETproxyLambdaIntegrationPermissionDF3406CE"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/GET--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiGETproxy396DCE6A"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/POST--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPOSTproxyLambdaIntegrationPermissionDE15A5C5"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/POST--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPOSTproxy06172A45"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/PUT--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPUTproxyLambdaIntegrationPermission73351BDF"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/PUT--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPUTproxy360030AF"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/PATCH--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPATCHproxyLambdaIntegrationPermission7092659E"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/PATCH--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPATCHproxyD95F022B"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/DELETE--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiDELETEproxyLambdaIntegrationPermission5B585495"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/DELETE--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiDELETEproxy2E4466F8"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/GET--health/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiGEThealthLambdaIntegrationPermission201253E0"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/GET--health/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiGEThealth6CB40255"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/GET--admin--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiGETadminproxyLambdaIntegrationPermissionF73ADD43"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/GET--admin--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiGETadminproxyA5ADC0DB"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/AdminAuthorizer/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiAdminAuthorizerBE526AEF"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/POST--admin--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPOSTadminproxyLambdaIntegrationPermission2247AB4A"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/POST--admin--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPOSTadminproxy45A60CCA"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/PUT--admin--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPUTadminproxyLambdaIntegrationPermission939778CD"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/PUT--admin--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPUTadminproxy09883AC8"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/PATCH--admin--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPATCHadminproxyLambdaIntegrationPermission1059C3A6"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/PATCH--admin--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPATCHadminproxy7180DF95"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/DELETE--admin--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiDELETEadminproxyLambdaIntegrationPermission353D12FF"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/DELETE--admin--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiDELETEadminproxy8E72583C"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/GET--customer--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiGETcustomerproxyLambdaIntegrationPermissionEB6613E8"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/GET--customer--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiGETcustomerproxyAB219230"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/CustomerAuthorizer/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiCustomerAuthorizer05E66D97"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/POST--customer--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPOSTcustomerproxyLambdaIntegrationPermission335711CF"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/POST--customer--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPOSTcustomerproxy71E6B629"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/PUT--customer--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPUTcustomerproxyLambdaIntegrationPermissionEAD47BD3"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/PUT--customer--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPUTcustomerproxy8C64FD28"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/PATCH--customer--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPATCHcustomerproxyLambdaIntegrationPermission1D0A7593"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/PATCH--customer--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPATCHcustomerproxy309B872D"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/DELETE--customer--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiDELETEcustomerproxyLambdaIntegrationPermission0DA37BAA"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/DELETE--customer--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiDELETEcustomerproxyB59C3A2E"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/GET--vendor--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiGETvendorproxyLambdaIntegrationPermissionCCEC33B3"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/GET--vendor--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiGETvendorproxyC4079A5E"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/VendorAuthorizer/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiVendorAuthorizerEB3B03F9"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/POST--vendor--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPOSTvendorproxyLambdaIntegrationPermission4EA4F13E"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/POST--vendor--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPOSTvendorproxy9E5EA176"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/PUT--vendor--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPUTvendorproxyLambdaIntegrationPermissionD029FB6F"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/PUT--vendor--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPUTvendorproxy49472C59"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/PATCH--vendor--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPATCHvendorproxyLambdaIntegrationPermission44BAE6FB"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/PATCH--vendor--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPATCHvendorproxyB3B63CFF"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/DELETE--vendor--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiDELETEvendorproxyLambdaIntegrationPermission885681CF"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/DELETE--vendor--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiDELETEvendorproxyAC088822"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/ApiDomain/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackApiDomainD311C659"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayStack/ApiMapping/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackApiMapping0435E41B"
+          }
+        ],
+        "/WarmpawzStack-dev/Route53Stack/ApiCertificate/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "Route53StackApiCertificate65C687FE"
+          }
+        ],
+        "/WarmpawzStack-dev/Route53Stack/CustomerAppARecord": [
+          {
+            "type": "aws:cdk:warning",
+            "data": "Ignoring ttl since 'target' uses an alias target [ack: aws-cdk-lib/aws-route53:ttlIgnored]",
+            "trace": [
+              "Annotations.addMessage (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/annotations.js:1:2066)",
+              "Annotations.addWarningV2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/annotations.js:1:984)",
+              "new RecordSet2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/aws-route53/lib/record-set.js:1:8586)",
+              "new RecordSet2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:681)",
+              "new ARecord2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/aws-route53/lib/record-set.js:1:13285)",
+              "new ARecord2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:681)",
+              "new Route53Stack (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/lib/route53-stack.ts:59:5)",
+              "new WarmpawzStack (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/lib/warmpawz-stack.ts:210:25)",
+              "/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/bin/cdk.ts:17:3",
+              "Array.forEach (<anonymous>)",
+              "Object.<anonymous> (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/bin/cdk.ts:14:14)",
+              "Module._compile (node:internal/modules/cjs/loader:1760:14)",
+              "Object..js (node:internal/modules/cjs/loader:1893:10)",
+              "Module.load (node:internal/modules/cjs/loader:1480:32)",
+              "Module._load (node:internal/modules/cjs/loader:1299:12)",
+              "TracingChannel.traceSync (node:diagnostics_channel:328:14)",
+              "wrapModuleLoad (node:internal/modules/cjs/loader:244:24)",
+              "Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)",
+              "node:internal/main/run_main_module:33:47"
+            ]
+          }
+        ],
+        "/WarmpawzStack-dev/Route53Stack/CustomerAppARecord/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "Route53StackCustomerAppARecord68AD059E"
+          }
+        ],
+        "/WarmpawzStack-dev/Route53Stack/VendorAppARecord": [
+          {
+            "type": "aws:cdk:warning",
+            "data": "Ignoring ttl since 'target' uses an alias target [ack: aws-cdk-lib/aws-route53:ttlIgnored]",
+            "trace": [
+              "Annotations.addMessage (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/annotations.js:1:2066)",
+              "Annotations.addWarningV2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/annotations.js:1:984)",
+              "new RecordSet2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/aws-route53/lib/record-set.js:1:8586)",
+              "new RecordSet2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:681)",
+              "new ARecord2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/aws-route53/lib/record-set.js:1:13285)",
+              "new ARecord2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:681)",
+              "new Route53Stack (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/lib/route53-stack.ts:69:5)",
+              "new WarmpawzStack (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/lib/warmpawz-stack.ts:210:25)",
+              "/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/bin/cdk.ts:17:3",
+              "Array.forEach (<anonymous>)",
+              "Object.<anonymous> (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/bin/cdk.ts:14:14)",
+              "Module._compile (node:internal/modules/cjs/loader:1760:14)",
+              "Object..js (node:internal/modules/cjs/loader:1893:10)",
+              "Module.load (node:internal/modules/cjs/loader:1480:32)",
+              "Module._load (node:internal/modules/cjs/loader:1299:12)",
+              "TracingChannel.traceSync (node:diagnostics_channel:328:14)",
+              "wrapModuleLoad (node:internal/modules/cjs/loader:244:24)",
+              "Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)",
+              "node:internal/main/run_main_module:33:47"
+            ]
+          }
+        ],
+        "/WarmpawzStack-dev/Route53Stack/VendorAppARecord/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "Route53StackVendorAppARecord0572B69C"
+          }
+        ],
+        "/WarmpawzStack-dev/Route53Stack/AdminARecord": [
+          {
+            "type": "aws:cdk:warning",
+            "data": "Ignoring ttl since 'target' uses an alias target [ack: aws-cdk-lib/aws-route53:ttlIgnored]",
+            "trace": [
+              "Annotations.addMessage (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/annotations.js:1:2066)",
+              "Annotations.addWarningV2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/annotations.js:1:984)",
+              "new RecordSet2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/aws-route53/lib/record-set.js:1:8586)",
+              "new RecordSet2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:681)",
+              "new ARecord2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/aws-route53/lib/record-set.js:1:13285)",
+              "new ARecord2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:681)",
+              "new Route53Stack (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/lib/route53-stack.ts:79:5)",
+              "new WarmpawzStack (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/lib/warmpawz-stack.ts:210:25)",
+              "/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/bin/cdk.ts:17:3",
+              "Array.forEach (<anonymous>)",
+              "Object.<anonymous> (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/bin/cdk.ts:14:14)",
+              "Module._compile (node:internal/modules/cjs/loader:1760:14)",
+              "Object..js (node:internal/modules/cjs/loader:1893:10)",
+              "Module.load (node:internal/modules/cjs/loader:1480:32)",
+              "Module._load (node:internal/modules/cjs/loader:1299:12)",
+              "TracingChannel.traceSync (node:diagnostics_channel:328:14)",
+              "wrapModuleLoad (node:internal/modules/cjs/loader:244:24)",
+              "Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)",
+              "node:internal/main/run_main_module:33:47"
+            ]
+          }
+        ],
+        "/WarmpawzStack-dev/Route53Stack/AdminARecord/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "Route53StackAdminARecordBEABFE99"
+          }
+        ],
+        "/WarmpawzStack-dev/Route53Stack/ApkARecord": [
+          {
+            "type": "aws:cdk:warning",
+            "data": "Ignoring ttl since 'target' uses an alias target [ack: aws-cdk-lib/aws-route53:ttlIgnored]",
+            "trace": [
+              "Annotations.addMessage (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/annotations.js:1:2066)",
+              "Annotations.addWarningV2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/annotations.js:1:984)",
+              "new RecordSet2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/aws-route53/lib/record-set.js:1:8586)",
+              "new RecordSet2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:681)",
+              "new ARecord2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/aws-route53/lib/record-set.js:1:13285)",
+              "new ARecord2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:681)",
+              "new Route53Stack (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/lib/route53-stack.ts:93:5)",
+              "new WarmpawzStack (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/lib/warmpawz-stack.ts:210:25)",
+              "/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/bin/cdk.ts:17:3",
+              "Array.forEach (<anonymous>)",
+              "Object.<anonymous> (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/bin/cdk.ts:14:14)",
+              "Module._compile (node:internal/modules/cjs/loader:1760:14)",
+              "Object..js (node:internal/modules/cjs/loader:1893:10)",
+              "Module.load (node:internal/modules/cjs/loader:1480:32)",
+              "Module._load (node:internal/modules/cjs/loader:1299:12)",
+              "TracingChannel.traceSync (node:diagnostics_channel:328:14)",
+              "wrapModuleLoad (node:internal/modules/cjs/loader:244:24)",
+              "Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)",
+              "node:internal/main/run_main_module:33:47"
+            ]
+          }
+        ],
+        "/WarmpawzStack-dev/Route53Stack/ApkARecord/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "Route53StackApkARecord99A5183D"
+          }
+        ],
+        "/WarmpawzStack-dev/Route53Stack/ApiARecord": [
+          {
+            "type": "aws:cdk:warning",
+            "data": "Ignoring ttl since 'target' uses an alias target [ack: aws-cdk-lib/aws-route53:ttlIgnored]",
+            "trace": [
+              "Annotations.addMessage (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/annotations.js:1:2066)",
+              "Annotations.addWarningV2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/annotations.js:1:984)",
+              "new RecordSet2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/aws-route53/lib/record-set.js:1:8586)",
+              "new RecordSet2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:681)",
+              "new ARecord2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/aws-route53/lib/record-set.js:1:13285)",
+              "new ARecord2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:681)",
+              "Route53Stack.createApiGatewayRecords (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/lib/route53-stack.ts:113:25)",
+              "new WarmpawzStack (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/lib/warmpawz-stack.ts:220:23)",
+              "/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/bin/cdk.ts:17:3",
+              "Array.forEach (<anonymous>)",
+              "Object.<anonymous> (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/bin/cdk.ts:14:14)",
+              "Module._compile (node:internal/modules/cjs/loader:1760:14)",
+              "Object..js (node:internal/modules/cjs/loader:1893:10)",
+              "Module.load (node:internal/modules/cjs/loader:1480:32)",
+              "Module._load (node:internal/modules/cjs/loader:1299:12)",
+              "TracingChannel.traceSync (node:diagnostics_channel:328:14)",
+              "wrapModuleLoad (node:internal/modules/cjs/loader:244:24)",
+              "Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)",
+              "node:internal/main/run_main_module:33:47"
+            ]
+          }
+        ],
+        "/WarmpawzStack-dev/Route53Stack/ApiARecord/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "Route53StackApiARecord8172ED39"
+          }
+        ],
+        "/WarmpawzStack-dev/Route53Stack/ApiAaaaRecord": [
+          {
+            "type": "aws:cdk:warning",
+            "data": "Ignoring ttl since 'target' uses an alias target [ack: aws-cdk-lib/aws-route53:ttlIgnored]",
+            "trace": [
+              "Annotations.addMessage (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/annotations.js:1:2066)",
+              "Annotations.addWarningV2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/annotations.js:1:984)",
+              "new RecordSet2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/aws-route53/lib/record-set.js:1:8586)",
+              "new RecordSet2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:681)",
+              "new AaaaRecord2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/aws-route53/lib/record-set.js:1:14897)",
+              "new AaaaRecord2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:681)",
+              "Route53Stack.createApiGatewayRecords (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/lib/route53-stack.ts:126:28)",
+              "new WarmpawzStack (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/lib/warmpawz-stack.ts:220:23)",
+              "/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/bin/cdk.ts:17:3",
+              "Array.forEach (<anonymous>)",
+              "Object.<anonymous> (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/bin/cdk.ts:14:14)",
+              "Module._compile (node:internal/modules/cjs/loader:1760:14)",
+              "Object..js (node:internal/modules/cjs/loader:1893:10)",
+              "Module.load (node:internal/modules/cjs/loader:1480:32)",
+              "Module._load (node:internal/modules/cjs/loader:1299:12)",
+              "TracingChannel.traceSync (node:diagnostics_channel:328:14)",
+              "wrapModuleLoad (node:internal/modules/cjs/loader:244:24)",
+              "Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)",
+              "node:internal/main/run_main_module:33:47"
+            ]
+          }
+        ],
+        "/WarmpawzStack-dev/Route53Stack/ApiAaaaRecord/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "Route53StackApiAaaaRecord55658A66"
+          }
+        ],
+        "/WarmpawzStack-dev/AWSCloudFrontPartitionHostedZoneIdMap": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AWSCloudFrontPartitionHostedZoneIdMap"
+          }
+        ],
+        "/WarmpawzStack-dev/AuroraEndpoint": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraEndpoint"
+          }
+        ],
+        "/WarmpawzStack-dev/AuroraProxyEndpoint": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraProxyEndpoint"
+          }
+        ],
+        "/WarmpawzStack-dev/AuroraSecretArn": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraSecretArn"
+          }
+        ],
+        "/WarmpawzStack-dev/CustomerUserPoolId": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CustomerUserPoolId"
+          }
+        ],
+        "/WarmpawzStack-dev/CustomerUserPoolClientId": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CustomerUserPoolClientId"
+          }
+        ],
+        "/WarmpawzStack-dev/VendorUserPoolId": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "VendorUserPoolId"
+          }
+        ],
+        "/WarmpawzStack-dev/VendorUserPoolClientId": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "VendorUserPoolClientId"
+          }
+        ],
+        "/WarmpawzStack-dev/AdminUserPoolId": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AdminUserPoolId"
+          }
+        ],
+        "/WarmpawzStack-dev/AdminUserPoolClientId": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AdminUserPoolClientId"
+          }
+        ],
+        "/WarmpawzStack-dev/CustomerAuthorizerId": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CustomerAuthorizerId"
+          }
+        ],
+        "/WarmpawzStack-dev/VendorAuthorizerId": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "VendorAuthorizerId"
+          }
+        ],
+        "/WarmpawzStack-dev/AdminAuthorizerId": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AdminAuthorizerId"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayUrl": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayUrl"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiGatewayId": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayId"
+          }
+        ],
+        "/WarmpawzStack-dev/StorageBucketName": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "StorageBucketName"
+          }
+        ],
+        "/WarmpawzStack-dev/UploadsBucketName": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "UploadsBucketName"
+          }
+        ],
+        "/WarmpawzStack-dev/CloudFrontDomainName": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CloudFrontDomainName"
+          }
+        ],
+        "/WarmpawzStack-dev/ApiDomainName": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiDomainName"
+          }
+        ],
+        "/WarmpawzStack-dev/CustomerAppDomain": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CustomerAppDomain"
+          }
+        ],
+        "/WarmpawzStack-dev/VendorAppDomain": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "VendorAppDomain"
+          }
+        ],
+        "/WarmpawzStack-dev/AdminDomain": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AdminDomain"
+          }
+        ],
+        "/WarmpawzStack-dev/ApkBucketName": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApkBucketName"
+          }
+        ],
+        "/WarmpawzStack-dev/ApkDistributionDomain": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApkDistributionDomain"
+          }
+        ],
+        "/WarmpawzStack-dev/LambdaExecutionRoleArn": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "LambdaExecutionRoleArn"
+          }
+        ],
+        "/WarmpawzStack-dev/LambdaFunctionArn": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "LambdaFunctionArn"
+          }
+        ],
+        "/WarmpawzStack-dev/LambdaFunctionName": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "LambdaFunctionName"
+          }
+        ],
+        "/WarmpawzStack-dev/NotificationQueueUrl": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "NotificationQueueUrl"
+          }
+        ],
+        "/WarmpawzStack-dev/BookingCreatedTopicArn": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "BookingCreatedTopicArn"
+          }
+        ],
+        "/WarmpawzStack-dev/LogsTableName": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "LogsTableName"
+          }
+        ],
+        "/WarmpawzStack-dev/ChatMessagesTableName": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ChatMessagesTableName"
+          }
+        ],
+        "/WarmpawzStack-dev/EventBusName": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "EventBusName"
+          }
+        ],
+        "/WarmpawzStack-dev/CDKMetadata/Default": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CDKMetadata"
+          }
+        ],
+        "/WarmpawzStack-dev/BootstrapVersion": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "BootstrapVersion"
+          }
+        ],
+        "/WarmpawzStack-dev/CheckBootstrapVersion": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CheckBootstrapVersion"
+          }
+        ]
+      },
+      "displayName": "WarmpawzStack-dev"
+    },
+    "WarmpawzStack-test.assets": {
+      "type": "cdk:asset-manifest",
+      "properties": {
+        "file": "WarmpawzStack-test.assets.json",
+        "requiresBootstrapStackVersion": 6,
+        "bootstrapStackVersionSsmParameter": "/cdk-bootstrap/hnb659fds/version"
+      }
+    },
+    "WarmpawzStack-test": {
+      "type": "aws:cloudformation:stack",
+      "environment": "aws://023394150666/ap-south-1",
+      "properties": {
+        "templateFile": "WarmpawzStack-test.template.json",
+        "terminationProtection": false,
+        "tags": {
+          "Environment": "test",
+          "ManagedBy": "CDK",
+          "Project": "Warmpawz"
+        },
+        "validateOnSynth": false,
+        "assumeRoleArn": "arn:${AWS::Partition}:iam::023394150666:role/cdk-hnb659fds-deploy-role-023394150666-ap-south-1",
+        "cloudFormationExecutionRoleArn": "arn:${AWS::Partition}:iam::023394150666:role/cdk-hnb659fds-cfn-exec-role-023394150666-ap-south-1",
+        "stackTemplateAssetObjectUrl": "s3://cdk-hnb659fds-assets-023394150666-ap-south-1/364ee3e5722cd974e317f24e12ca21858fe6f2f2b219cd062fe1c42341675c30.json",
+        "requiresBootstrapStackVersion": 6,
+        "bootstrapStackVersionSsmParameter": "/cdk-bootstrap/hnb659fds/version",
+        "additionalDependencies": [
+          "WarmpawzStack-test.assets"
+        ],
+        "lookupRole": {
+          "arn": "arn:${AWS::Partition}:iam::023394150666:role/cdk-hnb659fds-lookup-role-023394150666-ap-south-1",
+          "requiresBootstrapStackVersion": 8,
+          "bootstrapStackVersionSsmParameter": "/cdk-bootstrap/hnb659fds/version"
+        }
+      },
+      "dependencies": [
+        "WarmpawzStack-test.assets"
+      ],
+      "metadata": {
+        "/WarmpawzStack-test": [
+          {
+            "type": "aws:cdk:stack-tags",
+            "data": [
+              {
+                "Key": "Environment",
+                "Value": "test"
+              },
+              {
+                "Key": "ManagedBy",
+                "Value": "CDK"
+              },
+              {
+                "Key": "Project",
+                "Value": "Warmpawz"
+              }
+            ]
+          }
+        ],
+        "/WarmpawzStack-test/AuroraStack/AuroraSecret/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraStackAuroraSecret2E11B886"
+          }
+        ],
+        "/WarmpawzStack-test/AuroraStack/AuroraSecret/Attachment/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraStackAuroraSecretAttachment5041D1AD"
+          }
+        ],
+        "/WarmpawzStack-test/AuroraStack/AuroraSecurityGroup/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraStackAuroraSecurityGroup28BA76D3"
+          }
+        ],
+        "/WarmpawzStack-test/AuroraStack/AuroraSecurityGroup/from WarmpawzStacktestAuroraStackAuroraSecurityGroup1B731751:{IndirectPort}": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraStackAuroraSecurityGroupfromWarmpawzStacktestAuroraStackAuroraSecurityGroup1B731751IndirectPort16C78D6B"
+          }
+        ],
+        "/WarmpawzStack-test/AuroraStack/AuroraSecurityGroup/to WarmpawzStacktestAuroraStackAuroraSecurityGroup1B731751:{IndirectPort}": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraStackAuroraSecurityGrouptoWarmpawzStacktestAuroraStackAuroraSecurityGroup1B731751IndirectPort42FE0858"
+          }
+        ],
+        "/WarmpawzStack-test/AuroraStack/AuroraCluster/Subnets/Default": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraStackAuroraClusterSubnetsD6C77014"
+          }
+        ],
+        "/WarmpawzStack-test/AuroraStack/AuroraCluster/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraStackAuroraCluster0A30E50A"
+          }
+        ],
+        "/WarmpawzStack-test/AuroraStack/AuroraCluster/writer/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraStackAuroraClusterwriter15FEB042"
+          }
+        ],
+        "/WarmpawzStack-test/AuroraStack/AuroraProxy/IAMRole/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraStackAuroraProxyIAMRoleD0FA893E"
+          }
+        ],
+        "/WarmpawzStack-test/AuroraStack/AuroraProxy/IAMRole/DefaultPolicy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraStackAuroraProxyIAMRoleDefaultPolicy5CBE0CF0"
+          }
+        ],
+        "/WarmpawzStack-test/AuroraStack/AuroraProxy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraStackAuroraProxyEB6DC6B7"
+          }
+        ],
+        "/WarmpawzStack-test/AuroraStack/AuroraProxy/ProxyTargetGroup": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraStackAuroraProxyProxyTargetGroupD03E5434"
+          }
+        ],
+        "/WarmpawzStack-test/CognitoStack/CustomerUserPool/smsRole/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CognitoStackCustomerUserPoolsmsRole2E079065"
+          }
+        ],
+        "/WarmpawzStack-test/CognitoStack/CustomerUserPool/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CognitoStackCustomerUserPoolCB3F3B8A"
+          }
+        ],
+        "/WarmpawzStack-test/CognitoStack/CustomerUserPool/CustomerWebClient/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CognitoStackCustomerUserPoolCustomerWebClient357C429B"
+          }
+        ],
+        "/WarmpawzStack-test/CognitoStack/VendorUserPool/smsRole/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CognitoStackVendorUserPoolsmsRoleCF64B5E7"
+          }
+        ],
+        "/WarmpawzStack-test/CognitoStack/VendorUserPool/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CognitoStackVendorUserPoolFD3AACBE"
+          }
+        ],
+        "/WarmpawzStack-test/CognitoStack/VendorUserPool/VendorWebClient/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CognitoStackVendorUserPoolVendorWebClientDC01E110"
+          }
+        ],
+        "/WarmpawzStack-test/CognitoStack/AdminUserPool/smsRole/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CognitoStackAdminUserPoolsmsRole737F90FD"
+          }
+        ],
+        "/WarmpawzStack-test/CognitoStack/AdminUserPool/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CognitoStackAdminUserPool2B5416C2"
+          }
+        ],
+        "/WarmpawzStack-test/CognitoStack/AdminUserPool/AdminWebClient/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CognitoStackAdminUserPoolAdminWebClient04B63C90"
+          }
+        ],
+        "/WarmpawzStack-test/SecurityStack/LambdaSecurityGroup/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SecurityStackLambdaSecurityGroupE5CA1F78"
+          }
+        ],
+        "/WarmpawzStack-test/SecurityStack/ApiSecurityGroup/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SecurityStackApiSecurityGroup6ADCE8A7"
+          }
+        ],
+        "/WarmpawzStack-test/S3Stack/StorageBucket/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "S3StackStorageBucket59522327"
+          }
+        ],
+        "/WarmpawzStack-test/S3Stack/UploadsBucket/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "S3StackUploadsBucketF13EC11E"
+          }
+        ],
+        "/WarmpawzStack-test/S3Stack/AssetsBucket/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "S3StackAssetsBucket9CB49E63"
+          }
+        ],
+        "/WarmpawzStack-test/S3Stack/AssetsBucket/Policy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "S3StackAssetsBucketPolicyF5650C69"
+          }
+        ],
+        "/WarmpawzStack-test/S3Stack/AssetsDistribution/Origin1/S3Origin/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "S3StackAssetsDistributionOrigin1S3OriginEF691C1A"
+          }
+        ],
+        "/WarmpawzStack-test/S3Stack/AssetsDistribution/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "S3StackAssetsDistribution3582A8BC"
+          }
+        ],
+        "/WarmpawzStack-test/S3Stack/LogsBucket/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "S3StackLogsBucket02C3EB3A"
+          }
+        ],
+        "/WarmpawzStack-test/S3Stack/ApkBucket/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "S3StackApkBucket1AED656F"
+          }
+        ],
+        "/WarmpawzStack-test/S3Stack/ApkBucket/Policy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "S3StackApkBucketPolicy0D134C92"
+          }
+        ],
+        "/WarmpawzStack-test/S3Stack/ApkDistribution/Origin1/S3Origin/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "S3StackApkDistributionOrigin1S3Origin955A0888"
+          }
+        ],
+        "/WarmpawzStack-test/S3Stack/ApkDistribution/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "S3StackApkDistribution984CD1FF"
+          }
+        ],
+        "/WarmpawzStack-test/IamStack/LambdaExecutionRole/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "IamStackLambdaExecutionRole9AF0381A"
+          }
+        ],
+        "/WarmpawzStack-test/IamStack/LambdaExecutionRole/DefaultPolicy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "IamStackLambdaExecutionRoleDefaultPolicy1B284C67"
+          }
+        ],
+        "/WarmpawzStack-test/SqsStack/NotificationDLQ/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackNotificationDLQ0AA77695"
+          }
+        ],
+        "/WarmpawzStack-test/SqsStack/NotificationQueue/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackNotificationQueueCDC9E5EE"
+          }
+        ],
+        "/WarmpawzStack-test/SqsStack/NotificationQueue/Policy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackNotificationQueuePolicy16225D01"
+          }
+        ],
+        "/WarmpawzStack-test/SqsStack/NotificationQueue/WarmpawzStacktestSnsStackBookingCreatedTopicCBF5F9C2/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackNotificationQueueWarmpawzStacktestSnsStackBookingCreatedTopicCBF5F9C2B1963DBE"
+          }
+        ],
+        "/WarmpawzStack-test/SqsStack/NotificationQueue/WarmpawzStacktestSnsStackPaymentProcessedTopicBFE347D7/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackNotificationQueueWarmpawzStacktestSnsStackPaymentProcessedTopicBFE347D7FE444C5A"
+          }
+        ],
+        "/WarmpawzStack-test/SqsStack/NotificationQueue/WarmpawzStacktestSnsStackVendorApprovedTopic33C9249C/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackNotificationQueueWarmpawzStacktestSnsStackVendorApprovedTopic33C9249CF548000B"
+          }
+        ],
+        "/WarmpawzStack-test/SqsStack/NotificationQueue/WarmpawzStacktestSnsStackNotificationTopic6941CE5D/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackNotificationQueueWarmpawzStacktestSnsStackNotificationTopic6941CE5D43DC93CC"
+          }
+        ],
+        "/WarmpawzStack-test/SqsStack/EmailDLQ/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackEmailDLQ5B7065DD"
+          }
+        ],
+        "/WarmpawzStack-test/SqsStack/EmailQueue/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackEmailQueue23349431"
+          }
+        ],
+        "/WarmpawzStack-test/SqsStack/SmsDLQ/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackSmsDLQ770F1E2D"
+          }
+        ],
+        "/WarmpawzStack-test/SqsStack/SmsQueue/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackSmsQueue7579FE7A"
+          }
+        ],
+        "/WarmpawzStack-test/SqsStack/AnalyticsDLQ/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackAnalyticsDLQ692D26DF"
+          }
+        ],
+        "/WarmpawzStack-test/SqsStack/AnalyticsQueue/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackAnalyticsQueueEC085EA1"
+          }
+        ],
+        "/WarmpawzStack-test/SqsStack/AnalyticsQueue/Policy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackAnalyticsQueuePolicy0EEAC6F9"
+          }
+        ],
+        "/WarmpawzStack-test/SqsStack/AnalyticsQueue/WarmpawzStacktestSnsStackPaymentProcessedTopicBFE347D7/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackAnalyticsQueueWarmpawzStacktestSnsStackPaymentProcessedTopicBFE347D73259EDF4"
+          }
+        ],
+        "/WarmpawzStack-test/SqsStack/AnalyticsQueue/WarmpawzStacktestSnsStackAnalyticsTopic5FDE2D0E/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackAnalyticsQueueWarmpawzStacktestSnsStackAnalyticsTopic5FDE2D0EA872B445"
+          }
+        ],
+        "/WarmpawzStack-test/SqsStack/SettlementDLQ/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackSettlementDLQ36EB3BDC"
+          }
+        ],
+        "/WarmpawzStack-test/SqsStack/SettlementQueue/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackSettlementQueueE715B1BA"
+          }
+        ],
+        "/WarmpawzStack-test/SnsStack/BookingCreatedTopic/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SnsStackBookingCreatedTopicB7C02FB2"
+          }
+        ],
+        "/WarmpawzStack-test/SnsStack/BookingCreatedTopic/Policy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SnsStackBookingCreatedTopicPolicy5C66A051"
+          }
+        ],
+        "/WarmpawzStack-test/SnsStack/PaymentProcessedTopic/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SnsStackPaymentProcessedTopicABCFD806"
+          }
+        ],
+        "/WarmpawzStack-test/SnsStack/PaymentProcessedTopic/Policy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SnsStackPaymentProcessedTopicPolicyA02CC53D"
+          }
+        ],
+        "/WarmpawzStack-test/SnsStack/VendorApprovedTopic/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SnsStackVendorApprovedTopicA3E62696"
+          }
+        ],
+        "/WarmpawzStack-test/SnsStack/VendorApprovedTopic/Policy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SnsStackVendorApprovedTopicPolicyDC917707"
+          }
+        ],
+        "/WarmpawzStack-test/SnsStack/NotificationTopic/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SnsStackNotificationTopic8FDAC809"
+          }
+        ],
+        "/WarmpawzStack-test/SnsStack/AnalyticsTopic/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SnsStackAnalyticsTopic7094CF54"
+          }
+        ],
+        "/WarmpawzStack-test/DynamoDbStack/LogsTable": [
+          {
+            "type": "aws:cdk:hasPhysicalName",
+            "data": {
+              "Ref": "DynamoDbStackLogsTable96BE4B9D"
+            }
+          }
+        ],
+        "/WarmpawzStack-test/DynamoDbStack/LogsTable/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DynamoDbStackLogsTable96BE4B9D"
+          }
+        ],
+        "/WarmpawzStack-test/DynamoDbStack/AnalyticsTable": [
+          {
+            "type": "aws:cdk:hasPhysicalName",
+            "data": {
+              "Ref": "DynamoDbStackAnalyticsTable19FB8467"
+            }
+          }
+        ],
+        "/WarmpawzStack-test/DynamoDbStack/AnalyticsTable/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DynamoDbStackAnalyticsTable19FB8467"
+          }
+        ],
+        "/WarmpawzStack-test/DynamoDbStack/ReportsTable": [
+          {
+            "type": "aws:cdk:hasPhysicalName",
+            "data": {
+              "Ref": "DynamoDbStackReportsTableB844EC92"
+            }
+          }
+        ],
+        "/WarmpawzStack-test/DynamoDbStack/ReportsTable/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DynamoDbStackReportsTableB844EC92"
+          }
+        ],
+        "/WarmpawzStack-test/DynamoDbStack/ChatMessagesTable": [
+          {
+            "type": "aws:cdk:hasPhysicalName",
+            "data": {
+              "Ref": "DynamoDbStackChatMessagesTable8D237DC2"
+            }
+          }
+        ],
+        "/WarmpawzStack-test/DynamoDbStack/ChatMessagesTable/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DynamoDbStackChatMessagesTable8D237DC2"
+          }
+        ],
+        "/WarmpawzStack-test/DynamoDbStack/AiConversationsTable": [
+          {
+            "type": "aws:cdk:hasPhysicalName",
+            "data": {
+              "Ref": "DynamoDbStackAiConversationsTable8F2402AA"
+            }
+          }
+        ],
+        "/WarmpawzStack-test/DynamoDbStack/AiConversationsTable/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DynamoDbStackAiConversationsTable8F2402AA"
+          }
+        ],
+        "/WarmpawzStack-test/ChimeStack/ChimeRole/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ChimeStackChimeRole4A0C6A8C"
+          }
+        ],
+        "/WarmpawzStack-test/ChimeStack/ChimeRole/DefaultPolicy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ChimeStackChimeRoleDefaultPolicy3FF13B50"
+          }
+        ],
+        "/WarmpawzStack-test/ChimeStack/ChimeAppInstanceArn": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ChimeStackChimeAppInstanceArn4FBD7509"
+          }
+        ],
+        "/WarmpawzStack-test/ChimeStack/ChimeRoleArn": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ChimeStackChimeRoleArn34D55819"
+          }
+        ],
+        "/WarmpawzStack-test/EventBridgeStack/WarmpawzEventBus/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "EventBridgeStackWarmpawzEventBus2B15753F"
+          }
+        ],
+        "/WarmpawzStack-test/EventBridgeStack/BookingEventRule/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "EventBridgeStackBookingEventRuleF50BB7D3"
+          }
+        ],
+        "/WarmpawzStack-test/EventBridgeStack/PaymentEventRule/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "EventBridgeStackPaymentEventRule01796980"
+          }
+        ],
+        "/WarmpawzStack-test/EventBridgeStack/VendorEventRule/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "EventBridgeStackVendorEventRule483F9704"
+          }
+        ],
+        "/WarmpawzStack-test/EventBridgeStack/AnalyticsEventRule/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "EventBridgeStackAnalyticsEventRuleA69E042D"
+          }
+        ],
+        "/WarmpawzStack-test/EventBridgeStack/NotificationEventRule/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "EventBridgeStackNotificationEventRuleC1ECE6FA"
+          }
+        ],
+        "/WarmpawzStack-test/LambdaStack/SharedLayer/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "LambdaStackSharedLayerEA8C1C60"
+          }
+        ],
+        "/WarmpawzStack-test/LambdaStack/ApiFunction/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "LambdaStackApiFunctionC985920A"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiE5093081"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/DefaultStage/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiDefaultStage0F758123"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/GET--{proxy+}/LambdaIntegration/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiGETproxyLambdaIntegrationEDDD3B82"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/GET--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiGETproxyLambdaIntegrationPermissionDF3406CE"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/GET--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiGETproxy396DCE6A"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/POST--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPOSTproxyLambdaIntegrationPermissionDE15A5C5"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/POST--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPOSTproxy06172A45"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/PUT--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPUTproxyLambdaIntegrationPermission73351BDF"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/PUT--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPUTproxy360030AF"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/PATCH--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPATCHproxyLambdaIntegrationPermission7092659E"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/PATCH--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPATCHproxyD95F022B"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/DELETE--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiDELETEproxyLambdaIntegrationPermission5B585495"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/DELETE--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiDELETEproxy2E4466F8"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/GET--health/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiGEThealthLambdaIntegrationPermission201253E0"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/GET--health/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiGEThealth6CB40255"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/GET--admin--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiGETadminproxyLambdaIntegrationPermissionF73ADD43"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/GET--admin--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiGETadminproxyA5ADC0DB"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/AdminAuthorizer/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiAdminAuthorizerBE526AEF"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/POST--admin--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPOSTadminproxyLambdaIntegrationPermission2247AB4A"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/POST--admin--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPOSTadminproxy45A60CCA"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/PUT--admin--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPUTadminproxyLambdaIntegrationPermission939778CD"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/PUT--admin--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPUTadminproxy09883AC8"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/PATCH--admin--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPATCHadminproxyLambdaIntegrationPermission1059C3A6"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/PATCH--admin--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPATCHadminproxy7180DF95"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/DELETE--admin--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiDELETEadminproxyLambdaIntegrationPermission353D12FF"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/DELETE--admin--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiDELETEadminproxy8E72583C"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/GET--customer--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiGETcustomerproxyLambdaIntegrationPermissionEB6613E8"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/GET--customer--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiGETcustomerproxyAB219230"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/CustomerAuthorizer/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiCustomerAuthorizer05E66D97"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/POST--customer--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPOSTcustomerproxyLambdaIntegrationPermission335711CF"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/POST--customer--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPOSTcustomerproxy71E6B629"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/PUT--customer--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPUTcustomerproxyLambdaIntegrationPermissionEAD47BD3"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/PUT--customer--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPUTcustomerproxy8C64FD28"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/PATCH--customer--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPATCHcustomerproxyLambdaIntegrationPermission1D0A7593"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/PATCH--customer--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPATCHcustomerproxy309B872D"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/DELETE--customer--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiDELETEcustomerproxyLambdaIntegrationPermission0DA37BAA"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/DELETE--customer--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiDELETEcustomerproxyB59C3A2E"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/GET--vendor--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiGETvendorproxyLambdaIntegrationPermissionCCEC33B3"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/GET--vendor--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiGETvendorproxyC4079A5E"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/VendorAuthorizer/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiVendorAuthorizerEB3B03F9"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/POST--vendor--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPOSTvendorproxyLambdaIntegrationPermission4EA4F13E"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/POST--vendor--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPOSTvendorproxy9E5EA176"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/PUT--vendor--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPUTvendorproxyLambdaIntegrationPermissionD029FB6F"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/PUT--vendor--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPUTvendorproxy49472C59"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/PATCH--vendor--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPATCHvendorproxyLambdaIntegrationPermission44BAE6FB"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/PATCH--vendor--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPATCHvendorproxyB3B63CFF"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/DELETE--vendor--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiDELETEvendorproxyLambdaIntegrationPermission885681CF"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/WarmpawzApi/DELETE--vendor--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiDELETEvendorproxyAC088822"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/ApiDomain/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackApiDomainD311C659"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayStack/ApiMapping/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackApiMapping0435E41B"
+          }
+        ],
+        "/WarmpawzStack-test/Route53Stack/ApiCertificate/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "Route53StackApiCertificate65C687FE"
+          }
+        ],
+        "/WarmpawzStack-test/Route53Stack/CustomerAppARecord": [
+          {
+            "type": "aws:cdk:warning",
+            "data": "Ignoring ttl since 'target' uses an alias target [ack: aws-cdk-lib/aws-route53:ttlIgnored]",
+            "trace": [
+              "Annotations.addMessage (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/annotations.js:1:2066)",
+              "Annotations.addWarningV2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/annotations.js:1:984)",
+              "new RecordSet2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/aws-route53/lib/record-set.js:1:8586)",
+              "new RecordSet2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:681)",
+              "new ARecord2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/aws-route53/lib/record-set.js:1:13285)",
+              "new ARecord2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:681)",
+              "new Route53Stack (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/lib/route53-stack.ts:59:5)",
+              "new WarmpawzStack (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/lib/warmpawz-stack.ts:210:25)",
+              "/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/bin/cdk.ts:17:3",
+              "Array.forEach (<anonymous>)",
+              "Object.<anonymous> (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/bin/cdk.ts:14:14)",
+              "Module._compile (node:internal/modules/cjs/loader:1760:14)",
+              "Object..js (node:internal/modules/cjs/loader:1893:10)",
+              "Module.load (node:internal/modules/cjs/loader:1480:32)",
+              "Module._load (node:internal/modules/cjs/loader:1299:12)",
+              "TracingChannel.traceSync (node:diagnostics_channel:328:14)",
+              "wrapModuleLoad (node:internal/modules/cjs/loader:244:24)",
+              "Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)",
+              "node:internal/main/run_main_module:33:47"
+            ]
+          }
+        ],
+        "/WarmpawzStack-test/Route53Stack/CustomerAppARecord/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "Route53StackCustomerAppARecord68AD059E"
+          }
+        ],
+        "/WarmpawzStack-test/Route53Stack/VendorAppARecord": [
+          {
+            "type": "aws:cdk:warning",
+            "data": "Ignoring ttl since 'target' uses an alias target [ack: aws-cdk-lib/aws-route53:ttlIgnored]",
+            "trace": [
+              "Annotations.addMessage (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/annotations.js:1:2066)",
+              "Annotations.addWarningV2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/annotations.js:1:984)",
+              "new RecordSet2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/aws-route53/lib/record-set.js:1:8586)",
+              "new RecordSet2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:681)",
+              "new ARecord2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/aws-route53/lib/record-set.js:1:13285)",
+              "new ARecord2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:681)",
+              "new Route53Stack (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/lib/route53-stack.ts:69:5)",
+              "new WarmpawzStack (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/lib/warmpawz-stack.ts:210:25)",
+              "/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/bin/cdk.ts:17:3",
+              "Array.forEach (<anonymous>)",
+              "Object.<anonymous> (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/bin/cdk.ts:14:14)",
+              "Module._compile (node:internal/modules/cjs/loader:1760:14)",
+              "Object..js (node:internal/modules/cjs/loader:1893:10)",
+              "Module.load (node:internal/modules/cjs/loader:1480:32)",
+              "Module._load (node:internal/modules/cjs/loader:1299:12)",
+              "TracingChannel.traceSync (node:diagnostics_channel:328:14)",
+              "wrapModuleLoad (node:internal/modules/cjs/loader:244:24)",
+              "Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)",
+              "node:internal/main/run_main_module:33:47"
+            ]
+          }
+        ],
+        "/WarmpawzStack-test/Route53Stack/VendorAppARecord/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "Route53StackVendorAppARecord0572B69C"
+          }
+        ],
+        "/WarmpawzStack-test/Route53Stack/AdminARecord": [
+          {
+            "type": "aws:cdk:warning",
+            "data": "Ignoring ttl since 'target' uses an alias target [ack: aws-cdk-lib/aws-route53:ttlIgnored]",
+            "trace": [
+              "Annotations.addMessage (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/annotations.js:1:2066)",
+              "Annotations.addWarningV2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/annotations.js:1:984)",
+              "new RecordSet2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/aws-route53/lib/record-set.js:1:8586)",
+              "new RecordSet2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:681)",
+              "new ARecord2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/aws-route53/lib/record-set.js:1:13285)",
+              "new ARecord2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:681)",
+              "new Route53Stack (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/lib/route53-stack.ts:79:5)",
+              "new WarmpawzStack (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/lib/warmpawz-stack.ts:210:25)",
+              "/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/bin/cdk.ts:17:3",
+              "Array.forEach (<anonymous>)",
+              "Object.<anonymous> (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/bin/cdk.ts:14:14)",
+              "Module._compile (node:internal/modules/cjs/loader:1760:14)",
+              "Object..js (node:internal/modules/cjs/loader:1893:10)",
+              "Module.load (node:internal/modules/cjs/loader:1480:32)",
+              "Module._load (node:internal/modules/cjs/loader:1299:12)",
+              "TracingChannel.traceSync (node:diagnostics_channel:328:14)",
+              "wrapModuleLoad (node:internal/modules/cjs/loader:244:24)",
+              "Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)",
+              "node:internal/main/run_main_module:33:47"
+            ]
+          }
+        ],
+        "/WarmpawzStack-test/Route53Stack/AdminARecord/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "Route53StackAdminARecordBEABFE99"
+          }
+        ],
+        "/WarmpawzStack-test/Route53Stack/ApkARecord": [
+          {
+            "type": "aws:cdk:warning",
+            "data": "Ignoring ttl since 'target' uses an alias target [ack: aws-cdk-lib/aws-route53:ttlIgnored]",
+            "trace": [
+              "Annotations.addMessage (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/annotations.js:1:2066)",
+              "Annotations.addWarningV2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/annotations.js:1:984)",
+              "new RecordSet2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/aws-route53/lib/record-set.js:1:8586)",
+              "new RecordSet2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:681)",
+              "new ARecord2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/aws-route53/lib/record-set.js:1:13285)",
+              "new ARecord2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:681)",
+              "new Route53Stack (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/lib/route53-stack.ts:93:5)",
+              "new WarmpawzStack (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/lib/warmpawz-stack.ts:210:25)",
+              "/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/bin/cdk.ts:17:3",
+              "Array.forEach (<anonymous>)",
+              "Object.<anonymous> (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/bin/cdk.ts:14:14)",
+              "Module._compile (node:internal/modules/cjs/loader:1760:14)",
+              "Object..js (node:internal/modules/cjs/loader:1893:10)",
+              "Module.load (node:internal/modules/cjs/loader:1480:32)",
+              "Module._load (node:internal/modules/cjs/loader:1299:12)",
+              "TracingChannel.traceSync (node:diagnostics_channel:328:14)",
+              "wrapModuleLoad (node:internal/modules/cjs/loader:244:24)",
+              "Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)",
+              "node:internal/main/run_main_module:33:47"
+            ]
+          }
+        ],
+        "/WarmpawzStack-test/Route53Stack/ApkARecord/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "Route53StackApkARecord99A5183D"
+          }
+        ],
+        "/WarmpawzStack-test/Route53Stack/ApiARecord": [
+          {
+            "type": "aws:cdk:warning",
+            "data": "Ignoring ttl since 'target' uses an alias target [ack: aws-cdk-lib/aws-route53:ttlIgnored]",
+            "trace": [
+              "Annotations.addMessage (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/annotations.js:1:2066)",
+              "Annotations.addWarningV2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/annotations.js:1:984)",
+              "new RecordSet2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/aws-route53/lib/record-set.js:1:8586)",
+              "new RecordSet2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:681)",
+              "new ARecord2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/aws-route53/lib/record-set.js:1:13285)",
+              "new ARecord2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:681)",
+              "Route53Stack.createApiGatewayRecords (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/lib/route53-stack.ts:113:25)",
+              "new WarmpawzStack (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/lib/warmpawz-stack.ts:220:23)",
+              "/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/bin/cdk.ts:17:3",
+              "Array.forEach (<anonymous>)",
+              "Object.<anonymous> (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/bin/cdk.ts:14:14)",
+              "Module._compile (node:internal/modules/cjs/loader:1760:14)",
+              "Object..js (node:internal/modules/cjs/loader:1893:10)",
+              "Module.load (node:internal/modules/cjs/loader:1480:32)",
+              "Module._load (node:internal/modules/cjs/loader:1299:12)",
+              "TracingChannel.traceSync (node:diagnostics_channel:328:14)",
+              "wrapModuleLoad (node:internal/modules/cjs/loader:244:24)",
+              "Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)",
+              "node:internal/main/run_main_module:33:47"
+            ]
+          }
+        ],
+        "/WarmpawzStack-test/Route53Stack/ApiARecord/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "Route53StackApiARecord8172ED39"
+          }
+        ],
+        "/WarmpawzStack-test/Route53Stack/ApiAaaaRecord": [
+          {
+            "type": "aws:cdk:warning",
+            "data": "Ignoring ttl since 'target' uses an alias target [ack: aws-cdk-lib/aws-route53:ttlIgnored]",
+            "trace": [
+              "Annotations.addMessage (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/annotations.js:1:2066)",
+              "Annotations.addWarningV2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/annotations.js:1:984)",
+              "new RecordSet2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/aws-route53/lib/record-set.js:1:8586)",
+              "new RecordSet2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:681)",
+              "new AaaaRecord2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/aws-route53/lib/record-set.js:1:14897)",
+              "new AaaaRecord2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:681)",
+              "Route53Stack.createApiGatewayRecords (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/lib/route53-stack.ts:126:28)",
+              "new WarmpawzStack (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/lib/warmpawz-stack.ts:220:23)",
+              "/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/bin/cdk.ts:17:3",
+              "Array.forEach (<anonymous>)",
+              "Object.<anonymous> (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/bin/cdk.ts:14:14)",
+              "Module._compile (node:internal/modules/cjs/loader:1760:14)",
+              "Object..js (node:internal/modules/cjs/loader:1893:10)",
+              "Module.load (node:internal/modules/cjs/loader:1480:32)",
+              "Module._load (node:internal/modules/cjs/loader:1299:12)",
+              "TracingChannel.traceSync (node:diagnostics_channel:328:14)",
+              "wrapModuleLoad (node:internal/modules/cjs/loader:244:24)",
+              "Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)",
+              "node:internal/main/run_main_module:33:47"
+            ]
+          }
+        ],
+        "/WarmpawzStack-test/Route53Stack/ApiAaaaRecord/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "Route53StackApiAaaaRecord55658A66"
+          }
+        ],
+        "/WarmpawzStack-test/AWSCloudFrontPartitionHostedZoneIdMap": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AWSCloudFrontPartitionHostedZoneIdMap"
+          }
+        ],
+        "/WarmpawzStack-test/AuroraEndpoint": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraEndpoint"
+          }
+        ],
+        "/WarmpawzStack-test/AuroraProxyEndpoint": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraProxyEndpoint"
+          }
+        ],
+        "/WarmpawzStack-test/AuroraSecretArn": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraSecretArn"
+          }
+        ],
+        "/WarmpawzStack-test/CustomerUserPoolId": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CustomerUserPoolId"
+          }
+        ],
+        "/WarmpawzStack-test/CustomerUserPoolClientId": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CustomerUserPoolClientId"
+          }
+        ],
+        "/WarmpawzStack-test/VendorUserPoolId": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "VendorUserPoolId"
+          }
+        ],
+        "/WarmpawzStack-test/VendorUserPoolClientId": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "VendorUserPoolClientId"
+          }
+        ],
+        "/WarmpawzStack-test/AdminUserPoolId": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AdminUserPoolId"
+          }
+        ],
+        "/WarmpawzStack-test/AdminUserPoolClientId": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AdminUserPoolClientId"
+          }
+        ],
+        "/WarmpawzStack-test/CustomerAuthorizerId": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CustomerAuthorizerId"
+          }
+        ],
+        "/WarmpawzStack-test/VendorAuthorizerId": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "VendorAuthorizerId"
+          }
+        ],
+        "/WarmpawzStack-test/AdminAuthorizerId": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AdminAuthorizerId"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayUrl": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayUrl"
+          }
+        ],
+        "/WarmpawzStack-test/ApiGatewayId": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayId"
+          }
+        ],
+        "/WarmpawzStack-test/StorageBucketName": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "StorageBucketName"
+          }
+        ],
+        "/WarmpawzStack-test/UploadsBucketName": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "UploadsBucketName"
+          }
+        ],
+        "/WarmpawzStack-test/CloudFrontDomainName": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CloudFrontDomainName"
+          }
+        ],
+        "/WarmpawzStack-test/ApiDomainName": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiDomainName"
+          }
+        ],
+        "/WarmpawzStack-test/CustomerAppDomain": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CustomerAppDomain"
+          }
+        ],
+        "/WarmpawzStack-test/VendorAppDomain": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "VendorAppDomain"
+          }
+        ],
+        "/WarmpawzStack-test/AdminDomain": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AdminDomain"
+          }
+        ],
+        "/WarmpawzStack-test/ApkBucketName": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApkBucketName"
+          }
+        ],
+        "/WarmpawzStack-test/ApkDistributionDomain": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApkDistributionDomain"
+          }
+        ],
+        "/WarmpawzStack-test/LambdaExecutionRoleArn": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "LambdaExecutionRoleArn"
+          }
+        ],
+        "/WarmpawzStack-test/LambdaFunctionArn": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "LambdaFunctionArn"
+          }
+        ],
+        "/WarmpawzStack-test/LambdaFunctionName": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "LambdaFunctionName"
+          }
+        ],
+        "/WarmpawzStack-test/NotificationQueueUrl": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "NotificationQueueUrl"
+          }
+        ],
+        "/WarmpawzStack-test/BookingCreatedTopicArn": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "BookingCreatedTopicArn"
+          }
+        ],
+        "/WarmpawzStack-test/LogsTableName": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "LogsTableName"
+          }
+        ],
+        "/WarmpawzStack-test/ChatMessagesTableName": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ChatMessagesTableName"
+          }
+        ],
+        "/WarmpawzStack-test/EventBusName": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "EventBusName"
+          }
+        ],
+        "/WarmpawzStack-test/CDKMetadata/Default": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CDKMetadata"
+          }
+        ],
+        "/WarmpawzStack-test/BootstrapVersion": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "BootstrapVersion"
+          }
+        ],
+        "/WarmpawzStack-test/CheckBootstrapVersion": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CheckBootstrapVersion"
+          }
+        ]
+      },
+      "displayName": "WarmpawzStack-test"
+    },
+    "WarmpawzStack-prod.assets": {
+      "type": "cdk:asset-manifest",
+      "properties": {
+        "file": "WarmpawzStack-prod.assets.json",
+        "requiresBootstrapStackVersion": 6,
+        "bootstrapStackVersionSsmParameter": "/cdk-bootstrap/hnb659fds/version"
+      }
+    },
+    "WarmpawzStack-prod": {
+      "type": "aws:cloudformation:stack",
+      "environment": "aws://023394150666/ap-south-1",
+      "properties": {
+        "templateFile": "WarmpawzStack-prod.template.json",
+        "terminationProtection": false,
+        "tags": {
+          "Environment": "prod",
+          "ManagedBy": "CDK",
+          "Project": "Warmpawz"
+        },
+        "validateOnSynth": false,
+        "assumeRoleArn": "arn:${AWS::Partition}:iam::023394150666:role/cdk-hnb659fds-deploy-role-023394150666-ap-south-1",
+        "cloudFormationExecutionRoleArn": "arn:${AWS::Partition}:iam::023394150666:role/cdk-hnb659fds-cfn-exec-role-023394150666-ap-south-1",
+        "stackTemplateAssetObjectUrl": "s3://cdk-hnb659fds-assets-023394150666-ap-south-1/9447911fb4aae3bb76c7a1110a1063d639ee24f2b950d832cf103bff71795862.json",
+        "requiresBootstrapStackVersion": 6,
+        "bootstrapStackVersionSsmParameter": "/cdk-bootstrap/hnb659fds/version",
+        "additionalDependencies": [
+          "WarmpawzStack-prod.assets"
+        ],
+        "lookupRole": {
+          "arn": "arn:${AWS::Partition}:iam::023394150666:role/cdk-hnb659fds-lookup-role-023394150666-ap-south-1",
+          "requiresBootstrapStackVersion": 8,
+          "bootstrapStackVersionSsmParameter": "/cdk-bootstrap/hnb659fds/version"
+        }
+      },
+      "dependencies": [
+        "WarmpawzStack-prod.assets"
+      ],
+      "metadata": {
+        "/WarmpawzStack-prod": [
+          {
+            "type": "aws:cdk:stack-tags",
+            "data": [
+              {
+                "Key": "Environment",
+                "Value": "prod"
+              },
+              {
+                "Key": "ManagedBy",
+                "Value": "CDK"
+              },
+              {
+                "Key": "Project",
+                "Value": "Warmpawz"
+              }
+            ]
+          }
+        ],
+        "/WarmpawzStack-prod/AuroraStack/AuroraSecret/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraStackAuroraSecret2E11B886"
+          }
+        ],
+        "/WarmpawzStack-prod/AuroraStack/AuroraSecret/Attachment/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraStackAuroraSecretAttachment5041D1AD"
+          }
+        ],
+        "/WarmpawzStack-prod/AuroraStack/AuroraSecurityGroup/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraStackAuroraSecurityGroup28BA76D3"
+          }
+        ],
+        "/WarmpawzStack-prod/AuroraStack/AuroraSecurityGroup/from WarmpawzStackprodAuroraStackAuroraSecurityGroup97F19FB3:{IndirectPort}": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraStackAuroraSecurityGroupfromWarmpawzStackprodAuroraStackAuroraSecurityGroup97F19FB3IndirectPort15ED9DC4"
+          }
+        ],
+        "/WarmpawzStack-prod/AuroraStack/AuroraSecurityGroup/to WarmpawzStackprodAuroraStackAuroraSecurityGroup97F19FB3:{IndirectPort}": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraStackAuroraSecurityGrouptoWarmpawzStackprodAuroraStackAuroraSecurityGroup97F19FB3IndirectPort2F95BA6B"
+          }
+        ],
+        "/WarmpawzStack-prod/AuroraStack/AuroraCluster/Subnets/Default": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraStackAuroraClusterSubnetsD6C77014"
+          }
+        ],
+        "/WarmpawzStack-prod/AuroraStack/AuroraCluster/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraStackAuroraCluster0A30E50A"
+          }
+        ],
+        "/WarmpawzStack-prod/AuroraStack/AuroraCluster/writer/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraStackAuroraClusterwriter15FEB042"
+          }
+        ],
+        "/WarmpawzStack-prod/AuroraStack/AuroraProxy/IAMRole/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraStackAuroraProxyIAMRoleD0FA893E"
+          }
+        ],
+        "/WarmpawzStack-prod/AuroraStack/AuroraProxy/IAMRole/DefaultPolicy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraStackAuroraProxyIAMRoleDefaultPolicy5CBE0CF0"
+          }
+        ],
+        "/WarmpawzStack-prod/AuroraStack/AuroraProxy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraStackAuroraProxyEB6DC6B7"
+          }
+        ],
+        "/WarmpawzStack-prod/AuroraStack/AuroraProxy/ProxyTargetGroup": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraStackAuroraProxyProxyTargetGroupD03E5434"
+          }
+        ],
+        "/WarmpawzStack-prod/CognitoStack/CustomerUserPool/smsRole/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CognitoStackCustomerUserPoolsmsRole2E079065"
+          }
+        ],
+        "/WarmpawzStack-prod/CognitoStack/CustomerUserPool/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CognitoStackCustomerUserPoolCB3F3B8A"
+          }
+        ],
+        "/WarmpawzStack-prod/CognitoStack/CustomerUserPool/CustomerWebClient/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CognitoStackCustomerUserPoolCustomerWebClient357C429B"
+          }
+        ],
+        "/WarmpawzStack-prod/CognitoStack/VendorUserPool/smsRole/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CognitoStackVendorUserPoolsmsRoleCF64B5E7"
+          }
+        ],
+        "/WarmpawzStack-prod/CognitoStack/VendorUserPool/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CognitoStackVendorUserPoolFD3AACBE"
+          }
+        ],
+        "/WarmpawzStack-prod/CognitoStack/VendorUserPool/VendorWebClient/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CognitoStackVendorUserPoolVendorWebClientDC01E110"
+          }
+        ],
+        "/WarmpawzStack-prod/CognitoStack/AdminUserPool/smsRole/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CognitoStackAdminUserPoolsmsRole737F90FD"
+          }
+        ],
+        "/WarmpawzStack-prod/CognitoStack/AdminUserPool/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CognitoStackAdminUserPool2B5416C2"
+          }
+        ],
+        "/WarmpawzStack-prod/CognitoStack/AdminUserPool/AdminWebClient/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CognitoStackAdminUserPoolAdminWebClient04B63C90"
+          }
+        ],
+        "/WarmpawzStack-prod/SecurityStack/LambdaSecurityGroup/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SecurityStackLambdaSecurityGroupE5CA1F78"
+          }
+        ],
+        "/WarmpawzStack-prod/SecurityStack/ApiSecurityGroup/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SecurityStackApiSecurityGroup6ADCE8A7"
+          }
+        ],
+        "/WarmpawzStack-prod/S3Stack/StorageBucket/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "S3StackStorageBucket59522327"
+          }
+        ],
+        "/WarmpawzStack-prod/S3Stack/UploadsBucket/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "S3StackUploadsBucketF13EC11E"
+          }
+        ],
+        "/WarmpawzStack-prod/S3Stack/AssetsBucket/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "S3StackAssetsBucket9CB49E63"
+          }
+        ],
+        "/WarmpawzStack-prod/S3Stack/AssetsBucket/Policy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "S3StackAssetsBucketPolicyF5650C69"
+          }
+        ],
+        "/WarmpawzStack-prod/S3Stack/AssetsDistribution/Origin1/S3Origin/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "S3StackAssetsDistributionOrigin1S3OriginEF691C1A"
+          }
+        ],
+        "/WarmpawzStack-prod/S3Stack/AssetsDistribution/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "S3StackAssetsDistribution3582A8BC"
+          }
+        ],
+        "/WarmpawzStack-prod/S3Stack/LogsBucket/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "S3StackLogsBucket02C3EB3A"
+          }
+        ],
+        "/WarmpawzStack-prod/S3Stack/ApkBucket/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "S3StackApkBucket1AED656F"
+          }
+        ],
+        "/WarmpawzStack-prod/S3Stack/ApkBucket/Policy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "S3StackApkBucketPolicy0D134C92"
+          }
+        ],
+        "/WarmpawzStack-prod/S3Stack/ApkDistribution/Origin1/S3Origin/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "S3StackApkDistributionOrigin1S3Origin955A0888"
+          }
+        ],
+        "/WarmpawzStack-prod/S3Stack/ApkDistribution/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "S3StackApkDistribution984CD1FF"
+          }
+        ],
+        "/WarmpawzStack-prod/IamStack/LambdaExecutionRole/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "IamStackLambdaExecutionRole9AF0381A"
+          }
+        ],
+        "/WarmpawzStack-prod/IamStack/LambdaExecutionRole/DefaultPolicy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "IamStackLambdaExecutionRoleDefaultPolicy1B284C67"
+          }
+        ],
+        "/WarmpawzStack-prod/SqsStack/NotificationDLQ/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackNotificationDLQ0AA77695"
+          }
+        ],
+        "/WarmpawzStack-prod/SqsStack/NotificationQueue/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackNotificationQueueCDC9E5EE"
+          }
+        ],
+        "/WarmpawzStack-prod/SqsStack/NotificationQueue/Policy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackNotificationQueuePolicy16225D01"
+          }
+        ],
+        "/WarmpawzStack-prod/SqsStack/NotificationQueue/WarmpawzStackprodSnsStackBookingCreatedTopic5DF5E4B4/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackNotificationQueueWarmpawzStackprodSnsStackBookingCreatedTopic5DF5E4B41E47C154"
+          }
+        ],
+        "/WarmpawzStack-prod/SqsStack/NotificationQueue/WarmpawzStackprodSnsStackPaymentProcessedTopic4826DCE0/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackNotificationQueueWarmpawzStackprodSnsStackPaymentProcessedTopic4826DCE0991F704E"
+          }
+        ],
+        "/WarmpawzStack-prod/SqsStack/NotificationQueue/WarmpawzStackprodSnsStackVendorApprovedTopic44999AA5/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackNotificationQueueWarmpawzStackprodSnsStackVendorApprovedTopic44999AA58FADCB55"
+          }
+        ],
+        "/WarmpawzStack-prod/SqsStack/NotificationQueue/WarmpawzStackprodSnsStackNotificationTopic1BBFC9EB/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackNotificationQueueWarmpawzStackprodSnsStackNotificationTopic1BBFC9EB1B975C40"
+          }
+        ],
+        "/WarmpawzStack-prod/SqsStack/EmailDLQ/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackEmailDLQ5B7065DD"
+          }
+        ],
+        "/WarmpawzStack-prod/SqsStack/EmailQueue/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackEmailQueue23349431"
+          }
+        ],
+        "/WarmpawzStack-prod/SqsStack/SmsDLQ/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackSmsDLQ770F1E2D"
+          }
+        ],
+        "/WarmpawzStack-prod/SqsStack/SmsQueue/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackSmsQueue7579FE7A"
+          }
+        ],
+        "/WarmpawzStack-prod/SqsStack/AnalyticsDLQ/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackAnalyticsDLQ692D26DF"
+          }
+        ],
+        "/WarmpawzStack-prod/SqsStack/AnalyticsQueue/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackAnalyticsQueueEC085EA1"
+          }
+        ],
+        "/WarmpawzStack-prod/SqsStack/AnalyticsQueue/Policy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackAnalyticsQueuePolicy0EEAC6F9"
+          }
+        ],
+        "/WarmpawzStack-prod/SqsStack/AnalyticsQueue/WarmpawzStackprodSnsStackPaymentProcessedTopic4826DCE0/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackAnalyticsQueueWarmpawzStackprodSnsStackPaymentProcessedTopic4826DCE0FDC50DAC"
+          }
+        ],
+        "/WarmpawzStack-prod/SqsStack/AnalyticsQueue/WarmpawzStackprodSnsStackAnalyticsTopic8E9D8895/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackAnalyticsQueueWarmpawzStackprodSnsStackAnalyticsTopic8E9D889502279D24"
+          }
+        ],
+        "/WarmpawzStack-prod/SqsStack/SettlementDLQ/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackSettlementDLQ36EB3BDC"
+          }
+        ],
+        "/WarmpawzStack-prod/SqsStack/SettlementQueue/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SqsStackSettlementQueueE715B1BA"
+          }
+        ],
+        "/WarmpawzStack-prod/SnsStack/BookingCreatedTopic/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SnsStackBookingCreatedTopicB7C02FB2"
+          }
+        ],
+        "/WarmpawzStack-prod/SnsStack/BookingCreatedTopic/Policy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SnsStackBookingCreatedTopicPolicy5C66A051"
+          }
+        ],
+        "/WarmpawzStack-prod/SnsStack/PaymentProcessedTopic/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SnsStackPaymentProcessedTopicABCFD806"
+          }
+        ],
+        "/WarmpawzStack-prod/SnsStack/PaymentProcessedTopic/Policy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SnsStackPaymentProcessedTopicPolicyA02CC53D"
+          }
+        ],
+        "/WarmpawzStack-prod/SnsStack/VendorApprovedTopic/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SnsStackVendorApprovedTopicA3E62696"
+          }
+        ],
+        "/WarmpawzStack-prod/SnsStack/VendorApprovedTopic/Policy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SnsStackVendorApprovedTopicPolicyDC917707"
+          }
+        ],
+        "/WarmpawzStack-prod/SnsStack/NotificationTopic/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SnsStackNotificationTopic8FDAC809"
+          }
+        ],
+        "/WarmpawzStack-prod/SnsStack/AnalyticsTopic/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SnsStackAnalyticsTopic7094CF54"
+          }
+        ],
+        "/WarmpawzStack-prod/DynamoDbStack/LogsTable": [
+          {
+            "type": "aws:cdk:hasPhysicalName",
+            "data": {
+              "Ref": "DynamoDbStackLogsTable96BE4B9D"
+            }
+          }
+        ],
+        "/WarmpawzStack-prod/DynamoDbStack/LogsTable/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DynamoDbStackLogsTable96BE4B9D"
+          }
+        ],
+        "/WarmpawzStack-prod/DynamoDbStack/AnalyticsTable": [
+          {
+            "type": "aws:cdk:hasPhysicalName",
+            "data": {
+              "Ref": "DynamoDbStackAnalyticsTable19FB8467"
+            }
+          }
+        ],
+        "/WarmpawzStack-prod/DynamoDbStack/AnalyticsTable/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DynamoDbStackAnalyticsTable19FB8467"
+          }
+        ],
+        "/WarmpawzStack-prod/DynamoDbStack/ReportsTable": [
+          {
+            "type": "aws:cdk:hasPhysicalName",
+            "data": {
+              "Ref": "DynamoDbStackReportsTableB844EC92"
+            }
+          }
+        ],
+        "/WarmpawzStack-prod/DynamoDbStack/ReportsTable/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DynamoDbStackReportsTableB844EC92"
+          }
+        ],
+        "/WarmpawzStack-prod/DynamoDbStack/ChatMessagesTable": [
+          {
+            "type": "aws:cdk:hasPhysicalName",
+            "data": {
+              "Ref": "DynamoDbStackChatMessagesTable8D237DC2"
+            }
+          }
+        ],
+        "/WarmpawzStack-prod/DynamoDbStack/ChatMessagesTable/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DynamoDbStackChatMessagesTable8D237DC2"
+          }
+        ],
+        "/WarmpawzStack-prod/DynamoDbStack/AiConversationsTable": [
+          {
+            "type": "aws:cdk:hasPhysicalName",
+            "data": {
+              "Ref": "DynamoDbStackAiConversationsTable8F2402AA"
+            }
+          }
+        ],
+        "/WarmpawzStack-prod/DynamoDbStack/AiConversationsTable/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DynamoDbStackAiConversationsTable8F2402AA"
+          }
+        ],
+        "/WarmpawzStack-prod/ChimeStack/ChimeRole/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ChimeStackChimeRole4A0C6A8C"
+          }
+        ],
+        "/WarmpawzStack-prod/ChimeStack/ChimeRole/DefaultPolicy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ChimeStackChimeRoleDefaultPolicy3FF13B50"
+          }
+        ],
+        "/WarmpawzStack-prod/ChimeStack/ChimeAppInstanceArn": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ChimeStackChimeAppInstanceArn4FBD7509"
+          }
+        ],
+        "/WarmpawzStack-prod/ChimeStack/ChimeRoleArn": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ChimeStackChimeRoleArn34D55819"
+          }
+        ],
+        "/WarmpawzStack-prod/EventBridgeStack/WarmpawzEventBus/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "EventBridgeStackWarmpawzEventBus2B15753F"
+          }
+        ],
+        "/WarmpawzStack-prod/EventBridgeStack/BookingEventRule/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "EventBridgeStackBookingEventRuleF50BB7D3"
+          }
+        ],
+        "/WarmpawzStack-prod/EventBridgeStack/PaymentEventRule/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "EventBridgeStackPaymentEventRule01796980"
+          }
+        ],
+        "/WarmpawzStack-prod/EventBridgeStack/VendorEventRule/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "EventBridgeStackVendorEventRule483F9704"
+          }
+        ],
+        "/WarmpawzStack-prod/EventBridgeStack/AnalyticsEventRule/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "EventBridgeStackAnalyticsEventRuleA69E042D"
+          }
+        ],
+        "/WarmpawzStack-prod/EventBridgeStack/NotificationEventRule/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "EventBridgeStackNotificationEventRuleC1ECE6FA"
+          }
+        ],
+        "/WarmpawzStack-prod/LambdaStack/SharedLayer/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "LambdaStackSharedLayerEA8C1C60"
+          }
+        ],
+        "/WarmpawzStack-prod/LambdaStack/ApiFunction/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "LambdaStackApiFunctionC985920A"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiE5093081"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/DefaultStage/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiDefaultStage0F758123"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/GET--{proxy+}/LambdaIntegration/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiGETproxyLambdaIntegrationEDDD3B82"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/GET--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiGETproxyLambdaIntegrationPermissionDF3406CE"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/GET--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiGETproxy396DCE6A"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/POST--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPOSTproxyLambdaIntegrationPermissionDE15A5C5"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/POST--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPOSTproxy06172A45"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/PUT--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPUTproxyLambdaIntegrationPermission73351BDF"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/PUT--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPUTproxy360030AF"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/PATCH--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPATCHproxyLambdaIntegrationPermission7092659E"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/PATCH--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPATCHproxyD95F022B"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/DELETE--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiDELETEproxyLambdaIntegrationPermission5B585495"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/DELETE--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiDELETEproxy2E4466F8"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/GET--health/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiGEThealthLambdaIntegrationPermission201253E0"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/GET--health/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiGEThealth6CB40255"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/GET--admin--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiGETadminproxyLambdaIntegrationPermissionF73ADD43"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/GET--admin--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiGETadminproxyA5ADC0DB"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/AdminAuthorizer/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiAdminAuthorizerBE526AEF"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/POST--admin--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPOSTadminproxyLambdaIntegrationPermission2247AB4A"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/POST--admin--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPOSTadminproxy45A60CCA"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/PUT--admin--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPUTadminproxyLambdaIntegrationPermission939778CD"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/PUT--admin--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPUTadminproxy09883AC8"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/PATCH--admin--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPATCHadminproxyLambdaIntegrationPermission1059C3A6"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/PATCH--admin--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPATCHadminproxy7180DF95"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/DELETE--admin--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiDELETEadminproxyLambdaIntegrationPermission353D12FF"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/DELETE--admin--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiDELETEadminproxy8E72583C"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/GET--customer--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiGETcustomerproxyLambdaIntegrationPermissionEB6613E8"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/GET--customer--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiGETcustomerproxyAB219230"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/CustomerAuthorizer/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiCustomerAuthorizer05E66D97"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/POST--customer--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPOSTcustomerproxyLambdaIntegrationPermission335711CF"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/POST--customer--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPOSTcustomerproxy71E6B629"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/PUT--customer--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPUTcustomerproxyLambdaIntegrationPermissionEAD47BD3"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/PUT--customer--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPUTcustomerproxy8C64FD28"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/PATCH--customer--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPATCHcustomerproxyLambdaIntegrationPermission1D0A7593"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/PATCH--customer--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPATCHcustomerproxy309B872D"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/DELETE--customer--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiDELETEcustomerproxyLambdaIntegrationPermission0DA37BAA"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/DELETE--customer--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiDELETEcustomerproxyB59C3A2E"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/GET--vendor--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiGETvendorproxyLambdaIntegrationPermissionCCEC33B3"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/GET--vendor--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiGETvendorproxyC4079A5E"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/VendorAuthorizer/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiVendorAuthorizerEB3B03F9"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/POST--vendor--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPOSTvendorproxyLambdaIntegrationPermission4EA4F13E"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/POST--vendor--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPOSTvendorproxy9E5EA176"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/PUT--vendor--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPUTvendorproxyLambdaIntegrationPermissionD029FB6F"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/PUT--vendor--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPUTvendorproxy49472C59"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/PATCH--vendor--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPATCHvendorproxyLambdaIntegrationPermission44BAE6FB"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/PATCH--vendor--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiPATCHvendorproxyB3B63CFF"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/DELETE--vendor--{proxy+}/LambdaIntegration-Permission": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiDELETEvendorproxyLambdaIntegrationPermission885681CF"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/DELETE--vendor--{proxy+}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackWarmpawzApiDELETEvendorproxyAC088822"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/ApiDomain/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackApiDomainD311C659"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayStack/ApiMapping/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayStackApiMapping0435E41B"
+          }
+        ],
+        "/WarmpawzStack-prod/Route53Stack/ApiCertificate/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "Route53StackApiCertificate65C687FE"
+          }
+        ],
+        "/WarmpawzStack-prod/Route53Stack/CustomerAppARecord": [
+          {
+            "type": "aws:cdk:warning",
+            "data": "Ignoring ttl since 'target' uses an alias target [ack: aws-cdk-lib/aws-route53:ttlIgnored]",
+            "trace": [
+              "Annotations.addMessage (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/annotations.js:1:2066)",
+              "Annotations.addWarningV2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/annotations.js:1:984)",
+              "new RecordSet2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/aws-route53/lib/record-set.js:1:8586)",
+              "new RecordSet2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:681)",
+              "new ARecord2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/aws-route53/lib/record-set.js:1:13285)",
+              "new ARecord2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:681)",
+              "new Route53Stack (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/lib/route53-stack.ts:59:5)",
+              "new WarmpawzStack (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/lib/warmpawz-stack.ts:210:25)",
+              "/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/bin/cdk.ts:17:3",
+              "Array.forEach (<anonymous>)",
+              "Object.<anonymous> (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/bin/cdk.ts:14:14)",
+              "Module._compile (node:internal/modules/cjs/loader:1760:14)",
+              "Object..js (node:internal/modules/cjs/loader:1893:10)",
+              "Module.load (node:internal/modules/cjs/loader:1480:32)",
+              "Module._load (node:internal/modules/cjs/loader:1299:12)",
+              "TracingChannel.traceSync (node:diagnostics_channel:328:14)",
+              "wrapModuleLoad (node:internal/modules/cjs/loader:244:24)",
+              "Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)",
+              "node:internal/main/run_main_module:33:47"
+            ]
+          }
+        ],
+        "/WarmpawzStack-prod/Route53Stack/CustomerAppARecord/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "Route53StackCustomerAppARecord68AD059E"
+          }
+        ],
+        "/WarmpawzStack-prod/Route53Stack/VendorAppARecord": [
+          {
+            "type": "aws:cdk:warning",
+            "data": "Ignoring ttl since 'target' uses an alias target [ack: aws-cdk-lib/aws-route53:ttlIgnored]",
+            "trace": [
+              "Annotations.addMessage (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/annotations.js:1:2066)",
+              "Annotations.addWarningV2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/annotations.js:1:984)",
+              "new RecordSet2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/aws-route53/lib/record-set.js:1:8586)",
+              "new RecordSet2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:681)",
+              "new ARecord2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/aws-route53/lib/record-set.js:1:13285)",
+              "new ARecord2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:681)",
+              "new Route53Stack (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/lib/route53-stack.ts:69:5)",
+              "new WarmpawzStack (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/lib/warmpawz-stack.ts:210:25)",
+              "/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/bin/cdk.ts:17:3",
+              "Array.forEach (<anonymous>)",
+              "Object.<anonymous> (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/bin/cdk.ts:14:14)",
+              "Module._compile (node:internal/modules/cjs/loader:1760:14)",
+              "Object..js (node:internal/modules/cjs/loader:1893:10)",
+              "Module.load (node:internal/modules/cjs/loader:1480:32)",
+              "Module._load (node:internal/modules/cjs/loader:1299:12)",
+              "TracingChannel.traceSync (node:diagnostics_channel:328:14)",
+              "wrapModuleLoad (node:internal/modules/cjs/loader:244:24)",
+              "Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)",
+              "node:internal/main/run_main_module:33:47"
+            ]
+          }
+        ],
+        "/WarmpawzStack-prod/Route53Stack/VendorAppARecord/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "Route53StackVendorAppARecord0572B69C"
+          }
+        ],
+        "/WarmpawzStack-prod/Route53Stack/AdminARecord": [
+          {
+            "type": "aws:cdk:warning",
+            "data": "Ignoring ttl since 'target' uses an alias target [ack: aws-cdk-lib/aws-route53:ttlIgnored]",
+            "trace": [
+              "Annotations.addMessage (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/annotations.js:1:2066)",
+              "Annotations.addWarningV2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/annotations.js:1:984)",
+              "new RecordSet2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/aws-route53/lib/record-set.js:1:8586)",
+              "new RecordSet2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:681)",
+              "new ARecord2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/aws-route53/lib/record-set.js:1:13285)",
+              "new ARecord2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:681)",
+              "new Route53Stack (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/lib/route53-stack.ts:79:5)",
+              "new WarmpawzStack (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/lib/warmpawz-stack.ts:210:25)",
+              "/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/bin/cdk.ts:17:3",
+              "Array.forEach (<anonymous>)",
+              "Object.<anonymous> (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/bin/cdk.ts:14:14)",
+              "Module._compile (node:internal/modules/cjs/loader:1760:14)",
+              "Object..js (node:internal/modules/cjs/loader:1893:10)",
+              "Module.load (node:internal/modules/cjs/loader:1480:32)",
+              "Module._load (node:internal/modules/cjs/loader:1299:12)",
+              "TracingChannel.traceSync (node:diagnostics_channel:328:14)",
+              "wrapModuleLoad (node:internal/modules/cjs/loader:244:24)",
+              "Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)",
+              "node:internal/main/run_main_module:33:47"
+            ]
+          }
+        ],
+        "/WarmpawzStack-prod/Route53Stack/AdminARecord/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "Route53StackAdminARecordBEABFE99"
+          }
+        ],
+        "/WarmpawzStack-prod/Route53Stack/ApkARecord": [
+          {
+            "type": "aws:cdk:warning",
+            "data": "Ignoring ttl since 'target' uses an alias target [ack: aws-cdk-lib/aws-route53:ttlIgnored]",
+            "trace": [
+              "Annotations.addMessage (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/annotations.js:1:2066)",
+              "Annotations.addWarningV2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/annotations.js:1:984)",
+              "new RecordSet2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/aws-route53/lib/record-set.js:1:8586)",
+              "new RecordSet2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:681)",
+              "new ARecord2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/aws-route53/lib/record-set.js:1:13285)",
+              "new ARecord2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:681)",
+              "new Route53Stack (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/lib/route53-stack.ts:93:5)",
+              "new WarmpawzStack (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/lib/warmpawz-stack.ts:210:25)",
+              "/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/bin/cdk.ts:17:3",
+              "Array.forEach (<anonymous>)",
+              "Object.<anonymous> (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/bin/cdk.ts:14:14)",
+              "Module._compile (node:internal/modules/cjs/loader:1760:14)",
+              "Object..js (node:internal/modules/cjs/loader:1893:10)",
+              "Module.load (node:internal/modules/cjs/loader:1480:32)",
+              "Module._load (node:internal/modules/cjs/loader:1299:12)",
+              "TracingChannel.traceSync (node:diagnostics_channel:328:14)",
+              "wrapModuleLoad (node:internal/modules/cjs/loader:244:24)",
+              "Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)",
+              "node:internal/main/run_main_module:33:47"
+            ]
+          }
+        ],
+        "/WarmpawzStack-prod/Route53Stack/ApkARecord/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "Route53StackApkARecord99A5183D"
+          }
+        ],
+        "/WarmpawzStack-prod/Route53Stack/ApiARecord": [
+          {
+            "type": "aws:cdk:warning",
+            "data": "Ignoring ttl since 'target' uses an alias target [ack: aws-cdk-lib/aws-route53:ttlIgnored]",
+            "trace": [
+              "Annotations.addMessage (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/annotations.js:1:2066)",
+              "Annotations.addWarningV2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/annotations.js:1:984)",
+              "new RecordSet2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/aws-route53/lib/record-set.js:1:8586)",
+              "new RecordSet2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:681)",
+              "new ARecord2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/aws-route53/lib/record-set.js:1:13285)",
+              "new ARecord2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:681)",
+              "Route53Stack.createApiGatewayRecords (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/lib/route53-stack.ts:113:25)",
+              "new WarmpawzStack (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/lib/warmpawz-stack.ts:220:23)",
+              "/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/bin/cdk.ts:17:3",
+              "Array.forEach (<anonymous>)",
+              "Object.<anonymous> (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/bin/cdk.ts:14:14)",
+              "Module._compile (node:internal/modules/cjs/loader:1760:14)",
+              "Object..js (node:internal/modules/cjs/loader:1893:10)",
+              "Module.load (node:internal/modules/cjs/loader:1480:32)",
+              "Module._load (node:internal/modules/cjs/loader:1299:12)",
+              "TracingChannel.traceSync (node:diagnostics_channel:328:14)",
+              "wrapModuleLoad (node:internal/modules/cjs/loader:244:24)",
+              "Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)",
+              "node:internal/main/run_main_module:33:47"
+            ]
+          }
+        ],
+        "/WarmpawzStack-prod/Route53Stack/ApiARecord/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "Route53StackApiARecord8172ED39"
+          }
+        ],
+        "/WarmpawzStack-prod/Route53Stack/ApiAaaaRecord": [
+          {
+            "type": "aws:cdk:warning",
+            "data": "Ignoring ttl since 'target' uses an alias target [ack: aws-cdk-lib/aws-route53:ttlIgnored]",
+            "trace": [
+              "Annotations.addMessage (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/annotations.js:1:2066)",
+              "Annotations.addWarningV2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/annotations.js:1:984)",
+              "new RecordSet2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/aws-route53/lib/record-set.js:1:8586)",
+              "new RecordSet2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:681)",
+              "new AaaaRecord2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/aws-route53/lib/record-set.js:1:14897)",
+              "new AaaaRecord2 (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:681)",
+              "Route53Stack.createApiGatewayRecords (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/lib/route53-stack.ts:126:28)",
+              "new WarmpawzStack (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/lib/warmpawz-stack.ts:220:23)",
+              "/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/bin/cdk.ts:17:3",
+              "Array.forEach (<anonymous>)",
+              "Object.<anonymous> (/Users/ketan/Documents/warmpawzecodev/infrastructure/cdk/bin/cdk.ts:14:14)",
+              "Module._compile (node:internal/modules/cjs/loader:1760:14)",
+              "Object..js (node:internal/modules/cjs/loader:1893:10)",
+              "Module.load (node:internal/modules/cjs/loader:1480:32)",
+              "Module._load (node:internal/modules/cjs/loader:1299:12)",
+              "TracingChannel.traceSync (node:diagnostics_channel:328:14)",
+              "wrapModuleLoad (node:internal/modules/cjs/loader:244:24)",
+              "Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)",
+              "node:internal/main/run_main_module:33:47"
+            ]
+          }
+        ],
+        "/WarmpawzStack-prod/Route53Stack/ApiAaaaRecord/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "Route53StackApiAaaaRecord55658A66"
+          }
+        ],
+        "/WarmpawzStack-prod/AWSCloudFrontPartitionHostedZoneIdMap": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AWSCloudFrontPartitionHostedZoneIdMap"
+          }
+        ],
+        "/WarmpawzStack-prod/AuroraEndpoint": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraEndpoint"
+          }
+        ],
+        "/WarmpawzStack-prod/AuroraProxyEndpoint": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraProxyEndpoint"
+          }
+        ],
+        "/WarmpawzStack-prod/AuroraSecretArn": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AuroraSecretArn"
+          }
+        ],
+        "/WarmpawzStack-prod/CustomerUserPoolId": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CustomerUserPoolId"
+          }
+        ],
+        "/WarmpawzStack-prod/CustomerUserPoolClientId": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CustomerUserPoolClientId"
+          }
+        ],
+        "/WarmpawzStack-prod/VendorUserPoolId": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "VendorUserPoolId"
+          }
+        ],
+        "/WarmpawzStack-prod/VendorUserPoolClientId": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "VendorUserPoolClientId"
+          }
+        ],
+        "/WarmpawzStack-prod/AdminUserPoolId": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AdminUserPoolId"
+          }
+        ],
+        "/WarmpawzStack-prod/AdminUserPoolClientId": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AdminUserPoolClientId"
+          }
+        ],
+        "/WarmpawzStack-prod/CustomerAuthorizerId": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CustomerAuthorizerId"
+          }
+        ],
+        "/WarmpawzStack-prod/VendorAuthorizerId": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "VendorAuthorizerId"
+          }
+        ],
+        "/WarmpawzStack-prod/AdminAuthorizerId": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AdminAuthorizerId"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayUrl": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayUrl"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiGatewayId": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiGatewayId"
+          }
+        ],
+        "/WarmpawzStack-prod/StorageBucketName": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "StorageBucketName"
+          }
+        ],
+        "/WarmpawzStack-prod/UploadsBucketName": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "UploadsBucketName"
+          }
+        ],
+        "/WarmpawzStack-prod/CloudFrontDomainName": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CloudFrontDomainName"
+          }
+        ],
+        "/WarmpawzStack-prod/ApiDomainName": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApiDomainName"
+          }
+        ],
+        "/WarmpawzStack-prod/CustomerAppDomain": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CustomerAppDomain"
+          }
+        ],
+        "/WarmpawzStack-prod/VendorAppDomain": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "VendorAppDomain"
+          }
+        ],
+        "/WarmpawzStack-prod/AdminDomain": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "AdminDomain"
+          }
+        ],
+        "/WarmpawzStack-prod/ApkBucketName": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApkBucketName"
+          }
+        ],
+        "/WarmpawzStack-prod/ApkDistributionDomain": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ApkDistributionDomain"
+          }
+        ],
+        "/WarmpawzStack-prod/LambdaExecutionRoleArn": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "LambdaExecutionRoleArn"
+          }
+        ],
+        "/WarmpawzStack-prod/LambdaFunctionArn": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "LambdaFunctionArn"
+          }
+        ],
+        "/WarmpawzStack-prod/LambdaFunctionName": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "LambdaFunctionName"
+          }
+        ],
+        "/WarmpawzStack-prod/NotificationQueueUrl": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "NotificationQueueUrl"
+          }
+        ],
+        "/WarmpawzStack-prod/BookingCreatedTopicArn": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "BookingCreatedTopicArn"
+          }
+        ],
+        "/WarmpawzStack-prod/LogsTableName": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "LogsTableName"
+          }
+        ],
+        "/WarmpawzStack-prod/ChatMessagesTableName": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ChatMessagesTableName"
+          }
+        ],
+        "/WarmpawzStack-prod/EventBusName": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "EventBusName"
+          }
+        ],
+        "/WarmpawzStack-prod/CDKMetadata/Default": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CDKMetadata"
+          }
+        ],
+        "/WarmpawzStack-prod/BootstrapVersion": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "BootstrapVersion"
+          }
+        ],
+        "/WarmpawzStack-prod/CheckBootstrapVersion": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CheckBootstrapVersion"
+          }
+        ]
+      },
+      "displayName": "WarmpawzStack-prod"
+    },
+    "Tree": {
+      "type": "cdk:tree",
+      "properties": {
+        "file": "tree.json"
+      }
+    },
+    "aws-cdk-lib/feature-flag-report": {
+      "type": "cdk:feature-flag-report",
+      "properties": {
+        "module": "aws-cdk-lib",
+        "flags": {
+          "@aws-cdk/aws-signer:signingProfileNamePassedToCfn": {
+            "recommendedValue": true,
+            "explanation": "Pass signingProfileName to CfnSigningProfile"
+          },
+          "@aws-cdk/core:newStyleStackSynthesis": {
+            "recommendedValue": true,
+            "explanation": "Switch to new stack synthesis method which enables CI/CD",
+            "unconfiguredBehavesLike": {
+              "v2": true
+            }
+          },
+          "@aws-cdk/core:stackRelativeExports": {
+            "recommendedValue": true,
+            "explanation": "Name exports based on the construct paths relative to the stack, rather than the global construct path",
+            "unconfiguredBehavesLike": {
+              "v2": true
+            }
+          },
+          "@aws-cdk/aws-ecs-patterns:secGroupsDisablesImplicitOpenListener": {
+            "recommendedValue": true,
+            "explanation": "Disable implicit openListener when custom security groups are provided"
+          },
+          "@aws-cdk/aws-rds:lowercaseDbIdentifier": {
+            "recommendedValue": true,
+            "explanation": "Force lowercasing of RDS Cluster names in CDK",
+            "unconfiguredBehavesLike": {
+              "v2": true
+            }
+          },
+          "@aws-cdk/aws-apigateway:usagePlanKeyOrderInsensitiveId": {
+            "recommendedValue": true,
+            "explanation": "Allow adding/removing multiple UsagePlanKeys independently",
+            "unconfiguredBehavesLike": {
+              "v2": true
+            }
+          },
+          "@aws-cdk/aws-lambda:recognizeVersionProps": {
+            "recommendedValue": true,
+            "explanation": "Enable this feature flag to opt in to the updated logical id calculation for Lambda Version created using the  `fn.currentVersion`.",
+            "unconfiguredBehavesLike": {
+              "v2": true
+            }
+          },
+          "@aws-cdk/aws-lambda:recognizeLayerVersion": {
+            "userValue": true,
+            "recommendedValue": true,
+            "explanation": "Enable this feature flag to opt in to the updated logical id calculation for Lambda Version created using the `fn.currentVersion`."
+          },
+          "@aws-cdk/aws-cloudfront:defaultSecurityPolicyTLSv1.2_2021": {
+            "recommendedValue": true,
+            "explanation": "Enable this feature flag to have cloudfront distributions use the security policy TLSv1.2_2021 by default.",
+            "unconfiguredBehavesLike": {
+              "v2": true
+            }
+          },
+          "@aws-cdk/core:checkSecretUsage": {
+            "userValue": true,
+            "recommendedValue": true,
+            "explanation": "Enable this flag to make it impossible to accidentally use SecretValues in unsafe locations"
+          },
+          "@aws-cdk/core:target-partitions": {
+            "userValue": [
+              "aws",
+              "aws-cn"
+            ],
+            "recommendedValue": [
+              "aws",
+              "aws-cn"
+            ],
+            "explanation": "What regions to include in lookup tables of environment agnostic stacks"
+          },
+          "@aws-cdk-containers/ecs-service-extensions:enableDefaultLogDriver": {
+            "userValue": true,
+            "recommendedValue": true,
+            "explanation": "ECS extensions will automatically add an `awslogs` driver if no logging is specified"
+          },
+          "@aws-cdk/aws-ec2:uniqueImdsv2TemplateName": {
+            "userValue": true,
+            "recommendedValue": true,
+            "explanation": "Enable this feature flag to have Launch Templates generated by the `InstanceRequireImdsv2Aspect` use unique names."
+          },
+          "@aws-cdk/aws-ecs:arnFormatIncludesClusterName": {
+            "userValue": true,
+            "recommendedValue": true,
+            "explanation": "ARN format used by ECS. In the new ARN format, the cluster name is part of the resource ID."
+          },
+          "@aws-cdk/aws-iam:minimizePolicies": {
+            "userValue": true,
+            "recommendedValue": true,
+            "explanation": "Minimize IAM policies by combining Statements"
+          },
+          "@aws-cdk/core:validateSnapshotRemovalPolicy": {
+            "userValue": true,
+            "recommendedValue": true,
+            "explanation": "Error on snapshot removal policies on resources that do not support it."
+          },
+          "@aws-cdk/aws-codepipeline:crossAccountKeyAliasStackSafeResourceName": {
+            "userValue": true,
+            "recommendedValue": true,
+            "explanation": "Generate key aliases that include the stack name"
+          },
+          "@aws-cdk/aws-s3:createDefaultLoggingPolicy": {
+            "userValue": true,
+            "recommendedValue": true,
+            "explanation": "Enable this feature flag to create an S3 bucket policy by default in cases where an AWS service would automatically create the Policy if one does not exist."
+          },
+          "@aws-cdk/aws-sns-subscriptions:restrictSqsDescryption": {
+            "userValue": true,
+            "recommendedValue": true,
+            "explanation": "Restrict KMS key policy for encrypted Queues a bit more"
+          },
+          "@aws-cdk/aws-apigateway:disableCloudWatchRole": {
+            "userValue": true,
+            "recommendedValue": true,
+            "explanation": "Make default CloudWatch Role behavior safe for multiple API Gateways in one environment"
+          },
+          "@aws-cdk/core:enablePartitionLiterals": {
+            "userValue": true,
+            "recommendedValue": true,
+            "explanation": "Make ARNs concrete if AWS partition is known"
+          },
+          "@aws-cdk/aws-events:eventsTargetQueueSameAccount": {
+            "userValue": true,
+            "recommendedValue": true,
+            "explanation": "Event Rules may only push to encrypted SQS queues in the same account"
+          },
+          "@aws-cdk/aws-ecs:disableExplicitDeploymentControllerForCircuitBreaker": {
+            "userValue": true,
+            "recommendedValue": true,
+            "explanation": "Avoid setting the \"ECS\" deployment controller when adding a circuit breaker"
+          },
+          "@aws-cdk/aws-iam:importedRoleStackSafeDefaultPolicyName": {
+            "recommendedValue": true,
+            "explanation": "Enable this feature to create default policy names for imported roles that depend on the stack the role is in."
+          },
+          "@aws-cdk/aws-s3:serverAccessLogsUseBucketPolicy": {
+            "recommendedValue": true,
+            "explanation": "Use S3 Bucket Policy instead of ACLs for Server Access Logging"
+          },
+          "@aws-cdk/aws-route53-patters:useCertificate": {
+            "recommendedValue": true,
+            "explanation": "Use the official `Certificate` resource instead of `DnsValidatedCertificate`"
+          },
+          "@aws-cdk/customresources:installLatestAwsSdkDefault": {
+            "recommendedValue": false,
+            "explanation": "Whether to install the latest SDK by default in AwsCustomResource"
+          },
+          "@aws-cdk/aws-rds:databaseProxyUniqueResourceName": {
+            "recommendedValue": true,
+            "explanation": "Use unique resource name for Database Proxy"
+          },
+          "@aws-cdk/aws-codedeploy:removeAlarmsFromDeploymentGroup": {
+            "recommendedValue": true,
+            "explanation": "Remove CloudWatch alarms from deployment group"
+          },
+          "@aws-cdk/aws-apigateway:authorizerChangeDeploymentLogicalId": {
+            "recommendedValue": true,
+            "explanation": "Include authorizer configuration in the calculation of the API deployment logical ID."
+          },
+          "@aws-cdk/aws-ec2:launchTemplateDefaultUserData": {
+            "recommendedValue": true,
+            "explanation": "Define user data for a launch template by default when a machine image is provided."
+          },
+          "@aws-cdk/aws-secretsmanager:useAttachedSecretResourcePolicyForSecretTargetAttachments": {
+            "recommendedValue": true,
+            "explanation": "SecretTargetAttachments uses the ResourcePolicy of the attached Secret."
+          },
+          "@aws-cdk/aws-redshift:columnId": {
+            "recommendedValue": true,
+            "explanation": "Whether to use an ID to track Redshift column changes"
+          },
+          "@aws-cdk/aws-stepfunctions-tasks:enableEmrServicePolicyV2": {
+            "recommendedValue": true,
+            "explanation": "Enable AmazonEMRServicePolicy_v2 managed policies"
+          },
+          "@aws-cdk/aws-ec2:restrictDefaultSecurityGroup": {
+            "recommendedValue": true,
+            "explanation": "Restrict access to the VPC default security group"
+          },
+          "@aws-cdk/aws-apigateway:requestValidatorUniqueId": {
+            "recommendedValue": true,
+            "explanation": "Generate a unique id for each RequestValidator added to a method"
+          },
+          "@aws-cdk/aws-kms:aliasNameRef": {
+            "recommendedValue": true,
+            "explanation": "KMS Alias name and keyArn will have implicit reference to KMS Key"
+          },
+          "@aws-cdk/aws-kms:applyImportedAliasPermissionsToPrincipal": {
+            "recommendedValue": true,
+            "explanation": "Enable grant methods on Aliases imported by name to use kms:ResourceAliases condition"
+          },
+          "@aws-cdk/aws-autoscaling:generateLaunchTemplateInsteadOfLaunchConfig": {
+            "recommendedValue": true,
+            "explanation": "Generate a launch template when creating an AutoScalingGroup"
+          },
+          "@aws-cdk/core:includePrefixInUniqueNameGeneration": {
+            "recommendedValue": true,
+            "explanation": "Include the stack prefix in the stack name generation process"
+          },
+          "@aws-cdk/aws-efs:denyAnonymousAccess": {
+            "recommendedValue": true,
+            "explanation": "EFS denies anonymous clients accesses"
+          },
+          "@aws-cdk/aws-opensearchservice:enableOpensearchMultiAzWithStandby": {
+            "recommendedValue": true,
+            "explanation": "Enables support for Multi-AZ with Standby deployment for opensearch domains"
+          },
+          "@aws-cdk/aws-lambda-nodejs:useLatestRuntimeVersion": {
+            "recommendedValue": true,
+            "explanation": "Enables aws-lambda-nodejs.Function to use the latest available NodeJs runtime as the default"
+          },
+          "@aws-cdk/aws-efs:mountTargetOrderInsensitiveLogicalId": {
+            "recommendedValue": true,
+            "explanation": "When enabled, mount targets will have a stable logicalId that is linked to the associated subnet."
+          },
+          "@aws-cdk/aws-rds:auroraClusterChangeScopeOfInstanceParameterGroupWithEachParameters": {
+            "recommendedValue": true,
+            "explanation": "When enabled, a scope of InstanceParameterGroup for AuroraClusterInstance with each parameters will change."
+          },
+          "@aws-cdk/aws-appsync:useArnForSourceApiAssociationIdentifier": {
+            "recommendedValue": true,
+            "explanation": "When enabled, will always use the arn for identifiers for CfnSourceApiAssociation in the GraphqlApi construct rather than id."
+          },
+          "@aws-cdk/aws-rds:preventRenderingDeprecatedCredentials": {
+            "recommendedValue": true,
+            "explanation": "When enabled, creating an RDS database cluster from a snapshot will only render credentials for snapshot credentials."
+          },
+          "@aws-cdk/aws-codepipeline-actions:useNewDefaultBranchForCodeCommitSource": {
+            "recommendedValue": true,
+            "explanation": "When enabled, the CodeCommit source action is using the default branch name 'main'."
+          },
+          "@aws-cdk/aws-cloudwatch-actions:changeLambdaPermissionLogicalIdForLambdaAction": {
+            "recommendedValue": true,
+            "explanation": "When enabled, the logical ID of a Lambda permission for a Lambda action includes an alarm ID."
+          },
+          "@aws-cdk/aws-codepipeline:crossAccountKeysDefaultValueToFalse": {
+            "recommendedValue": true,
+            "explanation": "Enables Pipeline to set the default value for crossAccountKeys to false."
+          },
+          "@aws-cdk/aws-codepipeline:defaultPipelineTypeToV2": {
+            "recommendedValue": true,
+            "explanation": "Enables Pipeline to set the default pipeline type to V2."
+          },
+          "@aws-cdk/aws-kms:reduceCrossAccountRegionPolicyScope": {
+            "recommendedValue": true,
+            "explanation": "When enabled, IAM Policy created from KMS key grant will reduce the resource scope to this key only."
+          },
+          "@aws-cdk/pipelines:reduceAssetRoleTrustScope": {
+            "recommendedValue": true,
+            "explanation": "Remove the root account principal from PipelineAssetsFileRole trust policy",
+            "unconfiguredBehavesLike": {
+              "v2": true
+            }
+          },
+          "@aws-cdk/aws-eks:nodegroupNameAttribute": {
+            "recommendedValue": true,
+            "explanation": "When enabled, nodegroupName attribute of the provisioned EKS NodeGroup will not have the cluster name prefix."
+          },
+          "@aws-cdk/aws-ec2:ebsDefaultGp3Volume": {
+            "recommendedValue": true,
+            "explanation": "When enabled, the default volume type of the EBS volume will be GP3"
+          },
+          "@aws-cdk/aws-ecs:removeDefaultDeploymentAlarm": {
+            "recommendedValue": true,
+            "explanation": "When enabled, remove default deployment alarm settings"
+          },
+          "@aws-cdk/custom-resources:logApiResponseDataPropertyTrueDefault": {
+            "recommendedValue": false,
+            "explanation": "When enabled, the custom resource used for `AwsCustomResource` will configure the `logApiResponseData` property as true by default"
+          },
+          "@aws-cdk/aws-s3:keepNotificationInImportedBucket": {
+            "recommendedValue": false,
+            "explanation": "When enabled, Adding notifications to a bucket in the current stack will not remove notification from imported stack."
+          },
+          "@aws-cdk/aws-stepfunctions-tasks:useNewS3UriParametersForBedrockInvokeModelTask": {
+            "recommendedValue": true,
+            "explanation": "When enabled, use new props for S3 URI field in task definition of state machine for bedrock invoke model.",
+            "unconfiguredBehavesLike": {
+              "v2": true
+            }
+          },
+          "@aws-cdk/core:explicitStackTags": {
+            "recommendedValue": true,
+            "explanation": "When enabled, stack tags need to be assigned explicitly on a Stack."
+          },
+          "@aws-cdk/aws-ecs:reduceEc2FargateCloudWatchPermissions": {
+            "recommendedValue": true,
+            "explanation": "When enabled, we will only grant the necessary permissions when users specify cloudwatch log group through logConfiguration"
+          },
+          "@aws-cdk/aws-dynamodb:resourcePolicyPerReplica": {
+            "recommendedValue": true,
+            "explanation": "When enabled will allow you to specify a resource policy per replica, and not copy the source table policy to all replicas"
+          },
+          "@aws-cdk/aws-ec2:ec2SumTImeoutEnabled": {
+            "recommendedValue": true,
+            "explanation": "When enabled, initOptions.timeout and resourceSignalTimeout values will be summed together."
+          },
+          "@aws-cdk/aws-appsync:appSyncGraphQLAPIScopeLambdaPermission": {
+            "recommendedValue": true,
+            "explanation": "When enabled, a Lambda authorizer Permission created when using GraphqlApi will be properly scoped with a SourceArn."
+          },
+          "@aws-cdk/aws-rds:setCorrectValueForDatabaseInstanceReadReplicaInstanceResourceId": {
+            "recommendedValue": true,
+            "explanation": "When enabled, the value of property `instanceResourceId` in construct `DatabaseInstanceReadReplica` will be set to the correct value which is `DbiResourceId` instead of currently `DbInstanceArn`"
+          },
+          "@aws-cdk/core:cfnIncludeRejectComplexResourceUpdateCreatePolicyIntrinsics": {
+            "recommendedValue": true,
+            "explanation": "When enabled, CFN templates added with `cfn-include` will error if the template contains Resource Update or Create policies with CFN Intrinsics that include non-primitive values."
+          },
+          "@aws-cdk/aws-lambda-nodejs:sdkV3ExcludeSmithyPackages": {
+            "recommendedValue": true,
+            "explanation": "When enabled, both `@aws-sdk` and `@smithy` packages will be excluded from the Lambda Node.js 18.x runtime to prevent version mismatches in bundled applications."
+          },
+          "@aws-cdk/aws-stepfunctions-tasks:fixRunEcsTaskPolicy": {
+            "recommendedValue": true,
+            "explanation": "When enabled, the resource of IAM Run Ecs policy generated by SFN EcsRunTask will reference the definition, instead of constructing ARN."
+          },
+          "@aws-cdk/aws-ec2:bastionHostUseAmazonLinux2023ByDefault": {
+            "recommendedValue": true,
+            "explanation": "When enabled, the BastionHost construct will use the latest Amazon Linux 2023 AMI, instead of Amazon Linux 2."
+          },
+          "@aws-cdk/core:aspectStabilization": {
+            "recommendedValue": true,
+            "explanation": "When enabled, a stabilization loop will be run when invoking Aspects during synthesis.",
+            "unconfiguredBehavesLike": {
+              "v2": true
+            }
+          },
+          "@aws-cdk/aws-route53-targets:userPoolDomainNameMethodWithoutCustomResource": {
+            "recommendedValue": true,
+            "explanation": "When enabled, use a new method for DNS Name of user pool domain target without creating a custom resource."
+          },
+          "@aws-cdk/aws-elasticloadbalancingV2:albDualstackWithoutPublicIpv4SecurityGroupRulesDefault": {
+            "recommendedValue": true,
+            "explanation": "When enabled, the default security group ingress rules will allow IPv6 ingress from anywhere"
+          },
+          "@aws-cdk/aws-iam:oidcRejectUnauthorizedConnections": {
+            "recommendedValue": true,
+            "explanation": "When enabled, the default behaviour of OIDC provider will reject unauthorized connections"
+          },
+          "@aws-cdk/core:enableAdditionalMetadataCollection": {
+            "recommendedValue": true,
+            "explanation": "When enabled, CDK will expand the scope of usage data collected to better inform CDK development and improve communication for security concerns and emerging issues."
+          },
+          "@aws-cdk/aws-lambda:createNewPoliciesWithAddToRolePolicy": {
+            "recommendedValue": false,
+            "explanation": "[Deprecated] When enabled, Lambda will create new inline policies with AddToRolePolicy instead of adding to the Default Policy Statement"
+          },
+          "@aws-cdk/aws-s3:setUniqueReplicationRoleName": {
+            "recommendedValue": true,
+            "explanation": "When enabled, CDK will automatically generate a unique role name that is used for s3 object replication."
+          },
+          "@aws-cdk/pipelines:reduceStageRoleTrustScope": {
+            "recommendedValue": true,
+            "explanation": "Remove the root account principal from Stage addActions trust policy",
+            "unconfiguredBehavesLike": {
+              "v2": true
+            }
+          },
+          "@aws-cdk/aws-events:requireEventBusPolicySid": {
+            "recommendedValue": true,
+            "explanation": "When enabled, grantPutEventsTo() will use resource policies with Statement IDs for service principals."
+          },
+          "@aws-cdk/core:aspectPrioritiesMutating": {
+            "recommendedValue": true,
+            "explanation": "When set to true, Aspects added by the construct library on your behalf will be given a priority of MUTATING."
+          },
+          "@aws-cdk/aws-dynamodb:retainTableReplica": {
+            "recommendedValue": true,
+            "explanation": "When enabled, table replica will be default to the removal policy of source table unless specified otherwise."
+          },
+          "@aws-cdk/cognito:logUserPoolClientSecretValue": {
+            "recommendedValue": false,
+            "explanation": "When disabled, the value of the user pool client secret will not be logged in the custom resource lambda function logs."
+          },
+          "@aws-cdk/pipelines:reduceCrossAccountActionRoleTrustScope": {
+            "recommendedValue": true,
+            "explanation": "When enabled, scopes down the trust policy for the cross-account action role",
+            "unconfiguredBehavesLike": {
+              "v2": true
+            }
+          },
+          "@aws-cdk/aws-stepfunctions:useDistributedMapResultWriterV2": {
+            "recommendedValue": true,
+            "explanation": "When enabled, the resultWriterV2 property of DistributedMap will be used insted of resultWriter"
+          },
+          "@aws-cdk/s3-notifications:addS3TrustKeyPolicyForSnsSubscriptions": {
+            "recommendedValue": true,
+            "explanation": "Add an S3 trust policy to a KMS key resource policy for SNS subscriptions."
+          },
+          "@aws-cdk/aws-ec2:requirePrivateSubnetsForEgressOnlyInternetGateway": {
+            "recommendedValue": true,
+            "explanation": "When enabled, the EgressOnlyGateway resource is only created if private subnets are defined in the dual-stack VPC."
+          },
+          "@aws-cdk/aws-ec2-alpha:useResourceIdForVpcV2Migration": {
+            "recommendedValue": false,
+            "explanation": "When enabled, use resource IDs for VPC V2 migration"
+          },
+          "@aws-cdk/aws-s3:publicAccessBlockedByDefault": {
+            "recommendedValue": true,
+            "explanation": "When enabled, setting any combination of options for BlockPublicAccess will automatically set true for any options not defined."
+          },
+          "@aws-cdk/aws-lambda:useCdkManagedLogGroup": {
+            "recommendedValue": true,
+            "explanation": "When enabled, CDK creates and manages loggroup for the lambda function"
+          },
+          "@aws-cdk/aws-elasticloadbalancingv2:networkLoadBalancerWithSecurityGroupByDefault": {
+            "recommendedValue": true,
+            "explanation": "When enabled, Network Load Balancer will be created with a security group by default."
+          },
+          "@aws-cdk/aws-stepfunctions-tasks:httpInvokeDynamicJsonPathEndpoint": {
+            "recommendedValue": true,
+            "explanation": "When enabled, allows using a dynamic apiEndpoint with JSONPath format in HttpInvoke tasks.",
+            "unconfiguredBehavesLike": {
+              "v2": true
+            }
+          },
+          "@aws-cdk/aws-ecs-patterns:uniqueTargetGroupId": {
+            "recommendedValue": true,
+            "explanation": "When enabled, ECS patterns will generate unique target group IDs to prevent conflicts during load balancer replacement"
+          },
+          "@aws-cdk/aws-route53-patterns:useDistribution": {
+            "recommendedValue": true,
+            "explanation": "Use the `Distribution` resource instead of `CloudFrontWebDistribution`"
+          }
+        }
+      }
+    }
+  },
+  "minimumCliVersion": "2.1033.0"
+}
