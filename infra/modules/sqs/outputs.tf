@@ -8,6 +8,16 @@ output "dlq_url" {
   value       = aws_sqs_queue.dlq.url
 }
 
+output "dlq_fifo_arn" {
+  description = "FIFO dead letter queue ARN"
+  value       = aws_sqs_queue.dlq_fifo.arn
+}
+
+output "dlq_fifo_url" {
+  description = "FIFO dead letter queue URL"
+  value       = aws_sqs_queue.dlq_fifo.url
+}
+
 output "booking_processing_queue_arn" {
   description = "Booking processing queue ARN"
   value       = aws_sqs_queue.booking_processing.arn
