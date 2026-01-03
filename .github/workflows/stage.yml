@@ -1,0 +1,384 @@
+name: 🎯 Deploy to Stage
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  AWS_REGION: ap-south-1
+  TERRAFORM_VERSION: 1.6.0
+  NODE_VERSION: 20
+
+jobs:
+  # ============================================
+  # DRIFT DETECTION
+  # ============================================
+  drift-detection:
+    name: 🔍 Detect Infrastructure Drift
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Terraform Init
+        working-directory: infra/envs/stage
+        run: terraform init -backend-config=backend.hcl
+
+      - name: Check for drift
+        working-directory: infra/envs/stage
+        run: |
+          terraform plan -detailed-exitcode \
+            -var="opensearch_master_password=${{ secrets.STAGE_OPENSEARCH_PASSWORD }}" \
+            || EXIT_CODE=$?
+          
+          if [ $EXIT_CODE -eq 2 ]; then
+            echo "⚠️ Infrastructure drift detected!"
+            terraform show
+            exit 1
+          fi
+
+  # ============================================
+  # FULL TEST SUITE
+  # ============================================
+  full-test-suite:
+    name: 🧪 Full Test Suite
+    runs-on: ubuntu-latest
+    needs: drift-detection
+    strategy:
+      matrix:
+        test-type: [unit, integration, e2e]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ${{ matrix.test-type }} tests
+        run: npm run test:${{ matrix.test-type }} -- --coverage
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.test-type }}-test-results
+          path: tests/results/${{ matrix.test-type }}/
+
+      - name: Check test pass rate
+        run: |
+          PASS_RATE=$(cat tests/results/${{ matrix.test-type }}/summary.json | jq '.passRate')
+          echo "Pass rate: $PASS_RATE%"
+          if (( $(echo "$PASS_RATE < 100" | bc -l) )); then
+            echo "❌ Test pass rate below 100%"
+            exit 1
+          fi
+
+  # ============================================
+  # BUILD
+  # ============================================
+  build:
+    name: 🔨 Build & Package
+    runs-on: ubuntu-latest
+    needs: full-test-suite
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build all components
+        run: |
+          npm run build:backend
+          npm run build:frontend
+
+      - name: Package Lambda functions
+        run: npm run package:lambda
+
+      - name: Upload Lambda artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: lambda-functions-stage
+          path: backend/lambda/dist/*.zip
+
+  # ============================================
+  # TERRAFORM PLAN
+  # ============================================
+  terraform-plan:
+    name: 📋 Terraform Plan
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Download Lambda artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: lambda-functions-stage
+          path: backend/lambda/dist
+
+      - name: Terraform Init
+        working-directory: infra/envs/stage
+        run: terraform init -backend-config=backend.hcl
+
+      - name: Terraform Plan
+        working-directory: infra/envs/stage
+        run: |
+          terraform plan \
+            -var="opensearch_master_password=${{ secrets.STAGE_OPENSEARCH_PASSWORD }}" \
+            -out=tfplan
+
+      - name: Upload plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan-stage
+          path: infra/envs/stage/tfplan
+
+  # ============================================
+  # MANUAL APPROVAL GATE
+  # ============================================
+  approval-gate:
+    name: 🚦 Manual Approval Required
+    runs-on: ubuntu-latest
+    needs: terraform-plan
+    environment:
+      name: stage-approval
+      url: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Wait for approval
+        run: echo "✅ Deployment approved for stage environment"
+
+  # ============================================
+  # TERRAFORM APPLY
+  # ============================================
+  terraform-apply:
+    name: 🚀 Deploy Infrastructure
+    runs-on: ubuntu-latest
+    needs: approval-gate
+    environment: stage
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-plan-stage
+          path: infra/envs/stage
+
+      - name: Download Lambda artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: lambda-functions-stage
+          path: backend/lambda/dist
+
+      - name: Terraform Init
+        working-directory: infra/envs/stage
+        run: terraform init -backend-config=backend.hcl
+
+      - name: Terraform Apply
+        working-directory: infra/envs/stage
+        run: terraform apply -auto-approve tfplan
+
+      - name: Export outputs
+        id: outputs
+        working-directory: infra/envs/stage
+        run: |
+          echo "api_endpoint=$(terraform output -raw api_endpoint)" >> $GITHUB_OUTPUT
+
+  # ============================================
+  # DATABASE MIGRATIONS
+  # ============================================
+  database-migrations:
+    name: 🗄️ Database Migrations
+    runs-on: ubuntu-latest
+    needs: terraform-apply
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Run migrations
+        working-directory: db
+        run: |
+          npm ci
+          npm run migrate:up
+        env:
+          ENVIRONMENT: stage
+
+  # ============================================
+  # E2E TESTS
+  # ============================================
+  e2e-tests:
+    name: 🎭 End-to-End Tests
+    runs-on: ubuntu-latest
+    needs: database-migrations
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run E2E test suite
+        run: npm run test:e2e:full
+        env:
+          ENVIRONMENT: stage
+          API_ENDPOINT: ${{ needs.terraform-apply.outputs.api_endpoint }}
+
+      - name: Upload E2E results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-test-results
+          path: tests/results/e2e/
+
+  # ============================================
+  # SMOKE & READINESS
+  # ============================================
+  smoke-and-readiness:
+    name: 💨 Smoke & Readiness Checks
+    runs-on: ubuntu-latest
+    needs: e2e-tests
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Run comprehensive checks
+        run: |
+          chmod +x scripts/readiness-checks.sh
+          ./scripts/readiness-checks.sh stage
+
+  # ============================================
+  # TAG RELEASE CANDIDATE
+  # ============================================
+  tag-release:
+    name: 🏷️ Tag Release Candidate
+    runs-on: ubuntu-latest
+    needs: smoke-and-readiness
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create release candidate tag
+        run: |
+          VERSION=$(date +%Y.%m.%d)-rc.${{ github.run_number }}
+          git tag -a "v$VERSION" -m "Release candidate v$VERSION"
+          git push origin "v$VERSION"
+
+  # ============================================
+  # DEPLOYMENT SUMMARY
+  # ============================================
+  deployment-summary:
+    name: 📊 Deployment Summary
+    runs-on: ubuntu-latest
+    needs: [tag-release]
+    if: always()
+    steps:
+      - name: Generate report
+        run: |
+          echo "# 🎯 Stage Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** ✅ SUCCESS" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** stage" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 🚀 Ready for Production!" >> $GITHUB_STEP_SUMMARY
+
+      - name: Notify success
+        uses: 8398a7/action-slack@v3
+        if: success()
+        with:
+          status: ${{ job.status }}
+          text: '✅ Stage deployment succeeded! Ready for production.'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
+

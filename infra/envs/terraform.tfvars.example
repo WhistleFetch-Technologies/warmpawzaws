@@ -1,0 +1,40 @@
+# Environment Configuration Template
+# Copy this file and rename to terraform.tfvars for your environment
+
+# ===========================================
+# BASIC CONFIGURATION
+# ===========================================
+
+aws_region = "us-east-1"
+
+# Alert email addresses (comma-separated)
+alert_emails = [
+  "alerts@example.com",
+  "devops@example.com"
+]
+
+# ===========================================
+# OPENSEARCH
+# ===========================================
+
+# OpenSearch master password
+# IMPORTANT: Use strong password and store in Secrets Manager for production
+# Minimum 8 characters, must contain uppercase, lowercase, number, and special char
+opensearch_master_password = "REPLACE_WITH_SECURE_PASSWORD"
+
+# ===========================================
+# OPTIONAL: CUSTOM DOMAIN (PRODUCTION ONLY)
+# ===========================================
+
+# Uncomment and configure for production
+# custom_domain_name = "api.warmpawz.com"
+# certificate_arn    = "arn:aws:acm:us-east-1:ACCOUNT_ID:certificate/CERT_ID"
+# route53_zone_id    = "Z1234567890ABC"
+
+# ===========================================
+# FEATURE FLAGS (OPTIONAL)
+# ===========================================
+
+# Enable OpenSearch in development (disabled by default for cost)
+# enable_opensearch = false
+

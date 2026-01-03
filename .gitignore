@@ -167,3 +167,9 @@ deno.json
 vite.config.ts
 
 infrastructure/terraform-cleanup/.terraform/
+
+# Terraform
+.terraform/
+.terraform.lock.hcl
+terraform.tfstate*
+*.tfstate*
