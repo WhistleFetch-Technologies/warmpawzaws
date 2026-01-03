@@ -4,10 +4,11 @@
   "description": "AWS Lambda handlers for Warmpawz platform",
   "main": "dist/handler.js",
   "scripts": {
-    "build": "tsc",
+    "build": "npm run clean && tsc && npm run package",
+    "package": "cd dist && zip -r ../api-handler.zip . && cd ..",
     "test": "jest",
     "lint": "eslint src --ext .ts",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist api-handler.zip"
   },
   "dependencies": {
     "@aws-sdk/client-sns": "^3.450.0",
