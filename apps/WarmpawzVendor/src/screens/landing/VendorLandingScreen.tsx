@@ -306,8 +306,9 @@ export function VendorLandingScreen({
               )}
             </BrandedCard>
           )}
-      </ScrollView>
-    </SafeAreaView>
+        </ScrollView>
+      </SafeAreaView>
+    </GradientBackground>
   );
 }
 
