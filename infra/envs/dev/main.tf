@@ -206,8 +206,6 @@ module "lambda" {
     RAZORPAY_SECRET_ARN         = module.secrets.razorpay_secret_arn
     GOOGLE_MAPS_SECRET_ARN      = module.secrets.google_maps_secret_arn
     SHIPROCKET_SECRET_ARN       = module.secrets.shiprocket_secret_arn
-    SNS_ANDROID_CUSTOMER_ARN    = module.secrets.sns_android_customer_arn
-    SNS_ANDROID_VENDOR_ARN      = module.secrets.sns_android_vendor_arn
     API_BASE_URL                = "https://${local.api_subdomain}"
     COGNITO_USER_POOL_ID        = module.cognito.user_pool_id
     COGNITO_CLIENT_ID           = module.cognito.customer_web_client_id
@@ -222,9 +220,7 @@ module "lambda" {
   sns_arns = [
     module.sns.user_notifications_topic_arn,
     module.sns.booking_updates_topic_arn,
-    module.sns.vendor_notifications_topic_arn,
-    module.secrets.sns_android_customer_arn,
-    module.secrets.sns_android_vendor_arn
+    module.sns.vendor_notifications_topic_arn
   ]
   sqs_arns      = [module.sqs.booking_processing_queue_arn, module.sqs.payment_processing_queue_arn]
   dlq_arn       = module.sqs.dlq_arn

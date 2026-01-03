@@ -60,10 +60,12 @@ resource "aws_secretsmanager_secret_version" "shiprocket" {
 }
 
 # SNS Platform Application for Push Notifications (Android)
+# Using a placeholder since we're using AWS SNS directly (not Firebase)
 resource "aws_sns_platform_application" "android_customer" {
+  count               = var.enable_push_notifications ? 1 : 0
   name                = "warmpawz-${var.environment}-android-customer"
   platform            = "GCM"
-  platform_credential = var.fcm_server_key != "" ? var.fcm_server_key : "placeholder"
+  platform_credential = var.fcm_server_key
 
   attributes = {
     SuccessFeedbackSampleRate = "100"
@@ -71,9 +73,10 @@ resource "aws_sns_platform_application" "android_customer" {
 }
 
 resource "aws_sns_platform_application" "android_vendor" {
+  count               = var.enable_push_notifications ? 1 : 0
   name                = "warmpawz-${var.environment}-android-vendor"
   platform            = "GCM"
-  platform_credential = var.fcm_server_key != "" ? var.fcm_server_key : "placeholder"
+  platform_credential = var.fcm_server_key
 
   attributes = {
     SuccessFeedbackSampleRate = "100"
@@ -82,7 +85,7 @@ resource "aws_sns_platform_application" "android_vendor" {
 
 # SNS Platform Application for Push Notifications (iOS)
 resource "aws_sns_platform_application" "ios_customer" {
-  count               = var.apns_certificate != "" ? 1 : 0
+  count               = var.enable_ios_push ? 1 : 0
   name                = "warmpawz-${var.environment}-ios-customer"
   platform            = var.environment == "prod" ? "APNS" : "APNS_SANDBOX"
   platform_credential = var.apns_private_key
@@ -94,7 +97,7 @@ resource "aws_sns_platform_application" "ios_customer" {
 }
 
 resource "aws_sns_platform_application" "ios_vendor" {
-  count               = var.apns_certificate != "" ? 1 : 0
+  count               = var.enable_ios_push ? 1 : 0
   name                = "warmpawz-${var.environment}-ios-vendor"
   platform            = var.environment == "prod" ? "APNS" : "APNS_SANDBOX"
   platform_credential = var.apns_private_key
@@ -104,4 +107,3 @@ resource "aws_sns_platform_application" "ios_vendor" {
     SuccessFeedbackSampleRate = "100"
   }
 }
-

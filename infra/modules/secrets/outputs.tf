@@ -26,21 +26,25 @@ output "all_secret_arns" {
 
 output "sns_android_customer_arn" {
   description = "ARN of the Android customer SNS platform application"
-  value       = aws_sns_platform_application.android_customer.arn
+  value       = var.enable_push_notifications ? aws_sns_platform_application.android_customer[0].arn : null
 }
 
 output "sns_android_vendor_arn" {
   description = "ARN of the Android vendor SNS platform application"
-  value       = aws_sns_platform_application.android_vendor.arn
+  value       = var.enable_push_notifications ? aws_sns_platform_application.android_vendor[0].arn : null
 }
 
 output "sns_ios_customer_arn" {
   description = "ARN of the iOS customer SNS platform application"
-  value       = length(aws_sns_platform_application.ios_customer) > 0 ? aws_sns_platform_application.ios_customer[0].arn : null
+  value       = var.enable_ios_push ? aws_sns_platform_application.ios_customer[0].arn : null
 }
 
 output "sns_ios_vendor_arn" {
   description = "ARN of the iOS vendor SNS platform application"
-  value       = length(aws_sns_platform_application.ios_vendor) > 0 ? aws_sns_platform_application.ios_vendor[0].arn : null
+  value       = var.enable_ios_push ? aws_sns_platform_application.ios_vendor[0].arn : null
 }
 
+output "push_notifications_enabled" {
+  description = "Whether push notifications are enabled"
+  value       = var.enable_push_notifications
+}
