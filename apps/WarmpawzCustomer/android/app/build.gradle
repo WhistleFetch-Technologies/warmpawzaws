@@ -79,7 +79,8 @@ android {
             buildConfigField "String", "API_BASE_URL", '"http://localhost:3000"'
         }
         release {
-            signingConfig signingConfigs.release
+            // Use debug signing if release signing is not configured (for dev/staging in CI/CD)
+            signingConfig signingConfigs.release.storeFile != null ? signingConfigs.release : signingConfigs.debug
             minifyEnabled enableProguardInReleaseBuilds
             shrinkResources enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
