@@ -6,6 +6,11 @@ on:
       - develop
   workflow_dispatch:
 
+# Prevent parallel deployments to the same environment
+concurrency:
+  group: dev-deployment
+  cancel-in-progress: true
+
 env:
   AWS_REGION: ap-south-1
   TERRAFORM_VERSION: 1.6.0
@@ -146,7 +151,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: apps/${{ matrix.app }}
-        run: npm ci
+        run: npm ci --legacy-peer-deps
 
       - name: Create environment config
         working-directory: apps/${{ matrix.app }}

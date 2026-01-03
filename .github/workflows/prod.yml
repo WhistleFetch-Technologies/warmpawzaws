@@ -8,6 +8,11 @@ on:
         required: true
         type: string
 
+# Prevent parallel deployments to the same environment
+concurrency:
+  group: prod-deployment
+  cancel-in-progress: false
+
 env:
   AWS_REGION: ap-south-1
   TERRAFORM_VERSION: 1.6.0
