@@ -426,7 +426,8 @@ jobs:
 
       - name: Notify deployment success
         uses: 8398a7/action-slack@v3
-        if: success() && secrets.SLACK_WEBHOOK_URL != ''
+        if: success()
+        continue-on-error: true
         with:
           status: ${{ job.status }}
           text: '✅ Development deployment succeeded!'
@@ -435,7 +436,8 @@ jobs:
 
       - name: Notify deployment failure
         uses: 8398a7/action-slack@v3
-        if: failure() && secrets.SLACK_WEBHOOK_URL != ''
+        if: failure()
+        continue-on-error: true
         with:
           status: ${{ job.status }}
           text: '❌ Development deployment failed!'
