@@ -29,7 +29,7 @@ output "custom_domain_url" {
 }
 
 output "authorizer_id" {
-  description = "Cognito authorizer ID"
-  value       = var.cognito_user_pool_arn != null ? aws_apigatewayv2_authorizer.cognito[0].id : null
+  description = "Cognito authorizer ID (temporarily disabled)"
+  value       = null
 }
 
