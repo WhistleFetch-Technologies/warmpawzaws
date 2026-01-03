@@ -162,6 +162,7 @@ jobs:
         with:
           name: lambda-functions
           path: backend/lambda/dist
+        continue-on-error: true
 
       - name: Terraform Init
         working-directory: infra/envs/dev
@@ -219,6 +220,7 @@ jobs:
         with:
           name: lambda-functions
           path: backend/lambda/dist
+        continue-on-error: true
 
       - name: Terraform Init
         working-directory: infra/envs/dev
