@@ -1,0 +1,439 @@
+name: 🚀 Deploy to Development
+
+on:
+  push:
+    branches:
+      - develop
+  workflow_dispatch:
+
+env:
+  AWS_REGION: ap-south-1
+  TERRAFORM_VERSION: 1.6.0
+  NODE_VERSION: 20
+
+jobs:
+  # ============================================
+  # STATIC ANALYSIS
+  # ============================================
+  static-analysis:
+    name: 🔍 Static Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run linter
+        run: npm run lint
+
+      - name: Run type check
+        run: npm run type-check
+
+      - name: Validate Terraform
+        working-directory: infra/envs/dev
+        run: |
+          terraform init -backend=false
+          terraform validate
+          terraform fmt -check
+
+  # ============================================
+  # UNIT TESTS
+  # ============================================
+  unit-tests:
+    name: 🧪 Unit Tests
+    runs-on: ubuntu-latest
+    needs: static-analysis
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests
+        run: npm run test:unit -- --coverage
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage/lcov.info
+          flags: unit-tests
+
+      - name: Check coverage threshold
+        run: |
+          COVERAGE=$(cat coverage/coverage-summary.json | jq '.total.lines.pct')
+          echo "Coverage: $COVERAGE%"
+          if (( $(echo "$COVERAGE < 80" | bc -l) )); then
+            echo "❌ Coverage below 80%"
+            exit 1
+          fi
+
+  # ============================================
+  # BUILD
+  # ============================================
+  build:
+    name: 🔨 Build Application
+    runs-on: ubuntu-latest
+    needs: [static-analysis, unit-tests]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build backend
+        working-directory: backend
+        run: npm run build
+
+      - name: Package Lambda functions
+        working-directory: backend/lambda
+        run: |
+          mkdir -p dist
+          for func in */; do
+            echo "Packaging ${func}..."
+            cd "$func"
+            npm ci --production
+            zip -r "../dist/${func%/}.zip" .
+            cd ..
+          done
+
+      - name: Upload Lambda artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: lambda-functions
+          path: backend/lambda/dist/*.zip
+          retention-days: 7
+
+  # ============================================
+  # TERRAFORM PLAN
+  # ============================================
+  terraform-plan:
+    name: 📋 Terraform Plan
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Download Lambda artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: lambda-functions
+          path: backend/lambda/dist
+
+      - name: Terraform Init
+        working-directory: infra/envs/dev
+        run: terraform init -backend-config=backend.hcl
+
+      - name: Terraform Plan
+        working-directory: infra/envs/dev
+        run: |
+          terraform plan \
+            -var="opensearch_master_password=${{ secrets.DEV_OPENSEARCH_PASSWORD }}" \
+            -out=tfplan
+
+      - name: Upload Terraform plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan
+          path: infra/envs/dev/tfplan
+          retention-days: 1
+
+  # ============================================
+  # TERRAFORM APPLY
+  # ============================================
+  terraform-apply:
+    name: 🚀 Deploy Infrastructure
+    runs-on: ubuntu-latest
+    needs: terraform-plan
+    environment: dev
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Download Terraform plan
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-plan
+          path: infra/envs/dev
+
+      - name: Download Lambda artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: lambda-functions
+          path: backend/lambda/dist
+
+      - name: Terraform Init
+        working-directory: infra/envs/dev
+        run: terraform init -backend-config=backend.hcl
+
+      - name: Terraform Apply
+        working-directory: infra/envs/dev
+        run: terraform apply -auto-approve tfplan
+
+      - name: Export outputs
+        id: tf-outputs
+        working-directory: infra/envs/dev
+        run: |
+          echo "api_endpoint=$(terraform output -raw api_endpoint)" >> $GITHUB_OUTPUT
+          echo "rds_endpoint=$(terraform output -raw rds_endpoint)" >> $GITHUB_OUTPUT
+
+  # ============================================
+  # DATABASE MIGRATIONS
+  # ============================================
+  database-migrations:
+    name: 🗄️ Run Database Migrations
+    runs-on: ubuntu-latest
+    needs: terraform-apply
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Run migrations
+        working-directory: db
+        run: |
+          npm ci
+          npm run migrate:up
+        env:
+          ENVIRONMENT: dev
+
+      - name: Verify migrations
+        working-directory: db
+        run: npm run migrate:status
+
+  # ============================================
+  # SEED DATA
+  # ============================================
+  seed-data:
+    name: 🌱 Seed Base Data
+    runs-on: ubuntu-latest
+    needs: database-migrations
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Seed database
+        working-directory: db
+        run: |
+          npm ci
+          npm run seed:dev
+        env:
+          ENVIRONMENT: dev
+
+  # ============================================
+  # INTEGRATION TESTS
+  # ============================================
+  integration-tests:
+    name: 🔗 Integration Tests
+    runs-on: ubuntu-latest
+    needs: seed-data
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run integration tests
+        run: npm run test:integration
+        env:
+          ENVIRONMENT: dev
+          API_ENDPOINT: ${{ needs.terraform-apply.outputs.api_endpoint }}
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-results
+          path: tests/results/integration/
+
+  # ============================================
+  # SMOKE TESTS
+  # ============================================
+  smoke-tests:
+    name: 💨 Smoke Tests
+    runs-on: ubuntu-latest
+    needs: integration-tests
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run smoke tests
+        run: npm run test:smoke
+        env:
+          ENVIRONMENT: dev
+
+  # ============================================
+  # READINESS CHECKS
+  # ============================================
+  readiness-checks:
+    name: ✅ Readiness & Connectivity Checks
+    runs-on: ubuntu-latest
+    needs: smoke-tests
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Run readiness checks
+        run: |
+          chmod +x scripts/readiness-checks.sh
+          ./scripts/readiness-checks.sh dev
+
+  # ============================================
+  # DEPLOYMENT SUMMARY
+  # ============================================
+  deployment-summary:
+    name: 📊 Deployment Summary
+    runs-on: ubuntu-latest
+    needs: [readiness-checks]
+    if: always()
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Generate deployment report
+        run: |
+          echo "# 🚀 Development Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** dev" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Triggered by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## ✅ Deployment Status: SUCCESS" >> $GITHUB_STEP_SUMMARY
+
+      - name: Notify deployment success
+        uses: 8398a7/action-slack@v3
+        if: success()
+        with:
+          status: ${{ job.status }}
+          text: '✅ Development deployment succeeded!'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Notify deployment failure
+        uses: 8398a7/action-slack@v3
+        if: failure()
+        with:
+          status: ${{ job.status }}
+          text: '❌ Development deployment failed!'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
