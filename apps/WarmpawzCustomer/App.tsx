@@ -39,9 +39,6 @@ import { BookingConfirmationScreen } from './src/screens/bookings/BookingConfirm
 import { RescheduleBookingScreen } from './src/screens/bookings/RescheduleBookingScreen';
 import { CancelBookingScreen } from './src/screens/bookings/CancelBookingScreen';
 import { CustomerPetsPageScreen } from './src/screens/pets/CustomerPetsPageScreen';
-import { CustomerPetProfileScreen } from './src/screens/pets/CustomerPetProfileScreen';
-import { PetProfileDashboardScreen } from './src/screens/pets/PetProfileDashboardScreen';
-import { MedicalRecordsScreen } from './src/screens/pets/MedicalRecordsScreen';
 import { CustomerProfileScreen } from './src/screens/profile/CustomerProfileScreen';
 import { SettingsScreen } from './src/screens/settings/SettingsScreen';
 import { PaymentMethodsScreen } from './src/screens/settings/PaymentMethodsScreen';
@@ -79,7 +76,6 @@ import { PackageBookingScreen } from './src/screens/bookings/PackageBookingScree
 import { PrescriptionViewScreen } from './src/screens/medical/PrescriptionViewScreen';
 // Batch 3: New screens
 import { LiveTrackingDashboardScreen } from './src/screens/logistics/LiveTrackingDashboardScreen';
-import { OrderTrackingScreen } from './src/screens/orders/OrderTrackingScreen';
 import { WalletTopUpScreen } from './src/screens/wallet/WalletTopUpScreen';
 import { TransactionHistoryScreen } from './src/screens/wallet/TransactionHistoryScreen';
 import { CouponApplyScreen } from './src/screens/payments/CouponApplyScreen';
@@ -88,13 +84,6 @@ import { NotificationCenterScreen } from './src/screens/notifications/Notificati
 import { ServiceSearchScreen } from './src/screens/services/ServiceSearchScreen';
 import { VendorProfileScreen } from './src/screens/vendors/VendorProfileScreen';
 import { ServiceBookingFlowScreen } from './src/screens/bookings/ServiceBookingFlowScreen';
-import { BookingConfirmationScreen } from './src/screens/bookings/BookingConfirmationScreen';
-import { PaymentMethodsScreen } from './src/screens/settings/PaymentMethodsScreen';
-import { HelpSupportScreen } from './src/screens/settings/HelpSupportScreen';
-import { SettingsScreen } from './src/screens/settings/SettingsScreen';
-import { PetProfileDashboardScreen } from './src/screens/pets/PetProfileDashboardScreen';
-import { MedicalRecordsScreen } from './src/screens/pets/MedicalRecordsScreen';
-import { OrderHistoryScreen } from './src/screens/orders/OrderHistoryScreen';
 // Bottom Tab Navigator
 import { BottomTabNavigator } from './src/navigation/BottomTabNavigator';
 // Batch 5: New screens
