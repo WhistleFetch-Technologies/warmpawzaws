@@ -18,7 +18,6 @@ import {
 } from 'react-native';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { SecurityApi } from '../../services/api';
-import { Alert } from 'react-native';
 
 interface SecurityScreenProps {
   vendorId: string;
