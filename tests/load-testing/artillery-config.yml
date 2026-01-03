@@ -1,0 +1,254 @@
+# ============================================================================
+# WARMPAWZ PLATFORM - ARTILLERY LOAD TESTING CONFIGURATION
+# ============================================================================
+# Test Configuration for simulating real-world traffic patterns
+# 
+# Usage:
+#   npm install -g artillery
+#   artillery run artillery-config.yml
+# 
+# Report:
+#   artillery run --output report.json artillery-config.yml
+#   artillery report report.json
+# ============================================================================
+
+config:
+  target: "{{ $processEnvironment.API_BASE_URL || 'https://api.warmpawz.com' }}"
+  phases:
+    # Phase 1: Warm-up (2 minutes)
+    - duration: 120
+      arrivalRate: 5
+      name: "Warm-up"
+    
+    # Phase 2: Ramp up (3 minutes)
+    - duration: 180
+      arrivalRate: 10
+      rampTo: 50
+      name: "Ramp up"
+    
+    # Phase 3: Sustained load (5 minutes)
+    - duration: 300
+      arrivalRate: 50
+      name: "Sustained load"
+    
+    # Phase 4: Peak load (2 minutes)
+    - duration: 120
+      arrivalRate: 100
+      name: "Peak load"
+    
+    # Phase 5: Spike test (1 minute)
+    - duration: 60
+      arrivalRate: 200
+      name: "Spike test"
+    
+    # Phase 6: Cool down (1 minute)
+    - duration: 60
+      arrivalRate: 10
+      name: "Cool down"
+  
+  processor: "./artillery-functions.js"
+  
+  defaults:
+    headers:
+      Content-Type: "application/json"
+      User-Agent: "Warmpawz-LoadTest/1.0"
+  
+  variables:
+    customerPhone:
+      - "+919876543210"
+      - "+919876543211"
+      - "+919876543212"
+      - "+919876543213"
+      - "+919876543214"
+    
+    vendorId:
+      - "vendor-001"
+      - "vendor-002"
+      - "vendor-003"
+    
+    serviceCategory:
+      - "vet"
+      - "grooming"
+      - "training"
+      - "walker"
+      - "boarding"
+    
+    city:
+      - "Mumbai"
+      - "Delhi"
+      - "Bangalore"
+      - "Hyderabad"
+      - "Chennai"
+
+scenarios:
+  # ============================================================================
+  # CUSTOMER DISCOVERY & SEARCH FLOW
+  # ============================================================================
+  - name: "Customer Discovery Flow"
+    weight: 40
+    flow:
+      # 1. Search for services
+      - get:
+          url: "/search?q={{ $randomString() }}&category={{ serviceCategory }}&limit=20"
+          capture:
+            - json: "$.vendors[0].id"
+              as: "discoveredVendorId"
+      
+      # 2. Get vendor profile
+      - get:
+          url: "/vendor/{{ discoveredVendorId }}/profile"
+          ifTrue: "discoveredVendorId"
+      
+      # 3. Get vendor services
+      - get:
+          url: "/vendor/{{ discoveredVendorId }}/services"
+          ifTrue: "discoveredVendorId"
+          capture:
+            - json: "$.services[0].id"
+              as: "serviceId"
+      
+      # 4. Get available slots
+      - get:
+          url: "/bookings/available-slots?vendor_id={{ discoveredVendorId }}&service_id={{ serviceId }}&date={{ $randomDate() }}"
+          ifTrue: "serviceId"
+      
+      # 5. Create booking
+      - post:
+          url: "/bookings/create"
+          json:
+            customerId: "cust-{{ $randomNumber(1000, 9999) }}"
+            vendorId: "{{ discoveredVendorId }}"
+            serviceId: "{{ serviceId }}"
+            bookingDate: "{{ $randomDate() }}"
+            bookingTime: "10:00"
+            serviceType: "at_vendor"
+            amount: 500
+          capture:
+            - json: "$.bookingId"
+              as: "bookingId"
+      
+      # 6. Check booking status
+      - get:
+          url: "/bookings/{{ bookingId }}"
+          ifTrue: "bookingId"
+      
+      # Think time (simulate user reading)
+      - think: 2
+
+  # ============================================================================
+  # VENDOR DASHBOARD FLOW
+  # ============================================================================
+  - name: "Vendor Dashboard Flow"
+    weight: 30
+    flow:
+      # 1. Get vendor dashboard
+      - get:
+          url: "/vendor/{{ vendorId }}/dashboard"
+      
+      # 2. Get today's bookings
+      - get:
+          url: "/vendor/{{ vendorId }}/bookings/today"
+          capture:
+            - json: "$.bookings[0].id"
+              as: "todayBookingId"
+      
+      # 3. Get vendor services
+      - get:
+          url: "/vendor/{{ vendorId }}/services"
+      
+      # 4. Get vendor staff
+      - get:
+          url: "/vendor/{{ vendorId }}/staff"
+      
+      # 5. Get earnings
+      - get:
+          url: "/vendor/{{ vendorId }}/earnings"
+      
+      # 6. Confirm a booking
+      - post:
+          url: "/bookings/{{ todayBookingId }}/confirm"
+          ifTrue: "todayBookingId"
+      
+      # Think time
+      - think: 3
+
+  # ============================================================================
+  # SERVICE DISCOVERY (LOCATION-BASED)
+  # ============================================================================
+  - name: "Location-Based Discovery"
+    weight: 20
+    flow:
+      # 1. Get service categories
+      - get:
+          url: "/service-discovery/categories"
+      
+      # 2. Get vendors near location
+      - get:
+          url: "/service-discovery/vendors?category={{ serviceCategory }}&lat=19.0760&lng=72.8777&city={{ city }}"
+      
+      # 3. Get problem grid
+      - get:
+          url: "/service-discovery/problems"
+      
+      # Think time
+      - think: 1
+
+  # ============================================================================
+  # PAYMENT FLOW
+  # ============================================================================
+  - name: "Payment Flow"
+    weight: 5
+    flow:
+      # 1. Create payment order
+      - post:
+          url: "/payments/create-order"
+          json:
+            booking_id: "booking-{{ $randomNumber(1000, 9999) }}"
+            amount: 1000
+          capture:
+            - json: "$.order_id"
+              as: "orderId"
+      
+      # 2. Simulate payment verification
+      - post:
+          url: "/payments/verify"
+          json:
+            razorpay_order_id: "{{ orderId }}"
+            razorpay_payment_id: "pay_{{ $randomString() }}"
+            razorpay_signature: "{{ $randomString() }}"
+            booking_id: "booking-{{ $randomNumber(1000, 9999) }}"
+      
+      # Think time
+      - think: 2
+
+  # ============================================================================
+  # ADMIN OPERATIONS
+  # ============================================================================
+  - name: "Admin Operations"
+    weight: 5
+    flow:
+      # 1. Get vendor applications
+      - get:
+          url: "/admin/vendors?status=pending"
+      
+      # 2. Get platform stats
+      - get:
+          url: "/admin/dashboard/stats"
+      
+      # 3. Get roles
+      - get:
+          url: "/config/roles"
+      
+      # Think time
+      - think: 2
+
+# ============================================================================
+# PERFORMANCE EXPECTATIONS (SLAs)
+# ============================================================================
+# - P50 latency: < 200ms
+# - P95 latency: < 500ms
+# - P99 latency: < 1000ms
+# - Error rate: < 1%
+# - Throughput: > 100 requests/second
+# ============================================================================
+

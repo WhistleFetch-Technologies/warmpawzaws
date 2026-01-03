@@ -1,0 +1,77 @@
+name: Backend Lambda Deploy
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'backend/lambda/**'
+      - 'infrastructure/cdk/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - test
+          - preprod
+          - prod
+
+env:
+  AWS_REGION: ap-south-1
+  NODE_VERSION: '20'
+
+jobs:
+  build-and-deploy:
+    name: Build & Deploy Lambda
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'prod' || 'dev') }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: backend/lambda/package-lock.json
+
+      - name: Install Lambda dependencies
+        working-directory: backend/lambda
+        run: npm ci
+
+      - name: Build Lambda
+        working-directory: backend/lambda
+        run: npm run build
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install CDK dependencies
+        working-directory: infrastructure/cdk
+        run: npm ci
+
+      - name: Build CDK
+        working-directory: infrastructure/cdk
+        run: npm run build
+
+      - name: Deploy to AWS
+        working-directory: infrastructure/cdk
+        env:
+          ENVIRONMENT: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'prod' || 'dev') }}
+        run: |
+          npx cdk deploy WarmpawzStack-$ENVIRONMENT --require-approval never
+
+      - name: Output API URL
+        run: |
+          echo "🚀 Deployment complete!"
+          echo "API URL will be available in CloudFormation outputs"
+
