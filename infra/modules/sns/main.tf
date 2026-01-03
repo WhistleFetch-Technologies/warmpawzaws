@@ -2,9 +2,9 @@
 
 # SNS Topic for System Alerts
 resource "aws_sns_topic" "system_alerts" {
-  name              = "warmpawz-${var.environment}-system-alerts"
-  display_name      = "Warmpawz System Alerts (${upper(var.environment)})"
-  delivery_policy   = jsonencode({
+  name         = "warmpawz-${var.environment}-system-alerts"
+  display_name = "Warmpawz System Alerts (${upper(var.environment)})"
+  delivery_policy = jsonencode({
     http = {
       defaultHealthyRetryPolicy = {
         minDelayTarget     = 20
@@ -17,7 +17,7 @@ resource "aws_sns_topic" "system_alerts" {
       }
     }
   })
-  
+
   tags = {
     Name        = "warmpawz-${var.environment}-system-alerts"
     Environment = var.environment
@@ -28,7 +28,7 @@ resource "aws_sns_topic" "system_alerts" {
 resource "aws_sns_topic" "user_notifications" {
   name         = "warmpawz-${var.environment}-user-notifications"
   display_name = "Warmpawz User Notifications (${upper(var.environment)})"
-  
+
   tags = {
     Name        = "warmpawz-${var.environment}-user-notifications"
     Environment = var.environment
@@ -39,7 +39,7 @@ resource "aws_sns_topic" "user_notifications" {
 resource "aws_sns_topic" "booking_updates" {
   name         = "warmpawz-${var.environment}-booking-updates"
   display_name = "Warmpawz Booking Updates (${upper(var.environment)})"
-  
+
   tags = {
     Name        = "warmpawz-${var.environment}-booking-updates"
     Environment = var.environment
@@ -50,7 +50,7 @@ resource "aws_sns_topic" "booking_updates" {
 resource "aws_sns_topic" "payment_events" {
   name         = "warmpawz-${var.environment}-payment-events"
   display_name = "Warmpawz Payment Events (${upper(var.environment)})"
-  
+
   tags = {
     Name        = "warmpawz-${var.environment}-payment-events"
     Environment = var.environment
@@ -61,7 +61,7 @@ resource "aws_sns_topic" "payment_events" {
 resource "aws_sns_topic" "vendor_notifications" {
   name         = "warmpawz-${var.environment}-vendor-notifications"
   display_name = "Warmpawz Vendor Notifications (${upper(var.environment)})"
-  
+
   tags = {
     Name        = "warmpawz-${var.environment}-vendor-notifications"
     Environment = var.environment
@@ -79,7 +79,7 @@ resource "aws_sns_topic_subscription" "system_alerts_email" {
 # SNS Topic Policy
 resource "aws_sns_topic_policy" "system_alerts" {
   arn = aws_sns_topic.system_alerts.arn
-  
+
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -108,7 +108,7 @@ resource "aws_cloudwatch_metric_alarm" "sns_failed_notifications" {
     payment_events       = aws_sns_topic.payment_events.name
     vendor_notifications = aws_sns_topic.vendor_notifications.name
   }
-  
+
   alarm_name          = "warmpawz-${var.environment}-sns-${each.key}-failures"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = "1"
@@ -119,11 +119,11 @@ resource "aws_cloudwatch_metric_alarm" "sns_failed_notifications" {
   threshold           = "5"
   alarm_description   = "SNS notification failures for ${each.key}"
   alarm_actions       = [aws_sns_topic.system_alerts.arn]
-  
+
   dimensions = {
     TopicName = each.value
   }
-  
+
   tags = {
     Name        = "warmpawz-${var.environment}-sns-${each.key}-failures"
     Environment = var.environment
