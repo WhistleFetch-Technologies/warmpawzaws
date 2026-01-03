@@ -106,7 +106,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: apps/${{ matrix.app }}
-        run: npm ci
+        run: npm ci --legacy-peer-deps
 
       - name: Build ${{ matrix.app }}
         working-directory: apps/${{ matrix.app }}
