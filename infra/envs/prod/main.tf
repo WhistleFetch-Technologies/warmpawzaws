@@ -13,7 +13,7 @@ terraform {
 
 provider "aws" {
   region = var.aws_region
-  
+
   default_tags {
     tags = {
       Project     = "Warmpawz"
@@ -40,50 +40,50 @@ locals {
 # VPC Module - Production-grade with full HA
 module "vpc" {
   source = "../../modules/vpc"
-  
-  environment               = local.environment
-  aws_region                = var.aws_region
-  vpc_cidr                  = "10.2.0.0/16"
-  public_subnet_cidrs       = ["10.2.1.0/24", "10.2.2.0/24", "10.2.3.0/24"]
-  private_subnet_cidrs      = ["10.2.11.0/24", "10.2.12.0/24", "10.2.13.0/24"]
-  database_subnet_cidrs     = ["10.2.21.0/24", "10.2.22.0/24", "10.2.23.0/24"]
-  enable_nat_gateway        = true
-  single_nat_gateway        = false # HA: NAT per AZ
-  create_private_endpoints  = true
-  use_existing_vpc          = false
+
+  environment              = local.environment
+  aws_region               = var.aws_region
+  vpc_cidr                 = "10.2.0.0/16"
+  public_subnet_cidrs      = ["10.2.1.0/24", "10.2.2.0/24", "10.2.3.0/24"]
+  private_subnet_cidrs     = ["10.2.11.0/24", "10.2.12.0/24", "10.2.13.0/24"]
+  database_subnet_cidrs    = ["10.2.21.0/24", "10.2.22.0/24", "10.2.23.0/24"]
+  enable_nat_gateway       = true
+  single_nat_gateway       = false # HA: NAT per AZ
+  create_private_endpoints = true
+  use_existing_vpc         = false
 }
 
 module "sns" {
   source = "../../modules/sns"
-  
+
   environment  = local.environment
   alert_emails = var.alert_emails
 }
 
 module "rds" {
   source = "../../modules/rds"
-  
-  environment                = local.environment
-  vpc_id                     = module.vpc.vpc_id
-  database_subnet_ids        = module.vpc.database_subnet_ids
-  allowed_security_groups    = [module.lambda.lambda_security_group_id]
-  database_name              = "warmpawz"
-  master_username            = "warmpawz_admin"
-  min_capacity               = 2.0
-  max_capacity               = 16.0
-  backup_retention_period    = 30
-  availability_zones         = module.vpc.availability_zones
-  deletion_protection        = true
-  skip_final_snapshot        = false
-  instance_count             = 3 # HA: Multi-AZ with read replicas
+
+  environment                  = local.environment
+  vpc_id                       = module.vpc.vpc_id
+  database_subnet_ids          = module.vpc.database_subnet_ids
+  allowed_security_groups      = [module.lambda.lambda_security_group_id]
+  database_name                = "warmpawz"
+  master_username              = "warmpawz_admin"
+  min_capacity                 = 2.0
+  max_capacity                 = 16.0
+  backup_retention_period      = 30
+  availability_zones           = module.vpc.availability_zones
+  deletion_protection          = true
+  skip_final_snapshot          = false
+  instance_count               = 3 # HA: Multi-AZ with read replicas
   performance_insights_enabled = true
   auto_minor_version_upgrade   = false # Manual control in prod
-  alarm_actions              = [module.sns.system_alerts_topic_arn]
+  alarm_actions                = [module.sns.system_alerts_topic_arn]
 }
 
 module "dynamodb" {
   source = "../../modules/dynamodb"
-  
+
   environment   = local.environment
   billing_mode  = "PAY_PER_REQUEST"
   enable_pitr   = true
@@ -92,7 +92,7 @@ module "dynamodb" {
 
 module "s3" {
   source = "../../modules/s3"
-  
+
   environment           = local.environment
   account_id            = data.aws_caller_identity.current.account_id
   enable_versioning     = true
@@ -104,7 +104,7 @@ module "s3" {
 
 module "sqs" {
   source = "../../modules/sqs"
-  
+
   environment         = local.environment
   age_alarm_threshold = 180
   alarm_actions       = [module.sns.system_alerts_topic_arn]
@@ -112,12 +112,12 @@ module "sqs" {
 
 module "lambda" {
   source = "../../modules/lambda"
-  
+
   environment        = local.environment
   aws_region         = var.aws_region
   vpc_id             = module.vpc.vpc_id
   private_subnet_ids = module.vpc.private_subnet_ids
-  
+
   lambda_functions = {
     api-handler = {
       handler              = "index.handler"
@@ -129,7 +129,7 @@ module "lambda" {
       reserved_concurrency = 100 # Prevent runaway costs
     }
   }
-  
+
   common_env_vars = {
     DB_HOST                     = module.rds.cluster_endpoint
     DB_READER_HOST              = module.rds.cluster_reader_endpoint
@@ -147,48 +147,48 @@ module "lambda" {
     SNS_PAYMENT_TOPIC_ARN       = module.sns.payment_events_topic_arn
     OPENSEARCH_ENDPOINT         = module.opensearch.domain_endpoint
   }
-  
-  secrets_arns   = ["${module.rds.secret_arn}", "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:*"]
-  s3_arns        = ["${module.s3.user_uploads_bucket_arn}/*"]
-  dynamodb_arns  = [module.dynamodb.sessions_table_arn, module.dynamodb.cache_table_arn, module.dynamodb.analytics_events_table_arn]
-  sns_arns       = [module.sns.user_notifications_topic_arn, module.sns.booking_updates_topic_arn, module.sns.payment_events_topic_arn]
-  sqs_arns       = [module.sqs.booking_processing_queue_arn, module.sqs.payment_processing_queue_arn, module.sqs.notification_delivery_queue_arn]
+
+  secrets_arns    = ["${module.rds.secret_arn}", "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:*"]
+  s3_arns         = ["${module.s3.user_uploads_bucket_arn}/*"]
+  dynamodb_arns   = [module.dynamodb.sessions_table_arn, module.dynamodb.cache_table_arn, module.dynamodb.analytics_events_table_arn]
+  sns_arns        = [module.sns.user_notifications_topic_arn, module.sns.booking_updates_topic_arn, module.sns.payment_events_topic_arn]
+  sqs_arns        = [module.sqs.booking_processing_queue_arn, module.sqs.payment_processing_queue_arn, module.sqs.notification_delivery_queue_arn]
   opensearch_arns = [module.opensearch.domain_arn]
-  dlq_arn        = module.sqs.dlq_arn
-  enable_xray    = true
-  alarm_actions  = [module.sns.system_alerts_topic_arn]
+  dlq_arn         = module.sqs.dlq_arn
+  enable_xray     = true
+  alarm_actions   = [module.sns.system_alerts_topic_arn]
 }
 
 module "cognito" {
   source = "../../modules/cognito"
-  
-  environment              = local.environment
-  mfa_configuration        = "OPTIONAL"
-  advanced_security_mode   = "ENFORCED"
-  customer_callback_urls   = ["https://customer.warmpawz.com/callback", "https://www.warmpawz.com/callback"]
-  customer_logout_urls     = ["https://customer.warmpawz.com/logout", "https://www.warmpawz.com/logout"]
-  vendor_callback_urls     = ["https://vendor.warmpawz.com/callback"]
-  vendor_logout_urls       = ["https://vendor.warmpawz.com/logout"]
-  admin_callback_urls      = ["https://admin.warmpawz.com/callback"]
-  admin_logout_urls        = ["https://admin.warmpawz.com/logout"]
-  user_uploads_bucket_arn  = module.s3.user_uploads_bucket_arn
-  api_execution_arn        = module.api_gateway.api_execution_arn
+
+  environment             = local.environment
+  mfa_configuration       = "OPTIONAL"
+  advanced_security_mode  = "ENFORCED"
+  customer_callback_urls  = ["https://customer.warmpawz.com/callback", "https://www.warmpawz.com/callback"]
+  customer_logout_urls    = ["https://customer.warmpawz.com/logout", "https://www.warmpawz.com/logout"]
+  vendor_callback_urls    = ["https://vendor.warmpawz.com/callback"]
+  vendor_logout_urls      = ["https://vendor.warmpawz.com/logout"]
+  admin_callback_urls     = ["https://admin.warmpawz.com/callback"]
+  admin_logout_urls       = ["https://admin.warmpawz.com/logout"]
+  user_uploads_bucket_arn = module.s3.user_uploads_bucket_arn
+  api_execution_arn       = module.api_gateway.api_execution_arn
 }
 
 module "api_gateway" {
   source = "../../modules/api-gateway"
-  
-  environment              = local.environment
-  aws_region               = var.aws_region
-  stage_name               = "$default"
-  auto_deploy              = false # Manual deployment in prod
-  cors_allowed_origins     = ["https://customer.warmpawz.com", "https://vendor.warmpawz.com", "https://www.warmpawz.com"]
-  throttle_burst_limit     = 5000
-  throttle_rate_limit      = 10000
-  cognito_user_pool_arn    = module.cognito.user_pool_arn
-  cognito_user_pool_id     = module.cognito.user_pool_id
+
+  environment                 = local.environment
+  aws_region                  = var.aws_region
+  stage_name                  = "$default"
+  auto_deploy                 = false # Manual deployment in prod
+  cors_allowed_origins        = ["https://customer.warmpawz.com", "https://vendor.warmpawz.com", "https://www.warmpawz.com"]
+  throttle_burst_limit        = 5000
+  throttle_rate_limit         = 10000
+  cognito_user_pool_arn       = module.cognito.user_pool_arn
+  cognito_user_pool_id        = module.cognito.user_pool_id
   cognito_user_pool_client_id = module.cognito.customer_web_client_id
-  
+
   lambda_integrations = {
     api-handler = {
       invoke_arn    = module.lambda.lambda_function_invoke_arns["api-handler"]
@@ -196,7 +196,7 @@ module "api_gateway" {
       timeout_ms    = 30000
     }
   }
-  
+
   routes = {
     health = {
       route_key       = "GET /health"
@@ -204,18 +204,18 @@ module "api_gateway" {
       require_auth    = false
     }
   }
-  
+
   # Custom domain (optional)
   custom_domain_name = var.custom_domain_name
   certificate_arn    = var.certificate_arn
   route53_zone_id    = var.route53_zone_id
-  
+
   alarm_actions = [module.sns.system_alerts_topic_arn]
 }
 
 module "opensearch" {
   source = "../../modules/opensearch"
-  
+
   environment                = local.environment
   vpc_id                     = module.vpc.vpc_id
   vpc_cidr                   = "10.2.0.0/16"

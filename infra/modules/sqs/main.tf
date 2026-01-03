@@ -5,7 +5,7 @@ resource "aws_sqs_queue" "dlq" {
   name                       = "warmpawz-${var.environment}-dlq"
   message_retention_seconds  = 1209600 # 14 days
   visibility_timeout_seconds = 300
-  
+
   tags = {
     Name        = "warmpawz-${var.environment}-dlq"
     Environment = var.environment
@@ -20,12 +20,12 @@ resource "aws_sqs_queue" "booking_processing" {
   message_retention_seconds  = 345600 # 4 days
   receive_wait_time_seconds  = 20     # Long polling
   visibility_timeout_seconds = 300    # 5 minutes
-  
+
   redrive_policy = jsonencode({
     deadLetterTargetArn = aws_sqs_queue.dlq.arn
     maxReceiveCount     = 3
   })
-  
+
   tags = {
     Name        = "warmpawz-${var.environment}-booking-processing"
     Environment = var.environment
@@ -40,12 +40,12 @@ resource "aws_sqs_queue" "payment_processing" {
   message_retention_seconds  = 345600
   receive_wait_time_seconds  = 20
   visibility_timeout_seconds = 300
-  
+
   redrive_policy = jsonencode({
     deadLetterTargetArn = aws_sqs_queue.dlq.arn
     maxReceiveCount     = 3
   })
-  
+
   tags = {
     Name        = "warmpawz-${var.environment}-payment-processing"
     Environment = var.environment
@@ -60,12 +60,12 @@ resource "aws_sqs_queue" "notification_delivery" {
   message_retention_seconds  = 345600
   receive_wait_time_seconds  = 20
   visibility_timeout_seconds = 60 # Faster processing
-  
+
   redrive_policy = jsonencode({
     deadLetterTargetArn = aws_sqs_queue.dlq.arn
     maxReceiveCount     = 5
   })
-  
+
   tags = {
     Name        = "warmpawz-${var.environment}-notification-delivery"
     Environment = var.environment
@@ -80,12 +80,12 @@ resource "aws_sqs_queue" "analytics_events" {
   message_retention_seconds  = 345600
   receive_wait_time_seconds  = 20
   visibility_timeout_seconds = 120
-  
+
   redrive_policy = jsonencode({
     deadLetterTargetArn = aws_sqs_queue.dlq.arn
     maxReceiveCount     = 3
   })
-  
+
   tags = {
     Name        = "warmpawz-${var.environment}-analytics-events"
     Environment = var.environment
@@ -100,12 +100,12 @@ resource "aws_sqs_queue" "email_delivery" {
   message_retention_seconds  = 345600
   receive_wait_time_seconds  = 20
   visibility_timeout_seconds = 60
-  
+
   redrive_policy = jsonencode({
     deadLetterTargetArn = aws_sqs_queue.dlq.arn
     maxReceiveCount     = 5
   })
-  
+
   tags = {
     Name        = "warmpawz-${var.environment}-email-delivery"
     Environment = var.environment
@@ -122,12 +122,12 @@ resource "aws_sqs_queue" "order_processing" {
   message_retention_seconds   = 345600
   receive_wait_time_seconds   = 20
   visibility_timeout_seconds  = 300
-  
+
   redrive_policy = jsonencode({
     deadLetterTargetArn = aws_sqs_queue.dlq.arn
     maxReceiveCount     = 3
   })
-  
+
   tags = {
     Name        = "warmpawz-${var.environment}-order-processing"
     Environment = var.environment
@@ -144,7 +144,7 @@ resource "aws_cloudwatch_metric_alarm" "sqs_age_of_oldest_message" {
     email_delivery        = aws_sqs_queue.email_delivery.name
     order_processing      = aws_sqs_queue.order_processing.name
   }
-  
+
   alarm_name          = "warmpawz-${var.environment}-sqs-${each.key}-age"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = "1"
@@ -155,11 +155,11 @@ resource "aws_cloudwatch_metric_alarm" "sqs_age_of_oldest_message" {
   threshold           = var.age_alarm_threshold
   alarm_description   = "SQS message age is high for ${each.key}"
   alarm_actions       = var.alarm_actions
-  
+
   dimensions = {
     QueueName = each.value
   }
-  
+
   tags = {
     Name        = "warmpawz-${var.environment}-sqs-${each.key}-age"
     Environment = var.environment
@@ -177,11 +177,11 @@ resource "aws_cloudwatch_metric_alarm" "sqs_dlq_messages" {
   threshold           = "10"
   alarm_description   = "Messages in DLQ"
   alarm_actions       = var.alarm_actions
-  
+
   dimensions = {
     QueueName = aws_sqs_queue.dlq.name
   }
-  
+
   tags = {
     Name        = "warmpawz-${var.environment}-sqs-dlq-messages"
     Environment = var.environment

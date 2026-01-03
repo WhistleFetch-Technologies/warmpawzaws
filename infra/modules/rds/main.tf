@@ -5,12 +5,12 @@
 resource "aws_db_subnet_group" "main" {
   name       = "warmpawz-${var.environment}-db-subnet-group"
   subnet_ids = var.database_subnet_ids
-  
+
   tags = {
     Name        = "warmpawz-${var.environment}-db-subnet-group"
     Environment = var.environment
   }
-  
+
   lifecycle {
     create_before_destroy = true
   }
@@ -21,7 +21,7 @@ resource "aws_security_group" "rds" {
   name_prefix = "warmpawz-${var.environment}-rds-"
   description = "Security group for RDS Aurora cluster"
   vpc_id      = var.vpc_id
-  
+
   ingress {
     from_port       = 5432
     to_port         = 5432
@@ -29,7 +29,7 @@ resource "aws_security_group" "rds" {
     security_groups = var.allowed_security_groups
     description     = "PostgreSQL access from Lambda"
   }
-  
+
   egress {
     from_port   = 0
     to_port     = 0
@@ -37,12 +37,12 @@ resource "aws_security_group" "rds" {
     cidr_blocks = ["0.0.0.0/0"]
     description = "Allow all outbound traffic"
   }
-  
+
   tags = {
     Name        = "warmpawz-${var.environment}-rds-sg"
     Environment = var.environment
   }
-  
+
   lifecycle {
     create_before_destroy = true
   }
@@ -59,7 +59,7 @@ resource "aws_secretsmanager_secret" "rds_master_password" {
   name_prefix             = "warmpawz-${var.environment}-rds-master-"
   description             = "Master password for RDS Aurora cluster"
   recovery_window_in_days = var.environment == "prod" ? 30 : 0
-  
+
   tags = {
     Name        = "warmpawz-${var.environment}-rds-master-password"
     Environment = var.environment
@@ -83,27 +83,27 @@ resource "aws_rds_cluster_parameter_group" "main" {
   name_prefix = "warmpawz-${var.environment}-aurora-"
   family      = "aurora-postgresql15"
   description = "Cluster parameter group for Aurora PostgreSQL 15"
-  
+
   parameter {
     name  = "shared_preload_libraries"
     value = "pg_stat_statements,pgaudit"
   }
-  
+
   parameter {
     name  = "log_statement"
     value = var.environment == "prod" ? "ddl" : "all"
   }
-  
+
   parameter {
     name  = "log_min_duration_statement"
     value = var.environment == "prod" ? "1000" : "500"
   }
-  
+
   tags = {
     Name        = "warmpawz-${var.environment}-aurora-cluster-params"
     Environment = var.environment
   }
-  
+
   lifecycle {
     create_before_destroy = true
   }
@@ -114,12 +114,12 @@ resource "aws_db_parameter_group" "main" {
   name_prefix = "warmpawz-${var.environment}-aurora-db-"
   family      = "aurora-postgresql15"
   description = "DB parameter group for Aurora PostgreSQL 15"
-  
+
   tags = {
     Name        = "warmpawz-${var.environment}-aurora-db-params"
     Environment = var.environment
   }
-  
+
   lifecycle {
     create_before_destroy = true
   }
@@ -136,44 +136,44 @@ resource "aws_rds_cluster" "main" {
   master_password        = random_password.master.result
   db_subnet_group_name   = aws_db_subnet_group.main.name
   vpc_security_group_ids = [aws_security_group.rds.id]
-  
+
   # Serverless v2 scaling configuration
   serverlessv2_scaling_configuration {
     min_capacity = var.min_capacity
     max_capacity = var.max_capacity
   }
-  
+
   # Backup configuration
   backup_retention_period      = var.backup_retention_period
   preferred_backup_window      = var.preferred_backup_window
   preferred_maintenance_window = var.preferred_maintenance_window
-  
+
   # Encryption
   storage_encrypted = true
   kms_key_id        = var.kms_key_id
-  
+
   # High availability
   availability_zones = var.availability_zones
-  
+
   # Cluster parameter group
   db_cluster_parameter_group_name = aws_rds_cluster_parameter_group.main.name
-  
+
   # Enhanced monitoring
   enabled_cloudwatch_logs_exports = ["postgresql"]
-  
+
   # Deletion protection
-  deletion_protection = var.deletion_protection
-  skip_final_snapshot = var.skip_final_snapshot
+  deletion_protection       = var.deletion_protection
+  skip_final_snapshot       = var.skip_final_snapshot
   final_snapshot_identifier = var.skip_final_snapshot ? null : "warmpawz-${var.environment}-final-snapshot-${formatdate("YYYY-MM-DD-hhmm", timestamp())}"
-  
+
   # Apply changes immediately in non-prod
   apply_immediately = var.environment != "prod"
-  
+
   tags = {
     Name        = "warmpawz-${var.environment}-aurora-cluster"
     Environment = var.environment
   }
-  
+
   lifecycle {
     ignore_changes = [
       final_snapshot_identifier,
@@ -185,7 +185,7 @@ resource "aws_rds_cluster" "main" {
 # Aurora Serverless v2 Instance(s)
 resource "aws_rds_cluster_instance" "main" {
   count = var.instance_count
-  
+
   identifier                   = "warmpawz-${var.environment}-instance-${count.index + 1}"
   cluster_identifier           = aws_rds_cluster.main.id
   instance_class               = "db.serverless"
@@ -195,7 +195,7 @@ resource "aws_rds_cluster_instance" "main" {
   publicly_accessible          = false
   auto_minor_version_upgrade   = var.auto_minor_version_upgrade
   performance_insights_enabled = var.performance_insights_enabled
-  
+
   tags = {
     Name        = "warmpawz-${var.environment}-aurora-instance-${count.index + 1}"
     Environment = var.environment
@@ -214,11 +214,11 @@ resource "aws_cloudwatch_metric_alarm" "database_cpu" {
   threshold           = var.cpu_alarm_threshold
   alarm_description   = "This metric monitors RDS CPU utilization"
   alarm_actions       = var.alarm_actions
-  
+
   dimensions = {
     DBClusterIdentifier = aws_rds_cluster.main.id
   }
-  
+
   tags = {
     Name        = "warmpawz-${var.environment}-rds-cpu-alarm"
     Environment = var.environment
@@ -236,11 +236,11 @@ resource "aws_cloudwatch_metric_alarm" "database_connections" {
   threshold           = var.connections_alarm_threshold
   alarm_description   = "This metric monitors RDS connection count"
   alarm_actions       = var.alarm_actions
-  
+
   dimensions = {
     DBClusterIdentifier = aws_rds_cluster.main.id
   }
-  
+
   tags = {
     Name        = "warmpawz-${var.environment}-rds-connections-alarm"
     Environment = var.environment

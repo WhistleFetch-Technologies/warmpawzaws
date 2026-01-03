@@ -3,13 +3,13 @@
 # S3 Bucket for User Uploads (Profile pictures, documents, etc.)
 resource "aws_s3_bucket" "user_uploads" {
   bucket = "warmpawz-${var.environment}-user-uploads-${var.account_id}"
-  
+
   tags = {
     Name        = "warmpawz-${var.environment}-user-uploads"
     Environment = var.environment
     Purpose     = "user-uploads"
   }
-  
+
   lifecycle {
     prevent_destroy = false # Set to true for prod
   }
@@ -17,7 +17,7 @@ resource "aws_s3_bucket" "user_uploads" {
 
 resource "aws_s3_bucket_versioning" "user_uploads" {
   bucket = aws_s3_bucket.user_uploads.id
-  
+
   versioning_configuration {
     status = var.enable_versioning ? "Enabled" : "Suspended"
   }
@@ -25,7 +25,7 @@ resource "aws_s3_bucket_versioning" "user_uploads" {
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "user_uploads" {
   bucket = aws_s3_bucket.user_uploads.id
-  
+
   rule {
     apply_server_side_encryption_by_default {
       sse_algorithm = "AES256"
@@ -35,7 +35,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "user_uploads" {
 
 resource "aws_s3_bucket_public_access_block" "user_uploads" {
   bucket = aws_s3_bucket.user_uploads.id
-  
+
   block_public_acls       = true
   block_public_policy     = true
   ignore_public_acls      = true
@@ -44,7 +44,7 @@ resource "aws_s3_bucket_public_access_block" "user_uploads" {
 
 resource "aws_s3_bucket_cors_configuration" "user_uploads" {
   bucket = aws_s3_bucket.user_uploads.id
-  
+
   cors_rule {
     allowed_headers = ["*"]
     allowed_methods = ["GET", "PUT", "POST", "DELETE"]
@@ -56,20 +56,20 @@ resource "aws_s3_bucket_cors_configuration" "user_uploads" {
 
 resource "aws_s3_bucket_lifecycle_configuration" "user_uploads" {
   bucket = aws_s3_bucket.user_uploads.id
-  
+
   rule {
     id     = "delete-old-versions"
     status = "Enabled"
-    
+
     noncurrent_version_expiration {
       noncurrent_days = 30
     }
   }
-  
+
   rule {
     id     = "transition-to-ia"
     status = "Enabled"
-    
+
     transition {
       days          = 90
       storage_class = "STANDARD_IA"
@@ -80,13 +80,13 @@ resource "aws_s3_bucket_lifecycle_configuration" "user_uploads" {
 # S3 Bucket for Static Website Content
 resource "aws_s3_bucket" "static_website" {
   bucket = "warmpawz-${var.environment}-static-${var.account_id}"
-  
+
   tags = {
     Name        = "warmpawz-${var.environment}-static"
     Environment = var.environment
     Purpose     = "static-website"
   }
-  
+
   lifecycle {
     prevent_destroy = false
   }
@@ -94,7 +94,7 @@ resource "aws_s3_bucket" "static_website" {
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "static_website" {
   bucket = aws_s3_bucket.static_website.id
-  
+
   rule {
     apply_server_side_encryption_by_default {
       sse_algorithm = "AES256"
@@ -104,7 +104,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "static_website" {
 
 resource "aws_s3_bucket_public_access_block" "static_website" {
   bucket = aws_s3_bucket.static_website.id
-  
+
   block_public_acls       = false
   block_public_policy     = false
   ignore_public_acls      = false
@@ -113,11 +113,11 @@ resource "aws_s3_bucket_public_access_block" "static_website" {
 
 resource "aws_s3_bucket_website_configuration" "static_website" {
   bucket = aws_s3_bucket.static_website.id
-  
+
   index_document {
     suffix = "index.html"
   }
-  
+
   error_document {
     key = "error.html"
   }
@@ -126,13 +126,13 @@ resource "aws_s3_bucket_website_configuration" "static_website" {
 # S3 Bucket for Application Logs
 resource "aws_s3_bucket" "logs" {
   bucket = "warmpawz-${var.environment}-logs-${var.account_id}"
-  
+
   tags = {
     Name        = "warmpawz-${var.environment}-logs"
     Environment = var.environment
     Purpose     = "logs"
   }
-  
+
   lifecycle {
     prevent_destroy = false
   }
@@ -140,7 +140,7 @@ resource "aws_s3_bucket" "logs" {
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "logs" {
   bucket = aws_s3_bucket.logs.id
-  
+
   rule {
     apply_server_side_encryption_by_default {
       sse_algorithm = "AES256"
@@ -150,7 +150,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "logs" {
 
 resource "aws_s3_bucket_public_access_block" "logs" {
   bucket = aws_s3_bucket.logs.id
-  
+
   block_public_acls       = true
   block_public_policy     = true
   ignore_public_acls      = true
@@ -159,20 +159,20 @@ resource "aws_s3_bucket_public_access_block" "logs" {
 
 resource "aws_s3_bucket_lifecycle_configuration" "logs" {
   bucket = aws_s3_bucket.logs.id
-  
+
   rule {
     id     = "delete-old-logs"
     status = "Enabled"
-    
+
     expiration {
       days = var.log_retention_days
     }
   }
-  
+
   rule {
     id     = "transition-to-glacier"
     status = "Enabled"
-    
+
     transition {
       days          = 30
       storage_class = "GLACIER"
@@ -183,13 +183,13 @@ resource "aws_s3_bucket_lifecycle_configuration" "logs" {
 # S3 Bucket for Backups
 resource "aws_s3_bucket" "backups" {
   bucket = "warmpawz-${var.environment}-backups-${var.account_id}"
-  
+
   tags = {
     Name        = "warmpawz-${var.environment}-backups"
     Environment = var.environment
     Purpose     = "backups"
   }
-  
+
   lifecycle {
     prevent_destroy = true # Always protect backups
   }
@@ -197,7 +197,7 @@ resource "aws_s3_bucket" "backups" {
 
 resource "aws_s3_bucket_versioning" "backups" {
   bucket = aws_s3_bucket.backups.id
-  
+
   versioning_configuration {
     status = "Enabled"
   }
@@ -205,7 +205,7 @@ resource "aws_s3_bucket_versioning" "backups" {
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "backups" {
   bucket = aws_s3_bucket.backups.id
-  
+
   rule {
     apply_server_side_encryption_by_default {
       sse_algorithm     = "aws:kms"
@@ -216,7 +216,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "backups" {
 
 resource "aws_s3_bucket_public_access_block" "backups" {
   bucket = aws_s3_bucket.backups.id
-  
+
   block_public_acls       = true
   block_public_policy     = true
   ignore_public_acls      = true
@@ -225,21 +225,21 @@ resource "aws_s3_bucket_public_access_block" "backups" {
 
 resource "aws_s3_bucket_lifecycle_configuration" "backups" {
   bucket = aws_s3_bucket.backups.id
-  
+
   rule {
     id     = "archive-old-backups"
     status = "Enabled"
-    
+
     transition {
       days          = 30
       storage_class = "GLACIER"
     }
-    
+
     transition {
       days          = 90
       storage_class = "DEEP_ARCHIVE"
     }
-    
+
     expiration {
       days = var.backup_retention_days
     }
@@ -252,7 +252,7 @@ resource "aws_cloudwatch_metric_alarm" "s3_4xx_errors" {
     user_uploads = aws_s3_bucket.user_uploads.id
     static       = aws_s3_bucket.static_website.id
   }
-  
+
   alarm_name          = "warmpawz-${var.environment}-s3-${each.key}-4xx"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = "1"
@@ -263,11 +263,11 @@ resource "aws_cloudwatch_metric_alarm" "s3_4xx_errors" {
   threshold           = "10"
   alarm_description   = "S3 4XX error rate is high for ${each.key}"
   alarm_actions       = var.alarm_actions
-  
+
   dimensions = {
     BucketName = each.value
   }
-  
+
   tags = {
     Name        = "warmpawz-${var.environment}-s3-${each.key}-4xx-alarm"
     Environment = var.environment

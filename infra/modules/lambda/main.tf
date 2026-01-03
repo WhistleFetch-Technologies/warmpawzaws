@@ -6,7 +6,7 @@ resource "aws_security_group" "lambda" {
   name_prefix = "warmpawz-${var.environment}-lambda-"
   description = "Security group for Lambda functions"
   vpc_id      = var.vpc_id
-  
+
   egress {
     from_port   = 0
     to_port     = 0
@@ -14,12 +14,12 @@ resource "aws_security_group" "lambda" {
     cidr_blocks = ["0.0.0.0/0"]
     description = "Allow all outbound traffic"
   }
-  
+
   tags = {
     Name        = "warmpawz-${var.environment}-lambda-sg"
     Environment = var.environment
   }
-  
+
   lifecycle {
     create_before_destroy = true
   }
@@ -28,7 +28,7 @@ resource "aws_security_group" "lambda" {
 # IAM Role for Lambda Execution
 resource "aws_iam_role" "lambda" {
   name_prefix = "warmpawz-${var.environment}-lambda-"
-  
+
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -41,7 +41,7 @@ resource "aws_iam_role" "lambda" {
       }
     ]
   })
-  
+
   tags = {
     Name        = "warmpawz-${var.environment}-lambda-role"
     Environment = var.environment
@@ -64,7 +64,7 @@ resource "aws_iam_role_policy_attachment" "lambda_vpc" {
 resource "aws_iam_role_policy" "lambda_custom" {
   name_prefix = "warmpawz-${var.environment}-lambda-custom-"
   role        = aws_iam_role.lambda.id
-  
+
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -154,22 +154,22 @@ resource "aws_iam_role_policy" "lambda_custom" {
 # Lambda Layer for shared dependencies
 resource "aws_lambda_layer_version" "shared_dependencies" {
   count = var.create_shared_layer ? 1 : 0
-  
+
   filename            = var.layer_zip_path
   layer_name          = "warmpawz-${var.environment}-shared-dependencies"
   compatible_runtimes = var.lambda_runtimes
   source_code_hash    = filebase64sha256(var.layer_zip_path)
-  
+
   description = "Shared dependencies for Warmpawz Lambda functions"
 }
 
 # CloudWatch Log Group for Lambda
 resource "aws_cloudwatch_log_group" "lambda" {
   for_each = var.lambda_functions
-  
+
   name              = "/aws/lambda/warmpawz-${var.environment}-${each.key}"
   retention_in_days = var.log_retention_days
-  
+
   tags = {
     Name        = "warmpawz-${var.environment}-${each.key}-logs"
     Environment = var.environment
@@ -180,23 +180,23 @@ resource "aws_cloudwatch_log_group" "lambda" {
 # Lambda Functions
 resource "aws_lambda_function" "functions" {
   for_each = var.lambda_functions
-  
+
   function_name = "warmpawz-${var.environment}-${each.key}"
   role          = aws_iam_role.lambda.arn
   handler       = each.value.handler
   runtime       = each.value.runtime
   timeout       = each.value.timeout
   memory_size   = each.value.memory_size
-  
+
   filename         = each.value.zip_path
   source_code_hash = filebase64sha256(each.value.zip_path)
-  
+
   # VPC Configuration
   vpc_config {
     subnet_ids         = var.private_subnet_ids
     security_group_ids = [aws_security_group.lambda.id]
   }
-  
+
   # Environment Variables
   environment {
     variables = merge(
@@ -208,29 +208,29 @@ resource "aws_lambda_function" "functions" {
       }
     )
   }
-  
+
   # Lambda Layers
   layers = var.create_shared_layer ? [aws_lambda_layer_version.shared_dependencies[0].arn] : []
-  
+
   # Reserved Concurrent Executions (optional)
   reserved_concurrent_executions = lookup(each.value, "reserved_concurrency", -1)
-  
+
   # Dead Letter Queue (optional)
   dead_letter_config {
     target_arn = var.dlq_arn
   }
-  
+
   # Tracing
   tracing_config {
     mode = var.enable_xray ? "Active" : "PassThrough"
   }
-  
+
   tags = {
     Name        = "warmpawz-${var.environment}-${each.key}"
     Environment = var.environment
     Function    = each.key
   }
-  
+
   depends_on = [
     aws_iam_role_policy_attachment.lambda_basic,
     aws_iam_role_policy_attachment.lambda_vpc,
@@ -244,10 +244,10 @@ resource "aws_lambda_function_url" "functions" {
     for k, v in var.lambda_functions : k => v
     if lookup(v, "enable_function_url", false)
   }
-  
+
   function_name      = aws_lambda_function.functions[each.key].function_name
   authorization_type = "AWS_IAM"
-  
+
   cors {
     allow_credentials = true
     allow_origins     = var.cors_allowed_origins
@@ -260,7 +260,7 @@ resource "aws_lambda_function_url" "functions" {
 # Lambda Aliases for blue/green deployments
 resource "aws_lambda_alias" "live" {
   for_each = var.lambda_functions
-  
+
   name             = "live"
   description      = "Live alias for ${each.key}"
   function_name    = aws_lambda_function.functions[each.key].function_name
@@ -270,7 +270,7 @@ resource "aws_lambda_alias" "live" {
 # CloudWatch Alarms for Lambda
 resource "aws_cloudwatch_metric_alarm" "lambda_errors" {
   for_each = var.lambda_functions
-  
+
   alarm_name          = "warmpawz-${var.environment}-${each.key}-errors"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = "2"
@@ -281,11 +281,11 @@ resource "aws_cloudwatch_metric_alarm" "lambda_errors" {
   threshold           = var.error_alarm_threshold
   alarm_description   = "Lambda function ${each.key} error rate is high"
   alarm_actions       = var.alarm_actions
-  
+
   dimensions = {
     FunctionName = aws_lambda_function.functions[each.key].function_name
   }
-  
+
   tags = {
     Name        = "warmpawz-${var.environment}-${each.key}-error-alarm"
     Environment = var.environment
@@ -294,7 +294,7 @@ resource "aws_cloudwatch_metric_alarm" "lambda_errors" {
 
 resource "aws_cloudwatch_metric_alarm" "lambda_duration" {
   for_each = var.lambda_functions
-  
+
   alarm_name          = "warmpawz-${var.environment}-${each.key}-duration"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = "2"
@@ -305,11 +305,11 @@ resource "aws_cloudwatch_metric_alarm" "lambda_duration" {
   threshold           = each.value.timeout * 1000 * 0.8 # 80% of timeout
   alarm_description   = "Lambda function ${each.key} duration is high"
   alarm_actions       = var.alarm_actions
-  
+
   dimensions = {
     FunctionName = aws_lambda_function.functions[each.key].function_name
   }
-  
+
   tags = {
     Name        = "warmpawz-${var.environment}-${each.key}-duration-alarm"
     Environment = var.environment
@@ -318,7 +318,7 @@ resource "aws_cloudwatch_metric_alarm" "lambda_duration" {
 
 resource "aws_cloudwatch_metric_alarm" "lambda_throttles" {
   for_each = var.lambda_functions
-  
+
   alarm_name          = "warmpawz-${var.environment}-${each.key}-throttles"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = "1"
@@ -329,11 +329,11 @@ resource "aws_cloudwatch_metric_alarm" "lambda_throttles" {
   threshold           = "5"
   alarm_description   = "Lambda function ${each.key} is being throttled"
   alarm_actions       = var.alarm_actions
-  
+
   dimensions = {
     FunctionName = aws_lambda_function.functions[each.key].function_name
   }
-  
+
   tags = {
     Name        = "warmpawz-${var.environment}-${each.key}-throttle-alarm"
     Environment = var.environment

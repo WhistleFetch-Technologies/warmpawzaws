@@ -1,6 +1,6 @@
 # Production Environment Variables
-aws_region     = "ap-south-1"
-alert_emails   = ["prod-alerts@warmpawz.com", "sre@warmpawz.com", "cto@warmpawz.com"]
+aws_region   = "ap-south-1"
+alert_emails = ["prod-alerts@warmpawz.com", "sre@warmpawz.com", "cto@warmpawz.com"]
 
 # OpenSearch password - MUST be stored in AWS Secrets Manager
 opensearch_master_password = "REPLACE_WITH_SECRET_MANAGER_VALUE"
