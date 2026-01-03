@@ -161,8 +161,9 @@ keystore.properties
 supabase/
 Warmpawzecodev/
 archive/
-src/
-lib/
+# Legacy src/ at root (but allow backend/lambda/src/ and frontend apps/*/src/)
+/src/
+/lib/
 packages/
 deno.json
 vite.config.ts
