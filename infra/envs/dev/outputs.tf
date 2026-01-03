@@ -112,16 +112,16 @@ output "customer_url" {
   value       = "https://dev.customer.warmpawz.com"
 }
 
-# SNS Topics for Push Notifications
+# SNS Topics for Notifications
 
-output "sns_android_customer_arn" {
-  description = "SNS platform application ARN for Android customer app"
-  value       = module.secrets.sns_android_customer_arn
+output "sns_notifications_topic_arn" {
+  description = "SNS topic ARN for user notifications"
+  value       = module.sns.user_notifications_topic_arn
 }
 
-output "sns_android_vendor_arn" {
-  description = "SNS platform application ARN for Android vendor app"
-  value       = module.secrets.sns_android_vendor_arn
+output "sns_booking_updates_topic_arn" {
+  description = "SNS topic ARN for booking updates"
+  value       = module.sns.booking_updates_topic_arn
 }
 
 # Secrets ARNs

@@ -38,25 +38,36 @@ variable "shiprocket_password" {
   sensitive   = true
 }
 
-# Push Notifications (optional - use SNS instead of Firebase)
+# Push Notifications Configuration
+variable "enable_push_notifications" {
+  description = "Enable Android push notifications (requires FCM server key)"
+  type        = bool
+  default     = false
+}
+
+variable "enable_ios_push" {
+  description = "Enable iOS push notifications (requires APNS certificate)"
+  type        = bool
+  default     = false
+}
+
 variable "fcm_server_key" {
-  description = "Firebase Cloud Messaging server key (optional)"
+  description = "Firebase Cloud Messaging server key (required if enable_push_notifications is true)"
   type        = string
   default     = ""
   sensitive   = true
 }
 
 variable "apns_certificate" {
-  description = "Apple Push Notification Service certificate (optional)"
+  description = "Apple Push Notification Service certificate (required if enable_ios_push is true)"
   type        = string
   default     = ""
   sensitive   = true
 }
 
 variable "apns_private_key" {
-  description = "Apple Push Notification Service private key (optional)"
+  description = "Apple Push Notification Service private key (required if enable_ios_push is true)"
   type        = string
   default     = ""
   sensitive   = true
 }
-
