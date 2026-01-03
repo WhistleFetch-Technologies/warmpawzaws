@@ -6,6 +6,11 @@ on:
       - main
   workflow_dispatch:
 
+# Prevent parallel deployments to the same environment
+concurrency:
+  group: stage-deployment
+  cancel-in-progress: true
+
 env:
   AWS_REGION: ap-south-1
   TERRAFORM_VERSION: 1.6.0
