@@ -265,13 +265,51 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: Get database credentials
+        id: db-creds
+        working-directory: infra/envs/stage
+        run: |
+          terraform init -backend-config=backend.hcl
+          
+          # Get RDS connection info from Terraform outputs
+          RDS_ENDPOINT=$(terraform output -raw rds_endpoint)
+          RDS_SECRET_ARN=$(terraform output -raw rds_secret_arn)
+          RDS_DB_NAME=$(terraform output -raw rds_database_name || echo "warmpawz")
+          RDS_PORT=$(terraform output -raw rds_port || echo "5432")
+          
+          # Get database credentials from AWS Secrets Manager
+          DB_SECRET=$(aws secretsmanager get-secret-value --secret-id "$RDS_SECRET_ARN" --query SecretString --output text)
+          DB_PASSWORD=$(echo "$DB_SECRET" | jq -r '.password // .Password // .')
+          DB_USERNAME=$(echo "$DB_SECRET" | jq -r '.username // .Username // "postgres"')
+          
+          # Construct DATABASE_URL
+          DATABASE_URL="postgresql://${DB_USERNAME}:${DB_PASSWORD}@${RDS_ENDPOINT}:${RDS_PORT}/${RDS_DB_NAME}"
+          
+          # Export as masked output (password will be hidden in logs)
+          echo "::add-mask::$DB_PASSWORD"
+          echo "::add-mask::$DATABASE_URL"
+          echo "database_url=$DATABASE_URL" >> $GITHUB_OUTPUT
+
       - name: Run migrations
         working-directory: db
         run: |
           npm ci
           npm run migrate:up
         env:
+          DATABASE_URL: ${{ steps.db-creds.outputs.database_url }}
           ENVIRONMENT: stage
+
+      - name: Verify migrations
+        working-directory: db
+        run: npm run migrate:status
+        env:
+          DATABASE_URL: ${{ steps.db-creds.outputs.database_url }}
 
   # ============================================
   # E2E TESTS

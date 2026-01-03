@@ -15,6 +15,21 @@ output "rds_reader_endpoint" {
   sensitive   = true
 }
 
+output "rds_database_name" {
+  description = "RDS database name"
+  value       = module.rds.database_name
+}
+
+output "rds_port" {
+  description = "RDS cluster port"
+  value       = module.rds.cluster_port
+}
+
+output "rds_secret_arn" {
+  description = "RDS credentials secret ARN"
+  value       = module.rds.secret_arn
+}
+
 output "api_endpoint" {
   description = "API Gateway endpoint"
   value       = module.api_gateway.stage_invoke_url
