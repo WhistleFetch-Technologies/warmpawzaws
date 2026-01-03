@@ -224,7 +224,8 @@ resource "aws_s3_bucket_public_access_block" "backups" {
 }
 
 resource "aws_s3_bucket_lifecycle_configuration" "backups" {
-  bucket = aws_s3_bucket.backups.id
+  bucket     = aws_s3_bucket.backups.id
+  depends_on = [aws_s3_bucket.backups]
 
   rule {
     id     = "archive-old-backups"

@@ -131,7 +131,7 @@ resource "aws_rds_cluster" "main" {
   cluster_identifier     = "warmpawz-${var.environment}-cluster"
   engine                 = "aurora-postgresql"
   engine_mode            = "provisioned"
-  engine_version         = "15.4"
+  engine_version         = "15.5"
   database_name          = var.database_name
   master_username        = var.master_username
   master_password        = random_password.master.result
