@@ -106,7 +106,7 @@ export function GPSTrackingScreen({
           timeInterval: 5000, // Update every 5 seconds
           distanceInterval: 10, // Update every 10 meters
         },
-        (location) => {
+        async (location) => {
           const point: LocationPoint = {
             latitude: location.coords.latitude,
             longitude: location.coords.longitude,
@@ -159,7 +159,7 @@ export function GPSTrackingScreen({
     }
   };
 
-  const stopTracking = () => {
+  const stopTracking = async () => {
     if (locationSubscription.current) {
       locationSubscription.current.remove();
       locationSubscription.current = null;
