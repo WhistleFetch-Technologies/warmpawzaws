@@ -1,7 +1,7 @@
 variable "aws_region" {
   description = "AWS Region"
   type        = string
-  default     = "us-east-1"
+  default     = "ap-south-1"
 }
 
 variable "alert_emails" {
@@ -11,9 +11,9 @@ variable "alert_emails" {
 }
 
 variable "enable_opensearch" {
-  description = "Enable OpenSearch (optional for dev)"
+  description = "Enable OpenSearch/Elasticsearch"
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "opensearch_master_password" {
@@ -23,3 +23,34 @@ variable "opensearch_master_password" {
   default     = ""
 }
 
+# External Integration Secrets
+
+variable "razorpay_key_id" {
+  description = "Razorpay API Key ID"
+  type        = string
+  sensitive   = true
+}
+
+variable "razorpay_key_secret" {
+  description = "Razorpay API Key Secret"
+  type        = string
+  sensitive   = true
+}
+
+variable "google_maps_api_key" {
+  description = "Google Maps API Key"
+  type        = string
+  sensitive   = true
+}
+
+variable "shiprocket_email" {
+  description = "Shiprocket account email"
+  type        = string
+  sensitive   = true
+}
+
+variable "shiprocket_password" {
+  description = "Shiprocket account password"
+  type        = string
+  sensitive   = true
+}
