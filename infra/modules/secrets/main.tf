@@ -60,17 +60,12 @@ resource "aws_secretsmanager_secret_version" "shiprocket" {
 }
 
 # SNS Platform Application for Push Notifications (Android)
-# Note: These are optional and only created if push notifications are enabled
+# Note: aws_sns_platform_application doesn't support tags
 resource "aws_sns_platform_application" "android_customer" {
   count               = var.enable_push_notifications ? 1 : 0
   name                = "warmpawz-${var.environment}-android-customer"
   platform            = "GCM"
   platform_credential = var.fcm_server_key
-
-  tags = {
-    Name        = "warmpawz-${var.environment}-android-customer"
-    Environment = var.environment
-  }
 }
 
 resource "aws_sns_platform_application" "android_vendor" {
@@ -78,11 +73,6 @@ resource "aws_sns_platform_application" "android_vendor" {
   name                = "warmpawz-${var.environment}-android-vendor"
   platform            = "GCM"
   platform_credential = var.fcm_server_key
-
-  tags = {
-    Name        = "warmpawz-${var.environment}-android-vendor"
-    Environment = var.environment
-  }
 }
 
 # SNS Platform Application for Push Notifications (iOS)
@@ -92,11 +82,6 @@ resource "aws_sns_platform_application" "ios_customer" {
   platform            = var.environment == "prod" ? "APNS" : "APNS_SANDBOX"
   platform_credential = var.apns_private_key
   platform_principal  = var.apns_certificate
-
-  tags = {
-    Name        = "warmpawz-${var.environment}-ios-customer"
-    Environment = var.environment
-  }
 }
 
 resource "aws_sns_platform_application" "ios_vendor" {
@@ -105,9 +90,4 @@ resource "aws_sns_platform_application" "ios_vendor" {
   platform            = var.environment == "prod" ? "APNS" : "APNS_SANDBOX"
   platform_credential = var.apns_private_key
   platform_principal  = var.apns_certificate
-
-  tags = {
-    Name        = "warmpawz-${var.environment}-ios-vendor"
-    Environment = var.environment
-  }
 }
