@@ -111,24 +111,11 @@ jobs:
         run: npm ci
 
       - name: Build backend
-        run: echo "Skipping build - Lambda functions deploy directly" || npm run build:backend
+        run: echo "Skipping build - Lambda functions use pre-built zip files"
         continue-on-error: true
 
-      - name: Package Lambda functions
-        working-directory: backend/lambda
-        run: |
-          mkdir -p dist
-          # Lambda functions are deployed as-is, no packaging needed for now
-          echo "Lambda packaging will be handled by Terraform"
-        continue-on-error: true
-
-      - name: Upload Lambda artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: lambda-functions
-          path: backend/lambda/src
-          retention-days: 7
-        continue-on-error: true
+      # Lambda zip files are already in repo at backend/lambda/*.zip
+      # Terraform references them directly, no artifact upload needed
 
   # ============================================
   # TERRAFORM PLAN
@@ -157,12 +144,7 @@ jobs:
         with:
           terraform_version: ${{ env.TERRAFORM_VERSION }}
 
-      - name: Download Lambda artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: lambda-functions
-          path: backend/lambda/dist
-        continue-on-error: true
+      # Lambda zip files are in repo, no download needed
 
       - name: Terraform Init
         working-directory: infra/envs/dev
@@ -234,12 +216,7 @@ jobs:
           name: terraform-plan
           path: infra/envs/dev
 
-      - name: Download Lambda artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: lambda-functions
-          path: backend/lambda/dist
-        continue-on-error: true
+      # Lambda zip files are in repo, no download needed
 
       - name: Terraform Init
         working-directory: infra/envs/dev
