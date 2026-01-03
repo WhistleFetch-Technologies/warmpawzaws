@@ -39,6 +39,11 @@ jobs:
         run: npm run type-check || echo "Type-check script not found, skipping..."
         continue-on-error: true
 
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
       - name: Validate Terraform
         working-directory: infra/envs/dev
         run: |
