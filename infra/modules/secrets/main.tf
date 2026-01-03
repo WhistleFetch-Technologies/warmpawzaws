@@ -60,15 +60,16 @@ resource "aws_secretsmanager_secret_version" "shiprocket" {
 }
 
 # SNS Platform Application for Push Notifications (Android)
-# Using a placeholder since we're using AWS SNS directly (not Firebase)
+# Note: These are optional and only created if push notifications are enabled
 resource "aws_sns_platform_application" "android_customer" {
   count               = var.enable_push_notifications ? 1 : 0
   name                = "warmpawz-${var.environment}-android-customer"
   platform            = "GCM"
   platform_credential = var.fcm_server_key
 
-  attributes = {
-    SuccessFeedbackSampleRate = "100"
+  tags = {
+    Name        = "warmpawz-${var.environment}-android-customer"
+    Environment = var.environment
   }
 }
 
@@ -78,8 +79,9 @@ resource "aws_sns_platform_application" "android_vendor" {
   platform            = "GCM"
   platform_credential = var.fcm_server_key
 
-  attributes = {
-    SuccessFeedbackSampleRate = "100"
+  tags = {
+    Name        = "warmpawz-${var.environment}-android-vendor"
+    Environment = var.environment
   }
 }
 
@@ -91,8 +93,9 @@ resource "aws_sns_platform_application" "ios_customer" {
   platform_credential = var.apns_private_key
   platform_principal  = var.apns_certificate
 
-  attributes = {
-    SuccessFeedbackSampleRate = "100"
+  tags = {
+    Name        = "warmpawz-${var.environment}-ios-customer"
+    Environment = var.environment
   }
 }
 
@@ -103,7 +106,8 @@ resource "aws_sns_platform_application" "ios_vendor" {
   platform_credential = var.apns_private_key
   platform_principal  = var.apns_certificate
 
-  attributes = {
-    SuccessFeedbackSampleRate = "100"
+  tags = {
+    Name        = "warmpawz-${var.environment}-ios-vendor"
+    Environment = var.environment
   }
 }
