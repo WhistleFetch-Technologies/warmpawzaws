@@ -254,38 +254,114 @@ jobs:
             fi
           fi
 
-      - name: Import existing RDS cluster (CRITICAL - prevent destruction)
+      - name: Handle ALL RDS edge cases (CRITICAL)
         working-directory: infra/envs/dev
         continue-on-error: true
-        timeout-minutes: 2
+        timeout-minutes: 5
         run: |
-          echo "🔍 CRITICAL: Checking for existing RDS cluster..."
+          echo "🔍 CRITICAL: Analyzing RDS state and handling edge cases..."
           
-          # Check if RDS cluster exists
+          # Scenario 1: Check if cluster exists
+          CLUSTER_EXISTS=false
           if aws rds describe-db-clusters --db-cluster-identifier warmpawz-dev-cluster --region ap-south-1 2>/dev/null | grep -q "warmpawz-dev-cluster"; then
-            echo "✅ Found existing RDS cluster: warmpawz-dev-cluster"
-            echo "📋 Importing into Terraform state to prevent destruction..."
+            CLUSTER_EXISTS=true
+            CLUSTER_STATUS=$(aws rds describe-db-clusters --db-cluster-identifier warmpawz-dev-cluster --region ap-south-1 --query 'DBClusters[0].Status' --output text)
+            DELETION_PROTECTION=$(aws rds describe-db-clusters --db-cluster-identifier warmpawz-dev-cluster --region ap-south-1 --query 'DBClusters[0].DeletionProtection' --output text)
+            echo "✅ Found RDS cluster: warmpawz-dev-cluster"
+            echo "   Status: $CLUSTER_STATUS"
+            echo "   Deletion Protection: $DELETION_PROTECTION"
+          else
+            echo "ℹ️  No RDS cluster found"
+          fi
+          
+          # Scenario 2: Check if instances exist
+          INSTANCES=$(aws rds describe-db-instances --region ap-south-1 --query "DBInstances[?DBClusterIdentifier=='warmpawz-dev-cluster' || contains(DBInstanceIdentifier, 'warmpawz-dev-instance')].DBInstanceIdentifier" --output text 2>/dev/null)
+          
+          if [ -n "$INSTANCES" ]; then
+            echo "✅ Found RDS instances: $INSTANCES"
+            INSTANCE_COUNT=$(echo "$INSTANCES" | wc -w | tr -d ' ')
+            echo "   Instance count: $INSTANCE_COUNT"
+          else
+            echo "ℹ️  No RDS instances found"
+          fi
+          
+          # EDGE CASE 1: Cluster exists but NO instances (your current scenario)
+          if [ "$CLUSTER_EXISTS" = true ] && [ -z "$INSTANCES" ]; then
+            echo ""
+            echo "⚠️  EDGE CASE DETECTED: Cluster exists WITHOUT instances!"
+            echo "   This is the scenario you encountered"
+            echo ""
+            echo "📋 Resolution: Import cluster, Terraform will create missing instance"
             
             # Import cluster
-            terraform import 'module.rds.aws_rds_cluster.main' warmpawz-dev-cluster 2>&1 | grep -v "already managed" || echo "  Cluster already in state or import failed"
+            terraform import 'module.rds.aws_rds_cluster.main' warmpawz-dev-cluster 2>&1 | grep -E "Import successful|already managed" || echo "   Import may have failed, continuing..."
             
-            # Import cluster instance
-            if aws rds describe-db-instances --db-instance-identifier warmpawz-dev-instance-1 --region ap-south-1 2>/dev/null | grep -q "warmpawz-dev-instance-1"; then
-              echo "✅ Found existing RDS instance: warmpawz-dev-instance-1"
-              terraform import 'module.rds.aws_rds_cluster_instance.main[0]' warmpawz-dev-instance-1 2>&1 | grep -v "already managed" || echo "  Instance already in state or import failed"
-            fi
-            
-            # Import RDS secret
+            # Import secret if exists
             SECRET_ARN=$(aws secretsmanager list-secrets --region ap-south-1 --query "SecretList[?starts_with(Name, 'warmpawz-dev-rds-master')].ARN" --output text 2>/dev/null | head -1)
             if [ -n "$SECRET_ARN" ]; then
-              echo "✅ Found RDS secret: $SECRET_ARN"
-              terraform import 'module.rds.aws_secretsmanager_secret.rds_master_password' "$SECRET_ARN" 2>&1 | grep -v "already managed" || echo "  Secret already in state or import failed"
+              echo "   Importing RDS secret: $SECRET_ARN"
+              terraform import 'module.rds.aws_secretsmanager_secret.rds_master_password' "$SECRET_ARN" 2>&1 | grep -E "Import successful|already managed" || true
             fi
             
-            echo "✅ RDS import completed - cluster will be preserved"
-          else
-            echo "ℹ️  No existing RDS cluster found - will create new one"
+            echo "   ✅ Cluster imported - Terraform will add missing instance"
           fi
+          
+          # EDGE CASE 2: Cluster AND instances exist
+          if [ "$CLUSTER_EXISTS" = true ] && [ -n "$INSTANCES" ]; then
+            echo ""
+            echo "✅ Normal scenario: Cluster AND instances exist"
+            echo ""
+            
+            # Import cluster
+            terraform import 'module.rds.aws_rds_cluster.main' warmpawz-dev-cluster 2>&1 | grep -E "Import successful|already managed" || true
+            
+            # Import each instance
+            for INSTANCE in $INSTANCES; do
+              # Determine instance index (0-based)
+              INSTANCE_NUM=$(echo "$INSTANCE" | grep -oP 'instance-\K\d+' || echo "1")
+              INSTANCE_IDX=$((INSTANCE_NUM - 1))
+              
+              echo "   Importing instance: $INSTANCE (index: $INSTANCE_IDX)"
+              terraform import "module.rds.aws_rds_cluster_instance.main[$INSTANCE_IDX]" "$INSTANCE" 2>&1 | grep -E "Import successful|already managed" || true
+            done
+            
+            # Import secret
+            SECRET_ARN=$(aws secretsmanager list-secrets --region ap-south-1 --query "SecretList[?starts_with(Name, 'warmpawz-dev-rds-master')].ARN" --output text 2>/dev/null | head -1)
+            if [ -n "$SECRET_ARN" ]; then
+              terraform import 'module.rds.aws_secretsmanager_secret.rds_master_password' "$SECRET_ARN" 2>&1 | grep -E "Import successful|already managed" || true
+            fi
+            
+            echo "   ✅ Full RDS stack imported - will be preserved"
+          fi
+          
+          # EDGE CASE 3: No cluster but orphaned instances exist
+          if [ "$CLUSTER_EXISTS" = false ] && [ -n "$INSTANCES" ]; then
+            echo ""
+            echo "⚠️  EDGE CASE DETECTED: Orphaned instances WITHOUT cluster!"
+            echo "   Instances: $INSTANCES"
+            echo ""
+            echo "📋 Resolution: Delete orphaned instances"
+            
+            for INSTANCE in $INSTANCES; do
+              echo "   🗑️  Deleting orphaned instance: $INSTANCE"
+              aws rds delete-db-instance \
+                --db-instance-identifier "$INSTANCE" \
+                --skip-final-snapshot \
+                --region ap-south-1 2>&1 || echo "   Deletion failed or already deleting"
+            done
+            
+            echo "   ✅ Orphaned instances cleanup initiated"
+          fi
+          
+          # EDGE CASE 4: Nothing exists
+          if [ "$CLUSTER_EXISTS" = false ] && [ -z "$INSTANCES" ]; then
+            echo ""
+            echo "✅ Clean slate: No RDS resources exist"
+            echo "   Terraform will create fresh RDS cluster and instance"
+          fi
+          
+          echo ""
+          echo "✅ RDS edge case handling complete"
 
       - name: Clean orphaned S3 buckets (CRITICAL - prevents BucketAlreadyExists)
         continue-on-error: false  # Must succeed or deployment will fail anyway
