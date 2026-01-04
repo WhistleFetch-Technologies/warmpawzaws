@@ -162,10 +162,19 @@ resource "aws_rds_cluster" "main" {
   # Enhanced monitoring
   enabled_cloudwatch_logs_exports = ["postgresql"]
 
-  # Deletion protection
-  deletion_protection       = var.deletion_protection
+  # Deletion protection - CRITICAL: Prevent accidental deletion
+  deletion_protection       = true  # Always on - protect production data
   skip_final_snapshot       = var.skip_final_snapshot
   final_snapshot_identifier = var.skip_final_snapshot ? null : "warmpawz-${var.environment}-final-snapshot-${formatdate("YYYY-MM-DD-hhmm", timestamp())}"
+  
+  # Lifecycle - NEVER destroy existing cluster
+  lifecycle {
+    prevent_destroy = false  # Must be false for Terraform to work, but deletion_protection prevents actual deletion
+    ignore_changes  = [
+      master_password,  # Don't update password on every apply
+      snapshot_identifier  # Don't recreate from snapshot on changes
+    ]
+  }
 
   # Apply changes immediately in non-prod
   apply_immediately = var.environment != "prod"
