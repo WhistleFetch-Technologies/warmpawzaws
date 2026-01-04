@@ -255,6 +255,7 @@ jobs:
         id: plan
         working-directory: infra/envs/dev
         run: |
+          set +e  # Don't exit on error
           terraform plan \
             -var="opensearch_master_password=${{ secrets.DEV_OPENSEARCH_PASSWORD }}" \
             -var="razorpay_key_id=${{ secrets.RAZORPAY_KEY_ID }}" \
@@ -262,7 +263,28 @@ jobs:
             -var="google_maps_api_key=${{ secrets.GOOGLE_MAPS_API_KEY }}" \
             -var="shiprocket_email=${{ secrets.SHIPROCKET_EMAIL }}" \
             -var="shiprocket_password=${{ secrets.SHIPROCKET_PASSWORD }}" \
-            -out=tfplan
+            -out=tfplan \
+            -detailed-exitcode
+          
+          EXIT_CODE=$?
+          
+          # Terraform plan exit codes:
+          # 0 = No changes, success
+          # 1 = Error
+          # 2 = Successful plan with changes
+          
+          if [ $EXIT_CODE -eq 0 ] || [ $EXIT_CODE -eq 2 ]; then
+            echo "✅ Terraform plan successful (exit code: $EXIT_CODE)"
+            if [ $EXIT_CODE -eq 2 ]; then
+              echo "📋 Changes detected - ready to apply"
+            else
+              echo "✓ No changes needed"
+            fi
+            exit 0
+          else
+            echo "❌ Terraform plan failed (exit code: $EXIT_CODE)"
+            exit 1
+          fi
 
       - name: Upload Terraform plan
         uses: actions/upload-artifact@v4
