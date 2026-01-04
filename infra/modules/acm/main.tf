@@ -29,8 +29,9 @@ resource "aws_acm_certificate" "main" {
 }
 
 # Route53 Validation Records for main certificate (us-east-1)
+# Only create if we're actually validating (not skipping)
 resource "aws_route53_record" "validation" {
-  for_each = {
+  for_each = var.skip_validation ? {} : {
     for dvo in aws_acm_certificate.main.domain_validation_options : dvo.domain_name => {
       name   = dvo.resource_record_name
       record = dvo.resource_record_value
@@ -83,9 +84,9 @@ resource "aws_acm_certificate" "regional" {
 }
 
 # Route53 Validation Records for regional certificate
-# Created AFTER main is validated, so no DNS conflicts
+# Only create if we're actually validating (not skipping)
 resource "aws_route53_record" "regional_validation" {
-  for_each = var.create_regional_cert ? {
+  for_each = var.create_regional_cert && !var.skip_validation ? {
     for dvo in aws_acm_certificate.regional[0].domain_validation_options : dvo.domain_name => {
       name   = dvo.resource_record_name
       record = dvo.resource_record_value
@@ -105,8 +106,9 @@ resource "aws_route53_record" "regional_validation" {
 }
 
 # Certificate Validation for regional - WITH TIMEOUT
+# Skip validation if skip_validation is true (certificate will be validated manually or later)
 resource "aws_acm_certificate_validation" "regional" {
-  count                   = var.create_regional_cert ? 1 : 0
+  count                   = var.create_regional_cert && !var.skip_validation ? 1 : 0
   certificate_arn         = aws_acm_certificate.regional[0].arn
   validation_record_fqdns = [for record in aws_route53_record.regional_validation : record.fqdn]
 
