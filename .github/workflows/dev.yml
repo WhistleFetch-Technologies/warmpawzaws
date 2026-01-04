@@ -571,37 +571,13 @@ jobs:
             echo "$ALIAS_OUTPUT" | grep -qE "Import successful|already managed" && echo "      ✅ Alias imported" || echo "      ❌ Alias import FAILED: $ALIAS_OUTPUT"
           fi
           
-          # Import NAT Gateway + EIP (EIP limit reached - must import existing)
+          # NAT Gateway, EIP, IGW - DO NOT IMPORT when use_existing_vpc = true
+          # These resources have count = 0 in Terraform config, can't import
+          # Data sources will look them up instead for route table references
           if [ -n "$EXISTING_VPC_ID" ] && [ "$EXISTING_VPC_ID" != "None" ]; then
-            echo "   📦 NAT Gateway + EIP (EIP limit reached)..."
-            NAT_GW=$(aws ec2 describe-nat-gateways --filter "Name=vpc-id,Values=$EXISTING_VPC_ID" "Name=state,Values=available" --region ap-south-1 --query 'NatGateways[0].NatGatewayId' --output text 2>/dev/null || echo "")
-            if [ -n "$NAT_GW" ] && [ "$NAT_GW" != "None" ]; then
-              echo "      Importing NAT Gateway: $NAT_GW"
-              terraform state rm 'module.vpc.aws_nat_gateway.main[0]' 2>&1 | grep -v "Invalid target address" || true
-              NAT_OUTPUT=$(terraform import -input=false -lock=false 'module.vpc.aws_nat_gateway.main[0]' "$NAT_GW" 2>&1)
-              echo "$NAT_OUTPUT"
-              echo "$NAT_OUTPUT" | grep -qE "Import successful|already managed" && echo "      ✅ NAT Gateway imported" || echo "      ❌ NAT Gateway import FAILED"
-              
-              # Import EIP used by NAT Gateway
-              EIP_ID=$(aws ec2 describe-nat-gateways --nat-gateway-ids "$NAT_GW" --region ap-south-1 --query 'NatGateways[0].NatGatewayAddresses[0].AllocationId' --output text 2>/dev/null || echo "")
-              if [ -n "$EIP_ID" ] && [ "$EIP_ID" != "None" ]; then
-                echo "      Importing EIP: $EIP_ID"
-                terraform state rm 'module.vpc.aws_eip.nat[0]' 2>&1 | grep -v "Invalid target address" || true
-                EIP_OUTPUT=$(terraform import -input=false -lock=false 'module.vpc.aws_eip.nat[0]' "$EIP_ID" 2>&1)
-                echo "$EIP_OUTPUT"
-                echo "$EIP_OUTPUT" | grep -qE "Import successful|already managed" && echo "      ✅ EIP imported" || echo "      ❌ EIP import FAILED"
-              fi
-            fi
-            
-            # Import Internet Gateway
-            IGW_ID=$(aws ec2 describe-internet-gateways --filters "Name=attachment.vpc-id,Values=$EXISTING_VPC_ID" --region ap-south-1 --query 'InternetGateways[0].InternetGatewayId' --output text 2>/dev/null || echo "")
-            if [ -n "$IGW_ID" ] && [ "$IGW_ID" != "None" ]; then
-              echo "      Importing Internet Gateway: $IGW_ID"
-              terraform state rm 'module.vpc.aws_internet_gateway.main[0]' 2>&1 | grep -v "Invalid target address" || true
-              IGW_OUTPUT=$(terraform import -input=false -lock=false 'module.vpc.aws_internet_gateway.main[0]' "$IGW_ID" 2>&1)
-              echo "$IGW_OUTPUT"
-              echo "$IGW_OUTPUT" | grep -qE "Import successful|already managed" && echo "      ✅ IGW imported" || echo "      ❌ IGW import FAILED"
-            fi
+            echo "   ℹ️ NAT Gateway + EIP + IGW: Using data sources (not importing)"
+            echo "      (These resources have count=0 in config when use_existing_vpc=true)"
+            echo "      Data sources will look up existing resources for routing"
           fi
           
           # Import Route Tables FIRST (then associations)
