@@ -332,16 +332,9 @@ jobs:
           
           echo ""
           echo "═══════════════════════════════════════════════════════════════"
-          echo "2️⃣  CLOUDFRONT OACs"
+          echo "2️⃣  CLOUDFRONT OACs - SKIPPED (will be imported instead)"
           echo "═══════════════════════════════════════════════════════════════"
-          for APP in admin vendor customer; do
-            OAC_ID=$(aws cloudfront list-origin-access-controls --query "OriginAccessControlList.Items[?Name=='warmpawz-dev-${APP}-oac'].Id" --output text 2>/dev/null || echo "")
-            if [ -n "$OAC_ID" ] && [ "$OAC_ID" != "None" ]; then
-              echo "  Deleting OAC: warmpawz-dev-${APP}-oac ($OAC_ID)"
-              aws cloudfront delete-origin-access-control --id "$OAC_ID" 2>&1 || echo "    Failed (may be in use)"
-            fi
-          done
-          echo "  ✅ OACs cleaned"
+          echo "  ⏭️  OACs cannot be deleted if in use - will import them"
           
           echo ""
           echo "═══════════════════════════════════════════════════════════════"
@@ -355,10 +348,9 @@ jobs:
           
           echo ""
           echo "═══════════════════════════════════════════════════════════════"
-          echo "4️⃣  RDS DB SUBNET GROUP"
+          echo "4️⃣  RDS DB SUBNET GROUP - SKIPPED (will be imported instead)"
           echo "═══════════════════════════════════════════════════════════════"
-          aws rds delete-db-subnet-group --db-subnet-group-name "warmpawz-dev-db-subnet-group" --region ap-south-1 2>&1 || echo "  Not found or in use"
-          echo "  ✅ DB subnet group cleaned"
+          echo "  ⏭️  Subnet group cannot be deleted if RDS exists - will import it"
           
           echo ""
           echo "═══════════════════════════════════════════════════════════════"
@@ -410,12 +402,11 @@ jobs:
           echo "✅ CLEANUP COMPLETE - TERRAFORM WILL CREATE FRESH RESOURCES"
           echo "═══════════════════════════════════════════════════════════════"
 
-      - name: Handle ALL RDS edge cases (CRITICAL)
+      - name: Import ALL in-use resources (CRITICAL - prevents AlreadyExists errors)
         working-directory: infra/envs/dev
         continue-on-error: true
-        timeout-minutes: 3
+        timeout-minutes: 5
         env:
-          # CRITICAL: Provide all required variables to prevent terraform prompts
           TF_VAR_opensearch_master_password: ${{ secrets.DEV_OPENSEARCH_PASSWORD }}
           TF_VAR_razorpay_key_id: ${{ secrets.RAZORPAY_KEY_ID }}
           TF_VAR_razorpay_key_secret: ${{ secrets.RAZORPAY_KEY_SECRET }}
@@ -423,58 +414,96 @@ jobs:
           TF_VAR_shiprocket_email: ${{ secrets.SHIPROCKET_EMAIL }}
           TF_VAR_shiprocket_password: ${{ secrets.SHIPROCKET_PASSWORD }}
         run: |
-          echo "🔍 CRITICAL: Analyzing RDS state and handling edge cases..."
+          echo "📦 IMPORTING ALL IN-USE AWS RESOURCES..."
+          echo "These resources cannot be deleted because they're dependencies"
+          echo ""
           
-          # Check if cluster exists
-          CLUSTER_EXISTS=false
-          if aws rds describe-db-clusters --db-cluster-identifier warmpawz-dev-cluster --region ap-south-1 2>/dev/null | grep -q "warmpawz-dev-cluster"; then
-            CLUSTER_EXISTS=true
-            CLUSTER_STATUS=$(aws rds describe-db-clusters --db-cluster-identifier warmpawz-dev-cluster --region ap-south-1 --query 'DBClusters[0].Status' --output text)
-            echo "✅ Found RDS cluster: warmpawz-dev-cluster (Status: $CLUSTER_STATUS)"
-          else
-            echo "ℹ️  No RDS cluster found - Terraform will create fresh"
-          fi
-          
-          # Check if instances exist
-          INSTANCE_ID=$(aws rds describe-db-instances --region ap-south-1 --query "DBInstances[?DBClusterIdentifier=='warmpawz-dev-cluster'].DBInstanceIdentifier" --output text 2>/dev/null | head -1)
-          
-          if [ -n "$INSTANCE_ID" ] && [ "$INSTANCE_ID" != "None" ]; then
-            echo "✅ Found RDS instance: $INSTANCE_ID"
-          else
-            echo "ℹ️  No RDS instance found"
-          fi
-          
-          # IMPORT RDS RESOURCES IF THEY EXIST
-          if [ "$CLUSTER_EXISTS" = true ]; then
-            echo ""
-            echo "📋 Importing existing RDS resources into Terraform state..."
-            
-            # Import cluster (CRITICAL: use -input=false to prevent prompts)
-            echo "   Importing cluster..."
-            timeout 60 terraform import -input=false -lock=false 'module.rds.aws_rds_cluster.main' warmpawz-dev-cluster 2>&1 && echo "   ✅ Cluster imported" || echo "   ⚠️ Cluster import skipped (may already be in state)"
-            
-            # Import instance if exists (index 0)
-            if [ -n "$INSTANCE_ID" ] && [ "$INSTANCE_ID" != "None" ]; then
-              echo "   Importing instance..."
-              timeout 60 terraform import -input=false -lock=false 'module.rds.aws_rds_cluster_instance.main[0]' "$INSTANCE_ID" 2>&1 && echo "   ✅ Instance imported" || echo "   ⚠️ Instance import skipped"
+          # ═══════════════════════════════════════════════════════════════
+          echo "1️⃣  CLOUDFRONT OACs (cannot delete if distributions exist)"
+          echo "═══════════════════════════════════════════════════════════════"
+          for APP in admin vendor customer; do
+            OAC_ID=$(aws cloudfront list-origin-access-controls --query "OriginAccessControlList.Items[?Name=='warmpawz-dev-${APP}-oac'].Id" --output text 2>/dev/null || echo "")
+            if [ -n "$OAC_ID" ] && [ "$OAC_ID" != "None" ] && [ "$OAC_ID" != "" ]; then
+              echo "  Importing OAC: warmpawz-dev-${APP}-oac (ID: $OAC_ID)"
+              timeout 30 terraform import -input=false -lock=false "module.cloudfront.aws_cloudfront_origin_access_control.frontend[\"${APP}\"]" "$OAC_ID" 2>&1 && echo "    ✅ Imported" || echo "    ⚠️ Skipped"
+            else
+              echo "  OAC warmpawz-dev-${APP}-oac not found"
             fi
-            
-            # Import secret if exists
-            SECRET_ARN=$(aws secretsmanager list-secrets --region ap-south-1 --query "SecretList[?starts_with(Name, 'warmpawz-dev-rds-master')].ARN" --output text 2>/dev/null | head -1)
-            if [ -n "$SECRET_ARN" ] && [ "$SECRET_ARN" != "None" ]; then
-              echo "   Importing RDS secret..."
-              timeout 60 terraform import -input=false -lock=false 'module.rds.aws_secretsmanager_secret.rds_master_password' "$SECRET_ARN" 2>&1 && echo "   ✅ Secret imported" || echo "   ⚠️ Secret import skipped"
-            fi
-            
-            echo ""
-            echo "✅ RDS import complete - existing resources will be preserved"
+          done
+          
+          echo ""
+          # ═══════════════════════════════════════════════════════════════
+          echo "2️⃣  RDS DB SUBNET GROUP (cannot delete if RDS cluster exists)"
+          echo "═══════════════════════════════════════════════════════════════"
+          if aws rds describe-db-subnet-groups --db-subnet-group-name warmpawz-dev-db-subnet-group --region ap-south-1 2>/dev/null | grep -q "warmpawz-dev-db-subnet-group"; then
+            echo "  Importing DB Subnet Group: warmpawz-dev-db-subnet-group"
+            timeout 30 terraform import -input=false -lock=false 'module.rds.aws_db_subnet_group.main' warmpawz-dev-db-subnet-group 2>&1 && echo "    ✅ Imported" || echo "    ⚠️ Skipped"
           else
-            echo ""
-            echo "✅ Clean slate: No existing RDS - Terraform will create fresh"
+            echo "  DB Subnet Group not found"
           fi
           
           echo ""
-          echo "✅ RDS edge case handling complete"
+          # ═══════════════════════════════════════════════════════════════
+          echo "3️⃣  RDS CLUSTER + INSTANCE (stateful - must preserve)"
+          echo "═══════════════════════════════════════════════════════════════"
+          CLUSTER_EXISTS=false
+          if aws rds describe-db-clusters --db-cluster-identifier warmpawz-dev-cluster --region ap-south-1 2>/dev/null | grep -q "warmpawz-dev-cluster"; then
+            CLUSTER_EXISTS=true
+            echo "  Found RDS cluster: warmpawz-dev-cluster"
+            echo "  Importing cluster..."
+            timeout 60 terraform import -input=false -lock=false 'module.rds.aws_rds_cluster.main' warmpawz-dev-cluster 2>&1 && echo "    ✅ Imported" || echo "    ⚠️ Skipped"
+            
+            # Import instance
+            INSTANCE_ID=$(aws rds describe-db-instances --region ap-south-1 --query "DBInstances[?DBClusterIdentifier=='warmpawz-dev-cluster'].DBInstanceIdentifier" --output text 2>/dev/null | head -1)
+            if [ -n "$INSTANCE_ID" ] && [ "$INSTANCE_ID" != "None" ]; then
+              echo "  Importing instance: $INSTANCE_ID"
+              timeout 60 terraform import -input=false -lock=false 'module.rds.aws_rds_cluster_instance.main[0]' "$INSTANCE_ID" 2>&1 && echo "    ✅ Imported" || echo "    ⚠️ Skipped"
+            fi
+            
+            # Import RDS secret
+            SECRET_ARN=$(aws secretsmanager list-secrets --region ap-south-1 --query "SecretList[?starts_with(Name, 'warmpawz-dev-rds-master')].ARN" --output text 2>/dev/null | head -1)
+            if [ -n "$SECRET_ARN" ] && [ "$SECRET_ARN" != "None" ]; then
+              echo "  Importing RDS secret..."
+              timeout 30 terraform import -input=false -lock=false 'module.rds.aws_secretsmanager_secret.rds_master_password' "$SECRET_ARN" 2>&1 && echo "    ✅ Imported" || echo "    ⚠️ Skipped"
+            fi
+          else
+            echo "  No RDS cluster found - will be created fresh"
+          fi
+          
+          echo ""
+          # ═══════════════════════════════════════════════════════════════
+          echo "4️⃣  RDS SECURITY GROUP (dependency of cluster)"
+          echo "═══════════════════════════════════════════════════════════════"
+          RDS_SG_ID=$(aws ec2 describe-security-groups --filters "Name=group-name,Values=warmpawz-dev-rds-*" --region ap-south-1 --query 'SecurityGroups[0].GroupId' --output text 2>/dev/null || echo "")
+          if [ -n "$RDS_SG_ID" ] && [ "$RDS_SG_ID" != "None" ] && [ "$RDS_SG_ID" != "" ]; then
+            echo "  Importing RDS Security Group: $RDS_SG_ID"
+            timeout 30 terraform import -input=false -lock=false 'module.rds.aws_security_group.rds' "$RDS_SG_ID" 2>&1 && echo "    ✅ Imported" || echo "    ⚠️ Skipped"
+          else
+            echo "  RDS Security Group not found"
+          fi
+          
+          echo ""
+          # ═══════════════════════════════════════════════════════════════
+          echo "5️⃣  RDS PARAMETER GROUPS (dependency of cluster)"
+          echo "═══════════════════════════════════════════════════════════════"
+          # Cluster parameter group
+          CLUSTER_PG=$(aws rds describe-db-cluster-parameter-groups --region ap-south-1 --query "DBClusterParameterGroups[?contains(DBClusterParameterGroupName, 'warmpawz-dev-aurora')].DBClusterParameterGroupName" --output text 2>/dev/null | head -1)
+          if [ -n "$CLUSTER_PG" ] && [ "$CLUSTER_PG" != "None" ]; then
+            echo "  Importing Cluster Parameter Group: $CLUSTER_PG"
+            timeout 30 terraform import -input=false -lock=false 'module.rds.aws_rds_cluster_parameter_group.main' "$CLUSTER_PG" 2>&1 && echo "    ✅ Imported" || echo "    ⚠️ Skipped"
+          fi
+          
+          # DB parameter group
+          DB_PG=$(aws rds describe-db-parameter-groups --region ap-south-1 --query "DBParameterGroups[?contains(DBParameterGroupName, 'warmpawz-dev-aurora-db')].DBParameterGroupName" --output text 2>/dev/null | head -1)
+          if [ -n "$DB_PG" ] && [ "$DB_PG" != "None" ]; then
+            echo "  Importing DB Parameter Group: $DB_PG"
+            timeout 30 terraform import -input=false -lock=false 'module.rds.aws_db_parameter_group.main' "$DB_PG" 2>&1 && echo "    ✅ Imported" || echo "    ⚠️ Skipped"
+          fi
+          
+          echo ""
+          echo "═══════════════════════════════════════════════════════════════"
+          echo "✅ IMPORT COMPLETE - All in-use resources imported"
+          echo "═══════════════════════════════════════════════════════════════"
 
       - name: Terraform Plan
         id: plan
