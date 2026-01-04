@@ -27,6 +27,8 @@ output "regional_certificate_arn" {
 
 output "regional_validated_certificate_arn" {
   description = "ARN of the validated regional certificate"
-  value       = var.create_regional_cert ? aws_acm_certificate_validation.regional[0].certificate_arn : null
+  value       = var.create_regional_cert ? (
+    var.skip_validation ? aws_acm_certificate.regional[0].arn : aws_acm_certificate_validation.regional[0].certificate_arn
+  ) : null
 }
 
