@@ -419,105 +419,70 @@ jobs:
           echo ""
           
           # ═══════════════════════════════════════════════════════════════
-          echo "0️⃣  VPC + SUBNETS (CRITICAL: Must match RDS subnet group VPC)"
+          echo "0️⃣  NUCLEAR CLEANUP - Remove ALL VPC/RDS from state, then re-import"
           echo "═══════════════════════════════════════════════════════════════"
           # Find VPC from existing RDS subnet group
           RDS_SUBNET_GROUP_VPC=$(aws rds describe-db-subnet-groups --db-subnet-group-name warmpawz-dev-db-subnet-group --region ap-south-1 --query 'DBSubnetGroups[0].VpcId' --output text 2>/dev/null || echo "")
           
-          # Check if there's a DIFFERENT VPC in terraform state (conflict!)
-          CURRENT_STATE_VPC=$(terraform state show 'module.vpc.aws_vpc.main[0]' 2>/dev/null | grep "^id" | awk '{print $3}' | tr -d '"' || echo "")
-          
-          if [ -n "$RDS_SUBNET_GROUP_VPC" ] && [ -n "$CURRENT_STATE_VPC" ] && [ "$RDS_SUBNET_GROUP_VPC" != "$CURRENT_STATE_VPC" ]; then
-            echo "  ⚠️ VPC CONFLICT DETECTED!"
-            echo "     State VPC:  $CURRENT_STATE_VPC"
-            echo "     RDS VPC:    $RDS_SUBNET_GROUP_VPC"
-            echo ""
-            echo "  Removing conflicting VPC resources from state..."
-            terraform state rm 'module.vpc.aws_vpc.main[0]' 2>&1 || echo "    VPC already removed"
-            terraform state rm 'module.vpc.aws_internet_gateway.main[0]' 2>&1 || echo "    IGW already removed"
-            terraform state rm 'module.vpc.aws_nat_gateway.main[0]' 2>&1 || echo "    NAT already removed"
-            terraform state rm 'module.vpc.aws_eip.nat[0]' 2>&1 || echo "    EIP already removed"
-            terraform state rm 'module.vpc.aws_subnet.database[0]' 2>&1 || echo "    DB subnet 0 already removed"
-            terraform state rm 'module.vpc.aws_subnet.database[1]' 2>&1 || echo "    DB subnet 1 already removed"
-            terraform state rm 'module.vpc.aws_subnet.private[0]' 2>&1 || echo "    Private subnet 0 already removed"
-            terraform state rm 'module.vpc.aws_subnet.private[1]' 2>&1 || echo "    Private subnet 1 already removed"
-            terraform state rm 'module.vpc.aws_subnet.public[0]' 2>&1 || echo "    Public subnet 0 already removed"
-            terraform state rm 'module.vpc.aws_subnet.public[1]' 2>&1 || echo "    Public subnet 1 already removed"
-            terraform state rm 'module.vpc.aws_route_table.private[0]' 2>&1 || echo "    Private RT already removed"
-            terraform state rm 'module.vpc.aws_route_table.public' 2>&1 || echo "    Public RT already removed"
-            terraform state rm 'module.vpc.aws_route_table.database' 2>&1 || echo "    DB RT already removed"
-            echo "  ✅ Conflicting resources removed from state"
-            echo ""
-            
-            # Also delete the orphaned NEW VPC from AWS
-            echo "  Deleting orphaned VPC resources from AWS..."
-            
-            # Delete NAT Gateway first (takes time)
-            NAT_IDS=$(aws ec2 describe-nat-gateways --filter "Name=vpc-id,Values=$CURRENT_STATE_VPC" "Name=state,Values=available,pending" --region ap-south-1 --query 'NatGateways[*].NatGatewayId' --output text 2>/dev/null || echo "")
-            for NAT_ID in $NAT_IDS; do
-              echo "    Deleting NAT Gateway: $NAT_ID"
-              aws ec2 delete-nat-gateway --nat-gateway-id "$NAT_ID" --region ap-south-1 2>&1 || echo "      Failed"
-            done
-            
-            # Wait for NAT deletion
-            if [ -n "$NAT_IDS" ]; then
-              echo "    Waiting for NAT Gateway deletion (30s)..."
-              sleep 30
-            fi
-            
-            # Delete Internet Gateway
-            IGW_ID=$(aws ec2 describe-internet-gateways --filters "Name=attachment.vpc-id,Values=$CURRENT_STATE_VPC" --region ap-south-1 --query 'InternetGateways[0].InternetGatewayId' --output text 2>/dev/null || echo "")
-            if [ -n "$IGW_ID" ] && [ "$IGW_ID" != "None" ]; then
-              echo "    Detaching and deleting Internet Gateway: $IGW_ID"
-              aws ec2 detach-internet-gateway --internet-gateway-id "$IGW_ID" --vpc-id "$CURRENT_STATE_VPC" --region ap-south-1 2>&1 || echo "      Detach failed"
-              aws ec2 delete-internet-gateway --internet-gateway-id "$IGW_ID" --region ap-south-1 2>&1 || echo "      Delete failed"
-            fi
-            
-            # Release Elastic IPs
-            EIP_IDS=$(aws ec2 describe-addresses --filters "Name=tag:Name,Values=*warmpawz-dev*" --region ap-south-1 --query 'Addresses[*].AllocationId' --output text 2>/dev/null || echo "")
-            for EIP_ID in $EIP_IDS; do
-              echo "    Releasing EIP: $EIP_ID"
-              aws ec2 release-address --allocation-id "$EIP_ID" --region ap-south-1 2>&1 || echo "      Failed"
-            done
-            
-            # Delete subnets
-            SUBNET_IDS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$CURRENT_STATE_VPC" --region ap-south-1 --query 'Subnets[*].SubnetId' --output text 2>/dev/null || echo "")
-            for SUBNET_ID in $SUBNET_IDS; do
-              echo "    Deleting subnet: $SUBNET_ID"
-              aws ec2 delete-subnet --subnet-id "$SUBNET_ID" --region ap-south-1 2>&1 || echo "      Failed"
-            done
-            
-            # Delete route tables (except main)
-            RT_IDS=$(aws ec2 describe-route-tables --filters "Name=vpc-id,Values=$CURRENT_STATE_VPC" --region ap-south-1 --query 'RouteTables[?Associations[0].Main!=`true`].RouteTableId' --output text 2>/dev/null || echo "")
-            for RT_ID in $RT_IDS; do
-              echo "    Deleting route table: $RT_ID"
-              aws ec2 delete-route-table --route-table-id "$RT_ID" --region ap-south-1 2>&1 || echo "      Failed"
-            done
-            
-            # Delete security groups (except default)
-            SG_IDS=$(aws ec2 describe-security-groups --filters "Name=vpc-id,Values=$CURRENT_STATE_VPC" --region ap-south-1 --query 'SecurityGroups[?GroupName!=`default`].GroupId' --output text 2>/dev/null || echo "")
-            for SG_ID in $SG_IDS; do
-              echo "    Deleting security group: $SG_ID"
-              aws ec2 delete-security-group --group-id "$SG_ID" --region ap-south-1 2>&1 || echo "      Failed"
-            done
-            
-            # Delete VPC endpoints
-            VPCE_IDS=$(aws ec2 describe-vpc-endpoints --filters "Name=vpc-id,Values=$CURRENT_STATE_VPC" --region ap-south-1 --query 'VpcEndpoints[*].VpcEndpointId' --output text 2>/dev/null || echo "")
-            for VPCE_ID in $VPCE_IDS; do
-              echo "    Deleting VPC endpoint: $VPCE_ID"
-              aws ec2 delete-vpc-endpoints --vpc-endpoint-ids "$VPCE_ID" --region ap-south-1 2>&1 || echo "      Failed"
-            done
-            
-            # Finally delete the VPC
-            echo "    Deleting VPC: $CURRENT_STATE_VPC"
-            aws ec2 delete-vpc --vpc-id "$CURRENT_STATE_VPC" --region ap-south-1 2>&1 || echo "      VPC deletion failed (may have dependencies)"
-            
-            echo "  ✅ Orphaned VPC cleanup complete"
-          fi
-          
           if [ -n "$RDS_SUBNET_GROUP_VPC" ] && [ "$RDS_SUBNET_GROUP_VPC" != "None" ]; then
             echo "  Found RDS VPC: $RDS_SUBNET_GROUP_VPC"
-            echo "  Importing VPC..."
+            echo ""
+            echo "  🧹 STEP 1: Remove ALL VPC/RDS resources from state..."
+            
+            # Remove VPC resources from state
+            terraform state rm 'module.vpc.aws_vpc.main[0]' 2>&1 || true
+            terraform state rm 'module.vpc.aws_internet_gateway.main[0]' 2>&1 || true
+            terraform state rm 'module.vpc.aws_nat_gateway.main[0]' 2>&1 || true
+            terraform state rm 'module.vpc.aws_eip.nat[0]' 2>&1 || true
+            terraform state rm 'module.vpc.aws_subnet.database[0]' 2>&1 || true
+            terraform state rm 'module.vpc.aws_subnet.database[1]' 2>&1 || true
+            terraform state rm 'module.vpc.aws_subnet.private[0]' 2>&1 || true
+            terraform state rm 'module.vpc.aws_subnet.private[1]' 2>&1 || true
+            terraform state rm 'module.vpc.aws_subnet.public[0]' 2>&1 || true
+            terraform state rm 'module.vpc.aws_subnet.public[1]' 2>&1 || true
+            terraform state rm 'module.vpc.aws_route_table.private[0]' 2>&1 || true
+            terraform state rm 'module.vpc.aws_route_table.public' 2>&1 || true
+            terraform state rm 'module.vpc.aws_route_table.database' 2>&1 || true
+            terraform state rm 'module.vpc.aws_route_table_association.private[0]' 2>&1 || true
+            terraform state rm 'module.vpc.aws_route_table_association.private[1]' 2>&1 || true
+            terraform state rm 'module.vpc.aws_route_table_association.public[0]' 2>&1 || true
+            terraform state rm 'module.vpc.aws_route_table_association.public[1]' 2>&1 || true
+            terraform state rm 'module.vpc.aws_route_table_association.database[0]' 2>&1 || true
+            terraform state rm 'module.vpc.aws_route_table_association.database[1]' 2>&1 || true
+            terraform state rm 'module.vpc.aws_vpc_endpoint.s3' 2>&1 || true
+            terraform state rm 'module.vpc.aws_vpc_endpoint.dynamodb' 2>&1 || true
+            terraform state rm 'module.vpc.aws_security_group.vpc_endpoints' 2>&1 || true
+            
+            # Remove RDS resources from state
+            terraform state rm 'module.rds.aws_db_subnet_group.main' 2>&1 || true
+            terraform state rm 'module.rds.aws_rds_cluster.main' 2>&1 || true
+            terraform state rm 'module.rds.aws_rds_cluster_instance.main[0]' 2>&1 || true
+            terraform state rm 'module.rds.aws_security_group.rds' 2>&1 || true
+            terraform state rm 'module.rds.aws_rds_cluster_parameter_group.main' 2>&1 || true
+            terraform state rm 'module.rds.aws_db_parameter_group.main' 2>&1 || true
+            terraform state rm 'module.rds.aws_secretsmanager_secret.rds_master_password' 2>&1 || true
+            terraform state rm 'module.rds.aws_secretsmanager_secret_version.rds_master_password' 2>&1 || true
+            
+            # Remove CloudFront OACs from state
+            terraform state rm 'module.cloudfront.aws_cloudfront_origin_access_control.frontend["admin"]' 2>&1 || true
+            terraform state rm 'module.cloudfront.aws_cloudfront_origin_access_control.frontend["vendor"]' 2>&1 || true
+            terraform state rm 'module.cloudfront.aws_cloudfront_origin_access_control.frontend["customer"]' 2>&1 || true
+            
+            # Remove Lambda security group from state
+            terraform state rm 'module.lambda.aws_security_group.lambda' 2>&1 || true
+            
+            echo "  ✅ All conflicting resources removed from state"
+            echo ""
+          fi
+          
+          # Now check if there's a DIFFERENT VPC to clean up from AWS
+          CURRENT_STATE_VPC=""  # No longer in state after removal
+          
+          # STEP 2: Import the CORRECT VPC and all resources
+          if [ -n "$RDS_SUBNET_GROUP_VPC" ] && [ "$RDS_SUBNET_GROUP_VPC" != "None" ]; then
+            echo "  🔄 STEP 2: Import CORRECT VPC resources..."
+            echo ""
+            echo "  Importing VPC: $RDS_SUBNET_GROUP_VPC"
             timeout 30 terraform import -input=false -lock=false 'module.vpc.aws_vpc.main[0]' "$RDS_SUBNET_GROUP_VPC" 2>&1 && echo "    ✅ VPC Imported" || echo "    ⚠️ VPC import skipped"
             
             # Import subnets in this VPC
