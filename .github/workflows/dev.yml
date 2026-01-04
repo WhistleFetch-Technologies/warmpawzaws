@@ -543,27 +543,35 @@ jobs:
             terraform import -input=false -lock=false 'module.rds.aws_secretsmanager_secret.rds_master_password' "$SECRET_ARN" 2>&1 | grep -E "Import successful|already managed" || echo "      ⚠️ Skipped"
           fi
           
-          # Import Lambda Function
-          echo "   📦 Lambda Function..."
+          # Import Lambda Function + Permission + Alias
+          echo "   📦 Lambda Function + Permission + Alias..."
           if aws lambda get-function --function-name warmpawz-dev-api-handler --region ap-south-1 2>/dev/null | grep -q "warmpawz-dev-api-handler"; then
-            terraform import -input=false -lock=false 'module.lambda.aws_lambda_function.functions["api-handler"]' warmpawz-dev-api-handler 2>&1 | grep -E "Import successful|already managed" || echo "      ⚠️ Skipped"
+            # Import Lambda function
+            terraform import -input=false -lock=false 'module.lambda.aws_lambda_function.functions["api-handler"]' warmpawz-dev-api-handler 2>&1 | grep -E "Import successful|already managed" || echo "      ⚠️ Function import skipped"
+            
+            # Import Lambda permission (format: function_name/statement_id)
+            terraform import -input=false -lock=false 'module.api_gateway.aws_lambda_permission.api_gateway["api-handler"]' warmpawz-dev-api-handler/AllowAPIGatewayInvoke-api-handler 2>&1 | grep -E "Import successful|already managed" || echo "      ⚠️ Permission import skipped"
+            
+            # Import Lambda alias
+            terraform import -input=false -lock=false 'module.lambda.aws_lambda_alias.live["api-handler"]' warmpawz-dev-api-handler:live 2>&1 | grep -E "Import successful|already managed" || echo "      ⚠️ Alias import skipped"
           fi
           
-          # Import Route Table Associations (if VPC exists)
+          # Import Route Table Associations (FIXED: Query by subnet directly)
           if [ -n "$EXISTING_VPC_ID" ] && [ "$EXISTING_VPC_ID" != "None" ]; then
-            echo "   📦 Route Table Associations..."
+            echo "   📦 Route Table Associations (FIXED logic)..."
             
-            # Get all route table associations for this VPC
-            # Format: subnet_id:association_id
-            ASSOCIATIONS=$(aws ec2 describe-route-tables --filters "Name=vpc-id,Values=$EXISTING_VPC_ID" --region ap-south-1 --query 'RouteTables[*].Associations[?SubnetId!=`null`].[SubnetId,RouteTableAssociationId]' --output text 2>/dev/null || echo "")
-            
+            # Get associations by querying each subnet's route table
             # Import public subnet associations
             PUBLIC_SUBNETS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$EXISTING_VPC_ID" "Name=tag:Name,Values=*public*" --region ap-south-1 --query 'Subnets | sort_by(@, &AvailabilityZone)[*].SubnetId' --output text 2>/dev/null || echo "")
             IDX=0
             for SUBNET_ID in $PUBLIC_SUBNETS; do
-              RT_ASSOC_ID=$(echo "$ASSOCIATIONS" | grep "$SUBNET_ID" | awk '{print $2}' | head -1)
-              if [ -n "$RT_ASSOC_ID" ] && [ "$RT_ASSOC_ID" != "None" ]; then
-                terraform import -input=false -lock=false "module.vpc.aws_route_table_association.public[$IDX]" "$RT_ASSOC_ID" 2>&1 | grep -E "Import successful|already managed" || echo "      ⚠️ Skipped"
+              # Get association ID directly from subnet's route table
+              RT_ASSOC_ID=$(aws ec2 describe-route-tables --filters "Name=association.subnet-id,Values=$SUBNET_ID" --region ap-south-1 --query 'RouteTables[0].Associations[?SubnetId==`'$SUBNET_ID'`].RouteTableAssociationId' --output text 2>/dev/null || echo "")
+              if [ -n "$RT_ASSOC_ID" ] && [ "$RT_ASSOC_ID" != "None" ] && [ "$RT_ASSOC_ID" != "" ]; then
+                echo "      Importing public[$IDX]: $RT_ASSOC_ID"
+                terraform import -input=false -lock=false "module.vpc.aws_route_table_association.public[$IDX]" "$RT_ASSOC_ID" 2>&1 | grep -E "Import successful|already managed" || echo "      ⚠️ Failed"
+              else
+                echo "      ⚠️ No association found for public subnet $SUBNET_ID"
               fi
               IDX=$((IDX + 1))
             done
@@ -572,9 +580,12 @@ jobs:
             PRIVATE_SUBNETS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$EXISTING_VPC_ID" "Name=tag:Name,Values=*private*" --region ap-south-1 --query 'Subnets | sort_by(@, &AvailabilityZone)[*].SubnetId' --output text 2>/dev/null || echo "")
             IDX=0
             for SUBNET_ID in $PRIVATE_SUBNETS; do
-              RT_ASSOC_ID=$(echo "$ASSOCIATIONS" | grep "$SUBNET_ID" | awk '{print $2}' | head -1)
-              if [ -n "$RT_ASSOC_ID" ] && [ "$RT_ASSOC_ID" != "None" ]; then
-                terraform import -input=false -lock=false "module.vpc.aws_route_table_association.private[$IDX]" "$RT_ASSOC_ID" 2>&1 | grep -E "Import successful|already managed" || echo "      ⚠️ Skipped"
+              RT_ASSOC_ID=$(aws ec2 describe-route-tables --filters "Name=association.subnet-id,Values=$SUBNET_ID" --region ap-south-1 --query 'RouteTables[0].Associations[?SubnetId==`'$SUBNET_ID'`].RouteTableAssociationId' --output text 2>/dev/null || echo "")
+              if [ -n "$RT_ASSOC_ID" ] && [ "$RT_ASSOC_ID" != "None" ] && [ "$RT_ASSOC_ID" != "" ]; then
+                echo "      Importing private[$IDX]: $RT_ASSOC_ID"
+                terraform import -input=false -lock=false "module.vpc.aws_route_table_association.private[$IDX]" "$RT_ASSOC_ID" 2>&1 | grep -E "Import successful|already managed" || echo "      ⚠️ Failed"
+              else
+                echo "      ⚠️ No association found for private subnet $SUBNET_ID"
               fi
               IDX=$((IDX + 1))
             done
@@ -583,9 +594,12 @@ jobs:
             DATABASE_SUBNETS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$EXISTING_VPC_ID" "Name=tag:Name,Values=*database*" --region ap-south-1 --query 'Subnets | sort_by(@, &AvailabilityZone)[*].SubnetId' --output text 2>/dev/null || echo "")
             IDX=0
             for SUBNET_ID in $DATABASE_SUBNETS; do
-              RT_ASSOC_ID=$(echo "$ASSOCIATIONS" | grep "$SUBNET_ID" | awk '{print $2}' | head -1)
-              if [ -n "$RT_ASSOC_ID" ] && [ "$RT_ASSOC_ID" != "None" ]; then
-                terraform import -input=false -lock=false "module.vpc.aws_route_table_association.database[$IDX]" "$RT_ASSOC_ID" 2>&1 | grep -E "Import successful|already managed" || echo "      ⚠️ Skipped"
+              RT_ASSOC_ID=$(aws ec2 describe-route-tables --filters "Name=association.subnet-id,Values=$SUBNET_ID" --region ap-south-1 --query 'RouteTables[0].Associations[?SubnetId==`'$SUBNET_ID'`].RouteTableAssociationId' --output text 2>/dev/null || echo "")
+              if [ -n "$RT_ASSOC_ID" ] && [ "$RT_ASSOC_ID" != "None" ] && [ "$RT_ASSOC_ID" != "" ]; then
+                echo "      Importing database[$IDX]: $RT_ASSOC_ID"
+                terraform import -input=false -lock=false "module.vpc.aws_route_table_association.database[$IDX]" "$RT_ASSOC_ID" 2>&1 | grep -E "Import successful|already managed" || echo "      ⚠️ Failed"
+              else
+                echo "      ⚠️ No association found for database subnet $SUBNET_ID"
               fi
               IDX=$((IDX + 1))
             done
