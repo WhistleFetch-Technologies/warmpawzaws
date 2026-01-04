@@ -316,13 +316,13 @@ jobs:
             echo "📋 Resolution: Import cluster, Terraform will create missing instance"
             
             # Import cluster
-            terraform import 'module.rds.aws_rds_cluster.main' warmpawz-dev-cluster 2>&1 | grep -E "Import successful|already managed" || echo "   Import may have failed, continuing..."
+            terraform import -lock=false 'module.rds.aws_rds_cluster.main' warmpawz-dev-cluster 2>&1 | grep -E "Import successful|already managed" || echo "   Import may have failed, continuing..."
             
             # Import secret if exists
             SECRET_ARN=$(aws secretsmanager list-secrets --region ap-south-1 --query "SecretList[?starts_with(Name, 'warmpawz-dev-rds-master')].ARN" --output text 2>/dev/null | head -1)
             if [ -n "$SECRET_ARN" ]; then
               echo "   Importing RDS secret: $SECRET_ARN"
-              terraform import 'module.rds.aws_secretsmanager_secret.rds_master_password' "$SECRET_ARN" 2>&1 | grep -E "Import successful|already managed" || true
+              terraform import -lock=false 'module.rds.aws_secretsmanager_secret.rds_master_password' "$SECRET_ARN" 2>&1 | grep -E "Import successful|already managed" || true
             fi
             
             echo "   ✅ Cluster imported - Terraform will add missing instance"
@@ -335,7 +335,7 @@ jobs:
             echo ""
             
             # Import cluster
-            terraform import 'module.rds.aws_rds_cluster.main' warmpawz-dev-cluster 2>&1 | grep -E "Import successful|already managed" || true
+            terraform import -lock=false 'module.rds.aws_rds_cluster.main' warmpawz-dev-cluster 2>&1 | grep -E "Import successful|already managed" || true
             
             # Import each instance
             for INSTANCE in $INSTANCES; do
@@ -344,13 +344,13 @@ jobs:
               INSTANCE_IDX=$((INSTANCE_NUM - 1))
               
               echo "   Importing instance: $INSTANCE (index: $INSTANCE_IDX)"
-              terraform import "module.rds.aws_rds_cluster_instance.main[$INSTANCE_IDX]" "$INSTANCE" 2>&1 | grep -E "Import successful|already managed" || true
+              terraform import -lock=false "module.rds.aws_rds_cluster_instance.main[$INSTANCE_IDX]" "$INSTANCE" 2>&1 | grep -E "Import successful|already managed" || true
             done
             
             # Import secret
             SECRET_ARN=$(aws secretsmanager list-secrets --region ap-south-1 --query "SecretList[?starts_with(Name, 'warmpawz-dev-rds-master')].ARN" --output text 2>/dev/null | head -1)
             if [ -n "$SECRET_ARN" ]; then
-              terraform import 'module.rds.aws_secretsmanager_secret.rds_master_password' "$SECRET_ARN" 2>&1 | grep -E "Import successful|already managed" || true
+              terraform import -lock=false 'module.rds.aws_secretsmanager_secret.rds_master_password' "$SECRET_ARN" 2>&1 | grep -E "Import successful|already managed" || true
             fi
             
             echo "   ✅ Full RDS stack imported - will be preserved"
@@ -413,7 +413,7 @@ jobs:
               echo "  📋 Importing into Terraform state..."
               
               # Import the bucket
-              terraform import "module.cloudfront.aws_s3_bucket.frontend[\"$APP\"]" "$BUCKET" 2>&1 | grep -E "Import successful|already managed|Resource already managed" || echo "  Import may have failed, continuing..."
+              terraform import -lock=false "module.cloudfront.aws_s3_bucket.frontend[\"$APP\"]" "$BUCKET" 2>&1 | grep -E "Import successful|already managed|Resource already managed" || echo "  Import may have failed, continuing..."
               
               echo "  ✅ Bucket imported - will be reused"
             else
