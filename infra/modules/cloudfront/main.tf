@@ -11,6 +11,11 @@ resource "aws_s3_bucket" "frontend" {
     Environment = var.environment
     App         = each.key
   }
+
+  lifecycle {
+    # Allow importing existing buckets
+    ignore_changes = []
+  }
 }
 
 resource "aws_s3_bucket_versioning" "frontend" {

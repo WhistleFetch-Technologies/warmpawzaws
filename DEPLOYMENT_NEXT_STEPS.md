@@ -44,11 +44,18 @@ aws ec2 describe-vpcs --region ap-south-1 --query 'Vpcs[*].[VpcId,Tags[?Key==`Na
 
 ---
 
-## Step 2: Import Existing Resources (REQUIRED)
+## Step 2: Import Existing Resources (AUTOMATIC - CI/CD handles this)
 
-**Problem:** Resources exist in AWS but not in Terraform state
+**✅ GOOD NEWS:** The CI/CD workflow now automatically imports existing resources!
 
-**Solution:** Run the import script
+**What happens:**
+- The workflow runs `terraform import` for existing resources automatically
+- If resources exist → they're imported into state
+- If resources don't exist → they'll be created
+- **No manual import needed!**
+
+**Manual import (only if needed):**
+If you want to import resources manually before running CI/CD:
 
 ```bash
 cd infra/envs/dev
@@ -56,17 +63,11 @@ chmod +x import-existing-resources.sh
 ./import-existing-resources.sh
 ```
 
-**What it imports:**
+**What gets auto-imported:**
 - S3 buckets (frontend, uploads, logs, backups)
 - DynamoDB tables (sessions, cache, analytics, rate-limits)
 - CloudWatch log groups
 - Secrets Manager secrets
-
-**After import:**
-```bash
-terraform plan
-# Should show fewer resources to create
-```
 
 ---
 
