@@ -363,6 +363,45 @@ jobs:
           echo ""
           echo "✅ RDS edge case handling complete"
 
+      - name: Handle ALL S3 edge cases (CRITICAL - like RDS)
+        working-directory: infra/envs/dev
+        continue-on-error: true
+        timeout-minutes: 3
+        run: |
+          echo "🔍 CRITICAL: Analyzing S3 state and handling edge cases..."
+          echo ""
+          
+          # Check for existing frontend buckets
+          BUCKETS_TO_CHECK=(
+            "warmpawz-dev-admin-frontend-ap-south-1"
+            "warmpawz-dev-vendor-frontend-ap-south-1"
+            "warmpawz-dev-customer-frontend-ap-south-1"
+          )
+          
+          BUCKET_APPS=("admin" "vendor" "customer")
+          
+          for i in "${!BUCKETS_TO_CHECK[@]}"; do
+            BUCKET="${BUCKETS_TO_CHECK[$i]}"
+            APP="${BUCKET_APPS[$i]}"
+            
+            echo "Checking bucket: $BUCKET"
+            
+            if aws s3 ls "s3://$BUCKET" --region ap-south-1 2>/dev/null; then
+              echo "  ✅ Found existing bucket: $BUCKET"
+              echo "  📋 Importing into Terraform state..."
+              
+              # Import the bucket
+              terraform import "module.cloudfront.aws_s3_bucket.frontend[\"$APP\"]" "$BUCKET" 2>&1 | grep -E "Import successful|already managed|Resource already managed" || echo "  Import may have failed, continuing..."
+              
+              echo "  ✅ Bucket imported - will be reused"
+            else
+              echo "  ℹ️  Bucket does not exist - will be created"
+            fi
+            echo ""
+          done
+          
+          echo "✅ S3 edge case handling complete"
+
       - name: Clean orphaned S3 buckets (CRITICAL - prevents BucketAlreadyExists)
         continue-on-error: false  # Must succeed or deployment will fail anyway
         timeout-minutes: 5

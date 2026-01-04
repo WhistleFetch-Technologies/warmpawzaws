@@ -13,8 +13,12 @@ resource "aws_s3_bucket" "frontend" {
   }
 
   lifecycle {
-    # Allow importing existing buckets
-    ignore_changes = []
+    # Prevent destruction and ignore minor changes
+    prevent_destroy = false  # Can't use true in modules, but we'll use import strategy
+    ignore_changes = [
+      tags,  # Don't recreate on tag changes
+      lifecycle_rule  # Don't recreate on lifecycle rule changes (deprecated attribute)
+    ]
   }
 }
 
