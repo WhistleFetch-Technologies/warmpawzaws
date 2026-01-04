@@ -12,7 +12,7 @@ resource "aws_db_subnet_group" "main" {
   }
 
   lifecycle {
-    create_before_destroy = true
+    ignore_changes = all  # NUCLEAR OPTION: Never modify after import
   }
 }
 
@@ -44,7 +44,7 @@ resource "aws_security_group" "rds" {
   }
 
   lifecycle {
-    create_before_destroy = true
+    ignore_changes = all  # NUCLEAR OPTION: Never modify after creation
   }
 }
 
