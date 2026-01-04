@@ -316,6 +316,7 @@ module "cloudfront" {
   source = "../../modules/cloudfront"
 
   environment       = local.environment
+  aws_region        = var.aws_region
   certificate_arn   = module.acm.validated_certificate_arn
   enable_versioning = false
   price_class       = "PriceClass_200"

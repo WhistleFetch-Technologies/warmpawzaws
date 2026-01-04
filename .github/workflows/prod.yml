@@ -164,6 +164,14 @@ jobs:
         working-directory: infra/envs/prod
         run: terraform init -backend-config=backend.hcl
 
+      - name: Clean orphaned resources from state
+        working-directory: infra/envs/prod
+        continue-on-error: true
+        run: |
+          echo "🧹 Cleaning orphaned resources from Terraform state..."
+          chmod +x cleanup-state.sh
+          ./cleanup-state.sh || echo "⚠️  Cleanup completed with warnings"
+
       - name: Terraform Plan
         working-directory: infra/envs/prod
         run: |
