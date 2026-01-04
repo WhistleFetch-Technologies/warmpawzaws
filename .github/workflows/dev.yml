@@ -223,7 +223,7 @@ jobs:
         continue-on-error: true
         run: |
           echo "🔍 Checking if Terraform backend exists..."
-          if ! aws s3 ls s3://warmpawz-terraform-state-057442119249 2>/dev/null; then
+          if ! aws s3 ls s3://warmpawz-terraform-state-${{ secrets.AWS_ACCOUNT_ID }} 2>/dev/null; then
             echo "📦 Backend not found, bootstrapping..."
             terraform init
             terraform apply -auto-approve
@@ -244,7 +244,7 @@ jobs:
           # This is safe because we have concurrency control that cancels parallel runs
           LOCK_ID=$(aws dynamodb scan --table-name warmpawz-terraform-locks \
             --filter-expression "LockID = :lockid" \
-            --expression-attribute-values '{":lockid":{"S":"warmpawz-terraform-state-057442119249/dev/terraform.tfstate"}}' \
+            --expression-attribute-values '{":lockid":{"S":"warmpawz-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}/dev/terraform.tfstate"}}' \
             --query 'Items[0].Info.S' --output text 2>/dev/null || echo "")
           if [ -n "$LOCK_ID" ] && [ "$LOCK_ID" != "None" ]; then
             LOCK_UUID=$(echo "$LOCK_ID" | jq -r '.ID' 2>/dev/null || echo "")
@@ -266,10 +266,10 @@ jobs:
           terraform import 'module.cloudfront.aws_s3_bucket.frontend["admin"]' warmpawz-dev-admin-frontend-ap-south-1 2>/dev/null || true
           terraform import 'module.cloudfront.aws_s3_bucket.frontend["vendor"]' warmpawz-dev-vendor-frontend-ap-south-1 2>/dev/null || true
           terraform import 'module.cloudfront.aws_s3_bucket.frontend["customer"]' warmpawz-dev-customer-frontend-ap-south-1 2>/dev/null || true
-          terraform import 'module.s3.aws_s3_bucket.user_uploads' warmpawz-dev-user-uploads-057442119249 2>/dev/null || true
-          terraform import 'module.s3.aws_s3_bucket.static_website' warmpawz-dev-static-057442119249 2>/dev/null || true
-          terraform import 'module.s3.aws_s3_bucket.logs' warmpawz-dev-logs-057442119249 2>/dev/null || true
-          terraform import 'module.s3.aws_s3_bucket.backups' warmpawz-dev-backups-057442119249 2>/dev/null || true
+          terraform import 'module.s3.aws_s3_bucket.user_uploads' warmpawz-dev-user-uploads-${{ secrets.AWS_ACCOUNT_ID }} 2>/dev/null || true
+          terraform import 'module.s3.aws_s3_bucket.static_website' warmpawz-dev-static-${{ secrets.AWS_ACCOUNT_ID }} 2>/dev/null || true
+          terraform import 'module.s3.aws_s3_bucket.logs' warmpawz-dev-logs-${{ secrets.AWS_ACCOUNT_ID }} 2>/dev/null || true
+          terraform import 'module.s3.aws_s3_bucket.backups' warmpawz-dev-backups-${{ secrets.AWS_ACCOUNT_ID }} 2>/dev/null || true
           terraform import 'module.dynamodb.aws_dynamodb_table.sessions' warmpawz-dev-sessions 2>/dev/null || true
           terraform import 'module.dynamodb.aws_dynamodb_table.analytics_events' warmpawz-dev-analytics-events 2>/dev/null || true
           terraform import 'module.dynamodb.aws_dynamodb_table.cache' warmpawz-dev-cache 2>/dev/null || true
@@ -384,7 +384,7 @@ jobs:
           # This is safe because we have concurrency control that cancels parallel runs
           LOCK_ID=$(aws dynamodb scan --table-name warmpawz-terraform-locks \
             --filter-expression "LockID = :lockid" \
-            --expression-attribute-values '{":lockid":{"S":"warmpawz-terraform-state-057442119249/dev/terraform.tfstate"}}' \
+            --expression-attribute-values '{":lockid":{"S":"warmpawz-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}/dev/terraform.tfstate"}}' \
             --query 'Items[0].Info.S' --output text 2>/dev/null || echo "")
           if [ -n "$LOCK_ID" ] && [ "$LOCK_ID" != "None" ]; then
             LOCK_UUID=$(echo "$LOCK_ID" | jq -r '.ID' 2>/dev/null || echo "")
