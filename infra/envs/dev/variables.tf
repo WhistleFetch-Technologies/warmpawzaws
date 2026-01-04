@@ -54,3 +54,9 @@ variable "shiprocket_password" {
   type        = string
   sensitive   = true
 }
+
+variable "skip_cert_validation" {
+  description = "Skip certificate validation (certificates will be in PENDING_VALIDATION state)"
+  type        = bool
+  default     = true
+}

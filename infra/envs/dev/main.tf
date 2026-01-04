@@ -341,13 +341,14 @@ module "cloudfront" {
 
 # Route53 DNS Records
 resource "aws_route53_record" "api" {
-  zone_id = data.aws_route53_zone.main.zone_id
-  name    = local.api_subdomain
-  type    = "A"
+  count    = var.skip_cert_validation ? 0 : 1
+  zone_id  = data.aws_route53_zone.main.zone_id
+  name     = local.api_subdomain
+  type     = "A"
 
   alias {
-    name                   = aws_apigatewayv2_domain_name.api.domain_name_configuration[0].target_domain_name
-    zone_id                = aws_apigatewayv2_domain_name.api.domain_name_configuration[0].hosted_zone_id
+    name                   = aws_apigatewayv2_domain_name.api[0].domain_name_configuration[0].target_domain_name
+    zone_id                = aws_apigatewayv2_domain_name.api[0].domain_name_configuration[0].hosted_zone_id
     evaluate_target_health = false
   }
 }
@@ -389,7 +390,12 @@ resource "aws_route53_record" "customer" {
 }
 
 # API Gateway Custom Domain
+# API Gateway Domain Name
+# Only create if regional certificate is validated (not skipped)
+# If validation is skipped, certificate will be in PENDING_VALIDATION state
+# and cannot be used for API Gateway
 resource "aws_apigatewayv2_domain_name" "api" {
+  count       = var.skip_cert_validation ? 0 : 1
   domain_name = local.api_subdomain
 
   domain_name_configuration {
@@ -405,8 +411,9 @@ resource "aws_apigatewayv2_domain_name" "api" {
 }
 
 resource "aws_apigatewayv2_api_mapping" "api" {
+  count       = var.skip_cert_validation ? 0 : 1
   api_id      = module.api_gateway.api_id
-  domain_name = aws_apigatewayv2_domain_name.api.id
+  domain_name = aws_apigatewayv2_domain_name.api[0].id
   stage       = "$default"
 }
 
