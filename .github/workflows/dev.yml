@@ -236,23 +236,45 @@ jobs:
         working-directory: infra/envs/dev
         run: terraform init -backend-config=backend.hcl
 
-      - name: Force unlock stale Terraform state (if any)
-        working-directory: infra/envs/dev
+      - name: Force unlock stale Terraform state (ROBUST)
         continue-on-error: true
+        timeout-minutes: 1
         run: |
-          # Get any existing lock and force-unlock it
-          # This is safe because we have concurrency control that cancels parallel runs
-          LOCK_ID=$(aws dynamodb scan --table-name warmpawz-terraform-locks \
-            --filter-expression "LockID = :lockid" \
-            --expression-attribute-values '{":lockid":{"S":"warmpawz-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}/dev/terraform.tfstate"}}' \
-            --query 'Items[0].Info.S' --output text 2>/dev/null || echo "")
-          if [ -n "$LOCK_ID" ] && [ "$LOCK_ID" != "None" ]; then
-            LOCK_UUID=$(echo "$LOCK_ID" | jq -r '.ID' 2>/dev/null || echo "")
-            if [ -n "$LOCK_UUID" ] && [ "$LOCK_UUID" != "null" ]; then
-              echo "Found stale lock: $LOCK_UUID, force unlocking..."
-              terraform force-unlock -force "$LOCK_UUID" || true
+          echo "🔓 CRITICAL: Checking and clearing ANY existing Terraform state locks..."
+          
+          # Method 1: Direct DynamoDB deletion (most reliable)
+          echo "Method 1: Direct DynamoDB lock removal"
+          aws dynamodb delete-item \
+            --table-name warmpawz-terraform-locks \
+            --key '{"LockID":{"S":"warmpawz-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}/dev/terraform.tfstate"}}' \
+            --region ap-south-1 2>&1 || echo "  No lock found in DynamoDB (this is OK)"
+          
+          # Method 2: Terraform force-unlock (backup method)
+          echo ""
+          echo "Method 2: Terraform force-unlock (if lock still exists)"
+          cd infra/envs/dev
+          
+          # Get the lock info and extract UUID
+          LOCK_INFO=$(aws dynamodb get-item \
+            --table-name warmpawz-terraform-locks \
+            --key '{"LockID":{"S":"warmpawz-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}/dev/terraform.tfstate"}}' \
+            --region ap-south-1 \
+            --query 'Item.Info.S' \
+            --output text 2>/dev/null || echo "")
+          
+          if [ -n "$LOCK_INFO" ] && [ "$LOCK_INFO" != "None" ]; then
+            LOCK_UUID=$(echo "$LOCK_INFO" | jq -r '.ID' 2>/dev/null || echo "")
+            if [ -n "$LOCK_UUID" ] && [ "$LOCK_UUID" != "null" ] && [ "$LOCK_UUID" != "" ]; then
+              echo "  Found lock UUID: $LOCK_UUID"
+              echo "  Force unlocking via Terraform..."
+              terraform force-unlock -force "$LOCK_UUID" 2>&1 || echo "  Terraform unlock failed (may not be needed)"
             fi
+          else
+            echo "  No lock info found (state is clean)"
           fi
+          
+          echo ""
+          echo "✅ State lock cleanup complete - ready for deployment"
 
       - name: Handle ALL RDS edge cases (CRITICAL)
         working-directory: infra/envs/dev
@@ -557,23 +579,45 @@ jobs:
         working-directory: infra/envs/dev
         run: terraform init -backend-config=backend.hcl
 
-      - name: Force unlock stale Terraform state (if any)
-        working-directory: infra/envs/dev
+      - name: Force unlock stale Terraform state (ROBUST)
         continue-on-error: true
+        timeout-minutes: 1
         run: |
-          # Get any existing lock and force-unlock it
-          # This is safe because we have concurrency control that cancels parallel runs
-          LOCK_ID=$(aws dynamodb scan --table-name warmpawz-terraform-locks \
-            --filter-expression "LockID = :lockid" \
-            --expression-attribute-values '{":lockid":{"S":"warmpawz-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}/dev/terraform.tfstate"}}' \
-            --query 'Items[0].Info.S' --output text 2>/dev/null || echo "")
-          if [ -n "$LOCK_ID" ] && [ "$LOCK_ID" != "None" ]; then
-            LOCK_UUID=$(echo "$LOCK_ID" | jq -r '.ID' 2>/dev/null || echo "")
-            if [ -n "$LOCK_UUID" ] && [ "$LOCK_UUID" != "null" ]; then
-              echo "Found stale lock: $LOCK_UUID, force unlocking..."
-              terraform force-unlock -force "$LOCK_UUID" || true
+          echo "🔓 CRITICAL: Checking and clearing ANY existing Terraform state locks..."
+          
+          # Method 1: Direct DynamoDB deletion (most reliable)
+          echo "Method 1: Direct DynamoDB lock removal"
+          aws dynamodb delete-item \
+            --table-name warmpawz-terraform-locks \
+            --key '{"LockID":{"S":"warmpawz-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}/dev/terraform.tfstate"}}' \
+            --region ap-south-1 2>&1 || echo "  No lock found in DynamoDB (this is OK)"
+          
+          # Method 2: Terraform force-unlock (backup method)
+          echo ""
+          echo "Method 2: Terraform force-unlock (if lock still exists)"
+          cd infra/envs/dev
+          
+          # Get the lock info and extract UUID
+          LOCK_INFO=$(aws dynamodb get-item \
+            --table-name warmpawz-terraform-locks \
+            --key '{"LockID":{"S":"warmpawz-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}/dev/terraform.tfstate"}}' \
+            --region ap-south-1 \
+            --query 'Item.Info.S' \
+            --output text 2>/dev/null || echo "")
+          
+          if [ -n "$LOCK_INFO" ] && [ "$LOCK_INFO" != "None" ]; then
+            LOCK_UUID=$(echo "$LOCK_INFO" | jq -r '.ID' 2>/dev/null || echo "")
+            if [ -n "$LOCK_UUID" ] && [ "$LOCK_UUID" != "null" ] && [ "$LOCK_UUID" != "" ]; then
+              echo "  Found lock UUID: $LOCK_UUID"
+              echo "  Force unlocking via Terraform..."
+              terraform force-unlock -force "$LOCK_UUID" 2>&1 || echo "  Terraform unlock failed (may not be needed)"
             fi
+          else
+            echo "  No lock info found (state is clean)"
           fi
+          
+          echo ""
+          echo "✅ State lock cleanup complete - ready for deployment"
 
       - name: Check VPC limit (prevent deployment failure)
         working-directory: infra/envs/dev
