@@ -232,37 +232,43 @@ jobs:
             echo "✅ Backend already exists, skipping bootstrap"
           fi
 
-      - name: Clear state corruption (if any)
+      - name: Clear DynamoDB state entries (PREVENTS CORRUPTION)
         continue-on-error: true
         timeout-minutes: 1
         run: |
-          echo "🧹 Checking for state corruption between S3 and DynamoDB..."
-
-          # Check if state file exists in S3
-          if aws s3 ls "s3://warmpawz-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}/dev/terraform.tfstate" --region ap-south-1 2>/dev/null; then
-            echo "📄 State file exists in S3"
-            echo "🔄 Testing terraform init for corruption..."
-
-            # Try init and check for corruption error
-            if terraform init -backend-config=backend.hcl -input=false 2>&1 | grep -q "does not have the expected content"; then
-              echo "🚨 STATE CORRUPTION DETECTED!"
-              echo "🧹 Clearing corrupted state..."
-
-              # Clear S3 state
-              aws s3 rm "s3://warmpawz-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}/dev/terraform.tfstate" --region ap-south-1 2>&1 || echo "  S3 clear failed"
-
-              # Clear DynamoDB lock
-              aws dynamodb delete-item \
-                --table-name warmpawz-terraform-locks \
-                --key '{"LockID":{"S":"warmpawz-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}/dev/terraform.tfstate"}}' \
-                --region ap-south-1 2>&1 || echo "  DynamoDB clear failed"
-
-              echo "✅ State corruption cleared - will recreate from scratch"
-            else
-              echo "✅ State is healthy"
-            fi
+          echo "🧹 CRITICAL: Clearing ALL DynamoDB state entries to prevent corruption..."
+          echo ""
+          
+          # IMPORTANT: DynamoDB stores TWO types of entries:
+          # 1. Lock entry: path/terraform.tfstate
+          # 2. Checksum entry: path/terraform.tfstate-md5
+          # 
+          # The checksum entry (-md5) causes "does not have the expected content" error
+          # We MUST delete BOTH before terraform init
+          
+          STATE_PATH="warmpawz-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}/dev/terraform.tfstate"
+          
+          echo "1. Deleting lock entry: ${STATE_PATH}"
+          aws dynamodb delete-item \
+            --table-name warmpawz-terraform-locks \
+            --key "{\"LockID\":{\"S\":\"${STATE_PATH}\"}}" \
+            --region ap-south-1 2>&1 || echo "   No lock entry found (OK)"
+          
+          echo "2. Deleting checksum entry: ${STATE_PATH}-md5"
+          aws dynamodb delete-item \
+            --table-name warmpawz-terraform-locks \
+            --key "{\"LockID\":{\"S\":\"${STATE_PATH}-md5\"}}" \
+            --region ap-south-1 2>&1 || echo "   No checksum entry found (OK)"
+          
+          echo ""
+          echo "3. Verifying DynamoDB is clean..."
+          REMAINING=$(aws dynamodb scan --table-name warmpawz-terraform-locks --region ap-south-1 --query 'Count' --output text 2>/dev/null || echo "0")
+          echo "   Remaining entries: ${REMAINING}"
+          
+          if [ "$REMAINING" = "0" ]; then
+            echo "✅ DynamoDB is clean - no corruption possible"
           else
-            echo "📄 No state file in S3 (clean slate)"
+            echo "⚠️  Some entries remain (may be from other environments)"
           fi
 
       - name: Terraform Init
