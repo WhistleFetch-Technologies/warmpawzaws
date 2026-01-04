@@ -166,15 +166,6 @@ resource "aws_rds_cluster" "main" {
   deletion_protection       = true  # Always on - protect production data
   skip_final_snapshot       = var.skip_final_snapshot
   final_snapshot_identifier = var.skip_final_snapshot ? null : "warmpawz-${var.environment}-final-snapshot-${formatdate("YYYY-MM-DD-hhmm", timestamp())}"
-  
-  # Lifecycle - NEVER destroy existing cluster
-  lifecycle {
-    prevent_destroy = false  # Must be false for Terraform to work, but deletion_protection prevents actual deletion
-    ignore_changes  = [
-      master_password,  # Don't update password on every apply
-      snapshot_identifier  # Don't recreate from snapshot on changes
-    ]
-  }
 
   # Apply changes immediately in non-prod
   apply_immediately = var.environment != "prod"
@@ -184,10 +175,13 @@ resource "aws_rds_cluster" "main" {
     Environment = var.environment
   }
 
+  # Lifecycle - NEVER destroy existing cluster
   lifecycle {
-    ignore_changes = [
-      final_snapshot_identifier,
-      master_password
+    prevent_destroy = false  # Must be false for Terraform to work, but deletion_protection prevents actual deletion
+    ignore_changes  = [
+      master_password,          # Don't update password on every apply
+      snapshot_identifier,      # Don't recreate from snapshot on changes
+      final_snapshot_identifier # Don't recreate due to timestamp changes
     ]
   }
 }
