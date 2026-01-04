@@ -265,6 +265,10 @@ resource "aws_lambda_alias" "live" {
   description      = "Live alias for ${each.key}"
   function_name    = aws_lambda_function.functions[each.key].function_name
   function_version = aws_lambda_function.functions[each.key].version
+
+  lifecycle {
+    ignore_changes = all  # NUCLEAR OPTION: Never modify after import
+  }
 }
 
 # CloudWatch Alarms for Lambda

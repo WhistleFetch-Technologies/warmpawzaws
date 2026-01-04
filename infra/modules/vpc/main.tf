@@ -169,6 +169,10 @@ resource "aws_route_table" "public" {
     Name        = "warmpawz-${var.environment}-public-rt"
     Environment = var.environment
   }
+
+  lifecycle {
+    ignore_changes = all  # NUCLEAR OPTION: Never modify after import
+  }
 }
 
 data "aws_internet_gateway" "existing" {
@@ -198,6 +202,10 @@ resource "aws_route_table" "private" {
     Name        = "warmpawz-${var.environment}-private-rt-${count.index + 1}"
     Environment = var.environment
   }
+
+  lifecycle {
+    ignore_changes = all  # NUCLEAR OPTION: Never modify after import
+  }
 }
 
 # Route Table - Database
@@ -208,6 +216,10 @@ resource "aws_route_table" "database" {
     Name        = "warmpawz-${var.environment}-database-rt"
     Environment = var.environment
   }
+
+  lifecycle {
+    ignore_changes = all  # NUCLEAR OPTION: Never modify after import
+  }
 }
 
 # Route Table Associations - Public
@@ -216,6 +228,10 @@ resource "aws_route_table_association" "public" {
 
   subnet_id      = aws_subnet.public[count.index].id
   route_table_id = aws_route_table.public.id
+
+  lifecycle {
+    ignore_changes = all  # NUCLEAR OPTION: Never modify after import
+  }
 }
 
 # Route Table Associations - Private
@@ -224,6 +240,10 @@ resource "aws_route_table_association" "private" {
 
   subnet_id      = aws_subnet.private[count.index].id
   route_table_id = var.single_nat_gateway ? aws_route_table.private[0].id : aws_route_table.private[count.index].id
+
+  lifecycle {
+    ignore_changes = all  # NUCLEAR OPTION: Never modify after import
+  }
 }
 
 # Route Table Associations - Database
@@ -232,6 +252,10 @@ resource "aws_route_table_association" "database" {
 
   subnet_id      = aws_subnet.database[count.index].id
   route_table_id = aws_route_table.database.id
+
+  lifecycle {
+    ignore_changes = all  # NUCLEAR OPTION: Never modify after import
+  }
 }
 
 # VPC Endpoints for AWS Services (reduce costs & improve security)
