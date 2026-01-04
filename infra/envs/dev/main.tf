@@ -118,7 +118,7 @@ module "rds" {
   master_username         = "warmpawz_admin"
   min_capacity            = 0.5
   max_capacity            = 1.0
-  backup_retention_period = 3
+  backup_retention_period = 1  # Free tier allows max 1 day
   availability_zones      = slice(module.vpc.availability_zones, 0, 2)
   deletion_protection     = false
   skip_final_snapshot     = true
