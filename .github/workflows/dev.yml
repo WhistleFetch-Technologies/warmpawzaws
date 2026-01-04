@@ -169,14 +169,21 @@ jobs:
         working-directory: apps/${{ matrix.app }}/android
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon
+          ./gradlew assembleDevRelease --no-daemon
+          
+      - name: List build outputs (debug)
+        working-directory: apps/${{ matrix.app }}/android
+        run: |
+          echo "Build outputs:"
+          find app/build/outputs/apk -name "*.apk" -type f
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: android-${{ matrix.app }}
-          path: apps/${{ matrix.app }}/android/app/build/outputs/apk/release/*.apk
+          path: apps/${{ matrix.app }}/android/app/build/outputs/apk/dev/release/*.apk
           retention-days: 7
+          if-no-files-found: error
 
   # ============================================
   # TERRAFORM PLAN
@@ -323,9 +330,37 @@ jobs:
             fi
           fi
 
+      - name: Check for region migration
+        working-directory: infra/envs/dev
+        id: region-check
+        run: |
+          # Check if we're migrating regions (us-east-1 -> ap-south-1)
+          CURRENT_REGION=$(terraform show -json 2>/dev/null | jq -r '.values.root_module.resources[0].values.region // "none"' || echo "none")
+          TARGET_REGION="ap-south-1"
+          
+          if [ "$CURRENT_REGION" != "none" ] && [ "$CURRENT_REGION" != "$TARGET_REGION" ]; then
+            echo "⚠️  REGION MIGRATION DETECTED: $CURRENT_REGION -> $TARGET_REGION"
+            echo "This will RECREATE all resources in the new region."
+            echo "region_migration=true" >> $GITHUB_OUTPUT
+            
+            # Refresh state to detect orphaned resources
+            terraform refresh -var-file=terraform.tfvars || true
+          else
+            echo "✅ No region migration needed (current: $CURRENT_REGION, target: $TARGET_REGION)"
+            echo "region_migration=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Terraform Apply
         working-directory: infra/envs/dev
-        run: terraform apply -auto-approve tfplan
+        run: |
+          # Apply with detailed logging
+          terraform apply -auto-approve tfplan
+          
+          echo "✅ Terraform apply completed successfully"
+          
+          # If there were warnings about missing resources, they've been automatically removed from state
+          echo "📋 Final resource count:"
+          terraform state list | wc -l
 
       - name: Export outputs
         id: tf-outputs
