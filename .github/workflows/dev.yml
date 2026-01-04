@@ -254,48 +254,66 @@ jobs:
             fi
           fi
 
-      - name: Check for existing resources (cleanup orphans)
-        working-directory: infra/envs/dev
-        continue-on-error: true
-        timeout-minutes: 3
+      - name: Clean orphaned S3 buckets (CRITICAL - prevents BucketAlreadyExists)
+        continue-on-error: false  # Must succeed or deployment will fail anyway
+        timeout-minutes: 5
         run: |
-          echo "🔍 Comprehensive orphan cleanup from previous failed deployments..."
+          echo "🗑️ CRITICAL: Cleaning ALL orphaned S3 buckets from previous runs..."
           
-          # Function to safely delete S3 bucket
-          delete_bucket() {
+          # Function to forcefully delete S3 bucket
+          force_delete_bucket() {
             local bucket=$1
-            if aws s3 ls "s3://$bucket" 2>/dev/null; then
-              echo "  Found orphaned bucket: $bucket"
-              # Remove bucket policy first (might block deletion)
-              aws s3api delete-bucket-policy --bucket "$bucket" 2>/dev/null || true
-              # Remove public access block (might interfere)
-              aws s3api delete-public-access-block --bucket "$bucket" 2>/dev/null || true
-              # Empty and delete
-              aws s3 rm "s3://$bucket" --recursive 2>/dev/null || true
+            echo "  Checking bucket: $bucket"
+            
+            if ! aws s3 ls "s3://$bucket" 2>/dev/null; then
+              echo "    ✓ Does not exist"
+              return 0
+            fi
+            
+            echo "    Found - Deleting..."
+            
+            # Step 1: Remove all bucket policies
+            aws s3api delete-bucket-policy --bucket "$bucket" 2>/dev/null || true
+            
+            # Step 2: Remove public access block
+            aws s3api delete-public-access-block --bucket "$bucket" 2>/dev/null || true
+            
+            # Step 3: Remove bucket ownership controls
+            aws s3api delete-bucket-ownership-controls --bucket "$bucket" 2>/dev/null || true
+            
+            # Step 4: Disable versioning
+            aws s3api put-bucket-versioning --bucket "$bucket" --versioning-configuration Status=Suspended 2>/dev/null || true
+            
+            # Step 5: Delete all object versions
+            aws s3api list-object-versions --bucket "$bucket" --output json 2>/dev/null | \
+              jq -r '.Versions[]?, .DeleteMarkers[]? | "\(.Key) \(.VersionId)"' 2>/dev/null | \
+              while read key version; do
+                [ -n "$key" ] && aws s3api delete-object --bucket "$bucket" --key "$key" --version-id "$version" 2>/dev/null || true
+              done
+            
+            # Step 6: Delete all objects (non-versioned)
+            aws s3 rm "s3://$bucket" --recursive 2>/dev/null || true
+            
+            # Step 7: Delete bucket
+            aws s3api delete-bucket --bucket "$bucket" 2>/dev/null || \
               aws s3 rb "s3://$bucket" --force 2>/dev/null || true
-              echo "  ✅ Deleted: $bucket"
+            
+            # Step 8: Verify deletion
+            if aws s3 ls "s3://$bucket" 2>/dev/null; then
+              echo "    ❌ FAILED to delete $bucket"
+              return 1
+            else
+              echo "    ✅ Successfully deleted $bucket"
+              return 0
             fi
           }
           
-          # Clean up frontend S3 buckets
-          delete_bucket "warmpawz-dev-admin-frontend-ap-south-1"
-          delete_bucket "warmpawz-dev-vendor-frontend-ap-south-1"
-          delete_bucket "warmpawz-dev-customer-frontend-ap-south-1"
+          # Delete all three frontend buckets
+          force_delete_bucket "warmpawz-dev-admin-frontend-ap-south-1"
+          force_delete_bucket "warmpawz-dev-vendor-frontend-ap-south-1"
+          force_delete_bucket "warmpawz-dev-customer-frontend-ap-south-1"
           
-          # Clean up CloudFront OACs (can cause conflicts)
-          echo "Checking for orphaned CloudFront OACs..."
-          aws cloudfront list-origin-access-controls --query "OriginAccessControlList.Items[?starts_with(Name, 'warmpawz-dev')].{Name:Name,Id:Id}" --output text 2>/dev/null | while read name id; do
-            if [ -n "$id" ]; then
-              echo "  Found OAC: $name ($id)"
-              ETAG=$(aws cloudfront get-origin-access-control-config --id "$id" --query "ETag" --output text 2>/dev/null || true)
-              if [ -n "$ETAG" ]; then
-                aws cloudfront delete-origin-access-control --id "$id" --if-match "$ETAG" 2>/dev/null || true
-                echo "  ✅ Deleted OAC: $name"
-              fi
-            fi
-          done
-          
-          echo "✅ Orphan cleanup completed"
+          echo "✅ All orphaned buckets cleaned"
 
       - name: Terraform Plan
         id: plan
