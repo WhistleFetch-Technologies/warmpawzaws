@@ -182,6 +182,38 @@ resource "aws_subnet" "database" {
   }
 }
 
+# Data source for existing Internet Gateway (when use_existing_vpc = true)
+data "aws_internet_gateway" "existing" {
+  count = var.use_existing_vpc ? 1 : 0
+
+  filter {
+    name   = "attachment.vpc-id"
+    values = [local.vpc_id]
+  }
+}
+
+# Data source for existing NAT Gateway (when use_existing_vpc = true)
+data "aws_nat_gateways" "existing" {
+  count = var.use_existing_vpc ? 1 : 0
+
+  filter {
+    name   = "vpc-id"
+    values = [local.vpc_id]
+  }
+
+  filter {
+    name   = "state"
+    values = ["available"]
+  }
+}
+
+# Get details of first existing NAT Gateway
+data "aws_nat_gateway" "existing" {
+  count = var.use_existing_vpc && length(data.aws_nat_gateways.existing) > 0 ? 1 : 0
+
+  id = length(data.aws_nat_gateways.existing[0].ids) > 0 ? data.aws_nat_gateways.existing[0].ids[0] : null
+}
+
 # Internet Gateway
 resource "aws_internet_gateway" "main" {
   count = var.use_existing_vpc ? 0 : 1
@@ -256,26 +288,23 @@ resource "aws_route_table" "public" {
   }
 }
 
-data "aws_internet_gateway" "existing" {
-  count = var.use_existing_vpc ? 1 : 0
-
-  filter {
-    name   = "attachment.vpc-id"
-    values = [local.vpc_id]
-  }
-}
-
 # Route Table - Private
 resource "aws_route_table" "private" {
   count = var.enable_nat_gateway ? (var.single_nat_gateway ? 1 : length(var.private_subnet_cidrs)) : 1
 
   vpc_id = local.vpc_id
 
+  # Route to NAT Gateway for internet access
+  # CRITICAL: Use existing NAT Gateway data source when use_existing_vpc = true
   dynamic "route" {
     for_each = var.enable_nat_gateway ? [1] : []
     content {
       cidr_block     = "0.0.0.0/0"
-      nat_gateway_id = var.single_nat_gateway ? aws_nat_gateway.main[0].id : aws_nat_gateway.main[count.index].id
+      nat_gateway_id = var.use_existing_vpc ? (
+        length(data.aws_nat_gateway.existing) > 0 ? data.aws_nat_gateway.existing[0].id : null
+      ) : (
+        var.single_nat_gateway ? aws_nat_gateway.main[0].id : aws_nat_gateway.main[count.index].id
+      )
     }
   }
 
