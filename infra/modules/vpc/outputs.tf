@@ -10,17 +10,22 @@ output "vpc_cidr" {
 
 output "public_subnet_ids" {
   description = "Public subnet IDs"
-  value       = aws_subnet.public[*].id
+  # Uses locals which handle existing VPC vs new VPC automatically
+  value = local.public_subnet_ids
 }
 
 output "private_subnet_ids" {
-  description = "Private subnet IDs"
-  value       = aws_subnet.private[*].id
+  description = "Private subnet IDs (for Lambda routing)"
+  # CRITICAL: Lambda requires at least 2 subnets in different AZs for high availability
+  # Uses locals which handle existing VPC vs new VPC automatically
+  # Falls back to data source if imports fail, ensuring Lambda always has subnet IDs
+  value = local.private_subnet_ids
 }
 
 output "database_subnet_ids" {
   description = "Database subnet IDs"
-  value       = aws_subnet.database[*].id
+  # Uses locals which handle existing VPC vs new VPC automatically
+  value = local.database_subnet_ids
 }
 
 output "nat_gateway_ids" {
