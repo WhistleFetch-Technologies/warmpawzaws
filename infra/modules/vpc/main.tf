@@ -120,8 +120,9 @@ resource "aws_internet_gateway" "main" {
 }
 
 # Elastic IP for NAT Gateway
+# CRITICAL: Don't create if using existing VPC (resources already exist)
 resource "aws_eip" "nat" {
-  count = var.enable_nat_gateway ? (var.single_nat_gateway ? 1 : length(var.public_subnet_cidrs)) : 0
+  count = var.use_existing_vpc ? 0 : (var.enable_nat_gateway ? (var.single_nat_gateway ? 1 : length(var.public_subnet_cidrs)) : 0)
 
   domain = "vpc"
 
@@ -138,8 +139,9 @@ resource "aws_eip" "nat" {
 }
 
 # NAT Gateway (for private subnet internet access)
+# CRITICAL: Don't create if using existing VPC (resources already exist)
 resource "aws_nat_gateway" "main" {
-  count = var.enable_nat_gateway ? (var.single_nat_gateway ? 1 : length(var.public_subnet_cidrs)) : 0
+  count = var.use_existing_vpc ? 0 : (var.enable_nat_gateway ? (var.single_nat_gateway ? 1 : length(var.public_subnet_cidrs)) : 0)
 
   allocation_id = aws_eip.nat[count.index].id
   subnet_id     = aws_subnet.public[count.index].id
