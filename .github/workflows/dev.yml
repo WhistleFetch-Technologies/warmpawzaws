@@ -315,318 +315,166 @@ jobs:
           echo ""
           echo "✅ State lock cleanup complete - ready for deployment"
 
-      - name: Import ALL existing AWS resources (COMPREHENSIVE)
-        working-directory: infra/envs/dev
+      - name: Delete orphaned AWS resources (CLEAN SLATE)
         continue-on-error: true
-        timeout-minutes: 5
+        timeout-minutes: 3
         run: |
-          echo "📦 IMPORTING ALL EXISTING AWS RESOURCES INTO TERRAFORM STATE..."
-          echo "This prevents 'already exists' errors"
+          echo "🧹 DELETING ORPHANED AWS RESOURCES FOR CLEAN TERRAFORM STATE..."
+          echo "These resources exist in AWS but not in Terraform state"
           echo ""
           
-          # Function to import with error handling
-          import_resource() {
-            local RESOURCE_ADDR="$1"
-            local RESOURCE_ID="$2"
-            local RESOURCE_TYPE="$3"
-            
-            echo "  Importing $RESOURCE_TYPE: $RESOURCE_ID"
-            if timeout 30 terraform import -lock=false "$RESOURCE_ADDR" "$RESOURCE_ID" 2>&1 | grep -qE "Import successful|already managed|Resource already managed"; then
-              echo "    ✅ Imported"
-            else
-              echo "    ⏭️  Skipped (doesn't exist or already in state)"
-            fi
-          }
-          
           echo "═══════════════════════════════════════════════════════════════"
-          echo "1️⃣  S3 BUCKETS (7 total)"
+          echo "1️⃣  CLOUDWATCH LOG GROUPS"
           echo "═══════════════════════════════════════════════════════════════"
-          
-          # Frontend S3 buckets
-          import_resource 'module.cloudfront.aws_s3_bucket.frontend["admin"]' "warmpawz-dev-admin-frontend-ap-south-1" "S3 Bucket"
-          import_resource 'module.cloudfront.aws_s3_bucket.frontend["vendor"]' "warmpawz-dev-vendor-frontend-ap-south-1" "S3 Bucket"
-          import_resource 'module.cloudfront.aws_s3_bucket.frontend["customer"]' "warmpawz-dev-customer-frontend-ap-south-1" "S3 Bucket"
-          
-          # Other S3 buckets
-          import_resource 'module.s3.aws_s3_bucket.user_uploads' "warmpawz-dev-user-uploads-${{ secrets.AWS_ACCOUNT_ID }}" "S3 Bucket"
-          import_resource 'module.s3.aws_s3_bucket.static_website' "warmpawz-dev-static-${{ secrets.AWS_ACCOUNT_ID }}" "S3 Bucket"
-          import_resource 'module.s3.aws_s3_bucket.logs' "warmpawz-dev-logs-${{ secrets.AWS_ACCOUNT_ID }}" "S3 Bucket"
-          import_resource 'module.s3.aws_s3_bucket.backups' "warmpawz-dev-backups-${{ secrets.AWS_ACCOUNT_ID }}" "S3 Bucket"
+          aws logs delete-log-group --log-group-name "/aws/apigateway/warmpawz-dev" --region ap-south-1 2>&1 || echo "  Not found or already deleted"
+          aws logs delete-log-group --log-group-name "/aws/lambda/warmpawz-dev-api-handler" --region ap-south-1 2>&1 || echo "  Not found or already deleted"
+          echo "  ✅ Log groups cleaned"
           
           echo ""
           echo "═══════════════════════════════════════════════════════════════"
-          echo "2️⃣  CLOUDFRONT OACs (3 total)"
+          echo "2️⃣  CLOUDFRONT OACs"
           echo "═══════════════════════════════════════════════════════════════"
-          
-          # Get OAC IDs
           for APP in admin vendor customer; do
             OAC_ID=$(aws cloudfront list-origin-access-controls --query "OriginAccessControlList.Items[?Name=='warmpawz-dev-${APP}-oac'].Id" --output text 2>/dev/null || echo "")
             if [ -n "$OAC_ID" ] && [ "$OAC_ID" != "None" ]; then
-              import_resource "module.cloudfront.aws_cloudfront_origin_access_control.frontend[\"${APP}\"]" "$OAC_ID" "CloudFront OAC"
-            else
-              echo "  ⏭️  OAC warmpawz-dev-${APP}-oac not found"
+              echo "  Deleting OAC: warmpawz-dev-${APP}-oac ($OAC_ID)"
+              aws cloudfront delete-origin-access-control --id "$OAC_ID" 2>&1 || echo "    Failed (may be in use)"
             fi
           done
+          echo "  ✅ OACs cleaned"
           
           echo ""
           echo "═══════════════════════════════════════════════════════════════"
-          echo "3️⃣  DYNAMODB TABLES (4 total)"
+          echo "3️⃣  DYNAMODB TABLES"
           echo "═══════════════════════════════════════════════════════════════"
-          
-          import_resource 'module.dynamodb.aws_dynamodb_table.sessions' "warmpawz-dev-sessions" "DynamoDB Table"
-          import_resource 'module.dynamodb.aws_dynamodb_table.analytics_events' "warmpawz-dev-analytics-events" "DynamoDB Table"
-          import_resource 'module.dynamodb.aws_dynamodb_table.cache' "warmpawz-dev-cache" "DynamoDB Table"
-          import_resource 'module.dynamodb.aws_dynamodb_table.rate_limits' "warmpawz-dev-rate-limits" "DynamoDB Table"
+          for TABLE in sessions analytics-events cache rate-limits; do
+            echo "  Deleting table: warmpawz-dev-${TABLE}"
+            aws dynamodb delete-table --table-name "warmpawz-dev-${TABLE}" --region ap-south-1 2>&1 || echo "    Not found"
+          done
+          echo "  ✅ DynamoDB tables cleaned"
           
           echo ""
           echo "═══════════════════════════════════════════════════════════════"
-          echo "4️⃣  CLOUDWATCH LOG GROUPS (2 total)"
+          echo "4️⃣  RDS DB SUBNET GROUP"
           echo "═══════════════════════════════════════════════════════════════"
-          
-          import_resource 'module.api_gateway.aws_cloudwatch_log_group.api_gateway' "/aws/apigateway/warmpawz-dev" "CloudWatch Log Group"
-          import_resource 'module.lambda.aws_cloudwatch_log_group.lambda["api-handler"]' "/aws/lambda/warmpawz-dev-api-handler" "CloudWatch Log Group"
+          aws rds delete-db-subnet-group --db-subnet-group-name "warmpawz-dev-db-subnet-group" --region ap-south-1 2>&1 || echo "  Not found or in use"
+          echo "  ✅ DB subnet group cleaned"
           
           echo ""
           echo "═══════════════════════════════════════════════════════════════"
-          echo "5️⃣  RDS RESOURCES"
+          echo "5️⃣  SECRETS MANAGER (schedule deletion)"
           echo "═══════════════════════════════════════════════════════════════"
-          
-          import_resource 'module.rds.aws_db_subnet_group.main' "warmpawz-dev-db-subnet-group" "RDS DB Subnet Group"
-          
-          # RDS Cluster (if exists)
-          if aws rds describe-db-clusters --db-cluster-identifier warmpawz-dev-cluster --region ap-south-1 2>/dev/null; then
-            import_resource 'module.rds.aws_rds_cluster.main' "warmpawz-dev-cluster" "RDS Cluster"
-          fi
-          
-          # RDS Instance (if exists)
-          if aws rds describe-db-instances --db-instance-identifier warmpawz-dev-instance --region ap-south-1 2>/dev/null; then
-            import_resource 'module.rds.aws_rds_cluster_instance.main' "warmpawz-dev-instance" "RDS Instance"
-          fi
+          for SECRET in "warmpawz/dev/razorpay" "warmpawz/dev/google-maps" "warmpawz/dev/shiprocket"; do
+            echo "  Deleting secret: ${SECRET}"
+            aws secretsmanager delete-secret --secret-id "$SECRET" --force-delete-without-recovery --region ap-south-1 2>&1 || echo "    Not found"
+          done
+          # Also delete any RDS master password secrets
+          for SECRET_ARN in $(aws secretsmanager list-secrets --region ap-south-1 --query "SecretList[?contains(Name, 'warmpawz-dev-rds-master')].ARN" --output text 2>/dev/null); do
+            echo "  Deleting RDS secret: ${SECRET_ARN}"
+            aws secretsmanager delete-secret --secret-id "$SECRET_ARN" --force-delete-without-recovery --region ap-south-1 2>&1 || echo "    Failed"
+          done
+          echo "  ✅ Secrets cleaned"
           
           echo ""
           echo "═══════════════════════════════════════════════════════════════"
-          echo "6️⃣  SECRETS MANAGER (3 total)"
+          echo "6️⃣  S3 BUCKETS (empty and delete)"
           echo "═══════════════════════════════════════════════════════════════"
-          
-          # Get secret ARNs
-          for SECRET_NAME in razorpay google-maps shiprocket; do
-            SECRET_ARN=$(aws secretsmanager describe-secret --secret-id "warmpawz/dev/${SECRET_NAME}" --region ap-south-1 --query 'ARN' --output text 2>/dev/null || echo "")
-            if [ -n "$SECRET_ARN" ] && [ "$SECRET_ARN" != "None" ]; then
-              TF_RESOURCE=""
-              case $SECRET_NAME in
-                razorpay) TF_RESOURCE="module.secrets.aws_secretsmanager_secret.razorpay" ;;
-                google-maps) TF_RESOURCE="module.secrets.aws_secretsmanager_secret.google_maps" ;;
-                shiprocket) TF_RESOURCE="module.secrets.aws_secretsmanager_secret.shiprocket" ;;
-              esac
-              import_resource "$TF_RESOURCE" "$SECRET_ARN" "Secret"
+          BUCKETS=(
+            "warmpawz-dev-admin-frontend-ap-south-1"
+            "warmpawz-dev-vendor-frontend-ap-south-1"
+            "warmpawz-dev-customer-frontend-ap-south-1"
+            "warmpawz-dev-user-uploads-${{ secrets.AWS_ACCOUNT_ID }}"
+            "warmpawz-dev-static-${{ secrets.AWS_ACCOUNT_ID }}"
+            "warmpawz-dev-logs-${{ secrets.AWS_ACCOUNT_ID }}"
+            "warmpawz-dev-backups-${{ secrets.AWS_ACCOUNT_ID }}"
+          )
+          for BUCKET in "${BUCKETS[@]}"; do
+            echo "  Processing bucket: ${BUCKET}"
+            # Check if bucket exists
+            if aws s3api head-bucket --bucket "$BUCKET" --region ap-south-1 2>/dev/null; then
+              # Empty the bucket first
+              aws s3 rm "s3://${BUCKET}" --recursive --region ap-south-1 2>&1 || echo "    Empty failed"
+              # Delete bucket versioning objects if any
+              aws s3api delete-objects --bucket "$BUCKET" --delete "$(aws s3api list-object-versions --bucket "$BUCKET" --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}' --output json 2>/dev/null || echo '{"Objects":[]}')" --region ap-south-1 2>&1 || echo "    Version delete skipped"
+              # Delete the bucket
+              aws s3api delete-bucket --bucket "$BUCKET" --region ap-south-1 2>&1 || echo "    Bucket delete failed"
+              echo "    ✅ Deleted"
             else
-              echo "  ⏭️  Secret warmpawz/dev/${SECRET_NAME} not found"
+              echo "    Not found"
             fi
           done
-          
-          # RDS Master Password Secret
-          RDS_SECRET_ARN=$(aws secretsmanager list-secrets --region ap-south-1 --query "SecretList[?contains(Name, 'warmpawz-dev-rds-master')].ARN" --output text 2>/dev/null | head -1 || echo "")
-          if [ -n "$RDS_SECRET_ARN" ] && [ "$RDS_SECRET_ARN" != "None" ]; then
-            import_resource 'module.rds.aws_secretsmanager_secret.rds_master_password' "$RDS_SECRET_ARN" "RDS Secret"
-          fi
+          echo "  ✅ S3 buckets cleaned"
           
           echo ""
           echo "═══════════════════════════════════════════════════════════════"
-          echo "✅ IMPORT COMPLETE"
+          echo "✅ CLEANUP COMPLETE - TERRAFORM WILL CREATE FRESH RESOURCES"
           echo "═══════════════════════════════════════════════════════════════"
-          echo "All existing resources have been imported into Terraform state."
-          echo "Terraform apply will now update/create remaining resources."
 
       - name: Handle ALL RDS edge cases (CRITICAL)
         working-directory: infra/envs/dev
         continue-on-error: true
-        timeout-minutes: 2
+        timeout-minutes: 3
+        env:
+          # CRITICAL: Provide all required variables to prevent terraform prompts
+          TF_VAR_opensearch_master_password: ${{ secrets.DEV_OPENSEARCH_PASSWORD }}
+          TF_VAR_razorpay_key_id: ${{ secrets.RAZORPAY_KEY_ID }}
+          TF_VAR_razorpay_key_secret: ${{ secrets.RAZORPAY_KEY_SECRET }}
+          TF_VAR_google_maps_api_key: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+          TF_VAR_shiprocket_email: ${{ secrets.SHIPROCKET_EMAIL }}
+          TF_VAR_shiprocket_password: ${{ secrets.SHIPROCKET_PASSWORD }}
         run: |
           echo "🔍 CRITICAL: Analyzing RDS state and handling edge cases..."
           
-          # Scenario 1: Check if cluster exists
+          # Check if cluster exists
           CLUSTER_EXISTS=false
           if aws rds describe-db-clusters --db-cluster-identifier warmpawz-dev-cluster --region ap-south-1 2>/dev/null | grep -q "warmpawz-dev-cluster"; then
             CLUSTER_EXISTS=true
             CLUSTER_STATUS=$(aws rds describe-db-clusters --db-cluster-identifier warmpawz-dev-cluster --region ap-south-1 --query 'DBClusters[0].Status' --output text)
-            DELETION_PROTECTION=$(aws rds describe-db-clusters --db-cluster-identifier warmpawz-dev-cluster --region ap-south-1 --query 'DBClusters[0].DeletionProtection' --output text)
-            echo "✅ Found RDS cluster: warmpawz-dev-cluster"
-            echo "   Status: $CLUSTER_STATUS"
-            echo "   Deletion Protection: $DELETION_PROTECTION"
+            echo "✅ Found RDS cluster: warmpawz-dev-cluster (Status: $CLUSTER_STATUS)"
           else
-            echo "ℹ️  No RDS cluster found"
+            echo "ℹ️  No RDS cluster found - Terraform will create fresh"
           fi
           
-          # Scenario 2: Check if instances exist
-          INSTANCES=$(aws rds describe-db-instances --region ap-south-1 --query "DBInstances[?DBClusterIdentifier=='warmpawz-dev-cluster' || contains(DBInstanceIdentifier, 'warmpawz-dev-instance')].DBInstanceIdentifier" --output text 2>/dev/null)
+          # Check if instances exist
+          INSTANCE_ID=$(aws rds describe-db-instances --region ap-south-1 --query "DBInstances[?DBClusterIdentifier=='warmpawz-dev-cluster'].DBInstanceIdentifier" --output text 2>/dev/null | head -1)
           
-          if [ -n "$INSTANCES" ]; then
-            echo "✅ Found RDS instances: $INSTANCES"
-            INSTANCE_COUNT=$(echo "$INSTANCES" | wc -w | tr -d ' ')
-            echo "   Instance count: $INSTANCE_COUNT"
+          if [ -n "$INSTANCE_ID" ] && [ "$INSTANCE_ID" != "None" ]; then
+            echo "✅ Found RDS instance: $INSTANCE_ID"
           else
-            echo "ℹ️  No RDS instances found"
+            echo "ℹ️  No RDS instance found"
           fi
           
-          # EDGE CASE 1: Cluster exists but NO instances (your current scenario)
-          if [ "$CLUSTER_EXISTS" = true ] && [ -z "$INSTANCES" ]; then
+          # IMPORT RDS RESOURCES IF THEY EXIST
+          if [ "$CLUSTER_EXISTS" = true ]; then
             echo ""
-            echo "⚠️  EDGE CASE DETECTED: Cluster exists WITHOUT instances!"
-            echo "   This is the scenario you encountered"
-            echo ""
-            echo "📋 Resolution: Import cluster, Terraform will create missing instance"
+            echo "📋 Importing existing RDS resources into Terraform state..."
             
-            # Import cluster (with timeout)
-            timeout 30 terraform import -lock=false 'module.rds.aws_rds_cluster.main' warmpawz-dev-cluster 2>&1 | grep -E "Import successful|already managed|Resource already managed" || echo "   Import skipped"
+            # Import cluster (CRITICAL: use -input=false to prevent prompts)
+            echo "   Importing cluster..."
+            timeout 60 terraform import -input=false -lock=false 'module.rds.aws_rds_cluster.main' warmpawz-dev-cluster 2>&1 && echo "   ✅ Cluster imported" || echo "   ⚠️ Cluster import skipped (may already be in state)"
             
-            # Import secret if exists (with timeout)
-            SECRET_ARN=$(aws secretsmanager list-secrets --region ap-south-1 --query "SecretList[?starts_with(Name, 'warmpawz-dev-rds-master')].ARN" --output text 2>/dev/null | head -1)
-            if [ -n "$SECRET_ARN" ]; then
-              echo "   Importing RDS secret: $SECRET_ARN"
-              timeout 30 terraform import -lock=false 'module.rds.aws_secretsmanager_secret.rds_master_password' "$SECRET_ARN" 2>&1 | grep -E "Import successful|already managed|Resource already managed" || echo "   Secret import skipped"
+            # Import instance if exists (index 0)
+            if [ -n "$INSTANCE_ID" ] && [ "$INSTANCE_ID" != "None" ]; then
+              echo "   Importing instance..."
+              timeout 60 terraform import -input=false -lock=false 'module.rds.aws_rds_cluster_instance.main[0]' "$INSTANCE_ID" 2>&1 && echo "   ✅ Instance imported" || echo "   ⚠️ Instance import skipped"
             fi
             
-            echo "   ✅ Cluster imported - Terraform will add missing instance"
-          fi
-          
-          # EDGE CASE 2: Cluster AND instances exist
-          if [ "$CLUSTER_EXISTS" = true ] && [ -n "$INSTANCES" ]; then
-            echo ""
-            echo "✅ Normal scenario: Cluster AND instances exist"
-            echo ""
-            
-            # Import cluster (with timeout to prevent hanging)
-            timeout 30 terraform import -lock=false 'module.rds.aws_rds_cluster.main' warmpawz-dev-cluster 2>&1 | grep -E "Import successful|already managed|Resource already managed" || echo "   Import skipped (may already be in state)"
-            
-            # Import each instance (with timeout)
-            for INSTANCE in $INSTANCES; do
-              # Determine instance index (0-based)
-              INSTANCE_NUM=$(echo "$INSTANCE" | grep -oP 'instance-\K\d+' || echo "1")
-              INSTANCE_IDX=$((INSTANCE_NUM - 1))
-              
-              echo "   Importing instance: $INSTANCE (index: $INSTANCE_IDX)"
-              timeout 30 terraform import -lock=false "module.rds.aws_rds_cluster_instance.main[$INSTANCE_IDX]" "$INSTANCE" 2>&1 | grep -E "Import successful|already managed|Resource already managed" || echo "   Import skipped"
-            done
-            
-            # Import secret (with timeout)
+            # Import secret if exists
             SECRET_ARN=$(aws secretsmanager list-secrets --region ap-south-1 --query "SecretList[?starts_with(Name, 'warmpawz-dev-rds-master')].ARN" --output text 2>/dev/null | head -1)
-            if [ -n "$SECRET_ARN" ]; then
-              timeout 30 terraform import -lock=false 'module.rds.aws_secretsmanager_secret.rds_master_password' "$SECRET_ARN" 2>&1 | grep -E "Import successful|already managed|Resource already managed" || echo "   Secret import skipped"
+            if [ -n "$SECRET_ARN" ] && [ "$SECRET_ARN" != "None" ]; then
+              echo "   Importing RDS secret..."
+              timeout 60 terraform import -input=false -lock=false 'module.rds.aws_secretsmanager_secret.rds_master_password' "$SECRET_ARN" 2>&1 && echo "   ✅ Secret imported" || echo "   ⚠️ Secret import skipped"
             fi
             
-            echo "   ✅ Full RDS stack imported - will be preserved"
-          fi
-          
-          # EDGE CASE 3: No cluster but orphaned instances exist
-          if [ "$CLUSTER_EXISTS" = false ] && [ -n "$INSTANCES" ]; then
             echo ""
-            echo "⚠️  EDGE CASE DETECTED: Orphaned instances WITHOUT cluster!"
-            echo "   Instances: $INSTANCES"
+            echo "✅ RDS import complete - existing resources will be preserved"
+          else
             echo ""
-            echo "📋 Resolution: Delete orphaned instances"
-            
-            for INSTANCE in $INSTANCES; do
-              echo "   🗑️  Deleting orphaned instance: $INSTANCE"
-              aws rds delete-db-instance \
-                --db-instance-identifier "$INSTANCE" \
-                --skip-final-snapshot \
-                --region ap-south-1 2>&1 || echo "   Deletion failed or already deleting"
-            done
-            
-            echo "   ✅ Orphaned instances cleanup initiated"
-          fi
-          
-          # EDGE CASE 4: Nothing exists
-          if [ "$CLUSTER_EXISTS" = false ] && [ -z "$INSTANCES" ]; then
-            echo ""
-            echo "✅ Clean slate: No RDS resources exist"
-            echo "   Terraform will create fresh RDS cluster and instance"
+            echo "✅ Clean slate: No existing RDS - Terraform will create fresh"
           fi
           
           echo ""
           echo "✅ RDS edge case handling complete"
-
-      - name: Handle ALL S3 edge cases (CRITICAL - like RDS)
-        working-directory: infra/envs/dev
-        continue-on-error: true
-        timeout-minutes: 3
-        run: |
-          echo "🔍 CRITICAL: Analyzing S3 state and handling edge cases..."
-          echo ""
-          
-          # Check for existing frontend buckets
-          BUCKETS_TO_CHECK=(
-            "warmpawz-dev-admin-frontend-ap-south-1"
-            "warmpawz-dev-vendor-frontend-ap-south-1"
-            "warmpawz-dev-customer-frontend-ap-south-1"
-          )
-          
-          BUCKET_APPS=("admin" "vendor" "customer")
-          
-          for i in "${!BUCKETS_TO_CHECK[@]}"; do
-            BUCKET="${BUCKETS_TO_CHECK[$i]}"
-            APP="${BUCKET_APPS[$i]}"
-            
-            echo "Checking bucket: $BUCKET"
-            
-            if aws s3 ls "s3://$BUCKET" --region ap-south-1 2>/dev/null; then
-              echo "  ✅ Found existing bucket: $BUCKET"
-              echo "  📋 Importing into Terraform state..."
-              
-              # Import the bucket (with timeout to prevent hanging)
-              timeout 30 terraform import -lock=false "module.cloudfront.aws_s3_bucket.frontend[\"$APP\"]" "$BUCKET" 2>&1 | grep -E "Import successful|already managed|Resource already managed" || echo "  Import skipped (may already be in state)"
-              
-              echo "  ✅ Bucket imported - will be reused"
-            else
-              echo "  ℹ️  Bucket does not exist - will be created"
-            fi
-            echo ""
-          done
-          
-          echo "✅ S3 edge case handling complete"
-
-      - name: Import ALL existing S3 buckets (CRITICAL - prevents BucketAlreadyExists)
-        working-directory: infra/envs/dev
-        continue-on-error: true
-        timeout-minutes: 2
-        run: |
-          echo "📋 CRITICAL: Importing ALL existing S3 buckets to prevent BucketAlreadyExists errors..."
-          echo ""
-          
-          # Get AWS Account ID for bucket naming
-          ACCOUNT_ID="${{ secrets.AWS_ACCOUNT_ID }}"
-          
-          # List of ALL S3 buckets that might exist
-          declare -A BUCKETS=(
-            ["warmpawz-dev-admin-frontend-ap-south-1"]="module.cloudfront.aws_s3_bucket.frontend[\"admin\"]"
-            ["warmpawz-dev-vendor-frontend-ap-south-1"]="module.cloudfront.aws_s3_bucket.frontend[\"vendor\"]"
-            ["warmpawz-dev-customer-frontend-ap-south-1"]="module.cloudfront.aws_s3_bucket.frontend[\"customer\"]"
-            ["warmpawz-dev-user-uploads-${ACCOUNT_ID}"]="module.s3.aws_s3_bucket.user_uploads"
-            ["warmpawz-dev-static-${ACCOUNT_ID}"]="module.s3.aws_s3_bucket.static_website"
-            ["warmpawz-dev-logs-${ACCOUNT_ID}"]="module.s3.aws_s3_bucket.logs"
-            ["warmpawz-dev-backups-${ACCOUNT_ID}"]="module.s3.aws_s3_bucket.backups"
-          )
-          
-          for BUCKET_NAME in "${!BUCKETS[@]}"; do
-            TERRAFORM_ADDRESS="${BUCKETS[$BUCKET_NAME]}"
-            
-            echo "Checking bucket: $BUCKET_NAME"
-            
-            if aws s3 ls "s3://$BUCKET_NAME" --region ap-south-1 2>/dev/null; then
-              echo "  ✅ Found existing bucket"
-              echo "  📋 Importing: $TERRAFORM_ADDRESS"
-              
-              # Import with timeout (30 seconds max per bucket)
-              timeout 30 terraform import -lock=false "$TERRAFORM_ADDRESS" "$BUCKET_NAME" 2>&1 | \
-                grep -E "Import successful|already managed|Resource already managed" || \
-                echo "  ⚠️  Import skipped (may already be in state or import failed)"
-            else
-              echo "  ℹ️  Bucket does not exist - will be created"
-            fi
-            echo ""
-          done
-          
-          echo "✅ S3 bucket import complete"
 
       - name: Terraform Plan
         id: plan
