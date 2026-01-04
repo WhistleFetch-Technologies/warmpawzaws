@@ -404,10 +404,10 @@ jobs:
 
       # NUCLEAR OPTION: Delete entire state and start fresh
       # VPC module has lifecycle { ignore_changes = all } so imports will work
-      - name: 🔥 DELETE STATE + Import only RDS (NUCLEAR)
+      - name: 🔥 DELETE STATE + Import all existing resources
         working-directory: infra/envs/dev
         continue-on-error: true
-        timeout-minutes: 3
+        timeout-minutes: 8  # Increased from 3 to 8 minutes
         env:
           TF_VAR_opensearch_master_password: ${{ secrets.DEV_OPENSEARCH_PASSWORD }}
           TF_VAR_razorpay_key_id: ${{ secrets.RAZORPAY_KEY_ID }}
@@ -463,7 +463,7 @@ jobs:
             PUBLIC_SUBNETS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$EXISTING_VPC_ID" "Name=tag:Name,Values=*public*" --region ap-south-1 --query 'Subnets | sort_by(@, &AvailabilityZone)[*].SubnetId' --output text 2>/dev/null || echo "")
             IDX=0
             for SUBNET_ID in $PUBLIC_SUBNETS; do
-              terraform import -input=false "module.vpc.aws_subnet.public[$IDX]" "$SUBNET_ID" 2>&1 | grep -E "Import successful|already managed" || echo "      ⚠️ Skipped"
+              terraform import -input=false -lock=false "module.vpc.aws_subnet.public[$IDX]" "$SUBNET_ID" 2>&1 | grep -E "Import successful|already managed" || echo "      ⚠️ Skipped"
               IDX=$((IDX + 1))
             done
             
@@ -471,7 +471,7 @@ jobs:
             PRIVATE_SUBNETS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$EXISTING_VPC_ID" "Name=tag:Name,Values=*private*" --region ap-south-1 --query 'Subnets | sort_by(@, &AvailabilityZone)[*].SubnetId' --output text 2>/dev/null || echo "")
             IDX=0
             for SUBNET_ID in $PRIVATE_SUBNETS; do
-              terraform import -input=false "module.vpc.aws_subnet.private[$IDX]" "$SUBNET_ID" 2>&1 | grep -E "Import successful|already managed" || echo "      ⚠️ Skipped"
+              terraform import -input=false -lock=false "module.vpc.aws_subnet.private[$IDX]" "$SUBNET_ID" 2>&1 | grep -E "Import successful|already managed" || echo "      ⚠️ Skipped"
               IDX=$((IDX + 1))
             done
             
@@ -479,7 +479,7 @@ jobs:
             DATABASE_SUBNETS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$EXISTING_VPC_ID" "Name=tag:Name,Values=*database*" --region ap-south-1 --query 'Subnets | sort_by(@, &AvailabilityZone)[*].SubnetId' --output text 2>/dev/null || echo "")
             IDX=0
             for SUBNET_ID in $DATABASE_SUBNETS; do
-              terraform import -input=false "module.vpc.aws_subnet.database[$IDX]" "$SUBNET_ID" 2>&1 | grep -E "Import successful|already managed" || echo "      ⚠️ Skipped"
+              terraform import -input=false -lock=false "module.vpc.aws_subnet.database[$IDX]" "$SUBNET_ID" 2>&1 | grep -E "Import successful|already managed" || echo "      ⚠️ Skipped"
               IDX=$((IDX + 1))
             done
             
@@ -494,42 +494,45 @@ jobs:
             OAC_ID=$(aws cloudfront list-origin-access-controls --query "OriginAccessControlList.Items[?Name=='warmpawz-dev-${APP}-oac'].Id" --output text 2>/dev/null || echo "")
             if [ -n "$OAC_ID" ] && [ "$OAC_ID" != "None" ] && [ "$OAC_ID" != "" ]; then
               echo "      Importing warmpawz-dev-${APP}-oac: $OAC_ID"
-              terraform import -input=false "module.cloudfront.aws_cloudfront_origin_access_control.frontend[\"${APP}\"]" "$OAC_ID" 2>&1 || echo "      ⚠️ Skipped"
+              terraform import -input=false -lock=false "module.cloudfront.aws_cloudfront_origin_access_control.frontend[\"${APP}\"]" "$OAC_ID" 2>&1 | grep -E "Import successful|already managed" || echo "      ⚠️ Skipped"
             fi
           done
           
           # Import RDS DB Subnet Group
           echo "   📦 RDS DB Subnet Group..."
           if aws rds describe-db-subnet-groups --db-subnet-group-name warmpawz-dev-db-subnet-group --region ap-south-1 2>/dev/null | grep -q "warmpawz-dev-db-subnet-group"; then
-            terraform import -input=false 'module.rds.aws_db_subnet_group.main' warmpawz-dev-db-subnet-group 2>&1 || echo "      ⚠️ Skipped"
+            terraform import -input=false -lock=false 'module.rds.aws_db_subnet_group.main' warmpawz-dev-db-subnet-group 2>&1 | grep -E "Import successful|already managed" || echo "      ⚠️ Skipped"
           fi
           
           # Import RDS Security Group
           echo "   📦 RDS Security Group..."
           RDS_SG_ID=$(aws ec2 describe-security-groups --filters "Name=group-name,Values=warmpawz-dev-rds-*" --region ap-south-1 --query 'SecurityGroups[0].GroupId' --output text 2>/dev/null || echo "")
           if [ -n "$RDS_SG_ID" ] && [ "$RDS_SG_ID" != "None" ]; then
-            terraform import -input=false 'module.rds.aws_security_group.rds' "$RDS_SG_ID" 2>&1 || echo "      ⚠️ Skipped"
+            terraform import -input=false -lock=false 'module.rds.aws_security_group.rds' "$RDS_SG_ID" 2>&1 | grep -E "Import successful|already managed" || echo "      ⚠️ Skipped"
           fi
           
-          # Import RDS Parameter Groups
+          # Import RDS Parameter Groups (FIX: Get FIRST match only, add awk to handle tabs/spaces)
           echo "   📦 RDS Parameter Groups..."
-          CLUSTER_PG=$(aws rds describe-db-cluster-parameter-groups --region ap-south-1 --query "DBClusterParameterGroups[?contains(DBClusterParameterGroupName, 'warmpawz-dev-aurora')].DBClusterParameterGroupName" --output text 2>/dev/null | head -1)
+          CLUSTER_PG=$(aws rds describe-db-cluster-parameter-groups --region ap-south-1 --query "DBClusterParameterGroups[?contains(DBClusterParameterGroupName, 'warmpawz-dev-aurora')].DBClusterParameterGroupName | [0]" --output text 2>/dev/null | awk '{print $1}')
           if [ -n "$CLUSTER_PG" ] && [ "$CLUSTER_PG" != "None" ]; then
-            terraform import -input=false 'module.rds.aws_rds_cluster_parameter_group.main' "$CLUSTER_PG" 2>&1 || echo "      ⚠️ Skipped"
+            echo "      Importing: $CLUSTER_PG"
+            terraform import -input=false -lock=false 'module.rds.aws_rds_cluster_parameter_group.main' "$CLUSTER_PG" 2>&1 | grep -E "Import successful|already managed" || echo "      ⚠️ Skipped"
           fi
-          DB_PG=$(aws rds describe-db-parameter-groups --region ap-south-1 --query "DBParameterGroups[?contains(DBParameterGroupName, 'warmpawz-dev-aurora-db')].DBParameterGroupName" --output text 2>/dev/null | head -1)
+          
+          DB_PG=$(aws rds describe-db-parameter-groups --region ap-south-1 --query "DBParameterGroups[?contains(DBParameterGroupName, 'warmpawz-dev-aurora-db')].DBParameterGroupName | [0]" --output text 2>/dev/null | awk '{print $1}')
           if [ -n "$DB_PG" ] && [ "$DB_PG" != "None" ]; then
-            terraform import -input=false 'module.rds.aws_db_parameter_group.main' "$DB_PG" 2>&1 || echo "      ⚠️ Skipped"
+            echo "      Importing: $DB_PG"
+            terraform import -input=false -lock=false 'module.rds.aws_db_parameter_group.main' "$DB_PG" 2>&1 | grep -E "Import successful|already managed" || echo "      ⚠️ Skipped"
           fi
           
           # Import RDS cluster if exists
           echo "   📦 RDS Cluster + Instance..."
           if aws rds describe-db-clusters --db-cluster-identifier warmpawz-dev-cluster --region ap-south-1 2>/dev/null | grep -q "warmpawz-dev-cluster"; then
-            terraform import -input=false 'module.rds.aws_rds_cluster.main' warmpawz-dev-cluster 2>&1 || echo "      ⚠️ Skipped"
+            terraform import -input=false -lock=false 'module.rds.aws_rds_cluster.main' warmpawz-dev-cluster 2>&1 | grep -E "Import successful|already managed" || echo "      ⚠️ Skipped"
             
             INSTANCE_ID=$(aws rds describe-db-instances --region ap-south-1 --query "DBInstances[?DBClusterIdentifier=='warmpawz-dev-cluster'].DBInstanceIdentifier" --output text 2>/dev/null | head -1)
             if [ -n "$INSTANCE_ID" ] && [ "$INSTANCE_ID" != "None" ]; then
-              terraform import -input=false 'module.rds.aws_rds_cluster_instance.main[0]' "$INSTANCE_ID" 2>&1 || echo "      ⚠️ Skipped"
+              terraform import -input=false -lock=false 'module.rds.aws_rds_cluster_instance.main[0]' "$INSTANCE_ID" 2>&1 | grep -E "Import successful|already managed" || echo "      ⚠️ Skipped"
             fi
           fi
           
@@ -537,7 +540,7 @@ jobs:
           echo "   📦 RDS Secret..."
           SECRET_ARN=$(aws secretsmanager list-secrets --region ap-south-1 --query "SecretList[?starts_with(Name, 'warmpawz-dev-rds-master')].ARN" --output text 2>/dev/null | head -1)
           if [ -n "$SECRET_ARN" ] && [ "$SECRET_ARN" != "None" ]; then
-            terraform import -input=false 'module.rds.aws_secretsmanager_secret.rds_master_password' "$SECRET_ARN" 2>&1 || echo "      ⚠️ Skipped"
+            terraform import -input=false -lock=false 'module.rds.aws_secretsmanager_secret.rds_master_password' "$SECRET_ARN" 2>&1 | grep -E "Import successful|already managed" || echo "      ⚠️ Skipped"
           fi
           
           echo ""
