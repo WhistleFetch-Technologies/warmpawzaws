@@ -444,6 +444,21 @@ jobs:
           echo ""
           echo "4️⃣ Importing ALL existing resources..."
           
+          # Find and import EXISTING VPC (VPC limit reached - can't create new)
+          echo "   📦 VPC + Subnets (use_existing_vpc = true)..."
+          EXISTING_VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=warmpawz-dev-vpc" --region ap-south-1 --query 'Vpcs[0].VpcId' --output text 2>/dev/null || echo "")
+          if [ -z "$EXISTING_VPC_ID" ] || [ "$EXISTING_VPC_ID" == "None" ]; then
+            # Try to find VPC from RDS subnet group
+            EXISTING_VPC_ID=$(aws rds describe-db-subnet-groups --db-subnet-group-name warmpawz-dev-db-subnet-group --region ap-south-1 --query 'DBSubnetGroups[0].VpcId' --output text 2>/dev/null || echo "")
+          fi
+          
+          if [ -n "$EXISTING_VPC_ID" ] && [ "$EXISTING_VPC_ID" != "None" ]; then
+            echo "      Found existing VPC: $EXISTING_VPC_ID"
+            # Note: VPC module uses data source when use_existing_vpc = true, no import needed
+          else
+            echo "      ⚠️ No existing VPC found - this may cause issues!"
+          fi
+          
           # Import CloudFront OACs
           echo "   📦 CloudFront OACs..."
           for APP in admin vendor customer; do
@@ -498,6 +513,7 @@ jobs:
           
           echo ""
           echo "✅ NUCLEAR OPTION COMPLETE"
+          echo "   use_existing_vpc = true (VPC limit reached)"
           echo "   All existing resources imported"
           echo "   Terraform will create ONLY missing resources"
 
