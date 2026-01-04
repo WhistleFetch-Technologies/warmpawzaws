@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================================
-# CLEANUP ORPHANED TERRAFORM STATE - DEV ENVIRONMENT
+# CLEANUP ORPHANED TERRAFORM STATE - STAGE ENVIRONMENT
 # ============================================================================
 # Removes state entries for resources that exist in wrong region (us-east-1)
 # when deploying to ap-south-1. This prevents PermanentRedirect errors.
@@ -59,3 +59,4 @@ echo ""
 echo "============================================"
 echo "✅ Cleanup complete! Removed ${REMOVED} entries"
 echo "============================================"
+

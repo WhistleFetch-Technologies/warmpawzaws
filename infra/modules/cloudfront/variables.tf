@@ -5,6 +5,11 @@ variable "environment" {
   type        = string
 }
 
+variable "aws_region" {
+  description = "AWS region where resources are created"
+  type        = string
+}
+
 variable "frontend_apps" {
   description = "Map of frontend applications to deploy"
   type = map(object({

@@ -4,10 +4,10 @@
 resource "aws_s3_bucket" "frontend" {
   for_each = var.frontend_apps
 
-  bucket = "warmpawz-${var.environment}-${each.key}-frontend"
+  bucket = "warmpawz-${var.environment}-${each.key}-frontend-${var.aws_region}"
 
   tags = {
-    Name        = "warmpawz-${var.environment}-${each.key}-frontend"
+    Name        = "warmpawz-${var.environment}-${each.key}-frontend-${var.aws_region}"
     Environment = var.environment
     App         = each.key
   }
