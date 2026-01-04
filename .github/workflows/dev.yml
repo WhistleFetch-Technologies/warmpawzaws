@@ -257,30 +257,33 @@ jobs:
       - name: Auto-import existing resources (idempotent)
         working-directory: infra/envs/dev
         continue-on-error: true
+        timeout-minutes: 5
         run: |
           echo "🔄 Auto-importing existing resources (if any)..."
-          echo "This makes the workflow idempotent and reusable - existing resources are imported, new ones will be created"
+          echo "⏱️ Timeout: 5 minutes (skips import if taking too long)"
+          echo "This makes the workflow idempotent - ResourceAlreadyExists errors are prevented"
           
-          # Import existing resources if they exist (ignore errors if already imported or don't exist)
-          # This allows the workflow to run multiple times without ResourceAlreadyExists errors
-          terraform import 'module.cloudfront.aws_s3_bucket.frontend["admin"]' warmpawz-dev-admin-frontend-ap-south-1 2>/dev/null || true
-          terraform import 'module.cloudfront.aws_s3_bucket.frontend["vendor"]' warmpawz-dev-vendor-frontend-ap-south-1 2>/dev/null || true
-          terraform import 'module.cloudfront.aws_s3_bucket.frontend["customer"]' warmpawz-dev-customer-frontend-ap-south-1 2>/dev/null || true
-          terraform import 'module.s3.aws_s3_bucket.user_uploads' warmpawz-dev-user-uploads-${{ secrets.AWS_ACCOUNT_ID }} 2>/dev/null || true
-          terraform import 'module.s3.aws_s3_bucket.static_website' warmpawz-dev-static-${{ secrets.AWS_ACCOUNT_ID }} 2>/dev/null || true
-          terraform import 'module.s3.aws_s3_bucket.logs' warmpawz-dev-logs-${{ secrets.AWS_ACCOUNT_ID }} 2>/dev/null || true
-          terraform import 'module.s3.aws_s3_bucket.backups' warmpawz-dev-backups-${{ secrets.AWS_ACCOUNT_ID }} 2>/dev/null || true
-          terraform import 'module.dynamodb.aws_dynamodb_table.sessions' warmpawz-dev-sessions 2>/dev/null || true
-          terraform import 'module.dynamodb.aws_dynamodb_table.analytics_events' warmpawz-dev-analytics-events 2>/dev/null || true
-          terraform import 'module.dynamodb.aws_dynamodb_table.cache' warmpawz-dev-cache 2>/dev/null || true
-          terraform import 'module.dynamodb.aws_dynamodb_table.rate_limits' warmpawz-dev-rate-limits 2>/dev/null || true
-          terraform import 'module.api_gateway.aws_cloudwatch_log_group.api_gateway' /aws/apigateway/warmpawz-dev 2>/dev/null || true
-          terraform import 'module.lambda.aws_cloudwatch_log_group.lambda["api-handler"]' /aws/lambda/warmpawz-dev-api-handler 2>/dev/null || true
-          terraform import 'module.secrets.aws_secretsmanager_secret.razorpay' warmpawz/dev/razorpay 2>/dev/null || true
-          terraform import 'module.secrets.aws_secretsmanager_secret.google_maps' warmpawz/dev/google-maps 2>/dev/null || true
-          terraform import 'module.secrets.aws_secretsmanager_secret.shiprocket' warmpawz/dev/shiprocket 2>/dev/null || true
+          # Note: Using timeout command to prevent hanging on individual imports
+          # Each import gets max 10 seconds, then we move on
           
-          echo "✅ Auto-import completed (existing resources imported, new ones will be created in plan)"
+          timeout 10 terraform import 'module.cloudfront.aws_s3_bucket.frontend["admin"]' warmpawz-dev-admin-frontend-ap-south-1 2>/dev/null || true
+          timeout 10 terraform import 'module.cloudfront.aws_s3_bucket.frontend["vendor"]' warmpawz-dev-vendor-frontend-ap-south-1 2>/dev/null || true
+          timeout 10 terraform import 'module.cloudfront.aws_s3_bucket.frontend["customer"]' warmpawz-dev-customer-frontend-ap-south-1 2>/dev/null || true
+          timeout 10 terraform import 'module.s3.aws_s3_bucket.user_uploads' warmpawz-dev-user-uploads-${{ secrets.AWS_ACCOUNT_ID }} 2>/dev/null || true
+          timeout 10 terraform import 'module.s3.aws_s3_bucket.static_website' warmpawz-dev-static-${{ secrets.AWS_ACCOUNT_ID }} 2>/dev/null || true
+          timeout 10 terraform import 'module.s3.aws_s3_bucket.logs' warmpawz-dev-logs-${{ secrets.AWS_ACCOUNT_ID }} 2>/dev/null || true
+          timeout 10 terraform import 'module.s3.aws_s3_bucket.backups' warmpawz-dev-backups-${{ secrets.AWS_ACCOUNT_ID }} 2>/dev/null || true
+          timeout 10 terraform import 'module.dynamodb.aws_dynamodb_table.sessions' warmpawz-dev-sessions 2>/dev/null || true
+          timeout 10 terraform import 'module.dynamodb.aws_dynamodb_table.analytics_events' warmpawz-dev-analytics-events 2>/dev/null || true
+          timeout 10 terraform import 'module.dynamodb.aws_dynamodb_table.cache' warmpawz-dev-cache 2>/dev/null || true
+          timeout 10 terraform import 'module.dynamodb.aws_dynamodb_table.rate_limits' warmpawz-dev-rate-limits 2>/dev/null || true
+          timeout 10 terraform import 'module.api_gateway.aws_cloudwatch_log_group.api_gateway' /aws/apigateway/warmpawz-dev 2>/dev/null || true
+          timeout 10 terraform import 'module.lambda.aws_cloudwatch_log_group.lambda["api-handler"]' /aws/lambda/warmpawz-dev-api-handler 2>/dev/null || true
+          timeout 10 terraform import 'module.secrets.aws_secretsmanager_secret.razorpay' warmpawz/dev/razorpay 2>/dev/null || true
+          timeout 10 terraform import 'module.secrets.aws_secretsmanager_secret.google_maps' warmpawz/dev/google-maps 2>/dev/null || true
+          timeout 10 terraform import 'module.secrets.aws_secretsmanager_secret.shiprocket' warmpawz/dev/shiprocket 2>/dev/null || true
+          
+          echo "✅ Auto-import completed (timed out or no existing resources)"
 
       - name: Terraform Plan
         id: plan
