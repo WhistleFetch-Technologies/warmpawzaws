@@ -27,8 +27,9 @@ resource "aws_vpc" "main" {
     Environment = var.environment
   }
 
+  # NUCLEAR OPTION: Never modify or destroy VPC after creation
   lifecycle {
-    prevent_destroy = false # Set to true for prod after first deployment
+    ignore_changes = all
   }
 }
 
@@ -55,6 +56,11 @@ resource "aws_subnet" "public" {
     Environment = var.environment
     Type        = "public"
   }
+
+  # NUCLEAR OPTION: Never modify or destroy subnets after creation
+  lifecycle {
+    ignore_changes = all
+  }
 }
 
 # Private Subnets (for Lambda, RDS)
@@ -69,6 +75,11 @@ resource "aws_subnet" "private" {
     Name        = "warmpawz-${var.environment}-private-${count.index + 1}"
     Environment = var.environment
     Type        = "private"
+  }
+
+  # NUCLEAR OPTION: Never modify or destroy subnets after creation
+  lifecycle {
+    ignore_changes = all
   }
 }
 
@@ -85,6 +96,11 @@ resource "aws_subnet" "database" {
     Environment = var.environment
     Type        = "database"
   }
+
+  # NUCLEAR OPTION: Never modify or destroy subnets after creation
+  lifecycle {
+    ignore_changes = all
+  }
 }
 
 # Internet Gateway
@@ -96,6 +112,10 @@ resource "aws_internet_gateway" "main" {
   tags = {
     Name        = "warmpawz-${var.environment}-igw"
     Environment = var.environment
+  }
+
+  lifecycle {
+    ignore_changes = all
   }
 }
 
@@ -111,6 +131,10 @@ resource "aws_eip" "nat" {
   }
 
   depends_on = [aws_internet_gateway.main]
+
+  lifecycle {
+    ignore_changes = all
+  }
 }
 
 # NAT Gateway (for private subnet internet access)
@@ -126,6 +150,10 @@ resource "aws_nat_gateway" "main" {
   }
 
   depends_on = [aws_internet_gateway.main]
+
+  lifecycle {
+    ignore_changes = all
+  }
 }
 
 # Route Table - Public
