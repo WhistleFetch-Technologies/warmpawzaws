@@ -46,14 +46,19 @@ resource "aws_route53_record" "validation" {
   zone_id         = var.route53_zone_id
 }
 
-# Certificate Validation for us-east-1 (CloudFront)
+# Certificate Validation for us-east-1 (CloudFront) - WITH TIMEOUT
 resource "aws_acm_certificate_validation" "main" {
   provider                = aws.us_east_1
   certificate_arn         = aws_acm_certificate.main.arn
   validation_record_fqdns = [for record in aws_route53_record.validation : record.fqdn]
+
+  timeouts {
+    create = "15m"
+  }
 }
 
 # Regional Certificate (for API Gateway in ap-south-1)
+# IMPORTANT: Created AFTER main cert is validated to avoid DNS conflicts
 resource "aws_acm_certificate" "regional" {
   count             = var.create_regional_cert ? 1 : 0
   domain_name       = var.domain_name
@@ -69,14 +74,43 @@ resource "aws_acm_certificate" "regional" {
     Name        = "warmpawz-${var.environment}-regional-certificate"
     Environment = var.environment
   }
+
+  # CRITICAL: Wait for main cert to be FULLY validated first
+  # This prevents DNS record conflicts
+  depends_on = [aws_acm_certificate_validation.main]
 }
 
-# Certificate Validation for regional
-# IMPORTANT: Reuses the SAME validation records as main cert since domains are identical
+# Route53 Validation Records for regional certificate
+# Created AFTER main is validated, so no DNS conflicts
+resource "aws_route53_record" "regional_validation" {
+  for_each = var.create_regional_cert ? {
+    for dvo in aws_acm_certificate.regional[0].domain_validation_options : dvo.domain_name => {
+      name   = dvo.resource_record_name
+      record = dvo.resource_record_value
+      type   = dvo.resource_record_type
+    }
+  } : {}
+
+  allow_overwrite = true
+  name            = each.value.name
+  records         = [each.value.record]
+  ttl             = 60
+  type            = each.value.type
+  zone_id         = var.route53_zone_id
+
+  # Explicit dependency on main validation completion
+  depends_on = [aws_acm_certificate_validation.main]
+}
+
+# Certificate Validation for regional - WITH TIMEOUT
 resource "aws_acm_certificate_validation" "regional" {
   count                   = var.create_regional_cert ? 1 : 0
   certificate_arn         = aws_acm_certificate.regional[0].arn
-  validation_record_fqdns = [for record in aws_route53_record.validation : record.fqdn]
-  
-  depends_on = [aws_route53_record.validation]
+  validation_record_fqdns = [for record in aws_route53_record.regional_validation : record.fqdn]
+
+  timeouts {
+    create = "15m"
+  }
+
+  depends_on = [aws_route53_record.regional_validation]
 }
