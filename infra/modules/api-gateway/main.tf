@@ -104,6 +104,10 @@ resource "aws_lambda_permission" "api_gateway" {
   function_name = each.value.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.main.execution_arn}/*/*"
+
+  lifecycle {
+    ignore_changes = all  # NUCLEAR OPTION: Never modify after import
+  }
 }
 
 # API Routes
