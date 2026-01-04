@@ -330,25 +330,17 @@ jobs:
             fi
           fi
 
-      - name: Check for region migration
+      - name: Clean up orphaned us-east-1 resources
         working-directory: infra/envs/dev
-        id: region-check
+        continue-on-error: true
         run: |
-          # Check if we're migrating regions (us-east-1 -> ap-south-1)
-          CURRENT_REGION=$(terraform show -json 2>/dev/null | jq -r '.values.root_module.resources[0].values.region // "none"' || echo "none")
-          TARGET_REGION="ap-south-1"
+          # Make cleanup script executable
+          chmod +x cleanup-state.sh
           
-          if [ "$CURRENT_REGION" != "none" ] && [ "$CURRENT_REGION" != "$TARGET_REGION" ]; then
-            echo "⚠️  REGION MIGRATION DETECTED: $CURRENT_REGION -> $TARGET_REGION"
-            echo "This will RECREATE all resources in the new region."
-            echo "region_migration=true" >> $GITHUB_OUTPUT
-            
-            # Refresh state to detect orphaned resources
-            terraform refresh -var-file=terraform.tfvars || true
-          else
-            echo "✅ No region migration needed (current: $CURRENT_REGION, target: $TARGET_REGION)"
-            echo "region_migration=false" >> $GITHUB_OUTPUT
-          fi
+          # Run cleanup to remove orphaned us-east-1 resources from state
+          # This prevents cross-region access errors during plan
+          echo "🧹 Cleaning up orphaned us-east-1 resources from Terraform state..."
+          ./cleanup-state.sh || echo "⚠️  Some resources were already removed or don't exist"
 
       - name: Terraform Apply
         working-directory: infra/envs/dev
