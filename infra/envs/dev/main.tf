@@ -309,6 +309,7 @@ module "acm" {
     "dev.customer.warmpawz.com"
   ]
   create_regional_cert = true
+  skip_validation      = true  # Certificate already exists and is validated in us-east-1
 }
 
 # CloudFront Module (frontend hosting)

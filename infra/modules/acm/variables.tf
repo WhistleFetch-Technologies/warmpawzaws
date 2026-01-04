@@ -27,3 +27,9 @@ variable "create_regional_cert" {
   default     = true
 }
 
+variable "skip_validation" {
+  description = "Skip certificate validation (use when certificate already exists and is validated)"
+  type        = bool
+  default     = false
+}
+
