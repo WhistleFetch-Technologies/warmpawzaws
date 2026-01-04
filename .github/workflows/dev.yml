@@ -240,6 +240,17 @@ jobs:
             fi
           fi
 
+      - name: Clean orphaned us-east-1 resources from state
+        working-directory: infra/envs/dev
+        continue-on-error: true
+        run: |
+          echo "🧹 Cleaning orphaned us-east-1 resources from Terraform state..."
+          echo "This prevents PermanentRedirect errors when resources exist in wrong region."
+          
+          # Make cleanup script executable and run it
+          chmod +x cleanup-state.sh
+          ./cleanup-state.sh || echo "⚠️  Cleanup completed with warnings (some resources may not exist)"
+
       - name: Terraform Plan
         id: plan
         working-directory: infra/envs/dev
@@ -329,18 +340,6 @@ jobs:
               terraform force-unlock -force "$LOCK_UUID" || true
             fi
           fi
-
-      - name: Clean up orphaned us-east-1 resources
-        working-directory: infra/envs/dev
-        continue-on-error: true
-        run: |
-          # Make cleanup script executable
-          chmod +x cleanup-state.sh
-          
-          # Run cleanup to remove orphaned us-east-1 resources from state
-          # This prevents cross-region access errors during plan
-          echo "🧹 Cleaning up orphaned us-east-1 resources from Terraform state..."
-          ./cleanup-state.sh || echo "⚠️  Some resources were already removed or don't exist"
 
       - name: Terraform Apply
         working-directory: infra/envs/dev
