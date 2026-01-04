@@ -75,7 +75,7 @@ resource "aws_dynamodb_table" "terraform_locks" {
 variable "aws_account_id" {
   description = "AWS Account ID"
   type        = string
-  default     = "023394150666"
+  default     = "057442119249"
 }
 
 output "state_bucket_name" {

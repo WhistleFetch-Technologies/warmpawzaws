@@ -95,7 +95,7 @@ gh secret set SECRET_NAME --body "secret-value" --repo ketan0103/warmpawzaws
 - **Access Key ID:** `AKIAQK4TGNEFLQJLXMMI`
 - **Secret Access Key:** `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`
 - **Region:** `ap-south-1`
-- **Account ID:** `023394150666`
+- **Account ID:** `057442119249`
 
 ### **Razorpay:**
 - **Key ID:** `rzp_test_Rnp57suJH3wzUl`
