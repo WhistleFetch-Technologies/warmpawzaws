@@ -444,7 +444,7 @@ jobs:
           echo ""
           echo "4️⃣ Importing ALL existing resources..."
           
-          # Find and import EXISTING VPC (VPC limit reached - can't create new)
+          # Find and import EXISTING VPC + Subnets
           echo "   📦 VPC + Subnets (use_existing_vpc = true)..."
           EXISTING_VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=warmpawz-dev-vpc" --region ap-south-1 --query 'Vpcs[0].VpcId' --output text 2>/dev/null || echo "")
           if [ -z "$EXISTING_VPC_ID" ] || [ "$EXISTING_VPC_ID" == "None" ]; then
@@ -454,7 +454,36 @@ jobs:
           
           if [ -n "$EXISTING_VPC_ID" ] && [ "$EXISTING_VPC_ID" != "None" ]; then
             echo "      Found existing VPC: $EXISTING_VPC_ID"
-            # Note: VPC module uses data source when use_existing_vpc = true, no import needed
+            # Note: VPC module uses data source when use_existing_vpc = true, no import needed for VPC itself
+            
+            # But we MUST import subnets (they conflict if not imported)
+            echo "      Importing existing subnets..."
+            
+            # Public subnets
+            PUBLIC_SUBNETS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$EXISTING_VPC_ID" "Name=tag:Name,Values=*public*" --region ap-south-1 --query 'Subnets | sort_by(@, &AvailabilityZone)[*].SubnetId' --output text 2>/dev/null || echo "")
+            IDX=0
+            for SUBNET_ID in $PUBLIC_SUBNETS; do
+              terraform import -input=false "module.vpc.aws_subnet.public[$IDX]" "$SUBNET_ID" 2>&1 | grep -E "Import successful|already managed" || echo "      ⚠️ Skipped"
+              IDX=$((IDX + 1))
+            done
+            
+            # Private subnets
+            PRIVATE_SUBNETS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$EXISTING_VPC_ID" "Name=tag:Name,Values=*private*" --region ap-south-1 --query 'Subnets | sort_by(@, &AvailabilityZone)[*].SubnetId' --output text 2>/dev/null || echo "")
+            IDX=0
+            for SUBNET_ID in $PRIVATE_SUBNETS; do
+              terraform import -input=false "module.vpc.aws_subnet.private[$IDX]" "$SUBNET_ID" 2>&1 | grep -E "Import successful|already managed" || echo "      ⚠️ Skipped"
+              IDX=$((IDX + 1))
+            done
+            
+            # Database subnets
+            DATABASE_SUBNETS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$EXISTING_VPC_ID" "Name=tag:Name,Values=*database*" --region ap-south-1 --query 'Subnets | sort_by(@, &AvailabilityZone)[*].SubnetId' --output text 2>/dev/null || echo "")
+            IDX=0
+            for SUBNET_ID in $DATABASE_SUBNETS; do
+              terraform import -input=false "module.vpc.aws_subnet.database[$IDX]" "$SUBNET_ID" 2>&1 | grep -E "Import successful|already managed" || echo "      ⚠️ Skipped"
+              IDX=$((IDX + 1))
+            done
+            
+            echo "      ✅ VPC and subnets imported"
           else
             echo "      ⚠️ No existing VPC found - this may cause issues!"
           fi
