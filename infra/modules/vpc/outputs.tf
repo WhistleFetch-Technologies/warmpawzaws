@@ -35,7 +35,8 @@ output "nat_gateway_ids" {
 
 output "vpc_endpoints_security_group_id" {
   description = "Security group ID for VPC endpoints"
-  value       = aws_security_group.vpc_endpoints.id
+  # When use_existing_vpc = true, this security group doesn't exist
+  value       = var.use_existing_vpc ? null : aws_security_group.vpc_endpoints[0].id
 }
 
 output "availability_zones" {

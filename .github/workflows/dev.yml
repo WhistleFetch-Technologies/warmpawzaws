@@ -454,42 +454,10 @@ jobs:
           
           if [ -n "$EXISTING_VPC_ID" ] && [ "$EXISTING_VPC_ID" != "None" ]; then
             echo "      Found existing VPC: $EXISTING_VPC_ID"
-            # Note: VPC module uses data source when use_existing_vpc = true, no import needed for VPC itself
-            
-            # But we MUST import subnets (they conflict if not imported)
-            echo "      Importing existing subnets..."
-            
-            # Public subnets (FIX: Show full output)
-            PUBLIC_SUBNETS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$EXISTING_VPC_ID" "Name=tag:Name,Values=*public*" --region ap-south-1 --query 'Subnets | sort_by(@, &AvailabilityZone)[*].SubnetId' --output text 2>/dev/null || echo "")
-            IDX=0
-            for SUBNET_ID in $PUBLIC_SUBNETS; do
-              SUBNET_OUTPUT=$(terraform import -input=false -lock=false "module.vpc.aws_subnet.public[$IDX]" "$SUBNET_ID" 2>&1)
-              echo "$SUBNET_OUTPUT"
-              echo "$SUBNET_OUTPUT" | grep -qE "Import successful|already managed" && echo "      ✅ public[$IDX] imported" || echo "      ❌ public[$IDX] FAILED: $SUBNET_OUTPUT"
-              IDX=$((IDX + 1))
-            done
-            
-            # Private subnets (FIX: Show full output)
-            PRIVATE_SUBNETS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$EXISTING_VPC_ID" "Name=tag:Name,Values=*private*" --region ap-south-1 --query 'Subnets | sort_by(@, &AvailabilityZone)[*].SubnetId' --output text 2>/dev/null || echo "")
-            IDX=0
-            for SUBNET_ID in $PRIVATE_SUBNETS; do
-              SUBNET_OUTPUT=$(terraform import -input=false -lock=false "module.vpc.aws_subnet.private[$IDX]" "$SUBNET_ID" 2>&1)
-              echo "$SUBNET_OUTPUT"
-              echo "$SUBNET_OUTPUT" | grep -qE "Import successful|already managed" && echo "      ✅ private[$IDX] imported" || echo "      ❌ private[$IDX] FAILED: $SUBNET_OUTPUT"
-              IDX=$((IDX + 1))
-            done
-            
-            # Database subnets (FIX: Show full output)
-            DATABASE_SUBNETS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$EXISTING_VPC_ID" "Name=tag:Name,Values=*database*" --region ap-south-1 --query 'Subnets | sort_by(@, &AvailabilityZone)[*].SubnetId' --output text 2>/dev/null || echo "")
-            IDX=0
-            for SUBNET_ID in $DATABASE_SUBNETS; do
-              SUBNET_OUTPUT=$(terraform import -input=false -lock=false "module.vpc.aws_subnet.database[$IDX]" "$SUBNET_ID" 2>&1)
-              echo "$SUBNET_OUTPUT"
-              echo "$SUBNET_OUTPUT" | grep -qE "Import successful|already managed" && echo "      ✅ database[$IDX] imported" || echo "      ❌ database[$IDX] FAILED: $SUBNET_OUTPUT"
-              IDX=$((IDX + 1))
-            done
-            
-            echo "      ✅ VPC and subnets imported"
+            echo "      ✅ VPC uses data sources (no imports needed for VPC, subnets, route tables)"
+            echo "         - Subnets: count = 0 (data sources will fetch IDs)"
+            echo "         - Route tables: count = 0 (already exist)"
+            echo "         - Route table associations: count = 0 (already exist)"
           else
             echo "      ⚠️ No existing VPC found - this may cause issues!"
           fi
@@ -580,92 +548,17 @@ jobs:
             echo "      Data sources will look up existing resources for routing"
           fi
           
-          # Import Route Tables FIRST (then associations)
+          # Route Tables + Associations - SKIP imports when use_existing_vpc = true
+          # These resources have count = 0, so no imports needed
           if [ -n "$EXISTING_VPC_ID" ] && [ "$EXISTING_VPC_ID" != "None" ]; then
-            echo "   📦 Route Tables (import before associations)..."
-            
-            # Import public route table (FIX: Ignore 'Invalid target address' from state rm)
-            PUBLIC_RT=$(aws ec2 describe-route-tables --filters "Name=vpc-id,Values=$EXISTING_VPC_ID" "Name=tag:Name,Values=warmpawz-dev-public-rt" --region ap-south-1 --query 'RouteTables[0].RouteTableId' --output text 2>/dev/null || echo "")
-            if [ -n "$PUBLIC_RT" ] && [ "$PUBLIC_RT" != "None" ]; then
-              echo "      Importing public route table: $PUBLIC_RT"
-              terraform state rm 'module.vpc.aws_route_table.public' 2>&1 | grep -v "Invalid target address" || true
-              RT_OUTPUT=$(terraform import -input=false -lock=false 'module.vpc.aws_route_table.public' "$PUBLIC_RT" 2>&1)
-              echo "$RT_OUTPUT"
-              echo "$RT_OUTPUT" | grep -qE "Import successful|already managed" && echo "      ✅ Public RT imported" || echo "      ❌ Public RT import FAILED: $RT_OUTPUT"
-            fi
-            
-            # Import private route table
-            PRIVATE_RT=$(aws ec2 describe-route-tables --filters "Name=vpc-id,Values=$EXISTING_VPC_ID" "Name=tag:Name,Values=warmpawz-dev-private-rt-1" --region ap-south-1 --query 'RouteTables[0].RouteTableId' --output text 2>/dev/null || echo "")
-            if [ -n "$PRIVATE_RT" ] && [ "$PRIVATE_RT" != "None" ]; then
-              echo "      Importing private route table: $PRIVATE_RT"
-              terraform state rm 'module.vpc.aws_route_table.private[0]' 2>&1 | grep -v "Invalid target address" || true
-              RT_OUTPUT=$(terraform import -input=false -lock=false 'module.vpc.aws_route_table.private[0]' "$PRIVATE_RT" 2>&1)
-              echo "$RT_OUTPUT"
-              echo "$RT_OUTPUT" | grep -qE "Import successful|already managed" && echo "      ✅ Private RT imported" || echo "      ❌ Private RT import FAILED: $RT_OUTPUT"
-            fi
-            
-            # Import database route table
-            DATABASE_RT=$(aws ec2 describe-route-tables --filters "Name=vpc-id,Values=$EXISTING_VPC_ID" "Name=tag:Name,Values=warmpawz-dev-database-rt" --region ap-south-1 --query 'RouteTables[0].RouteTableId' --output text 2>/dev/null || echo "")
-            if [ -n "$DATABASE_RT" ] && [ "$DATABASE_RT" != "None" ]; then
-              echo "      Importing database route table: $DATABASE_RT"
-              terraform state rm 'module.vpc.aws_route_table.database' 2>&1 | grep -v "Invalid target address" || true
-              RT_OUTPUT=$(terraform import -input=false -lock=false 'module.vpc.aws_route_table.database' "$DATABASE_RT" 2>&1)
-              echo "$RT_OUTPUT"
-              echo "$RT_OUTPUT" | grep -qE "Import successful|already managed" && echo "      ✅ Database RT imported" || echo "      ❌ Database RT import FAILED: $RT_OUTPUT"
-            fi
-            
-            echo "   📦 Route Table Associations..."
-            
-            # Import public subnet associations (FIX: Ignore 'Invalid target address' from state rm)
-            PUBLIC_SUBNETS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$EXISTING_VPC_ID" "Name=tag:Name,Values=*public*" --region ap-south-1 --query 'Subnets | sort_by(@, &AvailabilityZone)[*].SubnetId' --output text 2>/dev/null || echo "")
-            IDX=0
-            for SUBNET_ID in $PUBLIC_SUBNETS; do
-              RT_ASSOC_ID=$(aws ec2 describe-route-tables --filters "Name=association.subnet-id,Values=$SUBNET_ID" --region ap-south-1 --query 'RouteTables[0].Associations[?SubnetId==`'$SUBNET_ID'`].RouteTableAssociationId' --output text 2>/dev/null || echo "")
-              if [ -n "$RT_ASSOC_ID" ] && [ "$RT_ASSOC_ID" != "None" ] && [ "$RT_ASSOC_ID" != "" ]; then
-                echo "      Importing public[$IDX]: subnet=$SUBNET_ID, assoc=$RT_ASSOC_ID"
-                terraform state rm "module.vpc.aws_route_table_association.public[$IDX]" 2>&1 | grep -v "Invalid target address" || true
-                ASSOC_OUTPUT=$(terraform import -input=false -lock=false "module.vpc.aws_route_table_association.public[$IDX]" "$RT_ASSOC_ID" 2>&1)
-                echo "$ASSOC_OUTPUT"
-                echo "$ASSOC_OUTPUT" | grep -qE "Import successful|already managed" && echo "      ✅ public[$IDX] imported" || echo "      ❌ public[$IDX] FAILED: $ASSOC_OUTPUT"
-              fi
-              IDX=$((IDX + 1))
-            done
-            
-            # Import private subnet associations
-            PRIVATE_SUBNETS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$EXISTING_VPC_ID" "Name=tag:Name,Values=*private*" --region ap-south-1 --query 'Subnets | sort_by(@, &AvailabilityZone)[*].SubnetId' --output text 2>/dev/null || echo "")
-            IDX=0
-            for SUBNET_ID in $PRIVATE_SUBNETS; do
-              RT_ASSOC_ID=$(aws ec2 describe-route-tables --filters "Name=association.subnet-id,Values=$SUBNET_ID" --region ap-south-1 --query 'RouteTables[0].Associations[?SubnetId==`'$SUBNET_ID'`].RouteTableAssociationId' --output text 2>/dev/null || echo "")
-              if [ -n "$RT_ASSOC_ID" ] && [ "$RT_ASSOC_ID" != "None" ] && [ "$RT_ASSOC_ID" != "" ]; then
-                echo "      Importing private[$IDX]: subnet=$SUBNET_ID, assoc=$RT_ASSOC_ID"
-                terraform state rm "module.vpc.aws_route_table_association.private[$IDX]" 2>&1 | grep -v "Invalid target address" || true
-                ASSOC_OUTPUT=$(terraform import -input=false -lock=false "module.vpc.aws_route_table_association.private[$IDX]" "$RT_ASSOC_ID" 2>&1)
-                echo "$ASSOC_OUTPUT"
-                echo "$ASSOC_OUTPUT" | grep -qE "Import successful|already managed" && echo "      ✅ private[$IDX] imported" || echo "      ❌ private[$IDX] FAILED: $ASSOC_OUTPUT"
-              fi
-              IDX=$((IDX + 1))
-            done
-            
-            # Import database subnet associations
-            DATABASE_SUBNETS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$EXISTING_VPC_ID" "Name=tag:Name,Values=*database*" --region ap-south-1 --query 'Subnets | sort_by(@, &AvailabilityZone)[*].SubnetId' --output text 2>/dev/null || echo "")
-            IDX=0
-            for SUBNET_ID in $DATABASE_SUBNETS; do
-              RT_ASSOC_ID=$(aws ec2 describe-route-tables --filters "Name=association.subnet-id,Values=$SUBNET_ID" --region ap-south-1 --query 'RouteTables[0].Associations[?SubnetId==`'$SUBNET_ID'`].RouteTableAssociationId' --output text 2>/dev/null || echo "")
-              if [ -n "$RT_ASSOC_ID" ] && [ "$RT_ASSOC_ID" != "None" ] && [ "$RT_ASSOC_ID" != "" ]; then
-                echo "      Importing database[$IDX]: subnet=$SUBNET_ID, assoc=$RT_ASSOC_ID"
-                terraform state rm "module.vpc.aws_route_table_association.database[$IDX]" 2>&1 | grep -v "Invalid target address" || true
-                ASSOC_OUTPUT=$(terraform import -input=false -lock=false "module.vpc.aws_route_table_association.database[$IDX]" "$RT_ASSOC_ID" 2>&1)
-                echo "$ASSOC_OUTPUT"
-                echo "$ASSOC_OUTPUT" | grep -qE "Import successful|already managed" && echo "      ✅ database[$IDX] imported" || echo "      ❌ database[$IDX] FAILED: $ASSOC_OUTPUT"
-              fi
-              IDX=$((IDX + 1))
-            done
+            echo "   ℹ️ Route Tables + Associations: count = 0, no imports needed"
+            echo "      (Already exist in AWS, Terraform won't manage them)"
           fi
           
             # Verify imports succeeded
             echo ""
             echo "🔍 Verifying imports..."
-            terraform state list | grep -E "module.vpc.aws_route_table|module.lambda.aws_lambda_alias|module.vpc.aws_eip|module.vpc.aws_nat_gateway" || echo "   ⚠️ Some resources not in state"
+            terraform state list | grep -E "module.rds|module.lambda.aws_lambda_function|module.cloudfront" || echo "   ⚠️ Some resources not in state"
             
             echo ""
             echo "✅ NUCLEAR OPTION COMPLETE"
