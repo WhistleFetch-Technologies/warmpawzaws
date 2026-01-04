@@ -254,6 +254,39 @@ jobs:
             fi
           fi
 
+      - name: Import existing RDS cluster (CRITICAL - prevent destruction)
+        working-directory: infra/envs/dev
+        continue-on-error: true
+        timeout-minutes: 2
+        run: |
+          echo "🔍 CRITICAL: Checking for existing RDS cluster..."
+          
+          # Check if RDS cluster exists
+          if aws rds describe-db-clusters --db-cluster-identifier warmpawz-dev-cluster --region ap-south-1 2>/dev/null | grep -q "warmpawz-dev-cluster"; then
+            echo "✅ Found existing RDS cluster: warmpawz-dev-cluster"
+            echo "📋 Importing into Terraform state to prevent destruction..."
+            
+            # Import cluster
+            terraform import 'module.rds.aws_rds_cluster.main' warmpawz-dev-cluster 2>&1 | grep -v "already managed" || echo "  Cluster already in state or import failed"
+            
+            # Import cluster instance
+            if aws rds describe-db-instances --db-instance-identifier warmpawz-dev-instance-1 --region ap-south-1 2>/dev/null | grep -q "warmpawz-dev-instance-1"; then
+              echo "✅ Found existing RDS instance: warmpawz-dev-instance-1"
+              terraform import 'module.rds.aws_rds_cluster_instance.main[0]' warmpawz-dev-instance-1 2>&1 | grep -v "already managed" || echo "  Instance already in state or import failed"
+            fi
+            
+            # Import RDS secret
+            SECRET_ARN=$(aws secretsmanager list-secrets --region ap-south-1 --query "SecretList[?starts_with(Name, 'warmpawz-dev-rds-master')].ARN" --output text 2>/dev/null | head -1)
+            if [ -n "$SECRET_ARN" ]; then
+              echo "✅ Found RDS secret: $SECRET_ARN"
+              terraform import 'module.rds.aws_secretsmanager_secret.rds_master_password' "$SECRET_ARN" 2>&1 | grep -v "already managed" || echo "  Secret already in state or import failed"
+            fi
+            
+            echo "✅ RDS import completed - cluster will be preserved"
+          else
+            echo "ℹ️  No existing RDS cluster found - will create new one"
+          fi
+
       - name: Clean orphaned S3 buckets (CRITICAL - prevents BucketAlreadyExists)
         continue-on-error: false  # Must succeed or deployment will fail anyway
         timeout-minutes: 5

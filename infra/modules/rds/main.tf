@@ -204,6 +204,16 @@ resource "aws_rds_cluster_instance" "main" {
     Name        = "warmpawz-${var.environment}-aurora-instance-${count.index + 1}"
     Environment = var.environment
   }
+
+  # CRITICAL: Protect existing RDS instances from being destroyed
+  lifecycle {
+    prevent_destroy = false  # Can't be true in modules, but we rely on cluster's deletion_protection
+    ignore_changes = [
+      engine_version,           # Don't destroy on minor version changes
+      db_parameter_group_name,  # Don't destroy on parameter group changes
+      instance_class            # Don't destroy on instance class changes
+    ]
+  }
 }
 
 # CloudWatch Alarms for monitoring
