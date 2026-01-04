@@ -319,22 +319,26 @@ module "cloudfront" {
 
   environment       = local.environment
   aws_region        = var.aws_region
-  certificate_arn   = module.acm.validated_certificate_arn
+  # IMPORTANT: Only use certificate if validated (ISSUED state)
+  # CloudFront rejects PENDING_VALIDATION certificates
+  certificate_arn   = var.skip_cert_validation ? null : module.acm.validated_certificate_arn
   enable_versioning = false
   price_class       = "PriceClass_200"
   alarm_actions     = [module.sns.system_alerts_topic_arn]
 
+  # IMPORTANT: Only set domain if certificate is validated
+  # CloudFront requires ISSUED certificate, not PENDING_VALIDATION
   frontend_apps = {
     admin = {
-      domain      = local.admin_subdomain
+      domain      = var.skip_cert_validation ? null : local.admin_subdomain
       description = "Admin Dashboard"
     }
     vendor = {
-      domain      = local.vendor_subdomain
+      domain      = var.skip_cert_validation ? null : local.vendor_subdomain
       description = "Vendor Portal"
     }
     customer = {
-      domain      = local.customer_subdomain
+      domain      = var.skip_cert_validation ? null : local.customer_subdomain
       description = "Customer App"
     }
   }
@@ -354,7 +358,10 @@ resource "aws_route53_record" "api" {
   }
 }
 
+# Route53 records for CloudFront custom domains
+# Only create when certificate is validated (not skipped)
 resource "aws_route53_record" "admin" {
+  count   = var.skip_cert_validation ? 0 : 1
   zone_id = data.aws_route53_zone.main.zone_id
   name    = local.admin_subdomain
   type    = "A"
@@ -367,6 +374,7 @@ resource "aws_route53_record" "admin" {
 }
 
 resource "aws_route53_record" "vendor" {
+  count   = var.skip_cert_validation ? 0 : 1
   zone_id = data.aws_route53_zone.main.zone_id
   name    = local.vendor_subdomain
   type    = "A"
@@ -379,6 +387,7 @@ resource "aws_route53_record" "vendor" {
 }
 
 resource "aws_route53_record" "customer" {
+  count   = var.skip_cert_validation ? 0 : 1
   zone_id = data.aws_route53_zone.main.zone_id
   name    = local.customer_subdomain
   type    = "A"
