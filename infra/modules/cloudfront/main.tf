@@ -12,13 +12,9 @@ resource "aws_s3_bucket" "frontend" {
     App         = each.key
   }
 
+  # CRITICAL: NUCLEAR OPTION - Ignore ALL changes to prevent destruction
   lifecycle {
-    # Prevent destruction and ignore minor changes
-    prevent_destroy = false  # Can't use true in modules, but we'll use import strategy
-    ignore_changes = [
-      tags,  # Don't recreate on tag changes
-      lifecycle_rule  # Don't recreate on lifecycle rule changes (deprecated attribute)
-    ]
+    ignore_changes = all  # Ignore ALL attribute changes - NEVER destroy/replace
   }
 }
 

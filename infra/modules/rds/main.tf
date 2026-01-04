@@ -176,13 +176,10 @@ resource "aws_rds_cluster" "main" {
   }
 
   # Lifecycle - NEVER destroy existing cluster
+  # CRITICAL: NUCLEAR OPTION - Ignore ALL changes to prevent destruction
+  # This means once created, Terraform will NEVER try to modify or replace this cluster
   lifecycle {
-    prevent_destroy = false  # Must be false for Terraform to work, but deletion_protection prevents actual deletion
-    ignore_changes  = [
-      master_password,          # Don't update password on every apply
-      snapshot_identifier,      # Don't recreate from snapshot on changes
-      final_snapshot_identifier # Don't recreate due to timestamp changes
-    ]
+    ignore_changes = all  # Ignore ALL attribute changes - NEVER destroy/replace
   }
 }
 
@@ -205,14 +202,10 @@ resource "aws_rds_cluster_instance" "main" {
     Environment = var.environment
   }
 
-  # CRITICAL: Protect existing RDS instances from being destroyed
+  # CRITICAL: NUCLEAR OPTION - Ignore ALL changes to prevent destruction
+  # This means once created, Terraform will NEVER try to modify or replace this instance
   lifecycle {
-    prevent_destroy = false  # Can't be true in modules, but we rely on cluster's deletion_protection
-    ignore_changes = [
-      engine_version,           # Don't destroy on minor version changes
-      db_parameter_group_name,  # Don't destroy on parameter group changes
-      instance_class            # Don't destroy on instance class changes
-    ]
+    ignore_changes = all  # Ignore ALL attribute changes - NEVER destroy/replace
   }
 }
 
