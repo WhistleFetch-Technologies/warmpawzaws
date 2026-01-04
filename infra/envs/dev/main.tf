@@ -95,7 +95,7 @@ module "vpc" {
   enable_nat_gateway       = true
   single_nat_gateway       = true
   create_private_endpoints = false
-  use_existing_vpc         = false
+  use_existing_vpc         = true  # CRITICAL: Use existing VPC (VPC limit reached)
 }
 
 # SNS Module (for alarms and push notifications)
