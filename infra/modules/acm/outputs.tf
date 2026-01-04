@@ -17,7 +17,7 @@ output "certificate_status" {
 
 output "validated_certificate_arn" {
   description = "ARN of the validated certificate"
-  value       = aws_acm_certificate_validation.main.certificate_arn
+  value       = var.skip_validation ? aws_acm_certificate.main.arn : aws_acm_certificate_validation.main[0].certificate_arn
 }
 
 output "regional_certificate_arn" {

@@ -47,7 +47,9 @@ resource "aws_route53_record" "validation" {
 }
 
 # Certificate Validation for us-east-1 (CloudFront) - WITH TIMEOUT
+# Only create validation if certificate is not already validated
 resource "aws_acm_certificate_validation" "main" {
+  count                   = var.skip_validation ? 0 : 1
   provider                = aws.us_east_1
   certificate_arn         = aws_acm_certificate.main.arn
   validation_record_fqdns = [for record in aws_route53_record.validation : record.fqdn]
@@ -77,7 +79,7 @@ resource "aws_acm_certificate" "regional" {
 
   # CRITICAL: Wait for main cert to be FULLY validated first
   # This prevents DNS record conflicts
-  depends_on = [aws_acm_certificate_validation.main]
+  depends_on = [aws_acm_certificate.main]
 }
 
 # Route53 Validation Records for regional certificate
@@ -98,8 +100,8 @@ resource "aws_route53_record" "regional_validation" {
   type            = each.value.type
   zone_id         = var.route53_zone_id
 
-  # Explicit dependency on main validation completion
-  depends_on = [aws_acm_certificate_validation.main]
+  # Explicit dependency on main certificate creation (not validation)
+  depends_on = [aws_acm_certificate.main]
 }
 
 # Certificate Validation for regional - WITH TIMEOUT
