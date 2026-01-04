@@ -459,27 +459,33 @@ jobs:
             # But we MUST import subnets (they conflict if not imported)
             echo "      Importing existing subnets..."
             
-            # Public subnets
+            # Public subnets (FIX: Show full output)
             PUBLIC_SUBNETS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$EXISTING_VPC_ID" "Name=tag:Name,Values=*public*" --region ap-south-1 --query 'Subnets | sort_by(@, &AvailabilityZone)[*].SubnetId' --output text 2>/dev/null || echo "")
             IDX=0
             for SUBNET_ID in $PUBLIC_SUBNETS; do
-              terraform import -input=false -lock=false "module.vpc.aws_subnet.public[$IDX]" "$SUBNET_ID" 2>&1 | grep -E "Import successful|already managed" || echo "      ⚠️ Skipped"
+              SUBNET_OUTPUT=$(terraform import -input=false -lock=false "module.vpc.aws_subnet.public[$IDX]" "$SUBNET_ID" 2>&1)
+              echo "$SUBNET_OUTPUT"
+              echo "$SUBNET_OUTPUT" | grep -qE "Import successful|already managed" && echo "      ✅ public[$IDX] imported" || echo "      ❌ public[$IDX] FAILED: $SUBNET_OUTPUT"
               IDX=$((IDX + 1))
             done
             
-            # Private subnets
+            # Private subnets (FIX: Show full output)
             PRIVATE_SUBNETS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$EXISTING_VPC_ID" "Name=tag:Name,Values=*private*" --region ap-south-1 --query 'Subnets | sort_by(@, &AvailabilityZone)[*].SubnetId' --output text 2>/dev/null || echo "")
             IDX=0
             for SUBNET_ID in $PRIVATE_SUBNETS; do
-              terraform import -input=false -lock=false "module.vpc.aws_subnet.private[$IDX]" "$SUBNET_ID" 2>&1 | grep -E "Import successful|already managed" || echo "      ⚠️ Skipped"
+              SUBNET_OUTPUT=$(terraform import -input=false -lock=false "module.vpc.aws_subnet.private[$IDX]" "$SUBNET_ID" 2>&1)
+              echo "$SUBNET_OUTPUT"
+              echo "$SUBNET_OUTPUT" | grep -qE "Import successful|already managed" && echo "      ✅ private[$IDX] imported" || echo "      ❌ private[$IDX] FAILED: $SUBNET_OUTPUT"
               IDX=$((IDX + 1))
             done
             
-            # Database subnets
+            # Database subnets (FIX: Show full output)
             DATABASE_SUBNETS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$EXISTING_VPC_ID" "Name=tag:Name,Values=*database*" --region ap-south-1 --query 'Subnets | sort_by(@, &AvailabilityZone)[*].SubnetId' --output text 2>/dev/null || echo "")
             IDX=0
             for SUBNET_ID in $DATABASE_SUBNETS; do
-              terraform import -input=false -lock=false "module.vpc.aws_subnet.database[$IDX]" "$SUBNET_ID" 2>&1 | grep -E "Import successful|already managed" || echo "      ⚠️ Skipped"
+              SUBNET_OUTPUT=$(terraform import -input=false -lock=false "module.vpc.aws_subnet.database[$IDX]" "$SUBNET_ID" 2>&1)
+              echo "$SUBNET_OUTPUT"
+              echo "$SUBNET_OUTPUT" | grep -qE "Import successful|already managed" && echo "      ✅ database[$IDX] imported" || echo "      ❌ database[$IDX] FAILED: $SUBNET_OUTPUT"
               IDX=$((IDX + 1))
             done
             
@@ -696,6 +702,8 @@ jobs:
         working-directory: infra/envs/dev
         run: |
           set +e  # Don't exit on error
+          
+          echo "🔍 Running terraform plan..."
           terraform plan \
             -var="opensearch_master_password=${{ secrets.DEV_OPENSEARCH_PASSWORD }}" \
             -var="razorpay_key_id=${{ secrets.RAZORPAY_KEY_ID }}" \
@@ -704,9 +712,20 @@ jobs:
             -var="shiprocket_email=${{ secrets.SHIPROCKET_EMAIL }}" \
             -var="shiprocket_password=${{ secrets.SHIPROCKET_PASSWORD }}" \
             -out=tfplan \
-            -detailed-exitcode
+            -detailed-exitcode 2>&1 | tee plan_output.txt
           
           EXIT_CODE=$?
+          
+          echo ""
+          echo "═══════════════════════════════════════════════════════════════"
+          echo "TERRAFORM PLAN EXIT CODE: $EXIT_CODE"
+          echo "═══════════════════════════════════════════════════════════════"
+          echo ""
+          echo "Terraform plan exit codes:"
+          echo "  0 = No changes, success"
+          echo "  1 = Error occurred"
+          echo "  2 = Successful plan with changes"
+          echo ""
           
           # Terraform plan exit codes:
           # 0 = No changes, success
@@ -723,6 +742,9 @@ jobs:
             exit 0
           else
             echo "❌ Terraform plan failed (exit code: $EXIT_CODE)"
+            echo ""
+            echo "Last 50 lines of plan output:"
+            tail -50 plan_output.txt || echo "Could not read plan output"
             exit 1
           fi
 
