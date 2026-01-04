@@ -546,13 +546,19 @@ jobs:
           # Import Lambda Function + Permission + Alias
           echo "   📦 Lambda Function + Permission + Alias..."
           if aws lambda get-function --function-name warmpawz-dev-api-handler --region ap-south-1 2>/dev/null | grep -q "warmpawz-dev-api-handler"; then
-            # Import Lambda function
-            terraform import -input=false -lock=false 'module.lambda.aws_lambda_function.functions["api-handler"]' warmpawz-dev-api-handler 2>&1 | grep -E "Import successful|already managed" || echo "      ⚠️ Function import skipped"
+            # Import Lambda function (FIX: Show full output)
+            terraform state rm 'module.lambda.aws_lambda_function.functions["api-handler"]' 2>&1 | grep -v "Invalid target address" || true
+            FUNC_OUTPUT=$(terraform import -input=false -lock=false 'module.lambda.aws_lambda_function.functions["api-handler"]' warmpawz-dev-api-handler 2>&1)
+            echo "$FUNC_OUTPUT"
+            echo "$FUNC_OUTPUT" | grep -qE "Import successful|already managed" && echo "      ✅ Function imported" || echo "      ❌ Function import FAILED: $FUNC_OUTPUT"
             
             # Import Lambda permission (format: function_name/statement_id)
-            terraform import -input=false -lock=false 'module.api_gateway.aws_lambda_permission.api_gateway["api-handler"]' warmpawz-dev-api-handler/AllowAPIGatewayInvoke-api-handler 2>&1 | grep -E "Import successful|already managed" || echo "      ⚠️ Permission import skipped"
+            terraform state rm 'module.api_gateway.aws_lambda_permission.api_gateway["api-handler"]' 2>&1 | grep -v "Invalid target address" || true
+            PERM_OUTPUT=$(terraform import -input=false -lock=false 'module.api_gateway.aws_lambda_permission.api_gateway["api-handler"]' warmpawz-dev-api-handler/AllowAPIGatewayInvoke-api-handler 2>&1)
+            echo "$PERM_OUTPUT"
+            echo "$PERM_OUTPUT" | grep -qE "Import successful|already managed" && echo "      ✅ Permission imported" || echo "      ❌ Permission import FAILED: $PERM_OUTPUT"
             
-            # Import Lambda alias (FIX: Ignore 'Invalid target address' from state rm, show full error)
+            # Import Lambda alias (FIX: Must import AFTER function is imported)
             terraform state rm 'module.lambda.aws_lambda_alias.live["api-handler"]' 2>&1 | grep -v "Invalid target address" || true
             ALIAS_OUTPUT=$(terraform import -input=false -lock=false 'module.lambda.aws_lambda_alias.live["api-handler"]' warmpawz-dev-api-handler:live 2>&1)
             echo "$ALIAS_OUTPUT"
@@ -674,11 +680,16 @@ jobs:
             done
           fi
           
-          echo ""
-          echo "✅ NUCLEAR OPTION COMPLETE"
-          echo "   use_existing_vpc = true (VPC limit reached)"
-          echo "   All existing resources imported"
-          echo "   Terraform will create ONLY missing resources"
+            # Verify imports succeeded
+            echo ""
+            echo "🔍 Verifying imports..."
+            terraform state list | grep -E "module.vpc.aws_route_table|module.lambda.aws_lambda_alias|module.vpc.aws_eip|module.vpc.aws_nat_gateway" || echo "   ⚠️ Some resources not in state"
+            
+            echo ""
+            echo "✅ NUCLEAR OPTION COMPLETE"
+            echo "   use_existing_vpc = true (VPC limit reached)"
+            echo "   All existing resources imported"
+            echo "   Terraform will create ONLY missing resources"
 
       - name: Terraform Plan
         id: plan
