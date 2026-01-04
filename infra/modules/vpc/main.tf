@@ -35,11 +35,90 @@ resource "aws_vpc" "main" {
 
 locals {
   vpc_id = var.use_existing_vpc ? data.aws_vpc.existing[0].id : aws_vpc.main[0].id
+  
+  # Subnet IDs - use data source if existing VPC, otherwise use created subnets
+  # This ensures Lambda always gets subnet IDs even if imports fail
+  private_subnet_ids = var.use_existing_vpc ? (
+    length(data.aws_subnets.existing_private) > 0 && length(data.aws_subnets.existing_private[0].ids) > 0 ? 
+    data.aws_subnets.existing_private[0].ids : 
+    aws_subnet.private[*].id
+  ) : aws_subnet.private[*].id
+  
+  public_subnet_ids = var.use_existing_vpc ? (
+    length(data.aws_subnets.existing_public) > 0 && length(data.aws_subnets.existing_public[0].ids) > 0 ? 
+    data.aws_subnets.existing_public[0].ids : 
+    aws_subnet.public[*].id
+  ) : aws_subnet.public[*].id
+  
+  database_subnet_ids = var.use_existing_vpc ? (
+    length(data.aws_subnets.existing_database) > 0 && length(data.aws_subnets.existing_database[0].ids) > 0 ? 
+    data.aws_subnets.existing_database[0].ids : 
+    aws_subnet.database[*].id
+  ) : aws_subnet.database[*].id
 }
 
 # Availability Zones
 data "aws_availability_zones" "available" {
   state = "available"
+}
+
+# Data sources for existing subnets (when use_existing_vpc = true)
+# These ensure we can get subnet IDs even if imports fail
+data "aws_subnets" "existing_private" {
+  count = var.use_existing_vpc ? 1 : 0
+
+  filter {
+    name   = "vpc-id"
+    values = [local.vpc_id]
+  }
+
+  filter {
+    name   = "tag:Type"
+    values = ["private"]
+  }
+
+  filter {
+    name   = "tag:Environment"
+    values = [var.environment]
+  }
+}
+
+data "aws_subnets" "existing_public" {
+  count = var.use_existing_vpc ? 1 : 0
+
+  filter {
+    name   = "vpc-id"
+    values = [local.vpc_id]
+  }
+
+  filter {
+    name   = "tag:Type"
+    values = ["public"]
+  }
+
+  filter {
+    name   = "tag:Environment"
+    values = [var.environment]
+  }
+}
+
+data "aws_subnets" "existing_database" {
+  count = var.use_existing_vpc ? 1 : 0
+
+  filter {
+    name   = "vpc-id"
+    values = [local.vpc_id]
+  }
+
+  filter {
+    name   = "tag:Type"
+    values = ["database"]
+  }
+
+  filter {
+    name   = "tag:Environment"
+    values = [var.environment]
+  }
 }
 
 # Public Subnets (for NAT, Load Balancers)
