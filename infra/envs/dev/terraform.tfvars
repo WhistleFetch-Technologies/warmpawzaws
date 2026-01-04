@@ -1,5 +1,5 @@
 # Development Environment Variables
-aws_region        = "us-east-1"
+aws_region        = "ap-south-1"
 alert_emails      = ["dev-alerts@warmpawz.com"]
 enable_opensearch = false
 
