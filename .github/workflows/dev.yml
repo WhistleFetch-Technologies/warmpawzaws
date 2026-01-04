@@ -279,7 +279,7 @@ jobs:
       - name: Handle ALL RDS edge cases (CRITICAL)
         working-directory: infra/envs/dev
         continue-on-error: true
-        timeout-minutes: 5
+        timeout-minutes: 2
         run: |
           echo "🔍 CRITICAL: Analyzing RDS state and handling edge cases..."
           
@@ -315,14 +315,14 @@ jobs:
             echo ""
             echo "📋 Resolution: Import cluster, Terraform will create missing instance"
             
-            # Import cluster
-            terraform import -lock=false 'module.rds.aws_rds_cluster.main' warmpawz-dev-cluster 2>&1 | grep -E "Import successful|already managed" || echo "   Import may have failed, continuing..."
+            # Import cluster (with timeout)
+            timeout 30 terraform import -lock=false 'module.rds.aws_rds_cluster.main' warmpawz-dev-cluster 2>&1 | grep -E "Import successful|already managed|Resource already managed" || echo "   Import skipped"
             
-            # Import secret if exists
+            # Import secret if exists (with timeout)
             SECRET_ARN=$(aws secretsmanager list-secrets --region ap-south-1 --query "SecretList[?starts_with(Name, 'warmpawz-dev-rds-master')].ARN" --output text 2>/dev/null | head -1)
             if [ -n "$SECRET_ARN" ]; then
               echo "   Importing RDS secret: $SECRET_ARN"
-              terraform import -lock=false 'module.rds.aws_secretsmanager_secret.rds_master_password' "$SECRET_ARN" 2>&1 | grep -E "Import successful|already managed" || true
+              timeout 30 terraform import -lock=false 'module.rds.aws_secretsmanager_secret.rds_master_password' "$SECRET_ARN" 2>&1 | grep -E "Import successful|already managed|Resource already managed" || echo "   Secret import skipped"
             fi
             
             echo "   ✅ Cluster imported - Terraform will add missing instance"
@@ -334,23 +334,23 @@ jobs:
             echo "✅ Normal scenario: Cluster AND instances exist"
             echo ""
             
-            # Import cluster
-            terraform import -lock=false 'module.rds.aws_rds_cluster.main' warmpawz-dev-cluster 2>&1 | grep -E "Import successful|already managed" || true
+            # Import cluster (with timeout to prevent hanging)
+            timeout 30 terraform import -lock=false 'module.rds.aws_rds_cluster.main' warmpawz-dev-cluster 2>&1 | grep -E "Import successful|already managed|Resource already managed" || echo "   Import skipped (may already be in state)"
             
-            # Import each instance
+            # Import each instance (with timeout)
             for INSTANCE in $INSTANCES; do
               # Determine instance index (0-based)
               INSTANCE_NUM=$(echo "$INSTANCE" | grep -oP 'instance-\K\d+' || echo "1")
               INSTANCE_IDX=$((INSTANCE_NUM - 1))
               
               echo "   Importing instance: $INSTANCE (index: $INSTANCE_IDX)"
-              terraform import -lock=false "module.rds.aws_rds_cluster_instance.main[$INSTANCE_IDX]" "$INSTANCE" 2>&1 | grep -E "Import successful|already managed" || true
+              timeout 30 terraform import -lock=false "module.rds.aws_rds_cluster_instance.main[$INSTANCE_IDX]" "$INSTANCE" 2>&1 | grep -E "Import successful|already managed|Resource already managed" || echo "   Import skipped"
             done
             
-            # Import secret
+            # Import secret (with timeout)
             SECRET_ARN=$(aws secretsmanager list-secrets --region ap-south-1 --query "SecretList[?starts_with(Name, 'warmpawz-dev-rds-master')].ARN" --output text 2>/dev/null | head -1)
             if [ -n "$SECRET_ARN" ]; then
-              terraform import -lock=false 'module.rds.aws_secretsmanager_secret.rds_master_password' "$SECRET_ARN" 2>&1 | grep -E "Import successful|already managed" || true
+              timeout 30 terraform import -lock=false 'module.rds.aws_secretsmanager_secret.rds_master_password' "$SECRET_ARN" 2>&1 | grep -E "Import successful|already managed|Resource already managed" || echo "   Secret import skipped"
             fi
             
             echo "   ✅ Full RDS stack imported - will be preserved"
@@ -412,8 +412,8 @@ jobs:
               echo "  ✅ Found existing bucket: $BUCKET"
               echo "  📋 Importing into Terraform state..."
               
-              # Import the bucket
-              terraform import -lock=false "module.cloudfront.aws_s3_bucket.frontend[\"$APP\"]" "$BUCKET" 2>&1 | grep -E "Import successful|already managed|Resource already managed" || echo "  Import may have failed, continuing..."
+              # Import the bucket (with timeout to prevent hanging)
+              timeout 30 terraform import -lock=false "module.cloudfront.aws_s3_bucket.frontend[\"$APP\"]" "$BUCKET" 2>&1 | grep -E "Import successful|already managed|Resource already managed" || echo "  Import skipped (may already be in state)"
               
               echo "  ✅ Bucket imported - will be reused"
             else
@@ -424,66 +424,48 @@ jobs:
           
           echo "✅ S3 edge case handling complete"
 
-      - name: Clean orphaned S3 buckets (CRITICAL - prevents BucketAlreadyExists)
-        continue-on-error: false  # Must succeed or deployment will fail anyway
-        timeout-minutes: 5
+      - name: Import ALL existing S3 buckets (CRITICAL - prevents BucketAlreadyExists)
+        working-directory: infra/envs/dev
+        continue-on-error: true
+        timeout-minutes: 2
         run: |
-          echo "🗑️ CRITICAL: Cleaning ALL orphaned S3 buckets from previous runs..."
+          echo "📋 CRITICAL: Importing ALL existing S3 buckets to prevent BucketAlreadyExists errors..."
+          echo ""
           
-          # Function to forcefully delete S3 bucket
-          force_delete_bucket() {
-            local bucket=$1
-            echo "  Checking bucket: $bucket"
+          # Get AWS Account ID for bucket naming
+          ACCOUNT_ID="${{ secrets.AWS_ACCOUNT_ID }}"
+          
+          # List of ALL S3 buckets that might exist
+          declare -A BUCKETS=(
+            ["warmpawz-dev-admin-frontend-ap-south-1"]="module.cloudfront.aws_s3_bucket.frontend[\"admin\"]"
+            ["warmpawz-dev-vendor-frontend-ap-south-1"]="module.cloudfront.aws_s3_bucket.frontend[\"vendor\"]"
+            ["warmpawz-dev-customer-frontend-ap-south-1"]="module.cloudfront.aws_s3_bucket.frontend[\"customer\"]"
+            ["warmpawz-dev-user-uploads-${ACCOUNT_ID}"]="module.s3.aws_s3_bucket.user_uploads"
+            ["warmpawz-dev-static-${ACCOUNT_ID}"]="module.s3.aws_s3_bucket.static_website"
+            ["warmpawz-dev-logs-${ACCOUNT_ID}"]="module.s3.aws_s3_bucket.logs"
+            ["warmpawz-dev-backups-${ACCOUNT_ID}"]="module.s3.aws_s3_bucket.backups"
+          )
+          
+          for BUCKET_NAME in "${!BUCKETS[@]}"; do
+            TERRAFORM_ADDRESS="${BUCKETS[$BUCKET_NAME]}"
             
-            if ! aws s3 ls "s3://$bucket" 2>/dev/null; then
-              echo "    ✓ Does not exist"
-              return 0
-            fi
+            echo "Checking bucket: $BUCKET_NAME"
             
-            echo "    Found - Deleting..."
-            
-            # Step 1: Remove all bucket policies
-            aws s3api delete-bucket-policy --bucket "$bucket" 2>/dev/null || true
-            
-            # Step 2: Remove public access block
-            aws s3api delete-public-access-block --bucket "$bucket" 2>/dev/null || true
-            
-            # Step 3: Remove bucket ownership controls
-            aws s3api delete-bucket-ownership-controls --bucket "$bucket" 2>/dev/null || true
-            
-            # Step 4: Disable versioning
-            aws s3api put-bucket-versioning --bucket "$bucket" --versioning-configuration Status=Suspended 2>/dev/null || true
-            
-            # Step 5: Delete all object versions
-            aws s3api list-object-versions --bucket "$bucket" --output json 2>/dev/null | \
-              jq -r '.Versions[]?, .DeleteMarkers[]? | "\(.Key) \(.VersionId)"' 2>/dev/null | \
-              while read key version; do
-                [ -n "$key" ] && aws s3api delete-object --bucket "$bucket" --key "$key" --version-id "$version" 2>/dev/null || true
-              done
-            
-            # Step 6: Delete all objects (non-versioned)
-            aws s3 rm "s3://$bucket" --recursive 2>/dev/null || true
-            
-            # Step 7: Delete bucket
-            aws s3api delete-bucket --bucket "$bucket" 2>/dev/null || \
-              aws s3 rb "s3://$bucket" --force 2>/dev/null || true
-            
-            # Step 8: Verify deletion
-            if aws s3 ls "s3://$bucket" 2>/dev/null; then
-              echo "    ❌ FAILED to delete $bucket"
-              return 1
+            if aws s3 ls "s3://$BUCKET_NAME" --region ap-south-1 2>/dev/null; then
+              echo "  ✅ Found existing bucket"
+              echo "  📋 Importing: $TERRAFORM_ADDRESS"
+              
+              # Import with timeout (30 seconds max per bucket)
+              timeout 30 terraform import -lock=false "$TERRAFORM_ADDRESS" "$BUCKET_NAME" 2>&1 | \
+                grep -E "Import successful|already managed|Resource already managed" || \
+                echo "  ⚠️  Import skipped (may already be in state or import failed)"
             else
-              echo "    ✅ Successfully deleted $bucket"
-              return 0
+              echo "  ℹ️  Bucket does not exist - will be created"
             fi
-          }
+            echo ""
+          done
           
-          # Delete all three frontend buckets
-          force_delete_bucket "warmpawz-dev-admin-frontend-ap-south-1"
-          force_delete_bucket "warmpawz-dev-vendor-frontend-ap-south-1"
-          force_delete_bucket "warmpawz-dev-customer-frontend-ap-south-1"
-          
-          echo "✅ All orphaned buckets cleaned"
+          echo "✅ S3 bucket import complete"
 
       - name: Terraform Plan
         id: plan
