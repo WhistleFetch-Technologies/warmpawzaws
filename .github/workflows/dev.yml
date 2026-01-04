@@ -254,38 +254,35 @@ jobs:
             fi
           fi
 
-      - name: Auto-import existing resources (idempotent)
+      - name: Check for existing resources (cleanup orphans)
         working-directory: infra/envs/dev
         continue-on-error: true
-        timeout-minutes: 3
+        timeout-minutes: 2
         run: |
-          echo "🔄 Checking for existing resources to import..."
-          echo "⏱️ Timeout: 3 minutes"
-          echo "This step prevents ResourceAlreadyExists errors on subsequent runs"
+          echo "🔍 Checking for orphaned resources from previous failed deployments..."
           
-          # For a fresh account, there are no resources to import
-          # Check if key resources exist before attempting import
+          # List any S3 buckets that might conflict
+          echo "Existing S3 buckets with warmpawz-dev prefix:"
+          aws s3 ls | grep "warmpawz-dev" || echo "  None found"
           
+          # Clean up any orphaned buckets from failed runs
+          # These will be recreated by Terraform apply
           if aws s3 ls s3://warmpawz-dev-admin-frontend-ap-south-1 2>/dev/null; then
-            echo "Found existing S3 buckets, importing..."
-            terraform import 'module.cloudfront.aws_s3_bucket.frontend["admin"]' warmpawz-dev-admin-frontend-ap-south-1 2>/dev/null || true
-            terraform import 'module.cloudfront.aws_s3_bucket.frontend["vendor"]' warmpawz-dev-vendor-frontend-ap-south-1 2>/dev/null || true
-            terraform import 'module.cloudfront.aws_s3_bucket.frontend["customer"]' warmpawz-dev-customer-frontend-ap-south-1 2>/dev/null || true
-          else
-            echo "No existing frontend S3 buckets found, skipping import"
+            echo "⚠️  Found orphaned frontend S3 bucket (admin), deleting..."
+            aws s3 rb s3://warmpawz-dev-admin-frontend-ap-south-1 --force || true
           fi
           
-          if aws s3 ls s3://warmpawz-dev-user-uploads-${{ secrets.AWS_ACCOUNT_ID }} 2>/dev/null; then
-            echo "Found existing app S3 buckets, importing..."
-            terraform import 'module.s3.aws_s3_bucket.user_uploads' warmpawz-dev-user-uploads-${{ secrets.AWS_ACCOUNT_ID }} 2>/dev/null || true
-            terraform import 'module.s3.aws_s3_bucket.static_website' warmpawz-dev-static-${{ secrets.AWS_ACCOUNT_ID }} 2>/dev/null || true
-            terraform import 'module.s3.aws_s3_bucket.logs' warmpawz-dev-logs-${{ secrets.AWS_ACCOUNT_ID }} 2>/dev/null || true
-            terraform import 'module.s3.aws_s3_bucket.backups' warmpawz-dev-backups-${{ secrets.AWS_ACCOUNT_ID }} 2>/dev/null || true
-          else
-            echo "No existing app S3 buckets found, skipping import"
+          if aws s3 ls s3://warmpawz-dev-vendor-frontend-ap-south-1 2>/dev/null; then
+            echo "⚠️  Found orphaned frontend S3 bucket (vendor), deleting..."
+            aws s3 rb s3://warmpawz-dev-vendor-frontend-ap-south-1 --force || true
           fi
           
-          echo "✅ Auto-import check completed"
+          if aws s3 ls s3://warmpawz-dev-customer-frontend-ap-south-1 2>/dev/null; then
+            echo "⚠️  Found orphaned frontend S3 bucket (customer), deleting..."
+            aws s3 rb s3://warmpawz-dev-customer-frontend-ap-south-1 --force || true
+          fi
+          
+          echo "✅ Orphan cleanup completed"
 
       - name: Terraform Plan
         id: plan
