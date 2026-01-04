@@ -232,6 +232,39 @@ jobs:
             echo "✅ Backend already exists, skipping bootstrap"
           fi
 
+      - name: Clear state corruption (if any)
+        continue-on-error: true
+        timeout-minutes: 1
+        run: |
+          echo "🧹 Checking for state corruption between S3 and DynamoDB..."
+
+          # Check if state file exists in S3
+          if aws s3 ls "s3://warmpawz-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}/dev/terraform.tfstate" --region ap-south-1 2>/dev/null; then
+            echo "📄 State file exists in S3"
+            echo "🔄 Testing terraform init for corruption..."
+
+            # Try init and check for corruption error
+            if terraform init -backend-config=backend.hcl -input=false 2>&1 | grep -q "does not have the expected content"; then
+              echo "🚨 STATE CORRUPTION DETECTED!"
+              echo "🧹 Clearing corrupted state..."
+
+              # Clear S3 state
+              aws s3 rm "s3://warmpawz-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}/dev/terraform.tfstate" --region ap-south-1 2>&1 || echo "  S3 clear failed"
+
+              # Clear DynamoDB lock
+              aws dynamodb delete-item \
+                --table-name warmpawz-terraform-locks \
+                --key '{"LockID":{"S":"warmpawz-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}/dev/terraform.tfstate"}}' \
+                --region ap-south-1 2>&1 || echo "  DynamoDB clear failed"
+
+              echo "✅ State corruption cleared - will recreate from scratch"
+            else
+              echo "✅ State is healthy"
+            fi
+          else
+            echo "📄 No state file in S3 (clean slate)"
+          fi
+
       - name: Terraform Init
         working-directory: infra/envs/dev
         run: terraform init -backend-config=backend.hcl
