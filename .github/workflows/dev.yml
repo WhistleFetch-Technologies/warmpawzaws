@@ -909,6 +909,15 @@ jobs:
           terraform_version: ${{ env.TERRAFORM_VERSION }}
           terraform_wrapper: false
 
+      - name: Ensure RDS is accessible (Dev Only)
+        run: |
+          echo "🔧 Ensuring RDS is accessible for migrations..."
+          chmod +x scripts/ci-enable-rds-access.sh
+          scripts/ci-enable-rds-access.sh
+        env:
+          ENVIRONMENT: dev
+          AWS_REGION: ${{ env.AWS_REGION }}
+
       - name: Get database credentials
         id: db-creds
         working-directory: infra/envs/dev
@@ -1011,6 +1020,64 @@ jobs:
           
           # Output for next steps
           echo "database_url=$DATABASE_URL" >> $GITHUB_OUTPUT
+
+      - name: Test database connectivity
+        run: |
+          echo "🔍 Testing database connectivity..."
+          
+          # Extract host and port from DATABASE_URL
+          DB_URL="${{ steps.db-creds.outputs.database_url }}"
+          DB_HOST=$(echo "$DB_URL" | sed -n 's|.*@\([^:]*\):[0-9]*/.*|\1|p')
+          DB_PORT=$(echo "$DB_URL" | sed -n 's|.*@[^:]*:\([0-9]*\)/.*|\1|p')
+          
+          echo "   Host: $DB_HOST"
+          echo "   Port: ${DB_PORT:-5432}"
+          echo ""
+          
+          # Test TCP connectivity
+          echo "🔗 Testing TCP connection to RDS..."
+          if timeout 10 bash -c "cat < /dev/null > /dev/tcp/$DB_HOST/${DB_PORT:-5432}"; then
+            echo "✅ TCP connection successful"
+          else
+            echo "❌ ERROR: Cannot connect to $DB_HOST:${DB_PORT:-5432}"
+            echo ""
+            echo "   Possible causes:"
+            echo "   1. RDS is not publicly accessible"
+            echo "   2. Security group doesn't allow GitHub Actions IPs"
+            echo "   3. RDS is still initializing"
+            echo "   4. Network connectivity issues"
+            echo ""
+            echo "   Run this locally to enable access:"
+            echo "   ./scripts/enable-rds-public-access-dev.sh"
+            echo ""
+            exit 1
+          fi
+          
+          echo ""
+          echo "🔑 Testing PostgreSQL authentication..."
+          # Install psql for connection test
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client > /dev/null
+          
+          # Test actual PostgreSQL connection
+          if psql "$DB_URL" -c "SELECT version();" > /dev/null 2>&1; then
+            echo "✅ PostgreSQL connection successful"
+            echo ""
+            psql "$DB_URL" -c "SELECT version();" | head -n 3
+          else
+            echo "❌ ERROR: PostgreSQL authentication failed"
+            echo ""
+            echo "   Possible causes:"
+            echo "   1. Incorrect username or password"
+            echo "   2. Database does not exist"
+            echo "   3. SSL/TLS configuration issue"
+            echo ""
+            exit 1
+          fi
+          
+          echo ""
+          echo "✅ Database is ready for migrations"
+        env:
+          PGCONNECT_TIMEOUT: 10
 
       - name: Run migrations
         working-directory: db
