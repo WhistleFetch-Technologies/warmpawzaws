@@ -1,0 +1,17 @@
+{
+  "name": "warmpawz-migration-runner-lambda",
+  "version": "1.0.0",
+  "description": "Lambda function to run database migrations from within VPC",
+  "main": "index.js",
+  "scripts": {
+    "build": "npm install --production && zip -r migration-runner.zip index.js node_modules package.json"
+  },
+  "dependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.470.0",
+    "pg": "^8.11.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
+
