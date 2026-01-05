@@ -20,6 +20,7 @@ export default function RootLayout({
       <body className={inter.className}>
         {/* Runtime config injected at deploy-time (static hosting safe). */}
         <script src="/runtime-config.js" />
+        {/* Deploy trigger: safe no-op comment to run frontend-only pipeline. */}
         <Providers>{children}</Providers>
       </body>
     </html>
