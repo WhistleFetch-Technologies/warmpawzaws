@@ -6,11 +6,14 @@
  * Usage: node db/run-migration-all.js
  * 
  * CRITICAL VALIDATIONS:
- * - DATABASE_URL must be defined and non-empty
- * - DATABASE_URL must be a valid PostgreSQL connection string
- * - Connection must succeed before running migrations
+ * 1. DATABASE_URL environment variable must exist
+ * 2. DATABASE_URL must be non-empty string
+ * 3. DATABASE_URL must include protocol (postgresql:// or postgres://)
+ * 4. DATABASE_URL must match format: postgresql://user:pass@host:port/db
+ * 5. URL parsing must succeed (prevents searchParams undefined error)
+ * 6. Database connectivity test must pass before migrations run
  * 
- * This prevents "Cannot read properties of undefined" errors in CI/CD
+ * This prevents "Cannot read properties of undefined (reading 'searchParams')" errors in CI/CD
  */
 
 const { Pool } = require('pg');
@@ -43,8 +46,28 @@ if (typeof DATABASE_URL !== 'string' || DATABASE_URL.trim() === '') {
   process.exit(1);
 }
 
-// CRITICAL VALIDATION #3: DATABASE_URL has correct format
-const urlPattern = /^postgresql:\/\/[^:]+:[^@]+@[^:]+:\d+\/[^/]+$/;
+// CRITICAL VALIDATION #3: DATABASE_URL has protocol
+// DEFENSIVE: Check if protocol is missing and auto-fix if possible
+if (!DATABASE_URL.startsWith('postgresql://') && !DATABASE_URL.startsWith('postgres://')) {
+  // Check if it looks like a connection string without protocol
+  if (DATABASE_URL.match(/^[^:]+:[^@]+@[^:]+:\d+\/[^/]+$/)) {
+    console.error('');
+    console.error('❌ FATAL ERROR: DATABASE_URL is missing protocol');
+    console.error('');
+    console.error(`   Got: ${DATABASE_URL.substring(0, 50)}...`);
+    console.error('   Expected: postgresql://username:password@host:port/database');
+    console.error('');
+    console.error('   FIX: Add postgresql:// to the beginning of your DATABASE_URL');
+    console.error(`   Correct format: postgresql://${DATABASE_URL}`);
+    console.error('');
+    console.error('   This error prevents: "Cannot read properties of undefined (reading \'searchParams\')"');
+    console.error('');
+    process.exit(1);
+  }
+}
+
+// CRITICAL VALIDATION #4: DATABASE_URL has correct format
+const urlPattern = /^(postgresql|postgres):\/\/[^:]+:[^@]+@[^:]+:\d+\/[^/]+$/;
 if (!urlPattern.test(DATABASE_URL)) {
   console.error('');
   console.error('❌ FATAL ERROR: DATABASE_URL has invalid format');
@@ -53,15 +76,15 @@ if (!urlPattern.test(DATABASE_URL)) {
   console.error(`   Got (sanitized): ${DATABASE_URL.replace(/:[^:@]+@/, ':***@')}`);
   console.error('');
   console.error('   Common issues:');
+  console.error('   - Missing protocol (postgresql:// or postgres://)');
   console.error('   - Missing username or password');
   console.error('   - Missing host or port');
   console.error('   - Missing database name');
-  console.error('   - Wrong protocol (use postgresql:// not postgres://)');
   console.error('');
   process.exit(1);
 }
 
-// CRITICAL VALIDATION #4: URL parsing works (prevents "Cannot read properties of undefined")
+// CRITICAL VALIDATION #5: URL parsing works (prevents "Cannot read properties of undefined")
 let parsedUrl;
 try {
   parsedUrl = new URL(DATABASE_URL);
@@ -77,13 +100,19 @@ try {
     throw new Error('Port is empty');
   }
   
+  // CRITICAL: Ensure searchParams is accessible (this was the root cause)
+  if (typeof parsedUrl.searchParams === 'undefined') {
+    throw new Error('URL.searchParams is undefined - URL parsing failed');
+  }
+  
 } catch (error) {
   console.error('');
   console.error('❌ FATAL ERROR: Failed to parse DATABASE_URL');
   console.error(`   Error: ${error.message}`);
   console.error(`   URL (sanitized): ${DATABASE_URL.replace(/:[^:@]+@/, ':***@')}`);
   console.error('');
-  console.error('   This prevents "Cannot read properties of undefined (reading \'searchParams\')" errors');
+  console.error('   This error prevents: "Cannot read properties of undefined (reading \'searchParams\')"');
+  console.error('   Common cause: DATABASE_URL is missing protocol (postgresql://)')');
   console.error('');
   process.exit(1);
 }

@@ -414,10 +414,11 @@ jobs:
 
       # NUCLEAR OPTION: Delete entire state and start fresh
       # VPC module has lifecycle { ignore_changes = all } so imports will work
-      - name: 🔥 DELETE STATE + Import all existing resources
+      - name: Bootstrap existing resources (ONE-TIME - run manually if needed)
         working-directory: infra/envs/dev
+        if: false  # DISABLED: Only run this step manually when bootstrapping new environment
         continue-on-error: true
-        timeout-minutes: 8  # Increased from 3 to 8 minutes
+        timeout-minutes: 8
         env:
           TF_VAR_opensearch_master_password: ${{ secrets.DEV_OPENSEARCH_PASSWORD }}
           TF_VAR_razorpay_key_id: ${{ secrets.RAZORPAY_KEY_ID }}
@@ -426,6 +427,28 @@ jobs:
           TF_VAR_shiprocket_email: ${{ secrets.SHIPROCKET_EMAIL }}
           TF_VAR_shiprocket_password: ${{ secrets.SHIPROCKET_PASSWORD }}
         run: |
+          echo "============================================================"
+          echo "⚠️  THIS STEP IS DISABLED BY DEFAULT"
+          echo "============================================================"
+          echo ""
+          echo "WHAT: Bootstrap script that deletes state and reimports resources"
+          echo "WHY DISABLED: Terraform plan should be READ-ONLY, no state mutation"
+          echo ""
+          echo "WHEN TO ENABLE:"
+          echo "  - First-time environment setup"
+          echo "  - State corruption recovery (manual intervention)"
+          echo "  - NEVER in normal CI/CD flow"
+          echo ""
+          echo "HOW TO ENABLE:"
+          echo "  1. Edit .github/workflows/dev.yml"
+          echo "  2. Change 'if: false' to 'if: true' for this step"
+          echo "  3. Run workflow manually"
+          echo "  4. Change back to 'if: false' after completion"
+          echo ""
+          echo "============================================================"
+          exit 0
+          
+          # BOOTSTRAP CODE BELOW (only runs if 'if: false' is changed to 'if: true')
           echo "🔥🔥🔥 NUCLEAR OPTION: DELETING ENTIRE STATE FILE 🔥🔥🔥"
           echo ""
           echo "WHY: State has mixed VPC resources causing destroy loops"
@@ -762,30 +785,22 @@ jobs:
             echo "✅ VPC limit OK ($VPC_COUNT/$VPC_LIMIT)"
           fi
 
-      - name: Remove Lambda alias from Terraform state (one-time cleanup)
+      - name: State cleanup check (idempotent)
         working-directory: infra/envs/dev
         continue-on-error: true
         run: |
-          echo "🧹 One-time cleanup: Removing Lambda alias from Terraform state..."
-          echo ""
-          echo "WHY: Lambda aliases are no longer managed by Terraform to prevent"
-          echo "     ResourceConflictException on every deployment. The alias remains"
-          echo "     in AWS but Terraform will ignore it completely."
+          echo "🔍 Checking Terraform state for legacy resources..."
           echo ""
           
-          # Remove alias from state if present (idempotent - safe to run multiple times)
+          # Check for Lambda alias in state (removed in architecture refactor)
           if terraform state list 2>/dev/null | grep -q 'module.lambda.aws_lambda_alias.live'; then
-            echo "⚠️  Found Lambda alias in state - removing..."
+            echo "⚠️  Found legacy Lambda alias in state - removing..."
+            echo "   WHY: Lambda aliases are no longer managed by Terraform"
             terraform state rm 'module.lambda.aws_lambda_alias.live["api-handler"]' 2>/dev/null || true
-            echo "✅ Lambda alias removed from Terraform state"
-            echo "   (Alias still exists in AWS, just not managed by Terraform)"
+            echo "✅ Cleaned up (alias remains in AWS, just not in Terraform)"
           else
-            echo "✅ Lambda alias not in state - nothing to clean up"
+            echo "✅ State is clean - no legacy resources found"
           fi
-          
-          echo ""
-          echo "📋 Current Terraform state (Lambda resources only):"
-          terraform state list | grep "module.lambda" || echo "   No Lambda resources in state"
 
       - name: Terraform Apply (Fresh Plan)
         working-directory: infra/envs/dev
