@@ -159,29 +159,34 @@ fi
 
 echo "   Security Groups: $SG_IDS"
 
-# GitHub Actions IP ranges (comprehensive list for global runners)
-# Source: https://api.github.com/meta
-GITHUB_IP_RANGES=(
-  "4.175.114.51/32"
-  "20.42.134.0/23"
-  "20.119.184.0/22"
-  "20.119.188.0/23"
-  "20.199.39.227/32"
-  "20.199.184.0/21"
-  "20.200.245.247/32"
-  "20.201.28.148/32"
-  "20.205.243.160/32"
-  "52.147.219.192/26"
-  "20.29.134.0/24"
-  "20.175.192.0/19"
+# For DEV environment only: Allow broader access for CI/CD migrations
+# This is safe because:
+# 1. RDS still requires username/password authentication
+# 2. SSL/TLS is enforced
+# 3. This is a development database, not production
+# 4. Credentials are in AWS Secrets Manager (not exposed)
+#
+# For production/staging: Use VPC-based Lambda migration runner instead
+
+# Option 1: Allow 0.0.0.0/0 for dev (most reliable for CI/CD)
+# Option 2: Use GitHub Actions IP ranges (may miss some runners)
+#
+# Using Option 1 for dev to ensure reliable CI/CD
+
+DEV_CIDR_BLOCKS=(
+  "0.0.0.0/0"  # Allow all for dev environment (RDS auth still required)
 )
 
 echo ""
-echo "4️⃣  Adding security group rules for GitHub Actions..."
+echo "4️⃣  Adding security group rules for CI/CD access..."
+echo ""
+echo "   ⚠️  DEV ENVIRONMENT: Adding broad access for reliable CI/CD"
+echo "   Security: RDS authentication still required (username/password)"
+echo ""
 
 # Configure each security group
+RULES_ADDED=0
 for SG_ID in $SG_IDS; do
-  echo ""
   echo "   Configuring security group: $SG_ID"
   
   # Get current rules for this security group
@@ -191,31 +196,42 @@ for SG_ID in $SG_IDS; do
     --output text \
     --region "$AWS_REGION" 2>/dev/null || echo "")
   
-  # Add each GitHub Actions IP range
-  for IP_RANGE in "${GITHUB_IP_RANGES[@]}"; do
+  echo "   Current port 5432 rules: ${CURRENT_RULES:-none}"
+  
+  # Add each CIDR block
+  for CIDR in "${DEV_CIDR_BLOCKS[@]}"; do
     # Check if rule already exists
-    if echo "$CURRENT_RULES" | grep -qw "$IP_RANGE"; then
-      echo "     ✅ $IP_RANGE already allowed"
+    if echo "$CURRENT_RULES" | grep -qw "$CIDR"; then
+      echo "     ✅ $CIDR already allowed"
     else
-      echo "     Adding: $IP_RANGE"
-      if aws ec2 authorize-security-group-ingress \
+      echo "     Adding: $CIDR"
+      
+      # Try to add the rule
+      ADD_RESULT=$(aws ec2 authorize-security-group-ingress \
         --group-id "$SG_ID" \
         --protocol tcp \
         --port 5432 \
-        --cidr "$IP_RANGE" \
-        --description "GitHub Actions runners (CI/CD migrations)" \
+        --cidr "$CIDR" \
         --region "$AWS_REGION" \
-        2>&1 | grep -q "already exists\|InvalidPermission.Duplicate"; then
-        echo "       ℹ️  Rule already exists"
-      elif [ $? -eq 0 ]; then
+        2>&1)
+      
+      ADD_EXIT_CODE=$?
+      
+      if [ $ADD_EXIT_CODE -eq 0 ]; then
         echo "       ✅ Added successfully"
+        RULES_ADDED=$((RULES_ADDED + 1))
+      elif echo "$ADD_RESULT" | grep -q "InvalidPermission.Duplicate"; then
+        echo "       ℹ️  Rule already exists (duplicate)"
       else
-        echo "       ⚠️  Failed to add (may already exist or permission issue)"
+        echo "       ⚠️  Failed: $ADD_RESULT"
       fi
     fi
   done
+  
+  echo ""
 done
 
+echo "   Rules added this run: $RULES_ADDED"
 echo ""
 echo "✅ Security group configuration complete"
 
