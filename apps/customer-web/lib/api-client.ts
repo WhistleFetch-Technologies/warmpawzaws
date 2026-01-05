@@ -3,14 +3,39 @@
  * Points to API Gateway instead of Supabase Functions
  */
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.warmpawz.com';
-const UAT_MODE = process.env.NEXT_PUBLIC_UAT_MODE === 'true';
+type RuntimeConfig = {
+  apiBaseUrl?: string;
+  uatMode?: boolean;
+};
+
+declare global {
+  interface Window {
+    __WARMPAWZ_RUNTIME_CONFIG__?: RuntimeConfig;
+  }
+}
+
+function getRuntimeConfig(): RuntimeConfig {
+  if (typeof window === 'undefined') return {};
+  return window.__WARMPAWZ_RUNTIME_CONFIG__ || {};
+}
+
+function getApiBaseUrl(): string {
+  // Priority: runtime-config.js (deploy-time) → build-time env (local dev)
+  const cfg = getRuntimeConfig();
+  return (
+    cfg.apiBaseUrl ||
+    process.env.NEXT_PUBLIC_API_BASE_URL ||
+    ''
+  );
+}
+
+const UAT_MODE = (process.env.NEXT_PUBLIC_UAT_MODE === 'true') || (typeof window !== 'undefined' && getRuntimeConfig().uatMode === true);
 
 export class ApiClient {
   private baseUrl: string;
 
-  constructor(baseUrl: string = API_BASE_URL) {
-    this.baseUrl = baseUrl;
+  constructor(baseUrl: string = getApiBaseUrl()) {
+    this.baseUrl = baseUrl || '';
     
     // UAT Mode: Log API configuration for debugging
     if (UAT_MODE && typeof window !== 'undefined') {
@@ -31,6 +56,9 @@ export class ApiClient {
     endpoint: string,
     options: RequestInit = {}
   ): Promise<T> {
+    if (!this.baseUrl) {
+      throw new Error('API_BASE_URL is not configured (runtime-config.js missing or empty).');
+    }
     const url = `${this.baseUrl}${endpoint}`;
     const token = this.getAuthToken();
     
