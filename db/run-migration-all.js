@@ -20,107 +20,130 @@ const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
 
-// Database URL from environment or default
-const DATABASE_URL = process.env.DATABASE_URL || process.env.SUPABASE_DB_URL;
-
-// CRITICAL VALIDATION #1: Environment variable exists
-if (!DATABASE_URL) {
-  console.error('');
-  console.error('❌ FATAL ERROR: DATABASE_URL environment variable is required');
-  console.error('');
-  console.error('   Set DATABASE_URL to a valid PostgreSQL connection string:');
-  console.error('   postgresql://username:password@host:port/database');
-  console.error('');
-  console.error('   Or set SUPABASE_DB_URL for Supabase databases');
-  console.error('');
-  process.exit(1);
+/**
+ * Sanitizes DATABASE_URL for logging (masks password)
+ * @param {string} url - The database URL to sanitize
+ * @returns {string} Sanitized URL safe for logging
+ */
+function sanitizeUrl(url) {
+  if (!url || typeof url !== 'string') return '(invalid)';
+  // Replace password with *** (pattern: :password@)
+  return url.replace(/:[^:@]+@/, ':***@');
 }
 
-// CRITICAL VALIDATION #2: DATABASE_URL is not undefined/null/empty string
-if (typeof DATABASE_URL !== 'string' || DATABASE_URL.trim() === '') {
-  console.error('');
-  console.error('❌ FATAL ERROR: DATABASE_URL is defined but empty or invalid');
-  console.error(`   Type: ${typeof DATABASE_URL}`);
-  console.error(`   Value: ${DATABASE_URL}`);
-  console.error('');
-  process.exit(1);
-}
-
-// CRITICAL VALIDATION #3: DATABASE_URL has protocol
-// DEFENSIVE: Check if protocol is missing and auto-fix if possible
-if (!DATABASE_URL.startsWith('postgresql://') && !DATABASE_URL.startsWith('postgres://')) {
-  // Check if it looks like a connection string without protocol
-  if (DATABASE_URL.match(/^[^:]+:[^@]+@[^:]+:\d+\/[^/]+$/)) {
+/**
+ * Validates DATABASE_URL with strict checks
+ * Exits process with code 1 if validation fails
+ * @param {string} databaseUrl - The DATABASE_URL to validate
+ * @returns {URL} Parsed URL object if validation succeeds
+ */
+function validateDatabaseUrl(databaseUrl) {
+  // VALIDATION 1: Environment variable exists
+  if (!databaseUrl) {
     console.error('');
-    console.error('❌ FATAL ERROR: DATABASE_URL is missing protocol');
+    console.error('❌ FATAL ERROR: DATABASE_URL environment variable is required');
     console.error('');
-    console.error(`   Got: ${DATABASE_URL.substring(0, 50)}...`);
-    console.error('   Expected: postgresql://username:password@host:port/database');
+    console.error('   Set DATABASE_URL to a valid PostgreSQL connection string:');
+    console.error('   postgresql://username:password@host:port/database');
     console.error('');
-    console.error('   FIX: Add postgresql:// to the beginning of your DATABASE_URL');
-    console.error(`   Correct format: postgresql://${DATABASE_URL}`);
-    console.error('');
-    console.error('   This error prevents: "Cannot read properties of undefined (reading \'searchParams\')"');
+    console.error('   Or set SUPABASE_DB_URL for Supabase databases');
     console.error('');
     process.exit(1);
   }
+
+  // VALIDATION 2: Must be non-empty string
+  if (typeof databaseUrl !== 'string' || databaseUrl.trim() === '') {
+    console.error('');
+    console.error('❌ FATAL ERROR: DATABASE_URL is defined but empty or invalid');
+    console.error(`   Type: ${typeof databaseUrl}`);
+    console.error(`   Value: ${databaseUrl}`);
+    console.error('');
+    process.exit(1);
+  }
+
+  // VALIDATION 3: Must have protocol (postgresql:// or postgres://)
+  if (!databaseUrl.startsWith('postgresql://') && !databaseUrl.startsWith('postgres://')) {
+    // Check if it looks like a connection string without protocol
+    if (databaseUrl.match(/^[^:]+:[^@]+@[^:]+:\d+\/[^/]+$/)) {
+      console.error('');
+      console.error('❌ FATAL ERROR: DATABASE_URL is missing protocol');
+      console.error('');
+      console.error(`   Got: ${databaseUrl.substring(0, 50)}...`);
+      console.error('   Expected: postgresql://username:password@host:port/database');
+      console.error('');
+      console.error('   FIX: Add postgresql:// to the beginning of your DATABASE_URL');
+      console.error(`   Correct format: postgresql://${databaseUrl}`);
+      console.error('');
+      console.error('   This error prevents: "Cannot read properties of undefined (reading \'searchParams\')"');
+      console.error('');
+      process.exit(1);
+    }
+  }
+
+  // VALIDATION 4: Must match PostgreSQL URL format
+  const urlPattern = /^(postgresql|postgres):\/\/[^:]+:[^@]+@[^:]+:\d+\/[^/]+$/;
+  if (!urlPattern.test(databaseUrl)) {
+    console.error('');
+    console.error('❌ FATAL ERROR: DATABASE_URL has invalid format');
+    console.error('');
+    console.error('   Expected format: postgresql://username:password@host:port/database');
+    console.error(`   Got (sanitized): ${sanitizeUrl(databaseUrl)}`);
+    console.error('');
+    console.error('   Common issues:');
+    console.error('   - Missing protocol (postgresql:// or postgres://)');
+    console.error('   - Missing username or password');
+    console.error('   - Missing host or port');
+    console.error('   - Missing database name');
+    console.error('');
+    process.exit(1);
+  }
+
+  // VALIDATION 5: URL parsing must succeed
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(databaseUrl);
+    
+    // Validate required components exist
+    if (!parsedUrl.hostname || parsedUrl.hostname === '') {
+      throw new Error('Hostname is empty');
+    }
+    if (!parsedUrl.pathname || parsedUrl.pathname === '/' || parsedUrl.pathname === '') {
+      throw new Error('Database name is empty');
+    }
+    if (!parsedUrl.port || parsedUrl.port === '') {
+      throw new Error('Port is empty');
+    }
+    
+    // CRITICAL: Ensure searchParams is accessible (prevents undefined.searchParams crash)
+    if (typeof parsedUrl.searchParams === 'undefined') {
+      throw new Error('URL.searchParams is undefined - URL parsing failed');
+    }
+    
+  } catch (error) {
+    console.error('');
+    console.error('❌ FATAL ERROR: Failed to parse DATABASE_URL');
+    console.error(`   Error: ${error.message}`);
+    console.error(`   URL (sanitized): ${sanitizeUrl(databaseUrl)}`);
+    console.error('');
+    console.error('   This error prevents: "Cannot read properties of undefined (reading \'searchParams\')"');
+    console.error('   Common cause: DATABASE_URL is missing protocol (postgresql://)');
+    console.error('');
+    process.exit(1);
+  }
+
+  return parsedUrl;
 }
 
-// CRITICAL VALIDATION #4: DATABASE_URL has correct format
-const urlPattern = /^(postgresql|postgres):\/\/[^:]+:[^@]+@[^:]+:\d+\/[^/]+$/;
-if (!urlPattern.test(DATABASE_URL)) {
-  console.error('');
-  console.error('❌ FATAL ERROR: DATABASE_URL has invalid format');
-  console.error('');
-  console.error('   Expected format: postgresql://username:password@host:port/database');
-  console.error(`   Got (sanitized): ${DATABASE_URL.replace(/:[^:@]+@/, ':***@')}`);
-  console.error('');
-  console.error('   Common issues:');
-  console.error('   - Missing protocol (postgresql:// or postgres://)');
-  console.error('   - Missing username or password');
-  console.error('   - Missing host or port');
-  console.error('   - Missing database name');
-  console.error('');
-  process.exit(1);
-}
+// Get DATABASE_URL from environment
+const DATABASE_URL = process.env.DATABASE_URL || process.env.SUPABASE_DB_URL;
 
-// CRITICAL VALIDATION #5: URL parsing works (prevents "Cannot read properties of undefined")
-let parsedUrl;
-try {
-  parsedUrl = new URL(DATABASE_URL);
-  
-  // Validate required components exist
-  if (!parsedUrl.hostname || parsedUrl.hostname === '') {
-    throw new Error('Hostname is empty');
-  }
-  if (!parsedUrl.pathname || parsedUrl.pathname === '/' || parsedUrl.pathname === '') {
-    throw new Error('Database name is empty');
-  }
-  if (!parsedUrl.port || parsedUrl.port === '') {
-    throw new Error('Port is empty');
-  }
-  
-  // CRITICAL: Ensure searchParams is accessible (this was the root cause)
-  if (typeof parsedUrl.searchParams === 'undefined') {
-    throw new Error('URL.searchParams is undefined - URL parsing failed');
-  }
-  
-} catch (error) {
-  console.error('');
-  console.error('❌ FATAL ERROR: Failed to parse DATABASE_URL');
-  console.error(`   Error: ${error.message}`);
-  console.error(`   URL (sanitized): ${DATABASE_URL.replace(/:[^:@]+@/, ':***@')}`);
-  console.error('');
-  console.error('   This error prevents: "Cannot read properties of undefined (reading \'searchParams\')"');
-  console.error('   Common cause: DATABASE_URL is missing protocol (postgresql://)')');
-  console.error('');
-  process.exit(1);
-}
+// Validate DATABASE_URL with strict checks (exits on failure)
+const parsedUrl = validateDatabaseUrl(DATABASE_URL);
 
 async function runAllMigrations() {
   console.log('🚀 Migration Runner - Running All Migrations');
   console.log('='.repeat(60));
-  console.log(`🔌 Database: ${DATABASE_URL.replace(/:[^:@]+@/, ':***@')}`);
+  console.log(`🔌 Database: ${sanitizeUrl(DATABASE_URL)}`);
   console.log(`   Host: ${parsedUrl.hostname}`);
   console.log(`   Port: ${parsedUrl.port}`);
   console.log(`   Database: ${parsedUrl.pathname.slice(1)}`);
