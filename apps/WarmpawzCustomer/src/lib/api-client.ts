@@ -31,8 +31,9 @@ import {
 // CONFIGURATION
 // ============================================================================
 
+// ✅ FIXED: Use dev.api.warmpawz.com for DEV builds
 const API_BASE_URL = __DEV__ 
-  ? 'http://localhost:3000' 
+  ? 'https://dev.api.warmpawz.com' 
   : 'https://api.warmpawz.com';
 
 const AUTH_TOKEN_KEY = '@warmpawz_auth_token';
