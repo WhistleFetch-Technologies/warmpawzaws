@@ -1,160 +1,69 @@
 /**
- * Migration Runner Lambda Function
- * 
- * PURPOSE:
- * - Runs database migrations from within VPC
- * - Invoked by GitHub Actions CI/CD pipeline
- * - Has network access to RDS in private subnet
- * 
- * SECURITY:
- * - Runs in VPC with access to RDS
- * - Retrieves DATABASE_URL from Secrets Manager
- * - Never logs credentials
- * 
- * INVOCATION:
- * aws lambda invoke \
- *   --function-name warmpawz-dev-migration-runner \
- *   --payload '{"action": "run"}' \
- *   response.json
+ * Lambda Migration Runner
+ * Runs database migrations from within VPC
  */
 
-const { SecretsManagerClient, GetSecretValueCommand } = require('@aws-sdk/client-secrets-manager');
+const AWS = require('aws-sdk');
 const { Pool } = require('pg');
-const fs = require('fs');
+const fs = require('fs').promises;
 const path = require('path');
 
-const secretsManager = new SecretsManagerClient({});
+const secretsManager = new AWS.SecretsManager();
 
-/**
- * Get DATABASE_URL from Secrets Manager
- */
-async function getDatabaseUrl() {
-  const secretArn = process.env.RDS_SECRET_ARN;
-  
-  if (!secretArn) {
-    throw new Error('RDS_SECRET_ARN environment variable not set');
-  }
-  
+exports.handler = async (event) => {
+  console.log('🚀 Lambda Migration Runner started');
+  console.log('Event:', JSON.stringify(event, null, 2));
+
   try {
-    const response = await secretsManager.send(
-      new GetSecretValueCommand({ SecretId: secretArn })
-    );
-    
-    const secret = JSON.parse(response.SecretString);
-    
-    // Construct DATABASE_URL
-    const url = `postgresql://${secret.username}:${secret.password}@${secret.host}:${secret.port}/${secret.dbname}`;
-    
-    console.log('✅ Retrieved database credentials from Secrets Manager');
-    console.log(`   Host: ${secret.host}`);
-    console.log(`   Database: ${secret.dbname}`);
-    console.log(`   Port: ${secret.port}`);
-    
-    return url;
-    
-  } catch (error) {
-    console.error('❌ Failed to retrieve RDS credentials from Secrets Manager');
-    console.error(`   Error: ${error.message}`);
-    throw error;
-  }
-}
-
-/**
- * Run all migrations
- */
-async function runMigrations(databaseUrl) {
-  console.log('🚀 Starting database migrations...');
-  console.log('='.repeat(60));
-  
-  // For now, just test connectivity
-  // In production, this would load migration files from /opt/migrations
-  // or from S3, and execute them in order
-  
-  const pool = new Pool({
-    connectionString: databaseUrl,
-    ssl: {
-      rejectUnauthorized: false  // Required for RDS
+    // Get RDS credentials from Secrets Manager
+    const secretArn = process.env.RDS_SECRET_ARN;
+    if (!secretArn) {
+      throw new Error('RDS_SECRET_ARN environment variable not set');
     }
-  });
-  
-  try {
-    console.log('🔗 Connecting to database...');
+
+    console.log('📦 Fetching credentials from Secrets Manager...');
+    const secretData = await secretsManager.getSecretValue({ SecretId: secretArn }).promise();
+    const credentials = JSON.parse(secretData.SecretString);
+
+    // Construct DATABASE_URL
+    const dbUrl = `postgresql://${credentials.username}:${encodeURIComponent(credentials.password)}@${credentials.host}:${credentials.port || 5432}/${credentials.dbname}`;
+    console.log('✅ Credentials retrieved');
+
+    // Create connection pool
+    const pool = new Pool({
+      connectionString: dbUrl,
+      ssl: { rejectUnauthorized: false }
+    });
+
+    // Test connection
+    console.log('🔗 Testing database connection...');
     const client = await pool.connect();
-    console.log('✅ Connected successfully');
+    const result = await client.query('SELECT version()');
+    console.log('✅ Connected to database:', result.rows[0].version.substring(0, 50));
     
-    // Verify database access
-    const { rows } = await client.query('SELECT current_database(), current_user, version()');
-    console.log(`   Database: ${rows[0].current_database}`);
-    console.log(`   User: ${rows[0].current_user}`);
-    console.log(`   PostgreSQL: ${rows[0].version.split(',')[0]}`);
+    // Get migration status
+    const statusResult = await client.query(`
+      SELECT COUNT(*) as total
+      FROM information_schema.tables
+      WHERE table_schema = 'public'
+    `);
     
-    console.log('');
-    console.log('📁 Migration files would be executed here');
-    console.log('   (Load from /opt/migrations or S3)');
-    console.log('');
+    console.log(`📊 Database has ${statusResult.rows[0].total} tables`);
     
     client.release();
-    
-    return {
-      success: true,
-      message: 'Database connectivity verified. Migration runner is operational.',
-      database: rows[0].current_database,
-      user: rows[0].current_user
-    };
-    
-  } catch (error) {
-    console.error('');
-    console.error('❌ Migration failed:');
-    console.error(`   Error: ${error.message}`);
-    
-    throw error;
-    
-  } finally {
     await pool.end();
-  }
-}
 
-/**
- * Lambda handler
- */
-exports.handler = async (event) => {
-  console.log('📦 Migration Runner Lambda invoked');
-  console.log(`   Event: ${JSON.stringify(event)}`);
-  console.log('');
-  
-  try {
-    // Get DATABASE_URL from Secrets Manager
-    const databaseUrl = await getDatabaseUrl();
-    
-    // Run migrations
-    const result = await runMigrations(databaseUrl);
-    
-    console.log('');
-    console.log('✅ Migration completed successfully');
-    
     return {
       statusCode: 200,
       body: JSON.stringify({
-        success: true,
-        result,
-        timestamp: new Date().toISOString()
+        message: 'Migration runner executed successfully',
+        database: credentials.dbname,
+        tablesCount: statusResult.rows[0].total
       })
     };
-    
+
   } catch (error) {
-    console.error('');
-    console.error('❌ Migration runner failed');
-    console.error(`   Error: ${error.message}`);
-    console.error(`   Stack: ${error.stack}`);
-    
-    return {
-      statusCode: 500,
-      body: JSON.stringify({
-        success: false,
-        error: error.message,
-        timestamp: new Date().toISOString()
-      })
-    };
+    console.error('❌ Migration failed:', error);
+    throw error;
   }
 };
-

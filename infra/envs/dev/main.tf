@@ -179,6 +179,10 @@ module "lambda" {
   vpc_id             = module.vpc.vpc_id
   private_subnet_ids = module.vpc.private_subnet_ids
 
+  # Enable VPC-based migration runner (Lambda with RDS access)
+  enable_migration_runner = true
+  rds_secret_arn          = module.rds.secret_arn
+
   lambda_functions = {
     api-handler = {
       handler     = "index.handler"
