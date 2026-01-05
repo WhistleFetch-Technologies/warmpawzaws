@@ -2,11 +2,10 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { apiClient } from '@/lib/api-client';
+import { apiClient, isUatMode } from '@/lib/api-client';
 
-// UAT Mode Configuration - DEV ONLY
-const UAT_MODE = process.env.NEXT_PUBLIC_UAT_MODE === 'true' || process.env.NODE_ENV === 'development';
-const UAT_OTP = '123456'; // Static OTP for UAT testing
+// UAT OTP for testing - actual UAT_MODE is computed at runtime
+const UAT_OTP = '123456';
 
 // ============================================================================
 // TYPES
@@ -60,6 +59,12 @@ export function VendorOnboardingFlow() {
   const [otp, setOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [resendTimer, setResendTimer] = useState(0);
+  
+  // UAT_MODE must be computed at runtime (after hydration) for static exports
+  const [UAT_MODE, setUatMode] = useState(false);
+  useEffect(() => {
+    setUatMode(isUatMode());
+  }, []);
 
   const [state, setState] = useState<OnboardingState>({
     step: 'phone',

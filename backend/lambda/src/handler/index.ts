@@ -224,6 +224,10 @@ export const handler = async (
       body: JSON.stringify({ error: 'Internal Server Error' }),
       headers: {
         'Content-Type': 'application/json',
+        // CORS headers must be present even in error responses
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS, PATCH',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
       },
     };
   }

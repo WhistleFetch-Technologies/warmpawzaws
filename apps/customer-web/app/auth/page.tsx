@@ -2,10 +2,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { apiClient } from '@/lib/api-client';
+import { apiClient, isUatMode } from '@/lib/api-client';
 
-// UAT Mode Configuration - DEV ONLY
-const UAT_MODE = process.env.NEXT_PUBLIC_UAT_MODE === 'true' || process.env.NODE_ENV === 'development';
+// UAT Mode Configuration - uses runtime config (deploy-time) for static exports
 const UAT_OTP = '123456'; // Static OTP for UAT testing
 
 export default function AuthPage() {
@@ -17,6 +16,12 @@ export default function AuthPage() {
   const [error, setError] = useState<string | null>(null);
   const [resendTimer, setResendTimer] = useState(0);
   const [uatHint, setUatHint] = useState(false);
+  
+  // UAT_MODE must be computed at runtime (after hydration) for static exports
+  const [UAT_MODE, setUatMode] = useState(false);
+  useEffect(() => {
+    setUatMode(isUatMode());
+  }, []);
 
   useEffect(() => {
     // Check if already logged in
