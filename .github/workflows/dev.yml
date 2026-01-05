@@ -1034,20 +1034,59 @@ jobs:
           echo "   Port: ${DB_PORT:-5432}"
           echo ""
           
-          # Test TCP connectivity
-          echo "🔗 Testing TCP connection to RDS..."
-          if timeout 10 bash -c "cat < /dev/null > /dev/tcp/$DB_HOST/${DB_PORT:-5432}"; then
-            echo "✅ TCP connection successful"
+          # Test DNS resolution first
+          echo "🌐 Testing DNS resolution..."
+          if host "$DB_HOST" > /dev/null 2>&1; then
+            RESOLVED_IP=$(host "$DB_HOST" | grep "has address" | head -n1 | awk '{print $NF}')
+            echo "   ✅ DNS resolves to: $RESOLVED_IP"
           else
-            echo "❌ ERROR: Cannot connect to $DB_HOST:${DB_PORT:-5432}"
+            echo "   ⚠️  Could not resolve DNS (this might be okay)"
+          fi
+          
+          echo ""
+          echo "🔗 Testing TCP connection to RDS (with retries)..."
+          
+          MAX_ATTEMPTS=5
+          ATTEMPT=1
+          TCP_SUCCESS=false
+          
+          while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+            echo "   Attempt $ATTEMPT of $MAX_ATTEMPTS..."
+            
+            if timeout 15 bash -c "cat < /dev/null > /dev/tcp/$DB_HOST/${DB_PORT:-5432}" 2>/dev/null; then
+              echo "   ✅ TCP connection successful"
+              TCP_SUCCESS=true
+              break
+            else
+              echo "   ⚠️  Connection failed (timeout or refused)"
+              if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+                echo "   Waiting 10 seconds before retry..."
+                sleep 10
+              fi
+            fi
+            
+            ATTEMPT=$((ATTEMPT + 1))
+          done
+          
+          if [ "$TCP_SUCCESS" != "true" ]; then
+            echo ""
+            echo "❌ ERROR: Cannot connect to $DB_HOST:${DB_PORT:-5432} after $MAX_ATTEMPTS attempts"
+            echo ""
+            echo "   Diagnostics:"
+            echo "   - RDS endpoint: $DB_HOST"
+            echo "   - Port: ${DB_PORT:-5432}"
+            echo "   - All TCP connection attempts failed"
             echo ""
             echo "   Possible causes:"
-            echo "   1. RDS is not publicly accessible"
-            echo "   2. Security group doesn't allow GitHub Actions IPs"
-            echo "   3. RDS is still initializing"
-            echo "   4. Network connectivity issues"
+            echo "   1. RDS public accessibility not enabled"
+            echo "   2. Security group not configured for GitHub Actions IPs"
+            echo "   3. RDS is still initializing or being modified"
+            echo "   4. Network routing issue"
             echo ""
-            echo "   Run this locally to enable access:"
+            echo "   Check RDS status:"
+            echo "   aws rds describe-db-instances --db-instance-identifier warmpawz-dev-instance-1 --region ap-south-1"
+            echo ""
+            echo "   Manually enable access:"
             echo "   ./scripts/enable-rds-public-access-dev.sh"
             echo ""
             exit 1
@@ -1058,26 +1097,53 @@ jobs:
           # Install psql for connection test
           sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client > /dev/null
           
-          # Test actual PostgreSQL connection
-          if psql "$DB_URL" -c "SELECT version();" > /dev/null 2>&1; then
-            echo "✅ PostgreSQL connection successful"
+          # Test actual PostgreSQL connection with retries
+          MAX_PG_ATTEMPTS=3
+          PG_ATTEMPT=1
+          PG_SUCCESS=false
+          
+          while [ $PG_ATTEMPT -le $MAX_PG_ATTEMPTS ]; do
+            echo "   Attempt $PG_ATTEMPT of $MAX_PG_ATTEMPTS..."
+            
+            if psql "$DB_URL" -c "SELECT version();" > /dev/null 2>&1; then
+              echo "   ✅ PostgreSQL connection successful"
+              PG_SUCCESS=true
+              break
+            else
+              echo "   ⚠️  Authentication failed"
+              if [ $PG_ATTEMPT -lt $MAX_PG_ATTEMPTS ]; then
+                echo "   Waiting 5 seconds before retry..."
+                sleep 5
+              fi
+            fi
+            
+            PG_ATTEMPT=$((PG_ATTEMPT + 1))
+          done
+          
+          if [ "$PG_SUCCESS" != "true" ]; then
             echo ""
-            psql "$DB_URL" -c "SELECT version();" | head -n 3
-          else
-            echo "❌ ERROR: PostgreSQL authentication failed"
+            echo "❌ ERROR: PostgreSQL authentication failed after $MAX_PG_ATTEMPTS attempts"
             echo ""
             echo "   Possible causes:"
-            echo "   1. Incorrect username or password"
+            echo "   1. Incorrect username or password in Secrets Manager"
             echo "   2. Database does not exist"
             echo "   3. SSL/TLS configuration issue"
+            echo "   4. RDS is rejecting connections"
+            echo ""
+            echo "   Verify credentials:"
+            echo "   aws secretsmanager get-secret-value --secret-id <RDS_SECRET_ARN>"
             echo ""
             exit 1
           fi
           
           echo ""
+          echo "📊 Database information:"
+          psql "$DB_URL" -c "SELECT version();" | head -n 3
+          
+          echo ""
           echo "✅ Database is ready for migrations"
         env:
-          PGCONNECT_TIMEOUT: 10
+          PGCONNECT_TIMEOUT: 15
 
       - name: Run migrations
         working-directory: db
