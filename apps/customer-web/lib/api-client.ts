@@ -4,12 +4,20 @@
  */
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.warmpawz.com';
+const UAT_MODE = process.env.NEXT_PUBLIC_UAT_MODE === 'true';
 
 export class ApiClient {
   private baseUrl: string;
 
   constructor(baseUrl: string = API_BASE_URL) {
     this.baseUrl = baseUrl;
+    
+    // UAT Mode: Log API configuration for debugging
+    if (UAT_MODE && typeof window !== 'undefined') {
+      console.log('🔧 [UAT Mode] API Client Initialized');
+      console.log('   Base URL:', this.baseUrl);
+      console.log('   Environment:', process.env.NODE_ENV);
+    }
   }
 
   private getAuthToken(): string | null {
@@ -33,6 +41,12 @@ export class ApiClient {
 
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
+    }
+    
+    // UAT Mode: Log API requests for debugging
+    if (UAT_MODE && typeof window !== 'undefined') {
+      console.log(`🌐 [UAT] API Request: ${options.method || 'GET'} ${endpoint}`);
+      console.log('   Full URL:', url);
     }
     
     const response = await fetch(url, {
