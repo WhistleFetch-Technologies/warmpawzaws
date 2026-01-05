@@ -537,17 +537,11 @@ jobs:
             echo "$PERM_OUTPUT"
             echo "$PERM_OUTPUT" | grep -qE "Import successful|already managed" && echo "      ✅ Permission imported" || echo "      ⚠️ Permission import failed (will be created)"
             
-            # Import Lambda alias (must import AFTER function)
-            if aws lambda get-alias --function-name warmpawz-dev-api-handler --name live --region ap-south-1 >/dev/null 2>&1; then
-              echo "      Found existing alias: live"
-              echo "      Importing alias..."
-              terraform state rm "module.lambda.aws_lambda_alias.live[\"api-handler\"]" 2>/dev/null || true
-              ALIAS_OUTPUT=$(terraform import -input=false -lock=false "module.lambda.aws_lambda_alias.live[\"api-handler\"]" "warmpawz-dev-api-handler:live" 2>&1)
-              echo "$ALIAS_OUTPUT"
-              echo "$ALIAS_OUTPUT" | grep -qE "Import successful|already managed" && echo "      ✅ Alias imported" || echo "      ⚠️ Alias import failed (will be created)"
-            else
-              echo "      ℹ️ No existing alias - will be created"
-            fi
+            # Lambda alias - NO LONGER MANAGED BY TERRAFORM
+            # Aliases are stable resources that should not be managed by Terraform
+            # They remain in AWS but Terraform ignores them completely
+            # This prevents ResourceConflictException on every deployment
+            echo "      ℹ️ Lambda aliases are no longer managed by Terraform (prevents conflicts)"
           else
             echo "      ℹ️ Lambda function does not exist - will be created"
           fi
@@ -745,51 +739,29 @@ jobs:
             echo "✅ VPC limit OK ($VPC_COUNT/$VPC_LIMIT)"
           fi
 
-      - name: Import existing Lambda (prevent ResourceConflictException)
+      - name: Remove Lambda alias from Terraform state (one-time cleanup)
         working-directory: infra/envs/dev
         continue-on-error: true
         run: |
-          echo "🔍 Checking for existing Lambda function and alias..."
+          echo "🧹 One-time cleanup: Removing Lambda alias from Terraform state..."
+          echo ""
+          echo "WHY: Lambda aliases are no longer managed by Terraform to prevent"
+          echo "     ResourceConflictException on every deployment. The alias remains"
+          echo "     in AWS but Terraform will ignore it completely."
           echo ""
           
-          if aws lambda get-function --function-name warmpawz-dev-api-handler --region ap-south-1 >/dev/null 2>&1; then
-            echo "✅ Lambda function exists in AWS: warmpawz-dev-api-handler"
-            
-            # Check if already in state
-            if terraform state list 2>/dev/null | grep -q 'module.lambda.aws_lambda_function.functions\["api-handler"\]'; then
-              echo "✅ Lambda function already in Terraform state"
-            else
-              echo "⚠️  Lambda function NOT in state - importing..."
-              terraform import 'module.lambda.aws_lambda_function.functions["api-handler"]' warmpawz-dev-api-handler
-              echo "✅ Lambda function imported successfully"
-            fi
-            
-            echo ""
-            echo "🔍 Checking for Lambda alias..."
-            
-            # Import alias if exists (MUST import AFTER function)
-            if aws lambda get-alias --function-name warmpawz-dev-api-handler --name live --region ap-south-1 >/dev/null 2>&1; then
-              echo "✅ Lambda alias 'live' exists in AWS"
-              
-              # Remove from state first to ensure clean import (silently ignore if not exists)
-              echo "   Removing from state (if present)..."
-              terraform state rm 'module.lambda.aws_lambda_alias.live["api-handler"]' 2>/dev/null || true
-              
-              echo "   Importing alias..."
-              if terraform import 'module.lambda.aws_lambda_alias.live["api-handler"]' 'warmpawz-dev-api-handler:live' 2>&1; then
-                echo "✅ Lambda alias imported successfully"
-              else
-                echo "⚠️  Alias import failed - will try to continue"
-              fi
-            else
-              echo "ℹ️  Lambda alias 'live' does not exist - will be created"
-            fi
+          # Remove alias from state if present (idempotent - safe to run multiple times)
+          if terraform state list 2>/dev/null | grep -q 'module.lambda.aws_lambda_alias.live'; then
+            echo "⚠️  Found Lambda alias in state - removing..."
+            terraform state rm 'module.lambda.aws_lambda_alias.live["api-handler"]' 2>/dev/null || true
+            echo "✅ Lambda alias removed from Terraform state"
+            echo "   (Alias still exists in AWS, just not managed by Terraform)"
           else
-            echo "ℹ️  Lambda function does not exist - will be created"
+            echo "✅ Lambda alias not in state - nothing to clean up"
           fi
           
           echo ""
-          echo "📋 Current Lambda state:"
+          echo "📋 Current Terraform state (Lambda resources only):"
           terraform state list | grep "module.lambda" || echo "   No Lambda resources in state"
 
       - name: Terraform Apply (Fresh Plan)

@@ -28,10 +28,9 @@ output "lambda_function_urls" {
   value       = { for k, v in aws_lambda_function_url.functions : k => v.function_url }
 }
 
-output "lambda_alias_arns" {
-  description = "ARNs of Lambda aliases"
-  value       = { for k, v in aws_lambda_alias.live : k => v.arn }
-}
+# Lambda alias output - REMOVED
+# Aliases are no longer managed by Terraform (see main.tf for explanation)
+# If needed, query AWS directly: aws lambda get-alias --function-name XXX --name live
 
 output "lambda_log_groups" {
   description = "CloudWatch log group names"

@@ -257,19 +257,18 @@ resource "aws_lambda_function_url" "functions" {
   }
 }
 
-# Lambda Aliases for blue/green deployments
-resource "aws_lambda_alias" "live" {
-  for_each = var.lambda_functions
-
-  name             = "live"
-  description      = "Live alias for ${each.key}"
-  function_name    = aws_lambda_function.functions[each.key].function_name
-  function_version = aws_lambda_function.functions[each.key].version
-
-  lifecycle {
-    ignore_changes = all  # NUCLEAR OPTION: Never modify after import
-  }
-}
+# Lambda Aliases - REMOVED
+# Aliases are NOT needed for API Gateway integration (uses function_name directly)
+# Aliases would require manual versioning and cause ResourceConflictException
+# For blue/green deployments, use Lambda versions + weighted aliases OUTSIDE Terraform
+#
+# Previous attempts to manage aliases in Terraform caused:
+# - ResourceConflictException when alias already exists
+# - Non-idempotent deployments (157+ failed attempts)
+# - State drift between AWS and Terraform
+#
+# DECISION: API Gateway references Lambda functions directly via invoke_arn
+# See: infra/modules/api-gateway/main.tf line 90 (uses invoke_arn, not alias)
 
 # CloudWatch Alarms for Lambda
 resource "aws_cloudwatch_metric_alarm" "lambda_errors" {
