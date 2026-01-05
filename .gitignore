@@ -1,177 +1,177 @@
-# Dependencies
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-# Keep package-lock.json for CI/CD reproducibility
-# package-lock.json
-yarn.lock
-pnpm-lock.yaml
+# # Dependencies
+# node_modules/
+# npm-debug.log*
+# yarn-debug.log*
+# yarn-error.log*
+# pnpm-debug.log*
+# # Keep package-lock.json for CI/CD reproducibility
+# # package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
 
-# Build outputs
-dist/
-build/
-.next/
-out/
-.vite/
+# # Build outputs
+# dist/
+# build/
+# .next/
+# out/
+# .vite/
 
-# Environment variables
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+# # # Environment variables
+# # .env
+# # .env.local
+# # .env.development.local
+# # .env.test.local
+# # .env.production.local
 
-# IDE and editor files
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-.DS_Store
+# # IDE and editor files
+# .vscode/
+# .idea/
+# *.swp
+# *.swo
+# *~
+# .DS_Store
 
-# OS files
-Thumbs.db
-.DS_Store
-.AppleDouble
-.LSOverride
+# # OS files
+# Thumbs.db
+# .DS_Store
+# .AppleDouble
+# .LSOverride
 
-# Logs
-logs/
-*.log
+# # Logs
+# logs/
+# *.log
 
-# Runtime data
-pids/
-*.pid
-*.seed
-*.pid.lock
+# # Runtime data
+# pids/
+# *.pid
+# *.seed
+# *.pid.lock
 
-# Coverage directory used by tools like istanbul
-coverage/
-*.lcov
+# # Coverage directory used by tools like istanbul
+# coverage/
+# *.lcov
 
-# nyc test coverage
-.nyc_output/
+# # nyc test coverage
+# .nyc_output/
 
-# Dependency directories
-jspm_packages/
+# # Dependency directories
+# jspm_packages/
 
-# Optional npm cache directory
-.npm
+# # Optional npm cache directory
+# .npm
 
-# Optional eslint cache
-.eslintcache
+# # Optional eslint cache
+# .eslintcache
 
-# Optional REPL history
-.node_repl_history
+# # Optional REPL history
+# .node_repl_history
 
-# Output of 'npm pack'
-*.tgz
+# # Output of 'npm pack'
+# *.tgz
 
-# Yarn Integrity file
-.yarn-integrity
+# # Yarn Integrity file
+# .yarn-integrity
 
-# parcel-bundler cache
-.cache/
-.parcel-cache
+# # parcel-bundler cache
+# .cache/
+# .parcel-cache
 
-# Next.js
-.next/
-out/
+# # Next.js
+# .next/
+# out/
 
-# Nuxt.js
-.nuxt/
-dist/
+# # Nuxt.js
+# .nuxt/
+# dist/
 
-# Gatsby
-.cache/
-public/
+# # Gatsby
+# .cache/
+# public/
 
-# Vite
-dist-ssr/
-*.local
+# # Vite
+# dist-ssr/
+# *.local
 
-# Rollup
-.rollup.cache
+# # Rollup
+# .rollup.cache
 
-# Serverless directories
-.serverless/
+# # Serverless directories
+# .serverless/
 
-# FuseBox cache
-.fusebox/
+# # FuseBox cache
+# .fusebox/
 
-# DynamoDB Local files
-.dynamodb/
+# # DynamoDB Local files
+# .dynamodb/
 
-# TernJS port file
-.tern-port
+# # TernJS port file
+# .tern-port
 
-# Stores VSCode versions used for testing VSCode extensions
-.vscode-test
+# # Stores VSCode versions used for testing VSCode extensions
+# .vscode-test
 
-# Temporary folders
-tmp/
-temp/
+# # Temporary folders
+# tmp/
+# temp/
 
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+# # Editor directories and files
+# .vscode/*
+# !.vscode/extensions.json
+# .idea
+# *.suo
+# *.ntvs*
+# *.njsproj
+# *.sln
+# *.sw?
 
-# Supabase
-.supabase/
+# # Supabase
+# .supabase/
 
-# Test files
-*.test.js.snap
-coverage/
+# # Test files
+# *.test.js.snap
+# coverage/
 
-# Build artifacts
-*.tsbuildinfo
+# # Build artifacts
+# *.tsbuildinfo
 
-# ============================================================================
-# MOBILE APP SENSITIVE FILES
-# ============================================================================
-# Keystores directory (for release keystores)
-keystores/
+# # ============================================================================
+# # MOBILE APP SENSITIVE FILES
+# # ============================================================================
+# # Keystores directory (for release keystores)
+# keystores/
 
-# Android keystores and signing configs
-*.keystore
-!**/debug.keystore
-keystore.properties
-*.jks
+# # Android keystores and signing configs
+# *.keystore
+# !**/debug.keystore
+# keystore.properties
+# *.jks
 
-# iOS provisioning profiles and certificates
-*.mobileprovision
-*.p12
-*.cer
-*.p8
+# # iOS provisioning profiles and certificates
+# *.mobileprovision
+# *.p12
+# *.cer
+# *.p8
 
-# ============================================================================
-# LEGACY DIRECTORIES - DO NOT RE-ADD (Migration to AWS Lambda complete)
-# ============================================================================
-# These directories contained Supabase/KV/Deno code that has been migrated
-# to AWS Lambda (backend/lambda/). Deleted on 2026-01-02 as part of cleanup.
-# DO NOT recreate these directories.
-supabase/
-Warmpawzecodev/
-archive/
-# Legacy src/ at root (but allow backend/lambda/src/ and frontend apps/*/src/)
-/src/
-/lib/
-packages/
-deno.json
-vite.config.ts
-
-infrastructure/terraform-cleanup/.terraform/
+# # ============================================================================
+# # LEGACY DIRECTORIES - DO NOT RE-ADD (Migration to AWS Lambda complete)
+# # ============================================================================
+# # These directories contained Supabase/KV/Deno code that has been migrated
+# # to AWS Lambda (backend/lambda/). Deleted on 2026-01-02 as part of cleanup.
+# # DO NOT recreate these directories.
+# supabase/
+# Warmpawzecodev/
+# archive/
+# # Legacy src/ at root (but allow backend/lambda/src/ and frontend apps/*/src/)
+# /src/
+# /lib/
+# packages/
+# deno.json
+# vite.config.ts
 
 # Terraform
 .terraform/
 .terraform.lock.hcl
 terraform.tfstate*
 *.tfstate*
+infrastructure/terraform-cleanup/.terraform/
+node_modules

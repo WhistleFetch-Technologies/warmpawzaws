@@ -262,9 +262,11 @@ export function VendorCapabilityDashboard({ vendorId }: { vendorId: string }) {
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center text-2xl">
-                🐾
-              </div>
+              <img 
+                src="/logo.png" 
+                alt="Warmpawz" 
+                className="w-12 h-12 rounded-2xl object-contain bg-white/20 p-1"
+              />
               <div>
                 <h1 className="text-xl font-bold">{vendor?.business_name || 'Vendor Dashboard'}</h1>
                 <p className="text-sm text-orange-100">{vendor?.owner_name}</p>

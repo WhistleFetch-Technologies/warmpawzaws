@@ -1,0 +1,58 @@
+[2025-12-27 11:39:14] \033[0;34m========================================\033[0m
+[2025-12-27 11:39:14] \033[0;34mAGENT 1 - COMPREHENSIVE E2E TEST SUITE\033[0m
+[2025-12-27 11:39:14] \033[0;34mAll 13 Batches Testing\033[0m
+[2025-12-27 11:39:14] \033[0;34m========================================\033[0m\n
+[2025-12-27 11:39:14] Test Results Directory: ./test-results/agent1-comprehensive
+[2025-12-27 11:39:14] Log File: ./test-results/agent1-comprehensive/test_20251227_113914.log
+[2025-12-27 11:39:14] Report File: ./test-results/agent1-comprehensive/report_20251227_113914.json
+[2025-12-27 11:39:14] 
+[2025-12-27 11:39:14] \n\033[0;34m========================================\033[0m
+[2025-12-27 11:39:14] \033[0;34mPHASE 1: SYNTAX VALIDATION\033[0m
+[2025-12-27 11:39:14] \033[0;34m========================================\033[0m\n
+[2025-12-27 11:39:14] Found 233 SQL-only files
+[2025-12-27 11:39:14] \033[0;31m✗ FAIL\033[0m: syntax - KV usage found in SQL file: home-services-enhanced-sql.tsx
+[2025-12-27 11:39:15] \033[0;31m✗ FAIL\033[0m: syntax - KV usage found in SQL file: vendor-bank-validation-sql.tsx
+[2025-12-27 11:39:15] \033[1;33m⚠ WARN\033[0m: syntax - No export found in: universal-otp-system-sql.tsx
+[2025-12-27 11:39:15] \033[1;33m⚠ WARN\033[0m: syntax - No export found in: consultation-notes-endpoints-sql.tsx
+[2025-12-27 11:39:15] \033[1;33m⚠ WARN\033[0m: syntax - No export found in: pharmacy-prescription-endpoints-sql.tsx
+[2025-12-27 11:39:15] \033[1;33m⚠ WARN\033[0m: syntax - No export found in: staff-schedule-endpoints-sql.tsx
+[2025-12-27 11:39:15] \033[1;33m⚠ WARN\033[0m: syntax - No export found in: training-progress-endpoints-sql.tsx
+[2025-12-27 11:39:15] \033[1;33m⚠ WARN\033[0m: syntax - No export found in: cafe-table-management-sql.tsx
+[2025-12-27 11:39:15] \033[1;33m⚠ WARN\033[0m: syntax - No export found in: analytics-aggregation-sql.tsx
+[2025-12-27 11:39:15] \033[1;33m⚠ WARN\033[0m: syntax - No export found in: home-services-enhanced-sql.tsx
+[2025-12-27 11:39:15] \033[1;33m⚠ WARN\033[0m: syntax - No export found in: search-analytics-api-sql.tsx
+[2025-12-27 11:39:15] \033[1;33m⚠ WARN\033[0m: syntax - No export found in: tier-system-sql.tsx
+[2025-12-27 11:39:15] \033[1;33m⚠ WARN\033[0m: syntax - No export found in: bank-verification-endpoints-sql.tsx
+[2025-12-27 11:39:15] \033[1;33m⚠ WARN\033[0m: syntax - No export found in: tier-upgrade-automation-sql.tsx
+[2025-12-27 11:39:16] \033[1;33m⚠ WARN\033[0m: syntax - No export found in: expiry-management-endpoints-sql.tsx
+[2025-12-27 11:39:16] \033[1;33m⚠ WARN\033[0m: syntax - No export found in: service-comparison-system-sql.tsx
+[2025-12-27 11:39:16] \033[1;33m⚠ WARN\033[0m: syntax - No export found in: vet-specialized-services-sql.tsx
+[2025-12-27 11:39:16] \033[1;33m⚠ WARN\033[0m: syntax - No export found in: cctv-access-endpoints-sql.tsx
+[2025-12-27 11:39:16] \033[1;33m⚠ WARN\033[0m: syntax - No export found in: customer-medical-records-sql.tsx
+[2025-12-27 11:39:16] \033[1;33m⚠ WARN\033[0m: syntax - No export found in: customer-pets-sql.tsx
+[2025-12-27 11:39:16] \033[1;33m⚠ WARN\033[0m: syntax - No export found in: customer-ecommerce-endpoints-sql.tsx
+[2025-12-27 11:39:16] \033[1;33m⚠ WARN\033[0m: syntax - No export found in: logistics-adapter-sql.tsx
+[2025-12-27 11:39:16] \033[0;32mPhase 1 complete\033[0m\n
+[2025-12-27 11:39:16] \n\033[0;34m========================================\033[0m
+[2025-12-27 11:39:16] \033[0;34mPHASE 2: ROUTE REGISTRATION VERIFICATION\033[0m
+[2025-12-27 11:39:16] \033[0;34m========================================\033[0m\n
+[2025-12-27 11:39:16] Found 175 SQL file imports in index.ts
+[2025-12-27 11:39:16] \033[0;32m✓ PASS\033[0m: registration - No duplicate route paths found
+[2025-12-27 11:39:16] \033[0;32mPhase 2 complete\033[0m\n
+[2025-12-27 11:39:16] \n\033[0;34m========================================\033[0m
+[2025-12-27 11:39:16] \033[0;34mPHASE 3: DETAILED DUPLICATION CHECK\033[0m
+[2025-12-27 11:39:16] \033[0;34m========================================\033[0m\n
+[2025-12-27 11:39:16] \033[0;32m✓ PASS\033[0m: duplication - No duplicate function registrations
+[2025-12-27 11:39:16] \033[0;32mPhase 3 complete\033[0m\n
+[2025-12-27 11:39:16] \n\033[0;34m========================================\033[0m
+[2025-12-27 11:39:16] \033[0;34mFINAL REPORT\033[0m
+[2025-12-27 11:39:16] \033[0;34m========================================\033[0m\n
+[2025-12-27 11:39:16] Total Checks: 24
+[2025-12-27 11:39:16] \033[0;32mPassed: 2\033[0m
+[2025-12-27 11:39:16] \033[0;31mFailed: 2\033[0m
+[2025-12-27 11:39:16] \033[1;33mWarnings: 20\033[0m
+[2025-12-27 11:39:16] Success Rate: 8%
+[2025-12-27 11:39:16] \nReport saved to: ./test-results/agent1-comprehensive/report_20251227_113914.json
+[2025-12-27 11:39:16] Log saved to: ./test-results/agent1-comprehensive/test_20251227_113914.log
+[2025-12-27 11:39:16] \n\033[0;31m❌ SOME CHECKS FAILED\033[0m
+[2025-12-27 11:39:16] \033[1;33mPlease fix failures before proceeding with endpoint testing.\033[0m\n

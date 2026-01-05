@@ -1,0 +1,323 @@
+"use strict";
+/**
+ * ============================================================================
+ * ERROR RECOVERY & RESILIENCE UTILITIES
+ * ============================================================================
+ *
+ * Comprehensive error handling with:
+ * - Automatic retry with exponential backoff
+ * - Circuit breaker pattern
+ * - Dead letter queue handling
+ * - Error recovery workflows
+ *
+ * Date: 2026-01-03
+ * ============================================================================
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.withRetry = withRetry;
+exports.getCircuitBreaker = getCircuitBreaker;
+exports.queueFailedOperation = queueFailedOperation;
+exports.retryFailedOperations = retryFailedOperations;
+exports.executeSaga = executeSaga;
+exports.performHealthCheck = performHealthCheck;
+exports.ensureFailedOperationsTable = ensureFailedOperationsTable;
+const rds_connection_1 = require("../database/rds-connection");
+const DEFAULT_RETRY_OPTIONS = {
+    maxAttempts: 3,
+    initialDelayMs: 1000,
+    maxDelayMs: 30000,
+    backoffMultiplier: 2,
+    retryableErrors: ['ETIMEDOUT', 'ECONNRESET', 'ENOTFOUND', 'EAI_AGAIN'],
+};
+/**
+ * Execute function with exponential backoff retry
+ */
+async function withRetry(fn, options = {}) {
+    const opts = { ...DEFAULT_RETRY_OPTIONS, ...options };
+    let lastError = null;
+    for (let attempt = 1; attempt <= opts.maxAttempts; attempt++) {
+        try {
+            return await fn();
+        }
+        catch (error) {
+            lastError = error;
+            // Check if error is retryable
+            const isRetryable = opts.retryableErrors.some((code) => error.code === code || error.message?.includes(code));
+            if (!isRetryable || attempt === opts.maxAttempts) {
+                throw error;
+            }
+            // Calculate delay with exponential backoff
+            const delay = Math.min(opts.initialDelayMs * Math.pow(opts.backoffMultiplier, attempt - 1), opts.maxDelayMs);
+            console.log(`[RETRY] Attempt ${attempt} failed, retrying in ${delay}ms...`);
+            await sleep(delay);
+        }
+    }
+    throw lastError || new Error('All retry attempts failed');
+}
+function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+var CircuitState;
+(function (CircuitState) {
+    CircuitState["CLOSED"] = "CLOSED";
+    CircuitState["OPEN"] = "OPEN";
+    CircuitState["HALF_OPEN"] = "HALF_OPEN";
+})(CircuitState || (CircuitState = {}));
+class CircuitBreaker {
+    constructor(options) {
+        this.options = options;
+        this.state = CircuitState.CLOSED;
+        this.failureCount = 0;
+        this.successCount = 0;
+        this.nextAttempt = Date.now();
+    }
+    async execute(fn) {
+        if (this.state === CircuitState.OPEN) {
+            if (Date.now() < this.nextAttempt) {
+                throw new Error('Circuit breaker is OPEN');
+            }
+            this.state = CircuitState.HALF_OPEN;
+            this.successCount = 0;
+        }
+        try {
+            const result = await fn();
+            this.onSuccess();
+            return result;
+        }
+        catch (error) {
+            this.onFailure();
+            throw error;
+        }
+    }
+    onSuccess() {
+        this.failureCount = 0;
+        if (this.state === CircuitState.HALF_OPEN) {
+            this.successCount++;
+            if (this.successCount >= this.options.successThreshold) {
+                this.state = CircuitState.CLOSED;
+                this.successCount = 0;
+            }
+        }
+    }
+    onFailure() {
+        this.failureCount++;
+        this.successCount = 0;
+        if (this.failureCount >= this.options.failureThreshold) {
+            this.state = CircuitState.OPEN;
+            this.nextAttempt = Date.now() + this.options.timeout;
+        }
+    }
+    getState() {
+        return this.state;
+    }
+}
+// Global circuit breakers for external services
+const circuitBreakers = new Map();
+function getCircuitBreaker(service) {
+    if (!circuitBreakers.has(service)) {
+        circuitBreakers.set(service, new CircuitBreaker({
+            failureThreshold: 5,
+            successThreshold: 2,
+            timeout: 60000, // 1 minute
+        }));
+    }
+    return circuitBreakers.get(service);
+}
+/**
+ * Queue failed operation for retry
+ */
+async function queueFailedOperation(operationType, operationData, error, maxAttempts = 5) {
+    try {
+        await (0, rds_connection_1.query)(`INSERT INTO failed_operations (
+        operation_type, operation_data, error_message, 
+        attempt_count, max_attempts, next_retry_at
+      ) VALUES ($1, $2, $3, 1, $4, NOW() + INTERVAL '5 minutes')`, [operationType, JSON.stringify(operationData), error.message, maxAttempts]);
+        console.log(`[ERROR_RECOVERY] Queued failed operation: ${operationType}`);
+    }
+    catch (err) {
+        console.error('[ERROR_RECOVERY] Failed to queue operation:', err);
+    }
+}
+/**
+ * Retry failed operations
+ */
+async function retryFailedOperations() {
+    const result = { retried: 0, succeeded: 0, failed: 0 };
+    try {
+        // Get operations due for retry
+        const { rows: operations } = await (0, rds_connection_1.query)(`SELECT * FROM failed_operations
+       WHERE status = 'pending'
+         AND next_retry_at <= NOW()
+         AND attempt_count < max_attempts
+       ORDER BY created_at ASC
+       LIMIT 100`);
+        for (const op of operations) {
+            result.retried++;
+            try {
+                // Execute operation based on type
+                await executeOperation(op.operation_type, JSON.parse(op.operation_data));
+                // Mark as completed
+                await (0, rds_connection_1.query)(`UPDATE failed_operations SET status = 'completed', updated_at = NOW() WHERE id = $1`, [op.id]);
+                result.succeeded++;
+            }
+            catch (error) {
+                // Increment attempt count and schedule next retry
+                const nextRetryMinutes = Math.pow(2, op.attempt_count) * 5; // Exponential backoff
+                await (0, rds_connection_1.query)(`UPDATE failed_operations 
+           SET attempt_count = attempt_count + 1,
+               error_message = $1,
+               next_retry_at = NOW() + INTERVAL '${nextRetryMinutes} minutes',
+               updated_at = NOW(),
+               status = CASE WHEN attempt_count + 1 >= max_attempts THEN 'exhausted' ELSE 'pending' END
+           WHERE id = $2`, [error.message, op.id]);
+                result.failed++;
+            }
+        }
+    }
+    catch (error) {
+        console.error('[ERROR_RECOVERY] Failed to retry operations:', error);
+    }
+    return result;
+}
+async function executeOperation(type, data) {
+    // Map operation types to handlers
+    const handlers = {
+        'payment_webhook': async (data) => {
+            // Re-process payment webhook
+            console.log('[RECOVERY] Retrying payment webhook:', data);
+            // TODO: Call webhook handler
+        },
+        'settlement_notification': async (data) => {
+            // Re-send settlement notification
+            console.log('[RECOVERY] Retrying settlement notification:', data);
+            // TODO: Call SNS publish
+        },
+        'refund_processing': async (data) => {
+            // Re-initiate refund
+            console.log('[RECOVERY] Retrying refund:', data);
+            // TODO: Call Razorpay refund API
+        },
+    };
+    const handler = handlers[type];
+    if (!handler) {
+        throw new Error(`Unknown operation type: ${type}`);
+    }
+    await handler(data);
+}
+// ============================================================================
+// COMPENSATION TRANSACTIONS
+// ============================================================================
+/**
+ * Execute saga pattern with compensation
+ */
+async function executeSaga(steps) {
+    const results = [];
+    const executedSteps = [];
+    try {
+        for (let i = 0; i < steps.length; i++) {
+            console.log(`[SAGA] Executing step ${i + 1}: ${steps[i].name}`);
+            const result = await steps[i].execute();
+            results.push(result);
+            executedSteps.push(i);
+        }
+        return results;
+    }
+    catch (error) {
+        console.error('[SAGA] Step failed, running compensation...', error);
+        // Execute compensation in reverse order
+        for (let i = executedSteps.length - 1; i >= 0; i--) {
+            const stepIndex = executedSteps[i];
+            try {
+                console.log(`[SAGA] Compensating step ${stepIndex + 1}: ${steps[stepIndex].name}`);
+                await steps[stepIndex].compensate();
+            }
+            catch (compensationError) {
+                console.error(`[SAGA] Compensation failed for step ${stepIndex + 1}:`, compensationError);
+                // Log to dead letter queue
+                await queueFailedOperation('saga_compensation', { stepName: steps[stepIndex].name, stepIndex }, compensationError);
+            }
+        }
+        throw error;
+    }
+}
+// ============================================================================
+// HEALTH CHECK & AUTO-RECOVERY
+// ============================================================================
+async function performHealthCheck() {
+    const issues = [];
+    const autoFixed = [];
+    // Check 1: Unbalanced transactions
+    try {
+        const { rows } = await (0, rds_connection_1.query)('SELECT COUNT(*) FROM unbalanced_transactions');
+        const count = parseInt(rows[0].count);
+        if (count > 0) {
+            issues.push(`${count} unbalanced transactions found`);
+        }
+    }
+    catch (error) {
+        issues.push('Could not check ledger balance');
+    }
+    // Check 2: Negative wallet balances
+    try {
+        const { rows } = await (0, rds_connection_1.query)('SELECT COUNT(*) FROM customer_wallets WHERE balance < 0');
+        const count = parseInt(rows[0].count);
+        if (count > 0) {
+            issues.push(`${count} wallets with negative balance`);
+        }
+    }
+    catch (error) {
+        issues.push('Could not check wallet balances');
+    }
+    // Check 3: Stuck bookings (auto-fix)
+    try {
+        const result = await (0, rds_connection_1.query)(`UPDATE bookings 
+       SET status = 'cancelled', cancellation_reason = 'Auto-cancelled: payment timeout'
+       WHERE status = 'pending' 
+         AND payment_status = 'pending'
+         AND created_at < NOW() - INTERVAL '30 minutes'
+       RETURNING id`);
+        if (result.rows.length > 0) {
+            autoFixed.push(`Auto-cancelled ${result.rows.length} stuck bookings`);
+        }
+    }
+    catch (error) {
+        issues.push('Could not check stuck bookings');
+    }
+    // Check 4: Expired idempotency keys (auto-clean)
+    try {
+        const result = await (0, rds_connection_1.query)(`DELETE FROM idempotency_keys WHERE expires_at < NOW() RETURNING key`);
+        if (result.rows.length > 0) {
+            autoFixed.push(`Cleaned ${result.rows.length} expired idempotency keys`);
+        }
+    }
+    catch (error) {
+        issues.push('Could not clean idempotency keys');
+    }
+    return {
+        healthy: issues.length === 0,
+        issues,
+        autoFixed,
+    };
+}
+// ============================================================================
+// CREATE FAILED_OPERATIONS TABLE (if not exists)
+// ============================================================================
+async function ensureFailedOperationsTable() {
+    await (0, rds_connection_1.query)(`
+    CREATE TABLE IF NOT EXISTS failed_operations (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      operation_type TEXT NOT NULL,
+      operation_data JSONB NOT NULL,
+      error_message TEXT,
+      attempt_count INTEGER DEFAULT 0,
+      max_attempts INTEGER DEFAULT 5,
+      next_retry_at TIMESTAMPTZ,
+      status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'exhausted')),
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_failed_ops_retry ON failed_operations(next_retry_at) WHERE status = 'pending';
+  `);
+}
+//# sourceMappingURL=error-recovery.js.map
