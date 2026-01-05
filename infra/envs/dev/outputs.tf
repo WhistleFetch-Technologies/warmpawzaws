@@ -95,21 +95,38 @@ output "s3_customer_bucket" {
   value       = module.cloudfront.bucket_names["customer"]
 }
 
-# Domain URLs
+# Domain URLs (Custom - require DNS setup)
 
 output "admin_url" {
-  description = "Admin dashboard URL"
+  description = "Admin dashboard URL (custom domain - requires DNS)"
   value       = "https://dev.admin.warmpawz.com"
 }
 
 output "vendor_url" {
-  description = "Vendor portal URL"
+  description = "Vendor portal URL (custom domain - requires DNS)"
   value       = "https://dev.vendor.warmpawz.com"
 }
 
 output "customer_url" {
-  description = "Customer app URL"
+  description = "Customer app URL (custom domain - requires DNS)"
   value       = "https://dev.customer.warmpawz.com"
+}
+
+# CloudFront URLs (Actual - always accessible)
+
+output "admin_cloudfront_url" {
+  description = "Admin dashboard CloudFront URL (actual, no DNS required)"
+  value       = "https://${module.cloudfront.distributions["admin"].domain_name}"
+}
+
+output "vendor_cloudfront_url" {
+  description = "Vendor portal CloudFront URL (actual, no DNS required)"
+  value       = "https://${module.cloudfront.distributions["vendor"].domain_name}"
+}
+
+output "customer_cloudfront_url" {
+  description = "Customer app CloudFront URL (actual, no DNS required)"
+  value       = "https://${module.cloudfront.distributions["customer"].domain_name}"
 }
 
 # SNS Topics for Notifications
