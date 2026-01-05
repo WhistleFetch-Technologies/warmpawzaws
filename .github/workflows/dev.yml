@@ -1256,17 +1256,101 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: Get deployment URLs
+        id: urls
+        working-directory: infra/envs/dev
+        run: |
+          terraform init -backend-config=backend.hcl > /dev/null
+          
+          # Get actual deployed URLs (CloudFront + API Gateway)
+          API_ENDPOINT=$(terraform output -raw api_endpoint 2>/dev/null || echo "")
+          ADMIN_URL=$(terraform output -raw admin_cloudfront_url 2>/dev/null || echo "")
+          VENDOR_URL=$(terraform output -raw vendor_cloudfront_url 2>/dev/null || echo "")
+          CUSTOMER_URL=$(terraform output -raw customer_cloudfront_url 2>/dev/null || echo "")
+          
+          echo "api_endpoint=$API_ENDPOINT" >> $GITHUB_OUTPUT
+          echo "admin_url=$ADMIN_URL" >> $GITHUB_OUTPUT
+          echo "vendor_url=$VENDOR_URL" >> $GITHUB_OUTPUT
+          echo "customer_url=$CUSTOMER_URL" >> $GITHUB_OUTPUT
+          
+          echo "Deployment URLs:"
+          echo "  API: $API_ENDPOINT"
+          echo "  Admin: $ADMIN_URL"
+          echo "  Vendor: $VENDOR_URL"
+          echo "  Customer: $CUSTOMER_URL"
+
       - name: Test API endpoint
         run: |
           echo "Testing API health endpoint..."
-          curl -f https://dev.api.warmpawz.com/health || echo "API health check pending..."
+          API_URL="${{ steps.urls.outputs.api_endpoint }}"
+          
+          if [ -z "$API_URL" ] || [ "$API_URL" = "null" ]; then
+            echo "⚠️  API endpoint not available from Terraform outputs"
+            echo "   This is expected if API Gateway deployment is still in progress"
+            exit 0
+          fi
+          
+          echo "Testing: ${API_URL}/health"
+          if curl -f -s -m 10 "${API_URL}/health" > /dev/null 2>&1; then
+            echo "✅ API health check passed"
+          else
+            echo "⚠️  API health check failed (may still be deploying)"
+          fi
 
       - name: Test frontend URLs
         run: |
-          echo "Testing frontend URLs..."
-          curl -f https://dev.admin.warmpawz.com || echo "Admin app pending..."
-          curl -f https://dev.vendor.warmpawz.com || echo "Vendor app pending..."
-          curl -f https://dev.customer.warmpawz.com || echo "Customer app pending..."
+          echo "Testing frontend CloudFront distributions..."
+          
+          ADMIN_URL="${{ steps.urls.outputs.admin_url }}"
+          VENDOR_URL="${{ steps.urls.outputs.vendor_url }}"
+          CUSTOMER_URL="${{ steps.urls.outputs.customer_url }}"
+          
+          # Test admin app
+          if [ -n "$ADMIN_URL" ] && [ "$ADMIN_URL" != "null" ]; then
+            echo "Testing: $ADMIN_URL"
+            if curl -f -s -m 10 "$ADMIN_URL" > /dev/null 2>&1; then
+              echo "✅ Admin app accessible"
+            else
+              echo "⚠️  Admin app not yet accessible (CloudFront may be propagating)"
+            fi
+          fi
+          
+          # Test vendor app
+          if [ -n "$VENDOR_URL" ] && [ "$VENDOR_URL" != "null" ]; then
+            echo "Testing: $VENDOR_URL"
+            if curl -f -s -m 10 "$VENDOR_URL" > /dev/null 2>&1; then
+              echo "✅ Vendor app accessible"
+            else
+              echo "⚠️  Vendor app not yet accessible (CloudFront may be propagating)"
+            fi
+          fi
+          
+          # Test customer app
+          if [ -n "$CUSTOMER_URL" ] && [ "$CUSTOMER_URL" != "null" ]; then
+            echo "Testing: $CUSTOMER_URL"
+            if curl -f -s -m 10 "$CUSTOMER_URL" > /dev/null 2>&1; then
+              echo "✅ Customer app accessible"
+            else
+              echo "⚠️  Customer app not yet accessible (CloudFront may be propagating)"
+            fi
+          fi
+          
+          echo ""
+          echo "Note: CloudFront distributions may take 5-15 minutes to fully propagate"
+          echo "Custom domains (dev.*.warmpawz.com) require DNS configuration"
 
   # ============================================
   # DEPLOYMENT SUMMARY
