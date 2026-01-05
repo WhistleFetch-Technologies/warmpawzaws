@@ -4,6 +4,13 @@
  * Executes all SQL migration files in numerical order
  * 
  * Usage: node db/run-migration-all.js
+ * 
+ * CRITICAL VALIDATIONS:
+ * - DATABASE_URL must be defined and non-empty
+ * - DATABASE_URL must be a valid PostgreSQL connection string
+ * - Connection must succeed before running migrations
+ * 
+ * This prevents "Cannot read properties of undefined" errors in CI/CD
  */
 
 const { Pool } = require('pg');
@@ -13,8 +20,71 @@ const path = require('path');
 // Database URL from environment or default
 const DATABASE_URL = process.env.DATABASE_URL || process.env.SUPABASE_DB_URL;
 
+// CRITICAL VALIDATION #1: Environment variable exists
 if (!DATABASE_URL) {
-  console.error('❌ DATABASE_URL or SUPABASE_DB_URL environment variable is required');
+  console.error('');
+  console.error('❌ FATAL ERROR: DATABASE_URL environment variable is required');
+  console.error('');
+  console.error('   Set DATABASE_URL to a valid PostgreSQL connection string:');
+  console.error('   postgresql://username:password@host:port/database');
+  console.error('');
+  console.error('   Or set SUPABASE_DB_URL for Supabase databases');
+  console.error('');
+  process.exit(1);
+}
+
+// CRITICAL VALIDATION #2: DATABASE_URL is not undefined/null/empty string
+if (typeof DATABASE_URL !== 'string' || DATABASE_URL.trim() === '') {
+  console.error('');
+  console.error('❌ FATAL ERROR: DATABASE_URL is defined but empty or invalid');
+  console.error(`   Type: ${typeof DATABASE_URL}`);
+  console.error(`   Value: ${DATABASE_URL}`);
+  console.error('');
+  process.exit(1);
+}
+
+// CRITICAL VALIDATION #3: DATABASE_URL has correct format
+const urlPattern = /^postgresql:\/\/[^:]+:[^@]+@[^:]+:\d+\/[^/]+$/;
+if (!urlPattern.test(DATABASE_URL)) {
+  console.error('');
+  console.error('❌ FATAL ERROR: DATABASE_URL has invalid format');
+  console.error('');
+  console.error('   Expected format: postgresql://username:password@host:port/database');
+  console.error(`   Got (sanitized): ${DATABASE_URL.replace(/:[^:@]+@/, ':***@')}`);
+  console.error('');
+  console.error('   Common issues:');
+  console.error('   - Missing username or password');
+  console.error('   - Missing host or port');
+  console.error('   - Missing database name');
+  console.error('   - Wrong protocol (use postgresql:// not postgres://)');
+  console.error('');
+  process.exit(1);
+}
+
+// CRITICAL VALIDATION #4: URL parsing works (prevents "Cannot read properties of undefined")
+let parsedUrl;
+try {
+  parsedUrl = new URL(DATABASE_URL);
+  
+  // Validate required components exist
+  if (!parsedUrl.hostname || parsedUrl.hostname === '') {
+    throw new Error('Hostname is empty');
+  }
+  if (!parsedUrl.pathname || parsedUrl.pathname === '/' || parsedUrl.pathname === '') {
+    throw new Error('Database name is empty');
+  }
+  if (!parsedUrl.port || parsedUrl.port === '') {
+    throw new Error('Port is empty');
+  }
+  
+} catch (error) {
+  console.error('');
+  console.error('❌ FATAL ERROR: Failed to parse DATABASE_URL');
+  console.error(`   Error: ${error.message}`);
+  console.error(`   URL (sanitized): ${DATABASE_URL.replace(/:[^:@]+@/, ':***@')}`);
+  console.error('');
+  console.error('   This prevents "Cannot read properties of undefined (reading \'searchParams\')" errors');
+  console.error('');
   process.exit(1);
 }
 
@@ -22,6 +92,9 @@ async function runAllMigrations() {
   console.log('🚀 Migration Runner - Running All Migrations');
   console.log('='.repeat(60));
   console.log(`🔌 Database: ${DATABASE_URL.replace(/:[^:@]+@/, ':***@')}`);
+  console.log(`   Host: ${parsedUrl.hostname}`);
+  console.log(`   Port: ${parsedUrl.port}`);
+  console.log(`   Database: ${parsedUrl.pathname.slice(1)}`);
   console.log('');
 
   const migrationsDir = path.join(__dirname, 'migrations');
@@ -53,6 +126,28 @@ async function runAllMigrations() {
     const client = await pool.connect();
     console.log('✅ Connected successfully');
     console.log('');
+    
+    // CRITICAL: Test database connectivity and permissions before running migrations
+    console.log('🔍 Verifying database access...');
+    try {
+      const { rows } = await client.query('SELECT current_database(), current_user, version()');
+      console.log(`   Database: ${rows[0].current_database}`);
+      console.log(`   User: ${rows[0].current_user}`);
+      console.log(`   PostgreSQL: ${rows[0].version.split(',')[0]}`);
+      console.log('✅ Database access verified');
+      console.log('');
+    } catch (error) {
+      console.error('');
+      console.error('❌ FATAL ERROR: Cannot access database');
+      console.error(`   Error: ${error.message}`);
+      console.error('');
+      console.error('   Possible causes:');
+      console.error('   - Database does not exist');
+      console.error('   - User does not have permissions');
+      console.error('   - Network/firewall blocking connection');
+      console.error('');
+      process.exit(1);
+    }
 
     // Run each migration
     for (const file of files) {

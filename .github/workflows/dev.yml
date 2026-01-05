@@ -146,6 +146,16 @@ jobs:
           distribution: 'temurin'
           java-version: ${{ env.JAVA_VERSION }}
 
+      - name: Setup Gradle cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -875,21 +885,91 @@ jobs:
         id: db-creds
         working-directory: infra/envs/dev
         run: |
+          echo "🔐 Retrieving database credentials from Terraform outputs and Secrets Manager..."
           terraform init -backend-config=backend.hcl
           
-          RDS_ENDPOINT=$(terraform output -raw rds_endpoint)
-          RDS_SECRET_ARN=$(terraform output -raw rds_secret_arn)
-          RDS_DB_NAME=$(terraform output -raw rds_database_name)
-          RDS_PORT=$(terraform output -raw rds_port)
+          # Get Terraform outputs with validation
+          RDS_ENDPOINT=$(terraform output -raw rds_endpoint 2>/dev/null || echo "")
+          RDS_SECRET_ARN=$(terraform output -raw rds_secret_arn 2>/dev/null || echo "")
+          RDS_DB_NAME=$(terraform output -raw rds_database_name 2>/dev/null || echo "")
+          RDS_PORT=$(terraform output -raw rds_port 2>/dev/null || echo "")
           
-          DB_SECRET=$(aws secretsmanager get-secret-value --secret-id "$RDS_SECRET_ARN" --query SecretString --output text)
-          DB_PASSWORD=$(echo "$DB_SECRET" | jq -r '.password // .Password // .')
-          DB_USERNAME=$(echo "$DB_SECRET" | jq -r '.username // .Username // "postgres"')
+          # CRITICAL: Validate all required outputs exist
+          if [ -z "$RDS_ENDPOINT" ] || [ "$RDS_ENDPOINT" = "null" ]; then
+            echo "❌ ERROR: rds_endpoint output is empty or undefined"
+            echo "   This usually means RDS has not been created yet or Terraform apply failed"
+            exit 1
+          fi
           
+          if [ -z "$RDS_SECRET_ARN" ] || [ "$RDS_SECRET_ARN" = "null" ]; then
+            echo "❌ ERROR: rds_secret_arn output is empty or undefined"
+            exit 1
+          fi
+          
+          if [ -z "$RDS_DB_NAME" ] || [ "$RDS_DB_NAME" = "null" ]; then
+            echo "❌ ERROR: rds_database_name output is empty or undefined"
+            exit 1
+          fi
+          
+          if [ -z "$RDS_PORT" ] || [ "$RDS_PORT" = "null" ]; then
+            echo "⚠️  WARNING: rds_port is empty, defaulting to 5432"
+            RDS_PORT="5432"
+          fi
+          
+          echo "✅ Terraform outputs retrieved:"
+          echo "   Endpoint: ${RDS_ENDPOINT}"
+          echo "   Database: ${RDS_DB_NAME}"
+          echo "   Port: ${RDS_PORT}"
+          echo ""
+          
+          # Get credentials from Secrets Manager with validation
+          echo "🔑 Retrieving credentials from Secrets Manager..."
+          DB_SECRET=$(aws secretsmanager get-secret-value --secret-id "$RDS_SECRET_ARN" --query SecretString --output text 2>/dev/null || echo "")
+          
+          if [ -z "$DB_SECRET" ]; then
+            echo "❌ ERROR: Failed to retrieve secret from Secrets Manager"
+            echo "   Secret ARN: ${RDS_SECRET_ARN}"
+            exit 1
+          fi
+          
+          DB_PASSWORD=$(echo "$DB_SECRET" | jq -r '.password // .Password // .' 2>/dev/null || echo "")
+          DB_USERNAME=$(echo "$DB_SECRET" | jq -r '.username // .Username // "postgres"' 2>/dev/null || echo "postgres")
+          
+          if [ -z "$DB_PASSWORD" ] || [ "$DB_PASSWORD" = "null" ] || [ "$DB_PASSWORD" = "." ]; then
+            echo "❌ ERROR: Failed to parse password from secret"
+            echo "   Secret structure may be invalid"
+            exit 1
+          fi
+          
+          if [ -z "$DB_USERNAME" ] || [ "$DB_USERNAME" = "null" ]; then
+            echo "⚠️  WARNING: username not found in secret, using 'postgres'"
+            DB_USERNAME="postgres"
+          fi
+          
+          echo "✅ Credentials retrieved successfully"
+          echo "   Username: ${DB_USERNAME}"
+          echo ""
+          
+          # Construct DATABASE_URL
           DATABASE_URL="postgresql://${DB_USERNAME}:${DB_PASSWORD}@${RDS_ENDPOINT}:${RDS_PORT}/${RDS_DB_NAME}"
           
+          # CRITICAL: Validate DATABASE_URL format
+          if ! echo "$DATABASE_URL" | grep -qE '^postgresql://[^:]+:[^@]+@[^:]+:[0-9]+/[^/]+$'; then
+            echo "❌ ERROR: Constructed DATABASE_URL has invalid format"
+            echo "   Expected: postgresql://username:password@host:port/database"
+            echo "   Got (sanitized): postgresql://${DB_USERNAME}:***@${RDS_ENDPOINT}:${RDS_PORT}/${RDS_DB_NAME}"
+            exit 1
+          fi
+          
+          echo "✅ DATABASE_URL constructed and validated"
+          echo "   Format: postgresql://${DB_USERNAME}:***@${RDS_ENDPOINT}:${RDS_PORT}/${RDS_DB_NAME}"
+          echo ""
+          
+          # Mask sensitive data
           echo "::add-mask::$DB_PASSWORD"
           echo "::add-mask::$DATABASE_URL"
+          
+          # Output for next steps
           echo "database_url=$DATABASE_URL" >> $GITHUB_OUTPUT
 
       - name: Run migrations
