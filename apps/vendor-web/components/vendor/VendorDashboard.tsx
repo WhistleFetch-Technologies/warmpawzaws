@@ -25,9 +25,13 @@ interface Booking {
 
 interface VendorDashboardProps {
   vendorId: string;
+  phone?: string;
+  vendorType?: string;
+  serviceStyle?: string;
+  onLogout?: () => void;
 }
 
-export function VendorDashboard({ vendorId }: VendorDashboardProps) {
+export function VendorDashboard({ vendorId, phone, vendorType, serviceStyle, onLogout }: VendorDashboardProps) {
   const [loading, setLoading] = useState(true);
   const [vendor, setVendor] = useState<any>(null);
   const [stats, setStats] = useState<DashboardStats>({

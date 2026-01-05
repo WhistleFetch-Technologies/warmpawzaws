@@ -573,13 +573,15 @@ export function VendorOnboardingFlow() {
   // ============================================================================
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50">
+    <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-primary-50/50">
       {/* Header */}
-      <header className="bg-white/80 backdrop-blur-md border-b border-orange-100 sticky top-0 z-50">
+      <header className="bg-white/80 backdrop-blur-md border-b border-primary-100 sticky top-0 z-50">
         <div className="max-w-3xl mx-auto px-4 py-4 flex items-center gap-4">
-          <div className="w-12 h-12 bg-gradient-to-br from-orange-400 to-orange-600 rounded-2xl flex items-center justify-center text-white text-2xl shadow-lg">
-            🐾
-          </div>
+          <img 
+            src="/logo.png" 
+            alt="Warmpawz" 
+            className="w-12 h-12 rounded-2xl shadow-primary object-contain"
+          />
           <div>
             <h1 className="text-xl font-bold text-gray-900">Warmpawz Partner</h1>
             <p className="text-sm text-gray-500">Become a service provider</p>
@@ -600,16 +602,16 @@ export function VendorOnboardingFlow() {
             return (
               <div key={step} className="flex items-center flex-1">
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-all ${
-                  isComplete ? 'bg-green-500 text-white' :
-                  isCurrent ? 'bg-orange-500 text-white ring-4 ring-orange-200' :
+                  isComplete ? 'bg-green text-white' :
+                  isCurrent ? 'bg-primary text-white ring-4 ring-primary/30' :
                   'bg-gray-200 text-gray-500'
                 }`}>
                   {isComplete ? '✓' : index + 1}
                 </div>
-                <span className={`ml-2 text-xs font-medium ${isCurrent ? 'text-orange-600' : 'text-gray-500'}`}>
+                <span className={`ml-2 text-xs font-medium ${isCurrent ? 'text-primary' : 'text-gray-500'}`}>
                   {stepNames[index]}
                 </span>
-                {index < 4 && <div className={`flex-1 h-0.5 mx-2 ${isComplete ? 'bg-green-500' : 'bg-gray-200'}`} />}
+                {index < 4 && <div className={`flex-1 h-0.5 mx-2 ${isComplete ? 'bg-green' : 'bg-gray-200'}`} />}
               </div>
             );
           })}
@@ -647,14 +649,14 @@ export function VendorOnboardingFlow() {
                   value={state.phone}
                   onChange={(e) => setState(prev => ({ ...prev, phone: e.target.value.replace(/\D/g, '') }))}
                   placeholder="Enter 10-digit mobile number"
-                  className="w-full pl-14 pr-4 py-4 text-lg border-2 border-gray-200 rounded-2xl focus:border-orange-500 focus:ring-4 focus:ring-orange-100 transition outline-none"
+                  className="w-full pl-14 pr-4 py-4 text-lg border-2 border-gray-200 rounded-2xl focus:border-primary focus:ring-4 focus:ring-primary/20 transition outline-none"
                 />
               </div>
               
               <button
                 onClick={sendOtp}
                 disabled={loading || state.phone.length !== 10}
-                className="w-full py-4 bg-gradient-to-r from-orange-500 to-orange-600 text-white text-lg font-semibold rounded-2xl hover:from-orange-600 hover:to-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition shadow-lg shadow-orange-200"
+                className="w-full py-4 bg-primary text-white text-lg font-semibold rounded-2xl hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition shadow-primary"
               >
                 {loading ? (
                   <span className="flex items-center justify-center gap-2">
@@ -696,7 +698,7 @@ export function VendorOnboardingFlow() {
                       next?.focus();
                     }
                   }}
-                  className="w-12 h-14 text-center text-2xl font-bold border-2 border-gray-200 rounded-xl focus:border-orange-500 focus:ring-4 focus:ring-orange-100 transition outline-none"
+                  className="w-12 h-14 text-center text-2xl font-bold border-2 border-gray-200 rounded-xl focus:border-primary focus:ring-4 focus:ring-primary/20 transition outline-none"
                 />
               ))}
             </div>
@@ -704,7 +706,7 @@ export function VendorOnboardingFlow() {
             <button
               onClick={verifyOtp}
               disabled={loading || otp.length !== 6}
-              className="w-full py-4 bg-gradient-to-r from-orange-500 to-orange-600 text-white text-lg font-semibold rounded-2xl hover:from-orange-600 hover:to-orange-700 disabled:opacity-50 transition shadow-lg shadow-orange-200"
+              className="w-full py-4 bg-primary text-white text-lg font-semibold rounded-2xl hover:bg-primary-dark disabled:opacity-50 transition shadow-primary"
             >
               {loading ? 'Verifying...' : 'Verify OTP'}
             </button>
@@ -713,7 +715,7 @@ export function VendorOnboardingFlow() {
               {resendTimer > 0 ? (
                 <p className="text-gray-500">Resend OTP in {resendTimer}s</p>
               ) : (
-                <button onClick={sendOtp} className="text-orange-500 font-medium hover:text-orange-600">
+                <button onClick={sendOtp} className="text-primary font-medium hover:text-primary-dark">
                   Resend OTP
                 </button>
               )}
@@ -745,15 +747,15 @@ export function VendorOnboardingFlow() {
                       selectedRole: role,
                       step: 'business_type',
                     }))}
-                    className="p-6 border-2 border-gray-200 rounded-2xl hover:border-orange-500 hover:bg-orange-50 transition text-left group"
+                    className="p-6 border-2 border-gray-200 rounded-2xl hover:border-primary hover:bg-primary-50 transition text-left group"
                   >
                     <div className="text-4xl mb-3">{role.icon || '🏢'}</div>
-                    <h3 className="text-lg font-semibold text-gray-900 group-hover:text-orange-600">{role.display_name}</h3>
+                    <h3 className="text-lg font-semibold text-gray-900 group-hover:text-primary">{role.display_name}</h3>
                     <p className="text-sm text-gray-500 mt-1 line-clamp-2">{role.description}</p>
                     {role.service_styles && role.service_styles.length > 0 && (
                       <div className="flex flex-wrap gap-1 mt-3">
                         {role.service_styles.slice(0, 3).map((style) => (
-                          <span key={style} className="px-2 py-0.5 bg-orange-100 text-orange-600 text-xs rounded-full">
+                          <span key={style} className="px-2 py-0.5 bg-primary-50 text-primary text-xs rounded-full">
                             {style}
                           </span>
                         ))}
@@ -778,10 +780,10 @@ export function VendorOnboardingFlow() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <button
                 onClick={() => setState(prev => ({ ...prev, businessType: 'solo', step: 'form' }))}
-                className="p-8 border-2 border-gray-200 rounded-2xl hover:border-orange-500 hover:bg-orange-50 transition text-center group"
+                className="p-8 border-2 border-gray-200 rounded-2xl hover:border-primary hover:bg-primary-50 transition text-center group"
               >
                 <div className="text-6xl mb-4">👤</div>
-                <h3 className="text-xl font-bold text-gray-900 group-hover:text-orange-600">Solo Provider</h3>
+                <h3 className="text-xl font-bold text-gray-900 group-hover:text-primary">Solo Provider</h3>
                 <p className="text-gray-500 mt-2">Individual service provider without a registered business</p>
                 <ul className="text-sm text-gray-600 mt-4 space-y-1 text-left">
                   <li>✓ Simplified registration</li>
@@ -792,10 +794,10 @@ export function VendorOnboardingFlow() {
               
               <button
                 onClick={() => setState(prev => ({ ...prev, businessType: 'business', step: 'form' }))}
-                className="p-8 border-2 border-gray-200 rounded-2xl hover:border-orange-500 hover:bg-orange-50 transition text-center group"
+                className="p-8 border-2 border-gray-200 rounded-2xl hover:border-primary hover:bg-primary-50 transition text-center group"
               >
                 <div className="text-6xl mb-4">🏪</div>
-                <h3 className="text-xl font-bold text-gray-900 group-hover:text-orange-600">Business</h3>
+                <h3 className="text-xl font-bold text-gray-900 group-hover:text-primary">Business</h3>
                 <p className="text-gray-500 mt-2">Registered business or clinic with staff</p>
                 <ul className="text-sm text-gray-600 mt-4 space-y-1 text-left">
                   <li>✓ Business profile</li>

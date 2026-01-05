@@ -468,8 +468,9 @@ export function AdminApp() {
       {/* Sidebar */}
       <aside className="fixed left-0 top-0 bottom-0 w-64 bg-slate-900 text-white overflow-y-auto">
         <div className="p-6 border-b border-slate-700">
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <span>🐾</span> Warmpawz
+          <h1 className="text-2xl font-bold flex items-center gap-3">
+            <img src="/logo.png" alt="Warmpawz" className="w-10 h-10 rounded-lg object-contain" />
+            Warmpawz
           </h1>
           <p className="text-sm text-slate-400 mt-1">Admin Portal</p>
         </div>

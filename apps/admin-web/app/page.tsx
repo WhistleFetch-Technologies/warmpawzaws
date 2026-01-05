@@ -71,9 +71,9 @@ export default function AdminHomePage() {
   // Show loading state
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
           <p className="mt-4 text-gray-600">Loading...</p>
         </div>
       </div>
@@ -98,14 +98,16 @@ export default function AdminHomePage() {
 
   // Show login form
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex flex-col items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex flex-col items-center justify-center p-4">
       {/* Logo */}
       <div className="text-center mb-8">
-        <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-orange-400 to-orange-600 rounded-3xl text-4xl shadow-2xl mb-4">
-          🐾
-        </div>
+        <img 
+          src="/logo.png" 
+          alt="Warmpawz" 
+          className="w-24 h-24 mx-auto rounded-3xl shadow-2xl shadow-primary/30 mb-4 object-contain"
+        />
         <h1 className="text-3xl font-bold text-white">Warmpawz</h1>
-        <p className="text-slate-400 mt-2">Admin Portal</p>
+        <p className="text-gray-400 mt-2">Admin Portal</p>
       </div>
 
       {/* Login Card */}
@@ -118,14 +120,14 @@ export default function AdminHomePage() {
 
           {/* UAT Mode Banner */}
           {UAT_MODE && (
-            <div className="mb-6 p-4 bg-orange-50 border border-orange-200 rounded-xl">
-              <div className="flex items-center gap-2 text-orange-700 font-medium mb-2">
+            <div className="mb-6 p-4 bg-primary-50 border border-primary/30 rounded-xl">
+              <div className="flex items-center gap-2 text-primary font-medium mb-2">
                 <span>🧪</span> UAT Mode Active
               </div>
-              <p className="text-sm text-orange-600">
+              <p className="text-sm text-primary/80">
                 Use these credentials for testing:
               </p>
-              <p className="text-sm font-mono mt-1 text-orange-700">
+              <p className="text-sm font-mono mt-1 text-primary-dark">
                 Email: {UAT_CREDENTIALS.email}<br />
                 Password: {UAT_CREDENTIALS.password}
               </p>
@@ -152,7 +154,7 @@ export default function AdminHomePage() {
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="admin@warmpawz.com"
                 required
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-orange-500 focus:ring-4 focus:ring-orange-100 transition outline-none"
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:ring-4 focus:ring-primary/20 transition outline-none"
               />
             </div>
 
@@ -167,14 +169,14 @@ export default function AdminHomePage() {
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••••"
                 required
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-orange-500 focus:ring-4 focus:ring-orange-100 transition outline-none"
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:ring-4 focus:ring-primary/20 transition outline-none"
               />
             </div>
 
             <button
               type="submit"
               disabled={loginLoading || !email || !password}
-              className="w-full py-4 bg-gradient-to-r from-orange-500 to-orange-600 text-white text-lg font-semibold rounded-xl hover:from-orange-600 hover:to-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition shadow-lg shadow-orange-200"
+              className="w-full py-4 bg-primary text-white text-lg font-semibold rounded-xl hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition shadow-primary"
             >
               {loginLoading ? (
                 <span className="flex items-center justify-center gap-2">
@@ -188,7 +190,7 @@ export default function AdminHomePage() {
         </div>
 
         {/* Footer */}
-        <p className="text-center text-sm text-slate-500 mt-6">
+        <p className="text-center text-sm text-gray-500 mt-6">
           Warmpawz Admin Portal v1.0
         </p>
       </div>

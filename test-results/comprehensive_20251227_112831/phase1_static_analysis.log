@@ -1,0 +1,61 @@
+========================================
+Comprehensive Batch Testing
+Batches: 18, 19, 26
+========================================
+
+Checking for duplicate routes...
+✅ No duplicate routes found
+
+Testing Batch 18...
+  ✅ appointment-detail-endpoints-sql.tsx
+  ✅ appointment-reminder-system-sql.tsx
+  ✅ consultation-notes-endpoints-sql.tsx
+  ✅ pharmacy-prescription-endpoints-sql.tsx
+  ✅ customer-medical-records-sql.tsx
+  ✅ bank-verification-endpoints-sql.tsx
+  ✅ expiry-management-endpoints-sql.tsx
+  ✅ cafe-table-management-sql.tsx
+
+Testing Batch 19...
+  ✅ patient-monitoring-endpoints-sql.tsx
+  ✅ critical-flow-fixes-sql.tsx
+  ✅ enhanced-service-publishing-sql.tsx
+  ✅ multi-service-scheduling-sql.tsx
+  ✅ qa-gap-fixes-sql.tsx
+  ✅ referral-system-sql.tsx
+  ✅ pet-endpoints-sql.tsx
+  ✅ medicine-reorder-endpoints-sql.tsx
+
+Testing Batch 26...
+  ✅ doctor-discovery-endpoints-sql.tsx
+  ✅ ecommerce-policies-endpoints-sql.tsx
+  ✅ ecommerce-routes-sql.tsx
+  ✅ elasticsearch-complete-sql.tsx
+  ✅ enhanced-refund-system-sql.tsx
+
+========================================
+Test Summary
+========================================
+
+Batch 18:
+  Passed: 8/8
+  Failed: 0
+
+Batch 19:
+  Passed: 8/8
+  Failed: 0
+
+Batch 26:
+  Passed: 5/5
+  Failed: 0
+
+Overall:
+  Syntax Tests: 21 passed, 0 failed
+  Route Tests: 21 passed, 0 failed
+  Handler Tests: 21 passed, 0 failed
+
+========================================
+✅ ALL TESTS PASSED!
+========================================
+
+Results saved to: /Users/ketan/Documents/warmpawzecodev/test-results/batch-test-1766815112131.json
