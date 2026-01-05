@@ -4,6 +4,10 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 
+// UAT Mode Configuration - DEV ONLY
+const UAT_MODE = process.env.NEXT_PUBLIC_UAT_MODE === 'true' || process.env.NODE_ENV === 'development';
+const UAT_OTP = '123456'; // Static OTP for UAT testing
+
 export default function AuthPage() {
   const router = useRouter();
   const [phone, setPhone] = useState('');
@@ -12,6 +16,7 @@ export default function AuthPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resendTimer, setResendTimer] = useState(0);
+  const [uatHint, setUatHint] = useState(false);
 
   useEffect(() => {
     // Check if already logged in
@@ -37,10 +42,28 @@ export default function AuthPage() {
     try {
       setLoading(true);
       setError(null);
+
+      // UAT Mode: Skip API call, use static OTP
+      if (UAT_MODE) {
+        console.log('🔧 [UAT Mode] OTP bypassed. Use:', UAT_OTP);
+        setOtpSent(true);
+        setResendTimer(60);
+        setUatHint(true);
+        return;
+      }
+
       await apiClient.post('/auth/otp/send', { phone });
       setOtpSent(true);
       setResendTimer(60);
     } catch (err: any) {
+      // UAT Fallback: If API fails, allow UAT mode
+      if (UAT_MODE) {
+        console.log('🔧 [UAT Fallback] API failed, using static OTP:', UAT_OTP);
+        setOtpSent(true);
+        setResendTimer(60);
+        setUatHint(true);
+        return;
+      }
       setError(err.message || 'Failed to send OTP');
     } finally {
       setLoading(false);
@@ -56,10 +79,29 @@ export default function AuthPage() {
     try {
       setLoading(true);
       setError(null);
+
+      // UAT Mode: Accept static OTP without API call
+      if (UAT_MODE && otp === UAT_OTP) {
+        console.log('🔧 [UAT Mode] OTP verified successfully (static)');
+        localStorage.setItem('customerPhone', phone);
+        localStorage.setItem('authToken', 'uat-token-customer-' + Date.now());
+        router.push('/');
+        return;
+      }
+
+      // UAT Mode: Wrong OTP
+      if (UAT_MODE && otp !== UAT_OTP) {
+        setError(`Invalid OTP. For UAT testing, use: ${UAT_OTP}`);
+        return;
+      }
+
       const response = await apiClient.post<any>('/auth/otp/verify', { phone, otp });
       
       if (response.success || response.verified) {
         localStorage.setItem('customerPhone', phone);
+        if (response.accessToken) {
+          localStorage.setItem('authToken', response.accessToken);
+        }
         
         // Check if customer exists, if not create profile
         try {
@@ -74,6 +116,14 @@ export default function AuthPage() {
         setError('Invalid OTP. Please try again.');
       }
     } catch (err: any) {
+      // UAT Fallback: If API fails but OTP matches, allow login
+      if (UAT_MODE && otp === UAT_OTP) {
+        console.log('🔧 [UAT Fallback] API failed, using static OTP verification');
+        localStorage.setItem('customerPhone', phone);
+        localStorage.setItem('authToken', 'uat-token-customer-' + Date.now());
+        router.push('/');
+        return;
+      }
       setError(err.message || 'Failed to verify OTP');
     } finally {
       setLoading(false);
@@ -138,6 +188,11 @@ export default function AuthPage() {
                 <>
                   <p className="text-center text-sm text-gray-500">
                     OTP sent to +91 {phone}
+                    {uatHint && (
+                      <span className="block mt-1 text-orange-500 font-medium">
+                        🧪 UAT Mode: Use OTP <strong>{UAT_OTP}</strong>
+                      </span>
+                    )}
                     <button
                       onClick={() => { setOtpSent(false); setOtp(''); }}
                       className="text-orange-500 ml-2 font-medium"

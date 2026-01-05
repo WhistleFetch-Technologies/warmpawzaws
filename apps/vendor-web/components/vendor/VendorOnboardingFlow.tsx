@@ -4,6 +4,10 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 
+// UAT Mode Configuration - DEV ONLY
+const UAT_MODE = process.env.NEXT_PUBLIC_UAT_MODE === 'true' || process.env.NODE_ENV === 'development';
+const UAT_OTP = '123456'; // Static OTP for UAT testing
+
 // ============================================================================
 // TYPES
 // ============================================================================
@@ -193,11 +197,28 @@ export function VendorOnboardingFlow() {
       setLoading(true);
       setError(null);
 
+      // UAT Mode: Skip API call, use static OTP
+      if (UAT_MODE) {
+        console.log('🔧 [UAT Mode] OTP bypassed. Use:', UAT_OTP);
+        setOtpSent(true);
+        setResendTimer(60);
+        localStorage.setItem('onboarding_phone', state.phone);
+        return;
+      }
+
       await apiClient.post('/auth/otp/send', { phone: state.phone });
       setOtpSent(true);
       setResendTimer(60);
       localStorage.setItem('onboarding_phone', state.phone);
     } catch (err: any) {
+      // UAT Fallback: If API fails, allow UAT mode
+      if (UAT_MODE) {
+        console.log('🔧 [UAT Fallback] API failed, using static OTP:', UAT_OTP);
+        setOtpSent(true);
+        setResendTimer(60);
+        localStorage.setItem('onboarding_phone', state.phone);
+        return;
+      }
       setError(err.message || 'Failed to send OTP');
     } finally {
       setLoading(false);
@@ -214,12 +235,33 @@ export function VendorOnboardingFlow() {
       setLoading(true);
       setError(null);
 
+      // UAT Mode: Accept static OTP without API call
+      if (UAT_MODE && otp === UAT_OTP) {
+        console.log('🔧 [UAT Mode] OTP verified successfully (static)');
+        localStorage.setItem('vendorAuthToken', 'uat-token-vendor-' + Date.now());
+        setState(prev => ({
+          ...prev,
+          otpVerified: true,
+          step: 'role',
+        }));
+        return;
+      }
+
+      // UAT Mode: Wrong OTP
+      if (UAT_MODE && otp !== UAT_OTP) {
+        setError(`Invalid OTP. For UAT testing, use: ${UAT_OTP}`);
+        return;
+      }
+
       const response = await apiClient.post<any>('/auth/otp/verify', {
         phone: state.phone,
         otp,
       });
 
       if (response.success || response.verified) {
+        if (response.accessToken) {
+          localStorage.setItem('vendorAuthToken', response.accessToken);
+        }
         setState(prev => ({
           ...prev,
           otpVerified: true,
@@ -230,6 +272,17 @@ export function VendorOnboardingFlow() {
         setError('Invalid OTP. Please try again.');
       }
     } catch (err: any) {
+      // UAT Fallback: If API fails but OTP matches, allow login
+      if (UAT_MODE && otp === UAT_OTP) {
+        console.log('🔧 [UAT Fallback] API failed, using static OTP verification');
+        localStorage.setItem('vendorAuthToken', 'uat-token-vendor-' + Date.now());
+        setState(prev => ({
+          ...prev,
+          otpVerified: true,
+          step: 'role',
+        }));
+        return;
+      }
       setError(err.message || 'Failed to verify OTP');
     } finally {
       setLoading(false);
@@ -614,6 +667,11 @@ export function VendorOnboardingFlow() {
             <div className="text-center">
               <h3 className="text-xl font-bold text-gray-900">Enter OTP</h3>
               <p className="text-gray-500 mt-1">Sent to +91 {state.phone}</p>
+              {UAT_MODE && (
+                <p className="mt-2 text-orange-500 font-medium text-sm">
+                  🧪 UAT Mode: Use OTP <strong>{UAT_OTP}</strong>
+                </p>
+              )}
             </div>
             
             <div className="flex gap-2 justify-center">
