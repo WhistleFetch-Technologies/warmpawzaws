@@ -1005,20 +1005,23 @@ jobs:
           echo "   Password encoded: Yes (${#DB_PASSWORD} chars → ${#DB_PASSWORD_ENCODED} chars)"
           echo ""
           
-          # Construct DATABASE_URL with encoded password and SSL mode
-          DATABASE_URL="postgresql://${DB_USERNAME}:${DB_PASSWORD_ENCODED}@${RDS_ENDPOINT}:${RDS_PORT}/${RDS_DB_NAME}?sslmode=require"
+          # Construct DATABASE_URL with encoded password
+          # NOTE: Do NOT add ?sslmode=require here - the migration script handles SSL automatically
+          # Adding sslmode in URL causes "unable to get local issuer certificate" errors
+          # because it conflicts with the script's ssl: { rejectUnauthorized: false } config
+          DATABASE_URL="postgresql://${DB_USERNAME}:${DB_PASSWORD_ENCODED}@${RDS_ENDPOINT}:${RDS_PORT}/${RDS_DB_NAME}"
           
-          # CRITICAL: Validate DATABASE_URL format (with optional query params)
-          if ! echo "$DATABASE_URL" | grep -qE '^postgresql://[^:]+:[^@]+@[^:]+:[0-9]+/[^?]+'; then
+          # CRITICAL: Validate DATABASE_URL format
+          if ! echo "$DATABASE_URL" | grep -qE '^postgresql://[^:]+:[^@]+@[^:]+:[0-9]+/[^/]+$'; then
             echo "❌ ERROR: Constructed DATABASE_URL has invalid format"
-            echo "   Expected: postgresql://username:password@host:port/database?sslmode=require"
-            echo "   Got (sanitized): postgresql://${DB_USERNAME}:***@${RDS_ENDPOINT}:${RDS_PORT}/${RDS_DB_NAME}?sslmode=require"
+            echo "   Expected: postgresql://username:password@host:port/database"
+            echo "   Got (sanitized): postgresql://${DB_USERNAME}:***@${RDS_ENDPOINT}:${RDS_PORT}/${RDS_DB_NAME}"
             exit 1
           fi
           
           echo "✅ DATABASE_URL constructed and validated"
-          echo "   Format: postgresql://${DB_USERNAME}:***@${RDS_ENDPOINT}:${RDS_PORT}/${RDS_DB_NAME}?sslmode=require"
-          echo "   SSL Mode: require (RDS requirement)"
+          echo "   Format: postgresql://${DB_USERNAME}:***@${RDS_ENDPOINT}:${RDS_PORT}/${RDS_DB_NAME}"
+          echo "   SSL: Handled automatically by migration script (rejectUnauthorized: false)"
           echo ""
           
           # Mask sensitive data
