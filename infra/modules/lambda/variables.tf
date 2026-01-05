@@ -134,3 +134,14 @@ variable "cors_allowed_origins" {
   default     = ["*"]
 }
 
+variable "rds_secret_arn" {
+  description = "ARN of RDS credentials secret in Secrets Manager (for migration runner)"
+  type        = string
+  default     = null
+}
+
+variable "enable_migration_runner" {
+  description = "Enable VPC-based migration runner Lambda (optional, for production)"
+  type        = bool
+  default     = false
+}

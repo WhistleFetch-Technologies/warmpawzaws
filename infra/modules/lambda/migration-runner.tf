@@ -5,11 +5,17 @@
 # WHY: RDS is in private subnet (publicly_accessible = false)
 # GitHub Actions runners cannot reach private IPs
 # Lambda runs inside VPC and can access RDS securely
+#
+# USAGE: Set enable_migration_runner = true to create this resource
+# This is OPTIONAL and only needed for production/staging environments
+# For dev, use the automated RDS public access approach (scripts/ci-enable-rds-access.sh)
 
 resource "aws_lambda_function" "migration_runner" {
+  count = var.enable_migration_runner ? 1 : 0
+  
   function_name = "warmpawz-${var.environment}-migration-runner"
   description   = "Runs database migrations from within VPC"
-  role          = aws_iam_role.migration_runner.arn
+  role          = aws_iam_role.migration_runner[0].arn
   
   # Use Node.js runtime to execute migration scripts
   runtime = "nodejs20.x"
@@ -19,7 +25,7 @@ resource "aws_lambda_function" "migration_runner" {
   # Deploy Lambda in VPC to access RDS
   vpc_config {
     subnet_ids         = var.private_subnet_ids
-    security_group_ids = [aws_security_group.migration_runner.id]
+    security_group_ids = [aws_security_group.migration_runner[0].id]
   }
   
   # Environment variables for database connection
@@ -29,7 +35,7 @@ resource "aws_lambda_function" "migration_runner" {
       {
         NODE_ENV = var.environment
         # DATABASE_URL will be constructed from Secrets Manager at runtime
-        RDS_SECRET_ARN = var.rds_secret_arn
+        RDS_SECRET_ARN = var.rds_secret_arn != null ? var.rds_secret_arn : ""
       }
     )
   }
@@ -55,6 +61,8 @@ resource "aws_lambda_function" "migration_runner" {
 
 # Security Group for Migration Runner Lambda
 resource "aws_security_group" "migration_runner" {
+  count = var.enable_migration_runner ? 1 : 0
+  
   name_prefix = "warmpawz-${var.environment}-migration-runner-"
   description = "Security group for migration runner Lambda"
   vpc_id      = var.vpc_id
@@ -75,6 +83,8 @@ resource "aws_security_group" "migration_runner" {
 
 # IAM Role for Migration Runner Lambda
 resource "aws_iam_role" "migration_runner" {
+  count = var.enable_migration_runner ? 1 : 0
+  
   name_prefix = "warmpawz-${var.environment}-migration-runner-"
   description = "IAM role for migration runner Lambda"
   
@@ -99,8 +109,10 @@ resource "aws_iam_role" "migration_runner" {
 
 # IAM Policy for Migration Runner
 resource "aws_iam_role_policy" "migration_runner" {
+  count = var.enable_migration_runner ? 1 : 0
+  
   name_prefix = "warmpawz-${var.environment}-migration-runner-"
-  role        = aws_iam_role.migration_runner.id
+  role        = aws_iam_role.migration_runner[0].id
   
   policy = jsonencode({
     Version = "2012-10-17"
@@ -131,7 +143,7 @@ resource "aws_iam_role_policy" "migration_runner" {
           "secretsmanager:GetSecretValue",
           "secretsmanager:DescribeSecret"
         ]
-        Resource = var.rds_secret_arn
+        Resource = var.rds_secret_arn != null ? var.rds_secret_arn : "*"
       }
     ]
   })
@@ -139,6 +151,8 @@ resource "aws_iam_role_policy" "migration_runner" {
 
 # CloudWatch Log Group
 resource "aws_cloudwatch_log_group" "migration_runner" {
+  count = var.enable_migration_runner ? 1 : 0
+  
   name              = "/aws/lambda/warmpawz-${var.environment}-migration-runner"
   retention_in_days = var.environment == "prod" ? 30 : 7
   
@@ -151,11 +165,11 @@ resource "aws_cloudwatch_log_group" "migration_runner" {
 # Output Lambda ARN for CI/CD invocation
 output "migration_runner_function_name" {
   description = "Name of migration runner Lambda function"
-  value       = aws_lambda_function.migration_runner.function_name
+  value       = var.enable_migration_runner ? aws_lambda_function.migration_runner[0].function_name : null
 }
 
 output "migration_runner_function_arn" {
   description = "ARN of migration runner Lambda function"
-  value       = aws_lambda_function.migration_runner.arn
+  value       = var.enable_migration_runner ? aws_lambda_function.migration_runner[0].arn : null
 }
 
