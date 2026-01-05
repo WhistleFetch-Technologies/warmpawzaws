@@ -745,15 +745,73 @@ jobs:
             echo "✅ VPC limit OK ($VPC_COUNT/$VPC_LIMIT)"
           fi
 
-      - name: Terraform Apply
+      - name: Import existing Lambda (prevent ResourceConflictException)
+        working-directory: infra/envs/dev
+        continue-on-error: true
+        run: |
+          echo "🔍 Checking for existing Lambda function and alias..."
+          echo ""
+          
+          if aws lambda get-function --function-name warmpawz-dev-api-handler --region ap-south-1 >/dev/null 2>&1; then
+            echo "✅ Lambda function exists in AWS: warmpawz-dev-api-handler"
+            
+            # Check if already in state
+            if terraform state list 2>/dev/null | grep -q 'module.lambda.aws_lambda_function.functions\["api-handler"\]'; then
+              echo "✅ Lambda function already in Terraform state"
+            else
+              echo "⚠️  Lambda function NOT in state - importing..."
+              terraform import 'module.lambda.aws_lambda_function.functions["api-handler"]' warmpawz-dev-api-handler
+              echo "✅ Lambda function imported successfully"
+            fi
+            
+            echo ""
+            echo "🔍 Checking for Lambda alias..."
+            
+            # Import alias if exists (MUST import AFTER function)
+            if aws lambda get-alias --function-name warmpawz-dev-api-handler --name live --region ap-south-1 >/dev/null 2>&1; then
+              echo "✅ Lambda alias 'live' exists in AWS"
+              
+              # Remove from state first to ensure clean import
+              echo "   Removing from state (if present)..."
+              terraform state rm 'module.lambda.aws_lambda_alias.live["api-handler"]' 2>&1 | grep -v "No matching objects" || true
+              
+              echo "   Importing alias..."
+              if terraform import 'module.lambda.aws_lambda_alias.live["api-handler"]' 'warmpawz-dev-api-handler:live' 2>&1; then
+                echo "✅ Lambda alias imported successfully"
+              else
+                echo "⚠️  Alias import failed - will try to continue"
+              fi
+            else
+              echo "ℹ️  Lambda alias 'live' does not exist - will be created"
+            fi
+          else
+            echo "ℹ️  Lambda function does not exist - will be created"
+          fi
+          
+          echo ""
+          echo "📋 Current Lambda state:"
+          terraform state list | grep "module.lambda" || echo "   No Lambda resources in state"
+
+      - name: Terraform Apply (Fresh Plan)
         working-directory: infra/envs/dev
         run: |
-          # Apply with detailed logging
-          terraform apply -auto-approve tfplan
+          echo "🚀 Running Terraform Apply with FRESH plan..."
+          echo "   (Not using saved plan to avoid hash mismatches)"
+          echo ""
           
+          # Run fresh plan + apply instead of saved plan
+          # This ensures the Lambda ZIP hash matches and imports are applied
+          terraform apply -auto-approve \
+            -var="opensearch_master_password=${{ secrets.DEV_OPENSEARCH_PASSWORD }}" \
+            -var="razorpay_key_id=${{ secrets.RAZORPAY_KEY_ID }}" \
+            -var="razorpay_key_secret=${{ secrets.RAZORPAY_KEY_SECRET }}" \
+            -var="google_maps_api_key=${{ secrets.GOOGLE_MAPS_API_KEY }}" \
+            -var="shiprocket_email=${{ secrets.SHIPROCKET_EMAIL }}" \
+            -var="shiprocket_password=${{ secrets.SHIPROCKET_PASSWORD }}"
+          
+          echo ""
           echo "✅ Terraform apply completed successfully"
           
-          # If there were warnings about missing resources, they've been automatically removed from state
           echo "📋 Final resource count:"
           terraform state list | wc -l
 
