@@ -236,7 +236,82 @@ echo ""
 echo "✅ Security group configuration complete"
 
 echo ""
-echo "5️⃣  Verifying RDS endpoint and connectivity..."
+echo "5️⃣  Checking/fixing database subnet route table..."
+
+# Get the database subnets
+DB_SUBNETS=$(aws rds describe-db-instances \
+  --db-instance-identifier "$INSTANCE_IDENTIFIER" \
+  --region "$AWS_REGION" \
+  --query 'DBInstances[0].DBSubnetGroup.Subnets[].SubnetIdentifier' \
+  --output text 2>/dev/null || echo "")
+
+if [ -z "$DB_SUBNETS" ]; then
+  echo "   ⚠️  Could not get database subnets"
+else
+  echo "   Database subnets: $DB_SUBNETS"
+  
+  # Get the VPC ID
+  VPC_ID=$(aws rds describe-db-instances \
+    --db-instance-identifier "$INSTANCE_IDENTIFIER" \
+    --region "$AWS_REGION" \
+    --query 'DBInstances[0].DBSubnetGroup.VpcId' \
+    --output text 2>/dev/null || echo "")
+  
+  echo "   VPC ID: $VPC_ID"
+  
+  # Get the Internet Gateway
+  IGW_ID=$(aws ec2 describe-internet-gateways \
+    --filters "Name=attachment.vpc-id,Values=$VPC_ID" \
+    --region "$AWS_REGION" \
+    --query 'InternetGateways[0].InternetGatewayId' \
+    --output text 2>/dev/null || echo "")
+  
+  echo "   Internet Gateway: $IGW_ID"
+  
+  if [ -n "$IGW_ID" ] && [ "$IGW_ID" != "None" ]; then
+    # Check each subnet's route table
+    for SUBNET in $DB_SUBNETS; do
+      # Get route table for this subnet
+      RT_ID=$(aws ec2 describe-route-tables \
+        --filters "Name=association.subnet-id,Values=$SUBNET" \
+        --region "$AWS_REGION" \
+        --query 'RouteTables[0].RouteTableId' \
+        --output text 2>/dev/null || echo "")
+      
+      # If no explicit association, use main route table
+      if [ -z "$RT_ID" ] || [ "$RT_ID" = "None" ]; then
+        RT_ID=$(aws ec2 describe-route-tables \
+          --filters "Name=vpc-id,Values=$VPC_ID" "Name=association.main,Values=true" \
+          --region "$AWS_REGION" \
+          --query 'RouteTables[0].RouteTableId' \
+          --output text 2>/dev/null || echo "")
+      fi
+      
+      echo "   Subnet $SUBNET → Route Table: $RT_ID"
+      
+      # Check if it has an IGW route
+      HAS_IGW=$(aws ec2 describe-route-tables \
+        --route-table-ids "$RT_ID" \
+        --region "$AWS_REGION" \
+        --query "RouteTables[0].Routes[?GatewayId=='$IGW_ID'].GatewayId" \
+        --output text 2>/dev/null || echo "")
+      
+      if [ -z "$HAS_IGW" ]; then
+        echo "     ⚠️  No IGW route found. Adding 0.0.0.0/0 → $IGW_ID"
+        aws ec2 create-route \
+          --route-table-id "$RT_ID" \
+          --destination-cidr-block 0.0.0.0/0 \
+          --gateway-id "$IGW_ID" \
+          --region "$AWS_REGION" 2>&1 && echo "     ✅ Route added" || echo "     ℹ️  Route may already exist"
+      else
+        echo "     ✅ IGW route exists"
+      fi
+    done
+  else
+    echo "   ⚠️  No Internet Gateway found in VPC"
+  fi
+fi
+
 RDS_ENDPOINT=$(aws rds describe-db-instances \
   --db-instance-identifier "$INSTANCE_IDENTIFIER" \
   --region "$AWS_REGION" \
@@ -253,7 +328,7 @@ echo "   Port: 5432"
 
 # Test DNS resolution
 echo ""
-echo "6️⃣  Testing DNS resolution..."
+echo "7️⃣  Testing DNS resolution..."
 if host "$RDS_ENDPOINT" > /dev/null 2>&1; then
   RESOLVED_IP=$(host "$RDS_ENDPOINT" | grep "has address" | head -n1 | awk '{print $NF}')
   echo "   ✅ DNS resolves to: $RESOLVED_IP"
@@ -263,7 +338,7 @@ fi
 
 # Brief wait to ensure network changes propagate
 echo ""
-echo "7️⃣  Waiting for network changes to propagate..."
+echo "8️⃣  Waiting for network changes to propagate..."
 sleep 10
 echo "   ✅ Ready"
 
