@@ -1,9 +1,6 @@
 name: 🚀 Deploy to Development
 
 on:
-  push:
-    branches:
-      - develop
   workflow_dispatch:
 
 # Prevent parallel deployments to the same environment
