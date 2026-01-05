@@ -15,9 +15,9 @@ output "distributions" {
 }
 
 output "s3_buckets" {
-  description = "Map of S3 bucket details for frontend apps"
+  description = "Map of S3 bucket details for frontend apps (existing buckets referenced by Terraform)"
   value = {
-    for k, v in aws_s3_bucket.frontend : k => {
+    for k, v in data.aws_s3_bucket.frontend : k => {
       id          = v.id
       arn         = v.arn
       bucket      = v.bucket
@@ -34,9 +34,9 @@ output "distribution_ids" {
 }
 
 output "bucket_names" {
-  description = "Map of S3 bucket names"
+  description = "Map of S3 bucket names (existing buckets, not created by Terraform)"
   value = {
-    for k, v in aws_s3_bucket.frontend : k => v.bucket
+    for k, v in data.aws_s3_bucket.frontend : k => v.bucket
   }
 }
 

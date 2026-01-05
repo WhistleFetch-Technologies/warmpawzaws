@@ -1,35 +1,50 @@
 # CloudFront Module - Static website hosting for frontend apps
+#
+# ARCHITECTURE DECISION: BROWNFIELD-SAFE S3 BUCKET HANDLING
+#
+# This module assumes S3 buckets ALREADY EXIST and are managed outside Terraform.
+# Buckets are created manually or via CI/CD deployment scripts.
+#
+# WHY:
+# - Prevents "BucketAlreadyOwnedByYou" errors on repeated deploys
+# - Allows independent bucket lifecycle management
+# - Makes Terraform fully idempotent (can run apply repeatedly)
+# - Separates storage infrastructure from CDN infrastructure
+#
+# TERRAFORM MANAGES:
+# ✅ CloudFront distributions
+# ✅ Origin Access Control (OAC)
+# ✅ Bucket policies (for CloudFront access)
+# ✅ Public access blocks
+# ✅ CloudWatch alarms
+#
+# EXTERNAL (NOT MANAGED):
+# ❌ S3 bucket creation/deletion
+# ❌ Bucket lifecycle rules
+# ❌ Bucket contents
 
-# S3 Bucket for frontend hosting
-resource "aws_s3_bucket" "frontend" {
+# Reference existing S3 buckets (BROWNFIELD - buckets must already exist)
+data "aws_s3_bucket" "frontend" {
   for_each = var.frontend_apps
 
-  bucket = "warmpawz-${var.environment}-${each.key}-frontend-${var.aws_region}"
-
-  tags = {
-    Name        = "warmpawz-${var.environment}-${each.key}-frontend-${var.aws_region}"
-    Environment = var.environment
-    App         = each.key
-  }
-
-  # CRITICAL: NUCLEAR OPTION - Ignore ALL changes to prevent destruction
-  lifecycle {
-    ignore_changes = all  # Ignore ALL attribute changes - NEVER destroy/replace
-  }
+  # Bucket names are passed as input (see variables.tf)
+  bucket = each.value.bucket_name
 }
 
+# Manage bucket versioning (optional - only if buckets support it)
 resource "aws_s3_bucket_versioning" "frontend" {
-  for_each = var.frontend_apps
-  bucket   = aws_s3_bucket.frontend[each.key].id
+  for_each = var.enable_versioning ? var.frontend_apps : {}
+  bucket   = data.aws_s3_bucket.frontend[each.key].id
 
   versioning_configuration {
-    status = var.enable_versioning ? "Enabled" : "Suspended"
+    status = "Enabled"
   }
 }
 
+# Manage public access block (CRITICAL for security)
 resource "aws_s3_bucket_public_access_block" "frontend" {
   for_each = var.frontend_apps
-  bucket   = aws_s3_bucket.frontend[each.key].id
+  bucket   = data.aws_s3_bucket.frontend[each.key].id
 
   block_public_acls       = true
   block_public_policy     = true
@@ -48,10 +63,11 @@ resource "aws_cloudfront_origin_access_control" "frontend" {
   signing_protocol                  = "sigv4"
 }
 
-# S3 bucket policy to allow CloudFront access
+# S3 bucket policy to allow CloudFront access (Terraform-managed)
+# IMPORTANT: This policy allows CloudFront to read from the bucket via OAC
 resource "aws_s3_bucket_policy" "frontend" {
   for_each = var.frontend_apps
-  bucket   = aws_s3_bucket.frontend[each.key].id
+  bucket   = data.aws_s3_bucket.frontend[each.key].id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -63,7 +79,7 @@ resource "aws_s3_bucket_policy" "frontend" {
           Service = "cloudfront.amazonaws.com"
         }
         Action   = "s3:GetObject"
-        Resource = "${aws_s3_bucket.frontend[each.key].arn}/*"
+        Resource = "${data.aws_s3_bucket.frontend[each.key].arn}/*"
         Condition = {
           StringEquals = {
             "AWS:SourceArn" = aws_cloudfront_distribution.frontend[each.key].arn
@@ -85,7 +101,8 @@ resource "aws_cloudfront_distribution" "frontend" {
   aliases             = each.value.domain != null ? [each.value.domain] : []
 
   origin {
-    domain_name              = aws_s3_bucket.frontend[each.key].bucket_regional_domain_name
+    # Reference existing S3 bucket (brownfield)
+    domain_name              = data.aws_s3_bucket.frontend[each.key].bucket_regional_domain_name
     origin_access_control_id = aws_cloudfront_origin_access_control.frontend[each.key].id
     origin_id                = "S3-${each.key}"
   }

@@ -11,10 +11,18 @@ variable "aws_region" {
 }
 
 variable "frontend_apps" {
-  description = "Map of frontend applications to deploy"
+  description = <<-EOT
+    Map of frontend applications to deploy.
+    
+    IMPORTANT: bucket_name must reference an EXISTING S3 bucket.
+    Terraform will NOT create the bucket - it must already exist.
+    
+    This prevents "BucketAlreadyOwnedByYou" errors and makes deployments idempotent.
+  EOT
   type = map(object({
-    domain      = string
-    description = string
+    bucket_name = string  # REQUIRED: Name of existing S3 bucket
+    domain      = string  # Optional custom domain (null for CloudFront default)
+    description = string  # Human-readable description
   }))
   default = {}
 }

@@ -328,16 +328,23 @@ module "cloudfront" {
 
   # IMPORTANT: Only set domain if certificate is validated
   # CloudFront requires ISSUED certificate, not PENDING_VALIDATION
+  #
+  # BROWNFIELD: bucket_name references EXISTING S3 buckets
+  # These buckets must be created manually or via deployment scripts BEFORE running Terraform
+  # Terraform will NOT create these buckets - it only manages CloudFront and policies
   frontend_apps = {
     admin = {
+      bucket_name = "warmpawz-${local.environment}-admin-frontend-${var.aws_region}"
       domain      = var.skip_cert_validation ? null : local.admin_subdomain
       description = "Admin Dashboard"
     }
     vendor = {
+      bucket_name = "warmpawz-${local.environment}-vendor-frontend-${var.aws_region}"
       domain      = var.skip_cert_validation ? null : local.vendor_subdomain
       description = "Vendor Portal"
     }
     customer = {
+      bucket_name = "warmpawz-${local.environment}-customer-frontend-${var.aws_region}"
       domain      = var.skip_cert_validation ? null : local.customer_subdomain
       description = "Customer App"
     }
