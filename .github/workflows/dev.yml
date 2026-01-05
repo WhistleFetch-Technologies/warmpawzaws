@@ -999,19 +999,26 @@ jobs:
           echo "   Username: ${DB_USERNAME}"
           echo ""
           
-          # Construct DATABASE_URL
-          DATABASE_URL="postgresql://${DB_USERNAME}:${DB_PASSWORD}@${RDS_ENDPOINT}:${RDS_PORT}/${RDS_DB_NAME}"
+          # CRITICAL: URL-encode the password (may contain special chars like #, *, +, @, etc.)
+          # Without encoding, DATABASE_URL will be invalid and psql will fail
+          DB_PASSWORD_ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('''$DB_PASSWORD''', safe=''))")
+          echo "   Password encoded: Yes (${#DB_PASSWORD} chars → ${#DB_PASSWORD_ENCODED} chars)"
+          echo ""
           
-          # CRITICAL: Validate DATABASE_URL format
-          if ! echo "$DATABASE_URL" | grep -qE '^postgresql://[^:]+:[^@]+@[^:]+:[0-9]+/[^/]+$'; then
+          # Construct DATABASE_URL with encoded password and SSL mode
+          DATABASE_URL="postgresql://${DB_USERNAME}:${DB_PASSWORD_ENCODED}@${RDS_ENDPOINT}:${RDS_PORT}/${RDS_DB_NAME}?sslmode=require"
+          
+          # CRITICAL: Validate DATABASE_URL format (with optional query params)
+          if ! echo "$DATABASE_URL" | grep -qE '^postgresql://[^:]+:[^@]+@[^:]+:[0-9]+/[^?]+'; then
             echo "❌ ERROR: Constructed DATABASE_URL has invalid format"
-            echo "   Expected: postgresql://username:password@host:port/database"
-            echo "   Got (sanitized): postgresql://${DB_USERNAME}:***@${RDS_ENDPOINT}:${RDS_PORT}/${RDS_DB_NAME}"
+            echo "   Expected: postgresql://username:password@host:port/database?sslmode=require"
+            echo "   Got (sanitized): postgresql://${DB_USERNAME}:***@${RDS_ENDPOINT}:${RDS_PORT}/${RDS_DB_NAME}?sslmode=require"
             exit 1
           fi
           
           echo "✅ DATABASE_URL constructed and validated"
-          echo "   Format: postgresql://${DB_USERNAME}:***@${RDS_ENDPOINT}:${RDS_PORT}/${RDS_DB_NAME}"
+          echo "   Format: postgresql://${DB_USERNAME}:***@${RDS_ENDPOINT}:${RDS_PORT}/${RDS_DB_NAME}?sslmode=require"
+          echo "   SSL Mode: require (RDS requirement)"
           echo ""
           
           # Mask sensitive data
