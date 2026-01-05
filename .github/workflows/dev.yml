@@ -472,6 +472,19 @@ jobs:
             echo "      ⚠️ No existing VPC found - this may cause issues!"
           fi
           
+          # S3 Buckets for CloudFront - NO IMPORT NEEDED (brownfield-safe)
+          echo "   📦 S3 Buckets (CloudFront)..."
+          echo "      ✅ Using data sources - no import needed"
+          echo "      Buckets must already exist:"
+          for APP in admin vendor customer; do
+            BUCKET_NAME="warmpawz-dev-${APP}-frontend-ap-south-1"
+            if aws s3api head-bucket --bucket "$BUCKET_NAME" 2>/dev/null; then
+              echo "         ✅ ${BUCKET_NAME} exists"
+            else
+              echo "         ⚠️  ${BUCKET_NAME} NOT FOUND - CloudFront will fail!"
+            fi
+          done
+          
           # Import CloudFront OACs
           echo "   📦 CloudFront OACs..."
           for APP in admin vendor customer; do
