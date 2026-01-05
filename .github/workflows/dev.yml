@@ -114,10 +114,15 @@ jobs:
         working-directory: apps/${{ matrix.app }}
         run: npm run build
         env:
-          VITE_API_URL: https://dev.api.warmpawz.com
-          VITE_COGNITO_USER_POOL_ID: ${{ secrets.DEV_COGNITO_USER_POOL_ID }}
-          VITE_COGNITO_CLIENT_ID: ${{ secrets.DEV_COGNITO_CLIENT_ID }}
-          VITE_GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+          # Next.js requires NEXT_PUBLIC_ prefix (not VITE_)
+          # Use DEV_API_URL secret if set, otherwise fall back to API Gateway format
+          # NOTE: Set DEV_API_URL secret to actual API Gateway invoke URL after first deploy
+          NEXT_PUBLIC_API_BASE_URL: ${{ secrets.DEV_API_URL || 'https://dev.api.warmpawz.com' }}
+          NEXT_PUBLIC_COGNITO_USER_POOL_ID: ${{ secrets.DEV_COGNITO_USER_POOL_ID }}
+          NEXT_PUBLIC_COGNITO_CLIENT_ID: ${{ secrets.DEV_COGNITO_CLIENT_ID }}
+          NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+          NEXT_PUBLIC_UAT_MODE: 'true'
+          NODE_ENV: development
 
       - name: Upload frontend artifact
         uses: actions/upload-artifact@v4
