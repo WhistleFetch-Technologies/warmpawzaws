@@ -883,10 +883,13 @@ jobs:
   # ============================================
   # DATABASE MIGRATIONS
   # ============================================
+  # TEMPORARILY DISABLED - Run migrations manually after deployment
+  # See: scripts/manual-migrate.sh for manual execution
   database-migrations:
-    name: 🗄️ Run Database Migrations
+    name: 🗄️ Run Database Migrations (DISABLED)
     runs-on: ubuntu-latest
     needs: terraform-apply
+    if: false  # SKIP THIS JOB - Run migrations manually
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -1173,10 +1176,12 @@ jobs:
   # ============================================
   # SEED DATA
   # ============================================
+  # TEMPORARILY DISABLED - Seed data manually after running migrations
   seed-data:
-    name: 🌱 Seed Base Data
+    name: 🌱 Seed Base Data (DISABLED)
     runs-on: ubuntu-latest
-    needs: database-migrations
+    needs: terraform-apply  # Changed from database-migrations (which is disabled)
+    if: false  # SKIP THIS JOB - Seed manually after migrations
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -1246,7 +1251,7 @@ jobs:
   smoke-tests:
     name: 💨 Smoke Tests
     runs-on: ubuntu-latest
-    needs: [deploy-frontend, seed-data]
+    needs: [deploy-frontend]  # seed-data is disabled, removed from dependencies
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
