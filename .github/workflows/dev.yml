@@ -523,26 +523,33 @@ jobs:
           if aws lambda get-function --function-name warmpawz-dev-api-handler --region ap-south-1 >/dev/null 2>&1; then
             echo "      Found existing Lambda function: warmpawz-dev-api-handler"
             
-            # Import Lambda function (FIX: Show full output)
-            terraform state rm 'module.lambda.aws_lambda_function.functions["api-handler"]' 2>&1 | grep -v "Invalid target address" || true
-            FUNC_OUTPUT=$(terraform import -input=false -lock=false 'module.lambda.aws_lambda_function.functions["api-handler"]' warmpawz-dev-api-handler 2>&1)
+            # FIX: Use escaped quotes for for_each keys in Terraform addresses
+            LAMBDA_FUNC_ADDR='module.lambda.aws_lambda_function.functions[\"api-handler\"]'
+            LAMBDA_ALIAS_ADDR='module.lambda.aws_lambda_alias.live[\"api-handler\"]'
+            LAMBDA_PERM_ADDR='module.api_gateway.aws_lambda_permission.api_gateway[\"api-handler\"]'
+            
+            # Import Lambda function
+            echo "      Importing function..."
+            terraform state rm "$LAMBDA_FUNC_ADDR" 2>&1 | grep -v "Invalid target address" || true
+            FUNC_OUTPUT=$(terraform import -input=false -lock=false "$LAMBDA_FUNC_ADDR" warmpawz-dev-api-handler 2>&1)
             echo "$FUNC_OUTPUT"
-            echo "$FUNC_OUTPUT" | grep -qE "Import successful|already managed" && echo "      ✅ Function imported" || echo "      ❌ Function import FAILED: $FUNC_OUTPUT"
+            echo "$FUNC_OUTPUT" | grep -qE "Import successful|already managed" && echo "      ✅ Function imported" || echo "      ❌ Function import FAILED"
             
             # Import Lambda permission (format: function_name/statement_id)
-            terraform state rm 'module.api_gateway.aws_lambda_permission.api_gateway["api-handler"]' 2>&1 | grep -v "Invalid target address" || true
-            PERM_OUTPUT=$(terraform import -input=false -lock=false 'module.api_gateway.aws_lambda_permission.api_gateway["api-handler"]' warmpawz-dev-api-handler/AllowAPIGatewayInvoke-api-handler 2>&1)
+            echo "      Importing permission..."
+            terraform state rm "$LAMBDA_PERM_ADDR" 2>&1 | grep -v "Invalid target address" || true
+            PERM_OUTPUT=$(terraform import -input=false -lock=false "$LAMBDA_PERM_ADDR" warmpawz-dev-api-handler/AllowAPIGatewayInvoke-api-handler 2>&1)
             echo "$PERM_OUTPUT"
-            echo "$PERM_OUTPUT" | grep -qE "Import successful|already managed" && echo "      ✅ Permission imported" || echo "      ❌ Permission import FAILED: $PERM_OUTPUT"
+            echo "$PERM_OUTPUT" | grep -qE "Import successful|already managed" && echo "      ✅ Permission imported" || echo "      ❌ Permission import FAILED"
             
-            # Import Lambda alias (FIX: Must import AFTER function is imported)
-            # Check if alias exists first
+            # Import Lambda alias (must import AFTER function)
             if aws lambda get-alias --function-name warmpawz-dev-api-handler --name live --region ap-south-1 >/dev/null 2>&1; then
               echo "      Found existing alias: live"
-              terraform state rm 'module.lambda.aws_lambda_alias.live["api-handler"]' 2>&1 | grep -v "Invalid target address" || true
-              ALIAS_OUTPUT=$(terraform import -input=false -lock=false 'module.lambda.aws_lambda_alias.live["api-handler"]' warmpawz-dev-api-handler:live 2>&1)
+              echo "      Importing alias..."
+              terraform state rm "$LAMBDA_ALIAS_ADDR" 2>&1 | grep -v "Invalid target address" || true
+              ALIAS_OUTPUT=$(terraform import -input=false -lock=false "$LAMBDA_ALIAS_ADDR" "warmpawz-dev-api-handler:live" 2>&1)
               echo "$ALIAS_OUTPUT"
-              echo "$ALIAS_OUTPUT" | grep -qE "Import successful|already managed" && echo "      ✅ Alias imported" || echo "      ❌ Alias import FAILED: $ALIAS_OUTPUT"
+              echo "$ALIAS_OUTPUT" | grep -qE "Import successful|already managed" && echo "      ✅ Alias imported" || echo "      ❌ Alias import FAILED"
             else
               echo "      ℹ️ No existing alias - will be created"
             fi
