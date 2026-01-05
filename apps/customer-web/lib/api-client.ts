@@ -29,7 +29,15 @@ function getApiBaseUrl(): string {
   );
 }
 
-const UAT_MODE = (process.env.NEXT_PUBLIC_UAT_MODE === 'true') || (typeof window !== 'undefined' && getRuntimeConfig().uatMode === true);
+// UAT Mode: Check runtime config FIRST (deploy-time), then build-time env (local dev)
+export function isUatMode(): boolean {
+  if (typeof window !== 'undefined' && getRuntimeConfig().uatMode === true) {
+    return true;
+  }
+  return process.env.NEXT_PUBLIC_UAT_MODE === 'true' || process.env.NODE_ENV === 'development';
+}
+
+const UAT_MODE = isUatMode();
 
 export class ApiClient {
   private baseUrl: string;
@@ -59,7 +67,10 @@ export class ApiClient {
     if (!this.baseUrl) {
       throw new Error('API_BASE_URL is not configured (runtime-config.js missing or empty).');
     }
-    const url = `${this.baseUrl}${endpoint}`;
+    // Fix: Normalize URL to avoid double slashes
+    const base = this.baseUrl.replace(/\/+$/, ''); // Remove trailing slashes
+    const path = endpoint.replace(/^\/+/, '/');    // Ensure single leading slash
+    const url = `${base}${path}`;
     const token = this.getAuthToken();
     
     const headers: Record<string, string> = {
