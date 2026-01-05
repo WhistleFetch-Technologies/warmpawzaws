@@ -519,7 +519,10 @@ jobs:
           
           # Import Lambda Function + Permission + Alias
           echo "   📦 Lambda Function + Permission + Alias..."
-          if aws lambda get-function --function-name warmpawz-dev-api-handler --region ap-south-1 2>/dev/null | grep -q "warmpawz-dev-api-handler"; then
+          # ROBUST check: Use exit code, not grep
+          if aws lambda get-function --function-name warmpawz-dev-api-handler --region ap-south-1 >/dev/null 2>&1; then
+            echo "      Found existing Lambda function: warmpawz-dev-api-handler"
+            
             # Import Lambda function (FIX: Show full output)
             terraform state rm 'module.lambda.aws_lambda_function.functions["api-handler"]' 2>&1 | grep -v "Invalid target address" || true
             FUNC_OUTPUT=$(terraform import -input=false -lock=false 'module.lambda.aws_lambda_function.functions["api-handler"]' warmpawz-dev-api-handler 2>&1)
@@ -533,10 +536,18 @@ jobs:
             echo "$PERM_OUTPUT" | grep -qE "Import successful|already managed" && echo "      ✅ Permission imported" || echo "      ❌ Permission import FAILED: $PERM_OUTPUT"
             
             # Import Lambda alias (FIX: Must import AFTER function is imported)
-            terraform state rm 'module.lambda.aws_lambda_alias.live["api-handler"]' 2>&1 | grep -v "Invalid target address" || true
-            ALIAS_OUTPUT=$(terraform import -input=false -lock=false 'module.lambda.aws_lambda_alias.live["api-handler"]' warmpawz-dev-api-handler:live 2>&1)
-            echo "$ALIAS_OUTPUT"
-            echo "$ALIAS_OUTPUT" | grep -qE "Import successful|already managed" && echo "      ✅ Alias imported" || echo "      ❌ Alias import FAILED: $ALIAS_OUTPUT"
+            # Check if alias exists first
+            if aws lambda get-alias --function-name warmpawz-dev-api-handler --name live --region ap-south-1 >/dev/null 2>&1; then
+              echo "      Found existing alias: live"
+              terraform state rm 'module.lambda.aws_lambda_alias.live["api-handler"]' 2>&1 | grep -v "Invalid target address" || true
+              ALIAS_OUTPUT=$(terraform import -input=false -lock=false 'module.lambda.aws_lambda_alias.live["api-handler"]' warmpawz-dev-api-handler:live 2>&1)
+              echo "$ALIAS_OUTPUT"
+              echo "$ALIAS_OUTPUT" | grep -qE "Import successful|already managed" && echo "      ✅ Alias imported" || echo "      ❌ Alias import FAILED: $ALIAS_OUTPUT"
+            else
+              echo "      ℹ️ No existing alias - will be created"
+            fi
+          else
+            echo "      ℹ️ Lambda function does not exist - will be created"
           fi
           
           # NAT Gateway, EIP, IGW - DO NOT IMPORT when use_existing_vpc = true
