@@ -32,16 +32,55 @@ exports.checkDbHealth = checkDbHealth;
 exports.handleDbError = handleDbError;
 const pg_1 = require("pg");
 Object.defineProperty(exports, "Pool", { enumerable: true, get: function () { return pg_1.Pool; } });
+const client_secrets_manager_1 = require("@aws-sdk/client-secrets-manager");
 // ============================================================================
 // CONFIGURATION
 // ============================================================================
 const DB_HOST = process.env.DB_HOST || process.env.RDS_HOSTNAME;
 const DB_PORT = parseInt(process.env.DB_PORT || '5432', 10);
 const DB_NAME = process.env.DB_NAME || process.env.RDS_DB_NAME;
-const DB_USER = process.env.DB_USER || process.env.RDS_USERNAME;
-const DB_PASSWORD = process.env.DB_PASSWORD || process.env.RDS_PASSWORD;
-if (!DB_HOST || !DB_NAME || !DB_USER || !DB_PASSWORD) {
-    throw new Error('Missing required RDS environment variables: DB_HOST, DB_NAME, DB_USER, DB_PASSWORD');
+const DB_SECRET_ARN = process.env.DB_SECRET_ARN;
+// Database credentials (will be fetched from Secrets Manager)
+let DB_USER = process.env.DB_USER || process.env.RDS_USERNAME;
+let DB_PASSWORD = process.env.DB_PASSWORD || process.env.RDS_PASSWORD;
+if (!DB_HOST || !DB_NAME) {
+    throw new Error('Missing required RDS environment variables: DB_HOST, DB_NAME');
+}
+// ============================================================================
+// SECRETS MANAGER CLIENT
+// ============================================================================
+const secretsClient = new client_secrets_manager_1.SecretsManagerClient({
+    region: process.env.AWS_REGION || 'ap-south-1',
+});
+/**
+ * Fetch database credentials from AWS Secrets Manager
+ */
+async function fetchDbCredentials() {
+    if (DB_USER && DB_PASSWORD) {
+        // Credentials already available
+        return;
+    }
+    if (!DB_SECRET_ARN) {
+        throw new Error('DB_SECRET_ARN not provided and credentials not in environment');
+    }
+    try {
+        const command = new client_secrets_manager_1.GetSecretValueCommand({ SecretId: DB_SECRET_ARN });
+        const response = await secretsClient.send(command);
+        if (!response.SecretString) {
+            throw new Error('Secret value is empty');
+        }
+        const secret = JSON.parse(response.SecretString);
+        DB_USER = secret.username || secret.Username || secret.user;
+        DB_PASSWORD = secret.password || secret.Password;
+        if (!DB_USER || !DB_PASSWORD) {
+            throw new Error('Failed to parse username/password from secret');
+        }
+        console.log('[DB] Successfully fetched credentials from Secrets Manager');
+    }
+    catch (error) {
+        console.error('[DB] Failed to fetch credentials from Secrets Manager:', error);
+        throw new Error('Failed to retrieve database credentials');
+    }
 }
 // ============================================================================
 // CONNECTION POOL
@@ -51,8 +90,13 @@ let pool = null;
  * Get or create the PostgreSQL connection pool
  * Uses singleton pattern for connection pooling
  */
-function getRdsPool() {
+async function getRdsPool() {
     if (!pool) {
+        // Ensure credentials are fetched before creating pool
+        await fetchDbCredentials();
+        if (!DB_USER || !DB_PASSWORD) {
+            throw new Error('Database credentials not available');
+        }
         pool = new pg_1.Pool({
             host: DB_HOST,
             port: DB_PORT,
@@ -75,7 +119,7 @@ function getRdsPool() {
  * Get a client from the pool for transaction use
  */
 async function getClient() {
-    const pool = getRdsPool();
+    const pool = await getRdsPool();
     return await pool.connect();
 }
 // ============================================================================
@@ -85,7 +129,7 @@ async function getClient() {
  * Execute a query with parameters (prepared statement)
  */
 async function query(text, params) {
-    const pool = getRdsPool();
+    const pool = await getRdsPool();
     const start = Date.now();
     try {
         const result = await pool.query(text, params);

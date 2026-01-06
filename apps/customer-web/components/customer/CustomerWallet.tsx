@@ -25,11 +25,21 @@ interface CustomerWalletProps {
   customerPhone: string;
 }
 
+declare global {
+  interface Window {
+    Razorpay: any;
+  }
+}
+
 export function CustomerWallet({ customerPhone }: CustomerWalletProps) {
   const [wallet, setWallet] = useState<WalletData | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('all');
+  const [showTopUpModal, setShowTopUpModal] = useState(false);
+  const [topUpAmount, setTopUpAmount] = useState<string>('');
+  const [processingTopUp, setProcessingTopUp] = useState(false);
+  const [customerId, setCustomerId] = useState<string | null>(null);
 
   useEffect(() => {
     loadWalletData();
@@ -43,15 +53,17 @@ export function CustomerWallet({ customerPhone }: CustomerWalletProps) {
     try {
       // First get customer ID from phone
       const customerResponse = await apiClient.get<any>(`/customer/by-phone?phone=${encodeURIComponent(customerPhone)}`);
-      const customerId = customerResponse.customer?.id;
+      const id = customerResponse.customer?.id;
       
-      if (!customerId) {
+      if (!id) {
         console.error('Customer not found');
         return;
       }
 
+      setCustomerId(id);
+
       // Then get wallet using customer ID
-      const response = await apiClient.get<any>(`/wallet/${customerId}`);
+      const response = await apiClient.get<any>(`/wallet/${id}`);
       if (response.success && response.data) {
         setWallet({
           balance: response.data.balance || 0,
@@ -116,12 +128,116 @@ export function CustomerWallet({ customerPhone }: CustomerWalletProps) {
     }
   };
 
+  const loadRazorpayScript = () => {
+    if (window.Razorpay) return;
+    const script = document.createElement('script');
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.async = true;
+    document.body.appendChild(script);
+  };
+
+  useEffect(() => {
+    loadRazorpayScript();
+  }, []);
+
+  const handleTopUp = async () => {
+    const amount = parseFloat(topUpAmount);
+    if (!amount || amount < 100) {
+      alert('Minimum top-up amount is ₹100');
+      return;
+    }
+
+    if (!customerId) {
+      alert('Customer not found. Please refresh the page.');
+      return;
+    }
+
+    setProcessingTopUp(true);
+    try {
+      // Create Razorpay order
+      const orderResponse = await apiClient.post<any>('/razorpay/create-order', {
+        bookingId: null, // Wallet top-up doesn't need booking
+        amount: amount,
+        currency: 'INR',
+        customerId: customerId,
+      });
+
+      if (!orderResponse.orderId) {
+        throw new Error('Failed to create payment order');
+      }
+
+      // Initialize Razorpay checkout
+      const options = {
+        key: orderResponse.keyId,
+        amount: orderResponse.amount * 100, // Convert to paise
+        currency: orderResponse.currency,
+        name: 'WarmPawz',
+        description: `Wallet Top-up of ₹${amount}`,
+        order_id: orderResponse.orderId,
+        handler: async (response: any) => {
+          try {
+            // Verify payment
+            const verifyResponse = await apiClient.post<any>('/razorpay/verify-payment', {
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+            });
+
+            if (verifyResponse.success) {
+              // Credit wallet
+              await apiClient.post<any>(`/wallet/${customerId}/credit`, {
+                amount: amount,
+                referenceType: 'topup',
+                referenceId: response.razorpay_payment_id,
+                description: `Wallet top-up via Razorpay`,
+              });
+
+              // Reload wallet data
+              await loadWalletData();
+              await loadTransactions();
+              
+              setShowTopUpModal(false);
+              setTopUpAmount('');
+              alert('Wallet topped up successfully!');
+            } else {
+              throw new Error('Payment verification failed');
+            }
+          } catch (error: any) {
+            console.error('Error processing top-up:', error);
+            alert('Failed to process top-up. Please contact support.');
+          } finally {
+            setProcessingTopUp(false);
+          }
+        },
+        prefill: {
+          contact: customerPhone,
+        },
+        theme: {
+          color: '#f97316', // Orange color
+        },
+        modal: {
+          ondismiss: () => {
+            setProcessingTopUp(false);
+          },
+        },
+      };
+
+      const razorpay = new window.Razorpay(options);
+      razorpay.open();
+    } catch (error: any) {
+      console.error('Error initiating top-up:', error);
+      alert('Failed to initiate top-up. Please try again.');
+      setProcessingTopUp(false);
+    }
+  };
+
   const getTransactionIcon = (type: string, refType?: string) => {
     if (type === 'credit') {
       switch (refType) {
         case 'refund': return '💸';
         case 'cashback': return '🎁';
         case 'referral': return '👥';
+        case 'topup': return '💳';
         default: return '💰';
       }
     } else {
@@ -172,6 +288,13 @@ export function CustomerWallet({ customerPhone }: CustomerWalletProps) {
       {/* Quick Actions */}
       <div className="max-w-4xl mx-auto px-4 -mt-4">
         <div className="bg-white rounded-2xl shadow-sm p-4 flex gap-3 overflow-x-auto">
+          <button
+            onClick={() => setShowTopUpModal(true)}
+            className="flex flex-col items-center p-3 hover:bg-orange-50 rounded-xl min-w-[80px] border-2 border-orange-500 bg-orange-50"
+          >
+            <span className="text-2xl">💳</span>
+            <span className="text-xs text-gray-600 mt-1 font-semibold">Add Money</span>
+          </button>
           <a href="/offers" className="flex flex-col items-center p-3 hover:bg-gray-50 rounded-xl min-w-[80px]">
             <span className="text-2xl">🎁</span>
             <span className="text-xs text-gray-600 mt-1">Offers</span>
@@ -243,6 +366,77 @@ export function CustomerWallet({ customerPhone }: CustomerWalletProps) {
           </div>
         )}
       </main>
+
+      {/* Top-up Modal */}
+      {showTopUpModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-bold text-gray-900">Add Money to Wallet</h3>
+              <button
+                onClick={() => {
+                  setShowTopUpModal(false);
+                  setTopUpAmount('');
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Amount (Minimum ₹100)
+              </label>
+              <input
+                type="number"
+                min="100"
+                step="100"
+                value={topUpAmount}
+                onChange={(e) => setTopUpAmount(e.target.value)}
+                placeholder="Enter amount"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+              />
+            </div>
+
+            <div className="grid grid-cols-4 gap-2 mb-4">
+              {[100, 500, 1000, 2000].map((amount) => (
+                <button
+                  key={amount}
+                  onClick={() => setTopUpAmount(amount.toString())}
+                  className={`px-4 py-2 rounded-lg border ${
+                    topUpAmount === amount.toString()
+                      ? 'bg-orange-500 text-white border-orange-500'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  ₹{amount}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowTopUpModal(false);
+                  setTopUpAmount('');
+                }}
+                className="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                disabled={processingTopUp}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleTopUp}
+                disabled={processingTopUp || !topUpAmount || parseFloat(topUpAmount) < 100}
+                className="flex-1 px-4 py-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
+              >
+                {processingTopUp ? 'Processing...' : `Add ₹${topUpAmount || '0'}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

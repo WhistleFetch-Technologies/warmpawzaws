@@ -11,6 +11,7 @@
  */
 
 import { Hono } from 'hono';
+import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { calculateCommuteTime, calculateMultipleCommuteTimes, calculateStaffETA } from '../utils/commute-time-calculator';
 
@@ -100,64 +101,55 @@ class CalculateStaffETAHandler extends BaseHandler {
 }
 
 export function registerCommuteTimeEndpoints(app: Hono) {
+  const calculateHandler = new CalculateCommuteTimeHandler();
+  const calculateMultipleHandler = new CalculateMultipleCommuteTimesHandler();
+  const staffETAHandler = new CalculateStaffETAHandler();
+
   // Calculate commute time between two locations
   app.post('/commute-time/calculate', async (c) => {
-    try {
-      const handler = new CalculateCommuteTimeHandler();
-      const context = {
-        event: c.req.raw as any,
-        context: {} as any,
-      };
-      const response = await handler.handle(context);
-      const data = JSON.parse(response.body);
-      if (response.statusCode !== 200) {
-        return c.json(data, response.statusCode as any);
-      }
-      return c.json(data);
-    } catch (error: any) {
-      console.error('Error calculating commute time:', error);
-      return c.json({ error: error.message || 'Internal server error' }, 500 as any);
-    }
+    const event = createApiGatewayEvent(c);
+    const context = createLambdaContext();
+    const result = await calculateHandler.execute(event, context);
+    return c.json(JSON.parse(result.body), result.statusCode);
   });
 
   // Calculate commute time to multiple destinations (for route optimization)
   app.post('/commute-time/calculate-multiple', async (c) => {
-    try {
-      const handler = new CalculateMultipleCommuteTimesHandler();
-      const context = {
-        event: c.req.raw as any,
-        context: {} as any,
-      };
-      const response = await handler.handle(context);
-      const data = JSON.parse(response.body);
-      if (response.statusCode !== 200) {
-        return c.json(data, response.statusCode as any);
-      }
-      return c.json(data);
-    } catch (error: any) {
-      console.error('Error calculating multiple commute times:', error);
-      return c.json({ error: error.message || 'Internal server error' }, 500 as any);
-    }
+    const event = createApiGatewayEvent(c);
+    const context = createLambdaContext();
+    const result = await calculateMultipleHandler.execute(event, context);
+    return c.json(JSON.parse(result.body), result.statusCode);
   });
 
   // Calculate ETA for staff arrival at customer location
   app.post('/commute-time/staff-eta', async (c) => {
-    try {
-      const handler = new CalculateStaffETAHandler();
-      const context = {
-        event: c.req.raw as any,
-        context: {} as any,
-      };
-      const response = await handler.handle(context);
-      const data = JSON.parse(response.body);
-      if (response.statusCode !== 200) {
-        return c.json(data, response.statusCode as any);
-      }
-      return c.json(data);
-    } catch (error: any) {
-      console.error('Error calculating staff ETA:', error);
-      return c.json({ error: error.message || 'Internal server error' }, 500 as any);
-    }
+    const event = createApiGatewayEvent(c);
+    const context = createLambdaContext();
+    const result = await staffETAHandler.execute(event, context);
+    return c.json(JSON.parse(result.body), result.statusCode);
   });
+}
+
+async function createApiGatewayEvent(c: any): Promise<any> {
+  const body = await c.req.json().catch(() => ({}));
+  return {
+    httpMethod: c.req.method,
+    path: c.req.url,
+    headers: c.req.headers,
+    body: JSON.stringify(body),
+    pathParameters: c.req.param() || {},
+    queryStringParameters: Object.fromEntries(new URL(c.req.url).searchParams),
+    requestContext: {
+      requestId: randomUUID(),
+    },
+  };
+}
+
+function createLambdaContext(): any {
+  return {
+    requestId: randomUUID(),
+    functionName: 'commute-time-handler',
+    functionVersion: '$LATEST',
+  };
 }
 

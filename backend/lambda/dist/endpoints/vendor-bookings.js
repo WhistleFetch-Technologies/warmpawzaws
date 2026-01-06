@@ -48,14 +48,28 @@ function registerVendorBookingsEndpoints(app) {
             }
             queryText += ' ORDER BY booking_date DESC, booking_time DESC';
             const result = await (0, rds_connection_1.query)(queryText, params).catch(() => ({ rows: [] }));
-            // Enrich bookings with customer and service details
+            // Enrich bookings with customer, service, and related data (prescriptions, medical records, chat)
             const enrichedBookings = await Promise.all(result.rows.map(async (booking) => {
-                const customer = booking.customer_id
-                    ? await (0, rds_connection_1.select)('customers', { id: booking.customer_id }).catch(() => [])
-                    : [];
-                const service = booking.service_id
-                    ? await (0, rds_connection_1.select)('services', { id: booking.service_id }).catch(() => [])
-                    : [];
+                const [customer, service, prescriptions, medicalRecords, chatMessages] = await Promise.all([
+                    booking.customer_id
+                        ? (0, rds_connection_1.select)('customers', { id: booking.customer_id }).catch(() => [])
+                        : Promise.resolve([]),
+                    booking.service_id
+                        ? (0, rds_connection_1.select)('services', { id: booking.service_id }).catch(() => [])
+                        : Promise.resolve([]),
+                    // Check for prescriptions
+                    (0, rds_connection_1.query)(`SELECT COUNT(*) as count FROM prescriptions 
+               WHERE booking_id = $1 AND is_active = true`, [booking.id]).catch(() => ({ rows: [{ count: '0' }] })),
+                    // Check for medical records
+                    (0, rds_connection_1.query)(`SELECT COUNT(*) as count FROM medical_records 
+               WHERE booking_id = $1 AND is_active = true`, [booking.id]).catch(() => ({ rows: [{ count: '0' }] })),
+                    // Check for unread chat messages
+                    (0, rds_connection_1.query)(`SELECT COUNT(*) as count FROM chat_messages 
+               WHERE booking_id = $1 AND is_read = false`, [booking.id]).catch(() => ({ rows: [{ count: '0' }] })),
+                ]);
+                const prescriptionCount = parseInt(prescriptions.rows[0]?.count || '0', 10);
+                const medicalRecordCount = parseInt(medicalRecords.rows[0]?.count || '0', 10);
+                const unreadMessageCount = parseInt(chatMessages.rows[0]?.count || '0', 10);
                 return {
                     ...booking,
                     customer: customer.length > 0 ? {
@@ -69,10 +83,13 @@ function registerVendorBookingsEndpoints(app) {
                         category: service[0].category,
                     } : null,
                     chatEnabled: booking.status !== 'cancelled',
-                    hasUnreadMessages: false, // TODO: Implement chat message tracking
-                    unreadMessageCount: 0,
-                    isFollowUp: false, // TODO: Implement follow-up tracking
-                    hasPrescription: false, // TODO: Implement prescription tracking
+                    hasUnreadMessages: unreadMessageCount > 0,
+                    unreadMessageCount,
+                    hasPrescription: prescriptionCount > 0,
+                    prescriptionCount,
+                    hasMedicalRecords: medicalRecordCount > 0,
+                    medicalRecordCount,
+                    isFollowUp: false, // Can be enhanced with follow_up_date check
                 };
             }));
             return c.json({

@@ -30,7 +30,7 @@ class CreateRefundHandler extends base_handler_1.BaseHandler {
         const requestId = context.event.requestContext?.requestId;
         const { paymentId, bookingId, amount, reason, refundType, // 'full' or 'partial'
         idempotencyKey, } = body;
-        this.validateRequired(body, ['paymentId', 'amount', 'reason']);
+        this.validateRequired(body, ['paymentId', 'reason']);
         // ✅ Check idempotency
         if (idempotencyKey) {
             const existing = await (0, idempotency_1.checkIdempotencyKey)(idempotencyKey);
@@ -48,8 +48,68 @@ class CreateRefundHandler extends base_handler_1.BaseHandler {
             return this.error('Payment not found', 404);
         }
         const payment = payments[0];
+        // ✅ Calculate refund amount using policy engine if bookingId provided
+        let refundAmount = amount;
+        if (bookingId && !amount) {
+            // Calculate refund using policy engine
+            try {
+                // Get booking to calculate hours until booking
+                const bookings = await (0, rds_connection_1.select)('bookings', { id: bookingId });
+                if (bookings.length > 0) {
+                    const booking = bookings[0];
+                    // Calculate hours until booking
+                    let hoursUntilBooking = 0;
+                    if (booking.booking_datetime) {
+                        const bookingDateTime = new Date(booking.booking_datetime);
+                        hoursUntilBooking = (bookingDateTime.getTime() - Date.now()) / (1000 * 60 * 60);
+                    }
+                    else if (booking.booking_date && booking.booking_time) {
+                        const bookingDateTime = new Date(`${booking.booking_date}T${booking.booking_time}`);
+                        hoursUntilBooking = (bookingDateTime.getTime() - Date.now()) / (1000 * 60 * 60);
+                    }
+                    if (hoursUntilBooking < 0) {
+                        return this.error('Cannot refund past bookings', 400);
+                    }
+                    // Get refund rules
+                    const rulesResult = await (0, rds_connection_1.query)(`SELECT * FROM booking_cancellation_rules
+             WHERE (vendor_id = $1 OR vendor_id IS NULL)
+               AND (service_id = $2 OR service_id IS NULL)
+             ORDER BY vendor_id DESC NULLS LAST, service_id DESC NULLS LAST
+             LIMIT 1`, [booking.vendor_id || null, booking.service_id || null]);
+                    const rows = Array.isArray(rulesResult) ? rulesResult : rulesResult.rows || [];
+                    const rule = rows.length > 0 ? rows[0] : null;
+                    const fullRefundHours = rule?.full_refund_before_hours || 48;
+                    const partialRefundHours = rule?.partial_refund_before_hours || 24;
+                    const partialRefundPercentage = parseFloat(rule?.partial_refund_percentage || '50');
+                    const cutoffHours = rule?.cancellation_cutoff_hours || 12;
+                    // Calculate refund percentage
+                    let refundPercentage = 0;
+                    if (hoursUntilBooking >= fullRefundHours) {
+                        refundPercentage = 100;
+                    }
+                    else if (hoursUntilBooking >= partialRefundHours) {
+                        refundPercentage = partialRefundPercentage;
+                    }
+                    else if (hoursUntilBooking >= cutoffHours) {
+                        refundPercentage = partialRefundPercentage;
+                    }
+                    else {
+                        return this.error(`No refund - cancelled less than ${cutoffHours} hours before booking`, 400);
+                    }
+                    refundAmount = (payment.amount * refundPercentage) / 100;
+                }
+            }
+            catch (error) {
+                console.error('Error calculating refund policy:', error);
+                // Continue with manual amount if policy calculation fails
+            }
+        }
+        // If amount not provided and not calculated, use full payment amount
+        if (!refundAmount) {
+            refundAmount = payment.amount;
+        }
         // Validate amount
-        if (amount <= 0 || amount > payment.amount) {
+        if (refundAmount <= 0 || refundAmount > payment.amount) {
             return this.error('Invalid refund amount', 400);
         }
         // Check if payment can be refunded

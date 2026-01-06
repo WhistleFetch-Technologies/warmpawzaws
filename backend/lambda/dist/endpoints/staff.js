@@ -19,6 +19,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.registerStaffEndpoints = registerStaffEndpoints;
 const rds_connection_1 = require("../database/rds-connection");
+const commute_time_calculator_1 = require("../utils/commute-time-calculator");
 /**
  * Calculate distance between two coordinates (Haversine formula)
  */
@@ -97,19 +98,59 @@ function registerStaffEndpoints(app) {
             let eligibleStaff = staffResults.rows;
             // Filter by service style availability
             if (serviceStyle === 'at_home' && customerLat && customerLng) {
-                // Filter by distance and home service availability
-                eligibleStaff = eligibleStaff
+                // Filter by distance and home service availability, then calculate commute time
+                const customerLocation = { latitude: customerLat, longitude: customerLng };
+                const bookingDateTime = c.req.query('booking_datetime')
+                    ? new Date(c.req.query('booking_datetime'))
+                    : undefined;
+                // Filter and calculate commute time for each staff
+                const staffWithCommuteTime = await Promise.all(eligibleStaff
                     .filter((staff) => {
                     if (!staff.latitude || !staff.longitude)
                         return false;
                     const distance = calculateDistance(customerLat, customerLng, parseFloat(staff.latitude), parseFloat(staff.longitude));
                     return distance <= maxDistance;
                 })
-                    .map((staff) => {
+                    .map(async (staff) => {
                     const distance = calculateDistance(customerLat, customerLng, parseFloat(staff.latitude), parseFloat(staff.longitude));
-                    return { ...staff, distance };
-                })
-                    .sort((a, b) => a.distance - b.distance);
+                    // Calculate commute time
+                    const staffLocation = {
+                        latitude: parseFloat(staff.latitude),
+                        longitude: parseFloat(staff.longitude),
+                    };
+                    try {
+                        const commuteResult = await (0, commute_time_calculator_1.calculateCommuteTime)(staffLocation, customerLocation, {
+                            googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY,
+                            departureTime: bookingDateTime,
+                            averageSpeedKmh: 30, // Default city speed
+                            trafficMultiplier: 1.25, // 25% traffic buffer
+                        });
+                        return {
+                            ...staff,
+                            distance: Math.round(distance * 100) / 100,
+                            commuteTime: commuteResult.durationMinutes,
+                            commuteDistance: commuteResult.distanceKm,
+                            estimatedArrival: commuteResult.estimatedArrival,
+                        };
+                    }
+                    catch (error) {
+                        // Fallback to simple distance-based estimate
+                        const estimatedMinutes = Math.ceil((distance / 30) * 60 * 1.25); // 30 km/h with 25% buffer
+                        return {
+                            ...staff,
+                            distance: Math.round(distance * 100) / 100,
+                            commuteTime: estimatedMinutes,
+                            commuteDistance: distance,
+                        };
+                    }
+                }));
+                // Sort by commute time (shortest first), then by distance
+                eligibleStaff = staffWithCommuteTime.sort((a, b) => {
+                    if (a.commuteTime !== b.commuteTime) {
+                        return a.commuteTime - b.commuteTime;
+                    }
+                    return a.distance - b.distance;
+                });
             }
             else if (serviceStyle === 'at_center') {
                 // Filter staff available at center
