@@ -29,6 +29,7 @@ import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-ha
 import { query, select, insert, update, withTransaction, getClient } from '../database/rds-connection';
 import { withIdempotency, checkIdempotencyKey, storeIdempotencyKey } from '../utils/idempotency';
 import { logAuditEntry, logBookingStatusChange } from '../utils/audit-log';
+import { calculateStaffETA } from '../utils/commute-time-calculator';
 
 // ============================================================================
 // CONFIGURATION
@@ -191,6 +192,44 @@ class CreateBookingHandler extends BaseHandler {
 
         if (staffId) {
           bookingData.staff_id = staffId;
+          
+          // Calculate commute time for home services if address has coordinates
+          if (serviceType === 'at_home' || serviceType === 'home') {
+            try {
+              const addressObj = typeof address === 'string' ? JSON.parse(address) : address;
+              if (addressObj?.latitude && addressObj?.longitude && staffId) {
+                const bookingDateTime = new Date(`${bookingDate}T${bookingTime}`);
+                const customerLocation = {
+                  latitude: parseFloat(addressObj.latitude),
+                  longitude: parseFloat(addressObj.longitude),
+                };
+
+                const commuteResult = await calculateStaffETA(
+                  staffId,
+                  customerLocation,
+                  bookingDateTime,
+                  {
+                    googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY,
+                    bufferMinutes: 5, // 5 minute buffer
+                  }
+                );
+
+                // Store commute time in notes (or add to booking metadata if column exists)
+                const commuteInfo = `Commute: ${commuteResult.durationMinutes}min, Distance: ${commuteResult.distanceKm}km`;
+                bookingData.notes = bookingData.notes 
+                  ? `${bookingData.notes} | ${commuteInfo}`
+                  : commuteInfo;
+
+                // If estimated_arrival column exists, store it
+                if (commuteResult.estimatedArrival) {
+                  bookingData.estimated_arrival = commuteResult.estimatedArrival;
+                }
+              }
+            } catch (error) {
+              // Log but don't fail booking creation if commute calculation fails
+              console.warn('Failed to calculate commute time for booking:', error);
+            }
+          }
         }
 
         // Use client.query within transaction

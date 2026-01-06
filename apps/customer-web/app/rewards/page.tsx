@@ -77,51 +77,17 @@ export default function RewardsPage() {
       setLoading(true);
       setError(null);
       
-      const [balanceRes, rewardsRes, historyRes, redeemedRes] = await Promise.allSettled([
+      const [balanceRes, rewardsRes, historyRes, redeemedRes] = await Promise.all([
         apiClient.get<any>('/rewards/balance'),
         apiClient.get<any>('/rewards/catalog'),
         apiClient.get<any>('/rewards/history'),
         apiClient.get<any>('/rewards/redeemed'),
       ]);
       
-      if (balanceRes.status === 'fulfilled') {
-        setBalance(balanceRes.value.balance || balanceRes.value);
-      } else {
-        setBalance({ points: 2450, tier: 'silver', points_to_next_tier: 550, next_tier: 'gold', lifetime_points: 8750 });
-      }
-      
-      if (rewardsRes.status === 'fulfilled') {
-        setRewards(rewardsRes.value.rewards || []);
-      } else {
-        setRewards([
-          { id: '1', name: '₹100 Off on Grooming', description: 'Flat ₹100 discount on any grooming service', points_required: 500, category: 'discount', validity_days: 30, is_featured: true },
-          { id: '2', name: 'Free Vet Consultation', description: 'One free tele-consultation with any vet', points_required: 1500, category: 'service', validity_days: 60, is_featured: true },
-          { id: '3', name: '20% Off Pet Food', description: 'Get 20% off on pet food (max ₹200)', points_required: 800, category: 'discount', validity_days: 30, is_featured: false },
-          { id: '4', name: 'Free Dog Walking Session', description: 'One complimentary 30-min walk', points_required: 600, category: 'service', validity_days: 14, is_featured: false },
-          { id: '5', name: 'Premium Pet Toy', description: 'Choose from select premium toys', points_required: 2000, category: 'product', validity_days: 45, stock: 15, is_featured: true },
-          { id: '6', name: 'Pet Photoshoot', description: '30-minute professional photoshoot', points_required: 5000, category: 'experience', validity_days: 90, stock: 5, is_featured: false },
-        ]);
-      }
-      
-      if (historyRes.status === 'fulfilled') {
-        setHistory(historyRes.value.history || []);
-      } else {
-        setHistory([
-          { id: '1', type: 'earned', points: 150, description: 'Booking completed - Full Grooming', created_at: '2026-01-04T10:00:00Z', booking_id: 'b1' },
-          { id: '2', type: 'bonus', points: 500, description: 'Welcome bonus', created_at: '2026-01-01T00:00:00Z' },
-          { id: '3', type: 'earned', points: 80, description: 'Booking completed - Vet Consultation', created_at: '2025-12-28T14:30:00Z', booking_id: 'b2' },
-          { id: '4', type: 'redeemed', points: -500, description: 'Redeemed: ₹100 Off on Grooming', created_at: '2025-12-20T09:15:00Z', reward_id: 'r1' },
-          { id: '5', type: 'earned', points: 120, description: 'Referral bonus - Friend signed up', created_at: '2025-12-15T16:00:00Z' },
-        ]);
-      }
-      
-      if (redeemedRes.status === 'fulfilled') {
-        setRedeemed(redeemedRes.value.rewards || []);
-      } else {
-        setRedeemed([
-          { id: '1', reward: { id: '1', name: '₹100 Off on Grooming', description: 'Flat ₹100 discount', points_required: 500, category: 'discount', validity_days: 30, is_featured: false }, redeemed_at: '2025-12-20T09:15:00Z', expires_at: '2026-01-19T23:59:59Z', status: 'active', coupon_code: 'GROOM100' },
-        ]);
-      }
+      setBalance(balanceRes.balance || balanceRes);
+      setRewards(rewardsRes.rewards || rewardsRes || []);
+      setHistory(historyRes.history || historyRes || []);
+      setRedeemed(redeemedRes.rewards || redeemedRes || []);
     } catch (err: any) {
       console.error('Error loading rewards:', err);
       setError(err.message || 'Failed to load rewards');

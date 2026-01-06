@@ -82,38 +82,15 @@ export default function ReportsPage() {
       setLoading(true);
       setError(null);
       
-      const [templatesRes, reportsRes, savedRes] = await Promise.allSettled([
+      const [templatesRes, reportsRes, savedRes] = await Promise.all([
         apiClient.get<any>('/admin/reports/templates'),
         apiClient.get<any>('/admin/reports/generated?limit=10'),
         apiClient.get<any>('/admin/reports/saved'),
       ]);
       
-      if (templatesRes.status === 'fulfilled') {
-        setTemplates(templatesRes.value.templates || []);
-      } else {
-        // Mock templates
-        setTemplates([
-          { id: '1', name: 'Revenue Summary', description: 'Total revenue, commission, and settlements', category: 'financial', parameters: [{ name: 'date_range', label: 'Date Range', type: 'daterange', required: true }] },
-          { id: '2', name: 'Vendor Performance', description: 'Bookings, ratings, and earnings by vendor', category: 'vendor', parameters: [{ name: 'date_range', label: 'Date Range', type: 'daterange', required: true }, { name: 'vendor_tier', label: 'Tier', type: 'select', required: false, options: [{ value: 'all', label: 'All Tiers' }, { value: 'gold', label: 'Gold' }, { value: 'silver', label: 'Silver' }] }] },
-          { id: '3', name: 'Booking Analytics', description: 'Booking trends, cancellations, and completion rates', category: 'operational', parameters: [{ name: 'date_range', label: 'Date Range', type: 'daterange', required: true }, { name: 'service_category', label: 'Service Category', type: 'select', required: false, options: [{ value: 'all', label: 'All' }, { value: 'grooming', label: 'Grooming' }, { value: 'medical', label: 'Medical' }] }] },
-          { id: '4', name: 'Customer Acquisition', description: 'New customers, retention, and churn', category: 'customer', parameters: [{ name: 'date_range', label: 'Date Range', type: 'daterange', required: true }] },
-          { id: '5', name: 'Settlement Report', description: 'Detailed settlement history with breakdowns', category: 'financial', parameters: [{ name: 'month', label: 'Month', type: 'select', required: true, options: [{ value: '2026-01', label: 'January 2026' }, { value: '2025-12', label: 'December 2025' }] }] },
-          { id: '6', name: 'Service Popularity', description: 'Most booked services by category and region', category: 'operational', parameters: [{ name: 'date_range', label: 'Date Range', type: 'daterange', required: true }] },
-        ]);
-      }
-      
-      if (reportsRes.status === 'fulfilled') {
-        setGeneratedReports(reportsRes.value.reports || []);
-      } else {
-        setGeneratedReports([
-          { id: '1', template_id: '1', template_name: 'Revenue Summary', parameters: { start_date: '2025-12-01', end_date: '2025-12-31' }, status: 'completed', format: 'pdf', download_url: '#', generated_at: '2026-01-02T10:30:00Z', generated_by: 'admin@warmpawz.com' },
-          { id: '2', template_id: '2', template_name: 'Vendor Performance', parameters: { start_date: '2025-12-01', end_date: '2025-12-31', vendor_tier: 'gold' }, status: 'completed', format: 'xlsx', download_url: '#', generated_at: '2026-01-01T14:00:00Z', generated_by: 'admin@warmpawz.com' },
-        ]);
-      }
-      
-      if (savedRes.status === 'fulfilled') {
-        setSavedReports(savedRes.value.reports || []);
-      }
+      setTemplates(templatesRes.templates || templatesRes || []);
+      setGeneratedReports(reportsRes.reports || reportsRes || []);
+      setSavedReports(savedRes.reports || savedRes || []);
     } catch (err: any) {
       console.error('Error loading reports:', err);
       setError(err.message || 'Failed to load reports');

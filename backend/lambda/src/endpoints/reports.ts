@@ -130,6 +130,72 @@ async function generateCustomReport(startDate: string, endDate: string, groupBy:
   return generateRevenueReport(startDate, endDate, groupBy, filters, metrics);
 }
 
+async function generateSettlementsReport(startDate: string, endDate: string, groupBy: string, filters: any, metrics: any[]) {
+  const settlementsQuery = `
+    SELECT 
+      DATE(created_at) as date,
+      COUNT(*) as settlement_count,
+      SUM(total_amount) as total_settled,
+      SUM(commission_amount) as total_commission,
+      SUM(payout_amount) as total_payout,
+      COUNT(*) FILTER (WHERE status = 'completed') as completed_count,
+      COUNT(*) FILTER (WHERE status = 'pending') as pending_count,
+      COUNT(*) FILTER (WHERE status = 'processing') as processing_count
+    FROM vendor_settlements
+    WHERE created_at >= $1 AND created_at <= $2
+    GROUP BY DATE(created_at)
+    ORDER BY date ASC
+  `;
+
+  const result = await query(settlementsQuery, [startDate, endDate]);
+  const rows = Array.isArray(result) ? result : (result as any).rows || [];
+  return rows;
+}
+
+async function generatePaymentsReport(startDate: string, endDate: string, groupBy: string, filters: any, metrics: any[]) {
+  const paymentsQuery = `
+    SELECT 
+      DATE(created_at) as date,
+      COUNT(*) as payment_count,
+      SUM(amount) as total_amount,
+      COUNT(*) FILTER (WHERE payment_status = 'completed') as completed_count,
+      COUNT(*) FILTER (WHERE payment_status = 'failed') as failed_count,
+      COUNT(*) FILTER (WHERE payment_status = 'pending') as pending_count,
+      COUNT(*) FILTER (WHERE payment_method = 'razorpay') as razorpay_count,
+      COUNT(*) FILTER (WHERE payment_method = 'wallet') as wallet_count
+    FROM payments
+    WHERE created_at >= $1 AND created_at <= $2
+    GROUP BY DATE(created_at)
+    ORDER BY date ASC
+  `;
+
+  const result = await query(paymentsQuery, [startDate, endDate]);
+  const rows = Array.isArray(result) ? result : (result as any).rows || [];
+  return rows;
+}
+
+async function generateFinancialSummary(startDate: string, endDate: string) {
+  const summaryQuery = `
+    SELECT 
+      (SELECT COALESCE(SUM(amount), 0) FROM payments 
+       WHERE created_at >= $1 AND created_at <= $2 AND payment_status = 'completed') as total_revenue,
+      (SELECT COALESCE(SUM(commission_amount), 0) FROM vendor_settlements 
+       WHERE created_at >= $1 AND created_at <= $2) as total_commission,
+      (SELECT COALESCE(SUM(payout_amount), 0) FROM vendor_settlements 
+       WHERE created_at >= $1 AND created_at <= $2 AND status = 'completed') as total_payouts,
+      (SELECT COALESCE(SUM(amount), 0) FROM refunds 
+       WHERE created_at >= $1 AND created_at <= $2 AND status = 'processed') as total_refunds,
+      (SELECT COUNT(*) FROM payments 
+       WHERE created_at >= $1 AND created_at <= $2 AND payment_status = 'completed') as completed_payments,
+      (SELECT COUNT(*) FROM vendor_settlements 
+       WHERE created_at >= $1 AND created_at <= $2 AND status = 'pending') as pending_settlements
+  `;
+
+  const result = await query(summaryQuery, [startDate, endDate]);
+  const rows = Array.isArray(result) ? result : (result as any).rows || [];
+  return rows[0] || {};
+}
+
 export function registerReportEndpoints(app: Hono) {
   /**
    * GET /admin/reports
@@ -180,6 +246,12 @@ export function registerReportEndpoints(app: Hono) {
         case 'custom':
           data = await generateCustomReport(startDate, endDate, groupBy, filters, metrics);
           break;
+        case 'settlements':
+          data = await generateSettlementsReport(startDate, endDate, groupBy, filters, metrics);
+          break;
+        case 'payments':
+          data = await generatePaymentsReport(startDate, endDate, groupBy, filters, metrics);
+          break;
         default:
           data = await generateRevenueReport(startDate, endDate, groupBy, filters, metrics);
       }
@@ -228,6 +300,18 @@ export function registerReportEndpoints(app: Hono) {
           description: 'Customer activity and spending',
           reportType: 'customers',
         },
+        {
+          id: 'settlements',
+          name: 'Settlements Report',
+          description: 'Vendor settlement and payout statistics',
+          reportType: 'settlements',
+        },
+        {
+          id: 'payments',
+          name: 'Payments Report',
+          description: 'Payment transactions and methods',
+          reportType: 'payments',
+        },
       ];
 
       return c.json({
@@ -236,6 +320,117 @@ export function registerReportEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching templates:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /admin/reports/financial/summary
+   * Get financial summary (revenue, commission, payouts, refunds)
+   */
+  app.get("/admin/reports/financial/summary", async (c) => {
+    try {
+      const dateRange = c.req.query('dateRange') || '30d';
+      const { startDate, endDate } = getDateRange(dateRange);
+
+      const summary = await generateFinancialSummary(startDate, endDate);
+
+      return c.json({
+        success: true,
+        summary,
+        dateRange: { startDate, endDate },
+      });
+    } catch (error: any) {
+      console.error('Error generating financial summary:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /admin/reports/financial/settlements
+   * Get detailed settlements report
+   */
+  app.get("/admin/reports/financial/settlements", async (c) => {
+    try {
+      const dateRange = c.req.query('dateRange') || '30d';
+      const vendorId = c.req.query('vendorId');
+      const { startDate, endDate } = getDateRange(dateRange);
+
+      let settlementsQuery = `
+        SELECT 
+          vs.*,
+          v.business_name,
+          v.city,
+          COUNT(DISTINCT vs.booking_ids) as booking_count
+        FROM vendor_settlements vs
+        JOIN vendors v ON vs.vendor_id = v.id
+        WHERE vs.created_at >= $1 AND vs.created_at <= $2
+      `;
+      const params: any[] = [startDate, endDate];
+
+      if (vendorId) {
+        settlementsQuery += ' AND vs.vendor_id = $3';
+        params.push(vendorId);
+      }
+
+      settlementsQuery += ' ORDER BY vs.created_at DESC LIMIT 100';
+
+      const result = await query(settlementsQuery, params);
+      const rows = Array.isArray(result) ? result : (result as any).rows || [];
+
+      return c.json({
+        success: true,
+        settlements: rows,
+        dateRange: { startDate, endDate },
+        total: rows.length,
+      });
+    } catch (error: any) {
+      console.error('Error fetching settlements report:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /admin/reports/financial/payments
+   * Get detailed payments report
+   */
+  app.get("/admin/reports/financial/payments", async (c) => {
+    try {
+      const dateRange = c.req.query('dateRange') || '30d';
+      const status = c.req.query('status');
+      const { startDate, endDate } = getDateRange(dateRange);
+
+      let paymentsQuery = `
+        SELECT 
+          p.*,
+          b.service_type,
+          b.status as booking_status,
+          v.business_name as vendor_name
+        FROM payments p
+        LEFT JOIN bookings b ON p.booking_id = b.id
+        LEFT JOIN vendors v ON p.vendor_id = v.id
+        WHERE p.created_at >= $1 AND p.created_at <= $2
+      `;
+      const params: any[] = [startDate, endDate];
+
+      if (status) {
+        paymentsQuery += ' AND p.payment_status = $3';
+        params.push(status);
+      }
+
+      paymentsQuery += ' ORDER BY p.created_at DESC LIMIT 100';
+
+      const result = await query(paymentsQuery, params);
+      const rows = Array.isArray(result) ? result : (result as any).rows || [];
+
+      return c.json({
+        success: true,
+        payments: rows,
+        dateRange: { startDate, endDate },
+        total: rows.length,
+      });
+    } catch (error: any) {
+      console.error('Error fetching payments report:', error);
       return c.json({ error: error.message }, 500);
     }
   });

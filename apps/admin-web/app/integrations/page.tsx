@@ -87,25 +87,20 @@ export default function IntegrationsPage() {
       setLoading(true);
       setError(null);
       
-      const [aws, razorpay, maps, shiprocket] = await Promise.allSettled([
+      const [aws, razorpay, maps, shiprocket] = await Promise.all([
         apiClient.get<any>('/admin/integrations/aws'),
         apiClient.get<any>('/admin/integrations/razorpay'),
         apiClient.get<any>('/admin/integrations/google-maps'),
         apiClient.get<any>('/admin/integrations/shiprocket'),
       ]);
       
-      // Set from API or use mock defaults
-      setAwsConfig(aws.status === 'fulfilled' ? aws.value.config : { region: 'ap-south-1', s3: { bucket: 'warmpawz-uploads', enabled: true }, sns: { enabled: true }, ses: { enabled: true }, chime: { enabled: false } });
-      setRazorpayConfig(razorpay.status === 'fulfilled' ? razorpay.value.config : { key_id: 'rzp_test_***', webhook_secret: '', live_mode: false, enabled: true });
-      setGoogleMapsConfig(maps.status === 'fulfilled' ? maps.value.config : { api_key: 'AIza***', places_enabled: true, directions_enabled: true, enabled: true });
-      setShiprocketConfig(shiprocket.status === 'fulfilled' ? shiprocket.value.config : { email: 'logistics@warmpawz.com', token: '', pickup_locations: [], enabled: false });
+      setAwsConfig(aws.config || aws);
+      setRazorpayConfig(razorpay.config || razorpay);
+      setGoogleMapsConfig(maps.config || maps);
+      setShiprocketConfig(shiprocket.config || shiprocket);
     } catch (err: any) {
       console.error('Error loading configs:', err);
-      // Set mock defaults on error
-      setAwsConfig({ region: 'ap-south-1', s3: { bucket: 'warmpawz-uploads', enabled: true }, sns: { enabled: true }, ses: { enabled: true }, chime: { enabled: false } });
-      setRazorpayConfig({ key_id: 'rzp_test_***', webhook_secret: '', live_mode: false, enabled: true });
-      setGoogleMapsConfig({ api_key: 'AIza***', places_enabled: true, directions_enabled: true, enabled: true });
-      setShiprocketConfig({ email: 'logistics@warmpawz.com', token: '', pickup_locations: [], enabled: false });
+      setError(err.message || 'Failed to load integration configs');
     } finally {
       setLoading(false);
     }

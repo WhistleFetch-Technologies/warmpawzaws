@@ -22,15 +22,16 @@ exports.adminDashboardEndpoints = adminDashboardEndpoints;
 const response_utils_1 = require("./response-utils");
 const db_1 = require("../lib/db");
 const repositories_1 = require("../lib/repositories");
+const BASE_PATH = '/make-server-3dd53475';
 /**
  * Register admin dashboard endpoints
  */
 function adminDashboardEndpoints(app) {
     /**
      * Get comprehensive admin dashboard data
-     * GET /admin/dashboard
+     * GET /make-server-3dd53475/admin/dashboard
      */
-    app.get('/admin/dashboard', async (c) => {
+    app.get(`${BASE_PATH}/admin/dashboard`, async (c) => {
         try {
             const timeframe = c.req.query('timeframe') || 'today'; // today, week, month, all
             // Calculate date ranges
@@ -142,9 +143,9 @@ function adminDashboardEndpoints(app) {
     });
     /**
      * Get platform health metrics
-     * GET /admin/dashboard/health
+     * GET /make-server-3dd53475/admin/dashboard/health
      */
-    app.get('/admin/dashboard/health', async (c) => {
+    app.get(`${BASE_PATH}/admin/dashboard/health`, async (c) => {
         try {
             const vendorsRepo = (0, repositories_1.getVendorsRepository)();
             const customersRepo = (0, repositories_1.getCustomersRepository)();

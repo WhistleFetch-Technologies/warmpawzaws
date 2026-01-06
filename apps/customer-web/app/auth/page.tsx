@@ -110,7 +110,21 @@ export default function AuthPage() {
       
       if (response.success || response.verified) {
         localStorage.setItem('customerPhone', phone);
-        if (response.accessToken) {
+        
+        // Store Cognito tokens (AWS Serverless compatible)
+        if (response.idToken && response.accessToken) {
+          const { storeCognitoTokens, storeUserInfo } = require('@/lib/cognito-auth');
+          storeCognitoTokens({
+            accessToken: response.accessToken,
+            idToken: response.idToken,
+            refreshToken: response.refreshToken || '',
+            expiresIn: response.expiresIn || 3600,
+          });
+          if (response.userId) {
+            storeUserInfo({ userId: response.userId, phone, username: response.username });
+          }
+        } else if (response.accessToken) {
+          // Fallback to legacy token
           localStorage.setItem('authToken', response.accessToken);
         }
         

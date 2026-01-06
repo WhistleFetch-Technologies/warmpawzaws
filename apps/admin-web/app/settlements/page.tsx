@@ -89,28 +89,13 @@ export default function SettlementsPage() {
       if (filterStatus) params.append('status', filterStatus);
       if (filterDateRange) params.append('period', filterDateRange);
       
-      const [settlementsRes, summaryRes] = await Promise.allSettled([
+      const [settlementsRes, summaryRes] = await Promise.all([
         apiClient.get<any>(`/settlements?${params.toString()}`),
         apiClient.get<any>('/settlements/summary'),
       ]);
       
-      if (settlementsRes.status === 'fulfilled') {
-        setSettlements(settlementsRes.value.settlements || []);
-      } else {
-        // Mock data for demo
-        setSettlements([
-          { id: '1', vendor_id: 'v1', vendor_name: 'Happy Paws Grooming', vendor_phone: '9876543210', period_start: '2026-01-01', period_end: '2026-01-07', gross_amount: 45000, commission_amount: 4500, net_amount: 40500, booking_count: 28, status: 'pending', created_at: '', updated_at: '' },
-          { id: '2', vendor_id: 'v2', vendor_name: 'Dr. Sharma Vet Clinic', vendor_phone: '9876543211', period_start: '2026-01-01', period_end: '2026-01-07', gross_amount: 78000, commission_amount: 7800, net_amount: 70200, booking_count: 52, status: 'completed', payout_reference: 'PAY_2026010712345', payout_date: '2026-01-08', created_at: '', updated_at: '' },
-          { id: '3', vendor_id: 'v3', vendor_name: 'Pet Paradise Boarding', vendor_phone: '9876543212', period_start: '2026-01-01', period_end: '2026-01-07', gross_amount: 62000, commission_amount: 6200, net_amount: 55800, booking_count: 15, status: 'processing', created_at: '', updated_at: '' },
-          { id: '4', vendor_id: 'v4', vendor_name: 'WalkMyDog Services', vendor_phone: '9876543213', period_start: '2026-01-01', period_end: '2026-01-07', gross_amount: 18000, commission_amount: 1800, net_amount: 16200, booking_count: 60, status: 'failed', failure_reason: 'Bank account verification pending', created_at: '', updated_at: '' },
-        ]);
-      }
-      
-      if (summaryRes.status === 'fulfilled') {
-        setSummary(summaryRes.value.summary || summaryRes.value);
-      } else {
-        setSummary({ totalPending: 1, totalProcessing: 1, totalCompleted: 1, totalFailed: 1, pendingAmount: 40500, completedAmount: 70200 });
-      }
+      setSettlements(settlementsRes.settlements || settlementsRes || []);
+      setSummary(summaryRes.summary || summaryRes);
     } catch (err: any) {
       console.error('Error loading settlements:', err);
       setError(err.message || 'Failed to load settlements');

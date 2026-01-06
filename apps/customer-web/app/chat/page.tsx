@@ -88,18 +88,8 @@ export default function ChatPage() {
       setLoading(true);
       setError(null);
       
-      const response = await apiClient.get<any>('/chat/conversations').catch(() => null);
-      
-      if (response?.conversations) {
-        setConversations(response.conversations);
-      } else {
-        // Mock data
-        setConversations([
-          { id: '1', participant_type: 'vendor', participant_id: 'v1', participant_name: 'Happy Paws Grooming', last_message: 'Your appointment is confirmed for tomorrow at 10 AM', last_message_time: '2026-01-05T08:30:00Z', unread_count: 1, booking_id: 'b1', booking_service: 'Full Grooming', is_online: true },
-          { id: '2', participant_type: 'vendor', participant_id: 'v2', participant_name: 'Dr. Sharma Vet Clinic', last_message: 'Bruno is doing great! Follow up in 2 weeks.', last_message_time: '2026-01-03T16:45:00Z', unread_count: 0, booking_id: 'b2', booking_service: 'Vet Consultation', is_online: false },
-          { id: '3', participant_type: 'support', participant_id: 's1', participant_name: 'Warmpawz Support', last_message: 'How can we help you today?', last_message_time: '2026-01-02T10:00:00Z', unread_count: 0, is_online: true },
-        ]);
-      }
+      const response = await apiClient.get<any>('/chat/conversations');
+      setConversations(response.conversations || response || []);
     } catch (err: any) {
       console.error('Error loading conversations:', err);
       setError(err.message || 'Failed to load conversations');
@@ -112,22 +102,8 @@ export default function ChatPage() {
     try {
       if (!silent) setLoading(true);
       
-      const response = await apiClient.get<any>(`/chat/conversations/${conversationId}/messages`).catch(() => null);
-      
-      if (response?.messages) {
-        setMessages(response.messages);
-      } else if (!silent) {
-        // Mock data
-        setMessages([
-          { id: '1', conversation_id: conversationId, sender_type: 'system', sender_id: 'system', content: 'Chat started for booking #b1', content_type: 'system', created_at: '2026-01-04T09:00:00Z' },
-          { id: '2', conversation_id: conversationId, sender_type: 'customer', sender_id: 'c1', content: 'Hi, I have a question about tomorrow\'s appointment', content_type: 'text', created_at: '2026-01-04T09:05:00Z' },
-          { id: '3', conversation_id: conversationId, sender_type: 'vendor', sender_id: 'v1', content: 'Hello! How can I help you?', content_type: 'text', created_at: '2026-01-04T09:06:00Z' },
-          { id: '4', conversation_id: conversationId, sender_type: 'customer', sender_id: 'c1', content: 'Can I bring my cat along with my dog?', content_type: 'text', created_at: '2026-01-04T09:07:00Z' },
-          { id: '5', conversation_id: conversationId, sender_type: 'vendor', sender_id: 'v1', content: 'Yes, absolutely! We can accommodate both pets. Would you like to add grooming for your cat as well?', content_type: 'text', created_at: '2026-01-04T09:10:00Z' },
-          { id: '6', conversation_id: conversationId, sender_type: 'customer', sender_id: 'c1', content: 'That would be great! Please add basic grooming for the cat.', content_type: 'text', created_at: '2026-01-04T09:12:00Z' },
-          { id: '7', conversation_id: conversationId, sender_type: 'vendor', sender_id: 'v1', content: 'Your appointment is confirmed for tomorrow at 10 AM', content_type: 'text', created_at: '2026-01-05T08:30:00Z' },
-        ]);
-      }
+      const response = await apiClient.get<any>(`/chat/conversations/${conversationId}/messages`);
+      setMessages(response.messages || response || []);
     } catch (err) {
       if (!silent) console.error('Error loading messages:', err);
     } finally {

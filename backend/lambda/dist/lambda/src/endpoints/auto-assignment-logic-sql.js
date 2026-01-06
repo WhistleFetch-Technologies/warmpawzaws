@@ -138,13 +138,14 @@ async function loadStaffDetails(staffIds) {
     const staff = [];
     const staffRepo = (0, staff_1.getStaffRepository)();
     const bookingsRepo = (0, bookings_1.getBookingsRepository)();
+    // ✅ Get database pool once and reuse for all queries
+    const pool = await (0, db_1.getDbClient)();
     for (const staffId of staffIds) {
         try {
             // ✅ SQL: Get staff profile
             const staffData = await staffRepo.findById(staffId);
             if (staffData) {
                 // ✅ SQL: Check current availability (online status - check from platform_settings or default false)
-                const pool = await (0, db_1.getDbClient)();
                 const onlineCheck = await pool.query(`SELECT setting_value FROM platform_settings WHERE setting_key = $1`, [`staff:${staffId}:online`]);
                 const isOnline = onlineCheck.rows.length > 0 ? onlineCheck.rows[0].setting_value?.isOnline || false : false;
                 // ✅ SQL: Get current location if available
@@ -160,8 +161,7 @@ async function loadStaffDetails(staffIds) {
                     }
                 }
                 // ✅ SQL: Count active bookings
-                const pool2 = await (0, db_1.getDbClient)();
-                const activeBookingsResult = await pool2.query(`SELECT COUNT(*)::int as count FROM bookings 
+                const activeBookingsResult = await pool.query(`SELECT COUNT(*)::int as count FROM bookings 
            WHERE assigned_staff_id = $1 AND status IN ('confirmed', 'assigned', 'in_progress')`, [staffId]);
                 const activeBookings = parseInt(activeBookingsResult.rows[0]?.count || '0', 10);
                 staff.push({

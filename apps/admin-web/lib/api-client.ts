@@ -55,6 +55,13 @@ export class ApiClient {
 
   private getAuthToken(): string | null {
     if (typeof window !== 'undefined') {
+      // Try Cognito token first (preferred for AWS Serverless)
+      const { getCognitoIdToken } = require('./cognito-auth');
+      const cognitoToken = getCognitoIdToken();
+      if (cognitoToken) {
+        return cognitoToken;
+      }
+      // Fallback to legacy token
       return localStorage.getItem('adminAuthToken');
     }
     return null;

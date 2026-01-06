@@ -87,43 +87,15 @@ export default function MedicalRecordsPage() {
       if (selectedPet) params.append('pet_id', selectedPet);
       if (selectedType) params.append('type', selectedType);
       
-      const [petsRes, recordsRes, vaccinationsRes] = await Promise.allSettled([
+      const [petsRes, recordsRes, vaccinationsRes] = await Promise.all([
         apiClient.get<any>('/pets'),
         apiClient.get<any>(`/medical-records?${params.toString()}`),
         apiClient.get<any>('/medical-records/vaccinations'),
       ]);
       
-      if (petsRes.status === 'fulfilled') {
-        setPets(petsRes.value.pets || []);
-      } else {
-        setPets([
-          { id: '1', name: 'Bruno', species: 'dog', breed: 'Golden Retriever' },
-          { id: '2', name: 'Whiskers', species: 'cat', breed: 'Persian' },
-        ]);
-      }
-      
-      if (recordsRes.status === 'fulfilled') {
-        setRecords(recordsRes.value.records || []);
-      } else {
-        setRecords([
-          { id: '1', pet_id: '1', type: 'consultation', title: 'Annual Health Checkup', description: 'Routine examination, all vitals normal. Weight: 32kg.', date: '2026-01-03', vendor_name: 'Happy Paws Vet Clinic', doctor_name: 'Dr. Sharma', attachments: [], notes: 'Continue current diet. Schedule dental cleaning.', follow_up_date: '2026-07-03', tags: ['checkup', 'routine'] },
-          { id: '2', pet_id: '1', type: 'vaccination', title: 'Rabies Vaccination', description: 'Annual rabies vaccine administered', date: '2026-01-03', vendor_name: 'Happy Paws Vet Clinic', doctor_name: 'Dr. Sharma', attachments: [{ id: 'a1', name: 'Vaccination Certificate.pdf', type: 'pdf', url: '#', size: 245000 }], tags: ['vaccination', 'rabies'] },
-          { id: '3', pet_id: '1', type: 'prescription', title: 'Joint Supplement Prescription', description: 'Glucosamine + Chondroitin for joint health', date: '2025-12-15', vendor_name: 'City Vet Hospital', doctor_name: 'Dr. Patel', attachments: [{ id: 'a2', name: 'Prescription.pdf', type: 'pdf', url: '#', size: 120000 }], tags: ['prescription', 'joints'] },
-          { id: '4', pet_id: '1', type: 'diagnostic', title: 'Blood Test Results', description: 'Complete blood count and metabolic panel', date: '2025-11-20', vendor_name: 'Pet Diagnostics Lab', attachments: [{ id: 'a3', name: 'Lab Report.pdf', type: 'pdf', url: '#', size: 380000 }], tags: ['lab', 'blood-test'] },
-          { id: '5', pet_id: '2', type: 'consultation', title: 'Skin Allergy Treatment', description: 'Treated for mild skin allergy, prescribed antihistamines', date: '2025-12-28', vendor_name: 'Happy Paws Vet Clinic', doctor_name: 'Dr. Sharma', attachments: [], notes: 'Apply topical cream twice daily. Avoid chicken-based food.', follow_up_date: '2026-01-15', tags: ['allergy', 'skin'] },
-        ]);
-      }
-      
-      if (vaccinationsRes.status === 'fulfilled') {
-        setVaccinations(vaccinationsRes.value.vaccinations || []);
-      } else {
-        setVaccinations([
-          { id: '1', pet_id: '1', vaccine_name: 'Rabies', batch_number: 'RAB2025-1234', date_administered: '2026-01-03', next_due_date: '2027-01-03', administered_by: 'Dr. Sharma', clinic_name: 'Happy Paws Vet Clinic' },
-          { id: '2', pet_id: '1', vaccine_name: 'DHPP', batch_number: 'DHPP2025-5678', date_administered: '2025-08-15', next_due_date: '2026-08-15', administered_by: 'Dr. Patel', clinic_name: 'City Vet Hospital' },
-          { id: '3', pet_id: '1', vaccine_name: 'Bordetella', batch_number: 'BOR2025-9012', date_administered: '2025-06-01', next_due_date: '2026-06-01', administered_by: 'Dr. Sharma', clinic_name: 'Happy Paws Vet Clinic' },
-          { id: '4', pet_id: '2', vaccine_name: 'FVRCP', batch_number: 'FVR2025-3456', date_administered: '2025-09-10', next_due_date: '2026-09-10', administered_by: 'Dr. Sharma', clinic_name: 'Happy Paws Vet Clinic' },
-        ]);
-      }
+      setPets(petsRes.pets || petsRes || []);
+      setRecords(recordsRes.records || recordsRes || []);
+      setVaccinations(vaccinationsRes.vaccinations || vaccinationsRes || []);
     } catch (err: any) {
       console.error('Error loading medical records:', err);
       setError(err.message || 'Failed to load medical records');
