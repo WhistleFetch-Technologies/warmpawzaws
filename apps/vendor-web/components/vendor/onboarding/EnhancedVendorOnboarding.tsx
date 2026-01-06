@@ -151,11 +151,15 @@ export function EnhancedVendorOnboarding({
     return (
       <SoloProviderOnboarding
         roleId={roleId}
-        roleName={roleName || 'Provider'}
-        phone={phone}
-        onSubmit={handleSoloOnboardingSubmit}
         onBack={() => setStep('business_type')}
-        submitting={submitting}
+        onSuccess={() => {
+          // SoloProviderOnboarding already handles submission internally
+          // Just notify parent that onboarding is complete
+          onComplete({
+            success: true,
+            isSoloProvider: true,
+          });
+        }}
       />
     );
   }

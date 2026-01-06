@@ -1,16 +1,16 @@
 {
   "/_not-found/page": "app/_not-found/page.js",
   "/bookings/page": "app/bookings/page.js",
+  "/auth/page": "app/auth/page.js",
+  "/earnings/page": "app/earnings/page.js",
   "/onboarding/page": "app/onboarding/page.js",
-  "/page": "app/page.js",
-  "/staff/page": "app/staff/page.js",
-  "/schedule/page": "app/schedule/page.js",
-  "/settings/page": "app/settings/page.js",
   "/packages/page": "app/packages/page.js",
-  "/bank-details/page": "app/bank-details/page.js",
+  "/page": "app/page.js",
+  "/settings/page": "app/settings/page.js",
   "/subscriptions/page": "app/subscriptions/page.js",
   "/services/page": "app/services/page.js",
-  "/settlements/page": "app/settlements/page.js",
-  "/earnings/page": "app/earnings/page.js",
-  "/auth/page": "app/auth/page.js"
+  "/schedule/page": "app/schedule/page.js",
+  "/bank-details/page": "app/bank-details/page.js",
+  "/staff/page": "app/staff/page.js",
+  "/settlements/page": "app/settlements/page.js"
 }

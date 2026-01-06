@@ -3,6 +3,9 @@
 import React, { useState, useEffect } from 'react';
 import { AdminApp } from '@/components/AdminApp';
 
+// Prevent prerendering - this page uses localStorage and React context
+export const dynamic = 'force-dynamic';
+
 // UAT Mode Configuration - DEV ONLY
 const UAT_MODE = process.env.NEXT_PUBLIC_UAT_MODE === 'true' || process.env.NODE_ENV === 'development';
 
