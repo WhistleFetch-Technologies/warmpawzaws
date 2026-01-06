@@ -1,18 +1,18 @@
 {
   "/_not-found/page": "app/_not-found/page.js",
-  "/analytics/page": "app/analytics/page.js",
-  "/integrations/page": "app/integrations/page.js",
   "/governance/page": "app/governance/page.js",
-  "/notifications/page": "app/notifications/page.js",
+  "/catalog/page": "app/catalog/page.js",
+  "/integrations/page": "app/integrations/page.js",
+  "/analytics/page": "app/analytics/page.js",
   "/page": "app/page.js",
   "/logistics/page": "app/logistics/page.js",
-  "/regions/page": "app/regions/page.js",
-  "/settlements/page": "app/settlements/page.js",
-  "/reports/page": "app/reports/page.js",
-  "/roles/page": "app/roles/page.js",
   "/refunds/page": "app/refunds/page.js",
+  "/settlements/page": "app/settlements/page.js",
+  "/notifications/page": "app/notifications/page.js",
+  "/regions/page": "app/regions/page.js",
   "/promotions/page": "app/promotions/page.js",
-  "/vendors/page": "app/vendors/page.js",
+  "/roles/page": "app/roles/page.js",
   "/tiers/page": "app/tiers/page.js",
-  "/catalog/page": "app/catalog/page.js"
+  "/reports/page": "app/reports/page.js",
+  "/vendors/page": "app/vendors/page.js"
 }

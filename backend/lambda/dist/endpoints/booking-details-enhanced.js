@@ -18,6 +18,7 @@
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.registerBookingDetailsEnhancedEndpoints = registerBookingDetailsEnhancedEndpoints;
+const crypto_1 = require("crypto");
 const base_handler_1 = require("../handler/base-handler");
 const rds_connection_1 = require("../database/rds-connection");
 class GetEnhancedBookingDetailsHandler extends base_handler_1.BaseHandler {
@@ -204,101 +205,65 @@ class GetBookingChatHandler extends base_handler_1.BaseHandler {
     }
 }
 function registerBookingDetailsEnhancedEndpoints(app) {
+    const enhancedHandler = new GetEnhancedBookingDetailsHandler();
+    const prescriptionsHandler = new GetBookingPrescriptionsHandler();
+    const medicalRecordsHandler = new GetBookingMedicalRecordsHandler();
+    const chatHandler = new GetBookingChatHandler();
     // Get comprehensive booking details with all related data
     app.get('/bookings/:bookingId/enhanced', async (c) => {
-        try {
-            const handler = new GetEnhancedBookingDetailsHandler();
-            const context = {
-                event: {
-                    ...c.req.raw,
-                    pathParameters: { bookingId: c.req.param('bookingId') },
-                    queryStringParameters: {
-                        actorId: c.req.query('actorId') || undefined,
-                        actorRole: c.req.query('actorRole') || 'customer',
-                    },
-                },
-                context: {},
-            };
-            const response = await handler.handle(context);
-            const data = JSON.parse(response.body);
-            if (response.statusCode !== 200) {
-                return c.json(data, response.statusCode);
-            }
-            return c.json(data);
-        }
-        catch (error) {
-            console.error('Error in enhanced booking details:', error);
-            return c.json({ error: error.message || 'Internal server error' }, 500);
-        }
+        const event = createApiGatewayEvent(c.req);
+        event.pathParameters = { bookingId: c.req.param('bookingId') };
+        event.queryStringParameters = {
+            actorId: c.req.query('actorId') || undefined,
+            actorRole: c.req.query('actorRole') || 'customer',
+        };
+        const context = createLambdaContext();
+        const result = await enhancedHandler.execute(event, context);
+        return c.json(JSON.parse(result.body), result.statusCode);
     });
     // Get prescriptions for a booking
     app.get('/bookings/:bookingId/prescriptions', async (c) => {
-        try {
-            const handler = new GetBookingPrescriptionsHandler();
-            const context = {
-                event: {
-                    ...c.req.raw,
-                    pathParameters: { bookingId: c.req.param('bookingId') },
-                },
-                context: {},
-            };
-            const response = await handler.handle(context);
-            const data = JSON.parse(response.body);
-            if (response.statusCode !== 200) {
-                return c.json(data, response.statusCode);
-            }
-            return c.json(data);
-        }
-        catch (error) {
-            console.error('Error fetching prescriptions:', error);
-            return c.json({ error: error.message || 'Internal server error' }, 500);
-        }
+        const event = createApiGatewayEvent(c.req);
+        event.pathParameters = { bookingId: c.req.param('bookingId') };
+        const context = createLambdaContext();
+        const result = await prescriptionsHandler.execute(event, context);
+        return c.json(JSON.parse(result.body), result.statusCode);
     });
     // Get medical records for a booking
     app.get('/bookings/:bookingId/medical-records', async (c) => {
-        try {
-            const handler = new GetBookingMedicalRecordsHandler();
-            const context = {
-                event: {
-                    ...c.req.raw,
-                    pathParameters: { bookingId: c.req.param('bookingId') },
-                },
-                context: {},
-            };
-            const response = await handler.handle(context);
-            const data = JSON.parse(response.body);
-            if (response.statusCode !== 200) {
-                return c.json(data, response.statusCode);
-            }
-            return c.json(data);
-        }
-        catch (error) {
-            console.error('Error fetching medical records:', error);
-            return c.json({ error: error.message || 'Internal server error' }, 500);
-        }
+        const event = createApiGatewayEvent(c.req);
+        event.pathParameters = { bookingId: c.req.param('bookingId') };
+        const context = createLambdaContext();
+        const result = await medicalRecordsHandler.execute(event, context);
+        return c.json(JSON.parse(result.body), result.statusCode);
     });
     // Get chat for a booking
     app.get('/bookings/:bookingId/chat', async (c) => {
-        try {
-            const handler = new GetBookingChatHandler();
-            const context = {
-                event: {
-                    ...c.req.raw,
-                    pathParameters: { bookingId: c.req.param('bookingId') },
-                },
-                context: {},
-            };
-            const response = await handler.handle(context);
-            const data = JSON.parse(response.body);
-            if (response.statusCode !== 200) {
-                return c.json(data, response.statusCode);
-            }
-            return c.json(data);
-        }
-        catch (error) {
-            console.error('Error fetching chat:', error);
-            return c.json({ error: error.message || 'Internal server error' }, 500);
-        }
+        const event = createApiGatewayEvent(c.req);
+        event.pathParameters = { bookingId: c.req.param('bookingId') };
+        const context = createLambdaContext();
+        const result = await chatHandler.execute(event, context);
+        return c.json(JSON.parse(result.body), result.statusCode);
     });
+}
+function createApiGatewayEvent(req) {
+    return {
+        httpMethod: req.method,
+        path: req.url,
+        headers: req.headers,
+        body: JSON.stringify(req.body || {}),
+        pathParameters: req.param() || {},
+        queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
+        requestContext: {
+            requestId: (0, crypto_1.randomUUID)(),
+        },
+    };
+}
+function createLambdaContext() {
+    return {
+        requestId: (0, crypto_1.randomUUID)(),
+        functionName: 'booking-details-enhanced-handler',
+        functionVersion: '$LATEST',
+    };
 }
 //# sourceMappingURL=booking-details-enhanced.js.map

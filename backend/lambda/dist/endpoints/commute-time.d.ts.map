@@ -1,1 +1,1 @@
-{"version":3,"file":"commute-time.d.ts","sourceRoot":"","sources":["../../src/endpoints/commute-time.ts"],"names":[],"mappings":"AAAA;;;;;;;;;;GAUG;AAEH,OAAO,EAAE,IAAI,EAAE,MAAM,MAAM,CAAC;AAyF5B,wBAAgB,4BAA4B,CAAC,GAAG,EAAE,IAAI,QA4DrD"}
+{"version":3,"file":"commute-time.d.ts","sourceRoot":"","sources":["../../src/endpoints/commute-time.ts"],"names":[],"mappings":"AAAA;;;;;;;;;;GAUG;AAEH,OAAO,EAAE,IAAI,EAAE,MAAM,MAAM,CAAC;AA0F5B,wBAAgB,4BAA4B,CAAC,GAAG,EAAE,IAAI,QA4BrD"}
