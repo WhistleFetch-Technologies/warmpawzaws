@@ -9,6 +9,8 @@ buildscript {
     }
     repositories {
         google()
+        // Razorpay Maven repository (MUST be before mavenCentral - Razorpay doesn't publish to Maven Central)
+        maven { url "https://maven.razorpay.com/releases" }
         mavenCentral()
         // Fallback repositories for CI/CD (Maven Central 403 issues)
         maven { url 'https://maven.google.com' }
@@ -26,8 +28,10 @@ apply plugin: "com.facebook.react.rootproject"
 // Configure repositories for all subprojects (CI/CD compatibility)
 allprojects {
     repositories {
-        // Order matters: Google first (most React Native deps), then Maven Central with fallbacks
+        // Order matters: Google first (most React Native deps), then Razorpay, then Maven Central with fallbacks
         google()
+        // Razorpay Maven repository (MUST be before mavenCentral - Razorpay doesn't publish to Maven Central)
+        maven { url "https://maven.razorpay.com/releases" }
         mavenCentral()
         // Fallback for CI/CD when Maven Central returns 403
         maven { url 'https://maven.google.com' }
