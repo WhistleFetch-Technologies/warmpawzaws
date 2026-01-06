@@ -107,7 +107,7 @@ export function registerCommuteTimeEndpoints(app: Hono) {
 
   // Calculate commute time between two locations
   app.post('/commute-time/calculate', async (c) => {
-    const event = createApiGatewayEvent(c);
+    const event = await createApiGatewayEvent(c);
     const context = createLambdaContext();
     const result = await calculateHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
@@ -115,7 +115,7 @@ export function registerCommuteTimeEndpoints(app: Hono) {
 
   // Calculate commute time to multiple destinations (for route optimization)
   app.post('/commute-time/calculate-multiple', async (c) => {
-    const event = createApiGatewayEvent(c);
+    const event = await createApiGatewayEvent(c);
     const context = createLambdaContext();
     const result = await calculateMultipleHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
@@ -123,7 +123,7 @@ export function registerCommuteTimeEndpoints(app: Hono) {
 
   // Calculate ETA for staff arrival at customer location
   app.post('/commute-time/staff-eta', async (c) => {
-    const event = createApiGatewayEvent(c);
+    const event = await createApiGatewayEvent(c);
     const context = createLambdaContext();
     const result = await staffETAHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
