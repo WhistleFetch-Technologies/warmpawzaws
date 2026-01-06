@@ -79,6 +79,10 @@ const transaction_monitoring_1 = require("../endpoints/transaction-monitoring");
 const time_window_subscription_1 = require("../endpoints/time-window-subscription");
 const storage_1 = require("../endpoints/storage");
 const push_notifications_1 = require("../endpoints/push-notifications");
+const commute_time_1 = require("../endpoints/commute-time");
+const booking_details_enhanced_1 = require("../endpoints/booking-details-enhanced");
+const razorpay_settlements_1 = require("../endpoints/razorpay-settlements");
+const refund_policy_engine_1 = require("../endpoints/refund-policy-engine");
 // Create Hono app
 const app = new hono_1.Hono();
 // Configure CORS
@@ -156,6 +160,10 @@ app.get('/health', (c) => {
 (0, time_window_subscription_1.registerTimeWindowSubscriptionEndpoints)(app);
 (0, storage_1.registerStorageEndpoints)(app);
 (0, push_notifications_1.registerPushNotificationEndpoints)(app);
+(0, commute_time_1.registerCommuteTimeEndpoints)(app);
+(0, booking_details_enhanced_1.registerBookingDetailsEnhancedEndpoints)(app);
+(0, razorpay_settlements_1.registerRazorpaySettlementEndpoints)(app);
+(0, refund_policy_engine_1.registerRefundPolicyEngineEndpoints)(app);
 // 404 handler
 app.notFound((c) => {
     return c.json({ error: 'Not Found' }, 404);
@@ -211,6 +219,10 @@ const handler = async (event, context) => {
             body: JSON.stringify({ error: 'Internal Server Error' }),
             headers: {
                 'Content-Type': 'application/json',
+                // CORS headers must be present even in error responses
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS, PATCH',
+                'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
             },
         };
     }

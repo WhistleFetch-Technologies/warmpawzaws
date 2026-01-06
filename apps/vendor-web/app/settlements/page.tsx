@@ -65,13 +65,35 @@ export default function SettlementsPage() {
       if (filterStatus) params.append('status', filterStatus);
       if (filterYear) params.append('year', filterYear);
       
+      // Get vendor ID from localStorage or context
+      const vendorId = localStorage.getItem('vendorId') || '';
+      
+      if (!vendorId) {
+        setError('Vendor ID not found. Please login again.');
+        setLoading(false);
+        return;
+      }
+
       const [settlementsRes, summaryRes] = await Promise.all([
-        apiClient.get<any>(`/vendor/settlements?${params.toString()}`),
-        apiClient.get<any>('/vendor/settlements/summary'),
+        apiClient.get<any>(`/vendor/${vendorId}/settlements?${params.toString()}`),
+        apiClient.get<any>(`/vendor/${vendorId}/settlements?summary=true`),
       ]);
       
-      setSettlements(settlementsRes.settlements || settlementsRes || []);
-      setSummary(summaryRes.summary || summaryRes);
+      // Handle both new and old response formats
+      const settlementsData = settlementsRes.settlements || settlementsRes.data?.settlements || settlementsRes || [];
+      const summaryData = summaryRes.summary || summaryRes.data?.summary || summaryRes;
+      
+      setSettlements(Array.isArray(settlementsData) ? settlementsData : []);
+      
+      if (summaryData) {
+        setSummary({
+          totalEarnings: summaryData.total_settled + summaryData.pending_amount + summaryData.processing_amount || 0,
+          totalSettled: summaryData.total_settled || 0,
+          pendingSettlement: summaryData.pending_amount || 0,
+          currentPeriodEarnings: summaryData.processing_amount || 0,
+          nextSettlementDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days from now
+        });
+      }
     } catch (err: any) {
       console.error('Error loading settlements:', err);
       setError(err.message || 'Failed to load settlements');

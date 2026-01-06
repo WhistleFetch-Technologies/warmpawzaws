@@ -37,6 +37,20 @@ class GetCustomerHandler extends base_handler_1.BaseHandler {
         return this.success(customers[0]);
     }
 }
+class GetCustomerByPhoneHandler extends base_handler_1.BaseHandler {
+    async handle(context) {
+        const phone = context.event.queryStringParameters?.phone;
+        if (!phone) {
+            return this.error('Phone number is required', 400);
+        }
+        // ✅ SQL: Get customer by phone
+        const customers = await (0, rds_connection_1.select)('customers', { phone });
+        if (customers.length === 0) {
+            return this.error('Customer not found', 404);
+        }
+        return this.success({ customer: customers[0] });
+    }
+}
 class UpdateCustomerHandler extends base_handler_1.BaseHandler {
     async handle(context) {
         const customerId = context.event.pathParameters?.customerId;
@@ -102,6 +116,7 @@ class AddPetHandler extends base_handler_1.BaseHandler {
 // ============================================================================
 function registerCustomerEndpoints(app) {
     const getHandler = new GetCustomerHandler();
+    const getByPhoneHandler = new GetCustomerByPhoneHandler();
     const updateHandler = new UpdateCustomerHandler();
     const getPetsHandler = new GetCustomerPetsHandler();
     const addPetHandler = new AddPetHandler();
@@ -110,6 +125,13 @@ function registerCustomerEndpoints(app) {
         event.pathParameters = { customerId: c.req.param('customerId') };
         const context = createLambdaContext();
         const result = await getHandler.execute(event, context);
+        return c.json(JSON.parse(result.body), result.statusCode);
+    });
+    app.get('/customer/by-phone', async (c) => {
+        const event = createApiGatewayEvent(c.req);
+        event.queryStringParameters = Object.fromEntries(new URL(c.req.url, 'http://localhost').searchParams);
+        const context = createLambdaContext();
+        const result = await getByPhoneHandler.execute(event, context);
         return c.json(JSON.parse(result.body), result.statusCode);
     });
     app.put('/customer/:customerId', async (c) => {

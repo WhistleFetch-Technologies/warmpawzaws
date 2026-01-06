@@ -21,7 +21,7 @@ import { Pool, PoolClient, QueryResult } from 'pg';
  * Get or create the PostgreSQL connection pool
  * Uses singleton pattern for connection pooling
  */
-export declare function getRdsPool(): Pool;
+export declare function getRdsPool(): Promise<Pool>;
 /**
  * Get a client from the pool for transaction use
  */

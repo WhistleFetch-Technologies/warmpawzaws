@@ -123,6 +123,30 @@ export class ApiClient {
   }
 
   async post<T>(endpoint: string, data?: any): Promise<T> {
+    // Handle FormData - don't stringify or set Content-Type header
+    if (data instanceof FormData) {
+      const token = this.getAuthToken();
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
+      // Don't set Content-Type for FormData - browser will set it with boundary
+      const response = await fetch(`${this.baseUrl}${endpoint}`, {
+        method: 'POST',
+        headers,
+        body: data,
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(error.error || error.message || `HTTP ${response.status}`);
+      }
+
+      return response.json();
+    }
+    
+    // Regular JSON POST
     return this.request<T>(endpoint, {
       method: 'POST',
       body: data ? JSON.stringify(data) : undefined,
