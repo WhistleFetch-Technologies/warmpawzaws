@@ -257,54 +257,98 @@ class GetBookingChatHandler extends BaseHandler {
 export function registerBookingDetailsEnhancedEndpoints(app: Hono) {
   // Get comprehensive booking details with all related data
   app.get('/bookings/:bookingId/enhanced', async (c) => {
-    const handler = new GetEnhancedBookingDetailsHandler();
-    return handler.handle({ 
-      event: {
-        ...c.req.raw as any,
-        pathParameters: { bookingId: c.req.param('bookingId') },
-        queryStringParameters: {
-          actorId: c.req.query('actorId') || undefined,
-          actorRole: c.req.query('actorRole') || 'customer',
+    try {
+      const handler = new GetEnhancedBookingDetailsHandler();
+      const context = {
+        event: {
+          ...c.req.raw as any,
+          pathParameters: { bookingId: c.req.param('bookingId') },
+          queryStringParameters: {
+            actorId: c.req.query('actorId') || undefined,
+            actorRole: c.req.query('actorRole') || 'customer',
+          },
         },
-      },
-      app 
-    });
+        context: {} as any,
+      };
+      const response = await handler.handle(context);
+      const data = JSON.parse(response.body);
+      if (response.statusCode !== 200) {
+        return c.json(data, response.statusCode as any);
+      }
+      return c.json(data);
+    } catch (error: any) {
+      console.error('Error in enhanced booking details:', error);
+      return c.json({ error: error.message || 'Internal server error' }, 500 as any);
+    }
   });
 
   // Get prescriptions for a booking
   app.get('/bookings/:bookingId/prescriptions', async (c) => {
-    const handler = new GetBookingPrescriptionsHandler();
-    return handler.handle({ 
-      event: {
-        ...c.req.raw as any,
-        pathParameters: { bookingId: c.req.param('bookingId') },
-      },
-      app 
-    });
+    try {
+      const handler = new GetBookingPrescriptionsHandler();
+      const context = {
+        event: {
+          ...c.req.raw as any,
+          pathParameters: { bookingId: c.req.param('bookingId') },
+        },
+        context: {} as any,
+      };
+      const response = await handler.handle(context);
+      const data = JSON.parse(response.body);
+      if (response.statusCode !== 200) {
+        return c.json(data, response.statusCode as any);
+      }
+      return c.json(data);
+    } catch (error: any) {
+      console.error('Error fetching prescriptions:', error);
+      return c.json({ error: error.message || 'Internal server error' }, 500 as any);
+    }
   });
 
   // Get medical records for a booking
   app.get('/bookings/:bookingId/medical-records', async (c) => {
-    const handler = new GetBookingMedicalRecordsHandler();
-    return handler.handle({ 
-      event: {
-        ...c.req.raw as any,
-        pathParameters: { bookingId: c.req.param('bookingId') },
-      },
-      app 
-    });
+    try {
+      const handler = new GetBookingMedicalRecordsHandler();
+      const context = {
+        event: {
+          ...c.req.raw as any,
+          pathParameters: { bookingId: c.req.param('bookingId') },
+        },
+        context: {} as any,
+      };
+      const response = await handler.handle(context);
+      const data = JSON.parse(response.body);
+      if (response.statusCode !== 200) {
+        return c.json(data, response.statusCode as any);
+      }
+      return c.json(data);
+    } catch (error: any) {
+      console.error('Error fetching medical records:', error);
+      return c.json({ error: error.message || 'Internal server error' }, 500 as any);
+    }
   });
 
   // Get chat for a booking
   app.get('/bookings/:bookingId/chat', async (c) => {
-    const handler = new GetBookingChatHandler();
-    return handler.handle({ 
-      event: {
-        ...c.req.raw as any,
-        pathParameters: { bookingId: c.req.param('bookingId') },
-      },
-      app 
-    });
+    try {
+      const handler = new GetBookingChatHandler();
+      const context = {
+        event: {
+          ...c.req.raw as any,
+          pathParameters: { bookingId: c.req.param('bookingId') },
+        },
+        context: {} as any,
+      };
+      const response = await handler.handle(context);
+      const data = JSON.parse(response.body);
+      if (response.statusCode !== 200) {
+        return c.json(data, response.statusCode as any);
+      }
+      return c.json(data);
+    } catch (error: any) {
+      console.error('Error fetching chat:', error);
+      return c.json({ error: error.message || 'Internal server error' }, 500 as any);
+    }
   });
 }
 

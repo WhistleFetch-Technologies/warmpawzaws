@@ -14,6 +14,7 @@ interface VendorServiceCatalogViewProps {
 
 interface ServiceCatalogItem {
   catalogId?: string;
+  serviceId?: string;
   categoryId: string;
   categoryName: string;
   subCategoryId?: string;

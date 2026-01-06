@@ -8,7 +8,15 @@
     ".": "./src/index.ts",
     "./tokens": "./src/tokens/index.ts",
     "./components": "./src/components/index.ts",
-    "./styles": "./src/styles/globals.css"
+    "./styles": "./src/styles/globals.css",
+    "./button": "./src/components/Button/index.ts",
+    "./input": "./src/components/Input/index.ts",
+    "./card": "./src/components/Card/index.ts",
+    "./badge": "./src/components/Badge/index.ts",
+    "./icon": "./src/components/Icon/index.ts",
+    "./table": "./src/components/Table/index.ts",
+    "./dialog": "./src/components/Dialog/index.ts",
+    "./accordion": "./src/components/Accordion/index.ts"
   },
   "scripts": {
     "build": "tsc",

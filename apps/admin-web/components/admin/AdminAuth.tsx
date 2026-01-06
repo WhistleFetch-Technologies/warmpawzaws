@@ -3,9 +3,7 @@
 import { useState } from 'react';
 import { Shield } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
-import { Button } from '@warmpawz/ui/button';
-import { Input } from '@warmpawz/ui/input';
-import { Label } from '@warmpawz/ui/label';
+import { Button, Input } from '@warmpawz/ui';
 
 interface AdminAuthProps {
   onAuthSuccess: (session: any) => void;
@@ -217,7 +215,7 @@ export function AdminAuth({ onAuthSuccess }: AdminAuthProps) {
             {isSignUp && (
               <>
                 <div>
-                  <Label htmlFor="name">Full Name</Label>
+                  <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
                   <Input
                     id="name"
                     type="text"
@@ -229,7 +227,7 @@ export function AdminAuth({ onAuthSuccess }: AdminAuthProps) {
                   />
                 </div>
                 <div>
-                  <Label htmlFor="masterKey">Master Key</Label>
+                  <label htmlFor="masterKey" className="block text-sm font-medium text-gray-700 mb-1">Master Key</label>
                   <Input
                     id="masterKey"
                     type="password"
@@ -247,7 +245,7 @@ export function AdminAuth({ onAuthSuccess }: AdminAuthProps) {
             )}
 
             <div>
-              <Label htmlFor="email">Email</Label>
+              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">Email</label>
               <Input
                 id="email"
                 type="email"
@@ -260,7 +258,7 @@ export function AdminAuth({ onAuthSuccess }: AdminAuthProps) {
             </div>
 
             <div>
-              <Label htmlFor="password">Password</Label>
+              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">Password</label>
               <Input
                 id="password"
                 type="password"
