@@ -188,7 +188,7 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
                 pattern="[0-9]*"
                 maxLength={6}
                 value={otpCode}
-                onChange={(e) => setOtpCode(e.target.value.replace(/[^0-9]/g, ''))}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setOtpCode(e.target.value.replace(/[^0-9]/g, ''))}
                 className="w-full text-center text-2xl tracking-widest h-14 border border-gray-300 rounded-lg focus:border-primary focus:ring-2 focus:ring-primary outline-none px-4"
                 placeholder="••••••"
                 required
@@ -263,7 +263,7 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
                   pattern="[0-9]*"
                   maxLength={10}
                   value={phoneNumber}
-                  onChange={(e) => setPhoneNumber(e.target.value.replace(/[^0-9]/g, ''))}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPhoneNumber(e.target.value.replace(/[^0-9]/g, ''))}
                   className="flex-1 h-12 border border-gray-300 rounded-lg focus:border-primary focus:ring-2 focus:ring-primary outline-none px-4"
                   placeholder="9876543210"
                   required

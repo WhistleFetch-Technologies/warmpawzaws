@@ -310,13 +310,13 @@ export default function ServiceCatalogPage() {
                 type="text"
                 placeholder="Search services..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
               />
             </div>
             <select
               value={filterCategory}
-              onChange={(e) => setFilterCategory(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilterCategory(e.target.value)}
               className="px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
             >
               <option value="">All Categories</option>
@@ -326,7 +326,7 @@ export default function ServiceCatalogPage() {
             </select>
             <select
               value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilterStatus(e.target.value)}
               className="px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
             >
               <option value="">All Status</option>
@@ -336,7 +336,7 @@ export default function ServiceCatalogPage() {
             </select>
             <select
               value={filterStyle}
-              onChange={(e) => setFilterStyle(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilterStyle(e.target.value)}
               className="px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
             >
               <option value="">All Styles</option>
@@ -469,7 +469,7 @@ export default function ServiceCatalogPage() {
                   <input
                     type="text"
                     value={formData.service_name || ''}
-                    onChange={(e) => setFormData(prev => ({ ...prev, service_name: e.target.value }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, service_name: e.target.value }))}
                     className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
                     placeholder="e.g., full_grooming"
                   />
@@ -479,7 +479,7 @@ export default function ServiceCatalogPage() {
                   <input
                     type="text"
                     value={formData.display_name || ''}
-                    onChange={(e) => setFormData(prev => ({ ...prev, display_name: e.target.value }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, display_name: e.target.value }))}
                     className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
                     placeholder="e.g., Full Grooming Package"
                   />
@@ -490,7 +490,7 @@ export default function ServiceCatalogPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
                 <textarea
                   value={formData.description || ''}
-                  onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData(prev => ({ ...prev, description: e.target.value }))}
                   rows={3}
                   className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none resize-none"
                 />
@@ -501,7 +501,7 @@ export default function ServiceCatalogPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
                   <select
                     value={formData.category_id || ''}
-                    onChange={(e) => setFormData(prev => ({ ...prev, category_id: e.target.value }))}
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData(prev => ({ ...prev, category_id: e.target.value }))}
                     className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
                   >
                     <option value="">Select Category</option>
@@ -514,7 +514,7 @@ export default function ServiceCatalogPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Service Style</label>
                   <select
                     value={formData.service_style || 'centre'}
-                    onChange={(e) => setFormData(prev => ({ ...prev, service_style: e.target.value as any }))}
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData(prev => ({ ...prev, service_style: e.target.value as any }))}
                     className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
                   >
                     {SERVICE_STYLES.map(style => (
@@ -530,7 +530,7 @@ export default function ServiceCatalogPage() {
                   <input
                     type="number"
                     value={formData.base_price || 0}
-                    onChange={(e) => setFormData(prev => ({ ...prev, base_price: Number(e.target.value) }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, base_price: Number(e.target.value) }))}
                     className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
                   />
                 </div>
@@ -539,7 +539,7 @@ export default function ServiceCatalogPage() {
                   <input
                     type="number"
                     value={formData.duration_minutes || 30}
-                    onChange={(e) => setFormData(prev => ({ ...prev, duration_minutes: Number(e.target.value) }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, duration_minutes: Number(e.target.value) }))}
                     className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
                   />
                 </div>
@@ -579,7 +579,7 @@ export default function ServiceCatalogPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
                   <select
                     value={formData.status || 'active'}
-                    onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value as any }))}
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData(prev => ({ ...prev, status: e.target.value as any }))}
                     className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
                   >
                     <option value="active">Active</option>
@@ -591,7 +591,7 @@ export default function ServiceCatalogPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Publish Status</label>
                   <select
                     value={formData.publish_status || 'published'}
-                    onChange={(e) => setFormData(prev => ({ ...prev, publish_status: e.target.value as any }))}
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData(prev => ({ ...prev, publish_status: e.target.value as any }))}
                     className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
                   >
                     <option value="published">Published</option>

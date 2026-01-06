@@ -239,7 +239,7 @@ export default function ShopPage() {
               type="text"
               placeholder="Search products..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
               className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
             />
           </div>
@@ -279,7 +279,7 @@ export default function ShopPage() {
           <div className="flex items-center gap-3">
             <select
               value={selectedPetType}
-              onChange={(e) => setSelectedPetType(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSelectedPetType(e.target.value)}
               className="px-3 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
             >
               <option value="">All Pets</option>
@@ -291,7 +291,7 @@ export default function ShopPage() {
           </div>
           <select
             value={sortBy}
-            onChange={(e) => setSortBy(e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSortBy(e.target.value)}
             className="px-3 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
           >
             <option value="popular">Most Popular</option>

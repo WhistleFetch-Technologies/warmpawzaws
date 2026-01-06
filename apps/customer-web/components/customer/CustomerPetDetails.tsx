@@ -369,7 +369,7 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
                   {editMode ? (
                     <select
                       value={pet.type}
-                      onChange={(e) => setPet({ ...pet, type: e.target.value })}
+                      onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setPet({ ...pet, type: e.target.value })}
                       className="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                     >
                       <option value="Dog">Dog</option>
@@ -388,7 +388,7 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
                     <input
                       type="text"
                       value={pet.breed}
-                      onChange={(e) => setPet({ ...pet, breed: e.target.value })}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPet({ ...pet, breed: e.target.value })}
                       className="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                     />
                   ) : (
@@ -404,7 +404,7 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
                     <input
                       type="text"
                       value={pet.age}
-                      onChange={(e) => setPet({ ...pet, age: e.target.value })}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPet({ ...pet, age: e.target.value })}
                       placeholder="e.g., 2 years"
                       className="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                     />
@@ -417,7 +417,7 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
                   {editMode ? (
                     <select
                       value={pet.gender}
-                      onChange={(e) => setPet({ ...pet, gender: e.target.value })}
+                      onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setPet({ ...pet, gender: e.target.value })}
                       className="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                     >
                       <option value="">Select</option>
@@ -436,7 +436,7 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
                   <input
                     type="text"
                     value={pet.weight}
-                    onChange={(e) => setPet({ ...pet, weight: e.target.value })}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPet({ ...pet, weight: e.target.value })}
                     placeholder="e.g., 15 kg"
                     className="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                   />

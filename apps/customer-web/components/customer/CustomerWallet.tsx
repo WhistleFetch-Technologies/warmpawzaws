@@ -316,7 +316,7 @@ export function CustomerWallet({ customerPhone }: CustomerWalletProps) {
           <h2 className="text-lg font-semibold text-gray-900">Transaction History</h2>
           <select
             value={filter}
-            onChange={(e) => setFilter(e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilter(e.target.value)}
             className="text-sm border rounded-lg px-3 py-2"
           >
             <option value="all">All</option>
@@ -393,7 +393,7 @@ export function CustomerWallet({ customerPhone }: CustomerWalletProps) {
                 min="100"
                 step="100"
                 value={topUpAmount}
-                onChange={(e) => setTopUpAmount(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTopUpAmount(e.target.value)}
                 placeholder="Enter amount"
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
               />

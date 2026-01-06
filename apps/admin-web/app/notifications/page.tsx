@@ -276,7 +276,7 @@ export default function NotificationsPage() {
                 <input
                   type="text"
                   value={formData.title}
-                  onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, title: e.target.value }))}
                   className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
                   placeholder="Notification title"
                 />
@@ -286,7 +286,7 @@ export default function NotificationsPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Message *</label>
                 <textarea
                   value={formData.message}
-                  onChange={(e) => setFormData(prev => ({ ...prev, message: e.target.value }))}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData(prev => ({ ...prev, message: e.target.value }))}
                   rows={4}
                   className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none resize-none"
                   placeholder="Notification message"
@@ -298,7 +298,7 @@ export default function NotificationsPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
                   <select
                     value={formData.type}
-                    onChange={(e) => setFormData(prev => ({ ...prev, type: e.target.value as any }))}
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData(prev => ({ ...prev, type: e.target.value as any }))}
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 outline-none"
                   >
                     <option value="info">Info</option>
@@ -311,7 +311,7 @@ export default function NotificationsPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Target Audience</label>
                   <select
                     value={formData.target_audience}
-                    onChange={(e) => setFormData(prev => ({ ...prev, target_audience: e.target.value as any }))}
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData(prev => ({ ...prev, target_audience: e.target.value as any }))}
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 outline-none"
                   >
                     <option value="all">All Users</option>
@@ -344,7 +344,7 @@ export default function NotificationsPage() {
                 <input
                   type="datetime-local"
                   value={formData.scheduled_at}
-                  onChange={(e) => setFormData(prev => ({ ...prev, scheduled_at: e.target.value }))}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, scheduled_at: e.target.value }))}
                   className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 outline-none"
                 />
                 <p className="text-xs text-gray-500 mt-1">Leave empty to send immediately</p>

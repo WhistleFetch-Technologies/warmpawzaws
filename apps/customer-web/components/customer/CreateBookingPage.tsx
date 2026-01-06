@@ -109,7 +109,7 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
             ) : (
               <select 
                 value={formData.petId} 
-                onChange={(e) => setFormData({...formData, petId: e.target.value})}
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData({...formData, petId: e.target.value})}
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                 required
               >
@@ -133,7 +133,7 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
                 <input
                   type="date"
                   value={formData.scheduledDate}
-                  onChange={(e) => setFormData({...formData, scheduledDate: e.target.value})}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({...formData, scheduledDate: e.target.value})}
                   className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                   min={new Date().toISOString().split('T')[0]}
                   required
@@ -147,7 +147,7 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
                 <input
                   type="time"
                   value={formData.scheduledTime}
-                  onChange={(e) => setFormData({...formData, scheduledTime: e.target.value})}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({...formData, scheduledTime: e.target.value})}
                   className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                   required
                 />
@@ -164,7 +164,7 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
               type="text"
               placeholder="Street Address"
               value={formData.address.street}
-              onChange={(e) => setFormData({
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({
                 ...formData,
                 address: { ...formData.address, street: e.target.value }
               })}
@@ -175,7 +175,7 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
                 type="text"
                 placeholder="City"
                 value={formData.address.city}
-                onChange={(e) => setFormData({
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({
                   ...formData,
                   address: { ...formData.address, city: e.target.value }
                 })}
@@ -185,7 +185,7 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
                 type="text"
                 placeholder="State"
                 value={formData.address.state}
-                onChange={(e) => setFormData({
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({
                   ...formData,
                   address: { ...formData.address, state: e.target.value }
                 })}
@@ -196,7 +196,7 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
               type="text"
               placeholder="Pincode"
               value={formData.address.pincode}
-              onChange={(e) => setFormData({
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({
                 ...formData,
                 address: { ...formData.address, pincode: e.target.value }
               })}
@@ -210,7 +210,7 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
             <textarea
               placeholder="Any special instructions or notes..."
               value={formData.notes}
-              onChange={(e) => setFormData({...formData, notes: e.target.value})}
+              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData({...formData, notes: e.target.value})}
               rows={4}
               className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none resize-none"
             />

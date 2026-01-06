@@ -48,7 +48,7 @@ export function GeneralSettingsTab() {
           <input
             type="text"
             value={settings.platformName}
-            onChange={(e) => setSettings(prev => ({ ...prev, platformName: e.target.value }))}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSettings(prev => ({ ...prev, platformName: e.target.value }))}
             className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
           />
         </div>
@@ -57,7 +57,7 @@ export function GeneralSettingsTab() {
           <input
             type="text"
             value={settings.timezone}
-            onChange={(e) => setSettings(prev => ({ ...prev, timezone: e.target.value }))}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSettings(prev => ({ ...prev, timezone: e.target.value }))}
             className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
             placeholder="UTC"
           />
@@ -67,7 +67,7 @@ export function GeneralSettingsTab() {
           <input
             type="text"
             value={settings.dateFormat}
-            onChange={(e) => setSettings(prev => ({ ...prev, dateFormat: e.target.value }))}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSettings(prev => ({ ...prev, dateFormat: e.target.value }))}
             className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
             placeholder="DD/MM/YYYY"
           />

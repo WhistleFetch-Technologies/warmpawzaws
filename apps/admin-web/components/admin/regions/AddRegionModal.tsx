@@ -153,7 +153,7 @@ export function AddRegionModal({ onClose, onSuccess }: AddRegionModalProps) {
                   <input
                     type="text"
                     value={formData.regionName}
-                    onChange={(e) => setFormData(prev => ({ ...prev, regionName: e.target.value }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, regionName: e.target.value }))}
                     className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                     placeholder="e.g., Canada"
                   />
@@ -165,7 +165,7 @@ export function AddRegionModal({ onClose, onSuccess }: AddRegionModalProps) {
                   <input
                     type="text"
                     value={formData.regionCode}
-                    onChange={(e) => setFormData(prev => ({ ...prev, regionCode: e.target.value.toUpperCase() }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, regionCode: e.target.value.toUpperCase() }))}
                     className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                     placeholder="e.g., CA"
                     maxLength={2}
@@ -179,7 +179,7 @@ export function AddRegionModal({ onClose, onSuccess }: AddRegionModalProps) {
                     <input
                       type="text"
                       value={formData.currencyCode}
-                      onChange={(e) => setFormData(prev => ({ ...prev, currencyCode: e.target.value.toUpperCase() }))}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, currencyCode: e.target.value.toUpperCase() }))}
                       className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                       placeholder="CAD"
                       maxLength={3}
@@ -192,7 +192,7 @@ export function AddRegionModal({ onClose, onSuccess }: AddRegionModalProps) {
                     <input
                       type="text"
                       value={formData.currencySymbol}
-                      onChange={(e) => setFormData(prev => ({ ...prev, currencySymbol: e.target.value }))}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, currencySymbol: e.target.value }))}
                       className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                       placeholder="$"
                     />

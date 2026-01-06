@@ -370,7 +370,7 @@ export default function DonationsPage() {
                 <input
                   type="number"
                   value={donationForm.amount}
-                  onChange={(e) => setDonationForm(prev => ({ ...prev, amount: Number(e.target.value) }))}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDonationForm(prev => ({ ...prev, amount: Number(e.target.value) }))}
                   className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none text-lg font-semibold"
                   min="1"
                   placeholder="Enter amount"
@@ -410,7 +410,7 @@ export default function DonationsPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-2">Message (optional)</label>
                 <textarea
                   value={donationForm.message}
-                  onChange={(e) => setDonationForm(prev => ({ ...prev, message: e.target.value }))}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setDonationForm(prev => ({ ...prev, message: e.target.value }))}
                   rows={3}
                   className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 outline-none resize-none"
                   placeholder="Leave a message of support..."
@@ -421,7 +421,7 @@ export default function DonationsPage() {
                 <input
                   type="checkbox"
                   checked={donationForm.anonymous}
-                  onChange={(e) => setDonationForm(prev => ({ ...prev, anonymous: e.target.checked }))}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDonationForm(prev => ({ ...prev, anonymous: e.target.checked }))}
                   className="rounded text-orange-500"
                 />
                 <span className="text-sm text-gray-700">Donate anonymously</span>

@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { SpecializedServiceRouter } from './specialized/SpecializedServiceRouter';
 
 interface Service {
   id: string;
@@ -47,11 +48,23 @@ declare global {
   }
 }
 
+// Specialized service types that need custom booking flows
+const SPECIALIZED_SERVICES = [
+  'ambulance', 'emergency',
+  'diagnostics', 'diagnostic', 'lab', 'laboratory',
+  'pharmacy', 'medicine', 'medicine_delivery',
+  'pet_cafe', 'cafe',
+  'pet_resort', 'resort', 'boarding',
+  'pet_walker', 'walker', 'walking',
+  'adoption', 'breeder', 'breeding',
+];
+
 export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
   const router = useRouter();
   const [step, setStep] = useState<'details' | 'datetime' | 'pet' | 'address' | 'payment' | 'confirmed'>('details');
   const [loading, setLoading] = useState(true);
   const [service, setService] = useState<Service | null>(null);
+  const [isSpecialized, setIsSpecialized] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [selectedTime, setSelectedTime] = useState<string>('');
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
@@ -90,6 +103,15 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
       const response = await apiClient.get<any>(`/services/${serviceId}`);
       if (response.service) {
         setService(response.service);
+        
+        // Check if this is a specialized service
+        const serviceName = (response.service.name || '').toLowerCase();
+        const serviceStyle = (response.service.service_style || '').toLowerCase();
+        const isSpecializedService = SPECIALIZED_SERVICES.some(type => 
+          serviceName.includes(type) || serviceStyle.includes(type) || serviceId.toLowerCase().includes(type)
+        );
+        
+        setIsSpecialized(isSpecializedService);
       }
     } catch (err) {
       console.error('Error loading service:', err);
@@ -237,6 +259,22 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
       setProcessing(false);
     }
   };
+
+  // Route to specialized service if detected
+  if (!loading && service && isSpecialized) {
+    return (
+      <SpecializedServiceRouter
+        serviceType={service.service_style || service.name || serviceId}
+        vendorId={service.vendor_id}
+        customerPhone={customerPhone}
+        onSuccess={(bookingId) => {
+          setBookingId(bookingId);
+          router.push(`/bookings/${bookingId}`);
+        }}
+        onCancel={() => router.push('/')}
+      />
+    );
+  }
 
   if (loading) {
     return (
@@ -496,7 +534,7 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
               </div>
               <textarea
                 value={notes}
-                onChange={(e) => setNotes(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNotes(e.target.value)}
                 placeholder="Add notes for the provider (optional)"
                 rows={2}
                 className="w-full mt-4 px-4 py-3 border rounded-xl focus:ring-2 focus:ring-orange-500"

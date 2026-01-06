@@ -51,7 +51,7 @@ export function NotificationSettingsTab() {
           <input
             type="checkbox"
             checked={settings.emailNotifications}
-            onChange={(e) => setSettings(prev => ({ ...prev, emailNotifications: e.target.checked }))}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSettings(prev => ({ ...prev, emailNotifications: e.target.checked }))}
             className="w-4 h-4 text-orange-600 rounded"
           />
         </div>
@@ -60,7 +60,7 @@ export function NotificationSettingsTab() {
           <input
             type="checkbox"
             checked={settings.pushNotifications}
-            onChange={(e) => setSettings(prev => ({ ...prev, pushNotifications: e.target.checked }))}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSettings(prev => ({ ...prev, pushNotifications: e.target.checked }))}
             className="w-4 h-4 text-orange-600 rounded"
           />
         </div>
@@ -69,7 +69,7 @@ export function NotificationSettingsTab() {
           <input
             type="checkbox"
             checked={settings.smsNotifications}
-            onChange={(e) => setSettings(prev => ({ ...prev, smsNotifications: e.target.checked }))}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSettings(prev => ({ ...prev, smsNotifications: e.target.checked }))}
             className="w-4 h-4 text-orange-600 rounded"
           />
         </div>

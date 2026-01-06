@@ -591,7 +591,7 @@ function AddTimeWindowModal({
             <label className="block text-sm font-medium text-gray-700 mb-2">Start Time</label>
             <select
               value={newTimeWindow.startTime}
-              onChange={(e) => setNewTimeWindow({ ...newTimeWindow, startTime: e.target.value })}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setNewTimeWindow({ ...newTimeWindow, startTime: e.target.value })}
               className="w-full p-3 border border-gray-300 rounded-lg"
             >
               {TIME_OPTIONS.map(time => (
@@ -604,7 +604,7 @@ function AddTimeWindowModal({
             <label className="block text-sm font-medium text-gray-700 mb-2">End Time</label>
             <select
               value={newTimeWindow.endTime}
-              onChange={(e) => setNewTimeWindow({ ...newTimeWindow, endTime: e.target.value })}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setNewTimeWindow({ ...newTimeWindow, endTime: e.target.value })}
               className="w-full p-3 border border-gray-300 rounded-lg"
             >
               {TIME_OPTIONS.map(time => (
@@ -681,7 +681,7 @@ function AddServiceConfigModal({
             <label className="block text-sm font-medium text-gray-700 mb-2">Service Type</label>
             <select
               value={serviceStyle}
-              onChange={(e) => setServiceStyle(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setServiceStyle(e.target.value)}
               className="w-full p-3 border border-gray-300 rounded-lg"
             >
               {availableStyles.map(style => (
@@ -696,7 +696,7 @@ function AddServiceConfigModal({
             <label className="block text-sm font-medium text-gray-700 mb-2">Slot Duration</label>
             <select
               value={slotDuration}
-              onChange={(e) => setSlotDuration(Number(e.target.value))}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSlotDuration(Number(e.target.value))}
               className="w-full p-3 border border-gray-300 rounded-lg"
             >
               {SLOT_DURATIONS.map(duration => (
@@ -715,7 +715,7 @@ function AddServiceConfigModal({
               <label className="block text-sm font-medium text-gray-700 mb-2">Service Area (km)</label>
               <select
                 value={serviceArea}
-                onChange={(e) => setServiceArea(Number(e.target.value))}
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setServiceArea(Number(e.target.value))}
                 className="w-full p-3 border border-gray-300 rounded-lg"
               >
                 {SERVICE_AREAS.map(area => (

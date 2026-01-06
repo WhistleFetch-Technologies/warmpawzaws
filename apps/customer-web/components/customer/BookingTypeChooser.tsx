@@ -230,7 +230,7 @@ export function BookingTypeChooser({ onTypeSelected, onProblemSearch }: BookingT
               <input
                 type="text"
                 value={problemQuery}
-                onChange={(e) => setProblemQuery(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProblemQuery(e.target.value)}
                 placeholder="Search for a problem or symptom..."
                 className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
               />

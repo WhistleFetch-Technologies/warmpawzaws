@@ -248,7 +248,7 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
                 <input
                   type="text"
                   value={petData.name}
-                  onChange={(e) => setPetData({ ...petData, name: e.target.value })}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPetData({ ...petData, name: e.target.value })}
                   placeholder="Enter pet name"
                   className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                   required
@@ -259,7 +259,7 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Type *</label>
                 <select
                   value={petData.type}
-                  onChange={(e) => setPetData({ ...petData, type: e.target.value })}
+                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setPetData({ ...petData, type: e.target.value })}
                   className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                 >
                   <option value="Dog">Dog</option>
@@ -275,7 +275,7 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
                 <input
                   type="text"
                   value={petData.breed}
-                  onChange={(e) => setPetData({ ...petData, breed: e.target.value })}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPetData({ ...petData, breed: e.target.value })}
                   placeholder="Enter breed"
                   className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                   required
@@ -288,7 +288,7 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
                   <input
                     type="text"
                     value={petData.age}
-                    onChange={(e) => setPetData({ ...petData, age: e.target.value })}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPetData({ ...petData, age: e.target.value })}
                     placeholder="e.g., 2 years"
                     className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                     required
@@ -298,7 +298,7 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
                   <label className="block text-sm font-semibold text-gray-700 mb-2">Gender</label>
                   <select
                     value={petData.gender}
-                    onChange={(e) => setPetData({ ...petData, gender: e.target.value })}
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setPetData({ ...petData, gender: e.target.value })}
                     className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                   >
                     <option value="">Select</option>
@@ -313,7 +313,7 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
                 <input
                   type="text"
                   value={petData.weight}
-                  onChange={(e) => setPetData({ ...petData, weight: e.target.value })}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPetData({ ...petData, weight: e.target.value })}
                   placeholder="e.g., 15 kg"
                   className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                 />
@@ -339,7 +339,7 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
                 <input
                   type="date"
                   value={petData.healthRecords?.lastCheckup || ''}
-                  onChange={(e) => setPetData({
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPetData({
                     ...petData,
                     healthRecords: { ...petData.healthRecords!, lastCheckup: e.target.value }
                   })}
@@ -351,7 +351,7 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Allergies</label>
                 <textarea
                   value={petData.healthRecords?.allergies || ''}
-                  onChange={(e) => setPetData({
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setPetData({
                     ...petData,
                     healthRecords: { ...petData.healthRecords!, allergies: e.target.value }
                   })}
@@ -365,7 +365,7 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Current Medications</label>
                 <textarea
                   value={petData.healthRecords?.medications || ''}
-                  onChange={(e) => setPetData({
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setPetData({
                     ...petData,
                     healthRecords: { ...petData.healthRecords!, medications: e.target.value }
                   })}
@@ -379,7 +379,7 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Medical Conditions</label>
                 <textarea
                   value={petData.healthRecords?.conditions || ''}
-                  onChange={(e) => setPetData({
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setPetData({
                     ...petData,
                     healthRecords: { ...petData.healthRecords!, conditions: e.target.value }
                   })}
@@ -418,7 +418,7 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
                 <input
                   type="date"
                   value={petData.vaccinations?.rabies || ''}
-                  onChange={(e) => setPetData({
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPetData({
                     ...petData,
                     vaccinations: { ...petData.vaccinations!, rabies: e.target.value }
                   })}
@@ -431,7 +431,7 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
                 <input
                   type="date"
                   value={petData.vaccinations?.distemper || ''}
-                  onChange={(e) => setPetData({
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPetData({
                     ...petData,
                     vaccinations: { ...petData.vaccinations!, distemper: e.target.value }
                   })}
@@ -444,7 +444,7 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
                 <input
                   type="date"
                   value={petData.vaccinations?.parvovirus || ''}
-                  onChange={(e) => setPetData({
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPetData({
                     ...petData,
                     vaccinations: { ...petData.vaccinations!, parvovirus: e.target.value }
                   })}
@@ -456,7 +456,7 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Other Vaccinations</label>
                 <textarea
                   value={petData.vaccinations?.other || ''}
-                  onChange={(e) => setPetData({
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setPetData({
                     ...petData,
                     vaccinations: { ...petData.vaccinations!, other: e.target.value }
                   })}

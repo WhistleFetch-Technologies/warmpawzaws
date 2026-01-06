@@ -166,7 +166,7 @@ export function VendorCustomServiceCreation({
                   <input
                     type="text"
                     value={serviceName}
-                    onChange={(e) => setServiceName(e.target.value)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setServiceName(e.target.value)}
                     placeholder="e.g., Premium Grooming Package"
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
                   />
@@ -179,7 +179,7 @@ export function VendorCustomServiceCreation({
                   <input
                     type="text"
                     value={categoryName}
-                    onChange={(e) => setCategoryName(e.target.value)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCategoryName(e.target.value)}
                     placeholder="e.g., Grooming"
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
                   />
@@ -191,7 +191,7 @@ export function VendorCustomServiceCreation({
                   </label>
                   <textarea
                     value={description}
-                    onChange={(e) => setDescription(e.target.value)}
+                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setDescription(e.target.value)}
                     placeholder="Describe your custom service..."
                     rows={3}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42] resize-none"
@@ -206,7 +206,7 @@ export function VendorCustomServiceCreation({
                     <input
                       type="number"
                       value={price}
-                      onChange={(e) => setPrice(parseFloat(e.target.value) || 0)}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPrice(parseFloat(e.target.value) || 0)}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
                     />
                   </div>
@@ -218,7 +218,7 @@ export function VendorCustomServiceCreation({
                     <input
                       type="number"
                       value={duration}
-                      onChange={(e) => setDuration(parseInt(e.target.value) || 60)}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDuration(parseInt(e.target.value) || 60)}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
                     />
                   </div>
@@ -229,7 +229,7 @@ export function VendorCustomServiceCreation({
                     type="checkbox"
                     id="isPackage"
                     checked={isPackage}
-                    onChange={(e) => setIsPackage(e.target.checked)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setIsPackage(e.target.checked)}
                     className="w-4 h-4"
                   />
                   <label htmlFor="isPackage" className="text-sm text-gray-700">

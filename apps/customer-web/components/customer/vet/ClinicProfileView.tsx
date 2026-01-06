@@ -292,7 +292,7 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
                 type="text"
                 placeholder="Search doctors..."
                 value={doctorSearchQuery}
-                onChange={(e) => setDoctorSearchQuery(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDoctorSearchQuery(e.target.value)}
                 className="w-full p-2 border border-gray-300 rounded-lg mb-3"
               />
               {doctors.length === 0 ? (

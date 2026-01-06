@@ -306,7 +306,7 @@ function RefundDetailModal({
           )}
         </div>
 
-        {refund.status === 'pending' && (
+        {(refund.status as any) === 'pending' && (
           <div className="border-t pt-4">
             <h3 className="font-semibold mb-3">Take Action</h3>
             <div className="flex gap-3 mb-4">
@@ -336,7 +336,7 @@ function RefundDetailModal({
                   </label>
                   <textarea
                     value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
+                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNotes(e.target.value)}
                     rows={3}
                     className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                     placeholder={action === 'approve' ? 'Optional notes...' : 'Please provide a reason...'}
@@ -369,7 +369,7 @@ function RefundDetailModal({
           </div>
         )}
 
-        {refund.status !== 'pending' && (
+        {(refund.status as any) !== 'pending' && (
           <div className={`p-4 rounded-lg ${
             refund.status === 'approved' ? 'bg-green-50' : 'bg-red-50'
           }`}>

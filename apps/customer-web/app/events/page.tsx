@@ -222,12 +222,12 @@ export default function EventsPage() {
                 type="text"
                 placeholder="Search events..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
                 className="flex-1 min-w-[200px] px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
               />
               <select
                 value={filterCategory}
-                onChange={(e) => setFilterCategory(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilterCategory(e.target.value)}
                 className="px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
               >
                 <option value="">All Categories</option>
@@ -239,7 +239,7 @@ export default function EventsPage() {
               </select>
               <select
                 value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilterStatus(e.target.value)}
                 className="px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
               >
                 <option value="">All Status</option>

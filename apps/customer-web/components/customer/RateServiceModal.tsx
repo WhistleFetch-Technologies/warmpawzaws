@@ -184,7 +184,7 @@ export function RateServiceModal({
             <label className="block text-sm font-medium mb-2">Write a review (optional)</label>
             <textarea
               value={review}
-              onChange={(e) => setReview(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setReview(e.target.value)}
               className="w-full p-3 border border-gray-300 rounded-lg"
               rows={4}
               placeholder="Share your experience..."

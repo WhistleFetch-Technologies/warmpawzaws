@@ -212,7 +212,7 @@ export default function AuthPage() {
                   type="tel"
                   maxLength={10}
                   value={phone}
-                  onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPhone(e.target.value.replace(/\D/g, ''))}
                   placeholder="74493 38923"
                   disabled={otpSent}
                   className="flex-1 py-4 pr-4 text-lg outline-none disabled:bg-gray-50 disabled:text-gray-500"
@@ -267,7 +267,7 @@ export default function AuthPage() {
                       inputMode="numeric"
                       maxLength={1}
                       value={otp[index] || ''}
-                      onChange={(e) => {
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                         const value = e.target.value.replace(/\D/g, '');
                         const newOtp = otp.split('');
                         newOtp[index] = value;

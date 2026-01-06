@@ -122,7 +122,7 @@ export function VendorBookingsPage({ vendorId }: VendorBookingsPageProps) {
         </div>
         <select
           value={filter}
-          onChange={(e) => setFilter(e.target.value)}
+          onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilter(e.target.value)}
           className="px-4 py-2 bg-white border rounded-lg text-sm"
         >
           <option value="all">All Status</option>

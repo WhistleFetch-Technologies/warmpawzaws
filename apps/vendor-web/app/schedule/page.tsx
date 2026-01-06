@@ -188,7 +188,7 @@ export default function SchedulePage() {
                   <input
                     type="number"
                     value={editingSchedule.slot_duration_minutes}
-                    onChange={(e) => setEditingSchedule({
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditingSchedule({
                       ...editingSchedule,
                       slot_duration_minutes: parseInt(e.target.value)
                     })}
@@ -200,7 +200,7 @@ export default function SchedulePage() {
                   <input
                     type="number"
                     value={editingSchedule.buffer_minutes}
-                    onChange={(e) => setEditingSchedule({
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditingSchedule({
                       ...editingSchedule,
                       buffer_minutes: parseInt(e.target.value)
                     })}
@@ -216,7 +216,7 @@ export default function SchedulePage() {
                       <input
                         type="checkbox"
                         checked={slot.is_available}
-                        onChange={(e) => updateTimeSlot(index, 'is_available', e.target.checked)}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateTimeSlot(index, 'is_available', e.target.checked)}
                         className="w-4 h-4 text-orange-500"
                       />
                       <span className="font-medium">{slot.day}</span>
@@ -224,7 +224,7 @@ export default function SchedulePage() {
                     <input
                       type="time"
                       value={slot.start_time}
-                      onChange={(e) => updateTimeSlot(index, 'start_time', e.target.value)}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateTimeSlot(index, 'start_time', e.target.value)}
                       disabled={!slot.is_available}
                       className="p-2 border rounded-lg disabled:bg-gray-100"
                     />
@@ -232,7 +232,7 @@ export default function SchedulePage() {
                     <input
                       type="time"
                       value={slot.end_time}
-                      onChange={(e) => updateTimeSlot(index, 'end_time', e.target.value)}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateTimeSlot(index, 'end_time', e.target.value)}
                       disabled={!slot.is_available}
                       className="p-2 border rounded-lg disabled:bg-gray-100"
                     />
@@ -246,7 +246,7 @@ export default function SchedulePage() {
                   <input
                     type="time"
                     value={editingSchedule.break_time_start || ''}
-                    onChange={(e) => setEditingSchedule({
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditingSchedule({
                       ...editingSchedule,
                       break_time_start: e.target.value
                     })}
@@ -258,7 +258,7 @@ export default function SchedulePage() {
                   <input
                     type="time"
                     value={editingSchedule.break_time_end || ''}
-                    onChange={(e) => setEditingSchedule({
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditingSchedule({
                       ...editingSchedule,
                       break_time_end: e.target.value
                     })}

@@ -246,7 +246,7 @@ export function PackageBookingPage({ customerPhone, customerId, petId, onBack }:
                     <input
                       type="date"
                       value={scheduledDates[idx] || ''}
-                      onChange={(e) => {
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                         const newDates = [...scheduledDates];
                         newDates[idx] = e.target.value;
                         setScheduledDates(newDates);

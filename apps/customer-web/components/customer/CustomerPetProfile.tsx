@@ -341,7 +341,7 @@ export function CustomerPetProfile({ phone, onComplete, onBack }: CustomerPetPro
           <input
             type="text"
             value={currentPet.name}
-            onChange={(e) => setCurrentPet({ ...currentPet, name: e.target.value })}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCurrentPet({ ...currentPet, name: e.target.value })}
             placeholder="e.g., Oreo, Max, Bella"
             className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/20 transition-all"
           />
@@ -378,7 +378,7 @@ export function CustomerPetProfile({ phone, onComplete, onBack }: CustomerPetPro
           <input
             type="text"
             value={currentPet.breed}
-            onChange={(e) => setCurrentPet({ ...currentPet, breed: e.target.value })}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCurrentPet({ ...currentPet, breed: e.target.value })}
             placeholder="e.g., Golden Retriever, Persian"
             className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/20 transition-all"
           />
@@ -393,7 +393,7 @@ export function CustomerPetProfile({ phone, onComplete, onBack }: CustomerPetPro
             <input
               type="number"
               value={currentPet.age}
-              onChange={(e) => setCurrentPet({ ...currentPet, age: e.target.value })}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCurrentPet({ ...currentPet, age: e.target.value })}
               placeholder="e.g., 3"
               className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/20 transition-all"
             />
@@ -404,7 +404,7 @@ export function CustomerPetProfile({ phone, onComplete, onBack }: CustomerPetPro
             </label>
             <select
               value={currentPet.gender}
-              onChange={(e) => setCurrentPet({ ...currentPet, gender: e.target.value })}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setCurrentPet({ ...currentPet, gender: e.target.value })}
               className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/20 transition-all"
             >
               <option value="">Select</option>
@@ -423,7 +423,7 @@ export function CustomerPetProfile({ phone, onComplete, onBack }: CustomerPetPro
             type="number"
             step="0.1"
             value={currentPet.weight}
-            onChange={(e) => setCurrentPet({ ...currentPet, weight: e.target.value })}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCurrentPet({ ...currentPet, weight: e.target.value })}
             placeholder="e.g., 12.5"
             className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/20 transition-all"
           />

@@ -214,7 +214,7 @@ function RoleDetailModal({
             <input
               type="text"
               value={formData.display_name}
-              onChange={(e) => setFormData({ ...formData, display_name: e.target.value })}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, display_name: e.target.value })}
               className="w-full px-3 py-2 border rounded-lg"
             />
           </div>
@@ -222,7 +222,7 @@ function RoleDetailModal({
             <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
             <textarea
               value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData({ ...formData, description: e.target.value })}
               rows={2}
               className="w-full px-3 py-2 border rounded-lg"
             />
@@ -321,7 +321,7 @@ function AddRoleModal({
             <input
               type="text"
               value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value.toLowerCase().replace(/\s+/g, '_') })}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, name: e.target.value.toLowerCase().replace(/\s+/g, '_') })}
               placeholder="e.g., pet_groomer"
               className="w-full px-3 py-2 border rounded-lg"
             />
@@ -331,7 +331,7 @@ function AddRoleModal({
             <input
               type="text"
               value={formData.display_name}
-              onChange={(e) => setFormData({ ...formData, display_name: e.target.value })}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, display_name: e.target.value })}
               placeholder="e.g., Pet Groomer"
               className="w-full px-3 py-2 border rounded-lg"
             />
@@ -340,7 +340,7 @@ function AddRoleModal({
             <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
             <textarea
               value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData({ ...formData, description: e.target.value })}
               rows={2}
               className="w-full px-3 py-2 border rounded-lg"
             />
@@ -349,7 +349,7 @@ function AddRoleModal({
             <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
             <select
               value={formData.category}
-              onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData({ ...formData, category: e.target.value })}
               className="w-full px-3 py-2 border rounded-lg"
             >
               <option value="healthcare">Healthcare</option>

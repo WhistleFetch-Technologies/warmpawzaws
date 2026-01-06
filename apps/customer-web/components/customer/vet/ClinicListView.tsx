@@ -192,7 +192,7 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
               type="text"
               placeholder="Search clinics..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
             />
           </div>
@@ -216,7 +216,7 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
               min="1"
               max="20"
               value={maxDistance}
-              onChange={(e) => setMaxDistance(Number(e.target.value))}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMaxDistance(Number(e.target.value))}
               className="w-full"
             />
           </div>
@@ -229,7 +229,7 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
               max="5"
               step="0.5"
               value={minRating}
-              onChange={(e) => setMinRating(Number(e.target.value))}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMinRating(Number(e.target.value))}
               className="w-full"
             />
           </div>
@@ -239,7 +239,7 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
               <input
                 type="checkbox"
                 checked={multispecialtyOnly}
-                onChange={(e) => setMultispecialtyOnly(e.target.checked)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMultispecialtyOnly(e.target.checked)}
                 className="rounded"
               />
               <span className="text-sm">Multispecialty only</span>
@@ -248,7 +248,7 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
               <input
                 type="checkbox"
                 checked={openNowOnly}
-                onChange={(e) => setOpenNowOnly(e.target.checked)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setOpenNowOnly(e.target.checked)}
                 className="rounded"
               />
               <span className="text-sm">Open now</span>
@@ -259,7 +259,7 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
             <label className="block text-sm font-medium mb-2">Sort by</label>
             <select
               value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as any)}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSortBy(e.target.value as any)}
               className="w-full p-2 border border-gray-300 rounded-lg"
             >
               <option value="distance">Distance</option>

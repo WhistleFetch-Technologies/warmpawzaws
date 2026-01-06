@@ -355,7 +355,7 @@ export default function SubscriptionsPage() {
                 <input
                   type="text"
                   value={planForm.name}
-                  onChange={(e) => setPlanForm(prev => ({ ...prev, name: e.target.value }))}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPlanForm(prev => ({ ...prev, name: e.target.value }))}
                   className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
                   placeholder="e.g., Monthly Grooming Pass"
                 />
@@ -365,7 +365,7 @@ export default function SubscriptionsPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
                 <textarea
                   value={planForm.description}
-                  onChange={(e) => setPlanForm(prev => ({ ...prev, description: e.target.value }))}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setPlanForm(prev => ({ ...prev, description: e.target.value }))}
                   rows={3}
                   className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none resize-none"
                   placeholder="Describe the subscription benefits"
@@ -376,7 +376,7 @@ export default function SubscriptionsPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Service *</label>
                 <select
                   value={planForm.service_id}
-                  onChange={(e) => setPlanForm(prev => ({ ...prev, service_id: e.target.value }))}
+                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setPlanForm(prev => ({ ...prev, service_id: e.target.value }))}
                   className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 outline-none"
                 >
                   <option value="">Select a service</option>
@@ -393,7 +393,7 @@ export default function SubscriptionsPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Billing Cycle *</label>
                   <select
                     value={planForm.billing_cycle}
-                    onChange={(e) => setPlanForm(prev => ({ ...prev, billing_cycle: e.target.value as any }))}
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setPlanForm(prev => ({ ...prev, billing_cycle: e.target.value as any }))}
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 outline-none"
                   >
                     <option value="weekly">Weekly</option>
@@ -407,7 +407,7 @@ export default function SubscriptionsPage() {
                   <input
                     type="number"
                     value={planForm.max_bookings_per_cycle}
-                    onChange={(e) => setPlanForm(prev => ({ ...prev, max_bookings_per_cycle: Number(e.target.value) }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPlanForm(prev => ({ ...prev, max_bookings_per_cycle: Number(e.target.value) }))}
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 outline-none"
                     min="1"
                   />
@@ -425,7 +425,7 @@ export default function SubscriptionsPage() {
                   <input
                     type="number"
                     value={planForm.price}
-                    onChange={(e) => setPlanForm(prev => ({ ...prev, price: Number(e.target.value) }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPlanForm(prev => ({ ...prev, price: Number(e.target.value) }))}
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
                   />
                 </div>
@@ -443,7 +443,7 @@ export default function SubscriptionsPage() {
                 <input
                   type="checkbox"
                   checked={planForm.is_active}
-                  onChange={(e) => setPlanForm(prev => ({ ...prev, is_active: e.target.checked }))}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPlanForm(prev => ({ ...prev, is_active: e.target.checked }))}
                   className="rounded text-orange-500"
                 />
                 <span className="text-sm text-gray-700">Plan is active and available for subscription</span>

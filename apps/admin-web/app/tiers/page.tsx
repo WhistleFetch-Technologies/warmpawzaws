@@ -295,7 +295,7 @@ export default function TiersPage() {
                   <input
                     type="text"
                     value={formData.name}
-                    onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value.toLowerCase() }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, name: e.target.value.toLowerCase() }))}
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
                     placeholder="e.g., gold"
                   />
@@ -305,7 +305,7 @@ export default function TiersPage() {
                   <input
                     type="text"
                     value={formData.display_name}
-                    onChange={(e) => setFormData(prev => ({ ...prev, display_name: e.target.value }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, display_name: e.target.value }))}
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
                     placeholder="e.g., Gold"
                   />
@@ -318,7 +318,7 @@ export default function TiersPage() {
                   <input
                     type="number"
                     value={formData.level}
-                    onChange={(e) => setFormData(prev => ({ ...prev, level: Number(e.target.value) }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, level: Number(e.target.value) }))}
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 outline-none"
                     min="1"
                   />
@@ -328,7 +328,7 @@ export default function TiersPage() {
                   <input
                     type="number"
                     value={formData.commission_rate}
-                    onChange={(e) => setFormData(prev => ({ ...prev, commission_rate: Number(e.target.value) }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, commission_rate: Number(e.target.value) }))}
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 outline-none"
                     min="0"
                     max="100"
@@ -340,7 +340,7 @@ export default function TiersPage() {
                   <input
                     type="number"
                     value={formData.min_bookings}
-                    onChange={(e) => setFormData(prev => ({ ...prev, min_bookings: Number(e.target.value) }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, min_bookings: Number(e.target.value) }))}
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 outline-none"
                     min="0"
                   />
@@ -352,7 +352,7 @@ export default function TiersPage() {
                 <input
                   type="number"
                   value={formData.min_revenue}
-                  onChange={(e) => setFormData(prev => ({ ...prev, min_revenue: Number(e.target.value) }))}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, min_revenue: Number(e.target.value) }))}
                   className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 outline-none"
                   min="0"
                 />
@@ -379,7 +379,7 @@ export default function TiersPage() {
                 <input
                   type="checkbox"
                   checked={formData.is_active}
-                  onChange={(e) => setFormData(prev => ({ ...prev, is_active: e.target.checked }))}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, is_active: e.target.checked }))}
                   className="rounded text-orange-500"
                 />
                 <span className="text-sm text-gray-700">Tier is active</span>

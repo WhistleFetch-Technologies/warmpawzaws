@@ -171,7 +171,7 @@ export function PetProfileDashboard({ phone, petData, onBack, onViewBooking }: P
             type="text"
             placeholder="Search services or vendors..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
             className="w-full pl-10 pr-4 py-3 rounded-xl border-none focus:outline-none focus:ring-2 focus:ring-white/50 bg-white/90"
           />
         </div>

@@ -207,7 +207,7 @@ export function VendorPolicyManagement({ vendorId, onClose }: PolicyManagementPr
                 type="text"
                 placeholder="Search by policy number, name, or provider..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
@@ -370,7 +370,7 @@ export function VendorPolicyManagement({ vendorId, onClose }: PolicyManagementPr
                     <input
                       type="text"
                       value={formData.policyNumber}
-                      onChange={(e) => setFormData({ ...formData, policyNumber: e.target.value })}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, policyNumber: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                       placeholder="POL-001"
                     />
@@ -380,7 +380,7 @@ export function VendorPolicyManagement({ vendorId, onClose }: PolicyManagementPr
                     <input
                       type="text"
                       value={formData.provider}
-                      onChange={(e) => setFormData({ ...formData, provider: e.target.value })}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, provider: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                       placeholder="Pet Insurance Co."
                     />
@@ -392,7 +392,7 @@ export function VendorPolicyManagement({ vendorId, onClose }: PolicyManagementPr
                   <input
                     type="text"
                     value={formData.policyName}
-                    onChange={(e) => setFormData({ ...formData, policyName: e.target.value })}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, policyName: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     placeholder="Comprehensive Pet Care Plan"
                   />
@@ -403,7 +403,7 @@ export function VendorPolicyManagement({ vendorId, onClose }: PolicyManagementPr
                     <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
                     <select
                       value={formData.policyType}
-                      onChange={(e) => setFormData({ ...formData, policyType: e.target.value as any })}
+                      onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData({ ...formData, policyType: e.target.value as any })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="comprehensive">Comprehensive</option>
@@ -418,7 +418,7 @@ export function VendorPolicyManagement({ vendorId, onClose }: PolicyManagementPr
                     <input
                       type="number"
                       value={formData.premium}
-                      onChange={(e) => setFormData({ ...formData, premium: e.target.value })}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, premium: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                       placeholder="12000"
                     />
@@ -428,7 +428,7 @@ export function VendorPolicyManagement({ vendorId, onClose }: PolicyManagementPr
                     <input
                       type="number"
                       value={formData.coverageAmount}
-                      onChange={(e) => setFormData({ ...formData, coverageAmount: e.target.value })}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, coverageAmount: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                       placeholder="500000"
                     />
@@ -441,7 +441,7 @@ export function VendorPolicyManagement({ vendorId, onClose }: PolicyManagementPr
                     <input
                       type="number"
                       value={formData.deductible}
-                      onChange={(e) => setFormData({ ...formData, deductible: e.target.value })}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, deductible: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                       placeholder="5000"
                     />
@@ -451,7 +451,7 @@ export function VendorPolicyManagement({ vendorId, onClose }: PolicyManagementPr
                     <input
                       type="date"
                       value={formData.startDate}
-                      onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, startDate: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
@@ -460,7 +460,7 @@ export function VendorPolicyManagement({ vendorId, onClose }: PolicyManagementPr
                     <input
                       type="date"
                       value={formData.endDate}
-                      onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, endDate: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
@@ -471,7 +471,7 @@ export function VendorPolicyManagement({ vendorId, onClose }: PolicyManagementPr
                   <input
                     type="text"
                     value={formData.petTypes.join(', ')}
-                    onChange={(e) => setFormData({ ...formData, petTypes: e.target.value.split(',').map(s => s.trim()) })}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, petTypes: e.target.value.split(',').map(s => s.trim()) })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     placeholder="Dogs, Cats, Birds (comma-separated)"
                   />
@@ -481,7 +481,7 @@ export function VendorPolicyManagement({ vendorId, onClose }: PolicyManagementPr
                   <input
                     type="checkbox"
                     checked={formData.preExistingConditions}
-                    onChange={(e) => setFormData({ ...formData, preExistingConditions: e.target.checked })}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, preExistingConditions: e.target.checked })}
                     className="mr-2"
                   />
                   <label className="text-sm text-gray-700">Covers pre-existing conditions</label>

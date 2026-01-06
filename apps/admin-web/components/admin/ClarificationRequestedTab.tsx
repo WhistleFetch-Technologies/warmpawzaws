@@ -82,7 +82,7 @@ export function ClarificationRequestedTab() {
     <div className="p-6">
       <div className="space-y-4">
         {requests.map((request) => {
-          const isOverdue = request.status === 'pending' && 
+          const isOverdue = (request.status as any) === 'pending' && 
             Date.now() - new Date(request.requestedAt).getTime() > 3 * 24 * 60 * 60 * 1000;
 
           return (

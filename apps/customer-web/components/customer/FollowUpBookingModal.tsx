@@ -197,7 +197,7 @@ export function FollowUpBookingModal({
             <label className="block text-sm font-medium mb-2">Additional Notes (optional)</label>
             <textarea
               value={notes}
-              onChange={(e) => setNotes(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNotes(e.target.value)}
               className="w-full p-3 border border-gray-300 rounded-lg"
               rows={3}
               placeholder="Any special instructions or concerns..."

@@ -192,35 +192,35 @@ export default function StaffManagementPage() {
                   type="text"
                   placeholder="Full Name"
                   value={newStaff.name || ''}
-                  onChange={(e) => setNewStaff({ ...newStaff, name: e.target.value })}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewStaff({ ...newStaff, name: e.target.value })}
                   className="w-full p-3 border rounded-lg"
                 />
                 <input
                   type="tel"
                   placeholder="Phone Number"
                   value={newStaff.phone || ''}
-                  onChange={(e) => setNewStaff({ ...newStaff, phone: e.target.value })}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewStaff({ ...newStaff, phone: e.target.value })}
                   className="w-full p-3 border rounded-lg"
                 />
                 <input
                   type="email"
                   placeholder="Email (optional)"
                   value={newStaff.email || ''}
-                  onChange={(e) => setNewStaff({ ...newStaff, email: e.target.value })}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewStaff({ ...newStaff, email: e.target.value })}
                   className="w-full p-3 border rounded-lg"
                 />
                 <input
                   type="text"
                   placeholder="Role (e.g., Veterinarian, Groomer)"
                   value={newStaff.role || ''}
-                  onChange={(e) => setNewStaff({ ...newStaff, role: e.target.value })}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewStaff({ ...newStaff, role: e.target.value })}
                   className="w-full p-3 border rounded-lg"
                 />
                 <input
                   type="number"
                   placeholder="Years of Experience"
                   value={newStaff.experience_years || ''}
-                  onChange={(e) => setNewStaff({ ...newStaff, experience_years: parseInt(e.target.value) })}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewStaff({ ...newStaff, experience_years: parseInt(e.target.value) })}
                   className="w-full p-3 border rounded-lg"
                 />
               </div>

@@ -300,7 +300,7 @@ export default function IntegrationsPage() {
                           <input
                             type="text"
                             value={awsConfig?.region || 'ap-south-1'}
-                            onChange={(e) => setAwsConfig(prev => prev ? { ...prev, region: e.target.value } : null)}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAwsConfig(prev => prev ? { ...prev, region: e.target.value } : null)}
                             className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
                           />
                         </div>
@@ -309,26 +309,26 @@ export default function IntegrationsPage() {
                           <input
                             type="text"
                             value={awsConfig?.s3?.bucket || ''}
-                            onChange={(e) => setAwsConfig(prev => prev ? { ...prev, s3: { ...prev.s3, bucket: e.target.value } } : null)}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAwsConfig(prev => prev ? { ...prev, s3: { ...prev.s3, bucket: e.target.value } } : null)}
                             className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
                           />
                         </div>
                       </div>
                       <div className="flex flex-wrap gap-4">
                         <label className="flex items-center gap-2">
-                          <input type="checkbox" checked={awsConfig?.s3?.enabled ?? false} onChange={(e) => setAwsConfig(prev => prev ? { ...prev, s3: { ...prev.s3, enabled: e.target.checked } } : null)} className="rounded" />
+                          <input type="checkbox" checked={awsConfig?.s3?.enabled ?? false} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAwsConfig(prev => prev ? { ...prev, s3: { ...prev.s3, enabled: e.target.checked } } : null)} className="rounded" />
                           <span className="text-sm">S3 Storage</span>
                         </label>
                         <label className="flex items-center gap-2">
-                          <input type="checkbox" checked={awsConfig?.sns?.enabled ?? false} onChange={(e) => setAwsConfig(prev => prev ? { ...prev, sns: { enabled: e.target.checked } } : null)} className="rounded" />
+                          <input type="checkbox" checked={awsConfig?.sns?.enabled ?? false} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAwsConfig(prev => prev ? { ...prev, sns: { enabled: e.target.checked } } : null)} className="rounded" />
                           <span className="text-sm">SNS Notifications</span>
                         </label>
                         <label className="flex items-center gap-2">
-                          <input type="checkbox" checked={awsConfig?.ses?.enabled ?? false} onChange={(e) => setAwsConfig(prev => prev ? { ...prev, ses: { enabled: e.target.checked } } : null)} className="rounded" />
+                          <input type="checkbox" checked={awsConfig?.ses?.enabled ?? false} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAwsConfig(prev => prev ? { ...prev, ses: { enabled: e.target.checked } } : null)} className="rounded" />
                           <span className="text-sm">SES Email</span>
                         </label>
                         <label className="flex items-center gap-2">
-                          <input type="checkbox" checked={awsConfig?.chime?.enabled ?? false} onChange={(e) => setAwsConfig(prev => prev ? { ...prev, chime: { enabled: e.target.checked } } : null)} className="rounded" />
+                          <input type="checkbox" checked={awsConfig?.chime?.enabled ?? false} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAwsConfig(prev => prev ? { ...prev, chime: { enabled: e.target.checked } } : null)} className="rounded" />
                           <span className="text-sm">Chime Video</span>
                         </label>
                       </div>
@@ -344,7 +344,7 @@ export default function IntegrationsPage() {
                           <input
                             type="text"
                             value={razorpayConfig?.key_id || ''}
-                            onChange={(e) => setRazorpayConfig(prev => prev ? { ...prev, key_id: e.target.value } : { key_id: e.target.value, webhook_secret: '', live_mode: false, enabled: false })}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRazorpayConfig(prev => prev ? { ...prev, key_id: e.target.value } : { key_id: e.target.value, webhook_secret: '', live_mode: false, enabled: false })}
                             className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
                             placeholder="rzp_test_..."
                           />
@@ -354,7 +354,7 @@ export default function IntegrationsPage() {
                           <input
                             type="password"
                             value={razorpayConfig?.webhook_secret || ''}
-                            onChange={(e) => setRazorpayConfig(prev => prev ? { ...prev, webhook_secret: e.target.value } : null)}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRazorpayConfig(prev => prev ? { ...prev, webhook_secret: e.target.value } : null)}
                             className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
                             placeholder="••••••••"
                           />
@@ -365,7 +365,7 @@ export default function IntegrationsPage() {
                           <input 
                             type="checkbox" 
                             checked={razorpayConfig?.live_mode ?? false} 
-                            onChange={(e) => setRazorpayConfig(prev => prev ? { ...prev, live_mode: e.target.checked } : null)} 
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRazorpayConfig(prev => prev ? { ...prev, live_mode: e.target.checked } : null)} 
                             className="rounded" 
                           />
                           <span className="text-sm">Live Mode</span>
@@ -374,7 +374,7 @@ export default function IntegrationsPage() {
                           <input 
                             type="checkbox" 
                             checked={razorpayConfig?.enabled ?? false} 
-                            onChange={(e) => setRazorpayConfig(prev => prev ? { ...prev, enabled: e.target.checked } : null)} 
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRazorpayConfig(prev => prev ? { ...prev, enabled: e.target.checked } : null)} 
                             className="rounded" 
                           />
                           <span className="text-sm">Enabled</span>
@@ -396,22 +396,22 @@ export default function IntegrationsPage() {
                         <input
                           type="password"
                           value={googleMapsConfig?.api_key || ''}
-                          onChange={(e) => setGoogleMapsConfig(prev => prev ? { ...prev, api_key: e.target.value } : { api_key: e.target.value, places_enabled: false, directions_enabled: false, enabled: false })}
+                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setGoogleMapsConfig(prev => prev ? { ...prev, api_key: e.target.value } : { api_key: e.target.value, places_enabled: false, directions_enabled: false, enabled: false })}
                           className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
                           placeholder="AIza..."
                         />
                       </div>
                       <div className="flex flex-wrap gap-4">
                         <label className="flex items-center gap-2">
-                          <input type="checkbox" checked={googleMapsConfig?.places_enabled ?? false} onChange={(e) => setGoogleMapsConfig(prev => prev ? { ...prev, places_enabled: e.target.checked } : null)} className="rounded" />
+                          <input type="checkbox" checked={googleMapsConfig?.places_enabled ?? false} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setGoogleMapsConfig(prev => prev ? { ...prev, places_enabled: e.target.checked } : null)} className="rounded" />
                           <span className="text-sm">Places API</span>
                         </label>
                         <label className="flex items-center gap-2">
-                          <input type="checkbox" checked={googleMapsConfig?.directions_enabled ?? false} onChange={(e) => setGoogleMapsConfig(prev => prev ? { ...prev, directions_enabled: e.target.checked } : null)} className="rounded" />
+                          <input type="checkbox" checked={googleMapsConfig?.directions_enabled ?? false} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setGoogleMapsConfig(prev => prev ? { ...prev, directions_enabled: e.target.checked } : null)} className="rounded" />
                           <span className="text-sm">Directions API</span>
                         </label>
                         <label className="flex items-center gap-2">
-                          <input type="checkbox" checked={googleMapsConfig?.enabled ?? false} onChange={(e) => setGoogleMapsConfig(prev => prev ? { ...prev, enabled: e.target.checked } : null)} className="rounded" />
+                          <input type="checkbox" checked={googleMapsConfig?.enabled ?? false} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setGoogleMapsConfig(prev => prev ? { ...prev, enabled: e.target.checked } : null)} className="rounded" />
                           <span className="text-sm">Enabled</span>
                         </label>
                       </div>
@@ -427,7 +427,7 @@ export default function IntegrationsPage() {
                           <input
                             type="email"
                             value={shiprocketConfig?.email || ''}
-                            onChange={(e) => setShiprocketConfig(prev => prev ? { ...prev, email: e.target.value } : { email: e.target.value, token: '', pickup_locations: [], enabled: false })}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setShiprocketConfig(prev => prev ? { ...prev, email: e.target.value } : { email: e.target.value, token: '', pickup_locations: [], enabled: false })}
                             className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
                           />
                         </div>
@@ -436,13 +436,13 @@ export default function IntegrationsPage() {
                           <input
                             type="password"
                             value={shiprocketConfig?.token || ''}
-                            onChange={(e) => setShiprocketConfig(prev => prev ? { ...prev, token: e.target.value } : null)}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setShiprocketConfig(prev => prev ? { ...prev, token: e.target.value } : null)}
                             className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
                           />
                         </div>
                       </div>
                       <label className="flex items-center gap-2">
-                        <input type="checkbox" checked={shiprocketConfig?.enabled ?? false} onChange={(e) => setShiprocketConfig(prev => prev ? { ...prev, enabled: e.target.checked } : null)} className="rounded" />
+                        <input type="checkbox" checked={shiprocketConfig?.enabled ?? false} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setShiprocketConfig(prev => prev ? { ...prev, enabled: e.target.checked } : null)} className="rounded" />
                         <span className="text-sm">Enabled</span>
                       </label>
                     </div>
@@ -456,7 +456,7 @@ export default function IntegrationsPage() {
                           <label className="block text-sm font-medium text-gray-700 mb-1">Provider</label>
                           <select
                             value={smsConfig?.provider || 'twilio'}
-                            onChange={(e) => setSmsConfig(prev => prev ? { ...prev, provider: e.target.value } : { provider: e.target.value, api_key: '', sender_id: '', enabled: false })}
+                            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSmsConfig(prev => prev ? { ...prev, provider: e.target.value } : { provider: e.target.value, api_key: '', sender_id: '', enabled: false })}
                             className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
                           >
                             <option value="twilio">Twilio</option>
@@ -469,7 +469,7 @@ export default function IntegrationsPage() {
                           <input
                             type="password"
                             value={smsConfig?.api_key || ''}
-                            onChange={(e) => setSmsConfig(prev => prev ? { ...prev, api_key: e.target.value } : null)}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSmsConfig(prev => prev ? { ...prev, api_key: e.target.value } : null)}
                             className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
                           />
                         </div>
@@ -478,14 +478,14 @@ export default function IntegrationsPage() {
                           <input
                             type="text"
                             value={smsConfig?.sender_id || ''}
-                            onChange={(e) => setSmsConfig(prev => prev ? { ...prev, sender_id: e.target.value } : null)}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSmsConfig(prev => prev ? { ...prev, sender_id: e.target.value } : null)}
                             className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
                             placeholder="WMPAWZ"
                           />
                         </div>
                       </div>
                       <label className="flex items-center gap-2">
-                        <input type="checkbox" checked={smsConfig?.enabled ?? false} onChange={(e) => setSmsConfig(prev => prev ? { ...prev, enabled: e.target.checked } : null)} className="rounded" />
+                        <input type="checkbox" checked={smsConfig?.enabled ?? false} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSmsConfig(prev => prev ? { ...prev, enabled: e.target.checked } : null)} className="rounded" />
                         <span className="text-sm">Enabled</span>
                       </label>
                     </div>
