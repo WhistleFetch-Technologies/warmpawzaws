@@ -34,7 +34,7 @@ echo ""
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "✅ DEPLOYMENT COMPLETE"
+echo "✅ DEPLOYMENT HAS BEEN COMPLETED "
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
