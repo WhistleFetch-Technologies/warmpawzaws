@@ -42,17 +42,6 @@ jobs:
         run: npm run type-check || echo "Type-check script not found, skipping..."
         continue-on-error: true
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: ${{ env.TERRAFORM_VERSION }}
-
-      - name: Validate Terraform
-        working-directory: infra/envs/dev
-        run: |
-          terraform init -backend=false
-          terraform validate
-
   # ============================================
   # BUILD BACKEND
   # ============================================
@@ -198,12 +187,12 @@ jobs:
           if-no-files-found: error
 
   # ============================================
-  # TERRAFORM PLAN
+  # DEPLOY LAMBDA (CODE ONLY - NO INFRASTRUCTURE)
   # ============================================
-  terraform-plan:
-    name: 📋 Terraform Plan
+  deploy-lambda:
+    name: ⚡ Deploy Lambda Code
     runs-on: ubuntu-latest
-    needs: [build-backend, build-frontend]
+    needs: build-backend
     permissions:
       id-token: write
       contents: read
@@ -219,22 +208,82 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: ${{ env.TERRAFORM_VERSION }}
-
       - name: Download Lambda artifact
         uses: actions/download-artifact@v4
         with:
           name: lambda-handlers
           path: backend/lambda
 
-      - name: Bootstrap Terraform Backend (if needed)
-        working-directory: infra/bootstrap
-        continue-on-error: true
+      - name: Update Lambda function code
         run: |
-          echo "🔍 Checking if Terraform backend exists..."
+          echo "⚡ Updating Lambda function code (NO INFRASTRUCTURE CHANGES)..."
+          aws lambda update-function-code \
+            --function-name warmpawz-dev-api-handler \
+            --zip-file fileb://backend/lambda/api-handler.zip \
+            --region ${{ env.AWS_REGION }}
+          
+          echo "✅ Lambda function code updated successfully"
+
+  # ============================================
+  # DEPLOY FRONTEND APPS
+  # ============================================
+  deploy-frontend:
+    name: 🌐 Deploy Frontend Apps
+    runs-on: ubuntu-latest
+    needs: [build-frontend, deploy-lambda]
+    strategy:
+      matrix:
+        include:
+          - app: admin-web
+          - app: vendor-web
+          - app: customer-web
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Download frontend artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-${{ matrix.app }}
+          path: dist
+
+      - name: Get S3 bucket and CloudFront ID from AWS
+        id: get-resources
+        run: |
+          # Get S3 bucket name (standard naming convention)
+          APP_NAME=$(echo "${{ matrix.app }}" | sed 's/-web//')
+          BUCKET_NAME="warmpawz-dev-${APP_NAME}-frontend-ap-south-1"
+          echo "bucket_name=$BUCKET_NAME" >> $GITHUB_OUTPUT
+          
+          # Get CloudFront distribution ID by finding distribution with matching origin
+          DIST_ID=$(aws cloudfront list-distributions --query "DistributionList.Items[?Origins.Items[?DomainName==\`${BUCKET_NAME}.s3.ap-south-1.amazonaws.com\`]].Id" --output text | head -1)
+          
+          if [ -z "$DIST_ID" ] || [ "$DIST_ID" = "None" ]; then
+            echo "⚠️  CloudFront distribution not found for ${BUCKET_NAME}"
+            echo "   Trying alternative lookup..."
+            # Try finding by comment/tags
+            DIST_ID=$(aws cloudfront list-distributions --query "DistributionList.Items[?Comment==\`warmpawz-dev-${APP_NAME}-frontend\`].Id" --output text | head -1)
+          fi
+          
+          echo "cloudfront_id=$DIST_ID" >> $GITHUB_OUTPUT
+          echo "✅ Found resources:"
+          echo "   Bucket: $BUCKET_NAME"
+          echo "   CloudFront: $DIST_ID"
+
+      - name: Deploy to S3
+        run: |
+          aws s3 sync dist/ s3://${{ steps.get-resources.outputs.bucket_name }}/ --delete
+
+      - name: Invalidate CloudFront cache
+        if: steps.get-resources.outputs.cloudfront_id != ''
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id ${{ steps.get-resources.outputs.cloudfront_id }} \
+            --paths "/*"
           if ! aws s3 ls s3://warmpawz-terraform-state-${{ secrets.AWS_ACCOUNT_ID }} 2>/dev/null; then
             echo "📦 Backend not found, bootstrapping..."
             terraform init
@@ -679,210 +728,6 @@ jobs:
   # ============================================
   # TERRAFORM APPLY
   # ============================================
-  terraform-apply:
-    name: 🚀 Deploy Infrastructure
-    runs-on: ubuntu-latest
-    needs: terraform-plan
-    environment: dev
-    permissions:
-      id-token: write
-      contents: read
-    outputs:
-      api_endpoint: ${{ steps.tf-outputs.outputs.api_endpoint }}
-      s3_admin_bucket: ${{ steps.tf-outputs.outputs.s3_admin_bucket }}
-      s3_vendor_bucket: ${{ steps.tf-outputs.outputs.s3_vendor_bucket }}
-      s3_customer_bucket: ${{ steps.tf-outputs.outputs.s3_customer_bucket }}
-      cloudfront_admin_id: ${{ steps.tf-outputs.outputs.cloudfront_admin_id }}
-      cloudfront_vendor_id: ${{ steps.tf-outputs.outputs.cloudfront_vendor_id }}
-      cloudfront_customer_id: ${{ steps.tf-outputs.outputs.cloudfront_customer_id }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: ${{ env.TERRAFORM_VERSION }}
-          terraform_wrapper: false
-
-      - name: Download Lambda artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: lambda-handlers
-          path: backend/lambda
-
-      - name: Download Terraform plan
-        uses: actions/download-artifact@v4
-        with:
-          name: terraform-plan
-          path: infra/envs/dev
-
-      - name: Terraform Init
-        working-directory: infra/envs/dev
-        run: terraform init -backend-config=backend.hcl
-
-      - name: Force unlock stale Terraform state (ROBUST)
-        continue-on-error: true
-        timeout-minutes: 1
-        run: |
-          echo "🔓 CRITICAL: Checking and clearing ANY existing Terraform state locks..."
-          
-          # Method 1: Direct DynamoDB deletion (most reliable)
-          echo "Method 1: Direct DynamoDB lock removal"
-          aws dynamodb delete-item \
-            --table-name warmpawz-terraform-locks \
-            --key '{"LockID":{"S":"warmpawz-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}/dev/terraform.tfstate"}}' \
-            --region ap-south-1 2>&1 || echo "  No lock found in DynamoDB (this is OK)"
-          
-          # Method 2: Terraform force-unlock (backup method)
-          echo ""
-          echo "Method 2: Terraform force-unlock (if lock still exists)"
-          cd infra/envs/dev
-          
-          # Get the lock info and extract UUID
-          LOCK_INFO=$(aws dynamodb get-item \
-            --table-name warmpawz-terraform-locks \
-            --key '{"LockID":{"S":"warmpawz-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}/dev/terraform.tfstate"}}' \
-            --region ap-south-1 \
-            --query 'Item.Info.S' \
-            --output text 2>/dev/null || echo "")
-          
-          if [ -n "$LOCK_INFO" ] && [ "$LOCK_INFO" != "None" ]; then
-            LOCK_UUID=$(echo "$LOCK_INFO" | jq -r '.ID' 2>/dev/null || echo "")
-            if [ -n "$LOCK_UUID" ] && [ "$LOCK_UUID" != "null" ] && [ "$LOCK_UUID" != "" ]; then
-              echo "  Found lock UUID: $LOCK_UUID"
-              echo "  Force unlocking via Terraform..."
-              terraform force-unlock -force "$LOCK_UUID" 2>&1 || echo "  Terraform unlock failed (may not be needed)"
-            fi
-          else
-            echo "  No lock info found (state is clean)"
-          fi
-          
-          echo ""
-          echo "✅ State lock cleanup complete - ready for deployment"
-
-      - name: Check VPC limit (prevent deployment failure)
-        working-directory: infra/envs/dev
-        continue-on-error: true
-        run: |
-          echo "🔍 Checking VPC limit..."
-          VPC_COUNT=$(aws ec2 describe-vpcs --region ap-south-1 --query 'length(Vpcs)' --output text)
-          VPC_LIMIT=5
-          
-          echo "Current VPC count: $VPC_COUNT / $VPC_LIMIT"
-          
-          if [ "$VPC_COUNT" -ge "$VPC_LIMIT" ]; then
-            echo "⚠️  WARNING: VPC limit reached ($VPC_COUNT/$VPC_LIMIT)"
-            echo "If VPC creation fails, delete unused VPCs or request limit increase"
-            echo "Listing existing VPCs:"
-            aws ec2 describe-vpcs --region ap-south-1 --query 'Vpcs[*].[VpcId,Tags[?Key==`Name`].Value|[0],CidrBlock]' --output table
-          else
-            echo "✅ VPC limit OK ($VPC_COUNT/$VPC_LIMIT)"
-          fi
-
-      - name: State cleanup check (idempotent)
-        working-directory: infra/envs/dev
-        continue-on-error: true
-        run: |
-          echo "🔍 Checking Terraform state for legacy resources..."
-          echo ""
-          
-          # Check for Lambda alias in state (removed in architecture refactor)
-          if terraform state list 2>/dev/null | grep -q 'module.lambda.aws_lambda_alias.live'; then
-            echo "⚠️  Found legacy Lambda alias in state - removing..."
-            echo "   WHY: Lambda aliases are no longer managed by Terraform"
-            terraform state rm 'module.lambda.aws_lambda_alias.live["api-handler"]' 2>/dev/null || true
-            echo "✅ Cleaned up (alias remains in AWS, just not in Terraform)"
-          else
-            echo "✅ State is clean - no legacy resources found"
-          fi
-
-      - name: Terraform Apply (Fresh Plan)
-        working-directory: infra/envs/dev
-        run: |
-          echo "🚀 Running Terraform Apply with FRESH plan..."
-          echo "   (Not using saved plan to avoid hash mismatches)"
-          echo ""
-          
-          # Run fresh plan + apply instead of saved plan
-          # This ensures the Lambda ZIP hash matches and imports are applied
-          terraform apply -auto-approve \
-            -var="opensearch_master_password=${{ secrets.DEV_OPENSEARCH_PASSWORD }}" \
-            -var="razorpay_key_id=${{ secrets.RAZORPAY_KEY_ID }}" \
-            -var="razorpay_key_secret=${{ secrets.RAZORPAY_KEY_SECRET }}" \
-            -var="google_maps_api_key=${{ secrets.GOOGLE_MAPS_API_KEY }}" \
-            -var="shiprocket_email=${{ secrets.SHIPROCKET_EMAIL }}" \
-            -var="shiprocket_password=${{ secrets.SHIPROCKET_PASSWORD }}"
-          
-          echo ""
-          echo "✅ Terraform apply completed successfully"
-          
-          echo "📋 Final resource count:"
-          terraform state list | wc -l
-
-      - name: Export outputs
-        id: tf-outputs
-        working-directory: infra/envs/dev
-        run: |
-          echo "api_endpoint=$(terraform output -raw api_endpoint)" >> $GITHUB_OUTPUT
-          echo "s3_admin_bucket=$(terraform output -raw s3_admin_bucket)" >> $GITHUB_OUTPUT
-          echo "s3_vendor_bucket=$(terraform output -raw s3_vendor_bucket)" >> $GITHUB_OUTPUT
-          echo "s3_customer_bucket=$(terraform output -raw s3_customer_bucket)" >> $GITHUB_OUTPUT
-          echo "cloudfront_admin_id=$(terraform output -raw cloudfront_admin_distribution_id)" >> $GITHUB_OUTPUT
-          echo "cloudfront_vendor_id=$(terraform output -raw cloudfront_vendor_distribution_id)" >> $GITHUB_OUTPUT
-          echo "cloudfront_customer_id=$(terraform output -raw cloudfront_customer_distribution_id)" >> $GITHUB_OUTPUT
-
-  # ============================================
-  # DEPLOY FRONTEND APPS
-  # ============================================
-  deploy-frontend:
-    name: 🌐 Deploy Frontend Apps
-    runs-on: ubuntu-latest
-    needs: terraform-apply
-    strategy:
-      matrix:
-        include:
-          - app: admin-web
-            bucket_output: s3_admin_bucket
-            cloudfront_output: cloudfront_admin_id
-          - app: vendor-web
-            bucket_output: s3_vendor_bucket
-            cloudfront_output: cloudfront_vendor_id
-          - app: customer-web
-            bucket_output: s3_customer_bucket
-            cloudfront_output: cloudfront_customer_id
-    steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Download frontend artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: frontend-${{ matrix.app }}
-          path: dist
-
-      - name: Deploy to S3
-        run: |
-          aws s3 sync dist/ s3://${{ needs.terraform-apply.outputs[matrix.bucket_output] }}/ --delete
-
-      - name: Invalidate CloudFront cache
-        run: |
-          aws cloudfront create-invalidation \
-            --distribution-id ${{ needs.terraform-apply.outputs[matrix.cloudfront_output] }} \
-            --paths "/*"
-
-  # ============================================
   # DATABASE MIGRATIONS
   # ============================================
   # TEMPORARILY DISABLED - Run migrations manually after deployment
@@ -890,7 +735,7 @@ jobs:
   database-migrations:
     name: 🗄️ Run Database Migrations (DISABLED)
     runs-on: ubuntu-latest
-    needs: terraform-apply
+    needs: deploy-lambda
     if: false  # SKIP THIS JOB - Run migrations manually
     steps:
       - name: Checkout code
@@ -1182,7 +1027,7 @@ jobs:
   seed-data:
     name: 🌱 Seed Base Data (DISABLED)
     runs-on: ubuntu-latest
-    needs: terraform-apply  # Changed from database-migrations (which is disabled)
+    needs: deploy-lambda
     if: false  # SKIP THIS JOB - Seed manually after migrations
     steps:
       - name: Checkout code
@@ -1265,23 +1110,26 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: ${{ env.TERRAFORM_VERSION }}
-          terraform_wrapper: false
-
-      - name: Get deployment URLs
+      - name: Get deployment URLs from AWS
         id: urls
-        working-directory: infra/envs/dev
         run: |
-          terraform init -backend-config=backend.hcl > /dev/null
+          # Get API Gateway endpoint
+          API_ID=$(aws apigatewayv2 get-apis --query "Items[?Name=='warmpawz-dev-api'].ApiId" --output text | head -1)
+          if [ -n "$API_ID" ] && [ "$API_ID" != "None" ]; then
+            API_ENDPOINT="https://${API_ID}.execute-api.ap-south-1.amazonaws.com"
+          else
+            # Fallback to standard domain
+            API_ENDPOINT="https://dev.api.warmpawz.com"
+          fi
           
-          # Get actual deployed URLs (CloudFront + API Gateway)
-          API_ENDPOINT=$(terraform output -raw api_endpoint 2>/dev/null || echo "")
-          ADMIN_URL=$(terraform output -raw admin_cloudfront_url 2>/dev/null || echo "")
-          VENDOR_URL=$(terraform output -raw vendor_cloudfront_url 2>/dev/null || echo "")
-          CUSTOMER_URL=$(terraform output -raw customer_cloudfront_url 2>/dev/null || echo "")
+          # Get CloudFront URLs
+          ADMIN_DIST=$(aws cloudfront list-distributions --query "DistributionList.Items[?Origins.Items[?DomainName==\`warmpawz-dev-admin-frontend-ap-south-1.s3.ap-south-1.amazonaws.com\`]].DomainName" --output text | head -1)
+          VENDOR_DIST=$(aws cloudfront list-distributions --query "DistributionList.Items[?Origins.Items[?DomainName==\`warmpawz-dev-vendor-frontend-ap-south-1.s3.ap-south-1.amazonaws.com\`]].DomainName" --output text | head -1)
+          CUSTOMER_DIST=$(aws cloudfront list-distributions --query "DistributionList.Items[?Origins.Items[?DomainName==\`warmpawz-dev-customer-frontend-ap-south-1.s3.ap-south-1.amazonaws.com\`]].DomainName" --output text | head -1)
+          
+          ADMIN_URL="https://${ADMIN_DIST:-dev.admin.warmpawz.com}"
+          VENDOR_URL="https://${VENDOR_DIST:-dev.vendor.warmpawz.com}"
+          CUSTOMER_URL="https://${CUSTOMER_DIST:-dev.customer.warmpawz.com}"
           
           echo "api_endpoint=$API_ENDPOINT" >> $GITHUB_OUTPUT
           echo "admin_url=$ADMIN_URL" >> $GITHUB_OUTPUT
