@@ -2,21 +2,54 @@
   "name": "@warmpawz/ui",
   "version": "1.0.0",
   "description": "Warmpawz Unified Design System",
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts",
-    "./tokens": "./src/tokens/index.ts",
-    "./components": "./src/components/index.ts",
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./tokens": {
+      "types": "./dist/tokens/index.d.ts",
+      "default": "./dist/tokens/index.js"
+    },
+    "./components": {
+      "types": "./dist/components/index.d.ts",
+      "default": "./dist/components/index.js"
+    },
     "./styles": "./src/styles/globals.css",
-    "./button": "./src/components/Button/index.ts",
-    "./input": "./src/components/Input/index.ts",
-    "./card": "./src/components/Card/index.ts",
-    "./badge": "./src/components/Badge/index.ts",
-    "./icon": "./src/components/Icon/index.ts",
-    "./table": "./src/components/Table/index.ts",
-    "./dialog": "./src/components/Dialog/index.ts",
-    "./accordion": "./src/components/Accordion/index.ts"
+    "./button": {
+      "types": "./dist/components/Button/index.d.ts",
+      "default": "./dist/components/Button/index.js"
+    },
+    "./input": {
+      "types": "./dist/components/Input/index.d.ts",
+      "default": "./dist/components/Input/index.js"
+    },
+    "./card": {
+      "types": "./dist/components/Card/index.d.ts",
+      "default": "./dist/components/Card/index.js"
+    },
+    "./badge": {
+      "types": "./dist/components/Badge/index.d.ts",
+      "default": "./dist/components/Badge/index.js"
+    },
+    "./icon": {
+      "types": "./dist/components/Icon/index.d.ts",
+      "default": "./dist/components/Icon/index.js"
+    },
+    "./table": {
+      "types": "./dist/components/Table/index.d.ts",
+      "default": "./dist/components/Table/index.js"
+    },
+    "./dialog": {
+      "types": "./dist/components/Dialog/index.d.ts",
+      "default": "./dist/components/Dialog/index.js"
+    },
+    "./accordion": {
+      "types": "./dist/components/Accordion/index.d.ts",
+      "default": "./dist/components/Accordion/index.js"
+    }
   },
   "scripts": {
     "build": "tsc",
