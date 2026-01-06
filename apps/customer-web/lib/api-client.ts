@@ -81,9 +81,14 @@ export class ApiClient {
     const token = this.getAuthToken();
     
     const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
       ...(options.headers as Record<string, string>),
     };
+
+    // CRITICAL FIX: Do NOT set Content-Type for FormData, let fetch handle it
+    // Setting Content-Type manually for FormData breaks the boundary parameter
+    if (!(options.body instanceof FormData)) {
+      headers['Content-Type'] = 'application/json';
+    }
 
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
@@ -125,7 +130,8 @@ export class ApiClient {
   async post<T>(endpoint: string, data?: any): Promise<T> {
     return this.request<T>(endpoint, {
       method: 'POST',
-      body: data ? JSON.stringify(data) : undefined,
+      // CRITICAL: Don't stringify FormData - pass it directly
+      body: data instanceof FormData ? data : (data ? JSON.stringify(data) : undefined),
     });
   }
 

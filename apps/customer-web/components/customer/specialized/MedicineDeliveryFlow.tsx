@@ -87,9 +87,8 @@ export function MedicineDeliveryFlow({ vendorId, customerPhone, onSuccess, onCan
       formData.append('file', file);
       formData.append('type', 'prescription');
       
-      const uploadResponse = await apiClient.post<any>('/file-upload/prescription', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      // API client automatically handles FormData (no Content-Type header needed)
+      const uploadResponse = await apiClient.post<any>('/file-upload/prescription', formData);
 
       if (uploadResponse.success) {
         setPrescriptionUploaded(true);
