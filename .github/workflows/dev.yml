@@ -298,449 +298,7 @@ jobs:
           aws cloudfront create-invalidation \
             --distribution-id ${{ steps.get-resources.outputs.cloudfront_id }} \
             --paths "/*"
-          if ! aws s3 ls s3://warmpawz-terraform-state-${{ secrets.AWS_ACCOUNT_ID }} 2>/dev/null; then
-            echo "📦 Backend not found, bootstrapping..."
-            terraform init
-            terraform apply -auto-approve
-            echo "✅ Backend bootstrapped successfully"
-          else
-            echo "✅ Backend already exists, skipping bootstrap"
-          fi
 
-      - name: Clear DynamoDB state entries (PREVENTS CORRUPTION)
-        continue-on-error: true
-        timeout-minutes: 1
-        run: |
-          echo "🧹 CRITICAL: Clearing ALL DynamoDB state entries to prevent corruption..."
-          echo ""
-          
-          # IMPORTANT: DynamoDB stores TWO types of entries:
-          # 1. Lock entry: path/terraform.tfstate
-          # 2. Checksum entry: path/terraform.tfstate-md5
-          # 
-          # The checksum entry (-md5) causes "does not have the expected content" error
-          # We MUST delete BOTH before terraform init
-          
-          STATE_PATH="warmpawz-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}/dev/terraform.tfstate"
-          
-          echo "1. Deleting lock entry: ${STATE_PATH}"
-          aws dynamodb delete-item \
-            --table-name warmpawz-terraform-locks \
-            --key "{\"LockID\":{\"S\":\"${STATE_PATH}\"}}" \
-            --region ap-south-1 2>&1 || echo "   No lock entry found (OK)"
-          
-          echo "2. Deleting checksum entry: ${STATE_PATH}-md5"
-          aws dynamodb delete-item \
-            --table-name warmpawz-terraform-locks \
-            --key "{\"LockID\":{\"S\":\"${STATE_PATH}-md5\"}}" \
-            --region ap-south-1 2>&1 || echo "   No checksum entry found (OK)"
-          
-          echo ""
-          echo "3. Verifying DynamoDB is clean..."
-          REMAINING=$(aws dynamodb scan --table-name warmpawz-terraform-locks --region ap-south-1 --query 'Count' --output text 2>/dev/null || echo "0")
-          echo "   Remaining entries: ${REMAINING}"
-          
-          if [ "$REMAINING" = "0" ]; then
-            echo "✅ DynamoDB is clean - no corruption possible"
-          else
-            echo "⚠️  Some entries remain (may be from other environments)"
-          fi
-
-      - name: Terraform Init
-        working-directory: infra/envs/dev
-        run: terraform init -backend-config=backend.hcl
-
-      - name: Force unlock stale Terraform state (ROBUST)
-        continue-on-error: true
-        timeout-minutes: 1
-        run: |
-          echo "🔓 CRITICAL: Checking and clearing ANY existing Terraform state locks..."
-          
-          # Method 1: Direct DynamoDB deletion (most reliable)
-          echo "Method 1: Direct DynamoDB lock removal"
-          aws dynamodb delete-item \
-            --table-name warmpawz-terraform-locks \
-            --key '{"LockID":{"S":"warmpawz-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}/dev/terraform.tfstate"}}' \
-            --region ap-south-1 2>&1 || echo "  No lock found in DynamoDB (this is OK)"
-          
-          # Method 2: Terraform force-unlock (backup method)
-          echo ""
-          echo "Method 2: Terraform force-unlock (if lock still exists)"
-          cd infra/envs/dev
-          
-          # Get the lock info and extract UUID
-          LOCK_INFO=$(aws dynamodb get-item \
-            --table-name warmpawz-terraform-locks \
-            --key '{"LockID":{"S":"warmpawz-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}/dev/terraform.tfstate"}}' \
-            --region ap-south-1 \
-            --query 'Item.Info.S' \
-            --output text 2>/dev/null || echo "")
-          
-          if [ -n "$LOCK_INFO" ] && [ "$LOCK_INFO" != "None" ]; then
-            LOCK_UUID=$(echo "$LOCK_INFO" | jq -r '.ID' 2>/dev/null || echo "")
-            if [ -n "$LOCK_UUID" ] && [ "$LOCK_UUID" != "null" ] && [ "$LOCK_UUID" != "" ]; then
-              echo "  Found lock UUID: $LOCK_UUID"
-              echo "  Force unlocking via Terraform..."
-              terraform force-unlock -force "$LOCK_UUID" 2>&1 || echo "  Terraform unlock failed (may not be needed)"
-            fi
-          else
-            echo "  No lock info found (state is clean)"
-          fi
-          
-          echo ""
-          echo "✅ State lock cleanup complete - ready for deployment"
-
-      - name: Delete orphaned AWS resources (CLEAN SLATE)
-        continue-on-error: true
-        timeout-minutes: 3
-        run: |
-          echo "🧹 DELETING ORPHANED AWS RESOURCES FOR CLEAN TERRAFORM STATE..."
-          echo "These resources exist in AWS but not in Terraform state"
-          echo ""
-          
-          echo "═══════════════════════════════════════════════════════════════"
-          echo "1️⃣  CLOUDWATCH LOG GROUPS"
-          echo "═══════════════════════════════════════════════════════════════"
-          aws logs delete-log-group --log-group-name "/aws/apigateway/warmpawz-dev" --region ap-south-1 2>&1 || echo "  Not found or already deleted"
-          aws logs delete-log-group --log-group-name "/aws/lambda/warmpawz-dev-api-handler" --region ap-south-1 2>&1 || echo "  Not found or already deleted"
-          echo "  ✅ Log groups cleaned"
-          
-          echo ""
-          echo "═══════════════════════════════════════════════════════════════"
-          echo "2️⃣  CLOUDFRONT OACs - SKIPPED (will be imported instead)"
-          echo "═══════════════════════════════════════════════════════════════"
-          echo "  ⏭️  OACs cannot be deleted if in use - will import them"
-          
-          echo ""
-          echo "═══════════════════════════════════════════════════════════════"
-          echo "3️⃣  DYNAMODB TABLES"
-          echo "═══════════════════════════════════════════════════════════════"
-          for TABLE in sessions analytics-events cache rate-limits; do
-            echo "  Deleting table: warmpawz-dev-${TABLE}"
-            aws dynamodb delete-table --table-name "warmpawz-dev-${TABLE}" --region ap-south-1 2>&1 || echo "    Not found"
-          done
-          echo "  ✅ DynamoDB tables cleaned"
-          
-          echo ""
-          echo "═══════════════════════════════════════════════════════════════"
-          echo "4️⃣  RDS DB SUBNET GROUP - SKIPPED (will be imported instead)"
-          echo "═══════════════════════════════════════════════════════════════"
-          echo "  ⏭️  Subnet group cannot be deleted if RDS exists - will import it"
-          
-          echo ""
-          echo "═══════════════════════════════════════════════════════════════"
-          echo "5️⃣  SECRETS MANAGER (schedule deletion)"
-          echo "═══════════════════════════════════════════════════════════════"
-          for SECRET in "warmpawz/dev/razorpay" "warmpawz/dev/google-maps" "warmpawz/dev/shiprocket"; do
-            echo "  Deleting secret: ${SECRET}"
-            aws secretsmanager delete-secret --secret-id "$SECRET" --force-delete-without-recovery --region ap-south-1 2>&1 || echo "    Not found"
-          done
-          # Also delete any RDS master password secrets
-          for SECRET_ARN in $(aws secretsmanager list-secrets --region ap-south-1 --query "SecretList[?contains(Name, 'warmpawz-dev-rds-master')].ARN" --output text 2>/dev/null); do
-            echo "  Deleting RDS secret: ${SECRET_ARN}"
-            aws secretsmanager delete-secret --secret-id "$SECRET_ARN" --force-delete-without-recovery --region ap-south-1 2>&1 || echo "    Failed"
-          done
-          echo "  ✅ Secrets cleaned"
-          
-          echo ""
-          echo "═══════════════════════════════════════════════════════════════"
-          echo "6️⃣  S3 BUCKETS (empty and delete)"
-          echo "═══════════════════════════════════════════════════════════════"
-          BUCKETS=(
-            "warmpawz-dev-admin-frontend-ap-south-1"
-            "warmpawz-dev-vendor-frontend-ap-south-1"
-            "warmpawz-dev-customer-frontend-ap-south-1"
-            "warmpawz-dev-user-uploads-${{ secrets.AWS_ACCOUNT_ID }}"
-            "warmpawz-dev-static-${{ secrets.AWS_ACCOUNT_ID }}"
-            "warmpawz-dev-logs-${{ secrets.AWS_ACCOUNT_ID }}"
-            "warmpawz-dev-backups-${{ secrets.AWS_ACCOUNT_ID }}"
-          )
-          for BUCKET in "${BUCKETS[@]}"; do
-            echo "  Processing bucket: ${BUCKET}"
-            # Check if bucket exists
-            if aws s3api head-bucket --bucket "$BUCKET" --region ap-south-1 2>/dev/null; then
-              # Empty the bucket first
-              aws s3 rm "s3://${BUCKET}" --recursive --region ap-south-1 2>&1 || echo "    Empty failed"
-              # Delete bucket versioning objects if any
-              aws s3api delete-objects --bucket "$BUCKET" --delete "$(aws s3api list-object-versions --bucket "$BUCKET" --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}' --output json 2>/dev/null || echo '{"Objects":[]}')" --region ap-south-1 2>&1 || echo "    Version delete skipped"
-              # Delete the bucket
-              aws s3api delete-bucket --bucket "$BUCKET" --region ap-south-1 2>&1 || echo "    Bucket delete failed"
-              echo "    ✅ Deleted"
-            else
-              echo "    Not found"
-            fi
-          done
-          echo "  ✅ S3 buckets cleaned"
-          
-          echo ""
-          echo "═══════════════════════════════════════════════════════════════"
-          echo "✅ CLEANUP COMPLETE - TERRAFORM WILL CREATE FRESH RESOURCES"
-          echo "═══════════════════════════════════════════════════════════════"
-
-      # NUCLEAR OPTION: Delete entire state and start fresh
-      # VPC module has lifecycle { ignore_changes = all } so imports will work
-      - name: Bootstrap existing resources (ONE-TIME - run manually if needed)
-        working-directory: infra/envs/dev
-        if: false  # DISABLED: Only run this step manually when bootstrapping new environment
-        continue-on-error: true
-        timeout-minutes: 8
-        env:
-          TF_VAR_opensearch_master_password: ${{ secrets.DEV_OPENSEARCH_PASSWORD }}
-          TF_VAR_razorpay_key_id: ${{ secrets.RAZORPAY_KEY_ID }}
-          TF_VAR_razorpay_key_secret: ${{ secrets.RAZORPAY_KEY_SECRET }}
-          TF_VAR_google_maps_api_key: ${{ secrets.GOOGLE_MAPS_API_KEY }}
-          TF_VAR_shiprocket_email: ${{ secrets.SHIPROCKET_EMAIL }}
-          TF_VAR_shiprocket_password: ${{ secrets.SHIPROCKET_PASSWORD }}
-        run: |
-          echo "============================================================"
-          echo "⚠️  THIS STEP IS DISABLED BY DEFAULT"
-          echo "============================================================"
-          echo ""
-          echo "WHAT: Bootstrap script that deletes state and reimports resources"
-          echo "WHY DISABLED: Terraform plan should be READ-ONLY, no state mutation"
-          echo ""
-          echo "WHEN TO ENABLE:"
-          echo "  - First-time environment setup"
-          echo "  - State corruption recovery (manual intervention)"
-          echo "  - NEVER in normal CI/CD flow"
-          echo ""
-          echo "HOW TO ENABLE:"
-          echo "  1. Edit .github/workflows/dev.yml"
-          echo "  2. Change 'if: false' to 'if: true' for this step"
-          echo "  3. Run workflow manually"
-          echo "  4. Change back to 'if: false' after completion"
-          echo ""
-          echo "============================================================"
-          exit 0
-          
-          # BOOTSTRAP CODE BELOW (only runs if 'if: false' is changed to 'if: true')
-          echo "🔥🔥🔥 NUCLEAR OPTION: DELETING ENTIRE STATE FILE 🔥🔥🔥"
-          echo ""
-          echo "WHY: State has mixed VPC resources causing destroy loops"
-          echo "FIX: Start fresh, import only RDS to preserve database"
-          echo "SAFETY: VPC module has lifecycle { ignore_changes = all }"
-          echo ""
-          
-          # Delete state file from S3
-          echo "1️⃣ Deleting terraform state from S3..."
-          aws s3 rm "s3://warmpawz-terraform-state-057442119249/dev/terraform.tfstate" --region ap-south-1 2>&1 || echo "   State file not found"
-          
-          # Delete DynamoDB entries
-          echo "2️⃣ Clearing DynamoDB entries..."
-          aws dynamodb delete-item --table-name warmpawz-terraform-locks \
-            --key '{"LockID":{"S":"warmpawz-terraform-state-057442119249/dev/terraform.tfstate"}}' \
-            --region ap-south-1 2>&1 || true
-          aws dynamodb delete-item --table-name warmpawz-terraform-locks \
-            --key '{"LockID":{"S":"warmpawz-terraform-state-057442119249/dev/terraform.tfstate-md5"}}' \
-            --region ap-south-1 2>&1 || true
-          
-          echo ""
-          echo "3️⃣ Re-initializing Terraform (fresh state)..."
-          rm -rf .terraform .terraform.lock.hcl
-          terraform init -backend-config=backend.hcl -reconfigure
-          
-          echo ""
-          echo "4️⃣ Importing ALL existing resources..."
-          
-          # Find and import EXISTING VPC + Subnets
-          echo "   📦 VPC + Subnets (use_existing_vpc = true)..."
-          EXISTING_VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=warmpawz-dev-vpc" --region ap-south-1 --query 'Vpcs[0].VpcId' --output text 2>/dev/null || echo "")
-          if [ -z "$EXISTING_VPC_ID" ] || [ "$EXISTING_VPC_ID" == "None" ]; then
-            # Try to find VPC from RDS subnet group
-            EXISTING_VPC_ID=$(aws rds describe-db-subnet-groups --db-subnet-group-name warmpawz-dev-db-subnet-group --region ap-south-1 --query 'DBSubnetGroups[0].VpcId' --output text 2>/dev/null || echo "")
-          fi
-          
-          if [ -n "$EXISTING_VPC_ID" ] && [ "$EXISTING_VPC_ID" != "None" ]; then
-            echo "      Found existing VPC: $EXISTING_VPC_ID"
-            echo "      ✅ VPC uses data sources (no imports needed for VPC, subnets, route tables)"
-            echo "         - Subnets: count = 0 (data sources will fetch IDs)"
-            echo "         - Route tables: count = 0 (already exist)"
-            echo "         - Route table associations: count = 0 (already exist)"
-          else
-            echo "      ⚠️ No existing VPC found - this may cause issues!"
-          fi
-          
-          # S3 Buckets for CloudFront - NO IMPORT NEEDED (brownfield-safe)
-          echo "   📦 S3 Buckets (CloudFront)..."
-          echo "      ✅ Using data sources - no import needed"
-          echo "      Buckets must already exist:"
-          for APP in admin vendor customer; do
-            BUCKET_NAME="warmpawz-dev-${APP}-frontend-ap-south-1"
-            if aws s3api head-bucket --bucket "$BUCKET_NAME" 2>/dev/null; then
-              echo "         ✅ ${BUCKET_NAME} exists"
-            else
-              echo "         ⚠️  ${BUCKET_NAME} NOT FOUND - CloudFront will fail!"
-            fi
-          done
-          
-          # Import CloudFront OACs
-          echo "   📦 CloudFront OACs..."
-          for APP in admin vendor customer; do
-            OAC_ID=$(aws cloudfront list-origin-access-controls --query "OriginAccessControlList.Items[?Name=='warmpawz-dev-${APP}-oac'].Id" --output text 2>/dev/null || echo "")
-            if [ -n "$OAC_ID" ] && [ "$OAC_ID" != "None" ] && [ "$OAC_ID" != "" ]; then
-              echo "      Importing warmpawz-dev-${APP}-oac: $OAC_ID"
-              terraform import -input=false -lock=false "module.cloudfront.aws_cloudfront_origin_access_control.frontend[\"${APP}\"]" "$OAC_ID" 2>&1 | grep -E "Import successful|already managed" || echo "      ⚠️ Skipped"
-            fi
-          done
-          
-          # Import RDS DB Subnet Group
-          echo "   📦 RDS DB Subnet Group..."
-          if aws rds describe-db-subnet-groups --db-subnet-group-name warmpawz-dev-db-subnet-group --region ap-south-1 2>/dev/null | grep -q "warmpawz-dev-db-subnet-group"; then
-            terraform import -input=false -lock=false 'module.rds.aws_db_subnet_group.main' warmpawz-dev-db-subnet-group 2>&1 | grep -E "Import successful|already managed" || echo "      ⚠️ Skipped"
-          fi
-          
-          # Import RDS Security Group
-          echo "   📦 RDS Security Group..."
-          RDS_SG_ID=$(aws ec2 describe-security-groups --filters "Name=group-name,Values=warmpawz-dev-rds-*" --region ap-south-1 --query 'SecurityGroups[0].GroupId' --output text 2>/dev/null || echo "")
-          if [ -n "$RDS_SG_ID" ] && [ "$RDS_SG_ID" != "None" ]; then
-            terraform import -input=false -lock=false 'module.rds.aws_security_group.rds' "$RDS_SG_ID" 2>&1 | grep -E "Import successful|already managed" || echo "      ⚠️ Skipped"
-          fi
-          
-          # Import RDS Parameter Groups (FIX: Get FIRST match only, add awk to handle tabs/spaces)
-          echo "   📦 RDS Parameter Groups..."
-          CLUSTER_PG=$(aws rds describe-db-cluster-parameter-groups --region ap-south-1 --query "DBClusterParameterGroups[?contains(DBClusterParameterGroupName, 'warmpawz-dev-aurora')].DBClusterParameterGroupName | [0]" --output text 2>/dev/null | awk '{print $1}')
-          if [ -n "$CLUSTER_PG" ] && [ "$CLUSTER_PG" != "None" ]; then
-            echo "      Importing: $CLUSTER_PG"
-            terraform import -input=false -lock=false 'module.rds.aws_rds_cluster_parameter_group.main' "$CLUSTER_PG" 2>&1 | grep -E "Import successful|already managed" || echo "      ⚠️ Skipped"
-          fi
-          
-          DB_PG=$(aws rds describe-db-parameter-groups --region ap-south-1 --query "DBParameterGroups[?contains(DBParameterGroupName, 'warmpawz-dev-aurora-db')].DBParameterGroupName | [0]" --output text 2>/dev/null | awk '{print $1}')
-          if [ -n "$DB_PG" ] && [ "$DB_PG" != "None" ]; then
-            echo "      Importing: $DB_PG"
-            terraform import -input=false -lock=false 'module.rds.aws_db_parameter_group.main' "$DB_PG" 2>&1 | grep -E "Import successful|already managed" || echo "      ⚠️ Skipped"
-          fi
-          
-          # Import RDS cluster if exists
-          echo "   📦 RDS Cluster + Instance..."
-          if aws rds describe-db-clusters --db-cluster-identifier warmpawz-dev-cluster --region ap-south-1 2>/dev/null | grep -q "warmpawz-dev-cluster"; then
-            terraform import -input=false -lock=false 'module.rds.aws_rds_cluster.main' warmpawz-dev-cluster 2>&1 | grep -E "Import successful|already managed" || echo "      ⚠️ Skipped"
-            
-            INSTANCE_ID=$(aws rds describe-db-instances --region ap-south-1 --query "DBInstances[?DBClusterIdentifier=='warmpawz-dev-cluster'].DBInstanceIdentifier" --output text 2>/dev/null | head -1)
-            if [ -n "$INSTANCE_ID" ] && [ "$INSTANCE_ID" != "None" ]; then
-              terraform import -input=false -lock=false 'module.rds.aws_rds_cluster_instance.main[0]' "$INSTANCE_ID" 2>&1 | grep -E "Import successful|already managed" || echo "      ⚠️ Skipped"
-            fi
-          fi
-          
-          # Import RDS Secret
-          echo "   📦 RDS Secret..."
-          SECRET_ARN=$(aws secretsmanager list-secrets --region ap-south-1 --query "SecretList[?starts_with(Name, 'warmpawz-dev-rds-master')].ARN" --output text 2>/dev/null | head -1)
-          if [ -n "$SECRET_ARN" ] && [ "$SECRET_ARN" != "None" ]; then
-            terraform import -input=false -lock=false 'module.rds.aws_secretsmanager_secret.rds_master_password' "$SECRET_ARN" 2>&1 | grep -E "Import successful|already managed" || echo "      ⚠️ Skipped"
-          fi
-          
-          # Import Lambda Function + Permission + Alias
-          echo "   📦 Lambda Function + Permission + Alias..."
-          # ROBUST check: Use exit code, not grep
-          if aws lambda get-function --function-name warmpawz-dev-api-handler --region ap-south-1 >/dev/null 2>&1; then
-            echo "      Found existing Lambda function: warmpawz-dev-api-handler"
-            
-            # Import Lambda function - use double quotes with escaped inner quotes
-            echo "      Importing function..."
-            terraform state rm "module.lambda.aws_lambda_function.functions[\"api-handler\"]" 2>&1 | grep -v "Invalid target address" || true
-            FUNC_OUTPUT=$(terraform import -input=false -lock=false "module.lambda.aws_lambda_function.functions[\"api-handler\"]" warmpawz-dev-api-handler 2>&1)
-            echo "$FUNC_OUTPUT"
-            echo "$FUNC_OUTPUT" | grep -qE "Import successful|already managed" && echo "      ✅ Function imported" || echo "      ❌ Function import FAILED"
-            
-            # Import Lambda permission (format: function_name/statement_id)
-            echo "      Importing permission..."
-            terraform state rm "module.api_gateway.aws_lambda_permission.api_gateway[\"api-handler\"]" 2>/dev/null || true
-            PERM_OUTPUT=$(terraform import -input=false -lock=false "module.api_gateway.aws_lambda_permission.api_gateway[\"api-handler\"]" warmpawz-dev-api-handler/AllowAPIGatewayInvoke-api-handler 2>&1)
-            echo "$PERM_OUTPUT"
-            echo "$PERM_OUTPUT" | grep -qE "Import successful|already managed" && echo "      ✅ Permission imported" || echo "      ⚠️ Permission import failed (will be created)"
-            
-            # Lambda alias - NO LONGER MANAGED BY TERRAFORM
-            # Aliases are stable resources that should not be managed by Terraform
-            # They remain in AWS but Terraform ignores them completely
-            # This prevents ResourceConflictException on every deployment
-            echo "      ℹ️ Lambda aliases are no longer managed by Terraform (prevents conflicts)"
-          else
-            echo "      ℹ️ Lambda function does not exist - will be created"
-          fi
-          
-          # NAT Gateway, EIP, IGW - DO NOT IMPORT when use_existing_vpc = true
-          # These resources have count = 0 in Terraform config, can't import
-          # Data sources will look them up instead for route table references
-          if [ -n "$EXISTING_VPC_ID" ] && [ "$EXISTING_VPC_ID" != "None" ]; then
-            echo "   ℹ️ NAT Gateway + EIP + IGW: Using data sources (not importing)"
-            echo "      (These resources have count=0 in config when use_existing_vpc=true)"
-            echo "      Data sources will look up existing resources for routing"
-          fi
-          
-          # Route Tables + Associations - SKIP imports when use_existing_vpc = true
-          # These resources have count = 0, so no imports needed
-          if [ -n "$EXISTING_VPC_ID" ] && [ "$EXISTING_VPC_ID" != "None" ]; then
-            echo "   ℹ️ Route Tables + Associations: count = 0, no imports needed"
-            echo "      (Already exist in AWS, Terraform won't manage them)"
-          fi
-          
-            # Verify imports succeeded
-            echo ""
-            echo "🔍 Verifying imports..."
-            terraform state list | grep -E "module.rds|module.lambda.aws_lambda_function|module.cloudfront" || echo "   ⚠️ Some resources not in state"
-            
-            echo ""
-            echo "✅ NUCLEAR OPTION COMPLETE"
-            echo "   use_existing_vpc = true (VPC limit reached)"
-            echo "   All existing resources imported"
-            echo "   Terraform will create ONLY missing resources"
-
-      - name: Terraform Plan
-        id: plan
-        working-directory: infra/envs/dev
-        run: |
-          set +e  # Don't exit on error
-          
-          echo "🔍 Running terraform plan..."
-          
-          # Run plan and capture both stdout and stderr
-          terraform plan \
-            -var="opensearch_master_password=${{ secrets.DEV_OPENSEARCH_PASSWORD }}" \
-            -var="razorpay_key_id=${{ secrets.RAZORPAY_KEY_ID }}" \
-            -var="razorpay_key_secret=${{ secrets.RAZORPAY_KEY_SECRET }}" \
-            -var="google_maps_api_key=${{ secrets.GOOGLE_MAPS_API_KEY }}" \
-            -var="shiprocket_email=${{ secrets.SHIPROCKET_EMAIL }}" \
-            -var="shiprocket_password=${{ secrets.SHIPROCKET_PASSWORD }}" \
-            -out=tfplan \
-            -detailed-exitcode > plan_output.txt 2>&1
-          
-          EXIT_CODE=$?
-          
-          # Show the full plan output
-          cat plan_output.txt
-          
-          echo ""
-          echo "═══════════════════════════════════════════════════════════════"
-          echo "TERRAFORM PLAN EXIT CODE: $EXIT_CODE"
-          echo "═══════════════════════════════════════════════════════════════"
-          
-          # Terraform plan exit codes with -detailed-exitcode:
-          # 0 = No changes, success
-          # 1 = Error occurred
-          # 2 = Successful plan with changes
-          
-          if [ $EXIT_CODE -eq 0 ]; then
-            echo "✅ Terraform plan successful - No changes needed"
-            exit 0
-          elif [ $EXIT_CODE -eq 2 ]; then
-            echo "✅ Terraform plan successful - Changes detected (ready to apply)"
-            exit 0
-          else
-            echo "❌ Terraform plan FAILED with exit code: $EXIT_CODE"
-            echo ""
-            echo "Full error output:"
-            cat plan_output.txt
-            exit 1
-          fi
-
-      - name: Upload Terraform plan
-        uses: actions/upload-artifact@v4
-        with:
-          name: terraform-plan
-          path: infra/envs/dev/tfplan
-          retention-days: 1
-
-  # ============================================
-  # TERRAFORM APPLY
   # ============================================
   # DATABASE MIGRATIONS
   # ============================================
@@ -767,12 +325,6 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: ${{ env.TERRAFORM_VERSION }}
-          terraform_wrapper: false
-
       - name: Ensure RDS is accessible (Dev Only)
         run: |
           echo "🔧 Ensuring RDS is accessible for migrations..."
@@ -784,7 +336,6 @@ jobs:
 
       - name: Get database credentials
         id: db-creds
-        working-directory: infra/envs/dev
         env:
           DEV_DATABASE_URL: ${{ secrets.DEV_DATABASE_URL }}
         run: |
@@ -799,37 +350,39 @@ jobs:
           fi
           
           echo "ℹ️  DEV_DATABASE_URL not set, falling back to Secrets Manager..."
-          terraform init -backend-config=backend.hcl
           
-          # Get Terraform outputs with validation
-          RDS_ENDPOINT=$(terraform output -raw rds_endpoint 2>/dev/null || echo "")
-          RDS_SECRET_ARN=$(terraform output -raw rds_secret_arn 2>/dev/null || echo "")
-          RDS_DB_NAME=$(terraform output -raw rds_database_name 2>/dev/null || echo "")
-          RDS_PORT=$(terraform output -raw rds_port 2>/dev/null || echo "")
+          # Get RDS endpoint from AWS directly (no Terraform needed)
+          RDS_CLUSTER_ID="warmpawz-dev-cluster"
+          RDS_ENDPOINT=$(aws rds describe-db-clusters --db-cluster-identifier "$RDS_CLUSTER_ID" --region ap-south-1 --query 'DBClusters[0].Endpoint' --output text 2>/dev/null || echo "")
+          RDS_PORT=$(aws rds describe-db-clusters --db-cluster-identifier "$RDS_CLUSTER_ID" --region ap-south-1 --query 'DBClusters[0].Port' --output text 2>/dev/null || echo "5432")
+          RDS_DB_NAME=$(aws rds describe-db-clusters --db-cluster-identifier "$RDS_CLUSTER_ID" --region ap-south-1 --query 'DBClusters[0].DatabaseName' --output text 2>/dev/null || echo "warmpawz")
           
-          # CRITICAL: Validate all required outputs exist
-          if [ -z "$RDS_ENDPOINT" ] || [ "$RDS_ENDPOINT" = "null" ]; then
-            echo "❌ ERROR: rds_endpoint output is empty or undefined"
-            echo "   This usually means RDS has not been created yet or Terraform apply failed"
+          # Get secret ARN from Secrets Manager
+          RDS_SECRET_ARN=$(aws secretsmanager list-secrets --region ap-south-1 --query "SecretList[?starts_with(Name, 'warmpawz-dev-rds-master')].ARN" --output text | head -1 || echo "")
+          
+          # CRITICAL: Validate all required values exist
+          if [ -z "$RDS_ENDPOINT" ] || [ "$RDS_ENDPOINT" = "None" ] || [ "$RDS_ENDPOINT" = "null" ]; then
+            echo "❌ ERROR: RDS endpoint is empty or undefined"
+            echo "   This usually means RDS has not been created yet"
             exit 1
           fi
           
-          if [ -z "$RDS_SECRET_ARN" ] || [ "$RDS_SECRET_ARN" = "null" ]; then
-            echo "❌ ERROR: rds_secret_arn output is empty or undefined"
+          if [ -z "$RDS_SECRET_ARN" ] || [ "$RDS_SECRET_ARN" = "None" ] || [ "$RDS_SECRET_ARN" = "null" ]; then
+            echo "❌ ERROR: RDS secret ARN is empty or undefined"
             exit 1
           fi
           
-          if [ -z "$RDS_DB_NAME" ] || [ "$RDS_DB_NAME" = "null" ]; then
-            echo "❌ ERROR: rds_database_name output is empty or undefined"
-            exit 1
+          if [ -z "$RDS_DB_NAME" ] || [ "$RDS_DB_NAME" = "None" ] || [ "$RDS_DB_NAME" = "null" ]; then
+            echo "⚠️  WARNING: RDS database name is empty, defaulting to 'warmpawz'"
+            RDS_DB_NAME="warmpawz"
           fi
           
-          if [ -z "$RDS_PORT" ] || [ "$RDS_PORT" = "null" ]; then
-            echo "⚠️  WARNING: rds_port is empty, defaulting to 5432"
+          if [ -z "$RDS_PORT" ] || [ "$RDS_PORT" = "None" ] || [ "$RDS_PORT" = "null" ]; then
+            echo "⚠️  WARNING: RDS port is empty, defaulting to 5432"
             RDS_PORT="5432"
           fi
           
-          echo "✅ Terraform outputs retrieved:"
+          echo "✅ AWS RDS information retrieved:"
           echo "   Endpoint: ${RDS_ENDPOINT}"
           echo "   Database: ${RDS_DB_NAME}"
           echo "   Port: ${RDS_PORT}"
@@ -1059,15 +612,8 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: ${{ env.TERRAFORM_VERSION }}
-          terraform_wrapper: false
-
       - name: Get database credentials
         id: db-creds
-        working-directory: infra/envs/dev
         env:
           DEV_DATABASE_URL: ${{ secrets.DEV_DATABASE_URL }}
         run: |
@@ -1080,28 +626,41 @@ jobs:
           fi
           
           echo "ℹ️  Falling back to Secrets Manager..."
-          terraform init -backend-config=backend.hcl
           
-          RDS_ENDPOINT=$(terraform output -raw rds_endpoint)
-          RDS_SECRET_ARN=$(terraform output -raw rds_secret_arn)
-          RDS_DB_NAME=$(terraform output -raw rds_database_name)
-          RDS_PORT=$(terraform output -raw rds_port)
+          # Get RDS endpoint from AWS directly (no Terraform needed)
+          RDS_CLUSTER_ID="warmpawz-dev-cluster"
+          RDS_ENDPOINT=$(aws rds describe-db-clusters --db-cluster-identifier "$RDS_CLUSTER_ID" --region ap-south-1 --query 'DBClusters[0].Endpoint' --output text 2>/dev/null || echo "")
+          RDS_PORT=$(aws rds describe-db-clusters --db-cluster-identifier "$RDS_CLUSTER_ID" --region ap-south-1 --query 'DBClusters[0].Port' --output text 2>/dev/null || echo "5432")
+          RDS_DB_NAME=$(aws rds describe-db-clusters --db-cluster-identifier "$RDS_CLUSTER_ID" --region ap-south-1 --query 'DBClusters[0].DatabaseName' --output text 2>/dev/null || echo "warmpawz")
           
-          DB_SECRET=$(aws secretsmanager get-secret-value --secret-id "$RDS_SECRET_ARN" --query SecretString --output text)
-          DB_PASSWORD=$(echo "$DB_SECRET" | jq -r '.password // .Password // .')
-          DB_USERNAME=$(echo "$DB_SECRET" | jq -r '.username // .Username // "postgres"')
+          # Get secret ARN from Secrets Manager
+          RDS_SECRET_ARN=$(aws secretsmanager list-secrets --region ap-south-1 --query "SecretList[?starts_with(Name, 'warmpawz-dev-rds-master')].ARN" --output text | head -1 || echo "")
           
-          DATABASE_URL="postgresql://${DB_USERNAME}:${DB_PASSWORD}@${RDS_ENDPOINT}:${RDS_PORT}/${RDS_DB_NAME}"
+          if [ -z "$RDS_ENDPOINT" ] || [ "$RDS_ENDPOINT" = "None" ] || [ "$RDS_ENDPOINT" = "null" ]; then
+            echo "❌ ERROR: RDS endpoint is empty or undefined"
+            exit 1
+          fi
           
-          echo "::add-mask::$DB_PASSWORD"
-          echo "::add-mask::$DATABASE_URL"
+          if [ -z "$RDS_SECRET_ARN" ] || [ "$RDS_SECRET_ARN" = "None" ] || [ "$RDS_SECRET_ARN" = "null" ]; then
+            echo "❌ ERROR: RDS secret ARN is empty or undefined"
+            exit 1
+          fi
+          
+          # Get credentials from Secrets Manager
+          DB_SECRET=$(aws secretsmanager get-secret-value --secret-id "$RDS_SECRET_ARN" --query SecretString --output text 2>/dev/null || echo "")
+          DB_PASSWORD=$(echo "$DB_SECRET" | jq -r '.password // .Password // .' 2>/dev/null || echo "")
+          DB_USERNAME=$(echo "$DB_SECRET" | jq -r '.username // .Username // "postgres"' 2>/dev/null || echo "postgres")
+          
+          DB_PASSWORD_ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('''$DB_PASSWORD''', safe=''))")
+          DATABASE_URL="postgresql://${DB_USERNAME}:${DB_PASSWORD_ENCODED}@${RDS_ENDPOINT}:${RDS_PORT}/${RDS_DB_NAME}"
+          
           echo "database_url=$DATABASE_URL" >> $GITHUB_OUTPUT
 
       - name: Seed database
         working-directory: db
         run: |
           npm ci
-          npm run seed:dev
+          npm run seed
         env:
           DATABASE_URL: ${{ steps.db-creds.outputs.database_url }}
           ENVIRONMENT: dev
@@ -1162,7 +721,7 @@ jobs:
           API_URL="${{ steps.urls.outputs.api_endpoint }}"
           
           if [ -z "$API_URL" ] || [ "$API_URL" = "null" ]; then
-            echo "⚠️  API endpoint not available from Terraform outputs"
+            echo "⚠️  API endpoint not available"
             echo "   This is expected if API Gateway deployment is still in progress"
             exit 0
           fi
@@ -1259,4 +818,6 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Android APKs are available as workflow artifacts." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## ✅ Deployment Status: SUCCESS" >> $GITHUB_STEP_SUMMARY
+          echo "## ✅ Deployment Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "All code deployments completed. Infrastructure was NOT modified." >> $GITHUB_STEP_SUMMARY
