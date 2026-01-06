@@ -78,7 +78,17 @@ async function calculateWithGoogleMaps(
     const url = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${originStr}&destinations=${destStr}&key=${apiKey}&mode=driving&traffic_model=best_guess&departure_time=now`;
     
     const response = await fetch(url);
-    const data = await response.json();
+    const data = await response.json() as {
+      status: string;
+      rows?: Array<{
+        elements?: Array<{
+          status: string;
+          distance?: { value: number };
+          duration?: { value: number };
+          duration_in_traffic?: { value: number };
+        }>;
+      }>;
+    };
 
     if (data.status !== 'OK' || !data.rows?.[0]?.elements?.[0]) {
       console.warn('Google Maps API error:', data.status);
@@ -92,15 +102,15 @@ async function calculateWithGoogleMaps(
       return null;
     }
 
-    const distanceKm = element.distance.value / 1000; // Convert meters to km
-    const durationSeconds = element.duration_in_traffic?.value || element.duration.value;
+    const distanceKm = (element.distance?.value || 0) / 1000; // Convert meters to km
+    const durationSeconds = element.duration_in_traffic?.value || element.duration?.value || 0;
     const durationMinutes = Math.ceil(durationSeconds / 60);
 
     return {
       distanceKm: Math.round(distanceKm * 100) / 100,
       durationMinutes,
       durationSeconds,
-      trafficMultiplier: element.duration_in_traffic 
+      trafficMultiplier: element.duration_in_traffic && element.duration
         ? element.duration_in_traffic.value / element.duration.value 
         : 1.0,
       method: 'google_maps',

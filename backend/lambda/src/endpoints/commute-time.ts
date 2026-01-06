@@ -102,20 +102,62 @@ class CalculateStaffETAHandler extends BaseHandler {
 export function registerCommuteTimeEndpoints(app: Hono) {
   // Calculate commute time between two locations
   app.post('/commute-time/calculate', async (c) => {
-    const handler = new CalculateCommuteTimeHandler();
-    return handler.handle({ event: c.req.raw as any, app });
+    try {
+      const handler = new CalculateCommuteTimeHandler();
+      const context = {
+        event: c.req.raw as any,
+        context: {} as any,
+      };
+      const response = await handler.handle(context);
+      const data = JSON.parse(response.body);
+      if (response.statusCode !== 200) {
+        return c.json(data, response.statusCode as any);
+      }
+      return c.json(data);
+    } catch (error: any) {
+      console.error('Error calculating commute time:', error);
+      return c.json({ error: error.message || 'Internal server error' }, 500 as any);
+    }
   });
 
   // Calculate commute time to multiple destinations (for route optimization)
   app.post('/commute-time/calculate-multiple', async (c) => {
-    const handler = new CalculateMultipleCommuteTimesHandler();
-    return handler.handle({ event: c.req.raw as any, app });
+    try {
+      const handler = new CalculateMultipleCommuteTimesHandler();
+      const context = {
+        event: c.req.raw as any,
+        context: {} as any,
+      };
+      const response = await handler.handle(context);
+      const data = JSON.parse(response.body);
+      if (response.statusCode !== 200) {
+        return c.json(data, response.statusCode as any);
+      }
+      return c.json(data);
+    } catch (error: any) {
+      console.error('Error calculating multiple commute times:', error);
+      return c.json({ error: error.message || 'Internal server error' }, 500 as any);
+    }
   });
 
   // Calculate ETA for staff arrival at customer location
   app.post('/commute-time/staff-eta', async (c) => {
-    const handler = new CalculateStaffETAHandler();
-    return handler.handle({ event: c.req.raw as any, app });
+    try {
+      const handler = new CalculateStaffETAHandler();
+      const context = {
+        event: c.req.raw as any,
+        context: {} as any,
+      };
+      const response = await handler.handle(context);
+      const data = JSON.parse(response.body);
+      if (response.statusCode !== 200) {
+        return c.json(data, response.statusCode as any);
+      }
+      return c.json(data);
+    } catch (error: any) {
+      console.error('Error calculating staff ETA:', error);
+      return c.json({ error: error.message || 'Internal server error' }, 500 as any);
+    }
   });
 }
 

@@ -198,16 +198,29 @@ export function DynamicVendorOnboardingForm({
       
       for (const [key, file] of Object.entries(documents)) {
         if (file) {
-          const formData = new FormData();
-          formData.append('file', file);
-          formData.append('documentType', key);
-          
-          const uploadResponse = await apiClient.post<any>(`/vendor/upload-document`, formData, {
-            headers: { 'Content-Type': 'multipart/form-data' }
-          });
-          
-          if (uploadResponse.url) {
-            uploadedDocuments[key] = uploadResponse.url;
+          try {
+            const uploadFormData = new FormData();
+            uploadFormData.append('file', file);
+            uploadFormData.append('documentType', key);
+            
+            // Use fetch directly for file uploads
+            const baseUrl = apiClient['baseUrl'] || '';
+            const token = apiClient['getAuthToken']?.() || '';
+            
+            const uploadResponse = await fetch(`${baseUrl}/vendor/upload-document`, {
+              method: 'POST',
+              headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+              body: uploadFormData
+            });
+            
+            if (uploadResponse.ok) {
+              const uploadData = await uploadResponse.json();
+              if (uploadData.url) {
+                uploadedDocuments[key] = uploadData.url;
+              }
+            }
+          } catch (error) {
+            console.error(`Error uploading ${key}:`, error);
           }
         }
       }

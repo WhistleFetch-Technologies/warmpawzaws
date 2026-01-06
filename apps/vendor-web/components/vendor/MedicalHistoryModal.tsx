@@ -43,12 +43,18 @@ export function MedicalHistoryModal({ petId, bookingId, petName, vendorId, onClo
       setLoading(true);
       setError(null);
 
-      const data = await apiClient.get<any>(`/appointments/${bookingId}/medical-records`, {
+      // TODO: Add header support to apiClient or use fetch directly for custom headers
+      const baseUrl = (apiClient as any).baseUrl || '';
+      const token = (apiClient as any).getAuthToken?.() || '';
+      const response = await fetch(`${baseUrl}/appointments/${bookingId}/medical-records`, {
         headers: {
+          'Content-Type': 'application/json',
           'X-User-Id': vendorId,
-          'X-User-Role': 'vendor'
+          'X-User-Role': 'vendor',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
         }
-      } as any);
+      });
+      const data = await response.json();
 
       if (data.success) {
         setRecords(data.records || []);
