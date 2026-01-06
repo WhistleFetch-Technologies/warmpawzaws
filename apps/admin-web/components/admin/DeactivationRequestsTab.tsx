@@ -97,7 +97,7 @@ export function DeactivationRequestsTab() {
                 </p>
               </div>
               
-              {request.status === 'pending' && (
+              {(request.status as any) === 'pending' && (
                 <div className="flex gap-2 ml-4">
                   <Button
                     size="sm"
@@ -120,7 +120,7 @@ export function DeactivationRequestsTab() {
                 </div>
               )}
               
-              {request.status !== 'pending' && (
+              {(request.status as any) !== 'pending' && (
                 <div className="ml-4">
                   <span className={`px-3 py-1 text-xs rounded-full ${
                     request.status === 'approved' 

@@ -181,7 +181,7 @@ export function UniversalVendorListView({ roleId, roleName, phone, onBack, onNav
           <input
             type="text"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
             placeholder={`Search ${searchType === 'staff' ? 'staff' : 'centers'}...`}
             className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
           />

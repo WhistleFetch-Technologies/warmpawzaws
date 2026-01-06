@@ -222,7 +222,7 @@ export default function SettlementsPage() {
           <div className="flex flex-wrap gap-4 items-center">
             <select
               value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilterStatus(e.target.value)}
               className="px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
             >
               <option value="">All Status</option>
@@ -233,7 +233,7 @@ export default function SettlementsPage() {
             </select>
             <select
               value={filterYear}
-              onChange={(e) => setFilterYear(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilterYear(e.target.value)}
               className="px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
             >
               <option value="2026">2026</option>

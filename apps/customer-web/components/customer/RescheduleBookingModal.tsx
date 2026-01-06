@@ -102,7 +102,7 @@ export function RescheduleBookingModal({
             <input
               type="date"
               value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSelectedDate(e.target.value)}
               min={new Date().toISOString().split('T')[0]}
               className="w-full p-3 border border-gray-300 rounded-lg"
             />
@@ -152,7 +152,7 @@ export function RescheduleBookingModal({
             <label className="block text-sm font-medium mb-2">Reason (optional)</label>
             <textarea
               value={reason}
-              onChange={(e) => setReason(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setReason(e.target.value)}
               className="w-full p-3 border border-gray-300 rounded-lg"
               rows={3}
               placeholder="Please provide a reason..."

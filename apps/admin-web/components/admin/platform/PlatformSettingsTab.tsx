@@ -120,7 +120,7 @@ export function PlatformSettingsTab() {
             <input
               type="text"
               value={settings.aws.s3Bucket}
-              onChange={(e) => updateSetting('aws', 's3Bucket', e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSetting('aws', 's3Bucket', e.target.value)}
               className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
               placeholder="my-bucket-name"
             />
@@ -130,7 +130,7 @@ export function PlatformSettingsTab() {
             <input
               type="text"
               value={settings.aws.s3Region}
-              onChange={(e) => updateSetting('aws', 's3Region', e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSetting('aws', 's3Region', e.target.value)}
               className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
               placeholder="us-east-1"
             />
@@ -140,7 +140,7 @@ export function PlatformSettingsTab() {
             <input
               type="text"
               value={settings.aws.sqsQueueUrl}
-              onChange={(e) => updateSetting('aws', 'sqsQueueUrl', e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSetting('aws', 'sqsQueueUrl', e.target.value)}
               className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
               placeholder="https://sqs.region.amazonaws.com/account/queue"
             />
@@ -150,7 +150,7 @@ export function PlatformSettingsTab() {
             <input
               type="text"
               value={settings.aws.googleMapsApiKey}
-              onChange={(e) => updateSetting('aws', 'googleMapsApiKey', e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSetting('aws', 'googleMapsApiKey', e.target.value)}
               className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
               placeholder="AIza..."
             />
@@ -170,7 +170,7 @@ export function PlatformSettingsTab() {
             <input
               type="text"
               value={settings.payments.razorpayKeyId}
-              onChange={(e) => updateSetting('payments', 'razorpayKeyId', e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSetting('payments', 'razorpayKeyId', e.target.value)}
               className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
               placeholder="rzp_live_..."
             />
@@ -180,7 +180,7 @@ export function PlatformSettingsTab() {
             <input
               type="password"
               value={settings.payments.razorpayKeySecret}
-              onChange={(e) => updateSetting('payments', 'razorpayKeySecret', e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSetting('payments', 'razorpayKeySecret', e.target.value)}
               className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
               placeholder="••••••••"
             />
@@ -190,7 +190,7 @@ export function PlatformSettingsTab() {
             <input
               type="text"
               value={settings.payments.stripePublishableKey}
-              onChange={(e) => updateSetting('payments', 'stripePublishableKey', e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSetting('payments', 'stripePublishableKey', e.target.value)}
               className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
               placeholder="pk_live_..."
             />
@@ -200,7 +200,7 @@ export function PlatformSettingsTab() {
             <input
               type="password"
               value={settings.payments.stripeSecretKey}
-              onChange={(e) => updateSetting('payments', 'stripeSecretKey', e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSetting('payments', 'stripeSecretKey', e.target.value)}
               className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
               placeholder="sk_live_..."
             />
@@ -220,7 +220,7 @@ export function PlatformSettingsTab() {
             <input
               type="text"
               value={settings.logistics.shiprocketApiKey}
-              onChange={(e) => updateSetting('logistics', 'shiprocketApiKey', e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSetting('logistics', 'shiprocketApiKey', e.target.value)}
               className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
               placeholder="API key"
             />
@@ -230,7 +230,7 @@ export function PlatformSettingsTab() {
             <input
               type="password"
               value={settings.logistics.shiprocketApiSecret}
-              onChange={(e) => updateSetting('logistics', 'shiprocketApiSecret', e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSetting('logistics', 'shiprocketApiSecret', e.target.value)}
               className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
               placeholder="••••••••"
             />

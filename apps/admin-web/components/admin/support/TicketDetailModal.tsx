@@ -50,7 +50,7 @@ export function TicketDetailModal({ ticket, onClose, onUpdate }: TicketDetailMod
             <label className="block text-sm font-medium text-gray-700 mb-2">Reply</label>
             <textarea
               value={replyText}
-              onChange={(e) => setReplyText(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setReplyText(e.target.value)}
               rows={4}
               className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
               placeholder="Type your reply..."

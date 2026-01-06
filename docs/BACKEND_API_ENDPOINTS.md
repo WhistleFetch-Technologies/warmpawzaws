@@ -692,10 +692,83 @@ Response: { success: boolean, coupon_code: string }
 
 ### Ambulance Service
 ```
-POST /services/ambulance/request
-Body: { pet_id: string, location: object, emergency_type: string }
-Response: { booking: Booking }
+GET /vendor/:vendorId/ambulance/vehicles
+Response: { success: boolean, vehicles: Vehicle[], total: number }
+
+POST /vendor/:vendorId/ambulance/vehicles
+Body: { vehicleNumber?: string, vehicleType?: string, capacity?: number, equipment?: array, currentLocation?: object, isAvailable?: boolean }
+Response: { success: boolean, vehicle: Vehicle, message: string }
+
+PUT /vendor/:vendorId/ambulance/vehicles/:vehicleId
+Body: { vehicleType?: string, capacity?: number, equipment?: array, currentLocation?: object, isAvailable?: boolean, rating?: number }
+Response: { success: boolean, vehicle: Vehicle, message: string }
 ```
+
+### Diagnostics Service
+```
+GET /vendor/:vendorId/diagnostics/tests
+Response: { success: boolean, tests: DiagnosticTest[], total: number }
+
+POST /vendor/:vendorId/diagnostics/tests
+Body: { testName: string, testCode?: string, category?: string, description?: string, price: number, durationMinutes?: number, sampleType?: string, preparationInstructions?: string }
+Response: { success: boolean, test: DiagnosticTest, message: string }
+
+PUT /vendor/:vendorId/diagnostics/tests/:testId
+Body: { testName?: string, category?: string, price?: number, isAvailable?: boolean }
+Response: { success: boolean, test: DiagnosticTest, message: string }
+```
+
+### Pharmacy/Medicine Delivery
+```
+GET /vendor/:vendorId/pharmacy/medicines
+Response: { success: boolean, medicines: Medicine[], total: number }
+
+POST /vendor/:vendorId/pharmacy/medicines
+Body: { name: string, brand?: string, dosage?: string, quantity: number, price: number, prescriptionRequired?: boolean }
+Response: { success: boolean, medicine: Medicine, message: string }
+```
+
+### Pet Cafe
+```
+GET /vendor/:vendorId/cafe/tables
+Response: { success: boolean, tables: Table[], total: number }
+
+POST /vendor/:vendorId/cafe/tables
+Body: { tableNumber?: string, tableType?: string, capacity: number, amenities?: array, pricePerHour?: number, isAvailable?: boolean }
+Response: { success: boolean, table: Table, message: string }
+```
+
+### Pet Resort/Boarding
+```
+GET /vendor/:vendorId/resort/rooms
+Response: { success: boolean, rooms: Room[], total: number }
+
+POST /vendor/:vendorId/resort/rooms
+Body: { roomNumber?: string, roomType?: string, capacity: number, amenities?: array, pricePerNight: number, isAvailable?: boolean }
+Response: { success: boolean, room: Room, message: string }
+```
+
+### Breeder/Adoption
+```
+GET /vendor/:vendorId/breeder/puppies
+Response: { success: boolean, puppies: Pet[], total: number }
+
+POST /vendor/:vendorId/breeder/puppies
+Body: { petName: string, petType?: string, breed: string, age: number, ageUnit?: string, gender: string, size: string, color: string, description?: string, photos?: array, listingType?: string, adoptionFee?: number }
+Response: { success: boolean, puppy: Pet, message: string }
+```
+
+### Frontend Components
+**Location:** `apps/customer-web/components/customer/specialized/`
+
+- `AmbulanceBookingFlow.tsx` - Emergency ambulance booking
+- `DiagnosticsBookingFlow.tsx` - Diagnostic test selection and booking
+- `MedicineDeliveryFlow.tsx` - Medicine ordering with prescription upload
+- `PetCafeBookingFlow.tsx` - Table booking for pet cafe
+- `PetResortBookingFlow.tsx` - Room booking for pet resort/boarding
+- `PetWalkerBookingFlow.tsx` - Pet walker service booking
+- `AdoptionListingView.tsx` - Pet adoption/breeder listings
+- `SpecializedServiceRouter.tsx` - Automatic routing to appropriate specialized flow
 
 ### Diagnostics
 ```

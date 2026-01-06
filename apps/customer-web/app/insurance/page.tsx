@@ -596,7 +596,7 @@ export default function InsurancePage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Policy *</label>
                 <select
                   value={claimForm.policy_id}
-                  onChange={(e) => setClaimForm(prev => ({ ...prev, policy_id: e.target.value }))}
+                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setClaimForm(prev => ({ ...prev, policy_id: e.target.value }))}
                   className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 outline-none"
                 >
                   <option value="">Select a policy</option>
@@ -612,7 +612,7 @@ export default function InsurancePage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Claim Type *</label>
                 <select
                   value={claimForm.claim_type}
-                  onChange={(e) => setClaimForm(prev => ({ ...prev, claim_type: e.target.value as any }))}
+                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setClaimForm(prev => ({ ...prev, claim_type: e.target.value as any }))}
                   className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 outline-none"
                 >
                   <option value="medical">Medical Treatment</option>
@@ -627,7 +627,7 @@ export default function InsurancePage() {
                 <input
                   type="date"
                   value={claimForm.incident_date}
-                  onChange={(e) => setClaimForm(prev => ({ ...prev, incident_date: e.target.value }))}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setClaimForm(prev => ({ ...prev, incident_date: e.target.value }))}
                   className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 outline-none"
                 />
               </div>
@@ -637,7 +637,7 @@ export default function InsurancePage() {
                 <input
                   type="number"
                   value={claimForm.amount_claimed}
-                  onChange={(e) => setClaimForm(prev => ({ ...prev, amount_claimed: Number(e.target.value) }))}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setClaimForm(prev => ({ ...prev, amount_claimed: Number(e.target.value) }))}
                   className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 outline-none"
                   min="0"
                 />
@@ -647,7 +647,7 @@ export default function InsurancePage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Description *</label>
                 <textarea
                   value={claimForm.description}
-                  onChange={(e) => setClaimForm(prev => ({ ...prev, description: e.target.value }))}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setClaimForm(prev => ({ ...prev, description: e.target.value }))}
                   rows={4}
                   className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 outline-none resize-none"
                   placeholder="Describe the incident and treatment received..."

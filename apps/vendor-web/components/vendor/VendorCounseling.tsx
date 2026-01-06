@@ -187,7 +187,7 @@ export function VendorCounseling({ vendorId, onClose }: CounselingProps) {
                 type="text"
                 placeholder="Search by customer or pet name..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
               />
             </div>
@@ -378,7 +378,7 @@ export function VendorCounseling({ vendorId, onClose }: CounselingProps) {
                   <input
                     type="text"
                     value={formData.customerName}
-                    onChange={(e) => setFormData({ ...formData, customerName: e.target.value })}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, customerName: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
                     placeholder="John Doe"
                   />
@@ -389,7 +389,7 @@ export function VendorCounseling({ vendorId, onClose }: CounselingProps) {
                   <input
                     type="tel"
                     value={formData.customerPhone}
-                    onChange={(e) => setFormData({ ...formData, customerPhone: e.target.value })}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, customerPhone: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
                     placeholder="+91 98765 43210"
                   />
@@ -399,7 +399,7 @@ export function VendorCounseling({ vendorId, onClose }: CounselingProps) {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Session Type</label>
                   <select
                     value={formData.sessionType}
-                    onChange={(e) => setFormData({ ...formData, sessionType: e.target.value as any })}
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData({ ...formData, sessionType: e.target.value as any })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
                   >
                     <option value="grief">Grief Counseling</option>
@@ -416,7 +416,7 @@ export function VendorCounseling({ vendorId, onClose }: CounselingProps) {
                     <input
                       type="date"
                       value={formData.scheduledDate}
-                      onChange={(e) => setFormData({ ...formData, scheduledDate: e.target.value })}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, scheduledDate: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
                     />
                   </div>
@@ -425,7 +425,7 @@ export function VendorCounseling({ vendorId, onClose }: CounselingProps) {
                     <input
                       type="time"
                       value={formData.scheduledTime}
-                      onChange={(e) => setFormData({ ...formData, scheduledTime: e.target.value })}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, scheduledTime: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
                     />
                   </div>
@@ -435,7 +435,7 @@ export function VendorCounseling({ vendorId, onClose }: CounselingProps) {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Mode</label>
                   <select
                     value={formData.mode}
-                    onChange={(e) => setFormData({ ...formData, mode: e.target.value as any })}
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData({ ...formData, mode: e.target.value as any })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
                   >
                     <option value="video">Video Call</option>
@@ -449,7 +449,7 @@ export function VendorCounseling({ vendorId, onClose }: CounselingProps) {
                   <input
                     type="text"
                     value={formData.petName}
-                    onChange={(e) => setFormData({ ...formData, petName: e.target.value })}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, petName: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
                     placeholder="Max"
                   />
@@ -459,7 +459,7 @@ export function VendorCounseling({ vendorId, onClose }: CounselingProps) {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Concerns/Notes</label>
                   <textarea
                     value={formData.concerns}
-                    onChange={(e) => setFormData({ ...formData, concerns: e.target.value })}
+                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData({ ...formData, concerns: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
                     rows={3}
                     placeholder="What would you like to discuss?"

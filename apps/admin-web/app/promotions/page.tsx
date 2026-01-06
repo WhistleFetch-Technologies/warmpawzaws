@@ -279,7 +279,7 @@ export default function PromotionsPage() {
             <div className="flex flex-wrap gap-4 items-center">
               <select
                 value={filterType}
-                onChange={(e) => setFilterType(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilterType(e.target.value)}
                 className="px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
               >
                 <option value="">All Types</option>
@@ -288,7 +288,7 @@ export default function PromotionsPage() {
               </select>
               <select
                 value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilterStatus(e.target.value)}
                 className="px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
               >
                 <option value="">All Status</option>
@@ -413,7 +413,7 @@ export default function PromotionsPage() {
                   <input
                     type="text"
                     value={promotionForm.code}
-                    onChange={(e) => setPromotionForm(prev => ({ ...prev, code: e.target.value.toUpperCase() }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPromotionForm(prev => ({ ...prev, code: e.target.value.toUpperCase() }))}
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none font-mono"
                     placeholder="WELCOME20"
                   />
@@ -423,7 +423,7 @@ export default function PromotionsPage() {
                   <input
                     type="text"
                     value={promotionForm.name}
-                    onChange={(e) => setPromotionForm(prev => ({ ...prev, name: e.target.value }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPromotionForm(prev => ({ ...prev, name: e.target.value }))}
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
                     placeholder="Welcome Offer"
                   />
@@ -434,7 +434,7 @@ export default function PromotionsPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
                 <textarea
                   value={promotionForm.description}
-                  onChange={(e) => setPromotionForm(prev => ({ ...prev, description: e.target.value }))}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setPromotionForm(prev => ({ ...prev, description: e.target.value }))}
                   rows={2}
                   className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none resize-none"
                 />
@@ -445,7 +445,7 @@ export default function PromotionsPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Discount Type *</label>
                   <select
                     value={promotionForm.discount_type}
-                    onChange={(e) => setPromotionForm(prev => ({ ...prev, discount_type: e.target.value as any }))}
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setPromotionForm(prev => ({ ...prev, discount_type: e.target.value as any }))}
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 outline-none"
                   >
                     <option value="percentage">Percentage</option>
@@ -457,7 +457,7 @@ export default function PromotionsPage() {
                   <input
                     type="number"
                     value={promotionForm.discount_value}
-                    onChange={(e) => setPromotionForm(prev => ({ ...prev, discount_value: Number(e.target.value) }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPromotionForm(prev => ({ ...prev, discount_value: Number(e.target.value) }))}
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 outline-none"
                     min="0"
                   />
@@ -467,7 +467,7 @@ export default function PromotionsPage() {
                   <input
                     type="number"
                     value={promotionForm.min_order_value}
-                    onChange={(e) => setPromotionForm(prev => ({ ...prev, min_order_value: Number(e.target.value) }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPromotionForm(prev => ({ ...prev, min_order_value: Number(e.target.value) }))}
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 outline-none"
                     min="0"
                   />
@@ -480,7 +480,7 @@ export default function PromotionsPage() {
                   <input
                     type="number"
                     value={promotionForm.max_discount || ''}
-                    onChange={(e) => setPromotionForm(prev => ({ ...prev, max_discount: e.target.value ? Number(e.target.value) : undefined }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPromotionForm(prev => ({ ...prev, max_discount: e.target.value ? Number(e.target.value) : undefined }))}
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 outline-none"
                     min="0"
                   />
@@ -493,7 +493,7 @@ export default function PromotionsPage() {
                   <input
                     type="date"
                     value={promotionForm.valid_from}
-                    onChange={(e) => setPromotionForm(prev => ({ ...prev, valid_from: e.target.value }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPromotionForm(prev => ({ ...prev, valid_from: e.target.value }))}
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 outline-none"
                   />
                 </div>
@@ -502,7 +502,7 @@ export default function PromotionsPage() {
                   <input
                     type="date"
                     value={promotionForm.valid_until}
-                    onChange={(e) => setPromotionForm(prev => ({ ...prev, valid_until: e.target.value }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPromotionForm(prev => ({ ...prev, valid_until: e.target.value }))}
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 outline-none"
                   />
                 </div>
@@ -514,7 +514,7 @@ export default function PromotionsPage() {
                   <input
                     type="number"
                     value={promotionForm.usage_limit || ''}
-                    onChange={(e) => setPromotionForm(prev => ({ ...prev, usage_limit: e.target.value ? Number(e.target.value) : undefined }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPromotionForm(prev => ({ ...prev, usage_limit: e.target.value ? Number(e.target.value) : undefined }))}
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 outline-none"
                     min="1"
                     placeholder="Unlimited"
@@ -525,7 +525,7 @@ export default function PromotionsPage() {
                   <input
                     type="number"
                     value={promotionForm.usage_limit_per_user || ''}
-                    onChange={(e) => setPromotionForm(prev => ({ ...prev, usage_limit_per_user: e.target.value ? Number(e.target.value) : undefined }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPromotionForm(prev => ({ ...prev, usage_limit_per_user: e.target.value ? Number(e.target.value) : undefined }))}
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 outline-none"
                     min="1"
                     placeholder="Unlimited"
@@ -537,7 +537,7 @@ export default function PromotionsPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Applicable To</label>
                 <select
                   value={promotionForm.applicable_to}
-                  onChange={(e) => setPromotionForm(prev => ({ ...prev, applicable_to: e.target.value as any }))}
+                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setPromotionForm(prev => ({ ...prev, applicable_to: e.target.value as any }))}
                   className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 outline-none"
                 >
                   <option value="all">All Services & Products</option>
@@ -551,7 +551,7 @@ export default function PromotionsPage() {
                 <input
                   type="checkbox"
                   checked={promotionForm.is_active}
-                  onChange={(e) => setPromotionForm(prev => ({ ...prev, is_active: e.target.checked }))}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPromotionForm(prev => ({ ...prev, is_active: e.target.checked }))}
                   className="rounded text-orange-500"
                 />
                 <span className="text-sm text-gray-700">Promotion is active</span>

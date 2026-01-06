@@ -349,7 +349,7 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
               <input
                 type="date"
                 value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSelectedDate(e.target.value)}
                 className="border-none bg-transparent outline-none"
               />
             </div>
@@ -680,7 +680,7 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
                   type="text"
                   maxLength={4}
                   value={otpInput}
-                  onChange={(e) => setOtpInput(e.target.value.replace(/[^0-9]/g, ''))}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setOtpInput(e.target.value.replace(/[^0-9]/g, ''))}
                   placeholder="0000"
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg text-center text-2xl tracking-widest focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
                   autoFocus

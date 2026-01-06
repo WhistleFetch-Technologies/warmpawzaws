@@ -319,7 +319,7 @@ export function MyOrders({ customerPhone }: MyOrdersProps) {
             </p>
             <textarea
               value={refundReason}
-              onChange={(e) => setRefundReason(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setRefundReason(e.target.value)}
               placeholder="Please tell us why you want a refund..."
               rows={4}
               className="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500"

@@ -183,7 +183,7 @@ export function CustomerUserProfile({ phone, journeyStage, onComplete }: Custome
               <input
                 type="text"
                 value={profile.firstName}
-                onChange={(e) => setProfile({ ...profile, firstName: e.target.value })}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, firstName: e.target.value })}
                 placeholder="John"
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/20 transition-all"
               />
@@ -195,7 +195,7 @@ export function CustomerUserProfile({ phone, journeyStage, onComplete }: Custome
               <input
                 type="text"
                 value={profile.lastName}
-                onChange={(e) => setProfile({ ...profile, lastName: e.target.value })}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, lastName: e.target.value })}
                 placeholder="Doe"
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/20 transition-all"
               />
@@ -210,7 +210,7 @@ export function CustomerUserProfile({ phone, journeyStage, onComplete }: Custome
             <input
               type="email"
               value={profile.email}
-              onChange={(e) => setProfile({ ...profile, email: e.target.value })}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, email: e.target.value })}
               placeholder="john.doe@example.com"
               className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/20 transition-all"
             />
@@ -242,7 +242,7 @@ export function CustomerUserProfile({ phone, journeyStage, onComplete }: Custome
             </label>
             <textarea
               value={profile.address}
-              onChange={(e) => setProfile({ ...profile, address: e.target.value })}
+              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setProfile({ ...profile, address: e.target.value })}
               placeholder="House No, Street, Area"
               rows={3}
               className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/20 transition-all resize-none"
@@ -257,7 +257,7 @@ export function CustomerUserProfile({ phone, journeyStage, onComplete }: Custome
             <input
               type="text"
               value={profile.pincode}
-              onChange={(e) => {
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                 const value = e.target.value.replace(/\D/g, '').slice(0, 6);
                 setProfile({ ...profile, pincode: value });
               }}

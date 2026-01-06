@@ -174,7 +174,7 @@ export function VendorSearchEnhanced() {
               <input
                 type="number"
                 value={filters.radius || 10}
-                onChange={(e) => setFilters({ ...filters, radius: parseInt(e.target.value) })}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFilters({ ...filters, radius: parseInt(e.target.value) })}
                 className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                 min="1"
                 max="50"
@@ -184,7 +184,7 @@ export function VendorSearchEnhanced() {
               <label className="block text-sm font-semibold text-gray-700 mb-2">Sort By</label>
               <select
                 value={filters.sortBy || 'relevance'}
-                onChange={(e) => setFilters({ ...filters, sortBy: e.target.value })}
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilters({ ...filters, sortBy: e.target.value })}
                 className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
               >
                 <option value="relevance">Relevance</option>

@@ -317,13 +317,13 @@ export default function SettlementsPage() {
                 type="text"
                 placeholder="Search by vendor name, phone, or reference..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
               />
             </div>
             <select
               value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilterStatus(e.target.value)}
               className="px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
             >
               <option value="">All Status</option>
@@ -334,7 +334,7 @@ export default function SettlementsPage() {
             </select>
             <select
               value={filterDateRange}
-              onChange={(e) => setFilterDateRange(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilterDateRange(e.target.value)}
               className="px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
             >
               <option value="7d">Last 7 days</option>
@@ -390,7 +390,7 @@ export default function SettlementsPage() {
                         <input
                           type="checkbox"
                           checked={selectedIds.includes(settlement.id)}
-                          onChange={(e) => {
+                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                             if (e.target.checked) {
                               setSelectedIds([...selectedIds, settlement.id]);
                             } else {

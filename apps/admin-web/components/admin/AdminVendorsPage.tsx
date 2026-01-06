@@ -109,7 +109,7 @@ export function AdminVendorsPage() {
             type="search"
             placeholder="Search vendors..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
             className="px-4 py-2 border rounded-lg w-64 focus:ring-2 focus:ring-blue-500"
           />
         </div>
@@ -119,7 +119,7 @@ export function AdminVendorsPage() {
       <div className="grid grid-cols-5 gap-4 mb-6">
         {[
           { label: 'All', value: vendors.length, filter: 'all', color: 'bg-gray-100' },
-          { label: 'Pending', value: vendors.filter(v => v.status === 'pending').length, filter: 'pending', color: 'bg-yellow-100' },
+          { label: 'Pending', value: vendors.filter(v => (v.status as any) === 'pending').length, filter: 'pending', color: 'bg-yellow-100' },
           { label: 'Approved', value: vendors.filter(v => v.status === 'approved' || v.status === 'active').length, filter: 'approved', color: 'bg-green-100' },
           { label: 'Rejected', value: vendors.filter(v => v.status === 'rejected').length, filter: 'rejected', color: 'bg-red-100' },
           { label: 'Suspended', value: vendors.filter(v => v.status === 'suspended').length, filter: 'suspended', color: 'bg-gray-200' },
@@ -265,7 +265,7 @@ function VendorDetailModal({
           </div>
         </div>
 
-        {vendor.status === 'pending' && (
+        {(vendor.status as any) === 'pending' && (
           <div className="border-t pt-4">
             <h3 className="font-semibold mb-3">Take Action</h3>
             <div className="flex gap-3 mb-4">
@@ -315,7 +315,7 @@ function VendorDetailModal({
                   </label>
                   <textarea
                     value={comment}
-                    onChange={(e) => setComment(e.target.value)}
+                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setComment(e.target.value)}
                     rows={3}
                     className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                     placeholder={action === 'changes' ? 'Please provide details about required changes...' : 'Please provide a reason for rejection...'}

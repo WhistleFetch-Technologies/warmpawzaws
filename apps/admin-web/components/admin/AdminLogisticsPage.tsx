@@ -240,7 +240,7 @@ export function AdminLogisticsPage() {
                   </td>
                   <td className="p-4">
                     <div className="flex gap-2">
-                      {order.status === 'pending' && (
+                      {(order.status as any) === 'pending' && (
                         <button
                           onClick={() => handleCreateShipment(order.order_id)}
                           disabled={processing}
@@ -369,7 +369,7 @@ function OrderDetailModal({
         </div>
 
         <div className="flex gap-3 pt-4 border-t">
-          {order.status === 'pending' && (
+          {(order.status as any) === 'pending' && (
             <button
               onClick={() => onCreateShipment(order.order_id)}
               disabled={processing}

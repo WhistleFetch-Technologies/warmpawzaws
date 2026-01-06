@@ -182,7 +182,7 @@ export function SearchFilters({ query, type = 'all', onFilterChange, className =
                 <label className="block text-sm font-semibold text-gray-700 mb-2">City</label>
                 <select
                   value={filters.city || ''}
-                  onChange={(e) => handleFilterChange('city', e.target.value || undefined)}
+                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => handleFilterChange('city', e.target.value || undefined)}
                   className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                 >
                   <option value="">All Cities</option>
@@ -199,7 +199,7 @@ export function SearchFilters({ query, type = 'all', onFilterChange, className =
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Specialization</label>
                 <select
                   value={filters.specialization || ''}
-                  onChange={(e) => handleFilterChange('specialization', e.target.value || undefined)}
+                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => handleFilterChange('specialization', e.target.value || undefined)}
                   className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                 >
                   <option value="">All Specializations</option>
@@ -215,7 +215,7 @@ export function SearchFilters({ query, type = 'all', onFilterChange, className =
               <label className="block text-sm font-semibold text-gray-700 mb-2">Minimum Rating</label>
               <select
                 value={filters.minRating || ''}
-                onChange={(e) => handleFilterChange('minRating', e.target.value ? parseFloat(e.target.value) : undefined)}
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => handleFilterChange('minRating', e.target.value ? parseFloat(e.target.value) : undefined)}
                 className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
               >
                 <option value="">All Ratings</option>
@@ -234,7 +234,7 @@ export function SearchFilters({ query, type = 'all', onFilterChange, className =
                     type="number"
                     placeholder="Min"
                     value={filters.priceRange?.min || ''}
-                    onChange={(e) => handleFilterChange('priceRange', {
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleFilterChange('priceRange', {
                       ...filters.priceRange,
                       min: e.target.value ? parseFloat(e.target.value) : undefined
                     })}
@@ -244,7 +244,7 @@ export function SearchFilters({ query, type = 'all', onFilterChange, className =
                     type="number"
                     placeholder="Max"
                     value={filters.priceRange?.max || ''}
-                    onChange={(e) => handleFilterChange('priceRange', {
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleFilterChange('priceRange', {
                       ...filters.priceRange,
                       max: e.target.value ? parseFloat(e.target.value) : undefined
                     })}

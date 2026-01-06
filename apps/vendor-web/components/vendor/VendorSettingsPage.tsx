@@ -133,7 +133,7 @@ export function VendorSettingsPage({ vendorId }: VendorSettingsPageProps) {
               <input
                 type="text"
                 value={profile.business_name}
-                onChange={(e) => setProfile({ ...profile, business_name: e.target.value })}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, business_name: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
               />
             </div>
@@ -142,7 +142,7 @@ export function VendorSettingsPage({ vendorId }: VendorSettingsPageProps) {
               <input
                 type="text"
                 value={profile.owner_name}
-                onChange={(e) => setProfile({ ...profile, owner_name: e.target.value })}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, owner_name: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
               />
             </div>
@@ -160,7 +160,7 @@ export function VendorSettingsPage({ vendorId }: VendorSettingsPageProps) {
               <input
                 type="email"
                 value={profile.email}
-                onChange={(e) => setProfile({ ...profile, email: e.target.value })}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, email: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
               />
             </div>
@@ -169,7 +169,7 @@ export function VendorSettingsPage({ vendorId }: VendorSettingsPageProps) {
               <input
                 type="text"
                 value={profile.address}
-                onChange={(e) => setProfile({ ...profile, address: e.target.value })}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, address: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
               />
             </div>
@@ -178,7 +178,7 @@ export function VendorSettingsPage({ vendorId }: VendorSettingsPageProps) {
               <input
                 type="text"
                 value={profile.city}
-                onChange={(e) => setProfile({ ...profile, city: e.target.value })}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, city: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
               />
             </div>
@@ -187,7 +187,7 @@ export function VendorSettingsPage({ vendorId }: VendorSettingsPageProps) {
               <input
                 type="text"
                 value={profile.state}
-                onChange={(e) => setProfile({ ...profile, state: e.target.value })}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, state: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
               />
             </div>
@@ -196,7 +196,7 @@ export function VendorSettingsPage({ vendorId }: VendorSettingsPageProps) {
               <input
                 type="text"
                 value={profile.pincode}
-                onChange={(e) => setProfile({ ...profile, pincode: e.target.value })}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, pincode: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
               />
             </div>
@@ -205,7 +205,7 @@ export function VendorSettingsPage({ vendorId }: VendorSettingsPageProps) {
               <input
                 type="text"
                 value={profile.gst_number || ''}
-                onChange={(e) => setProfile({ ...profile, gst_number: e.target.value })}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, gst_number: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
               />
             </div>
@@ -214,7 +214,7 @@ export function VendorSettingsPage({ vendorId }: VendorSettingsPageProps) {
               <input
                 type="text"
                 value={profile.pan_number || ''}
-                onChange={(e) => setProfile({ ...profile, pan_number: e.target.value })}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, pan_number: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
               />
             </div>
@@ -223,7 +223,7 @@ export function VendorSettingsPage({ vendorId }: VendorSettingsPageProps) {
               <input
                 type="text"
                 value={profile.operating_hours || ''}
-                onChange={(e) => setProfile({ ...profile, operating_hours: e.target.value })}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, operating_hours: e.target.value })}
                 placeholder="e.g., Mon-Sat 9:00 AM - 8:00 PM"
                 className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
               />
@@ -232,7 +232,7 @@ export function VendorSettingsPage({ vendorId }: VendorSettingsPageProps) {
               <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
               <textarea
                 value={profile.description || ''}
-                onChange={(e) => setProfile({ ...profile, description: e.target.value })}
+                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setProfile({ ...profile, description: e.target.value })}
                 rows={3}
                 className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
               />
@@ -272,7 +272,7 @@ export function VendorSettingsPage({ vendorId }: VendorSettingsPageProps) {
               <input
                 type="text"
                 value={bankDetails?.account_holder_name || ''}
-                onChange={(e) => setBankDetails({ ...bankDetails!, account_holder_name: e.target.value })}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBankDetails({ ...bankDetails!, account_holder_name: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
               />
             </div>
@@ -281,7 +281,7 @@ export function VendorSettingsPage({ vendorId }: VendorSettingsPageProps) {
               <input
                 type="text"
                 value={bankDetails?.account_number || ''}
-                onChange={(e) => setBankDetails({ ...bankDetails!, account_number: e.target.value })}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBankDetails({ ...bankDetails!, account_number: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
               />
             </div>
@@ -290,7 +290,7 @@ export function VendorSettingsPage({ vendorId }: VendorSettingsPageProps) {
               <input
                 type="text"
                 value={bankDetails?.ifsc_code || ''}
-                onChange={(e) => setBankDetails({ ...bankDetails!, ifsc_code: e.target.value.toUpperCase() })}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBankDetails({ ...bankDetails!, ifsc_code: e.target.value.toUpperCase() })}
                 className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
               />
             </div>
@@ -299,7 +299,7 @@ export function VendorSettingsPage({ vendorId }: VendorSettingsPageProps) {
               <input
                 type="text"
                 value={bankDetails?.bank_name || ''}
-                onChange={(e) => setBankDetails({ ...bankDetails!, bank_name: e.target.value })}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBankDetails({ ...bankDetails!, bank_name: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
               />
             </div>
@@ -385,7 +385,7 @@ function ScheduleManager({ vendorId }: { vendorId: string }) {
             <input
               type="checkbox"
               checked={day.is_open}
-              onChange={(e) => {
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                 const newSchedule = [...schedule];
                 newSchedule[idx].is_open = e.target.checked;
                 setSchedule(newSchedule);
@@ -399,7 +399,7 @@ function ScheduleManager({ vendorId }: { vendorId: string }) {
               <input
                 type="time"
                 value={day.open_time}
-                onChange={(e) => {
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                   const newSchedule = [...schedule];
                   newSchedule[idx].open_time = e.target.value;
                   setSchedule(newSchedule);
@@ -410,7 +410,7 @@ function ScheduleManager({ vendorId }: { vendorId: string }) {
               <input
                 type="time"
                 value={day.close_time}
-                onChange={(e) => {
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                   const newSchedule = [...schedule];
                   newSchedule[idx].close_time = e.target.value;
                   setSchedule(newSchedule);
@@ -475,7 +475,7 @@ function NotificationPreferences({ vendorId }: { vendorId: string }) {
               <input
                 type="checkbox"
                 checked={(prefs as any)[item.key]}
-                onChange={(e) => setPrefs({ ...prefs, [item.key]: e.target.checked })}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPrefs({ ...prefs, [item.key]: e.target.checked })}
                 className="w-5 h-5 accent-orange-500"
               />
             </label>
@@ -500,7 +500,7 @@ function NotificationPreferences({ vendorId }: { vendorId: string }) {
               <input
                 type="checkbox"
                 checked={(prefs as any)[channel.key]}
-                onChange={(e) => setPrefs({ ...prefs, [channel.key]: e.target.checked })}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPrefs({ ...prefs, [channel.key]: e.target.checked })}
                 className="hidden"
               />
               <span>{channel.icon}</span>

@@ -136,7 +136,7 @@ export function CancelBookingModal({
             <label className="block text-sm font-medium mb-2">Reason for cancellation *</label>
             <textarea
               value={reason}
-              onChange={(e) => setReason(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setReason(e.target.value)}
               className="w-full p-3 border border-gray-300 rounded-lg"
               rows={3}
               placeholder="Please provide a reason..."

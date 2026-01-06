@@ -361,7 +361,7 @@ export default function PackagesPage() {
                 <input
                   type="text"
                   value={packageForm.name}
-                  onChange={(e) => setPackageForm(prev => ({ ...prev, name: e.target.value }))}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPackageForm(prev => ({ ...prev, name: e.target.value }))}
                   className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
                   placeholder="e.g., Grooming Starter Pack"
                 />
@@ -371,7 +371,7 @@ export default function PackagesPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
                 <textarea
                   value={packageForm.description}
-                  onChange={(e) => setPackageForm(prev => ({ ...prev, description: e.target.value }))}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setPackageForm(prev => ({ ...prev, description: e.target.value }))}
                   rows={3}
                   className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none resize-none"
                   placeholder="Describe what's included in this package"
@@ -410,7 +410,7 @@ export default function PackagesPage() {
                   <input
                     type="number"
                     value={packageForm.package_price}
-                    onChange={(e) => setPackageForm(prev => ({ ...prev, package_price: Number(e.target.value) }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPackageForm(prev => ({ ...prev, package_price: Number(e.target.value) }))}
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
                   />
                 </div>
@@ -430,7 +430,7 @@ export default function PackagesPage() {
                   <input
                     type="number"
                     value={packageForm.validity_days}
-                    onChange={(e) => setPackageForm(prev => ({ ...prev, validity_days: Number(e.target.value) }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPackageForm(prev => ({ ...prev, validity_days: Number(e.target.value) }))}
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 outline-none"
                     min="1"
                   />
@@ -440,7 +440,7 @@ export default function PackagesPage() {
                   <input
                     type="number"
                     value={packageForm.max_uses}
-                    onChange={(e) => setPackageForm(prev => ({ ...prev, max_uses: Number(e.target.value) }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPackageForm(prev => ({ ...prev, max_uses: Number(e.target.value) }))}
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 outline-none"
                     min="1"
                   />
@@ -451,7 +451,7 @@ export default function PackagesPage() {
                 <input
                   type="checkbox"
                   checked={packageForm.is_active}
-                  onChange={(e) => setPackageForm(prev => ({ ...prev, is_active: e.target.checked }))}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPackageForm(prev => ({ ...prev, is_active: e.target.checked }))}
                   className="rounded text-orange-500"
                 />
                 <span className="text-sm text-gray-700">Package is active and available for purchase</span>

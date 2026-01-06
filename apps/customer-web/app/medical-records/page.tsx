@@ -277,12 +277,12 @@ export default function MedicalRecordsPage() {
                 type="text"
                 placeholder="Search records..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
                 className="flex-1 min-w-[200px] px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
               />
               <select
                 value={selectedType}
-                onChange={(e) => setSelectedType(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSelectedType(e.target.value)}
                 className="px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
               >
                 <option value="">All Types</option>

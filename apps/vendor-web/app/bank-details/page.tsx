@@ -482,7 +482,7 @@ export default function BankDetailsPage() {
                 <input
                   type="text"
                   value={bankForm.account_holder_name}
-                  onChange={(e) => setBankForm(prev => ({ ...prev, account_holder_name: e.target.value }))}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBankForm(prev => ({ ...prev, account_holder_name: e.target.value }))}
                   className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
                   placeholder="As per bank records"
                 />
@@ -493,7 +493,7 @@ export default function BankDetailsPage() {
                 <input
                   type="text"
                   value={bankForm.account_number}
-                  onChange={(e) => setBankForm(prev => ({ ...prev, account_number: e.target.value.replace(/\D/g, '') }))}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBankForm(prev => ({ ...prev, account_number: e.target.value.replace(/\D/g, '') }))}
                   className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
                   placeholder="Enter account number"
                 />
@@ -504,7 +504,7 @@ export default function BankDetailsPage() {
                 <input
                   type="text"
                   value={bankForm.confirm_account_number}
-                  onChange={(e) => setBankForm(prev => ({ ...prev, confirm_account_number: e.target.value.replace(/\D/g, '') }))}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBankForm(prev => ({ ...prev, confirm_account_number: e.target.value.replace(/\D/g, '') }))}
                   className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
                   placeholder="Re-enter account number"
                 />
@@ -515,7 +515,7 @@ export default function BankDetailsPage() {
                 <input
                   type="text"
                   value={bankForm.ifsc_code}
-                  onChange={(e) => {
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                     const value = e.target.value.toUpperCase();
                     setBankForm(prev => ({ ...prev, ifsc_code: value }));
                     if (value.length === 11) handleIFSCLookup(value);
@@ -532,7 +532,7 @@ export default function BankDetailsPage() {
                   <input
                     type="text"
                     value={bankForm.bank_name}
-                    onChange={(e) => setBankForm(prev => ({ ...prev, bank_name: e.target.value }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBankForm(prev => ({ ...prev, bank_name: e.target.value }))}
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none bg-gray-50"
                     placeholder="Auto-filled"
                     readOnly
@@ -543,7 +543,7 @@ export default function BankDetailsPage() {
                   <input
                     type="text"
                     value={bankForm.branch_name}
-                    onChange={(e) => setBankForm(prev => ({ ...prev, branch_name: e.target.value }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBankForm(prev => ({ ...prev, branch_name: e.target.value }))}
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none bg-gray-50"
                     placeholder="Auto-filled"
                     readOnly
@@ -555,7 +555,7 @@ export default function BankDetailsPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Account Type</label>
                 <select
                   value={bankForm.account_type}
-                  onChange={(e) => setBankForm(prev => ({ ...prev, account_type: e.target.value as 'savings' | 'current' }))}
+                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setBankForm(prev => ({ ...prev, account_type: e.target.value as 'savings' | 'current' }))}
                   className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 outline-none"
                 >
                   <option value="savings">Savings Account</option>
@@ -600,7 +600,7 @@ export default function BankDetailsPage() {
                 <input
                   type="text"
                   value={upiForm.upi_id}
-                  onChange={(e) => setUpiForm(prev => ({ ...prev, upi_id: e.target.value.toLowerCase() }))}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setUpiForm(prev => ({ ...prev, upi_id: e.target.value.toLowerCase() }))}
                   className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
                   placeholder="yourname@upi"
                 />
@@ -610,7 +610,7 @@ export default function BankDetailsPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Provider</label>
                 <select
                   value={upiForm.provider}
-                  onChange={(e) => setUpiForm(prev => ({ ...prev, provider: e.target.value }))}
+                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setUpiForm(prev => ({ ...prev, provider: e.target.value }))}
                   className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 outline-none"
                 >
                   <option value="gpay">Google Pay</option>

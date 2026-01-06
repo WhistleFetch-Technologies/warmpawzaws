@@ -324,13 +324,13 @@ export default function ReportsPage() {
                             <input
                               type="date"
                               value={reportParams[`${param.name}_start`] || ''}
-                              onChange={(e) => setReportParams(prev => ({ ...prev, [`${param.name}_start`]: e.target.value }))}
+                              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setReportParams(prev => ({ ...prev, [`${param.name}_start`]: e.target.value }))}
                               className="px-3 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
                             />
                             <input
                               type="date"
                               value={reportParams[`${param.name}_end`] || ''}
-                              onChange={(e) => setReportParams(prev => ({ ...prev, [`${param.name}_end`]: e.target.value }))}
+                              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setReportParams(prev => ({ ...prev, [`${param.name}_end`]: e.target.value }))}
                               className="px-3 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
                             />
                           </div>
@@ -339,7 +339,7 @@ export default function ReportsPage() {
                         {param.type === 'select' && (
                           <select
                             value={reportParams[param.name] || ''}
-                            onChange={(e) => setReportParams(prev => ({ ...prev, [param.name]: e.target.value }))}
+                            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setReportParams(prev => ({ ...prev, [param.name]: e.target.value }))}
                             className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
                           >
                             <option value="">Select...</option>

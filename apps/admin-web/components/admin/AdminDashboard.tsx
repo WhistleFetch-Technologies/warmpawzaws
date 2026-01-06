@@ -172,7 +172,7 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
 
   const stats = {
     total: vendors.length,
-    pending: vendors.filter(v => v.status === 'pending').length,
+    pending: vendors.filter(v => (v.status as any) === 'pending').length,
     approved: vendors.filter(v => v.status === 'approved').length,
     rejected: vendors.filter(v => v.status === 'rejected').length,
     totalRevenue: vendors.reduce((sum, v) => sum + (v.revenue || 0), 0)
@@ -218,7 +218,7 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
                 <Input
                   placeholder="Search"
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
                   className="pl-10 h-9 border-gray-300"
                 />
               </div>
@@ -587,7 +587,7 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
                     className={
                       selectedVendor.status === 'approved'
                         ? 'bg-green-100 text-green-700'
-                        : selectedVendor.status === 'pending'
+                        : (selectedVendor.status as any) === 'pending'
                         ? 'bg-yellow-100 text-yellow-700'
                         : 'bg-red-100 text-red-700'
                     }

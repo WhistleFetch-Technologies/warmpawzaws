@@ -191,7 +191,7 @@ export function ServicePublishFormWithGPS({
                   <input
                     type="checkbox"
                     checked={selectedCentres.includes(centre.id)}
-                    onChange={(e) => {
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                       if (e.target.checked) {
                         setSelectedCentres([...selectedCentres, centre.id]);
                       } else {

@@ -151,7 +151,7 @@ export function BookingActions({ booking, phone, onSuccess }: BookingActionsProp
                   <input
                     type="date"
                     value={rescheduleData.newDate}
-                    onChange={(e) => setRescheduleData({...rescheduleData, newDate: e.target.value})}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRescheduleData({...rescheduleData, newDate: e.target.value})}
                     className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                     min={new Date().toISOString().split('T')[0]}
                     required
@@ -166,7 +166,7 @@ export function BookingActions({ booking, phone, onSuccess }: BookingActionsProp
                   <input
                     type="time"
                     value={rescheduleData.newTimeSlot}
-                    onChange={(e) => setRescheduleData({...rescheduleData, newTimeSlot: e.target.value})}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRescheduleData({...rescheduleData, newTimeSlot: e.target.value})}
                     className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                   />
                 </div>
@@ -176,7 +176,7 @@ export function BookingActions({ booking, phone, onSuccess }: BookingActionsProp
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Reason (Optional)</label>
                 <textarea
                   value={rescheduleData.reason}
-                  onChange={(e) => setRescheduleData({...rescheduleData, reason: e.target.value})}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setRescheduleData({...rescheduleData, reason: e.target.value})}
                   placeholder="Why are you rescheduling?"
                   rows={3}
                   className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none resize-none"
@@ -229,7 +229,7 @@ export function BookingActions({ booking, phone, onSuccess }: BookingActionsProp
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Reason for Cancellation *</label>
                 <textarea
                   value={cancellationReason}
-                  onChange={(e) => setCancellationReason(e.target.value)}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setCancellationReason(e.target.value)}
                   placeholder="Please tell us why you're cancelling..."
                   rows={4}
                   className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none resize-none"

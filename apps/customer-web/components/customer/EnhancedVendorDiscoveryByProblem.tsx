@@ -65,7 +65,7 @@ export function EnhancedVendorDiscoveryByProblem({
               <label className="block text-sm font-semibold text-white mb-2">Sort By</label>
               <select
                 value={filters.sortBy}
-                onChange={(e) => setFilters({ ...filters, sortBy: e.target.value })}
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilters({ ...filters, sortBy: e.target.value })}
                 className="w-full px-4 py-2 bg-white rounded-xl focus:outline-none"
               >
                 <option value="rating">Highest Rated</option>
@@ -78,7 +78,7 @@ export function EnhancedVendorDiscoveryByProblem({
               <label className="block text-sm font-semibold text-white mb-2">Min Rating</label>
               <select
                 value={filters.minRating}
-                onChange={(e) => setFilters({ ...filters, minRating: e.target.value })}
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilters({ ...filters, minRating: e.target.value })}
                 className="w-full px-4 py-2 bg-white rounded-xl focus:outline-none"
               >
                 <option value="">All Ratings</option>
@@ -91,7 +91,7 @@ export function EnhancedVendorDiscoveryByProblem({
               <label className="block text-sm font-semibold text-white mb-2">Service Style</label>
               <select
                 value={filters.serviceStyle}
-                onChange={(e) => setFilters({ ...filters, serviceStyle: e.target.value })}
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilters({ ...filters, serviceStyle: e.target.value })}
                 className="w-full px-4 py-2 bg-white rounded-xl focus:outline-none"
               >
                 <option value="">All Styles</option>

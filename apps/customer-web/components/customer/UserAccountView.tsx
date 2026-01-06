@@ -454,7 +454,7 @@ export function UserAccountView({ phone, onBack, onViewBooking }: UserAccountVie
                         <input
                           type="text"
                           value={profile.firstName}
-                          onChange={(e) => setProfile({ ...profile, firstName: e.target.value })}
+                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, firstName: e.target.value })}
                           className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                         />
                       ) : (
@@ -467,7 +467,7 @@ export function UserAccountView({ phone, onBack, onViewBooking }: UserAccountVie
                         <input
                           type="text"
                           value={profile.lastName}
-                          onChange={(e) => setProfile({ ...profile, lastName: e.target.value })}
+                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, lastName: e.target.value })}
                           className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                         />
                       ) : (
@@ -487,7 +487,7 @@ export function UserAccountView({ phone, onBack, onViewBooking }: UserAccountVie
                       <input
                         type="email"
                         value={profile.email}
-                        onChange={(e) => setProfile({ ...profile, email: e.target.value })}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, email: e.target.value })}
                         className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                       />
                     ) : (
@@ -500,7 +500,7 @@ export function UserAccountView({ phone, onBack, onViewBooking }: UserAccountVie
                     {editMode ? (
                       <textarea
                         value={profile.address}
-                        onChange={(e) => setProfile({ ...profile, address: e.target.value })}
+                        onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setProfile({ ...profile, address: e.target.value })}
                         rows={3}
                         className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none resize-none"
                       />
@@ -515,7 +515,7 @@ export function UserAccountView({ phone, onBack, onViewBooking }: UserAccountVie
                       <input
                         type="text"
                         value={profile.pincode}
-                        onChange={(e) => {
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                           const value = e.target.value.replace(/\D/g, '').slice(0, 6);
                           setProfile({ ...profile, pincode: value });
                         }}

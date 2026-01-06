@@ -263,7 +263,7 @@ export function DynamicVendorOnboardingForm({
         return (
           <textarea
             value={value}
-            onChange={(e) => handleFieldChange(field.name, e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => handleFieldChange(field.name, e.target.value)}
             placeholder={field.placeholder}
             className={`${commonClasses} min-h-[100px] resize-none`}
             rows={3}
@@ -274,7 +274,7 @@ export function DynamicVendorOnboardingForm({
         return (
           <select
             value={value}
-            onChange={(e) => handleFieldChange(field.name, e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => handleFieldChange(field.name, e.target.value)}
             className={commonClasses}
           >
             <option value="">{field.placeholder || `Select ${field.label}`}</option>
@@ -292,7 +292,7 @@ export function DynamicVendorOnboardingForm({
             <input
               type="checkbox"
               checked={!!value}
-              onChange={(e) => handleFieldChange(field.name, e.target.checked)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleFieldChange(field.name, e.target.checked)}
               className="w-5 h-5 rounded border-gray-300 text-primary focus:ring-primary"
             />
             <label className="text-sm font-medium text-gray-700">{field.label}</label>
@@ -304,7 +304,7 @@ export function DynamicVendorOnboardingForm({
           <input
             type="date"
             value={value}
-            onChange={(e) => handleFieldChange(field.name, e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleFieldChange(field.name, e.target.value)}
             className={commonClasses}
           />
         );
@@ -347,7 +347,7 @@ export function DynamicVendorOnboardingForm({
                   type="file"
                   accept={field.acceptedFileTypes?.join(',') || 'image/*'}
                   className="hidden"
-                  onChange={(e) => {
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                     const file = e.target.files?.[0];
                     if (file) handleFileUpload(field.name, file);
                   }}
@@ -394,7 +394,7 @@ export function DynamicVendorOnboardingForm({
           <input
             type={field.type}
             value={value}
-            onChange={(e) => handleFieldChange(field.name, e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleFieldChange(field.name, e.target.value)}
             placeholder={field.placeholder}
             className={commonClasses}
           />
@@ -562,7 +562,7 @@ export function DynamicVendorOnboardingForm({
                   <input
                     type="checkbox"
                     checked={agreedToTerms}
-                    onChange={(e) => setAgreedToTerms(e.target.checked)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAgreedToTerms(e.target.checked)}
                     className="w-5 h-5 rounded border-gray-300 text-primary"
                   />
                   <span className="text-sm text-gray-700">

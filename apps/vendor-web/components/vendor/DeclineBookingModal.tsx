@@ -94,7 +94,7 @@ export function DeclineBookingModal({ booking, vendorId, onClose, onSuccess }: D
                       name="declineReason"
                       value={reason}
                       checked={selectedReason === reason}
-                      onChange={(e) => setSelectedReason(e.target.value)}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSelectedReason(e.target.value)}
                       className="mt-0.5"
                     />
                     <span className="text-sm">{reason}</span>
@@ -110,7 +110,7 @@ export function DeclineBookingModal({ booking, vendorId, onClose, onSuccess }: D
                 </label>
                 <textarea
                   value={customReason}
-                  onChange={(e) => setCustomReason(e.target.value)}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setCustomReason(e.target.value)}
                   placeholder="Explain why you can't accept this booking..."
                   rows={3}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42] resize-none"
@@ -124,7 +124,7 @@ export function DeclineBookingModal({ booking, vendorId, onClose, onSuccess }: D
               </label>
               <textarea
                 value={suggestAlternative}
-                onChange={(e) => setSuggestAlternative(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setSuggestAlternative(e.target.value)}
                 placeholder="E.g., Try booking for tomorrow at 3 PM, or contact XYZ Grooming nearby"
                 rows={3}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42] resize-none"

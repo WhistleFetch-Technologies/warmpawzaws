@@ -110,7 +110,7 @@ export function TagsSelector({
             <input
               type="text"
               value={inputValue}
-              onChange={(e) => {
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                 setInputValue(e.target.value);
                 setIsOpen(e.target.value.length > 0);
               }}

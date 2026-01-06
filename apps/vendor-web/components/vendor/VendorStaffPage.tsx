@@ -255,7 +255,7 @@ function StaffModal({
             <input
               type="text"
               value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, name: e.target.value })}
               className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
               required
             />
@@ -265,7 +265,7 @@ function StaffModal({
             <input
               type="tel"
               value={formData.phone}
-              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, phone: e.target.value })}
               className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
               required
             />
@@ -275,7 +275,7 @@ function StaffModal({
             <input
               type="email"
               value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, email: e.target.value })}
               className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
             />
           </div>
@@ -283,7 +283,7 @@ function StaffModal({
             <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
             <select
               value={formData.role}
-              onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData({ ...formData, role: e.target.value })}
               className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
             >
               <option value="Staff">Staff</option>
@@ -300,7 +300,7 @@ function StaffModal({
             <input
               type="number"
               value={formData.experience_years}
-              onChange={(e) => setFormData({ ...formData, experience_years: Number(e.target.value) })}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, experience_years: Number(e.target.value) })}
               className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
               min="0"
             />

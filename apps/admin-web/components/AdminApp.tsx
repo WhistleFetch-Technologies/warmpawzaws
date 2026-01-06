@@ -898,7 +898,7 @@ export function AdminApp() {
                     <label className="block text-sm font-medium text-gray-700 mb-1">Refund Policy</label>
                     <textarea
                       value={settings.refund_policy}
-                      onChange={(e) => handleSaveSettings({ refund_policy: e.target.value })}
+                      onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => handleSaveSettings({ refund_policy: e.target.value })}
                       rows={4}
                       className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none transition resize-none"
                     />
@@ -975,7 +975,7 @@ function NumberSetting({ label, value, onChange }: { label: string; value: numbe
       <input
         type="number"
         value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
+        onChange={(e: React.ChangeEvent<HTMLInputElement>) => onChange(Number(e.target.value))}
         className="w-24 px-3 py-2 border border-gray-200 rounded-lg text-right focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
       />
     </div>
@@ -1047,7 +1047,7 @@ function RoleEditModal({
               <input
                 type="text"
                 value={formData.name}
-                onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, name: e.target.value }))}
                 className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
                 placeholder="e.g., veterinarian"
               />
@@ -1057,7 +1057,7 @@ function RoleEditModal({
               <input
                 type="text"
                 value={formData.display_name}
-                onChange={(e) => setFormData(prev => ({ ...prev, display_name: e.target.value }))}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, display_name: e.target.value }))}
                 className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
                 placeholder="e.g., Veterinarian"
               />
@@ -1068,7 +1068,7 @@ function RoleEditModal({
             <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
             <textarea
               value={formData.description}
-              onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData(prev => ({ ...prev, description: e.target.value }))}
               rows={2}
               className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none resize-none"
             />

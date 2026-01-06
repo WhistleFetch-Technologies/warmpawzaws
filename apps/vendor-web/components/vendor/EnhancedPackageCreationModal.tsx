@@ -208,7 +208,7 @@ export function EnhancedPackageCreationModal({
                 type="checkbox"
                 id="is-package"
                 checked={formData.isPackage}
-                onChange={(e) => setFormData({ ...formData, isPackage: e.target.checked })}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, isPackage: e.target.checked })}
                 className="w-5 h-5"
               />
               <div className="flex-1">
@@ -226,7 +226,7 @@ export function EnhancedPackageCreationModal({
               <input
                 type="text"
                 value={formData.serviceName}
-                onChange={(e) => setFormData({ ...formData, serviceName: e.target.value })}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, serviceName: e.target.value })}
                 placeholder={formData.isPackage ? "e.g., Premium Grooming Package" : "e.g., Advanced Dental Cleaning"}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
               />
@@ -236,7 +236,7 @@ export function EnhancedPackageCreationModal({
               <label className="block text-sm font-medium text-gray-700 mb-1">Description *</label>
               <textarea
                 value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData({ ...formData, description: e.target.value })}
                 placeholder="Detailed description of what's included..."
                 rows={3}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
@@ -249,7 +249,7 @@ export function EnhancedPackageCreationModal({
                   <label className="block text-sm font-medium text-gray-700 mb-1">Package Type *</label>
                   <select
                     value={formData.packageType}
-                    onChange={(e) => setFormData({ ...formData, packageType: e.target.value as any })}
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData({ ...formData, packageType: e.target.value as any })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
                   >
                     <option value="combo">Combo Package (Multiple services bundled)</option>
@@ -337,7 +337,7 @@ export function EnhancedPackageCreationModal({
                     <input
                       type="number"
                       value={formData.validityDays}
-                      onChange={(e) => setFormData({ ...formData, validityDays: parseInt(e.target.value) || 0 })}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, validityDays: parseInt(e.target.value) || 0 })}
                       placeholder="30"
                       min="1"
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
@@ -354,7 +354,7 @@ export function EnhancedPackageCreationModal({
                         <input
                           type="number"
                           value={formData.maxUsageCount === -1 ? '' : formData.maxUsageCount}
-                          onChange={(e) => setFormData({ 
+                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ 
                             ...formData, 
                             maxUsageCount: e.target.value === '' ? -1 : parseInt(e.target.value) || 0 
                           })}
@@ -364,7 +364,7 @@ export function EnhancedPackageCreationModal({
                         />
                         <select
                           value={formData.usageInterval}
-                          onChange={(e) => setFormData({ ...formData, usageInterval: e.target.value as any })}
+                          onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData({ ...formData, usageInterval: e.target.value as any })}
                           className="w-32 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
                         >
                           <option value="per_day">Per Day</option>
@@ -386,7 +386,7 @@ export function EnhancedPackageCreationModal({
                     <input
                       type="number"
                       value={formData.discountPercentage}
-                      onChange={(e) => setFormData({ ...formData, discountPercentage: parseFloat(e.target.value) || 0 })}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, discountPercentage: parseFloat(e.target.value) || 0 })}
                       placeholder="10"
                       min="0"
                       max="100"
@@ -407,7 +407,7 @@ export function EnhancedPackageCreationModal({
                   <div className="flex gap-2">
                     <input
                       value={benefitInput}
-                      onChange={(e) => setBenefitInput(e.target.value)}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBenefitInput(e.target.value)}
                       placeholder="e.g., Priority booking, Free consultation"
                       onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addBenefit())}
                       className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
@@ -440,7 +440,7 @@ export function EnhancedPackageCreationModal({
                     <input
                       type="number"
                       value={formData.originalPrice || ''}
-                      onChange={(e) => setFormData({ ...formData, originalPrice: parseFloat(e.target.value) || 0 })}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, originalPrice: parseFloat(e.target.value) || 0 })}
                       placeholder="5000"
                       min="0"
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
@@ -452,7 +452,7 @@ export function EnhancedPackageCreationModal({
                     <input
                       type="number"
                       value={formData.packagePrice || ''}
-                      onChange={(e) => setFormData({ ...formData, packagePrice: parseFloat(e.target.value) || 0 })}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, packagePrice: parseFloat(e.target.value) || 0 })}
                       placeholder="3999"
                       min="0"
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
@@ -469,7 +469,7 @@ export function EnhancedPackageCreationModal({
                   <label className="block text-sm font-medium text-gray-700 mb-1">Terms & Conditions</label>
                   <textarea
                     value={formData.termsAndConditions}
-                    onChange={(e) => setFormData({ ...formData, termsAndConditions: e.target.value })}
+                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData({ ...formData, termsAndConditions: e.target.value })}
                     placeholder="Package terms, restrictions, etc..."
                     rows={2}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
@@ -480,7 +480,7 @@ export function EnhancedPackageCreationModal({
                   <label className="block text-sm font-medium text-gray-700 mb-1">Cancellation Policy</label>
                   <textarea
                     value={formData.cancellationPolicy}
-                    onChange={(e) => setFormData({ ...formData, cancellationPolicy: e.target.value })}
+                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData({ ...formData, cancellationPolicy: e.target.value })}
                     placeholder="Refund and cancellation terms..."
                     rows={2}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
@@ -494,7 +494,7 @@ export function EnhancedPackageCreationModal({
                   <input
                     type="number"
                     value={formData.price || ''}
-                    onChange={(e) => setFormData({ ...formData, price: parseFloat(e.target.value) || 0 })}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, price: parseFloat(e.target.value) || 0 })}
                     placeholder="500"
                     min="0"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
@@ -505,7 +505,7 @@ export function EnhancedPackageCreationModal({
                   <input
                     type="number"
                     value={formData.duration}
-                    onChange={(e) => setFormData({ ...formData, duration: parseInt(e.target.value) || 0 })}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, duration: parseInt(e.target.value) || 0 })}
                     placeholder="30"
                     min="5"
                     step="5"

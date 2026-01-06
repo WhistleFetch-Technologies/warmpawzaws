@@ -51,7 +51,7 @@ export function IntegrationSettingsTab() {
           <input
             type="password"
             value={settings.apiKey}
-            onChange={(e) => setSettings(prev => ({ ...prev, apiKey: e.target.value }))}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSettings(prev => ({ ...prev, apiKey: e.target.value }))}
             className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
             placeholder="Enter API key"
           />
@@ -61,7 +61,7 @@ export function IntegrationSettingsTab() {
           <input
             type="url"
             value={settings.webhookUrl}
-            onChange={(e) => setSettings(prev => ({ ...prev, webhookUrl: e.target.value }))}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSettings(prev => ({ ...prev, webhookUrl: e.target.value }))}
             className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
             placeholder="https://example.com/webhook"
           />

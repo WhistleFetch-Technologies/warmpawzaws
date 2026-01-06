@@ -82,6 +82,7 @@ import { registerCommuteTimeEndpoints } from '../endpoints/commute-time';
 import { registerBookingDetailsEnhancedEndpoints } from '../endpoints/booking-details-enhanced';
 import { registerRazorpaySettlementEndpoints } from '../endpoints/razorpay-settlements';
 import { registerRefundPolicyEngineEndpoints } from '../endpoints/refund-policy-engine';
+import { registerAdminGovernanceEnhancedEndpoints } from '../endpoints/admin-governance-enhanced';
 
 // Create Hono app
 const app = new Hono();

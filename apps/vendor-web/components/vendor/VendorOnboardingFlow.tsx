@@ -647,7 +647,7 @@ export function VendorOnboardingFlow() {
                   type="tel"
                   maxLength={10}
                   value={state.phone}
-                  onChange={(e) => setState(prev => ({ ...prev, phone: e.target.value.replace(/\D/g, '') }))}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setState(prev => ({ ...prev, phone: e.target.value.replace(/\D/g, '') }))}
                   placeholder="Enter 10-digit mobile number"
                   className="w-full pl-14 pr-4 py-4 text-lg border-2 border-gray-200 rounded-2xl focus:border-primary focus:ring-4 focus:ring-primary/20 transition outline-none"
                 />
@@ -688,7 +688,7 @@ export function VendorOnboardingFlow() {
                   type="text"
                   maxLength={1}
                   value={otp[index] || ''}
-                  onChange={(e) => {
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                     const newOtp = otp.split('');
                     newOtp[index] = e.target.value;
                     setOtp(newOtp.join(''));
@@ -835,7 +835,7 @@ export function VendorOnboardingFlow() {
                   {field.type === 'textarea' ? (
                     <textarea
                       value={state.formData[field.name] || ''}
-                      onChange={(e) => updateFormField(field.name, e.target.value)}
+                      onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => updateFormField(field.name, e.target.value)}
                       placeholder={field.placeholder}
                       rows={3}
                       className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-orange-500 focus:ring-4 focus:ring-orange-100 transition outline-none resize-none"
@@ -843,7 +843,7 @@ export function VendorOnboardingFlow() {
                   ) : field.type === 'select' ? (
                     <select
                       value={state.formData[field.name] || ''}
-                      onChange={(e) => updateFormField(field.name, e.target.value)}
+                      onChange={(e: React.ChangeEvent<HTMLSelectElement>) => updateFormField(field.name, e.target.value)}
                       className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-orange-500 focus:ring-4 focus:ring-orange-100 transition outline-none"
                     >
                       <option value="">Select...</option>
@@ -856,7 +856,7 @@ export function VendorOnboardingFlow() {
                       <input
                         type="checkbox"
                         checked={state.formData[field.name] || false}
-                        onChange={(e) => updateFormField(field.name, e.target.checked)}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateFormField(field.name, e.target.checked)}
                         className="w-5 h-5 border-2 border-gray-300 rounded text-orange-500 focus:ring-orange-500"
                       />
                       <span className="text-gray-700">Yes</span>
@@ -865,7 +865,7 @@ export function VendorOnboardingFlow() {
                     <input
                       type={field.type}
                       value={state.formData[field.name] || ''}
-                      onChange={(e) => updateFormField(field.name, e.target.value)}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateFormField(field.name, e.target.value)}
                       placeholder={field.placeholder}
                       className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-orange-500 focus:ring-4 focus:ring-orange-100 transition outline-none"
                     />
@@ -919,7 +919,7 @@ export function VendorOnboardingFlow() {
                         type="file"
                         accept=".pdf,.jpg,.jpeg,.png"
                         className="hidden"
-                        onChange={(e) => updateDocument(doc.key, e.target.files?.[0] || null)}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateDocument(doc.key, e.target.files?.[0] || null)}
                       />
                       <span className="px-4 py-2 bg-orange-100 text-orange-600 rounded-lg font-medium hover:bg-orange-200 transition">
                         {state.documents[doc.key] ? 'Change' : 'Upload'}

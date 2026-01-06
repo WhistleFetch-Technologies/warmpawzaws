@@ -118,7 +118,7 @@ export function CustomerServicesPage({ onBack, onNavigate, initialFilters }: Cus
           <div className="flex flex-wrap gap-3">
             <select
               value={category}
-              onChange={(e) => setCategory(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setCategory(e.target.value)}
               className="px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
             >
               <option value="all">All Categories</option>
@@ -129,7 +129,7 @@ export function CustomerServicesPage({ onBack, onNavigate, initialFilters }: Cus
 
             <select
               value={serviceStyle}
-              onChange={(e) => setServiceStyle(e.target.value as any)}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setServiceStyle(e.target.value as any)}
               className="px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
             >
               <option value="all">All Types</option>
@@ -145,7 +145,7 @@ export function CustomerServicesPage({ onBack, onNavigate, initialFilters }: Cus
               type="text"
               placeholder="Search services..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
             />
             <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />

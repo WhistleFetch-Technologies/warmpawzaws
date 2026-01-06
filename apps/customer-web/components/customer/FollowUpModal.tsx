@@ -214,7 +214,7 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
                 <input
                   type="text"
                   value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewMessage(e.target.value)}
                   onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
                   className="flex-1 p-3 border border-gray-300 rounded-lg"
                   placeholder="Type a message..."
@@ -238,7 +238,7 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
                 <input
                   type="date"
                   value={selectedDate}
-                  onChange={(e) => setSelectedDate(e.target.value)}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSelectedDate(e.target.value)}
                   min={new Date().toISOString().split('T')[0]}
                   className="w-full p-3 border border-gray-300 rounded-lg"
                 />

@@ -108,7 +108,7 @@ export function AcceptBookingModal({ booking, vendorId, onClose, onSuccess }: Ac
                 </label>
                 <select
                   value={selectedStaffId}
-                  onChange={(e) => setSelectedStaffId(e.target.value)}
+                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSelectedStaffId(e.target.value)}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
                 >
                   <option value="">Select staff member</option>
@@ -127,7 +127,7 @@ export function AcceptBookingModal({ booking, vendorId, onClose, onSuccess }: Ac
               </label>
               <textarea
                 value={notes}
-                onChange={(e) => setNotes(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNotes(e.target.value)}
                 placeholder="E.g., Looking forward to serving you! Please arrive 5 minutes early."
                 rows={3}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42] resize-none"
