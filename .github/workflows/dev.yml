@@ -119,7 +119,7 @@ jobs:
           NEXT_PUBLIC_COGNITO_CLIENT_ID: ${{ secrets.DEV_COGNITO_CLIENT_ID }}
           NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
           NEXT_PUBLIC_UAT_MODE: 'true'
-          NODE_ENV: development
+          NODE_ENV: production
 
       - name: Upload frontend artifact
         uses: actions/upload-artifact@v4

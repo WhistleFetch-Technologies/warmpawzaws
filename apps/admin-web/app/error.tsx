@@ -3,6 +3,9 @@
 import React from 'react';
 import Link from 'next/link';
 
+// Prevent static generation - error pages need to be dynamic
+export const dynamic = 'force-dynamic';
+
 export default function Error({
   error,
   reset,
