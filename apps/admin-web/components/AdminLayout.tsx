@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
@@ -23,11 +23,19 @@ const menuItems = [
 ];
 
 export function AdminLayout({ children }: AdminLayoutProps) {
+  // usePathname must be called unconditionally (React hook rule)
+  // During static generation, it will return the current route or '/'
   const pathname = usePathname();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const isActive = (href: string) => {
+    if (!mounted) return false; // During static generation, don't highlight
     if (href === '/') return pathname === '/';
-    return pathname.startsWith(href);
+    return pathname?.startsWith(href) || false;
   };
 
   return (

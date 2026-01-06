@@ -198,6 +198,8 @@ module "lambda" {
     ENVIRONMENT                 = local.environment
     # AWS_REGION is reserved by Lambda runtime, cannot be set
     # Lambda functions automatically have AWS_REGION available
+    UAT_MODE                    = "true"
+    NODE_ENV                    = "development"
     DB_HOST                     = module.rds.cluster_endpoint
     DB_NAME                     = module.rds.database_name
     DB_SECRET_ARN               = module.rds.secret_arn

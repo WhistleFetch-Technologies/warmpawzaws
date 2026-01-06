@@ -3,6 +3,9 @@
 import React from 'react';
 import Link from 'next/link';
 
+// Prevent static generation
+export const dynamic = 'force-dynamic';
+
 export default function NotFound() {
   return (
     <div style={{
