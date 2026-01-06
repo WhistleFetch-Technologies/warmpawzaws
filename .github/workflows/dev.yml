@@ -260,19 +260,33 @@ jobs:
           echo "bucket_name=$BUCKET_NAME" >> $GITHUB_OUTPUT
           
           # Get CloudFront distribution ID by finding distribution with matching origin
-          DIST_ID=$(aws cloudfront list-distributions --query "DistributionList.Items[?Origins.Items[?DomainName==\`${BUCKET_NAME}.s3.ap-south-1.amazonaws.com\`]].Id" --output text | head -1)
+          # Use --output text and take only the first result, handling multiple IDs properly
+          DIST_ID=$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?Origins.Items[?DomainName==\`${BUCKET_NAME}.s3.ap-south-1.amazonaws.com\`]].Id" \
+            --output text | awk '{print $1}' | head -1)
           
-          if [ -z "$DIST_ID" ] || [ "$DIST_ID" = "None" ]; then
+          # Clean up any whitespace or newlines
+          DIST_ID=$(echo "$DIST_ID" | tr -d '[:space:]')
+          
+          if [ -z "$DIST_ID" ] || [ "$DIST_ID" = "None" ] || [ "$DIST_ID" = "null" ]; then
             echo "⚠️  CloudFront distribution not found for ${BUCKET_NAME}"
-            echo "   Trying alternative lookup..."
+            echo "   Trying alternative lookup by comment..."
             # Try finding by comment/tags
-            DIST_ID=$(aws cloudfront list-distributions --query "DistributionList.Items[?Comment==\`warmpawz-dev-${APP_NAME}-frontend\`].Id" --output text | head -1)
+            DIST_ID=$(aws cloudfront list-distributions \
+              --query "DistributionList.Items[?Comment==\`warmpawz-dev-${APP_NAME}-frontend\`].Id" \
+              --output text | awk '{print $1}' | head -1)
+            DIST_ID=$(echo "$DIST_ID" | tr -d '[:space:]')
           fi
           
-          echo "cloudfront_id=$DIST_ID" >> $GITHUB_OUTPUT
-          echo "✅ Found resources:"
-          echo "   Bucket: $BUCKET_NAME"
-          echo "   CloudFront: $DIST_ID"
+          if [ -z "$DIST_ID" ] || [ "$DIST_ID" = "None" ] || [ "$DIST_ID" = "null" ]; then
+            echo "❌ CloudFront distribution not found. Skipping cache invalidation."
+            echo "cloudfront_id=" >> $GITHUB_OUTPUT
+          else
+            echo "cloudfront_id=$DIST_ID" >> $GITHUB_OUTPUT
+            echo "✅ Found resources:"
+            echo "   Bucket: $BUCKET_NAME"
+            echo "   CloudFront: $DIST_ID"
+          fi
 
       - name: Deploy to S3
         run: |
