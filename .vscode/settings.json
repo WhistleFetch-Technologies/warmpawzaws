@@ -1,0 +1,12 @@
+{
+  "java.jdt.ls.java.home": "/Users/ketan/.sdkman/candidates/java/current",
+  "java.configuration.runtimes": [
+    {
+      "name": "JavaSE-17",
+      "path": "/Users/ketan/.sdkman/candidates/java/current",
+      "default": true
+    }
+  ],
+  "java.compile.nullAnalysis.mode": "automatic",
+  "java.configuration.updateBuildConfiguration": "automatic"
+}
