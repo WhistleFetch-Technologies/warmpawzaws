@@ -73,34 +73,13 @@ export default function ServiceCatalogPage() {
       setLoading(true);
       setError(null);
       
-      const [servicesRes, categoriesRes] = await Promise.allSettled([
+      const [servicesRes, categoriesRes] = await Promise.all([
         apiClient.get<any>('/admin/service-catalog'),
         apiClient.get<any>('/service-catalog/categories'),
       ]);
       
-      if (servicesRes.status === 'fulfilled') {
-        setServices(servicesRes.value.services || []);
-      } else {
-        // Mock data for demo when API unavailable
-        setServices([
-          { id: '1', service_id: 'grooming_full', service_name: 'full_grooming', display_name: 'Full Grooming Package', description: 'Complete grooming service', category_id: 'cat1', category_name: 'Grooming', applicable_roles: ['pet_groomer'], service_style: 'centre', base_price: 1500, duration_minutes: 90, status: 'active', publish_status: 'published', display_order: 1, created_at: '', updated_at: '' },
-          { id: '2', service_id: 'vet_consult', service_name: 'vet_consultation', display_name: 'Veterinary Consultation', description: 'General health checkup', category_id: 'cat2', category_name: 'Medical', applicable_roles: ['veterinarian'], service_style: 'centre', base_price: 800, duration_minutes: 30, status: 'active', publish_status: 'published', display_order: 2, created_at: '', updated_at: '' },
-          { id: '3', service_id: 'tele_consult', service_name: 'tele_consultation', display_name: 'Tele-Consultation', description: 'Video call with vet', category_id: 'cat2', category_name: 'Medical', applicable_roles: ['veterinarian'], service_style: 'tele', base_price: 500, duration_minutes: 20, status: 'active', publish_status: 'published', display_order: 3, created_at: '', updated_at: '' },
-          { id: '4', service_id: 'dog_walking', service_name: 'dog_walking', display_name: 'Dog Walking', description: '30 min walk session', category_id: 'cat3', category_name: 'Exercise', applicable_roles: ['pet_walker'], service_style: 'home', base_price: 300, duration_minutes: 30, status: 'active', publish_status: 'published', display_order: 4, created_at: '', updated_at: '' },
-          { id: '5', service_id: 'pet_boarding', service_name: 'pet_boarding', display_name: 'Pet Boarding (Daily)', description: 'Overnight stay', category_id: 'cat4', category_name: 'Boarding', applicable_roles: ['pet_boarder'], service_style: 'centre', base_price: 1200, duration_minutes: 1440, status: 'active', publish_status: 'published', display_order: 5, created_at: '', updated_at: '' },
-        ]);
-      }
-      
-      if (categoriesRes.status === 'fulfilled') {
-        setCategories(categoriesRes.value.categories || []);
-      } else {
-        setCategories([
-          { id: 'cat1', name: 'grooming', display_name: 'Grooming' },
-          { id: 'cat2', name: 'medical', display_name: 'Medical' },
-          { id: 'cat3', name: 'exercise', display_name: 'Exercise' },
-          { id: 'cat4', name: 'boarding', display_name: 'Boarding' },
-        ]);
-      }
+      setServices(servicesRes.services || servicesRes || []);
+      setCategories(categoriesRes.categories || categoriesRes || []);
     } catch (err: any) {
       console.error('Error loading catalog:', err);
       setError(err.message || 'Failed to load service catalog');

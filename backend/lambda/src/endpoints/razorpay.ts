@@ -277,30 +277,96 @@ class MarketplaceSettlementHandler extends BaseHandler {
     const settlements = await insert('settlements', settlementData);
     const settlement = settlements[0];
 
-    // ✅ TODO: Initiate Razorpay Route transfer
-    // For now, mark as processing. Actual transfer would be done via Razorpay Route API
+    // ✅ SQL: Get vendor details for Razorpay Route transfer
+    const vendors = await select('vendors', { id: vendorId });
+    if (vendors.length === 0) {
+      return this.error('Vendor not found', 404);
+    }
+
+    const vendor = vendors[0];
+    let transferId: string | null = null;
+    let settlementStatus = 'processing';
+
+    // ✅ Initiate Razorpay Route transfer if vendor has linked account
+    if (vendor.razorpay_account_id && vendor.bank_verified) {
+      try {
+        // Get payment for this booking to find the Razorpay payment ID
+        const payments = await select('payments', { booking_id: bookingId, payment_status: 'completed' });
+        
+        if (payments.length > 0 && payments[0].razorpay_payment_id) {
+          // Create transfer via Razorpay Route API
+          const transfer = await razorpayRequest('/transfers', 'POST', {
+            account: vendor.razorpay_account_id,
+            amount: Math.round(vendorShare * 100), // Convert to paise
+            currency: 'INR',
+            linked_account_notes: {
+              booking_id: bookingId,
+              settlement_id: settlement.id,
+            },
+            notes: {
+              vendor_id: vendorId,
+              booking_id: bookingId,
+              settlement_date: new Date().toISOString(),
+            },
+            on_hold: false,
+            on_hold_until: null,
+          });
+
+          transferId = transfer.id;
+          settlementStatus = transfer.status === 'processed' ? 'completed' : 'processing';
+
+          // Update settlement with transfer ID
+          await update('settlements', { id: settlement.id }, {
+            razorpay_transfer_id: transferId,
+            settlement_status: settlementStatus,
+          });
+        } else {
+          // No payment found, mark for manual processing
+          console.warn(`No completed payment found for booking ${bookingId}, settlement queued for manual processing`);
+        }
+      } catch (error: any) {
+        console.error('Error initiating Razorpay Route transfer:', error);
+        // Continue with settlement record but mark as pending manual processing
+        settlementStatus = 'pending';
+        await update('settlements', { id: settlement.id }, {
+          settlement_status: 'pending',
+          settlement_notes: `Route transfer failed: ${error.message}`,
+        });
+      }
+    } else {
+      // Vendor doesn't have linked account or bank not verified
+      settlementStatus = 'pending';
+      await update('settlements', { id: settlement.id }, {
+        settlement_status: 'pending',
+        settlement_notes: vendor.razorpay_account_id 
+          ? 'Bank account not verified' 
+          : 'Linked account not configured',
+      });
+    }
 
     // ✅ SQL: Update booking settlement status
     await update(
       'bookings',
       { id: bookingId },
       {
-        settlement_status: 'processing',
+        settlement_status: settlementStatus,
         settlement_id: settlement.id,
       }
     );
 
-    // ✅ Send to settlement queue for async processing
-    try {
-      const { sendToSettlementQueue } = await import('../utils/sqs-client');
-      await sendToSettlementQueue({
-        settlementId: settlement.id,
-        bookingId,
-        vendorId,
-        amount: vendorShare,
-      });
-    } catch (error) {
-      console.error('Failed to send to settlement queue:', error);
+    // ✅ Send to settlement queue for async processing (if not already processed)
+    if (settlementStatus === 'processing' || settlementStatus === 'pending') {
+      try {
+        const { sendToSettlementQueue } = await import('../utils/sqs-client');
+        await sendToSettlementQueue({
+          settlementId: settlement.id,
+          bookingId,
+          vendorId,
+          amount: vendorShare,
+        });
+      } catch (error) {
+        console.error('Failed to send to settlement queue:', error);
+      }
     }
 
     return this.success({

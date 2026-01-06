@@ -66,83 +66,18 @@ export default function AnalyticsPage() {
       setLoading(true);
       setError(null);
       
-      const [kpisRes, chartsRes, topsRes] = await Promise.allSettled([
+      const [kpisRes, chartsRes, topsRes] = await Promise.all([
         apiClient.get<any>(`/admin/analytics/kpis?period=${dateRange}`),
         apiClient.get<any>(`/admin/analytics/charts?period=${dateRange}`),
         apiClient.get<any>(`/admin/analytics/top-performers?period=${dateRange}`),
       ]);
       
-      // KPIs
-      if (kpisRes.status === 'fulfilled') {
-        setKpis(kpisRes.value.kpis || []);
-      } else {
-        setKpis([
-          { id: '1', name: 'Total Revenue', value: 2450000, previousValue: 2100000, change: 16.7, changeType: 'increase', format: 'currency', icon: '💰' },
-          { id: '2', name: 'Total Bookings', value: 3842, previousValue: 3245, change: 18.4, changeType: 'increase', format: 'number', icon: '📅' },
-          { id: '3', name: 'Active Vendors', value: 287, previousValue: 265, change: 8.3, changeType: 'increase', format: 'number', icon: '🏪' },
-          { id: '4', name: 'New Customers', value: 1456, previousValue: 1234, change: 18.0, changeType: 'increase', format: 'number', icon: '👤' },
-          { id: '5', name: 'Avg Rating', value: 4.6, previousValue: 4.5, change: 2.2, changeType: 'increase', format: 'number', icon: '⭐' },
-          { id: '6', name: 'Completion Rate', value: 94.2, previousValue: 92.8, change: 1.5, changeType: 'increase', format: 'percentage', icon: '✅' },
-        ]);
-      }
-      
-      // Charts
-      if (chartsRes.status === 'fulfilled') {
-        setRevenueChart(chartsRes.value.revenue);
-        setBookingsChart(chartsRes.value.bookings);
-      } else {
-        const last30Days = Array.from({ length: 30 }, (_, i) => {
-          const d = new Date();
-          d.setDate(d.getDate() - (29 - i));
-          return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
-        });
-        
-        setRevenueChart({
-          labels: last30Days,
-          datasets: [
-            { label: 'Revenue', data: last30Days.map(() => Math.floor(50000 + Math.random() * 100000)), color: '#f97316' },
-            { label: 'Commission', data: last30Days.map(() => Math.floor(5000 + Math.random() * 10000)), color: '#22c55e' },
-          ],
-        });
-        
-        setBookingsChart({
-          labels: last30Days,
-          datasets: [
-            { label: 'Bookings', data: last30Days.map(() => Math.floor(80 + Math.random() * 80)), color: '#3b82f6' },
-          ],
-        });
-      }
-      
-      // Top Performers
-      if (topsRes.status === 'fulfilled') {
-        setTopVendors(topsRes.value.vendors || []);
-        setTopServices(topsRes.value.services || []);
-        setTopCities(topsRes.value.cities || []);
-      } else {
-        setTopVendors([
-          { id: '1', name: 'Happy Paws Grooming', value: 245000, subtext: '312 bookings', change: 24 },
-          { id: '2', name: 'Dr. Sharma Vet Clinic', value: 198000, subtext: '256 bookings', change: 18 },
-          { id: '3', name: 'Pet Paradise Resort', value: 175000, subtext: '89 stays', change: 32 },
-          { id: '4', name: 'WalkMyDog Services', value: 125000, subtext: '890 walks', change: 12 },
-          { id: '5', name: 'Paws & Claws Cafe', value: 98000, subtext: '445 visits', change: -5 },
-        ]);
-        
-        setTopServices([
-          { id: '1', name: 'Full Grooming Package', value: 1245, subtext: '₹1,500 avg' },
-          { id: '2', name: 'Vet Consultation', value: 892, subtext: '₹800 avg' },
-          { id: '3', name: 'Dog Walking (30 min)', value: 756, subtext: '₹300 avg' },
-          { id: '4', name: 'Pet Boarding (Daily)', value: 523, subtext: '₹1,200 avg' },
-          { id: '5', name: 'Vaccination', value: 412, subtext: '₹600 avg' },
-        ]);
-        
-        setTopCities([
-          { id: '1', name: 'Bangalore', value: 1256, change: 22 },
-          { id: '2', name: 'Mumbai', value: 987, change: 18 },
-          { id: '3', name: 'Delhi NCR', value: 756, change: 15 },
-          { id: '4', name: 'Hyderabad', value: 534, change: 28 },
-          { id: '5', name: 'Chennai', value: 423, change: 8 },
-        ]);
-      }
+      setKpis(kpisRes.kpis || kpisRes || []);
+      setRevenueChart(chartsRes.revenue || chartsRes?.data?.revenue);
+      setBookingsChart(chartsRes.bookings || chartsRes?.data?.bookings);
+      setTopVendors(topsRes.vendors || topsRes?.data?.vendors || []);
+      setTopServices(topsRes.services || topsRes?.data?.services || []);
+      setTopCities(topsRes.cities || topsRes?.data?.cities || []);
     } catch (err: any) {
       console.error('Error loading analytics:', err);
       setError(err.message || 'Failed to load analytics');

@@ -41,25 +41,76 @@ export function CustomerWallet({ customerPhone }: CustomerWalletProps) {
 
   const loadWalletData = async () => {
     try {
-      const response = await apiClient.get<any>(`/customer/wallet?phone=${encodeURIComponent(customerPhone)}`);
-      if (response.wallet) {
-        setWallet(response.wallet);
+      // First get customer ID from phone
+      const customerResponse = await apiClient.get<any>(`/customer/by-phone?phone=${encodeURIComponent(customerPhone)}`);
+      const customerId = customerResponse.customer?.id;
+      
+      if (!customerId) {
+        console.error('Customer not found');
+        return;
+      }
+
+      // Then get wallet using customer ID
+      const response = await apiClient.get<any>(`/wallet/${customerId}`);
+      if (response.success && response.data) {
+        setWallet({
+          balance: response.data.balance || 0,
+          pending_credits: 0,
+          total_earned: 0,
+          total_spent: 0,
+        });
       }
     } catch (err) {
       console.error('Error loading wallet:', err);
+      // Fallback: try old endpoint
+      try {
+        const response = await apiClient.get<any>(`/customer/wallet?phone=${encodeURIComponent(customerPhone)}`);
+        if (response.wallet) {
+          setWallet(response.wallet);
+        }
+      } catch (fallbackErr) {
+        console.error('Fallback wallet load failed:', fallbackErr);
+      }
     }
   };
 
   const loadTransactions = async () => {
     try {
       setLoading(true);
-      const params = filter !== 'all' ? `&type=${filter}` : '';
-      const response = await apiClient.get<any>(`/customer/wallet/transactions?phone=${encodeURIComponent(customerPhone)}${params}`);
-      if (response.transactions) {
-        setTransactions(response.transactions);
+      
+      // First get customer ID from phone
+      const customerResponse = await apiClient.get<any>(`/customer/by-phone?phone=${encodeURIComponent(customerPhone)}`);
+      const customerId = customerResponse.customer?.id;
+      
+      if (!customerId) {
+        setLoading(false);
+        return;
+      }
+
+      // Then get transactions using customer ID
+      const params = new URLSearchParams();
+      if (filter !== 'all') {
+        params.append('type', filter);
+      }
+      params.append('limit', '50');
+      params.append('offset', '0');
+
+      const response = await apiClient.get<any>(`/wallet/${customerId}/transactions?${params.toString()}`);
+      if (response.success && response.data) {
+        setTransactions(response.data.transactions || []);
       }
     } catch (err) {
       console.error('Error loading transactions:', err);
+      // Fallback: try old endpoint
+      try {
+        const params = filter !== 'all' ? `&type=${filter}` : '';
+        const response = await apiClient.get<any>(`/customer/wallet/transactions?phone=${encodeURIComponent(customerPhone)}${params}`);
+        if (response.transactions) {
+          setTransactions(response.transactions);
+        }
+      } catch (fallbackErr) {
+        console.error('Fallback transactions load failed:', fallbackErr);
+      }
     } finally {
       setLoading(false);
     }

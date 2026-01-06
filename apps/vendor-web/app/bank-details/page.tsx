@@ -78,27 +78,13 @@ export default function BankDetailsPage() {
       setLoading(true);
       setError(null);
       
-      const [bankRes, upiRes] = await Promise.allSettled([
+      const [bankRes, upiRes] = await Promise.all([
         apiClient.get<any>('/vendor/bank-accounts'),
         apiClient.get<any>('/vendor/upi-accounts'),
       ]);
       
-      if (bankRes.status === 'fulfilled') {
-        setBankAccounts(bankRes.value.accounts || []);
-      } else {
-        // Mock data for demo
-        setBankAccounts([
-          { id: '1', account_holder_name: 'Happy Paws Grooming', account_number: '****1234', ifsc_code: 'HDFC0001234', bank_name: 'HDFC Bank', branch_name: 'Koramangala', account_type: 'current', is_primary: true, is_verified: true, verification_status: 'verified', created_at: '', updated_at: '' },
-        ]);
-      }
-      
-      if (upiRes.status === 'fulfilled') {
-        setUpiAccounts(upiRes.value.accounts || []);
-      } else {
-        setUpiAccounts([
-          { id: '1', upi_id: 'happypaws@okaxis', provider: 'gpay', is_primary: true, is_verified: true, created_at: '' },
-        ]);
-      }
+      setBankAccounts(bankRes.accounts || bankRes || []);
+      setUpiAccounts(upiRes.accounts || upiRes || []);
     } catch (err: any) {
       console.error('Error loading bank details:', err);
       setError(err.message || 'Failed to load bank details');

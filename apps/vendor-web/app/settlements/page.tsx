@@ -65,34 +65,13 @@ export default function SettlementsPage() {
       if (filterStatus) params.append('status', filterStatus);
       if (filterYear) params.append('year', filterYear);
       
-      const [settlementsRes, summaryRes] = await Promise.allSettled([
+      const [settlementsRes, summaryRes] = await Promise.all([
         apiClient.get<any>(`/vendor/settlements?${params.toString()}`),
         apiClient.get<any>('/vendor/settlements/summary'),
       ]);
       
-      if (settlementsRes.status === 'fulfilled') {
-        setSettlements(settlementsRes.value.settlements || []);
-      } else {
-        // Mock data for demo
-        setSettlements([
-          { id: '1', period_start: '2026-01-01', period_end: '2026-01-07', gross_amount: 45000, commission_amount: 4500, commission_rate: 10, net_amount: 40500, booking_count: 28, status: 'completed', payout_reference: 'PAY_2026010845678', payout_date: '2026-01-08', payout_method: 'bank', created_at: '2026-01-08' },
-          { id: '2', period_start: '2025-12-25', period_end: '2025-12-31', gross_amount: 52000, commission_amount: 5200, commission_rate: 10, net_amount: 46800, booking_count: 35, status: 'completed', payout_reference: 'PAY_2026010112345', payout_date: '2026-01-01', payout_method: 'bank', created_at: '2026-01-01' },
-          { id: '3', period_start: '2025-12-18', period_end: '2025-12-24', gross_amount: 38000, commission_amount: 3800, commission_rate: 10, net_amount: 34200, booking_count: 22, status: 'completed', payout_reference: 'PAY_2025122598765', payout_date: '2025-12-25', payout_method: 'upi', created_at: '2025-12-25' },
-          { id: '4', period_start: '2026-01-08', period_end: '2026-01-14', gross_amount: 28000, commission_amount: 2800, commission_rate: 10, net_amount: 25200, booking_count: 18, status: 'pending', payout_method: 'bank', created_at: '2026-01-15' },
-        ]);
-      }
-      
-      if (summaryRes.status === 'fulfilled') {
-        setSummary(summaryRes.value.summary || summaryRes.value);
-      } else {
-        setSummary({
-          totalEarnings: 163000,
-          totalSettled: 121500,
-          pendingSettlement: 25200,
-          currentPeriodEarnings: 16300,
-          nextSettlementDate: '2026-01-15',
-        });
-      }
+      setSettlements(settlementsRes.settlements || settlementsRes || []);
+      setSummary(summaryRes.summary || summaryRes);
     } catch (err: any) {
       console.error('Error loading settlements:', err);
       setError(err.message || 'Failed to load settlements');

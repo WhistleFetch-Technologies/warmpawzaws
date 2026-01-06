@@ -72,38 +72,13 @@ export default function GovernancePage() {
       setLoading(true);
       setError(null);
       
-      const [statusRes, auditRes] = await Promise.allSettled([
+      const [statusRes, auditRes] = await Promise.all([
         apiClient.get<any>('/admin/governance/status'),
         apiClient.get<any>('/admin/governance/audit-log?limit=50'),
       ]);
       
-      if (statusRes.status === 'fulfilled') {
-        setStatus(statusRes.value.status || statusRes.value);
-      } else {
-        // Mock status for demo
-        setStatus({
-          cache: { status: 'healthy', lastInvalidated: '2026-01-05T10:30:00Z', hitRate: 94, size: 256 },
-          config: { version: 'v2.4.1', lastPropagated: '2026-01-05T08:00:00Z', pendingChanges: 2 },
-          services: {
-            api: { status: 'up', latency: 45 },
-            database: { status: 'up', connections: 12 },
-            sns: { status: 'up', messagesQueued: 3 },
-            s3: { status: 'up' },
-          },
-          lastSync: new Date().toISOString(),
-        });
-      }
-      
-      if (auditRes.status === 'fulfilled') {
-        setAuditLog(auditRes.value.entries || []);
-      } else {
-        // Mock audit log
-        setAuditLog([
-          { id: '1', action: 'cache_invalidated', actor: 'admin@warmpawz.com', actorRole: 'Super Admin', target: 'vendors_cache', details: {}, status: 'success', timestamp: '2026-01-05T10:30:00Z' },
-          { id: '2', action: 'config_propagated', actor: 'admin@warmpawz.com', actorRole: 'Super Admin', target: 'all_instances', details: {}, status: 'success', timestamp: '2026-01-05T08:00:00Z' },
-          { id: '3', action: 'role_updated', actor: 'admin@warmpawz.com', actorRole: 'Super Admin', target: 'veterinarian', details: {}, status: 'success', timestamp: '2026-01-04T15:20:00Z' },
-        ]);
-      }
+      setStatus(statusRes.status || statusRes);
+      setAuditLog(auditRes.entries || auditRes || []);
     } catch (err: any) {
       console.error('Error loading governance data:', err);
       setError(err.message || 'Failed to load governance status');

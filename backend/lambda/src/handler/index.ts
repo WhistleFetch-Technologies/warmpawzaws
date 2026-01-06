@@ -78,6 +78,10 @@ import { registerTransactionMonitoringEndpoints } from '../endpoints/transaction
 import { registerTimeWindowSubscriptionEndpoints } from '../endpoints/time-window-subscription';
 import { registerStorageEndpoints } from '../endpoints/storage';
 import { registerPushNotificationEndpoints } from '../endpoints/push-notifications';
+import { registerCommuteTimeEndpoints } from '../endpoints/commute-time';
+import { registerBookingDetailsEnhancedEndpoints } from '../endpoints/booking-details-enhanced';
+import { registerRazorpaySettlementEndpoints } from '../endpoints/razorpay-settlements';
+import { registerRefundPolicyEngineEndpoints } from '../endpoints/refund-policy-engine';
 
 // Create Hono app
 const app = new Hono();
@@ -159,6 +163,10 @@ registerTransactionMonitoringEndpoints(app);
 registerTimeWindowSubscriptionEndpoints(app);
 registerStorageEndpoints(app);
 registerPushNotificationEndpoints(app);
+registerCommuteTimeEndpoints(app);
+registerBookingDetailsEnhancedEndpoints(app);
+registerRazorpaySettlementEndpoints(app);
+registerRefundPolicyEngineEndpoints(app);
 
 // 404 handler
 app.notFound((c) => {

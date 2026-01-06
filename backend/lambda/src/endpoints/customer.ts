@@ -43,6 +43,25 @@ class GetCustomerHandler extends BaseHandler {
   }
 }
 
+class GetCustomerByPhoneHandler extends BaseHandler {
+  async handle(context: HandlerContext): Promise<HandlerResponse> {
+    const phone = context.event.queryStringParameters?.phone;
+
+    if (!phone) {
+      return this.error('Phone number is required', 400);
+    }
+
+    // ✅ SQL: Get customer by phone
+    const customers = await select('customers', { phone });
+    
+    if (customers.length === 0) {
+      return this.error('Customer not found', 404);
+    }
+
+    return this.success({ customer: customers[0] });
+  }
+}
+
 class UpdateCustomerHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     const customerId = context.event.pathParameters?.customerId;
@@ -117,6 +136,7 @@ class AddPetHandler extends BaseHandler {
 
 export function registerCustomerEndpoints(app: Hono) {
   const getHandler = new GetCustomerHandler();
+  const getByPhoneHandler = new GetCustomerByPhoneHandler();
   const updateHandler = new UpdateCustomerHandler();
   const getPetsHandler = new GetCustomerPetsHandler();
   const addPetHandler = new AddPetHandler();
@@ -126,6 +146,14 @@ export function registerCustomerEndpoints(app: Hono) {
     event.pathParameters = { customerId: c.req.param('customerId') };
     const context = createLambdaContext();
     const result = await getHandler.execute(event, context);
+    return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
+  app.get('/customer/by-phone', async (c) => {
+    const event = createApiGatewayEvent(c.req);
+    event.queryStringParameters = Object.fromEntries(new URL(c.req.url, 'http://localhost').searchParams);
+    const context = createLambdaContext();
+    const result = await getByPhoneHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 

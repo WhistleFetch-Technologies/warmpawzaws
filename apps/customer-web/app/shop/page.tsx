@@ -80,36 +80,13 @@ export default function ShopPage() {
       if (selectedPetType) params.append('pet_type', selectedPetType);
       if (sortBy) params.append('sort', sortBy);
       
-      const [productsRes, categoriesRes] = await Promise.allSettled([
+      const [productsRes, categoriesRes] = await Promise.all([
         apiClient.get<any>(`/ecommerce/products?${params.toString()}`),
         apiClient.get<any>('/ecommerce/categories'),
       ]);
       
-      if (productsRes.status === 'fulfilled') {
-        setProducts(productsRes.value.products || []);
-      } else {
-        // Mock products
-        setProducts([
-          { id: '1', name: 'Premium Dog Food - Chicken & Rice', description: 'High-quality nutrition for adult dogs', category: 'food', price: 1299, sale_price: 999, images: ['/products/dog-food.jpg'], rating: 4.5, review_count: 234, in_stock: true, stock_quantity: 50, vendor_id: 'v1', vendor_name: 'PetMart', pet_type: 'dog' },
-          { id: '2', name: 'Interactive Cat Toy', description: 'Battery-operated mouse toy', category: 'toys', price: 599, images: ['/products/cat-toy.jpg'], rating: 4.2, review_count: 89, in_stock: true, stock_quantity: 30, vendor_id: 'v2', vendor_name: 'Paws & Play', pet_type: 'cat' },
-          { id: '3', name: 'Orthopedic Dog Bed - Large', description: 'Memory foam bed for joint support', category: 'accessories', price: 2499, sale_price: 1999, images: ['/products/dog-bed.jpg'], rating: 4.8, review_count: 156, in_stock: true, stock_quantity: 15, vendor_id: 'v1', vendor_name: 'PetMart', pet_type: 'dog' },
-          { id: '4', name: 'Cat Scratching Post', description: 'Sisal rope with play ball', category: 'accessories', price: 899, images: ['/products/scratch-post.jpg'], rating: 4.3, review_count: 67, in_stock: true, stock_quantity: 25, vendor_id: 'v2', vendor_name: 'Paws & Play', pet_type: 'cat' },
-          { id: '5', name: 'Flea & Tick Shampoo', description: 'Gentle formula for all pets', category: 'grooming', price: 449, images: ['/products/shampoo.jpg'], rating: 4.6, review_count: 312, in_stock: true, stock_quantity: 100, vendor_id: 'v3', vendor_name: 'Pet Care Plus', pet_type: 'all' },
-          { id: '6', name: 'Bird Cage - Deluxe', description: 'Spacious cage with accessories', category: 'accessories', price: 3499, images: ['/products/bird-cage.jpg'], rating: 4.4, review_count: 45, in_stock: true, stock_quantity: 8, vendor_id: 'v1', vendor_name: 'PetMart', pet_type: 'bird' },
-        ]);
-      }
-      
-      if (categoriesRes.status === 'fulfilled') {
-        setCategories(categoriesRes.value.categories || []);
-      } else {
-        setCategories([
-          { id: 'food', name: 'Food & Treats', icon: '🍖', product_count: 45 },
-          { id: 'toys', name: 'Toys', icon: '🧸', product_count: 32 },
-          { id: 'accessories', name: 'Accessories', icon: '🎀', product_count: 28 },
-          { id: 'grooming', name: 'Grooming', icon: '🧴', product_count: 18 },
-          { id: 'health', name: 'Health & Wellness', icon: '💊', product_count: 24 },
-        ]);
-      }
+      setProducts(productsRes.products || productsRes || []);
+      setCategories(categoriesRes.categories || categoriesRes || []);
     } catch (err: any) {
       console.error('Error loading shop:', err);
       setError(err.message || 'Failed to load shop');
