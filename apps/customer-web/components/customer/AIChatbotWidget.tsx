@@ -70,7 +70,7 @@ export function AIChatbotWidget({
     setSending(true);
 
     try {
-      let response;
+      let response: any;
       
       if (mode === 'symptoms') {
         response = await aiChatbotApi.symptomsChecker({
