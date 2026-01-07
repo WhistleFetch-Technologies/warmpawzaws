@@ -588,7 +588,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.lg,
     padding: spacing.lg,
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
   },
   optionIcon: {
     fontSize: 48,
@@ -613,7 +613,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
   },
   vendorName: {
     fontSize: typography.h3,
@@ -641,7 +641,7 @@ const styles = StyleSheet.create({
   imagePlaceholder: {
     width: '100%',
     height: 200,
-    backgroundColor: colors.gray.100,
+    backgroundColor: colors.gray['100'],
     borderRadius: borderRadius.md,
     justifyContent: 'center',
     alignItems: 'center',
@@ -687,7 +687,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
   },
   packageCard: {
     borderColor: colors.primary,
@@ -730,7 +730,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
   },
   petName: {
     fontSize: typography.h3,

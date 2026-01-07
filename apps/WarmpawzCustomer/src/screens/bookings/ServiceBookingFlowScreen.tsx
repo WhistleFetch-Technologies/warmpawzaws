@@ -476,7 +476,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: colors.gray.200,
+    backgroundColor: colors.gray['200'],
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -496,7 +496,7 @@ const styles = StyleSheet.create({
   progressLine: {
     flex: 1,
     height: 2,
-    backgroundColor: colors.gray.200,
+    backgroundColor: colors.gray['200'],
     marginHorizontal: spacing.xs,
   },
   progressLineActive: {
@@ -694,7 +694,7 @@ const styles = StyleSheet.create({
   },
   backButtonAction: {
     flex: 1,
-    backgroundColor: colors.gray.100,
+    backgroundColor: colors.gray['100'],
     padding: spacing.md,
     borderRadius: borderRadius.md,
     alignItems: 'center',
@@ -712,7 +712,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   nextButtonDisabled: {
-    backgroundColor: colors.gray.400,
+    backgroundColor: colors.gray['400'],
   },
   nextButtonText: {
     color: colors.white,

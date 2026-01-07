@@ -340,7 +340,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
   verifyButtonDisabled: {
-    backgroundColor: colors.gray.400,
+    backgroundColor: colors.gray['400'],
   },
   verifyButtonText: {
     color: colors.white,

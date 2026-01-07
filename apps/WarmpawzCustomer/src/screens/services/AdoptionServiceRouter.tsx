@@ -572,7 +572,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
   },
   centerName: {
     fontSize: typography.h3,
@@ -601,7 +601,7 @@ const styles = StyleSheet.create({
   imagePlaceholder: {
     width: '100%',
     height: 200,
-    backgroundColor: colors.gray.100,
+    backgroundColor: colors.gray['100'],
     borderRadius: borderRadius.md,
     justifyContent: 'center',
     alignItems: 'center',
@@ -652,13 +652,13 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
   },
   petImagePlaceholder: {
     width: 80,
     height: 80,
     borderRadius: borderRadius.md,
-    backgroundColor: colors.gray.100,
+    backgroundColor: colors.gray['100'],
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: spacing.md,
@@ -729,7 +729,7 @@ const styles = StyleSheet.create({
   },
   formInput: {
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
     borderRadius: borderRadius.md,
     padding: spacing.md,
     fontSize: typography.body,

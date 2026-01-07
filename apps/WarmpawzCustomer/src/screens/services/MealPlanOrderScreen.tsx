@@ -881,7 +881,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   placeOrderButtonDisabled: {
-    backgroundColor: colors.gray.400,
+    backgroundColor: colors.gray['400'],
   },
   placeOrderButtonText: {
     color: colors.white,

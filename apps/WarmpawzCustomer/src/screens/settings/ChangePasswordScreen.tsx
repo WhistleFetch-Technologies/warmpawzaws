@@ -298,7 +298,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   requirementsContainer: {
-    backgroundColor: colors.gray.100,
+    backgroundColor: colors.gray['100'],
     padding: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: spacing.lg,
@@ -322,7 +322,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   changeButtonDisabled: {
-    backgroundColor: colors.gray.400,
+    backgroundColor: colors.gray['400'],
   },
   changeButtonText: {
     color: colors.white,

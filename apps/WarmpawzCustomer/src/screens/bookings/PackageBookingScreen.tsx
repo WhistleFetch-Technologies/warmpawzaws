@@ -483,7 +483,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   bookButtonDisabled: {
-    backgroundColor: colors.gray.400,
+    backgroundColor: colors.gray['400'],
   },
   bookButtonText: {
     color: colors.white,

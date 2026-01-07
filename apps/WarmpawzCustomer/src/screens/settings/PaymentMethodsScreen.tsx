@@ -327,7 +327,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: borderRadius.sm,
-    backgroundColor: colors.gray.100,
+    backgroundColor: colors.gray['100'],
   },
   actionButtonText: {
     fontSize: 12,

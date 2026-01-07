@@ -448,7 +448,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   addAddressButton: {
-    backgroundColor: colors.gray.100,
+    backgroundColor: colors.gray['100'],
     padding: spacing.md,
     borderRadius: borderRadius.md,
     alignItems: 'center',
@@ -575,7 +575,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   placeOrderButtonDisabled: {
-    backgroundColor: colors.gray.400,
+    backgroundColor: colors.gray['400'],
   },
   placeOrderButtonText: {
     color: colors.white,

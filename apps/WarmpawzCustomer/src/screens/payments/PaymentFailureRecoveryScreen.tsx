@@ -378,7 +378,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   reasonsCard: {
-    backgroundColor: colors.gray.100,
+    backgroundColor: colors.gray['100'],
     padding: spacing.md,
     borderRadius: borderRadius.md,
   },
@@ -396,7 +396,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   retryButtonDisabled: {
-    backgroundColor: colors.gray.400,
+    backgroundColor: colors.gray['400'],
   },
   retryButtonText: {
     color: colors.white,

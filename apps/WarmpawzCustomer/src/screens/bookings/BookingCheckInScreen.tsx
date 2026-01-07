@@ -378,7 +378,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   checkInButtonDisabled: {
-    backgroundColor: colors.gray.400,
+    backgroundColor: colors.gray['400'],
   },
   checkInButtonText: {
     color: colors.white,

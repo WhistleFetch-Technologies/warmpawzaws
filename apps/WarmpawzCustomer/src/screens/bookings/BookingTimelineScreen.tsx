@@ -271,7 +271,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: colors.gray.200,
+    backgroundColor: colors.gray['200'],
     borderWidth: 3,
     borderColor: '#d1d5db',
     alignItems: 'center',
@@ -294,7 +294,7 @@ const styles = StyleSheet.create({
   timelineLine: {
     width: 2,
     flex: 1,
-    backgroundColor: colors.gray.200,
+    backgroundColor: colors.gray['200'],
     minHeight: 60,
     marginTop: spacing.xs,
   },

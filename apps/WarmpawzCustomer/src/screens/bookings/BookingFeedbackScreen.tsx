@@ -293,7 +293,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   submitButtonDisabled: {
-    backgroundColor: colors.gray.400,
+    backgroundColor: colors.gray['400'],
   },
   submitButtonText: {
     color: colors.white,

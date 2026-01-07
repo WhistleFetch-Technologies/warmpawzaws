@@ -323,7 +323,7 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   disabledInput: {
-    backgroundColor: colors.gray.100,
+    backgroundColor: colors.gray['100'],
   },
   inputText: {
     fontSize: 14,
@@ -370,7 +370,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   saveButtonDisabled: {
-    backgroundColor: colors.gray.400,
+    backgroundColor: colors.gray['400'],
   },
   saveButtonText: {
     color: colors.white,

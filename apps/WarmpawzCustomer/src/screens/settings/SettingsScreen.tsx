@@ -196,7 +196,7 @@ export function SettingsScreen({
                   setNotificationsEnabled(value);
                   if (customerId) handleSaveSettings();
                 }}
-                trackColor={{ false: {colors.gray.200}, true: colors.primary }}
+                trackColor={{ false: colors.gray['200'], true: colors.primary }}
               />
             </View>
             {notificationsEnabled && (
@@ -211,7 +211,7 @@ export function SettingsScreen({
                   <Switch
                     value={emailNotifications}
                     onValueChange={setEmailNotifications}
-                    trackColor={{ false: {colors.gray.200}, true: colors.primary }}
+                    trackColor={{ false: colors.gray['200'], true: colors.primary }}
                   />
                 </View>
                 <View style={styles.toggleItem}>
@@ -224,7 +224,7 @@ export function SettingsScreen({
                   <Switch
                     value={smsNotifications}
                     onValueChange={setSmsNotifications}
-                    trackColor={{ false: {colors.gray.200}, true: colors.primary }}
+                    trackColor={{ false: colors.gray['200'], true: colors.primary }}
                   />
                 </View>
                 <View style={styles.toggleItem}>
@@ -237,7 +237,7 @@ export function SettingsScreen({
                   <Switch
                     value={pushNotifications}
                     onValueChange={setPushNotifications}
-                    trackColor={{ false: {colors.gray.200}, true: colors.primary }}
+                    trackColor={{ false: colors.gray['200'], true: colors.primary }}
                   />
                 </View>
               </>

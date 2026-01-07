@@ -339,7 +339,7 @@ const styles = StyleSheet.create({
   instructionsContainer: {
     marginTop: spacing.sm,
     padding: spacing.sm,
-    backgroundColor: colors.gray.100,
+    backgroundColor: colors.gray['100'],
     borderRadius: borderRadius.sm,
   },
   instructionsLabel: {

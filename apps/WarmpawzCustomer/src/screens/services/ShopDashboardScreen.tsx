@@ -823,13 +823,13 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
     fontSize: typography.body,
   },
   categoriesContainer: {
     backgroundColor: colors.white,
     borderBottomWidth: 1,
-    borderBottomColor: colors.gray.200,
+    borderBottomColor: colors.gray['200'],
   },
   categoriesContent: {
     paddingHorizontal: spacing.md,
@@ -914,7 +914,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: colors.gray.200,
+    backgroundColor: colors.gray['200'],
   },
   bannerDotActive: {
     width: 24,
@@ -932,7 +932,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
   },
   featureIcon: {
     fontSize: 24,
@@ -972,7 +972,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     marginRight: spacing.md,
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
     overflow: 'hidden',
   },
   productsGrid: {
@@ -986,7 +986,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.white,
     borderRadius: borderRadius.md,
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
     overflow: 'hidden',
   },
   productImageContainer: {
@@ -1289,7 +1289,7 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: borderRadius.md,
-    backgroundColor: colors.gray.200,
+    backgroundColor: colors.gray['200'],
   },
   cartItemInfo: {
     flex: 1,
@@ -1344,7 +1344,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
     paddingTop: spacing.md,
     borderTopWidth: 1,
-    borderTopColor: colors.gray.200,
+    borderTopColor: colors.gray['200'],
   },
   cartSummaryTotalLabel: {
     fontSize: typography.h3,
@@ -1392,7 +1392,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
     paddingTop: spacing.md,
     borderTopWidth: 1,
-    borderTopColor: colors.gray.200,
+    borderTopColor: colors.gray['200'],
   },
   checkoutTotalLabel: {
     fontSize: typography.h3,

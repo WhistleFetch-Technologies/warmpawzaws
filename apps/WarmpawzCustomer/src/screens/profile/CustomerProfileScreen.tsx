@@ -392,7 +392,7 @@ const styles = StyleSheet.create({
     width: 120,
     height: 120,
     borderRadius: 60,
-    backgroundColor: colors.gray.200,
+    backgroundColor: colors.gray['200'],
     overflow: 'hidden',
     marginBottom: spacing.md,
     borderWidth: 4,
@@ -420,7 +420,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     backgroundColor: '#F9FAFB',
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
   },
   changePhotoButtonText: {
     fontSize: typography.body,
@@ -444,12 +444,12 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
     fontSize: typography.body,
     color: colors.text,
   },
   inputDisabled: {
-    backgroundColor: colors.gray.100,
+    backgroundColor: colors.gray['100'],
     color: colors.textSecondary,
   },
   textArea: {
@@ -475,7 +475,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
   },
   quickActionIcon: {
     fontSize: 32,

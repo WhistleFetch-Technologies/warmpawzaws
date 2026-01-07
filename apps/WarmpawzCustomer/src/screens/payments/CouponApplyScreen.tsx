@@ -375,7 +375,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   validateButtonDisabled: {
-    backgroundColor: colors.gray.400,
+    backgroundColor: colors.gray['400'],
   },
   validateButtonText: {
     color: colors.white,

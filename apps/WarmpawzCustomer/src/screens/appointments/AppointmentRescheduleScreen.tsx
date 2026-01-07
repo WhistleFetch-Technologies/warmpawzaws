@@ -344,7 +344,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   rescheduleButtonDisabled: {
-    backgroundColor: colors.gray.400,
+    backgroundColor: colors.gray['400'],
   },
   rescheduleButtonText: {
     color: colors.white,
