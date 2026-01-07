@@ -218,7 +218,7 @@ export function UnifiedBookingEngine({
         serviceStyle: selectedServiceStyle || '',
       });
 
-      const staff = await apiClient.get(`/vendors/${service.vendor_id}/staff/available?${params}`);
+      const staff: any = await apiClient.get(`/vendors/${service.vendor_id}/staff/available?${params}`);
       setAvailableStaff(staff || []);
     } catch (err: any) {
       console.error('Failed to load staff:', err);
@@ -361,7 +361,7 @@ export function UnifiedBookingEngine({
       }
 
       // Get customer ID from phone
-      const customer = await apiClient.get(`/customers/phone/${customerPhone}`);
+      const customer: any = await apiClient.get(`/customers/phone/${customerPhone}`);
       if (!customer) {
         throw new Error('Customer not found');
       }
