@@ -117,7 +117,11 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: Install dependencies
+      - name: Install UI package dependencies
+        working-directory: packages/ui
+        run: npm ci --legacy-peer-deps
+
+      - name: Install app dependencies
         working-directory: apps/${{ matrix.app }}
         run: npm ci --legacy-peer-deps
 
