@@ -42,12 +42,12 @@ jobs:
           cache: 'npm'
 
       - name: Install root dependencies
-        run: npm install
+        run: npm ci --legacy-peer-deps
 
       - name: Build UI Package
         run: |
           cd packages/ui
-          npm install
+          npm ci --legacy-peer-deps
           npm run build
 
       - name: Build Admin Web
