@@ -164,7 +164,7 @@ export function WalletScreen({
   };
 
   const getTransactionColor = (type: string) => {
-    return type === 'credit' ? {colors.success} : '#EF4444';
+    return type === 'credit' ? colors.success : '#EF4444';
   };
 
   if (loading) {
