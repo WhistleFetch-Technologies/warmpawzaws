@@ -14,7 +14,6 @@ import {
   MeetingSessionConfiguration,
   AudioVideoFacade,
   DefaultDeviceController,
-  DefaultMeetingSession,
   Logger,
   LogLevel,
   VideoTile,
