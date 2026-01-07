@@ -297,13 +297,19 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Build API Contracts (for Lambda)
+        run: |
+          cd packages/api-contracts
+          npm ci --legacy-peer-deps || npm install --legacy-peer-deps
+          npm run build
+
       - name: Install Serverless Framework
         run: npm install -g serverless@3
 
       - name: Deploy Lambda
         run: |
           cd backend/lambda
-          npm install
+          npm ci --legacy-peer-deps || npm install --legacy-peer-deps
           npm run build
           serverless deploy --stage dev --region ${{ env.AWS_REGION }}
         env:
