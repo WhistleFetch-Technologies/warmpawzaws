@@ -213,12 +213,12 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
 
   if (!pet) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center w-full max-w-[430px] mx-auto p-6">
+      <div className="min-h-screen bg-white flex items-center justify-center w-full max-w-[430px] mx-auto p-0">
         <div className="text-center">
           <p className="text-gray-600 mb-4">Pet not found</p>
           <button
             onClick={onBack}
-            className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors"
+            className="px-4 py-0 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors"
           >
             Go Back
           </button>
@@ -230,9 +230,9 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
   return (
     <div className="min-h-screen bg-white flex flex-col w-full max-w-[430px] mx-auto">
       {/* Status Bar */}
-      <div className="px-6 pt-3 pb-2 flex justify-between items-center">
+      <div className="px-0 pt-0 pb-0 flex justify-between items-center">
         <span className="text-black text-sm">09:41</span>
-        <div className="flex gap-1.5 items-center">
+        <div className="flex gap-0.5 items-center">
           <svg width="17" height="12" viewBox="0 0 17 12" fill="none">
             <rect y="8" width="3" height="4" rx="0.5" fill="black"/>
             <rect x="4.5" y="5" width="3" height="7" rx="0.5" fill="black"/>
@@ -251,7 +251,7 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
       </div>
 
       {/* Header */}
-      <div className="bg-gradient-to-r from-primary to-primary-dark px-6 py-6">
+      <div className="bg-gradient-to-r from-primary to-primary-dark px-0 py-0">
         <div className="flex items-center justify-between mb-4">
           <button
             onClick={onBack}
@@ -298,7 +298,7 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
           <div className="flex-1 text-white">
             <h3 className="text-xl font-bold">{pet.name}</h3>
             <p className="text-white/90 text-sm">{pet.breed}</p>
-            <div className="flex items-center gap-2 mt-1 text-xs text-white/80">
+            <div className="flex items-center gap-0 mt-0 text-xs text-white/80">
               <span>{pet.age}</span>
               {pet.gender && <span>• {pet.gender}</span>}
               {pet.weight && <span>• {pet.weight}</span>}
@@ -307,19 +307,19 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
         </div>
 
         {/* Action Buttons */}
-        <div className="flex gap-2">
+        <div className="flex gap-0">
           {editMode ? (
             <>
               <button
                 onClick={() => setEditMode(false)}
-                className="flex-1 py-2 bg-white/20 rounded-lg text-white font-medium hover:bg-white/30 transition-colors"
+                className="flex-1 py-0 bg-white/20 rounded-lg text-white font-medium hover:bg-white/30 transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="flex-1 py-2 bg-white rounded-lg text-primary font-medium hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                className="flex-1 py-0 bg-white rounded-lg text-primary font-medium hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-0"
               >
                 {saving ? (
                   <>
@@ -338,7 +338,7 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
             <>
               <button
                 onClick={() => setEditMode(true)}
-                className="flex-1 py-2 bg-white/20 rounded-lg text-white font-medium hover:bg-white/30 transition-colors flex items-center justify-center gap-2"
+                className="flex-1 py-0 bg-white/20 rounded-lg text-white font-medium hover:bg-white/30 transition-colors flex items-center justify-center gap-0"
               >
                 <Edit2 className="w-4 h-4" />
                 Edit
@@ -346,7 +346,7 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
               {onViewPetProfile && (
                 <button
                   onClick={() => onViewPetProfile(pet)}
-                  className="flex-1 py-2 bg-white/20 rounded-lg text-white font-medium hover:bg-white/30 transition-colors"
+                  className="flex-1 py-0 bg-white/20 rounded-lg text-white font-medium hover:bg-white/30 transition-colors"
                 >
                   Full Profile
                 </button>
@@ -358,19 +358,19 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
 
       {/* Scrollable Content */}
       <div className="flex-1 overflow-y-auto pb-32">
-        <div className="px-6 py-6 space-y-6">
+        <div className="px-0 py-0 space-y-6">
           {/* Pet Details */}
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
+          <div className="bg-white rounded-2xl p-0 shadow-sm border border-gray-200">
             <h3 className="font-bold text-gray-900 mb-4">Pet Information</h3>
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-2">Type</label>
+                  <label className="block text-xs font-semibold text-gray-500 mb-0">Type</label>
                   {editMode ? (
                     <select
                       value={pet.type}
                       onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setPet({ ...pet, type: e.target.value })}
-                      className="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                      className="w-full px-4 py-0.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                     >
                       <option value="Dog">Dog</option>
                       <option value="Cat">Cat</option>
@@ -379,87 +379,87 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
                       <option value="Other">Other</option>
                     </select>
                   ) : (
-                    <p className="text-gray-900 font-medium px-4 py-2.5 bg-gray-50 rounded-xl">{pet.type}</p>
+                    <p className="text-gray-900 font-medium px-4 py-0.5 bg-gray-50 rounded-xl">{pet.type}</p>
                   )}
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-2">Breed</label>
+                  <label className="block text-xs font-semibold text-gray-500 mb-0">Breed</label>
                   {editMode ? (
                     <input
                       type="text"
                       value={pet.breed}
                       onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPet({ ...pet, breed: e.target.value })}
-                      className="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                      className="w-full px-4 py-0.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                     />
                   ) : (
-                    <p className="text-gray-900 font-medium px-4 py-2.5 bg-gray-50 rounded-xl">{pet.breed}</p>
+                    <p className="text-gray-900 font-medium px-4 py-0.5 bg-gray-50 rounded-xl">{pet.breed}</p>
                   )}
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-2">Age</label>
+                  <label className="block text-xs font-semibold text-gray-500 mb-0">Age</label>
                   {editMode ? (
                     <input
                       type="text"
                       value={pet.age}
                       onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPet({ ...pet, age: e.target.value })}
                       placeholder="e.g., 2 years"
-                      className="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                      className="w-full px-4 py-0.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                     />
                   ) : (
-                    <p className="text-gray-900 font-medium px-4 py-2.5 bg-gray-50 rounded-xl">{pet.age}</p>
+                    <p className="text-gray-900 font-medium px-4 py-0.5 bg-gray-50 rounded-xl">{pet.age}</p>
                   )}
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-2">Gender</label>
+                  <label className="block text-xs font-semibold text-gray-500 mb-0">Gender</label>
                   {editMode ? (
                     <select
                       value={pet.gender}
                       onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setPet({ ...pet, gender: e.target.value })}
-                      className="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                      className="w-full px-4 py-0.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                     >
                       <option value="">Select</option>
                       <option value="Male">Male</option>
                       <option value="Female">Female</option>
                     </select>
                   ) : (
-                    <p className="text-gray-900 font-medium px-4 py-2.5 bg-gray-50 rounded-xl">{pet.gender || '-'}</p>
+                    <p className="text-gray-900 font-medium px-4 py-0.5 bg-gray-50 rounded-xl">{pet.gender || '-'}</p>
                   )}
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-2">Weight</label>
+                <label className="block text-xs font-semibold text-gray-500 mb-0">Weight</label>
                 {editMode ? (
                   <input
                     type="text"
                     value={pet.weight}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPet({ ...pet, weight: e.target.value })}
                     placeholder="e.g., 15 kg"
-                    className="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                    className="w-full px-4 py-0.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                   />
                 ) : (
-                  <p className="text-gray-900 font-medium px-4 py-2.5 bg-gray-50 rounded-xl">{pet.weight || '-'}</p>
+                  <p className="text-gray-900 font-medium px-4 py-0.5 bg-gray-50 rounded-xl">{pet.weight || '-'}</p>
                 )}
               </div>
 
               {pet.microchipId && (
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-2">Microchip ID</label>
-                  <p className="text-gray-900 font-medium px-4 py-2.5 bg-gray-50 rounded-xl">{pet.microchipId}</p>
+                  <label className="block text-xs font-semibold text-gray-500 mb-0">Microchip ID</label>
+                  <p className="text-gray-900 font-medium px-4 py-0.5 bg-gray-50 rounded-xl">{pet.microchipId}</p>
                 </div>
               )}
             </div>
           </div>
 
           {/* Bookings Section */}
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-200">
+          <div className="bg-white rounded-2xl p-0 shadow-sm border border-gray-200">
             <h3 className="font-bold text-gray-900 mb-4">Recent Bookings</h3>
             {loadingBookings ? (
               <div className="text-center py-8">
-                <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+                <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-0"></div>
                 <p className="text-gray-600 text-sm">Loading...</p>
               </div>
             ) : bookings.length === 0 ? (
@@ -474,19 +474,19 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
                     onClick={() => onViewBooking?.(booking.id, petId)}
                     className="w-full bg-gray-50 rounded-xl p-4 hover:bg-gray-100 transition-colors text-left"
                   >
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-0">
                       <div className="w-12 h-12 bg-gradient-to-br from-orange-100 to-pink-100 rounded-xl flex items-center justify-center text-xl">
                         {getServiceIcon(booking.serviceType)}
                       </div>
                       <div className="flex-1">
                         <h4 className="font-semibold text-gray-900">{booking.serviceType}</h4>
                         <p className="text-sm text-gray-600">{booking.vendorName}</p>
-                        <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
+                        <div className="flex items-center gap-0 mt-0 text-xs text-gray-500">
                           <Calendar className="w-3 h-3" />
                           <span>{new Date(booking.startDate).toLocaleDateString()}</span>
                         </div>
                       </div>
-                      <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${getStatusColor(booking.status)}`}>
+                      <span className={`px-0.5 py-0 rounded-full text-xs font-semibold ${getStatusColor(booking.status)}`}>
                         {booking.status}
                       </span>
                     </div>
@@ -501,7 +501,7 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
             <button
               onClick={handleDelete}
               disabled={deleting}
-              className="w-full py-3 bg-red-50 border-2 border-red-200 rounded-xl text-red-600 font-medium hover:bg-red-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              className="w-full py-0 bg-red-50 border-2 border-red-200 rounded-xl text-red-600 font-medium hover:bg-red-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-0"
             >
               {deleting ? (
                 <>

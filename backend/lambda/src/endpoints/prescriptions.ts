@@ -183,9 +183,41 @@ export function registerPrescriptionEndpoints(app: Hono) {
       const { prescriptionId } = c.req.param();
       const { actorId, actorRole, actorName } = await c.req.json();
 
-      // Log download (assuming a prescription_downloads table exists)
-      // For now, we'll just return success
-      // TODO: Create prescription_downloads table if needed
+      // Log download in prescription_downloads table
+      try {
+        const { insert, query } = require('../database/rds-connection');
+        
+        // Check if table exists, create if needed
+        await query(`
+          CREATE TABLE IF NOT EXISTS prescription_downloads (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            prescription_id UUID NOT NULL REFERENCES prescriptions(id),
+            downloaded_by VARCHAR(255),
+            downloaded_by_role VARCHAR(50),
+            downloaded_by_name VARCHAR(255),
+            downloaded_at TIMESTAMP DEFAULT NOW(),
+            ip_address VARCHAR(45),
+            user_agent TEXT,
+            created_at TIMESTAMP DEFAULT NOW()
+          )
+        `).catch(() => {
+          // Table might already exist, ignore error
+        });
+        
+        // Insert download record
+        await insert('prescription_downloads', {
+          prescription_id: prescriptionId,
+          downloaded_by: actorId,
+          downloaded_by_role: actorRole,
+          downloaded_by_name: actorName,
+          downloaded_at: new Date().toISOString(),
+        });
+        
+        console.log(`✅ Prescription download logged: ${prescriptionId}`);
+      } catch (error: any) {
+        console.warn('Failed to log prescription download:', error);
+        // Don't fail the request if logging fails
+      }
 
       return c.json({
         success: true,

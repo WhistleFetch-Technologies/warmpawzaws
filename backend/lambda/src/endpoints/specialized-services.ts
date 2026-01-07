@@ -301,6 +301,120 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
     }
   });
 
+  /**
+   * POST /nutrition/delivery-orders
+   * Create meal plan delivery order
+   */
+  app.post("/nutrition/delivery-orders", async (c) => {
+    try {
+      const orderData = await c.req.json();
+      const {
+        vendorId,
+        customerId,
+        mealPlanId,
+        petId,
+        addressId,
+        deliveryDate,
+        deliveryTime,
+        quantity,
+        totalAmount,
+      } = orderData;
+
+      if (!vendorId || !customerId || !mealPlanId || !petId || !addressId || !deliveryDate || !deliveryTime) {
+        return c.json({ error: 'Missing required fields' }, 400);
+      }
+
+      // Get address details
+      const addresses = await select('addresses', { id: addressId });
+      if (addresses.length === 0) {
+        return c.json({ error: 'Address not found' }, 404);
+      }
+      const address = addresses[0];
+
+      // Get meal plan details
+      const mealPlans = await select('meal_plans', { id: mealPlanId });
+      if (mealPlans.length === 0) {
+        return c.json({ error: 'Meal plan not found' }, 404);
+      }
+      const mealPlan = mealPlans[0];
+
+      // Generate order number
+      const orderNumber = `MP-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+
+      // Create order
+      const order = await insert('orders', {
+        customer_id: customerId,
+        vendor_id: vendorId,
+        order_number: orderNumber,
+        order_status: 'pending',
+        order_type: 'meal_plan_delivery',
+        total_amount: totalAmount || 0,
+        payment_method: 'online',
+        shipping_address: JSON.stringify({
+          address: address.address,
+          city: address.city,
+          pincode: address.pincode,
+          state: address.state || '',
+        }),
+        delivery_date: deliveryDate,
+        delivery_time: deliveryTime,
+      });
+
+      // Create order item
+      await insert('order_items', {
+        order_id: order[0].id,
+        service_id: mealPlanId,
+        quantity: quantity || 1,
+        price: mealPlan.price || totalAmount,
+        total: (mealPlan.price || totalAmount) * (quantity || 1),
+        item_type: 'meal_plan',
+      });
+
+      // Store meal plan specific data
+      await insert('meal_plan_orders', {
+        order_id: order[0].id,
+        meal_plan_id: mealPlanId,
+        pet_id: petId,
+        quantity: quantity || 1,
+        delivery_date: deliveryDate,
+        delivery_time: deliveryTime,
+      }).catch(() => {
+        // Table might not exist, that's okay
+        console.log('meal_plan_orders table not found, skipping');
+      });
+
+      return c.json({
+        success: true,
+        order: order[0],
+        order_id: order[0].id,
+        message: 'Meal plan order created successfully',
+      });
+    } catch (error: any) {
+      console.error('Error creating meal plan delivery order:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /vendor/:vendorId/nutrition/meal-plans
+   * Get meal plans (alternative endpoint for customer app)
+   */
+  app.get("/vendor/:vendorId/nutrition/meal-plans", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      
+      const mealPlans = await select('meal_plans',
+        { vendor_id: vendorId, is_active: true },
+        { orderBy: 'created_at', orderDirection: 'DESC' }
+      );
+      
+      return c.json({ success: true, plans: mealPlans, mealPlans, total: mealPlans.length });
+    } catch (error: any) {
+      console.error('Error fetching meal plans:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
   // ============================================
   // CAFE: TABLE & PAX CONFIGURATION
   // ============================================

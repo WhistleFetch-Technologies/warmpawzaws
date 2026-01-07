@@ -16,7 +16,7 @@ import {
   Alert,
 } from 'react-native';
 import { colors, spacing, borderRadius } from '../../theme/colors';
-import { CustomerApi } from '../../services/api';
+import { CustomerApi, PaymentApi } from '../../services/api';
 
 interface PaymentFailureRecoveryScreenProps {
   paymentId: string;
@@ -47,30 +47,47 @@ export function PaymentFailureRecoveryScreen({
     try {
       setRetrying(true);
 
-      // TODO: Call actual payment retry API
-      // For now, simulate retry
-      await new Promise(resolve => setTimeout(resolve, 2000));
-
-      Alert.alert(
-        'Payment Successful',
-        'Your payment has been processed successfully.',
-        [
-          {
-            text: 'OK',
-            onPress: () => {
+      // ✅ WIRED: Using actual payment retry API
+      const response = await PaymentApi.retryPayment(paymentId, orderId, bookingId, selectedMethod);
+      
+      if (response.success || response.paymentUrl || response.razorpayOrderId) {
+        // If payment URL is returned, navigate to payment screen
+        if (response.paymentUrl && onNavigate) {
+          onNavigate('Payment', {
+            paymentUrl: response.paymentUrl,
+            orderId: orderId || bookingId,
+            amount,
+            onSuccess: () => {
               if (onSuccess) {
                 onSuccess();
-              } else if (onNavigate) {
-                if (bookingId) {
-                  onNavigate('BookingDetail', { bookingId });
-                } else if (orderId) {
-                  onNavigate('OrderDetail', { orderId });
-                }
               }
             },
-          },
-        ]
-      );
+          });
+        } else {
+          Alert.alert(
+            'Payment Successful',
+            'Your payment has been processed successfully.',
+            [
+              {
+                text: 'OK',
+                onPress: () => {
+                  if (onSuccess) {
+                    onSuccess();
+                  } else if (onNavigate) {
+                    if (bookingId) {
+                      onNavigate('BookingDetail', { bookingId });
+                    } else if (orderId) {
+                      onNavigate('OrderDetail', { orderId });
+                    }
+                  }
+                },
+              },
+            ]
+          );
+        }
+      } else {
+        Alert.alert('Payment Failed', response.error || 'Failed to process payment. Please try again.');
+      }
     } catch (error: any) {
       console.error('Error retrying payment:', error);
       Alert.alert('Payment Failed', error.message || 'Failed to process payment. Please try again.');
@@ -191,7 +208,7 @@ export function PaymentFailureRecoveryScreen({
           disabled={retrying}
         >
           {retrying ? (
-            <ActivityIndicator size="small" color="#fff" />
+            <ActivityIndicator size="small" color={colors.white} />
           ) : (
             <Text style={styles.retryButtonText}>Retry Payment</Text>
           )}
@@ -220,7 +237,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -246,7 +263,7 @@ const styles = StyleSheet.create({
   },
   errorBanner: {
     flexDirection: 'row',
-    backgroundColor: '#fee2e2',
+    backgroundColor: colors.error + 20% opacity,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: spacing.lg,
@@ -263,7 +280,7 @@ const styles = StyleSheet.create({
   errorTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#dc2626',
+    color: colors.error,
     marginBottom: spacing.xs,
   },
   errorSubtitle: {
@@ -280,7 +297,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   detailsCard: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     borderWidth: 1,
@@ -319,7 +336,7 @@ const styles = StyleSheet.create({
   methodCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: spacing.sm,
@@ -328,7 +345,7 @@ const styles = StyleSheet.create({
   },
   methodCardSelected: {
     borderColor: colors.primary,
-    backgroundColor: '#fff7ed',
+    backgroundColor: colors.primary.50,
   },
   methodIcon: {
     fontSize: 32,
@@ -356,12 +373,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   selectedCheck: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 14,
     fontWeight: 'bold',
   },
   reasonsCard: {
-    backgroundColor: '#f3f4f6',
+    backgroundColor: colors.gray.100,
     padding: spacing.md,
     borderRadius: borderRadius.md,
   },
@@ -379,10 +396,10 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   retryButtonDisabled: {
-    backgroundColor: '#9ca3af',
+    backgroundColor: colors.gray.400,
   },
   retryButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 16,
     fontWeight: 'bold',
   },

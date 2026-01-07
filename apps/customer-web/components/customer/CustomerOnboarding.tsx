@@ -13,7 +13,7 @@ export function CustomerOnboarding({ onComplete }: CustomerOnboardingProps) {
   return (
     <div className="min-h-screen bg-primary flex flex-col w-full max-w-[430px] mx-auto">
       {/* Orange Top Section */}
-      <div className="flex flex-col items-center pt-16 pb-8 px-6">
+      <div className="flex flex-col items-center pt-16 pb-8 px-0">
         {/* Paw Logo with Heart */}
         <div className="mb-8 w-32 h-32 bg-white rounded-full flex items-center justify-center shadow-xl">
           <img src="/logo.png" alt="Warmpawz" className="w-24 h-24 object-contain" />
@@ -23,14 +23,14 @@ export function CustomerOnboarding({ onComplete }: CustomerOnboardingProps) {
       </div>
 
       {/* White Bottom Section */}
-      <div className="flex-1 bg-white rounded-t-[40px] px-6 py-8 overflow-y-auto shadow-[0_-4px_20px_rgba(0,0,0,0.1)]">
+      <div className="flex-1 bg-white rounded-t-[40px] px-0 py-8 overflow-y-auto shadow-[0_-4px_20px_rgba(0,0,0,0.1)]">
         <p className="text-center text-gray-700 mb-8 text-sm leading-relaxed">
           Choose your journey to get<br />
           personalized support 💖🐕🐈
         </p>
 
         {/* Journey Stage Cards */}
-        <div className="space-y-4 mb-6">
+        <div className="space-y-4 mb-0">
           {/* Planning to Get a Pet */}
           <button
             onClick={() => setSelectedStage('planning')}
@@ -49,17 +49,17 @@ export function CustomerOnboarding({ onComplete }: CustomerOnboardingProps) {
 
               {/* Content */}
               <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center justify-between mb-0">
                   <h3 className="font-semibold text-gray-900">Planning to Get a Pet</h3>
                   <ArrowRight className="w-5 h-5 text-gray-400 flex-shrink-0" />
                 </div>
-                <p className="text-xs text-gray-600 mb-3 leading-relaxed">
+                <p className="text-xs text-gray-600 mb-0 leading-relaxed">
                   Find your perfect match! Get expert guidance on breeds, adoption, preparation, and bringing home your new best friend 🐾💙
                 </p>
                 
                 {/* Button */}
                 <div className="inline-flex">
-                  <span className="text-xs px-4 py-1.5 rounded-full border-2 border-blue-300 bg-blue-100 text-blue-700 font-medium">
+                  <span className="text-xs px-4 py-0.5 rounded-full border-2 border-blue-300 bg-blue-100 text-blue-700 font-medium">
                     Start Your Journey
                   </span>
                 </div>
@@ -88,11 +88,11 @@ export function CustomerOnboarding({ onComplete }: CustomerOnboardingProps) {
 
               {/* Content */}
               <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center justify-between mb-0">
                   <h3 className="font-semibold text-gray-900">Already Have a Pet</h3>
                   <ArrowRight className="w-5 h-5 text-gray-400 flex-shrink-0" />
                 </div>
-                <p className="text-xs text-gray-600 mb-3 leading-relaxed">
+                <p className="text-xs text-gray-600 mb-0 leading-relaxed">
                   Complete pet care hub! Track health records, schedule vet visits, manage medications, log activities, and celebrate your bond 💚🐾
                 </p>
                 
@@ -123,17 +123,17 @@ export function CustomerOnboarding({ onComplete }: CustomerOnboardingProps) {
 
               {/* Content */}
               <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center justify-between mb-0">
                   <h3 className="font-semibold text-gray-900">End of Life Care</h3>
                   <ArrowRight className="w-5 h-5 text-gray-400 flex-shrink-0" />
                 </div>
-                <p className="text-xs text-gray-600 mb-3 leading-relaxed">
+                <p className="text-xs text-gray-600 mb-0 leading-relaxed">
                   Compassionate support with quality of life guidance, hospice care, sunset services, memorial options, and grief counseling 🌈💜
                 </p>
                 
                 {/* Button */}
                 <div className="inline-flex">
-                  <span className="text-xs px-4 py-1.5 rounded-full border-2 border-purple-300 bg-purple-100 text-purple-700 font-medium">
+                  <span className="text-xs px-4 py-0.5 rounded-full border-2 border-purple-300 bg-purple-100 text-purple-700 font-medium">
                     Manage care
                   </span>
                 </div>
@@ -143,7 +143,7 @@ export function CustomerOnboarding({ onComplete }: CustomerOnboardingProps) {
         </div>
 
         {/* Footer Message */}
-        <div className="text-center mb-6">
+        <div className="text-center mb-0">
           <p className="text-sm text-gray-700">
             🐾💕🐾<br />
             Every pet deserves love and the best care
@@ -154,7 +154,7 @@ export function CustomerOnboarding({ onComplete }: CustomerOnboardingProps) {
         <button
           onClick={() => selectedStage && onComplete(selectedStage)}
           disabled={!selectedStage}
-          className="w-full h-14 bg-primary hover:bg-primary-dark text-white font-semibold rounded-2xl disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-primary/30 mb-6"
+          className="w-full h-14 bg-primary hover:bg-primary-dark text-white font-semibold rounded-2xl disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-primary/30 mb-0"
         >
           Continue
         </button>

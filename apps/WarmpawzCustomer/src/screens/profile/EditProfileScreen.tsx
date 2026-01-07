@@ -225,7 +225,7 @@ export function EditProfileScreen({
           disabled={!name.trim() || saving}
         >
           {saving ? (
-            <ActivityIndicator size="small" color="#fff" />
+            <ActivityIndicator size="small" color={colors.white} />
           ) : (
             <Text style={styles.saveButtonText}>Save Changes</Text>
           )}
@@ -246,7 +246,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -291,7 +291,7 @@ const styles = StyleSheet.create({
   photoPlaceholderText: {
     fontSize: 40,
     fontWeight: 'bold',
-    color: '#fff',
+    color: colors.white,
   },
   changePhotoButton: {
     padding: spacing.sm,
@@ -314,7 +314,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   input: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: borderRadius.md,
@@ -323,7 +323,7 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   disabledInput: {
-    backgroundColor: '#f3f4f6',
+    backgroundColor: colors.gray.100,
   },
   inputText: {
     fontSize: 14,
@@ -343,7 +343,7 @@ const styles = StyleSheet.create({
   },
   genderButton: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     borderWidth: 2,
@@ -352,7 +352,7 @@ const styles = StyleSheet.create({
   },
   genderButtonSelected: {
     borderColor: colors.primary,
-    backgroundColor: '#fff7ed',
+    backgroundColor: colors.primary.50,
   },
   genderButtonText: {
     fontSize: 14,
@@ -370,10 +370,10 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   saveButtonDisabled: {
-    backgroundColor: '#9ca3af',
+    backgroundColor: colors.gray.400,
   },
   saveButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 16,
     fontWeight: 'bold',
   },

@@ -107,6 +107,14 @@ export function HelpSupportScreen({
         {/* Quick Actions */}
         <View style={styles.quickActions}>
           <TouchableOpacity
+            style={[styles.quickActionButton, styles.aiChatbotButton]}
+            onPress={() => onNavigate && onNavigate('AIChatbot')}
+          >
+            <Text style={styles.quickActionIcon}>🤖</Text>
+            <Text style={styles.quickActionText}>AI Assistant</Text>
+            <Text style={styles.quickActionSubtext}>Symptoms, Booking, Support</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
             style={styles.quickActionButton}
             onPress={() => setShowContactForm(!showContactForm)}
           >
@@ -234,7 +242,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -265,7 +273,7 @@ const styles = StyleSheet.create({
   },
   quickActionButton: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     alignItems: 'center',
@@ -282,7 +290,7 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   contactForm: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: spacing.lg,
@@ -296,7 +304,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   formInput: {
-    backgroundColor: '#f3f4f6',
+    backgroundColor: colors.gray.100,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     fontSize: 14,
@@ -313,7 +321,7 @@ const styles = StyleSheet.create({
   },
   cancelButton: {
     flex: 1,
-    backgroundColor: '#f3f4f6',
+    backgroundColor: colors.gray.100,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     alignItems: 'center',
@@ -331,7 +339,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   submitButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 14,
     fontWeight: '600',
   },
@@ -353,7 +361,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: borderRadius.full,
-    backgroundColor: '#f3f4f6',
+    backgroundColor: colors.gray.100,
   },
   categoryChipActive: {
     backgroundColor: colors.primary,
@@ -364,7 +372,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   categoryChipTextActive: {
-    color: '#fff',
+    color: colors.white,
   },
   faqsContainer: {
     marginBottom: spacing.lg,
@@ -382,7 +390,7 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   faqCard: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: spacing.md,

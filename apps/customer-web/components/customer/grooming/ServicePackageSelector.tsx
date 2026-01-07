@@ -70,29 +70,29 @@ export function ServicePackageSelector({
           <button
             key={pkg.id}
             onClick={() => onPackageSelect(pkg.id, pkg)}
-            className={`w-full p-5 rounded-xl border-2 transition-all text-left ${
+            className={`w-full p-0 rounded-xl border-2 transition-all text-left ${
               isSelected
                 ? 'border-primary bg-orange-50'
                 : 'border-gray-200 hover:border-primary hover:shadow-md'
             }`}
           >
-            <div className="flex items-start justify-between mb-3">
+            <div className="flex items-start justify-between mb-0">
               <div className="flex-1">
-                <div className="flex items-center gap-2 mb-2">
+                <div className="flex items-center gap-0 mb-0">
                   <h3 className="font-bold text-gray-900">{pkg.name}</h3>
                   {pkg.popular && (
-                    <span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full text-xs font-semibold">
+                    <span className="px-0 py-0.5 bg-orange-100 text-orange-700 rounded-full text-xs font-semibold">
                       Popular
                     </span>
                   )}
                 </div>
-                <p className="text-sm text-gray-600 mb-3">{pkg.description}</p>
+                <p className="text-sm text-gray-600 mb-0">{pkg.description}</p>
                 {pkg.services && pkg.services.length > 0 && (
-                  <div className="flex flex-wrap gap-2 mb-3">
+                  <div className="flex flex-wrap gap-0 mb-0">
                     {pkg.services.map((service, idx) => (
                       <span
                         key={idx}
-                        className="px-2 py-1 bg-gray-100 text-gray-700 rounded-full text-xs"
+                        className="px-0 py-0 bg-gray-100 text-gray-700 rounded-full text-xs"
                       >
                         {service}
                       </span>
@@ -107,18 +107,18 @@ export function ServicePackageSelector({
               )}
             </div>
 
-            <div className="flex items-center gap-4 text-sm text-gray-600 mb-3">
-              <div className="flex items-center gap-1">
+            <div className="flex items-center gap-4 text-sm text-gray-600 mb-0">
+              <div className="flex items-center gap-0">
                 <Package className="w-4 h-4" />
                 <span>{pkg.sessions} sessions</span>
               </div>
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-0">
                 <Clock className="w-4 h-4" />
                 <span>{pkg.duration} min each</span>
               </div>
             </div>
 
-            <div className="flex items-center justify-between pt-3 border-t border-gray-200">
+            <div className="flex items-center justify-between pt-0 border-t border-gray-200">
               <div>
                 {pkg.discount && (
                   <p className="text-sm text-gray-500 line-through">₹{pkg.price + pkg.discount}</p>

@@ -145,10 +145,36 @@ export function registerNotificationEndpoints(app: Hono) {
         }
       }
 
-      // Send push notification if requested (would integrate with SNS for mobile push)
+      // Send push notification if requested via SNS
       if (sendPush) {
-        // TODO: Implement push notification via SNS
-        console.log('Push notification requested but not yet implemented');
+        try {
+          const { publishNotification } = require('../utils/aws-clients');
+          
+          // Determine target type from recipient_id
+          let targetType: 'vendor' | 'customer' | 'admin' = 'customer';
+          if (recipientId.startsWith('vendor_') || recipientId.startsWith('ven_')) {
+            targetType = 'vendor';
+          } else if (recipientId.startsWith('admin_') || recipientId.startsWith('adm_')) {
+            targetType = 'admin';
+          }
+          
+          await publishNotification(targetType, recipientId, {
+            title: title,
+            body: message,
+            data: {
+              notification_id: notification[0].id,
+              type: notificationType,
+              booking_id: data?.booking_id,
+              payment_id: data?.payment_id,
+            },
+            type: notificationType,
+          });
+          
+          console.log(`✅ Push notification sent via SNS to ${targetType}:${recipientId}`);
+        } catch (error: any) {
+          console.error('Error sending push notification via SNS:', error);
+          // Don't fail the request if push notification fails
+        }
       }
 
       return c.json({

@@ -76,8 +76,8 @@ export function RescheduleBookingModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between mb-6">
+      <div className="bg-white rounded-2xl p-0 max-w-md w-full max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-0">
           <h2 className="font-bold text-lg">Reschedule Booking</h2>
           <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">
             <X className="w-5 h-5" />
@@ -87,7 +87,7 @@ export function RescheduleBookingModal({
         <div className="space-y-6">
           {/* Current Schedule */}
           <div className="p-4 bg-gray-50 rounded-lg">
-            <p className="text-sm text-gray-600 mb-1">Current Schedule</p>
+            <p className="text-sm text-gray-600 mb-0">Current Schedule</p>
             <p className="font-semibold text-gray-900">
               {new Date(currentDate).toLocaleDateString()} at {currentTime}
             </p>
@@ -95,7 +95,7 @@ export function RescheduleBookingModal({
 
           {/* Date Picker */}
           <div>
-            <label className="block text-sm font-medium mb-2 flex items-center gap-2">
+            <label className="block text-sm font-medium mb-0 flex items-center gap-0">
               <Calendar className="w-4 h-4" />
               Select New Date
             </label>
@@ -104,14 +104,14 @@ export function RescheduleBookingModal({
               value={selectedDate}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSelectedDate(e.target.value)}
               min={new Date().toISOString().split('T')[0]}
-              className="w-full p-3 border border-gray-300 rounded-lg"
+              className="w-full p-0 border border-gray-300 rounded-lg"
             />
           </div>
 
           {/* Time Slots */}
           {selectedDate && (
             <div>
-              <label className="block text-sm font-medium mb-2 flex items-center gap-2">
+              <label className="block text-sm font-medium mb-0 flex items-center gap-0">
                 <Clock className="w-4 h-4" />
                 Select Time Slot
               </label>
@@ -125,14 +125,14 @@ export function RescheduleBookingModal({
                   No slots available on this date
                 </p>
               ) : (
-                <div className="grid grid-cols-3 gap-2 max-h-60 overflow-y-auto">
+                <div className="grid grid-cols-3 gap-0 max-h-60 overflow-y-auto">
                   {availableSlots.map((slot) => {
                     const isSelected = selectedSlot === slot;
                     return (
                       <button
                         key={slot}
                         onClick={() => setSelectedSlot(slot)}
-                        className={`p-3 rounded-lg border-2 transition-all text-sm ${
+                        className={`p-0 rounded-lg border-2 transition-all text-sm ${
                           isSelected
                             ? 'border-primary bg-orange-50 text-primary'
                             : 'border-gray-200 hover:border-primary text-gray-900'
@@ -149,28 +149,28 @@ export function RescheduleBookingModal({
 
           {/* Reason */}
           <div>
-            <label className="block text-sm font-medium mb-2">Reason (optional)</label>
+            <label className="block text-sm font-medium mb-0">Reason (optional)</label>
             <textarea
               value={reason}
               onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setReason(e.target.value)}
-              className="w-full p-3 border border-gray-300 rounded-lg"
+              className="w-full p-0 border border-gray-300 rounded-lg"
               rows={3}
               placeholder="Please provide a reason..."
             />
           </div>
 
           {/* Actions */}
-          <div className="flex gap-3">
+          <div className="flex gap-0">
             <button
               onClick={onClose}
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg"
+              className="flex-1 px-4 py-0 border border-gray-300 rounded-lg"
             >
               Cancel
             </button>
             <button
               onClick={handleReschedule}
               disabled={loading || !selectedDate || !selectedSlot}
-              className="flex-1 px-4 py-2 bg-primary text-white rounded-lg font-semibold disabled:opacity-50"
+              className="flex-1 px-4 py-0 bg-primary text-white rounded-lg font-semibold disabled:opacity-50"
             >
               {loading ? 'Rescheduling...' : 'Confirm'}
             </button>

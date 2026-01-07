@@ -116,7 +116,7 @@ export function BookingLifecycleManager({ vendorId }: { vendorId: string }) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20">
+      <div className="flex items-center justify-center py-00">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#FF8C42]"></div>
       </div>
     );
@@ -135,7 +135,7 @@ export function BookingLifecycleManager({ vendorId }: { vendorId: string }) {
           <div className="space-y-3">
             {bookings.map((booking) => (
               <div key={booking.id} className="border border-gray-200 rounded-xl p-4">
-                <div className="flex items-start justify-between mb-3">
+                <div className="flex items-start justify-between mb-0">
                   <div className="flex-1">
                     <h3 className="font-semibold text-gray-900">{booking.customer_name}</h3>
                     <p className="text-sm text-gray-600">{booking.service_name}</p>
@@ -143,7 +143,7 @@ export function BookingLifecycleManager({ vendorId }: { vendorId: string }) {
                       {new Date(booking.booking_date).toLocaleDateString()} at {booking.booking_time}
                     </p>
                   </div>
-                  <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                  <span className={`px-0 py-0 rounded-full text-xs font-medium ${
                     booking.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
                     booking.status === 'confirmed' ? 'bg-blue-100 text-blue-800' :
                     booking.status === 'in_progress' ? 'bg-purple-100 text-purple-800' :
@@ -154,18 +154,18 @@ export function BookingLifecycleManager({ vendorId }: { vendorId: string }) {
                   </span>
                 </div>
 
-                <div className="flex gap-2">
+                <div className="flex gap-0">
                   {booking.status === 'pending' && (
                     <>
                       <button
                         onClick={() => handleAcceptBooking(booking)}
-                        className="flex-1 px-4 py-2 bg-green-500 text-white rounded-lg text-sm font-medium"
+                        className="flex-1 px-4 py-0 bg-green-500 text-white rounded-lg text-sm font-medium"
                       >
                         Accept
                       </button>
                       <button
                         onClick={() => handleRejectBooking(booking)}
-                        className="flex-1 px-4 py-2 bg-red-500 text-white rounded-lg text-sm font-medium"
+                        className="flex-1 px-4 py-0 bg-red-500 text-white rounded-lg text-sm font-medium"
                       >
                         Reject
                       </button>
@@ -174,7 +174,7 @@ export function BookingLifecycleManager({ vendorId }: { vendorId: string }) {
                   {booking.status === 'confirmed' && (
                     <button
                       onClick={() => handleStartService(booking)}
-                      className="w-full px-4 py-2 bg-blue-500 text-white rounded-lg text-sm font-medium"
+                      className="w-full px-4 py-0 bg-blue-500 text-white rounded-lg text-sm font-medium"
                     >
                       Start Service
                     </button>
@@ -182,7 +182,7 @@ export function BookingLifecycleManager({ vendorId }: { vendorId: string }) {
                   {booking.status === 'in_progress' && (
                     <button
                       onClick={() => handleCompleteService(booking)}
-                      className="w-full px-4 py-2 bg-green-500 text-white rounded-lg text-sm font-medium"
+                      className="w-full px-4 py-0 bg-green-500 text-white rounded-lg text-sm font-medium"
                     >
                       Complete Service
                     </button>
@@ -196,7 +196,7 @@ export function BookingLifecycleManager({ vendorId }: { vendorId: string }) {
 
       {showOTPModal && selectedBooking && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-[380px] p-6">
+          <div className="bg-white rounded-2xl w-full max-w-[380px] p-0">
             <h3 className="font-semibold text-gray-900 mb-4">Enter Customer OTP</h3>
             <input
               type="text"
@@ -204,20 +204,20 @@ export function BookingLifecycleManager({ vendorId }: { vendorId: string }) {
               value={otpInput}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setOtpInput(e.target.value.replace(/[^0-9]/g, ''))}
               placeholder="0000"
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg text-center text-2xl tracking-widest focus:outline-none focus:ring-2 focus:ring-[#FF8C42] mb-4"
+              className="w-full px-4 py-0 border border-gray-300 rounded-lg text-center text-2xl tracking-widest focus:outline-none focus:ring-2 focus:ring-[#FF8C42] mb-4"
               autoFocus
             />
-            <div className="flex gap-2">
+            <div className="flex gap-0">
               <button
                 onClick={() => setShowOTPModal(false)}
-                className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg font-medium"
+                className="flex-1 px-4 py-0.5 border border-gray-300 text-gray-700 rounded-lg font-medium"
               >
                 Cancel
               </button>
               <button
                 onClick={verifyCompletionOTP}
                 disabled={verifying || otpInput.length !== 4}
-                className="flex-1 px-4 py-2.5 bg-green-500 text-white rounded-lg font-medium disabled:opacity-50"
+                className="flex-1 px-4 py-0.5 bg-green-500 text-white rounded-lg font-medium disabled:opacity-50"
               >
                 {verifying ? 'Verifying...' : 'Complete'}
               </button>

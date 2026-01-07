@@ -16,7 +16,7 @@ import {
   TextInput,
 } from 'react-native';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
-import { CustomerApi } from '../../services/api';
+import { CustomerApi, CommunityApi } from '../../services/api';
 
 interface CommunityScreenProps {
   phone: string;
@@ -31,6 +31,28 @@ export function CommunityScreen({
 }: CommunityScreenProps) {
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'feed' | 'forums' | 'events'>('feed');
+  const [posts, setPosts] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (customerId && activeTab === 'feed') {
+      loadPosts();
+    }
+  }, [customerId, activeTab]);
+
+  const loadPosts = async () => {
+    try {
+      setLoading(true);
+      if (customerId) {
+        const response = await CommunityApi.getPosts(customerId, 20, 0);
+        setPosts(response.posts || response || []);
+      }
+    } catch (error) {
+      console.error('Error loading posts:', error);
+      setPosts([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -68,14 +90,30 @@ export function CommunityScreen({
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {activeTab === 'feed' && (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyIcon}>💬</Text>
-            <Text style={styles.emptyTitle}>Community Feed</Text>
-            <Text style={styles.emptySubtitle}>
-              Connect with other pet parents, share stories, and get advice
-            </Text>
-            <Text style={styles.comingSoon}>Coming Soon</Text>
-          </View>
+          <>
+            {loading ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={colors.primary} />
+              </View>
+            ) : posts.length > 0 ? (
+              posts.map((post) => (
+                <View key={post.id} style={styles.postCard}>
+                  <Text style={styles.postContent}>{post.content}</Text>
+                  {post.images && post.images.length > 0 && (
+                    <Text style={styles.postImages}>{post.images.length} image(s)</Text>
+                  )}
+                </View>
+              ))
+            ) : (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyIcon}>💬</Text>
+                <Text style={styles.emptyTitle}>Community Feed</Text>
+                <Text style={styles.emptySubtitle}>
+                  Connect with other pet parents, share stories, and get advice
+                </Text>
+              </View>
+            )}
+          </>
         )}
 
         {activeTab === 'forums' && (
@@ -173,6 +211,30 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSizes.sm,
     color: colors.primary,
     fontWeight: typography.fontWeights.semibold,
+  },
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xl * 2,
+  },
+  postCard: {
+    backgroundColor: '#fff',
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  postContent: {
+    fontSize: typography.fontSizes.md,
+    color: colors.text,
+    marginBottom: spacing.sm,
+  },
+  postImages: {
+    fontSize: typography.fontSizes.sm,
+    color: colors.textSecondary,
+    fontStyle: 'italic',
   },
 });
 

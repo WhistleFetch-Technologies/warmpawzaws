@@ -117,19 +117,19 @@ export function ActiveVendorsTab() {
         
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-base">Active Vendors</h3>
-          <div className="flex gap-3">
-            <Button variant="outline" className="gap-2" onClick={loadActiveVendors}>
+          <div className="flex gap-0">
+            <Button variant="outline" className="gap-0" onClick={loadActiveVendors}>
               <RefreshCw className="w-4 h-4" />
               Refresh
             </Button>
-            <Button className="bg-[#FF8C42] hover:bg-[#FF7A2E] gap-2">
+            <Button className="bg-[#FF8C42] hover:bg-[#FF7A2E] gap-0">
               <Plus className="w-4 h-4" />
               Add Vendor
             </Button>
           </div>
         </div>
 
-        <div className="flex gap-3 mb-4">
+        <div className="flex gap-0 mb-4">
           <CustomDropdown
             options={[
               { value: 'all', label: 'All Categories' },
@@ -158,18 +158,18 @@ export function ActiveVendorsTab() {
       </div>
 
       {loading ? (
-        <div className="p-6 text-center text-gray-500">Loading vendors...</div>
+        <div className="p-0 text-center text-gray-500">Loading vendors...</div>
       ) : filteredVendors.length === 0 ? (
-        <div className="p-6 text-center text-gray-500">No active vendors found</div>
+        <div className="p-0 text-center text-gray-500">No active vendors found</div>
       ) : (
         <div className="space-y-3">
           {filteredVendors.map((vendor) => (
             <div key={vendor.id} className="bg-white border rounded-lg p-4 hover:shadow-md transition-shadow">
               <div className="flex items-center justify-between">
                 <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-2">
+                  <div className="flex items-center gap-0 mb-0">
                     <h4 className="font-semibold text-gray-900">{vendor.name}</h4>
-                    <span className={`px-2 py-1 text-xs rounded-full ${getCategoryColor(vendor.category)}`}>
+                    <span className={`px-0 py-0 text-xs rounded-full ${getCategoryColor(vendor.category)}`}>
                       {vendor.category}
                     </span>
                     <span className={`text-xs font-medium ${getTierColor(vendor.tierColor)}`}>
@@ -180,30 +180,30 @@ export function ActiveVendorsTab() {
                   <div className="grid grid-cols-4 gap-4 text-sm">
                     <div>
                       <span className="text-gray-500">Location:</span>
-                      <span className="ml-2 text-gray-900">{vendor.location}</span>
+                      <span className="ml-0 text-gray-900">{vendor.location}</span>
                     </div>
                     <div>
                       <span className="text-gray-500">Rating:</span>
-                      <span className="ml-2 text-gray-900">{vendor.rating.toFixed(1)} ⭐</span>
+                      <span className="ml-0 text-gray-900">{vendor.rating.toFixed(1)} ⭐</span>
                     </div>
                     <div>
                       <span className="text-gray-500">Revenue:</span>
-                      <span className="ml-2 text-gray-900">₹{vendor.revenue.toLocaleString()}</span>
+                      <span className="ml-0 text-gray-900">₹{vendor.revenue.toLocaleString()}</span>
                     </div>
                     <div>
                       <span className="text-gray-500">Last Active:</span>
-                      <span className="ml-2 text-gray-900">{vendor.lastActive}</span>
+                      <span className="ml-0 text-gray-900">{vendor.lastActive}</span>
                     </div>
                   </div>
                 </div>
                 
-                <div className="flex gap-2 ml-4">
+                <div className="flex gap-0 ml-4">
                   <Button
                     size="sm"
                     variant="outline"
                     onClick={() => handleViewVendor(vendor.id)}
                   >
-                    <Eye className="w-4 h-4 mr-1" />
+                    <Eye className="w-4 h-4 mr-0" />
                     View
                   </Button>
                   <Button
@@ -211,7 +211,7 @@ export function ActiveVendorsTab() {
                     variant="outline"
                     onClick={() => handleCallVendor(vendor.id)}
                   >
-                    <Phone className="w-4 h-4 mr-1" />
+                    <Phone className="w-4 h-4 mr-0" />
                     Call
                   </Button>
                 </div>

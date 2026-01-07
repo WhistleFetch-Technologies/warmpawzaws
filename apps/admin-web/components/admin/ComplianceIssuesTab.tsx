@@ -85,12 +85,12 @@ export function ComplianceIssuesTab() {
   };
 
   if (loading) {
-    return <div className="p-6 text-center text-gray-500">Loading issues...</div>;
+    return <div className="p-0 text-center text-gray-500">Loading issues...</div>;
   }
 
   if (issues.length === 0) {
     return (
-      <div className="p-6 text-center">
+      <div className="p-0 text-center">
         <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-4" />
         <p className="text-gray-500">No compliance issues at this time.</p>
       </div>
@@ -98,13 +98,13 @@ export function ComplianceIssuesTab() {
   }
 
   return (
-    <div className="p-6">
+    <div className="p-0">
       <div className="space-y-4">
         {issues.map((issue) => (
           <div key={issue.id} className="bg-white border rounded-lg p-4">
             <div className="flex items-start justify-between">
               <div className="flex-1">
-                <div className="flex items-center gap-2 mb-2">
+                <div className="flex items-center gap-0 mb-0">
                   <Badge className={getSeverityColor(issue.severity)}>
                     {issue.severity.toUpperCase()}
                   </Badge>
@@ -114,25 +114,25 @@ export function ComplianceIssuesTab() {
                 </div>
                 
                 <h3 className="font-semibold text-gray-900">{issue.vendorName}</h3>
-                <p className="text-sm text-gray-600 mt-1">
+                <p className="text-sm text-gray-600 mt-0">
                   <strong>Issue Type:</strong> {issue.issueType}
                 </p>
-                <p className="text-sm text-gray-700 mt-2">
+                <p className="text-sm text-gray-700 mt-0">
                   <strong>Description:</strong> {issue.description}
                 </p>
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-gray-500 mt-0">
                   Reported: {new Date(issue.reportedAt).toLocaleDateString()}
                 </p>
               </div>
               
-              <div className="flex gap-2 ml-4">
+              <div className="flex gap-0 ml-4">
                 {issue.status === 'open' && (
                   <Button
                     size="sm"
                     variant="secondary"
                     onClick={() => handleInvestigate(issue.id)}
                   >
-                    <Eye className="w-4 h-4 mr-1" />
+                    <Eye className="w-4 h-4 mr-0" />
                     Investigate
                   </Button>
                 )}
@@ -143,7 +143,7 @@ export function ComplianceIssuesTab() {
                     onClick={() => handleResolve(issue.id)}
                     className="text-green-600 hover:bg-green-50"
                   >
-                    <CheckCircle className="w-4 h-4 mr-1" />
+                    <CheckCircle className="w-4 h-4 mr-0" />
                     Resolve
                   </Button>
                 )}

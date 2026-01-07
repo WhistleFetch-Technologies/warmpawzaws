@@ -62,13 +62,13 @@ export function TicketsTab() {
   return (
     <div className="space-y-4">
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+        <Search className="absolute left-3 top-0/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
         <input
           type="text"
           value={searchQuery}
           onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
           placeholder="Search tickets..."
-          className="w-full pl-10 pr-4 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
+          className="w-full pl-0 pr-4 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
         />
       </div>
 
@@ -81,20 +81,20 @@ export function TicketsTab() {
           >
             <div className="flex items-start justify-between">
               <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1">
+                <div className="flex items-center gap-0 mb-0">
                   <Ticket className="w-4 h-4 text-gray-400" />
                   <h3 className="font-semibold text-gray-900">{ticket.subject}</h3>
                 </div>
-                <div className="flex items-center gap-2 mt-2">
+                <div className="flex items-center gap-0 mt-0">
                   {getStatusIcon(ticket.status)}
-                  <span className={`text-xs px-2 py-1 rounded ${
+                  <span className={`text-xs px-0 py-0 rounded ${
                     ticket.status === 'open' ? 'bg-red-100 text-red-700' :
                     ticket.status === 'in_progress' ? 'bg-yellow-100 text-yellow-700' :
                     'bg-green-100 text-green-700'
                   }`}>
                     {ticket.status}
                   </span>
-                  <span className={`text-xs px-2 py-1 rounded ${
+                  <span className={`text-xs px-0 py-0 rounded ${
                     ticket.priority === 'high' ? 'bg-red-100 text-red-700' :
                     ticket.priority === 'medium' ? 'bg-yellow-100 text-yellow-700' :
                     'bg-gray-100 text-gray-700'

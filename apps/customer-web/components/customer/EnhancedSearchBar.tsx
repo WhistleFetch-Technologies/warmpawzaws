@@ -182,14 +182,14 @@ export function EnhancedSearchBar({
     <div ref={wrapperRef} className={`relative ${className}`}>
       <form onSubmit={handleSubmit} className="relative">
         <div className="relative">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+          <Search className="absolute left-4 top-0/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
           <input
             type="text"
             value={query}
             onChange={handleInputChange}
             onFocus={() => setIsOpen(true)}
             placeholder={placeholder}
-            className="w-full pl-12 pr-12 py-3 bg-white border border-gray-200 rounded-full shadow-sm focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+            className="w-full pl-12 pr-12 py-0 bg-white border border-gray-200 rounded-full shadow-sm focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
           />
           {query && (
             <button
@@ -199,7 +199,7 @@ export function EnhancedSearchBar({
                 setResults([]);
                 setIsOpen(false);
               }}
-              className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+              className="absolute right-4 top-0/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
             >
               <X className="w-5 h-5" />
             </button>
@@ -209,11 +209,11 @@ export function EnhancedSearchBar({
 
       {/* Dropdown */}
       {isOpen && (results.length > 0 || showRecentSearches || showTrending) && (
-        <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-xl border border-gray-200 max-h-96 overflow-y-auto z-50">
+        <div className="absolute top-full left-0 right-0 mt-0 bg-white rounded-2xl shadow-xl border border-gray-200 max-h-96 overflow-y-auto z-50">
           {/* Recent Searches */}
           {showRecentSearches && (
-            <div className="p-3 border-b border-gray-100">
-              <div className="flex items-center gap-2 text-xs font-semibold text-gray-500 mb-2">
+            <div className="p-0 border-b border-gray-100">
+              <div className="flex items-center gap-0 text-xs font-semibold text-gray-500 mb-0">
                 <Clock className="w-4 h-4" />
                 Recent Searches
               </div>
@@ -222,7 +222,7 @@ export function EnhancedSearchBar({
                   <button
                     key={idx}
                     onClick={() => handleSelect(search)}
-                    className="w-full text-left px-3 py-2 hover:bg-gray-50 rounded-lg transition-colors flex items-center gap-2"
+                    className="w-full text-left px-0 py-0 hover:bg-gray-50 rounded-lg transition-colors flex items-center gap-0"
                   >
                     <Clock className="w-4 h-4 text-gray-400" />
                     <span className="text-sm text-gray-700">{search}</span>
@@ -234,8 +234,8 @@ export function EnhancedSearchBar({
 
           {/* Trending Suggestions */}
           {showTrending && (
-            <div className="p-3 border-b border-gray-100">
-              <div className="flex items-center gap-2 text-xs font-semibold text-gray-500 mb-2">
+            <div className="p-0 border-b border-gray-100">
+              <div className="flex items-center gap-0 text-xs font-semibold text-gray-500 mb-0">
                 <TrendingUp className="w-4 h-4" />
                 Trending
               </div>
@@ -244,7 +244,7 @@ export function EnhancedSearchBar({
                   <button
                     key={idx}
                     onClick={() => handleSelect(suggestion.text)}
-                    className="w-full text-left px-3 py-2 hover:bg-gray-50 rounded-lg transition-colors flex items-center gap-2"
+                    className="w-full text-left px-0 py-0 hover:bg-gray-50 rounded-lg transition-colors flex items-center gap-0"
                   >
                     <TrendingUp className="w-4 h-4 text-gray-400" />
                     <span className="text-sm text-gray-700">{suggestion.text}</span>
@@ -256,19 +256,19 @@ export function EnhancedSearchBar({
 
           {/* Search Results */}
           {results.length > 0 && (
-            <div className="p-3">
-              <div className="text-xs font-semibold text-gray-500 mb-2">Results</div>
+            <div className="p-0">
+              <div className="text-xs font-semibold text-gray-500 mb-0">Results</div>
               <div className="space-y-1">
                 {results.slice(0, 5).map((result) => (
                   <button
                     key={result.id}
                     onClick={() => handleResultSelect(result)}
-                    className="w-full text-left px-3 py-2 hover:bg-gray-50 rounded-lg transition-colors"
+                    className="w-full text-left px-0 py-0 hover:bg-gray-50 rounded-lg transition-colors"
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs px-2 py-0.5 bg-primary/10 text-primary rounded-full">
+                        <div className="flex items-center gap-0">
+                          <span className="text-xs px-0 py-0.5 bg-primary/10 text-primary rounded-full">
                             {result.type}
                           </span>
                           <span className="text-sm font-medium text-gray-900">
@@ -276,7 +276,7 @@ export function EnhancedSearchBar({
                           </span>
                         </div>
                         {result.distance && (
-                          <div className="flex items-center gap-1 text-xs text-gray-500 mt-1">
+                          <div className="flex items-center gap-0 text-xs text-gray-500 mt-0">
                             <MapPin className="w-3 h-3" />
                             <span>{result.distance.toFixed(1)} km away</span>
                           </div>

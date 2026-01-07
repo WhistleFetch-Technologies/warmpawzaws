@@ -203,18 +203,18 @@ const styles = StyleSheet.create({
   },
   summaryTitle: {
     fontSize: typography.fontSizes.md,
-    color: '#ffffff',
+    color: colors.white,
     marginBottom: spacing.sm,
   },
   tierName: {
     fontSize: typography.fontSizes['2xl'],
     fontWeight: typography.fontWeights.bold,
-    color: '#ffffff',
+    color: colors.white,
     marginBottom: spacing.xs,
   },
   commissionRate: {
     fontSize: typography.fontSizes.sm,
-    color: '#ffffff',
+    color: colors.white,
   },
   statsCard: {
     backgroundColor: colors.background,
@@ -344,7 +344,7 @@ const styles = StyleSheet.create({
   },
   periodButtonActive: {
     borderColor: colors.primary,
-    backgroundColor: '#FFF4E6',
+    backgroundColor: colors.primary.50,
   },
   periodButtonText: {
     fontSize: typography.fontSizes.sm,

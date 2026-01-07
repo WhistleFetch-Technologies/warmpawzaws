@@ -160,6 +160,60 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
   });
 
   /**
+   * POST /vendor/bookings/:bookingId/check-in
+   * Check in a booking (for services like grooming, boarding)
+   */
+  app.post("/vendor/bookings/:bookingId/check-in", async (c) => {
+    try {
+      const { bookingId } = c.req.param();
+      const { vendorId, staffId, notes, petCondition } = await c.req.json();
+
+      console.log(`✅ [CHECK-IN] Vendor ${vendorId} checking in booking ${bookingId}`);
+
+      // Get booking
+      const bookings = await select('bookings', { id: bookingId });
+      if (bookings.length === 0) {
+        return c.json({ error: 'Booking not found' }, 404);
+      }
+
+      const booking = bookings[0];
+
+      // Verify vendor owns this booking
+      if (booking.vendor_id !== vendorId) {
+        return c.json({ error: 'Unauthorized: This booking belongs to another vendor' }, 403);
+      }
+
+      // Check if booking is already checked in or completed
+      if (booking.status === 'checked_in' || booking.status === 'in_progress' || booking.status === 'completed') {
+        return c.json({ error: `Booking is already ${booking.status}` }, 400);
+      }
+
+      // Update booking status to checked_in
+      const updated = await update('bookings',
+        { id: bookingId },
+        {
+          status: 'checked_in',
+          checked_in_at: new Date().toISOString(),
+          checked_in_by: staffId || null,
+          notes: notes || booking.notes,
+          pet_condition: petCondition || null,
+        }
+      );
+
+      console.log(`✅ [CHECK-IN] Booking checked in successfully`);
+
+      return c.json({
+        success: true,
+        booking: updated[0],
+        message: 'Booking checked in successfully!',
+      });
+    } catch (error: any) {
+      console.error('Error checking in booking:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
    * POST /vendor/bookings/:bookingId/end-session
    * End a session
    */

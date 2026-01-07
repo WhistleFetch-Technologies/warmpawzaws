@@ -106,9 +106,9 @@ export function MedicalHistoryModal({ petId, bookingId, petName, vendorId, onClo
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden">
-        <div className="p-6 border-b border-gray-100 bg-gradient-to-r from-blue-50 to-indigo-50">
+        <div className="p-0 border-b border-gray-100 bg-gradient-to-r from-blue-50 to-indigo-50">
           <div className="flex justify-between items-center">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-0">
               <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-sm text-blue-600">
                 <Activity className="w-6 h-6" />
               </div>
@@ -121,17 +121,17 @@ export function MedicalHistoryModal({ petId, bookingId, petName, vendorId, onClo
             </div>
             <button 
               onClick={onClose} 
-              className="p-2 hover:bg-white/50 rounded-full transition-colors text-blue-700"
+              className="p-0 hover:bg-white/50 rounded-full transition-colors text-blue-700"
             >
               <X className="w-6 h-6" />
             </button>
           </div>
         </div>
 
-        <div className="flex border-b border-gray-200 px-6 pt-2 bg-white sticky top-0 z-10">
+        <div className="flex border-b border-gray-200 px-0 pt-0 bg-white sticky top-0 z-10">
           <button
             onClick={() => setActiveTab('all')}
-            className={`pb-3 px-4 text-sm font-medium border-b-2 transition-colors ${
+            className={`pb-0 px-4 text-sm font-medium border-b-2 transition-colors ${
               activeTab === 'all' ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
@@ -139,7 +139,7 @@ export function MedicalHistoryModal({ petId, bookingId, petName, vendorId, onClo
           </button>
           <button
             onClick={() => setActiveTab('prescriptions')}
-            className={`pb-3 px-4 text-sm font-medium border-b-2 transition-colors ${
+            className={`pb-0 px-4 text-sm font-medium border-b-2 transition-colors ${
               activeTab === 'prescriptions' ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
@@ -147,7 +147,7 @@ export function MedicalHistoryModal({ petId, bookingId, petName, vendorId, onClo
           </button>
           <button
             onClick={() => setActiveTab('reports')}
-            className={`pb-3 px-4 text-sm font-medium border-b-2 transition-colors ${
+            className={`pb-0 px-4 text-sm font-medium border-b-2 transition-colors ${
               activeTab === 'reports' ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
@@ -155,7 +155,7 @@ export function MedicalHistoryModal({ petId, bookingId, petName, vendorId, onClo
           </button>
           <button
             onClick={() => setActiveTab('notes')}
-            className={`pb-3 px-4 text-sm font-medium border-b-2 transition-colors ${
+            className={`pb-0 px-4 text-sm font-medium border-b-2 transition-colors ${
               activeTab === 'notes' ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
@@ -163,20 +163,20 @@ export function MedicalHistoryModal({ petId, bookingId, petName, vendorId, onClo
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6 bg-gray-50 min-h-[400px]">
+        <div className="flex-1 overflow-y-auto p-0 bg-gray-50 min-h-[400px]">
           {loading ? (
             <div className="flex flex-col items-center justify-center h-64">
               <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4"></div>
               <p className="text-sm text-gray-600 font-medium">Retrieving secure medical records...</p>
             </div>
           ) : error ? (
-            <div className="flex flex-col items-center justify-center h-64 text-center p-6 bg-red-50 rounded-xl border border-red-100 m-4">
-              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mb-3">
+            <div className="flex flex-col items-center justify-center h-64 text-center p-0 bg-red-50 rounded-xl border border-red-100 m-4">
+              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mb-0">
                 <AlertCircle className="w-6 h-6 text-red-600" />
               </div>
-              <h3 className="text-red-900 font-semibold mb-1">Access Restricted</h3>
+              <h3 className="text-red-900 font-semibold mb-0">Access Restricted</h3>
               <p className="text-sm text-red-700 max-w-xs mx-auto">{error}</p>
-              <p className="text-xs text-red-500 mt-2">
+              <p className="text-xs text-red-500 mt-0">
                 Records are only available during active appointments for the assigned pet.
               </p>
             </div>
@@ -185,7 +185,7 @@ export function MedicalHistoryModal({ petId, bookingId, petName, vendorId, onClo
               <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
                 <FileText className="w-8 h-8 text-gray-400" />
               </div>
-              <h3 className="text-gray-900 font-medium mb-1">No records found</h3>
+              <h3 className="text-gray-900 font-medium mb-0">No records found</h3>
               <p className="text-gray-500 text-sm">
                 No medical history available in this category.
               </p>
@@ -193,24 +193,24 @@ export function MedicalHistoryModal({ petId, bookingId, petName, vendorId, onClo
           ) : (
             <div className="space-y-4">
               {filteredRecords.map((record) => (
-                <div key={record.id} className="bg-white p-5 rounded-xl border border-gray-200 hover:border-blue-300 hover:shadow-md transition-all group">
+                <div key={record.id} className="bg-white p-0 rounded-xl border border-gray-200 hover:border-blue-300 hover:shadow-md transition-all group">
                   <div className="flex items-start gap-4">
                     <div className="w-12 h-12 rounded-full bg-gray-50 flex items-center justify-center flex-shrink-0 group-hover:bg-blue-50 transition-colors">
                       {getIcon(record.type)}
                     </div>
 
                     <div className="flex-1 min-w-0">
-                      <div className="flex justify-between items-start mb-1">
+                      <div className="flex justify-between items-start mb-0">
                         <div>
-                          <span className="inline-block px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider bg-gray-100 text-gray-600 mb-1">
+                          <span className="inline-block px-0 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider bg-gray-100 text-gray-600 mb-0">
                             {getTypeLabel(record.type)}
                           </span>
                           <h4 className="text-base font-bold text-gray-900 group-hover:text-blue-700 transition-colors">
                             {record.title}
                           </h4>
                         </div>
-                        <span className="text-xs text-gray-500 font-medium whitespace-nowrap flex items-center bg-gray-50 px-2 py-1 rounded">
-                          <Calendar className="w-3 h-3 mr-1.5" />
+                        <span className="text-xs text-gray-500 font-medium whitespace-nowrap flex items-center bg-gray-50 px-0 py-0 rounded">
+                          <Calendar className="w-3 h-3 mr-0.5" />
                           {new Date(record.date).toLocaleDateString('en-IN', {
                             day: 'numeric',
                             month: 'short',
@@ -220,29 +220,29 @@ export function MedicalHistoryModal({ petId, bookingId, petName, vendorId, onClo
                       </div>
                       
                       {record.doctorName && (
-                        <p className="text-xs text-blue-600 font-medium mb-2 flex items-center">
-                          <Stethoscope className="w-3 h-3 mr-1" />
+                        <p className="text-xs text-blue-600 font-medium mb-0 flex items-center">
+                          <Stethoscope className="w-3 h-3 mr-0" />
                           Dr. {record.doctorName} 
-                          {record.clinicName && <span className="text-gray-400 mx-1">•</span>} 
+                          {record.clinicName && <span className="text-gray-400 mx-0">•</span>} 
                           {record.clinicName}
                         </p>
                       )}
                       
                       {record.description && (
-                        <p className="text-sm text-gray-600 leading-relaxed mb-3">
+                        <p className="text-sm text-gray-600 leading-relaxed mb-0">
                           {record.description}
                         </p>
                       )}
                       
                       {record.metadata && (
-                        <div className="flex flex-wrap gap-2 mb-3">
+                        <div className="flex flex-wrap gap-0 mb-0">
                           {record.metadata.diagnosis && (
-                            <span className="text-xs bg-red-50 text-red-700 px-2 py-1 rounded border border-red-100">
+                            <span className="text-xs bg-red-50 text-red-700 px-0 py-0 rounded border border-red-100">
                               Dx: {record.metadata.diagnosis}
                             </span>
                           )}
                           {record.metadata.dosage && (
-                            <span className="text-xs bg-green-50 text-green-700 px-2 py-1 rounded border border-green-100">
+                            <span className="text-xs bg-green-50 text-green-700 px-0 py-0 rounded border border-green-100">
                               Rx: {record.metadata.dosage}
                             </span>
                           )}
@@ -254,13 +254,13 @@ export function MedicalHistoryModal({ petId, bookingId, petName, vendorId, onClo
                           href={record.url} 
                           target="_blank" 
                           rel="noopener noreferrer"
-                          className="inline-flex items-center text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg transition-colors shadow-sm"
+                          className="inline-flex items-center text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 px-4 py-0 rounded-lg transition-colors shadow-sm"
                         >
-                          <Download className="w-3.5 h-3.5 mr-2" />
+                          <Download className="w-3.5 h-3.5 mr-0" />
                           Download Report / PDF
                         </a>
                       ) : (
-                        <div className="inline-flex items-center text-xs text-gray-400 italic bg-gray-50 px-3 py-1.5 rounded">
+                        <div className="inline-flex items-center text-xs text-gray-400 italic bg-gray-50 px-0 py-0.5 rounded">
                           Text Record Only
                         </div>
                       )}
@@ -273,7 +273,7 @@ export function MedicalHistoryModal({ petId, bookingId, petName, vendorId, onClo
         </div>
         
         <div className="p-4 bg-white border-t border-gray-200 text-center">
-          <p className="text-[10px] text-gray-400 flex items-center justify-center gap-1.5">
+          <p className="text-[10px] text-gray-400 flex items-center justify-center gap-0.5">
             <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
             HIPAA Compliant • End-to-End Encrypted • Access Logged
           </p>

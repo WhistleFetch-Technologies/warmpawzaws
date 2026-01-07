@@ -67,7 +67,7 @@ export function VendorApplicationUnderReview({ submittedAt, isReapproval, reappr
 
           {/* Submission Time */}
           <div className="bg-white rounded-xl border border-orange-200 p-4 shadow-sm">
-            <p className="text-sm text-primary flex items-center justify-center gap-2">
+            <p className="text-sm text-primary flex items-center justify-center gap-0">
               <Clock className="w-4 h-4" />
               Your application was submitted {timeAgo}
             </p>
@@ -76,19 +76,19 @@ export function VendorApplicationUnderReview({ submittedAt, isReapproval, reappr
           {/* Re-approval Notice */}
           {isReapproval && (
             <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-              <h4 className="font-semibold text-sm text-blue-900 mb-2">Profile Update - Re-approval Required</h4>
+              <h4 className="font-semibold text-sm text-blue-900 mb-0">Profile Update - Re-approval Required</h4>
               <p className="text-xs text-blue-700">
                 {reapprovalReason || 'You updated your profile information. Your changes are being reviewed for approval.'}
               </p>
-              <p className="text-xs text-blue-600 mt-2">
+              <p className="text-xs text-blue-600 mt-0">
                 This review is typically faster than initial applications (12-24 hours).
               </p>
             </div>
           )}
 
           {/* Review Process */}
-          <div className="bg-white rounded-2xl p-5 shadow-lg space-y-4">
-            <div className="flex items-center gap-3">
+          <div className="bg-white rounded-2xl p-0 shadow-lg space-y-4">
+            <div className="flex items-center gap-0">
               <div className="w-10 h-10 rounded-lg bg-orange-100 flex items-center justify-center">
                 <FileText className="w-5 h-5 text-primary" />
               </div>
@@ -97,33 +97,33 @@ export function VendorApplicationUnderReview({ submittedAt, isReapproval, reappr
 
             <div className="space-y-4">
               {/* Step 1 - Completed */}
-              <div className="flex items-start gap-3">
+              <div className="flex items-start gap-0">
                 <div className="w-10 h-10 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0">
                   <CheckCircle className="w-6 h-6 text-white" />
                 </div>
-                <div className="flex-1 pt-1">
+                <div className="flex-1 pt-0">
                   <h4 className="font-semibold text-sm text-gray-900">Application Submitted</h4>
                   <p className="text-xs text-gray-500">Document and profile received</p>
                 </div>
               </div>
 
               {/* Step 2 - In Progress */}
-              <div className="flex items-start gap-3">
+              <div className="flex items-start gap-0">
                 <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center flex-shrink-0 animate-pulse">
                   <div className="w-6 h-6 rounded-full border-4 border-white" />
                 </div>
-                <div className="flex-1 pt-1">
+                <div className="flex-1 pt-0">
                   <h4 className="font-semibold text-sm text-gray-900">Document Verification</h4>
                   <p className="text-xs text-gray-500">Checking credentials and certificates</p>
                 </div>
               </div>
 
               {/* Step 3 - Pending */}
-              <div className="flex items-start gap-3">
+              <div className="flex items-start gap-0">
                 <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0">
                   <div className="w-6 h-6 rounded-full border-4 border-white" />
                 </div>
-                <div className="flex-1 pt-1">
+                <div className="flex-1 pt-0">
                   <h4 className="font-semibold text-sm text-gray-400">Final Approval</h4>
                   <p className="text-xs text-gray-400">Account activation and setup</p>
                 </div>
@@ -132,8 +132,8 @@ export function VendorApplicationUnderReview({ submittedAt, isReapproval, reappr
           </div>
 
           {/* Expected Timeline */}
-          <div className="bg-orange-50 rounded-2xl p-5 space-y-3">
-            <div className="flex items-center gap-3">
+          <div className="bg-orange-50 rounded-2xl p-0 space-y-3">
+            <div className="flex items-center gap-0">
               <div className="w-10 h-10 rounded-lg bg-white flex items-center justify-center">
                 <FileText className="w-5 h-5 text-primary" />
               </div>
@@ -145,7 +145,7 @@ export function VendorApplicationUnderReview({ submittedAt, isReapproval, reappr
                 • Most applications are reviewed within 24-48 hours
               </p>
               
-              <div className="flex justify-between pt-2">
+              <div className="flex justify-between pt-0">
                 <span className="text-gray-600">Peak hours:</span>
                 <span className="font-medium text-gray-900">9 AM - 6 PM (Mon-Fri)</span>
               </div>
@@ -164,12 +164,12 @@ export function VendorApplicationUnderReview({ submittedAt, isReapproval, reappr
             </p>
 
             <div className="space-y-3">
-              <button className="w-full h-12 rounded-xl border-2 border-primary text-primary hover:bg-orange-50 font-medium flex items-center justify-center gap-2 transition-all">
+              <button className="w-full h-12 rounded-xl border-2 border-primary text-primary hover:bg-orange-50 font-medium flex items-center justify-center gap-0 transition-all">
                 <Mail className="w-5 h-5" />
                 Email Support
               </button>
 
-              <button className="w-full h-12 rounded-xl border-2 border-primary text-primary hover:bg-orange-50 font-medium flex items-center justify-center gap-2 transition-all">
+              <button className="w-full h-12 rounded-xl border-2 border-primary text-primary hover:bg-orange-50 font-medium flex items-center justify-center gap-0 transition-all">
                 <Phone className="w-5 h-5" />
                 Call Support
               </button>

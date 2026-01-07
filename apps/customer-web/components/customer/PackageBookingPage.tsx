@@ -120,7 +120,7 @@ export function PackageBookingPage({ customerPhone, customerId, petId, onBack }:
   return (
     <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
       {/* Header */}
-      <div className="bg-gradient-to-r from-primary to-primary-dark px-6 pt-12 pb-6 sticky top-0 z-20">
+      <div className="bg-gradient-to-r from-primary to-primary-dark px-0 pt-02 pb-0 sticky top-0 z-20">
         <div className="flex items-center gap-4 mb-4">
           {onBack && (
             <button
@@ -137,12 +137,12 @@ export function PackageBookingPage({ customerPhone, customerId, petId, onBack }:
         </div>
 
         {/* View Tabs */}
-        <div className="flex gap-2 bg-white/20 backdrop-blur-sm rounded-xl p-1">
+        <div className="flex gap-0 bg-white/20 backdrop-blur-sm rounded-xl p-0">
           {(['browse', 'my-packages'] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setView(tab)}
-              className={`flex-1 px-4 py-2 rounded-lg font-medium transition-all ${
+              className={`flex-1 px-4 py-0 rounded-lg font-medium transition-all ${
                 view === tab
                   ? 'bg-white text-primary'
                   : 'text-white/90 hover:text-white'
@@ -155,15 +155,15 @@ export function PackageBookingPage({ customerPhone, customerId, petId, onBack }:
       </div>
 
       {/* Content */}
-      <div className="px-6 py-6">
+      <div className="px-0 py-0">
         {view === 'browse' ? (
           <>
             {loading ? (
-              <div className="flex items-center justify-center py-12">
+              <div className="flex items-center justify-center py-02">
                 <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
               </div>
             ) : packages.length === 0 ? (
-              <div className="bg-white rounded-xl border p-12 text-center">
+              <div className="bg-white rounded-xl border p-02 text-center">
                 <Package className="w-16 h-16 mx-auto mb-4 text-gray-300" />
                 <p className="text-gray-600">No packages available</p>
               </div>
@@ -176,35 +176,35 @@ export function PackageBookingPage({ customerPhone, customerId, petId, onBack }:
                       setSelectedPackage(pkg);
                       setView('schedule');
                     }}
-                    className="bg-white rounded-xl border-2 border-gray-200 p-5 hover:border-primary hover:shadow-md transition-all active:scale-[0.98] cursor-pointer"
+                    className="bg-white rounded-xl border-2 border-gray-200 p-0 hover:border-primary hover:shadow-md transition-all active:scale-[0.98] cursor-pointer"
                   >
-                    <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-start justify-between mb-0">
                       <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
+                        <div className="flex items-center gap-0 mb-0">
                           <h3 className="font-bold text-gray-900">{pkg.name}</h3>
                           {pkg.popular && (
-                            <span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full text-xs font-semibold">
+                            <span className="px-0 py-0.5 bg-orange-100 text-orange-700 rounded-full text-xs font-semibold">
                               Popular
                             </span>
                           )}
                         </div>
-                        <p className="text-sm text-gray-600 mb-2">{pkg.description}</p>
+                        <p className="text-sm text-gray-600 mb-0">{pkg.description}</p>
                         <p className="text-sm text-gray-600">{pkg.vendorName}</p>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-4 text-sm text-gray-600 mb-3">
-                      <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-4 text-sm text-gray-600 mb-0">
+                      <div className="flex items-center gap-0">
                         <Package className="w-4 h-4" />
                         <span>{pkg.totalSessions} sessions</span>
                       </div>
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-0">
                         <Clock className="w-4 h-4" />
                         <span>{pkg.duration} min each</span>
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between pt-3 border-t border-gray-200">
+                    <div className="flex items-center justify-between pt-1 border-t border-gray-200">
                       <div>
                         {pkg.discount && (
                           <p className="text-sm text-gray-500 line-through">₹{pkg.totalPrice + pkg.discount}</p>
@@ -223,8 +223,8 @@ export function PackageBookingPage({ customerPhone, customerId, petId, onBack }:
           </>
         ) : view === 'schedule' && selectedPackage ? (
           <div className="space-y-6">
-            <div className="bg-white rounded-2xl p-5 shadow-sm">
-              <h3 className="font-bold text-gray-900 mb-2">{selectedPackage.name}</h3>
+            <div className="bg-white rounded-2xl p-0 shadow-sm">
+              <h3 className="font-bold text-gray-900 mb-0">{selectedPackage.name}</h3>
               <p className="text-sm text-gray-600 mb-4">{selectedPackage.description}</p>
               <div className="flex items-center justify-between">
                 <span className="text-2xl font-bold text-primary">₹{selectedPackage.totalPrice}</span>
@@ -232,7 +232,7 @@ export function PackageBookingPage({ customerPhone, customerId, petId, onBack }:
               </div>
             </div>
 
-            <div className="bg-white rounded-2xl p-5 shadow-sm">
+            <div className="bg-white rounded-2xl p-0 shadow-sm">
               <h3 className="font-bold text-gray-900 mb-4">Schedule Sessions</h3>
               <p className="text-sm text-gray-600 mb-4">
                 Select dates for {selectedPackage.totalSessions} sessions
@@ -240,7 +240,7 @@ export function PackageBookingPage({ customerPhone, customerId, petId, onBack }:
               <div className="space-y-3">
                 {Array.from({ length: selectedPackage.totalSessions }).map((_, idx) => (
                   <div key={idx}>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    <label className="block text-sm font-semibold text-gray-700 mb-0">
                       Session {idx + 1}
                     </label>
                     <input
@@ -252,7 +252,7 @@ export function PackageBookingPage({ customerPhone, customerId, petId, onBack }:
                         setScheduledDates(newDates);
                       }}
                       min={new Date().toISOString().split('T')[0]}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                      className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                     />
                   </div>
                 ))}
@@ -276,13 +276,13 @@ export function PackageBookingPage({ customerPhone, customerId, petId, onBack }:
               </div>
             ) : (
               myPackages.map((pkg) => (
-                <div key={pkg.id} className="bg-white rounded-xl border-2 border-gray-200 p-5">
-                  <h3 className="font-bold text-gray-900 mb-2">{pkg.packageName}</h3>
-                  <div className="flex items-center justify-between mb-3">
+                <div key={pkg.id} className="bg-white rounded-xl border-2 border-gray-200 p-1">
+                  <h3 className="font-bold text-gray-900 mb-0">{pkg.packageName}</h3>
+                  <div className="flex items-center justify-between mb-0">
                     <span className="text-sm text-gray-600">
                       {pkg.completedSessions}/{pkg.totalSessions} sessions completed
                     </span>
-                    <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
+                    <span className={`px-0.5 py-1 rounded-full text-xs font-semibold ${
                       pkg.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
                     }`}>
                       {pkg.status}

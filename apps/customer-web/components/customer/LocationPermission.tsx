@@ -114,9 +114,9 @@ export function LocationPermission({
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary/10 to-white max-w-[430px] mx-auto flex items-center justify-center p-6">
+    <div className="min-h-screen bg-gradient-to-br from-primary/10 to-white max-w-[430px] mx-auto flex items-center justify-center p-0">
       <div className="w-full bg-white rounded-3xl shadow-lg p-8 text-center">
-        <div className="mb-6">
+        <div className="mb-0">
           <div className="w-20 h-20 bg-gradient-to-br from-primary to-primary-dark rounded-full mx-auto flex items-center justify-center mb-4">
             {loading ? (
               <Loader className="w-10 h-10 text-white animate-spin" />
@@ -125,15 +125,15 @@ export function LocationPermission({
             )}
           </div>
           
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">{title}</h1>
+          <h1 className="text-2xl font-bold text-gray-900 mb-0">{title}</h1>
           <p className="text-gray-600">{message}</p>
         </div>
 
         {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
+          <div className="mb-0 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-0">
             <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
             <div className="text-left">
-              <p className="text-sm text-red-800 font-medium mb-1">Location Access Error</p>
+              <p className="text-sm text-red-800 font-medium mb-0">Location Access Error</p>
               <p className="text-xs text-red-700">{error}</p>
             </div>
           </div>
@@ -143,7 +143,7 @@ export function LocationPermission({
           <button
             onClick={requestLocation}
             disabled={loading}
-            className="w-full bg-gradient-to-r from-primary to-primary-dark hover:shadow-lg text-white font-medium py-3 px-6 rounded-xl disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+            className="w-full bg-gradient-to-r from-primary to-primary-dark hover:shadow-lg text-white font-medium py-0 px-0 rounded-xl disabled:opacity-50 transition-all flex items-center justify-center gap-0"
           >
             {loading ? (
               <>
@@ -160,7 +160,7 @@ export function LocationPermission({
           {onSkip && (
             <button
               onClick={onSkip}
-              className="w-full border-2 border-gray-200 text-gray-700 hover:bg-gray-50 font-medium py-3 px-6 rounded-xl disabled:opacity-50 transition-all"
+              className="w-full border-2 border-gray-200 text-gray-700 hover:bg-gray-50 font-medium py-0 px-0 rounded-xl disabled:opacity-50 transition-all"
               disabled={loading}
             >
               Skip for Now
@@ -169,8 +169,8 @@ export function LocationPermission({
         </div>
 
         {permissionState === 'denied' && (
-          <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <p className="text-xs text-blue-800 mb-2 font-medium">How to enable location:</p>
+          <div className="mt-0 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <p className="text-xs text-blue-800 mb-0 font-medium">How to enable location:</p>
             <ol className="text-xs text-blue-700 text-left space-y-1 ml-4">
               <li>1. Click the lock/info icon in your browser&apos;s address bar</li>
               <li>2. Find &quot;Location&quot; or &quot;Permissions&quot;</li>
@@ -180,7 +180,7 @@ export function LocationPermission({
           </div>
         )}
 
-        <div className="mt-6 text-xs text-gray-500">
+        <div className="mt-0 text-xs text-gray-500">
           🔒 Your location is only used to find nearby services and is never shared without your permission
         </div>
       </div>

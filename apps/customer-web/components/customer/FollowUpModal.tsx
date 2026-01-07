@@ -131,7 +131,7 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl w-full max-w-[430px] max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+        <div className="px-0 py-4 border-b border-gray-200 flex items-center justify-between">
           <h2 className="font-bold text-lg">Follow-Up</h2>
           <button
             onClick={onClose}
@@ -142,7 +142,7 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-0">
           {view === 'list' && (
             <div className="space-y-3">
               {followUpBookings.map((booking) => (
@@ -150,26 +150,26 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
                   key={booking.id}
                   className="bg-white border border-gray-200 rounded-xl p-4 hover:border-primary transition-colors"
                 >
-                  <div className="flex items-start justify-between mb-2">
+                  <div className="flex items-start justify-between mb-0">
                     <div>
                       <h3 className="font-semibold text-gray-900">{booking.vendorName}</h3>
                       <p className="text-sm text-gray-600">{booking.serviceName}</p>
                     </div>
                     {unreadCounts[booking.bookingId] > 0 && (
-                      <span className="px-2 py-1 bg-primary text-white rounded-full text-xs">
+                      <span className="px-0 py-0 bg-primary text-white rounded-full text-xs">
                         {unreadCounts[booking.bookingId]}
                       </span>
                     )}
                   </div>
-                  <div className="flex gap-2 mt-3">
+                  <div className="flex gap-0 mt-0">
                     <button
                       onClick={() => {
                         setSelectedBooking(booking);
                         setView('chat');
                       }}
-                      className="flex-1 px-3 py-2 bg-primary text-white rounded-lg text-sm font-medium"
+                      className="flex-1 px-0 py-0 bg-primary text-white rounded-lg text-sm font-medium"
                     >
-                      <MessageCircle className="w-4 h-4 inline mr-1" />
+                      <MessageCircle className="w-4 h-4 inline mr-0" />
                       Chat
                     </button>
                     <button
@@ -177,9 +177,9 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
                         setSelectedBooking(booking);
                         setView('book-slot');
                       }}
-                      className="flex-1 px-3 py-2 bg-white border-2 border-primary text-primary rounded-lg text-sm font-medium"
+                      className="flex-1 px-0 py-0 bg-white border-2 border-primary text-primary rounded-lg text-sm font-medium"
                     >
-                      <Calendar className="w-4 h-4 inline mr-1" />
+                      <Calendar className="w-4 h-4 inline mr-0" />
                       Book Slot
                     </button>
                   </div>
@@ -196,13 +196,13 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
                     key={msg.id}
                     className={`flex ${msg.senderType === 'customer' ? 'justify-end' : 'justify-start'}`}
                   >
-                    <div className={`max-w-[70%] p-3 rounded-lg ${
+                    <div className={`max-w-[70%] p-0 rounded-lg ${
                       msg.senderType === 'customer' 
                         ? 'bg-primary text-white' 
                         : 'bg-gray-100 text-gray-900'
                     }`}>
                       <p className="text-sm">{msg.message}</p>
-                      <p className="text-xs opacity-70 mt-1">
+                      <p className="text-xs opacity-70 mt-0">
                         {new Date(msg.createdAt).toLocaleTimeString()}
                       </p>
                     </div>
@@ -210,19 +210,19 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
                 ))}
                 <div ref={messagesEndRef} />
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-0">
                 <input
                   type="text"
                   value={newMessage}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewMessage(e.target.value)}
                   onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
-                  className="flex-1 p-3 border border-gray-300 rounded-lg"
+                  className="flex-1 p-0 border border-gray-300 rounded-lg"
                   placeholder="Type a message..."
                 />
                 <button
                   onClick={sendMessage}
                   disabled={sendingMessage || !newMessage.trim()}
-                  className="px-4 py-3 bg-primary text-white rounded-lg disabled:opacity-50"
+                  className="px-4 py-0 bg-primary text-white rounded-lg disabled:opacity-50"
                 >
                   <Send className="w-5 h-5" />
                 </button>
@@ -234,24 +234,24 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
             <div className="space-y-4">
               <p className="text-gray-600">Book a follow-up slot with {selectedBooking.vendorName}</p>
               <div>
-                <label className="block text-sm font-medium mb-2">Select Date</label>
+                <label className="block text-sm font-medium mb-0">Select Date</label>
                 <input
                   type="date"
                   value={selectedDate}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSelectedDate(e.target.value)}
                   min={new Date().toISOString().split('T')[0]}
-                  className="w-full p-3 border border-gray-300 rounded-lg"
+                  className="w-full p-0 border border-gray-300 rounded-lg"
                 />
               </div>
               {selectedDate && (
                 <div>
-                  <label className="block text-sm font-medium mb-2">Select Time</label>
-                  <div className="grid grid-cols-3 gap-2">
+                  <label className="block text-sm font-medium mb-0">Select Time</label>
+                  <div className="grid grid-cols-3 gap-0">
                     {availableSlots.map((slot) => (
                       <button
                         key={slot}
                         onClick={() => setSelectedSlot(slot)}
-                        className={`p-3 rounded-lg border-2 ${
+                        className={`p-0 rounded-lg border-2 ${
                           selectedSlot === slot
                             ? 'border-primary bg-orange-50'
                             : 'border-gray-200'
@@ -274,7 +274,7 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
                   onClose();
                 }}
                 disabled={!selectedDate || !selectedSlot}
-                className="w-full py-3 bg-primary text-white rounded-lg font-semibold disabled:opacity-50"
+                className="w-full py-0 bg-primary text-white rounded-lg font-semibold disabled:opacity-50"
               >
                 Book Follow-Up
               </button>
@@ -284,13 +284,13 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
 
         {/* Back Button */}
         {view !== 'list' && (
-          <div className="px-6 py-4 border-t border-gray-200">
+          <div className="px-0 py-4 border-t border-gray-200">
             <button
               onClick={() => {
                 setView('list');
                 setSelectedBooking(null);
               }}
-              className="w-full py-2 text-primary font-medium"
+              className="w-full py-0 text-primary font-medium"
             >
               Back to List
             </button>

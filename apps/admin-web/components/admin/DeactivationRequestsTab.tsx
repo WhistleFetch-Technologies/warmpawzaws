@@ -68,12 +68,12 @@ export function DeactivationRequestsTab() {
   };
 
   if (loading) {
-    return <div className="p-6 text-center text-gray-500">Loading requests...</div>;
+    return <div className="p-0 text-center text-gray-500">Loading requests...</div>;
   }
 
   if (requests.length === 0) {
     return (
-      <div className="p-6 text-center">
+      <div className="p-0 text-center">
         <AlertTriangle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
         <p className="text-gray-500">No deactivation requests at this time.</p>
       </div>
@@ -81,7 +81,7 @@ export function DeactivationRequestsTab() {
   }
 
   return (
-    <div className="p-6">
+    <div className="p-0">
       <div className="space-y-4">
         {requests.map((request) => (
           <div key={request.id} className="bg-white border rounded-lg p-4">
@@ -89,23 +89,23 @@ export function DeactivationRequestsTab() {
               <div className="flex-1">
                 <h3 className="font-semibold text-gray-900">{request.vendorName}</h3>
                 <p className="text-sm text-gray-600">{request.businessName}</p>
-                <p className="text-sm text-gray-700 mt-2">
+                <p className="text-sm text-gray-700 mt-0">
                   <strong>Reason:</strong> {request.reason}
                 </p>
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-gray-500 mt-0">
                   Requested: {new Date(request.requestedAt).toLocaleDateString()}
                 </p>
               </div>
               
               {(request.status as any) === 'pending' && (
-                <div className="flex gap-2 ml-4">
+                <div className="flex gap-0 ml-4">
                   <Button
                     size="sm"
                     variant="outline"
                     onClick={() => handleApprove(request.id)}
                     className="text-green-600 hover:bg-green-50"
                   >
-                    <Check className="w-4 h-4 mr-1" />
+                    <Check className="w-4 h-4 mr-0" />
                     Approve
                   </Button>
                   <Button
@@ -114,7 +114,7 @@ export function DeactivationRequestsTab() {
                     onClick={() => handleReject(request.id)}
                     className="text-red-600 hover:bg-red-50"
                   >
-                    <X className="w-4 h-4 mr-1" />
+                    <X className="w-4 h-4 mr-0" />
                     Reject
                   </Button>
                 </div>
@@ -122,7 +122,7 @@ export function DeactivationRequestsTab() {
               
               {(request.status as any) !== 'pending' && (
                 <div className="ml-4">
-                  <span className={`px-3 py-1 text-xs rounded-full ${
+                  <span className={`px-0 py-0 text-xs rounded-full ${
                     request.status === 'approved' 
                       ? 'bg-green-100 text-green-700' 
                       : 'bg-red-100 text-red-700'

@@ -131,7 +131,7 @@ export function VendorRoleSelectionScreen({ onRoleSelect }: VendorRoleSelectionS
   const getRoleColor = (roleId: string) => {
     if (roleId.includes('vet') || roleId.includes('healthcare')) return '#3b82f6';
     if (roleId.includes('product') || roleId.includes('seller')) return '#8b5cf6';
-    return '#10b981';
+    return {colors.success};
   };
 
   const handleSelect = (roleId: string) => {

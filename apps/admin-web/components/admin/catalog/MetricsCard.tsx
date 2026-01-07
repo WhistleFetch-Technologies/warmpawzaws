@@ -24,12 +24,12 @@ export function MetricsCard({
 }: MetricsCardProps) {
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md transition-shadow">
-      <div className="flex items-start justify-between mb-3">
-        <div className={`p-2 ${iconBg} rounded-lg`}>
+      <div className="flex items-start justify-between mb-0">
+        <div className={`p-0 ${iconBg} rounded-lg`}>
           {icon}
         </div>
         {change && (
-          <div className={`flex items-center gap-1 text-xs ${
+          <div className={`flex items-center gap-0 text-xs ${
             changePositive ? 'text-green-600' : 'text-red-600'
           }`}>
             {changePositive ? (
@@ -43,10 +43,10 @@ export function MetricsCard({
       </div>
       
       <div>
-        <p className="text-gray-600 text-sm mb-1">{title}</p>
+        <p className="text-gray-600 text-sm mb-0">{title}</p>
         <p className="text-2xl font-bold text-gray-900">{value}</p>
         {subtitle && (
-          <p className="text-xs text-gray-500 mt-1">{subtitle}</p>
+          <p className="text-xs text-gray-500 mt-0">{subtitle}</p>
         )}
       </div>
     </div>

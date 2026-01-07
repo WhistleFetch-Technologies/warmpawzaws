@@ -118,30 +118,30 @@ export function VendorSearchEnhanced() {
 
           {/* View Controls */}
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-0">
               {userLocation && (
-                <div className="flex items-center gap-2 text-sm text-gray-600">
+                <div className="flex items-center gap-0 text-sm text-gray-600">
                   <MapPin className="w-4 h-4" />
                   <span>Searching nearby</span>
                 </div>
               )}
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-0">
               {/* Filters Toggle */}
               <button
                 onClick={() => setShowFilters(!showFilters)}
-                className="px-3 py-2 border-2 border-gray-200 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors flex items-center gap-2"
+                className="px-0 py-0 border-2 border-gray-200 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors flex items-center gap-0"
               >
                 <SlidersHorizontal className="w-4 h-4" />
                 Filters
               </button>
 
               {/* View Mode Toggle */}
-              <div className="flex items-center bg-gray-100 rounded-lg p-1">
+              <div className="flex items-center bg-gray-100 rounded-lg p-0">
                 <button
                   onClick={() => setViewMode('list')}
-                  className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+                  className={`px-0 py-0.5 rounded text-sm font-medium transition-colors ${
                     viewMode === 'list'
                       ? 'bg-white text-gray-900 shadow-sm'
                       : 'text-gray-600 hover:text-gray-900'
@@ -151,7 +151,7 @@ export function VendorSearchEnhanced() {
                 </button>
                 <button
                   onClick={() => setViewMode('map')}
-                  className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+                  className={`px-0 py-0.5 rounded text-sm font-medium transition-colors ${
                     viewMode === 'map'
                       ? 'bg-white text-gray-900 shadow-sm'
                       : 'text-gray-600 hover:text-gray-900'
@@ -170,22 +170,22 @@ export function VendorSearchEnhanced() {
         <div className="bg-white border-b border-gray-200 px-4 py-4">
           <div className="space-y-3">
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Radius (km)</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-0">Radius (km)</label>
               <input
                 type="number"
                 value={filters.radius || 10}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFilters({ ...filters, radius: parseInt(e.target.value) })}
-                className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                 min="1"
                 max="50"
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Sort By</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-0">Sort By</label>
               <select
                 value={filters.sortBy || 'relevance'}
                 onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilters({ ...filters, sortBy: e.target.value })}
-                className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
               >
                 <option value="relevance">Relevance</option>
                 <option value="rating">Highest Rated</option>
@@ -206,7 +206,7 @@ export function VendorSearchEnhanced() {
       )}
 
       {/* Results */}
-      <div className="px-4 py-6">
+      <div className="px-4 py-0">
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
@@ -214,7 +214,7 @@ export function VendorSearchEnhanced() {
         ) : results.length === 0 ? (
           <div className="bg-white rounded-xl border p-12 text-center">
             <p className="text-gray-600">No vendors found</p>
-            <p className="text-sm text-gray-500 mt-2">Try adjusting your search or filters</p>
+            <p className="text-sm text-gray-500 mt-0">Try adjusting your search or filters</p>
           </div>
         ) : viewMode === 'list' ? (
           <>
@@ -241,17 +241,17 @@ export function VendorSearchEnhanced() {
                       </div>
                     )}
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between mb-1">
+                      <div className="flex items-start justify-between mb-0">
                         <h3 className="font-bold text-gray-900 truncate">{vendor.businessName}</h3>
                         {vendor.isVerified && (
-                          <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-semibold">
+                          <span className="px-0 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-semibold">
                             Verified
                           </span>
                         )}
                       </div>
                       {vendor.rating && (
-                        <div className="flex items-center gap-2 mb-2">
-                          <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-0 mb-0">
+                          <div className="flex items-center gap-0">
                             <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
                             <span className="text-sm font-semibold">{vendor.rating.toFixed(1)}</span>
                           </div>
@@ -261,26 +261,26 @@ export function VendorSearchEnhanced() {
                         </div>
                       )}
                       {vendor.description && (
-                        <p className="text-sm text-gray-600 line-clamp-2 mb-2">{vendor.description}</p>
+                        <p className="text-sm text-gray-600 line-clamp-0 mb-0">{vendor.description}</p>
                       )}
                       {vendor.services && vendor.services.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mb-2">
+                        <div className="flex flex-wrap gap-0 mb-0">
                           {vendor.services.slice(0, 3).map((service, idx) => (
-                            <span key={idx} className="px-2 py-0.5 bg-gray-100 text-gray-700 text-xs rounded-full">
+                            <span key={idx} className="px-0 py-0.5 bg-gray-100 text-gray-700 text-xs rounded-full">
                               {service}
                             </span>
                           ))}
                         </div>
                       )}
-                      <div className="flex items-center gap-3 text-sm text-gray-600">
+                      <div className="flex items-center gap-0 text-sm text-gray-600">
                         {vendor.distance && (
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center gap-0">
                             <MapPin className="w-4 h-4" />
                             <span>{vendor.distance.toFixed(1)} km</span>
                           </div>
                         )}
                         {vendor.responseTime && (
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center gap-0">
                             <Clock className="w-4 h-4" />
                             <span>{vendor.responseTime}</span>
                           </div>

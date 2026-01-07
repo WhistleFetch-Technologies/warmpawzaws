@@ -265,7 +265,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -297,7 +297,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   bookingsList: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     paddingVertical: spacing.md,
     borderTopWidth: 1,
     borderTopColor: colors.border,
@@ -310,7 +310,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   bookingCard: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     marginLeft: spacing.md,
@@ -320,7 +320,7 @@ const styles = StyleSheet.create({
   },
   bookingCardSelected: {
     borderColor: colors.primary,
-    backgroundColor: '#fff7ed',
+    backgroundColor: colors.primary.50,
   },
   bookingHeader: {
     flexDirection: 'row',
@@ -374,7 +374,7 @@ const styles = StyleSheet.create({
   actions: {
     flexDirection: 'row',
     padding: spacing.md,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderTopWidth: 1,
     borderTopColor: colors.border,
     gap: spacing.sm,
@@ -391,7 +391,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   actionButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 12,
     fontWeight: '600',
   },

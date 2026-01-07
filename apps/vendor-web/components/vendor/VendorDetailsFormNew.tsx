@@ -72,12 +72,12 @@ export function VendorDetailsFormNew({ vendorId, initialData, onSuccess }: Vendo
 
   return (
     <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto p-4">
-      <div className="bg-white rounded-lg border-2 border-gray-200 p-6">
-        <h2 className="text-xl font-bold text-gray-900 mb-6">Vendor Details</h2>
+      <div className="bg-white rounded-lg border-2 border-gray-200 p-0">
+        <h2 className="text-xl font-bold text-gray-900 mb-0">Vendor Details</h2>
         
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
+            <label className="block text-sm font-medium text-gray-700 mb-0 flex items-center gap-0">
               <Building2 className="w-4 h-4 text-gray-400" />
               Business Name *
             </label>
@@ -85,28 +85,28 @@ export function VendorDetailsFormNew({ vendorId, initialData, onSuccess }: Vendo
               type="text"
               value={formData.businessName}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleChange('businessName', e.target.value)}
-              className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+              className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
               placeholder="Enter business name"
             />
-            {errors.businessName && <p className="text-xs text-red-500 mt-1">{errors.businessName}</p>}
+            {errors.businessName && <p className="text-xs text-red-500 mt-0">{errors.businessName}</p>}
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-700 mb-0">
               Owner Name *
             </label>
             <input
               type="text"
               value={formData.ownerName}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleChange('ownerName', e.target.value)}
-              className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+              className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
               placeholder="Enter owner name"
             />
-            {errors.ownerName && <p className="text-xs text-red-500 mt-1">{errors.ownerName}</p>}
+            {errors.ownerName && <p className="text-xs text-red-500 mt-0">{errors.ownerName}</p>}
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
+            <label className="block text-sm font-medium text-gray-700 mb-0 flex items-center gap-0">
               <Phone className="w-4 h-4 text-gray-400" />
               Phone Number *
             </label>
@@ -114,14 +114,14 @@ export function VendorDetailsFormNew({ vendorId, initialData, onSuccess }: Vendo
               type="tel"
               value={formData.phone}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleChange('phone', e.target.value)}
-              className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+              className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
               placeholder="Enter phone number"
             />
-            {errors.phone && <p className="text-xs text-red-500 mt-1">{errors.phone}</p>}
+            {errors.phone && <p className="text-xs text-red-500 mt-0">{errors.phone}</p>}
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
+            <label className="block text-sm font-medium text-gray-700 mb-0 flex items-center gap-0">
               <Mail className="w-4 h-4 text-gray-400" />
               Email
             </label>
@@ -129,77 +129,77 @@ export function VendorDetailsFormNew({ vendorId, initialData, onSuccess }: Vendo
               type="email"
               value={formData.email}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleChange('email', e.target.value)}
-              className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+              className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
               placeholder="Enter email (optional)"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
+            <label className="block text-sm font-medium text-gray-700 mb-0 flex items-center gap-0">
               <MapPin className="w-4 h-4 text-gray-400" />
               Address *
             </label>
             <textarea
               value={formData.address}
               onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => handleChange('address', e.target.value)}
-              className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+              className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
               rows={3}
               placeholder="Enter full address"
             />
-            {errors.address && <p className="text-xs text-red-500 mt-1">{errors.address}</p>}
+            {errors.address && <p className="text-xs text-red-500 mt-0">{errors.address}</p>}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-0">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 mb-0">
                 City *
               </label>
               <input
                 type="text"
                 value={formData.city}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleChange('city', e.target.value)}
-                className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                 placeholder="City"
               />
-              {errors.city && <p className="text-xs text-red-500 mt-1">{errors.city}</p>}
+              {errors.city && <p className="text-xs text-red-500 mt-0">{errors.city}</p>}
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 mb-0">
                 State
               </label>
               <input
                 type="text"
                 value={formData.state}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleChange('state', e.target.value)}
-                className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                 placeholder="State"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-700 mb-0">
               Pincode
             </label>
             <input
               type="text"
               value={formData.pincode}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleChange('pincode', e.target.value.replace(/\D/g, ''))}
-              className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+              className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
               placeholder="Enter pincode"
               maxLength={6}
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-700 mb-0">
               GST Number
             </label>
             <input
               type="text"
               value={formData.gstNumber}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleChange('gstNumber', e.target.value.toUpperCase())}
-              className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 uppercase"
+              className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 uppercase"
               placeholder="22AAAAA0000A1Z5"
               maxLength={15}
             />
@@ -208,7 +208,7 @@ export function VendorDetailsFormNew({ vendorId, initialData, onSuccess }: Vendo
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-0 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? (
               <>

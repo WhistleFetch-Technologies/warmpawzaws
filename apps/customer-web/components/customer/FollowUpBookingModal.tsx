@@ -113,7 +113,7 @@ export function FollowUpBookingModal({
         style={{ animation: 'slideUp 0.3s ease-out' }}
       >
         {/* Header */}
-        <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between rounded-t-[32px] z-10">
+        <div className="sticky top-0 bg-white border-b border-gray-200 px-0 py-4 flex items-center justify-between rounded-t-[32px] z-10">
           <h2 className="font-bold text-gray-800">Book Follow-Up</h2>
           <button
             onClick={onClose}
@@ -123,14 +123,14 @@ export function FollowUpBookingModal({
           </button>
         </div>
 
-        <div className="p-6 space-y-6">
+        <div className="p-0 space-y-6">
           {/* Info */}
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-            <div className="flex items-start gap-3">
+            <div className="flex items-start gap-0">
               <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5" />
               <div>
                 <p className="text-sm text-blue-900 font-medium">Follow-up Appointment</p>
-                <p className="text-xs text-blue-700 mt-1">
+                <p className="text-xs text-blue-700 mt-0">
                   Schedule a follow-up with {vendorName} for {petName}
                 </p>
               </div>
@@ -139,11 +139,11 @@ export function FollowUpBookingModal({
 
           {/* Date Selection */}
           <div>
-            <label className="block text-sm font-medium mb-3 flex items-center gap-2">
+            <label className="block text-sm font-medium mb-0 flex items-center gap-0">
               <Calendar className="w-4 h-4" />
               Select Date
             </label>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-0">
               {getAvailableDates().map((date) => {
                 const dateStr = date.toISOString().split('T')[0];
                 const isSelected = selectedDate === dateStr;
@@ -151,7 +151,7 @@ export function FollowUpBookingModal({
                   <button
                     key={dateStr}
                     onClick={() => setSelectedDate(dateStr)}
-                    className={`p-3 rounded-lg border-2 transition-all text-sm ${
+                    className={`p-0 rounded-lg border-2 transition-all text-sm ${
                       isSelected
                         ? 'border-primary bg-orange-50 text-primary'
                         : 'border-gray-200 hover:border-primary text-gray-900'
@@ -167,18 +167,18 @@ export function FollowUpBookingModal({
           {/* Time Selection */}
           {selectedDate && (
             <div>
-              <label className="block text-sm font-medium mb-3 flex items-center gap-2">
+              <label className="block text-sm font-medium mb-0 flex items-center gap-0">
                 <Clock className="w-4 h-4" />
                 Select Time
               </label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-0">
                 {timeSlots.map((slot) => {
                   const isSelected = selectedTime === slot;
                   return (
                     <button
                       key={slot}
                       onClick={() => setSelectedTime(slot)}
-                      className={`p-3 rounded-lg border-2 transition-all text-sm ${
+                      className={`p-0 rounded-lg border-2 transition-all text-sm ${
                         isSelected
                           ? 'border-primary bg-orange-50 text-primary'
                           : 'border-gray-200 hover:border-primary text-gray-900'
@@ -194,11 +194,11 @@ export function FollowUpBookingModal({
 
           {/* Notes */}
           <div>
-            <label className="block text-sm font-medium mb-2">Additional Notes (optional)</label>
+            <label className="block text-sm font-medium mb-0">Additional Notes (optional)</label>
             <textarea
               value={notes}
               onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNotes(e.target.value)}
-              className="w-full p-3 border border-gray-300 rounded-lg"
+              className="w-full p-0 border border-gray-300 rounded-lg"
               rows={3}
               placeholder="Any special instructions or concerns..."
             />
@@ -206,7 +206,7 @@ export function FollowUpBookingModal({
 
           {/* Error */}
           {error && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-0">
               <p className="text-sm text-red-700">{error}</p>
             </div>
           )}

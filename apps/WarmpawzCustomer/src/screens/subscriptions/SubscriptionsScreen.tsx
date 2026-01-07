@@ -16,7 +16,7 @@ import {
   Alert,
 } from 'react-native';
 import { colors, spacing, borderRadius } from '../../theme/colors';
-import { CustomerApi } from '../../services/api';
+import { CustomerApi, SubscriptionApi } from '../../services/api';
 
 interface SubscriptionsScreenProps {
   phone: string;
@@ -53,7 +53,7 @@ export function SubscriptionsScreen({
     try {
       setLoading(true);
       if (customerId) {
-        const response = await CustomerApi.getCustomerSubscriptions(customerId);
+        const response = await SubscriptionApi.getSubscriptions(customerId);
         const subscriptionsData = (response as any).subscriptions || Array.isArray(response) ? response : [];
         
         const formattedSubscriptions: Subscription[] = subscriptionsData.map((sub: any) => ({
@@ -86,10 +86,16 @@ export function SubscriptionsScreen({
         {
           text: 'Pause',
           onPress: async () => {
-            // TODO: Call pause API
-            setSubscriptions(subscriptions.map(sub =>
-              sub.id === subscriptionId ? { ...sub, status: 'paused' } : sub
-            ));
+            try {
+              await SubscriptionApi.pauseSubscription(subscriptionId);
+              setSubscriptions(subscriptions.map(sub =>
+                sub.id === subscriptionId ? { ...sub, status: 'paused' } : sub
+              ));
+              Alert.alert('Success', 'Subscription paused successfully');
+            } catch (error: any) {
+              console.error('Error pausing subscription:', error);
+              Alert.alert('Error', error.message || 'Failed to pause subscription');
+            }
           },
         },
       ]
@@ -97,10 +103,16 @@ export function SubscriptionsScreen({
   };
 
   const handleResume = async (subscriptionId: string) => {
-    // TODO: Call resume API
-    setSubscriptions(subscriptions.map(sub =>
-      sub.id === subscriptionId ? { ...sub, status: 'active' } : sub
-    ));
+    try {
+      await SubscriptionApi.resumeSubscription(subscriptionId);
+      setSubscriptions(subscriptions.map(sub =>
+        sub.id === subscriptionId ? { ...sub, status: 'active' } : sub
+      ));
+      Alert.alert('Success', 'Subscription resumed successfully');
+    } catch (error: any) {
+      console.error('Error resuming subscription:', error);
+      Alert.alert('Error', error.message || 'Failed to resume subscription');
+    }
   };
 
   const handleCancel = async (subscriptionId: string) => {
@@ -114,7 +126,7 @@ export function SubscriptionsScreen({
           style: 'destructive',
           onPress: async () => {
             try {
-              await CustomerApi.cancelSubscription(subscriptionId, 'Customer requested cancellation');
+              await SubscriptionApi.cancelSubscription(subscriptionId, 'Customer requested cancellation');
               setSubscriptions(subscriptions.map(sub =>
                 sub.id === subscriptionId ? { ...sub, status: 'cancelled' } : sub
               ));
@@ -143,7 +155,7 @@ export function SubscriptionsScreen({
     switch (status) {
       case 'active': return '#16a34a';
       case 'paused': return '#f59e0b';
-      case 'cancelled': return '#dc2626';
+      case 'cancelled': return {colors.error};
       default: return colors.textSecondary;
     }
   };
@@ -268,7 +280,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -319,7 +331,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   subscriptionCard: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: spacing.md,
@@ -378,7 +390,7 @@ const styles = StyleSheet.create({
   },
   pauseButton: {
     flex: 1,
-    backgroundColor: '#f3f4f6',
+    backgroundColor: colors.gray.100,
     padding: spacing.sm,
     borderRadius: borderRadius.md,
     alignItems: 'center',
@@ -396,19 +408,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   resumeButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 14,
     fontWeight: '600',
   },
   cancelButton: {
     flex: 1,
-    backgroundColor: '#fee2e2',
+    backgroundColor: colors.error + 20% opacity,
     padding: spacing.sm,
     borderRadius: borderRadius.md,
     alignItems: 'center',
   },
   cancelButtonText: {
-    color: '#dc2626',
+    color: colors.error,
     fontSize: 14,
     fontWeight: '600',
   },

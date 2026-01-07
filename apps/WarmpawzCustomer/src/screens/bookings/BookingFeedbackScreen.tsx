@@ -160,7 +160,7 @@ export function BookingFeedbackScreen({
           disabled={rating === 0 || !feedback.trim() || submitting}
         >
           {submitting ? (
-            <ActivityIndicator size="small" color="#fff" />
+            <ActivityIndicator size="small" color={colors.white} />
           ) : (
             <Text style={styles.submitButtonText}>Submit Feedback</Text>
           )}
@@ -181,7 +181,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -226,7 +226,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   ratingContainer: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.lg,
     borderRadius: borderRadius.md,
     marginBottom: spacing.lg,
@@ -269,7 +269,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   feedbackInput: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: borderRadius.md,
@@ -293,10 +293,10 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   submitButtonDisabled: {
-    backgroundColor: '#9ca3af',
+    backgroundColor: colors.gray.400,
   },
   submitButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 18,
     fontWeight: 'bold',
   },

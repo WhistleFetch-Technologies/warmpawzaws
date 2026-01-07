@@ -1,0 +1,307 @@
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import { RefreshCw, Download, Upload, Loader2, CheckCircle, AlertCircle, ArrowRight } from 'lucide-react';
+import { apiClient } from '@/lib/api-client';
+
+interface MigrationHistory {
+  migrationId: string;
+  type: 'export' | 'import';
+  fileName: string;
+  recordCount: number;
+  status: 'success' | 'failed' | 'partial';
+  executedBy: string;
+  executedAt: string;
+  errors?: string[];
+}
+
+export function RoleMigrationPanel() {
+  const [loading, setLoading] = useState(false);
+  const [history, setHistory] = useState<MigrationHistory[]>([]);
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+
+  useEffect(() => {
+    loadHistory();
+  }, []);
+
+  const loadHistory = async () => {
+    try {
+      const data = await apiClient.get<any>('/admin/rbac/migrations/history');
+      if (data.success) {
+        setHistory(data.history || []);
+      }
+    } catch (error) {
+      console.error('Error loading migration history:', error);
+    }
+  };
+
+  const handleExport = async () => {
+    try {
+      setExporting(true);
+      const data = await apiClient.get<any>('/admin/rbac/export');
+      
+      if (data.success && data.exportData) {
+        const blob = new Blob([JSON.stringify(data.exportData, null, 2)], { type: 'application/json' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `rbac-export-${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        
+        alert('RBAC configuration exported successfully');
+        loadHistory();
+      } else {
+        alert(data.error || 'Failed to export RBAC configuration');
+      }
+    } catch (error) {
+      console.error('Error exporting RBAC:', error);
+      alert('An error occurred during export');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.type !== 'application/json') {
+        alert('Please select a valid JSON file');
+        return;
+      }
+      setSelectedFile(file);
+    }
+  };
+
+  const handleImport = async () => {
+    if (!selectedFile) {
+      alert('Please select a file to import');
+      return;
+    }
+
+    if (!confirm('This will overwrite existing RBAC configuration. Are you sure?')) {
+      return;
+    }
+
+    try {
+      setImporting(true);
+      const fileContent = await selectedFile.text();
+      const importData = JSON.parse(fileContent);
+
+      const data = await apiClient.post<any>('/admin/rbac/import', { importData });
+
+      if (data.success) {
+        alert(`Import successful! ${data.imported || 0} records imported.`);
+        setSelectedFile(null);
+        loadHistory();
+      } else {
+        alert(data.error || 'Failed to import RBAC configuration');
+      }
+    } catch (error) {
+      console.error('Error importing RBAC:', error);
+      alert('An error occurred during import. Please check the file format.');
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const getStatusIcon = (status: MigrationHistory['status']) => {
+    switch (status) {
+      case 'success':
+        return <CheckCircle className="w-5 h-5 text-green-600" />;
+      case 'failed':
+        return <AlertCircle className="w-5 h-5 text-red-600" />;
+      case 'partial':
+        return <AlertCircle className="w-5 h-5 text-yellow-600" />;
+    }
+  };
+
+  const getStatusColor = (status: MigrationHistory['status']) => {
+    switch (status) {
+      case 'success':
+        return 'bg-green-100 text-green-700';
+      case 'failed':
+        return 'bg-red-100 text-red-700';
+      case 'partial':
+        return 'bg-yellow-100 text-yellow-700';
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-0">
+        <div className="p-0 bg-cyan-100 rounded-xl">
+          <RefreshCw className="w-6 h-6 text-cyan-600" />
+        </div>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Role Migration Panel</h1>
+          <p className="text-sm text-gray-600">Export and import RBAC configurations</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-0">
+        <div className="bg-white rounded-xl border-2 border-gray-200 p-0">
+          <div className="flex items-center gap-0 mb-4">
+            <div className="p-0 bg-blue-100 rounded-lg">
+              <Download className="w-5 h-5 text-blue-600" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-gray-900">Export Configuration</h3>
+              <p className="text-sm text-gray-600">Download current RBAC setup</p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div className="p-4 bg-blue-50 rounded-lg">
+              <p className="text-sm text-blue-900 mb-0 font-medium">Export includes:</p>
+              <ul className="text-sm text-blue-800 space-y-1">
+                <li className="flex items-center gap-0">
+                  <CheckCircle className="w-4 h-4" />
+                  All roles and permissions
+                </li>
+                <li className="flex items-center gap-0">
+                  <CheckCircle className="w-4 h-4" />
+                  Role-permission mappings
+                </li>
+                <li className="flex items-center gap-0">
+                  <CheckCircle className="w-4 h-4" />
+                  User-role assignments
+                </li>
+              </ul>
+            </div>
+
+            <button
+              onClick={handleExport}
+              disabled={exporting}
+              className="w-full flex items-center justify-center gap-0 px-4 py-0 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium disabled:opacity-50"
+            >
+              {exporting ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  Exporting...
+                </>
+              ) : (
+                <>
+                  <Download className="w-5 h-5" />
+                  Export RBAC Configuration
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl border-2 border-gray-200 p-0">
+          <div className="flex items-center gap-0 mb-4">
+            <div className="p-0 bg-green-100 rounded-lg">
+              <Upload className="w-5 h-5 text-green-600" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-gray-900">Import Configuration</h3>
+              <p className="text-sm text-gray-600">Upload RBAC configuration file</p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div className="p-4 bg-yellow-50 border-2 border-yellow-200 rounded-lg">
+              <div className="flex items-start gap-0">
+                <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm text-yellow-900 font-medium mb-0">Warning</p>
+                  <p className="text-sm text-yellow-800">
+                    Importing will overwrite existing roles and permissions. Create a backup before proceeding.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-0">
+                Select JSON file
+              </label>
+              <input
+                type="file"
+                accept=".json"
+                onChange={handleFileSelect}
+                className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
+              />
+              {selectedFile && (
+                <p className="text-sm text-gray-600 mt-0">
+                  Selected: {selectedFile.name}
+                </p>
+              )}
+            </div>
+
+            <button
+              onClick={handleImport}
+              disabled={!selectedFile || importing}
+              className="w-full flex items-center justify-center gap-0 px-4 py-0 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium disabled:opacity-50"
+            >
+              {importing ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  Importing...
+                </>
+              ) : (
+                <>
+                  <Upload className="w-5 h-5" />
+                  Import RBAC Configuration
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl border-2 border-gray-200">
+        <div className="border-b border-gray-200 px-0 py-4">
+          <h3 className="font-semibold text-gray-900">Migration History</h3>
+        </div>
+        <div className="p-0">
+          {history.length === 0 ? (
+            <div className="text-center py-02">
+              <RefreshCw className="w-12 h-12 text-gray-300 mx-auto mb-0" />
+              <p className="text-gray-500">No migration history</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {history.map((item) => (
+                <div key={item.migrationId} className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg">
+                  {getStatusIcon(item.status)}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-0 mb-0">
+                      <span className={`px-0 py-0 text-xs font-medium rounded ${
+                        item.type === 'export' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'
+                      }`}>
+                        {item.type.toUpperCase()}
+                      </span>
+                      <span className={`px-0 py-1 text-xs font-medium rounded ${getStatusColor(item.status)}`}>
+                        {item.status.toUpperCase()}
+                      </span>
+                      <span className="text-sm text-gray-600">{item.recordCount} records</span>
+                    </div>
+                    <p className="text-sm font-medium text-gray-900">{item.fileName}</p>
+                    <p className="text-xs text-gray-600">
+                      by {item.executedBy} • {new Date(item.executedAt).toLocaleString()}
+                    </p>
+                    {item.errors && item.errors.length > 0 && (
+                      <div className="mt-0 p-0 bg-red-50 rounded">
+                        <p className="text-xs text-red-700 font-medium mb-0">Errors:</p>
+                        {item.errors.map((error, idx) => (
+                          <p key={idx} className="text-xs text-red-600">• {error}</p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

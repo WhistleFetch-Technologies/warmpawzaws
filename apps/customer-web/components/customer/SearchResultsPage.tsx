@@ -89,10 +89,10 @@ export function SearchResultsPage() {
     const { type, data, score } = result;
 
     return (
-      <div key={`${type}-${data.id || data.staffId || data.vendorId || data.serviceId}`} className="bg-white rounded-2xl p-6 shadow-sm border border-gray-200 hover:shadow-lg transition-shadow">
+      <div key={`${type}-${data.id || data.staffId || data.vendorId || data.serviceId}`} className="bg-white rounded-2xl p-0 shadow-sm border border-gray-200 hover:shadow-lg transition-shadow">
         <div className="flex items-start gap-4">
           {/* Type Badge */}
-          <div className={`px-3 py-1 rounded-full text-xs font-semibold ${
+          <div className={`px-0 py-0 rounded-full text-xs font-semibold ${
             type === 'staff' ? 'bg-blue-100 text-blue-700' :
             type === 'center' ? 'bg-green-100 text-green-700' :
             'bg-purple-100 text-purple-700'
@@ -102,14 +102,14 @@ export function SearchResultsPage() {
 
           <div className="flex-1">
             {/* Title */}
-            <h3 className="text-xl font-bold text-gray-900 mb-2">
+            <h3 className="text-xl font-bold text-gray-900 mb-0">
               {data.name || data.businessName}
             </h3>
 
             {/* Rating */}
             {data.rating > 0 && (
-              <div className="flex items-center gap-2 mb-2">
-                <div className="flex items-center gap-1">
+              <div className="flex items-center gap-0 mb-0">
+                <div className="flex items-center gap-0">
                   <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
                   <span className="font-semibold text-gray-900">{data.rating.toFixed(1)}</span>
                 </div>
@@ -120,10 +120,10 @@ export function SearchResultsPage() {
             )}
 
             {/* Details */}
-            <div className="space-y-2 mb-3">
+            <div className="space-y-2 mb-0">
               {/* Location */}
               {data.location && (
-                <div className="flex items-center gap-2 text-gray-600">
+                <div className="flex items-center gap-0 text-gray-600">
                   <MapPin className="w-4 h-4" />
                   <span className="text-sm">
                     {data.location.area}, {data.location.city}
@@ -136,7 +136,7 @@ export function SearchResultsPage() {
 
               {/* Price */}
               {data.price && (
-                <div className="flex items-center gap-2 text-gray-600">
+                <div className="flex items-center gap-0 text-gray-600">
                   <DollarSign className="w-4 h-4" />
                   <span className="text-sm">₹{data.price}</span>
                 </div>
@@ -151,7 +151,7 @@ export function SearchResultsPage() {
 
               {/* Description */}
               {data.description && (
-                <p className="text-sm text-gray-600 line-clamp-2">
+                <p className="text-sm text-gray-600 line-clamp-0">
                   {data.description}
                 </p>
               )}
@@ -159,14 +159,14 @@ export function SearchResultsPage() {
 
             {/* Services/Tags */}
             {data.services && data.services.length > 0 && (
-              <div className="flex flex-wrap gap-2 mb-3">
+              <div className="flex flex-wrap gap-0 mb-0">
                 {data.services.slice(0, 5).map((service: string, idx: number) => (
-                  <span key={idx} className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded-full">
+                  <span key={idx} className="px-0 py-0 bg-gray-100 text-gray-700 text-xs rounded-full">
                     {service}
                   </span>
                 ))}
                 {data.services.length > 5 && (
-                  <span className="px-2 py-1 text-gray-500 text-xs">
+                  <span className="px-0 py-0 text-gray-500 text-xs">
                     +{data.services.length - 5} more
                   </span>
                 )}
@@ -174,7 +174,7 @@ export function SearchResultsPage() {
             )}
 
             {/* Action Button */}
-            <button className="mt-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors text-sm font-medium">
+            <button className="mt-0 px-4 py-0 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors text-sm font-medium">
               View Details
             </button>
           </div>
@@ -206,7 +206,7 @@ export function SearchResultsPage() {
       </div>
 
       {/* Results */}
-      <div className="px-4 py-6">
+      <div className="px-4 py-0">
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
@@ -214,7 +214,7 @@ export function SearchResultsPage() {
         ) : results.length === 0 ? (
           <div className="bg-white rounded-xl border p-12 text-center">
             <Search className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-            <h3 className="font-bold text-gray-900 mb-2">No results found</h3>
+            <h3 className="font-bold text-gray-900 mb-0">No results found</h3>
             <p className="text-gray-600">Try adjusting your search or filters</p>
           </div>
         ) : (

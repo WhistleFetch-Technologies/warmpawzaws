@@ -105,21 +105,21 @@ export function CustomerServicesPage({ onBack, onNavigate, initialFilters }: Cus
   return (
     <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-white border-b px-4 py-4 flex items-center gap-3">
+      <div className="sticky top-0 z-10 bg-white border-b px-4 py-4 flex items-center gap-0">
         <button onClick={onBack} className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors">
           <ArrowLeft className="w-5 h-5" />
         </button>
         <h1 className="text-lg font-bold">Browse Services</h1>
       </div>
 
-      <div className="px-4 py-6">
+      <div className="px-4 py-0">
         {/* Filters */}
-        <div className="mb-6 space-y-4">
-          <div className="flex flex-wrap gap-3">
+        <div className="mb-0 space-y-4">
+          <div className="flex flex-wrap gap-0">
             <select
               value={category}
               onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setCategory(e.target.value)}
-              className="px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+              className="px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
             >
               <option value="all">All Categories</option>
               <option value="vet">Veterinary</option>
@@ -130,7 +130,7 @@ export function CustomerServicesPage({ onBack, onNavigate, initialFilters }: Cus
             <select
               value={serviceStyle}
               onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setServiceStyle(e.target.value as any)}
-              className="px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+              className="px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
             >
               <option value="all">All Types</option>
               <option value="at_home">At Home</option>
@@ -146,15 +146,15 @@ export function CustomerServicesPage({ onBack, onNavigate, initialFilters }: Cus
               placeholder="Search services..."
               value={searchQuery}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+              className="w-full pl-0 pr-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
             />
-            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+            <Filter className="absolute left-3 top-0/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
           </div>
         </div>
 
         {/* Services List */}
         {loading ? (
-          <div className="flex items-center justify-center py-12">
+          <div className="flex items-center justify-center py-02">
             <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
           </div>
         ) : error ? (
@@ -175,21 +175,21 @@ export function CustomerServicesPage({ onBack, onNavigate, initialFilters }: Cus
               >
                 <div className="flex gap-4">
                   <div className="flex-1">
-                    <h3 className="font-bold text-gray-900 mb-1">{service.serviceName}</h3>
-                    <p className="text-sm text-gray-600 mb-2 line-clamp-2">{service.description}</p>
+                    <h3 className="font-bold text-gray-900 mb-0">{service.serviceName}</h3>
+                    <p className="text-sm text-gray-600 mb-0 line-clamp-0">{service.description}</p>
                     
-                    <div className="flex items-center gap-4 text-sm text-gray-600 mb-2">
-                      <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-4 text-sm text-gray-600 mb-0">
+                      <div className="flex items-center gap-0">
                         <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
                         <span className="font-semibold">{service.vendorRating.toFixed(1)}</span>
                       </div>
                       {service.distance && (
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-0">
                           <MapPin className="w-4 h-4" />
                           <span>{service.distance.toFixed(1)} km</span>
                         </div>
                       )}
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-0">
                         <Clock className="w-4 h-4" />
                         <span>{service.duration} min</span>
                       </div>
@@ -197,7 +197,7 @@ export function CustomerServicesPage({ onBack, onNavigate, initialFilters }: Cus
 
                     <div className="flex items-center justify-between">
                       <span className="text-2xl font-bold text-primary">₹{service.price}</span>
-                      <span className="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded-full">
+                      <span className="text-xs px-0 py-1 bg-gray-100 text-gray-700 rounded-full">
                         {service.serviceStyle.replace('_', ' ')}
                       </span>
                     </div>

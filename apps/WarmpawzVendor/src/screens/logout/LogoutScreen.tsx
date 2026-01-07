@@ -85,7 +85,7 @@ export function LogoutScreen({ onBack, onLogout }: LogoutScreenProps) {
             disabled={loggingOut}
           >
             {loggingOut ? (
-              <ActivityIndicator color="#ffffff" />
+              <ActivityIndicator color={colors.white} />
             ) : (
               <Text style={styles.logoutButtonText}>Logout</Text>
             )}
@@ -158,7 +158,7 @@ const styles = StyleSheet.create({
   logoutButtonText: {
     fontSize: typography.fontSizes.md,
     fontWeight: typography.fontWeights.semibold,
-    color: '#ffffff',
+    color: colors.white,
   },
 });
 

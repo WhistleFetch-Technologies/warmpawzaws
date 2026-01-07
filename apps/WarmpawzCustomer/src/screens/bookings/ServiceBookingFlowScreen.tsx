@@ -415,7 +415,7 @@ export function ServiceBookingFlowScreen({
           disabled={submitting}
         >
           {submitting ? (
-            <ActivityIndicator size="small" color="#fff" />
+            <ActivityIndicator size="small" color={colors.white} />
           ) : (
             <Text style={styles.nextButtonText}>
               {step === 4 ? 'Confirm Booking' : 'Next'}
@@ -438,7 +438,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -463,7 +463,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: spacing.md,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -476,7 +476,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#e5e7eb',
+    backgroundColor: colors.gray.200,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -484,7 +484,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
   },
   progressCheck: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 16,
     fontWeight: 'bold',
   },
@@ -496,7 +496,7 @@ const styles = StyleSheet.create({
   progressLine: {
     flex: 1,
     height: 2,
-    backgroundColor: '#e5e7eb',
+    backgroundColor: colors.gray.200,
     marginHorizontal: spacing.xs,
   },
   progressLineActive: {
@@ -520,7 +520,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   petCard: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: spacing.md,
@@ -532,7 +532,7 @@ const styles = StyleSheet.create({
   },
   petCardSelected: {
     borderColor: colors.primary,
-    backgroundColor: '#fff7ed',
+    backgroundColor: colors.primary.50,
   },
   petName: {
     fontSize: 18,
@@ -552,12 +552,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   selectedCheck: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 14,
     fontWeight: 'bold',
   },
   dateButton: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     borderWidth: 1,
@@ -583,7 +583,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   timeSlot: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     borderWidth: 2,
@@ -593,7 +593,7 @@ const styles = StyleSheet.create({
   },
   timeSlotSelected: {
     borderColor: colors.primary,
-    backgroundColor: '#fff7ed',
+    backgroundColor: colors.primary.50,
   },
   timeSlotText: {
     fontSize: 14,
@@ -604,7 +604,7 @@ const styles = StyleSheet.create({
     color: colors.primary,
   },
   addressCard: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: spacing.md,
@@ -616,7 +616,7 @@ const styles = StyleSheet.create({
   },
   addressCardSelected: {
     borderColor: colors.primary,
-    backgroundColor: '#fff7ed',
+    backgroundColor: colors.primary.50,
   },
   addressName: {
     fontSize: 16,
@@ -629,7 +629,7 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   summaryCard: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     borderWidth: 1,
@@ -680,21 +680,21 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
   },
   addButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 16,
     fontWeight: '600',
   },
   actions: {
     flexDirection: 'row',
     padding: spacing.md,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderTopWidth: 1,
     borderTopColor: colors.border,
     gap: spacing.sm,
   },
   backButtonAction: {
     flex: 1,
-    backgroundColor: '#f3f4f6',
+    backgroundColor: colors.gray.100,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     alignItems: 'center',
@@ -712,10 +712,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   nextButtonDisabled: {
-    backgroundColor: '#9ca3af',
+    backgroundColor: colors.gray.400,
   },
   nextButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 16,
     fontWeight: 'bold',
   },

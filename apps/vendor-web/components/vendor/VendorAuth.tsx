@@ -107,15 +107,15 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-orange-50 to-white flex items-center justify-center p-4">
         <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-8 text-center">
-          <div className="w-20 h-20 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-6">
+          <div className="w-20 h-20 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-0">
             <span className="text-4xl">⏳</span>
           </div>
           <h2 className="text-2xl mb-4">Application Under Review</h2>
-          <p className="text-gray-600 mb-6">
+          <p className="text-gray-600 mb-0">
             Thank you for registering with WarmPawz! Your vendor application is being reviewed by our admin team. 
             We'll notify you once your account is approved.
           </p>
-          <p className="text-sm text-gray-500 mb-6">
+          <p className="text-sm text-gray-500 mb-0">
             This usually takes 24-48 hours. You'll receive an email once approved.
           </p>
           <button
@@ -123,7 +123,7 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
               setPendingApproval(false);
               setIsSignUp(false);
             }}
-            className="w-full bg-primary hover:bg-primary-dark text-white py-3 px-4 rounded-lg font-medium transition-colors"
+            className="w-full bg-primary hover:bg-primary-dark text-white py-0 px-4 rounded-lg font-medium transition-colors"
           >
             Back to Login
           </button>
@@ -137,27 +137,27 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
     return (
       <div className="min-h-screen bg-white flex flex-col w-full max-w-[430px] mx-auto">
         {/* Back Button */}
-        <div className="px-6 py-4">
+        <div className="px-0 py-4">
           <button
             onClick={() => {
               setShowOtpScreen(false);
               setOtpCode('');
               setError('');
             }}
-            className="flex items-center gap-2 text-gray-700 hover:text-gray-900"
+            className="flex items-center gap-0 text-gray-700 hover:text-gray-900"
           >
             <ArrowLeft className="w-5 h-5" />
             <span className="text-sm">Back</span>
           </button>
         </div>
 
-        <div className="flex-1 flex flex-col items-center justify-center px-6 pb-12">
+        <div className="flex-1 flex flex-col items-center justify-center px-0 pb-12">
           {/* Logo */}
           <div className="w-20 h-20 mb-8">
             <Image src="/logo.png" alt="Warmpawz" width={80} height={80} className="w-full h-full object-contain" />
           </div>
 
-          <h1 className="text-2xl text-gray-900 mb-2 text-center">
+          <h1 className="text-2xl text-gray-900 mb-0 text-center">
             Enter verification code
           </h1>
           <p className="text-gray-600 text-center mb-8">
@@ -165,20 +165,20 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
           </p>
 
           {UAT_MODE && (
-            <div className="mb-4 w-full max-w-sm p-3 bg-blue-50 border border-blue-200 rounded-xl text-blue-700 text-sm text-center">
+            <div className="mb-4 w-full max-w-sm p-0 bg-blue-50 border border-blue-200 rounded-xl text-blue-700 text-sm text-center">
               🔐 UAT Mode: Use OTP <strong>123456</strong>
             </div>
           )}
 
           {error && (
-            <div className="mb-6 w-full max-w-sm p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
+            <div className="mb-0 w-full max-w-sm p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
               {error}
             </div>
           )}
 
           <form onSubmit={handleVerifyOtp} className="w-full max-w-sm">
-            <div className="mb-6">
-              <label htmlFor="otp" className="text-gray-700 mb-2 block text-sm font-medium">
+            <div className="mb-0">
+              <label htmlFor="otp" className="text-gray-700 mb-0 block text-sm font-medium">
                 6-digit code
               </label>
               <input
@@ -222,38 +222,38 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
   if (isSignUp) {
     return (
       <div className="min-h-screen bg-white flex flex-col w-full max-w-[430px] mx-auto">
-        <div className="flex-1 flex flex-col items-center justify-center px-6 pb-12">
+        <div className="flex-1 flex flex-col items-center justify-center px-0 pb-12">
           {/* Logo */}
           <div className="w-32 h-32 mb-8">
             <Image src="/logo.png" alt="Warmpawz" width={128} height={128} className="w-full h-full object-contain" />
           </div>
 
-          <h1 className="text-3xl text-gray-900 mb-2 text-center">
+          <h1 className="text-3xl text-gray-900 mb-0 text-center">
             Warmpawz Provider
           </h1>
-          <p className="text-gray-600 text-center mb-10">
+          <p className="text-gray-600 text-center mb-0">
             Professional pet care services platform
           </p>
 
           {UAT_MODE && (
-            <div className="mb-4 w-full max-w-sm p-3 bg-blue-50 border border-blue-200 rounded-xl text-blue-700 text-sm text-center">
+            <div className="mb-4 w-full max-w-sm p-0 bg-blue-50 border border-blue-200 rounded-xl text-blue-700 text-sm text-center">
               🔐 UAT Mode: OTP is 123456 for all numbers
             </div>
           )}
 
           {error && (
-            <div className="mb-6 w-full max-w-sm p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
+            <div className="mb-0 w-full max-w-sm p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
               {error}
             </div>
           )}
 
           <form onSubmit={handleSendCode} className="w-full max-w-sm">
-            <div className="mb-6">
-              <label htmlFor="phone" className="text-gray-700 mb-2 block text-sm font-medium">
+            <div className="mb-0">
+              <label htmlFor="phone" className="text-gray-700 mb-0 block text-sm font-medium">
                 Mobile Number
               </label>
-              <div className="flex gap-3">
-                <div className="bg-gray-100 border border-gray-300 rounded-xl px-4 py-3 flex items-center">
+              <div className="flex gap-0">
+                <div className="bg-gray-100 border border-gray-300 rounded-xl px-4 py-0 flex items-center">
                   <span className="text-gray-900">+91</span>
                 </div>
                 <input
@@ -281,11 +281,11 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
             </button>
           </form>
 
-          <p className="text-xs text-gray-400 text-center mt-10 max-w-xs">
+          <p className="text-xs text-gray-400 text-center mt-0 max-w-xs">
             By continuing, you agree to our Terms of Service and Privacy Policy
           </p>
 
-          <div className="mt-6 text-center">
+          <div className="mt-0 text-center">
             <button
               type="button"
               onClick={() => {
@@ -318,12 +318,12 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
                 className="object-contain"
               />
             </div>
-            <h1 className="text-3xl text-primary mb-2">WarmPawz</h1>
+            <h1 className="text-3xl text-primary mb-0">WarmPawz</h1>
             <p className="text-gray-600">Vendor Portal</p>
           </div>
 
           {error && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+            <div className="mb-4 p-0 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
               {error}
             </div>
           )}
@@ -344,7 +344,7 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
                 <div className="w-full border-t border-gray-300"></div>
               </div>
               <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-white text-gray-500">Or</span>
+                <span className="px-0 bg-white text-gray-500">Or</span>
               </div>
             </div>
 
@@ -353,7 +353,7 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
             </p>
           </div>
 
-          <div className="mt-6 text-center">
+          <div className="mt-0 text-center">
             <button
               type="button"
               onClick={() => {

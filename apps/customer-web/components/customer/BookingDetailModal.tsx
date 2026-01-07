@@ -49,7 +49,7 @@ export function BookingDetailModal({ bookingId, phone, isOpen, onClose, onSucces
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-3xl w-full max-w-[430px] max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="sticky top-0 bg-gradient-to-r from-primary to-primary-dark px-6 py-6 flex items-center justify-between z-10">
+        <div className="sticky top-0 bg-gradient-to-r from-primary to-primary-dark px-0 py-0 flex items-center justify-between z-10">
           <h2 className="text-white font-bold text-lg">Booking Details</h2>
           <button
             onClick={onClose}
@@ -60,9 +60,9 @@ export function BookingDetailModal({ bookingId, phone, isOpen, onClose, onSucces
         </div>
 
         {/* Content */}
-        <div className="px-6 py-6">
+        <div className="px-0 py-0">
           {loading ? (
-            <div className="flex items-center justify-center py-12">
+            <div className="flex items-center justify-center py-02">
               <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
             </div>
           ) : !booking ? (
@@ -75,7 +75,7 @@ export function BookingDetailModal({ bookingId, phone, isOpen, onClose, onSucces
               <div className="bg-gray-50 rounded-xl p-4">
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-600">Status</span>
-                  <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                  <span className={`px-0 py-1 rounded-full text-sm font-semibold ${
                     booking.status === 'confirmed' ? 'bg-green-100 text-green-700' :
                     booking.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
                     booking.status === 'cancelled' ? 'bg-red-100 text-red-700' :
@@ -88,9 +88,9 @@ export function BookingDetailModal({ bookingId, phone, isOpen, onClose, onSucces
 
               {/* Service Info */}
               <div>
-                <h3 className="font-bold text-gray-900 mb-3">Service Information</h3>
+                <h3 className="font-bold text-gray-900 mb-0">Service Information</h3>
                 <div className="space-y-3">
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-0">
                     <Calendar className="w-5 h-5 text-gray-400" />
                     <div>
                       <p className="text-sm text-gray-600">Date</p>
@@ -99,7 +99,7 @@ export function BookingDetailModal({ bookingId, phone, isOpen, onClose, onSucces
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-0">
                     <Clock className="w-5 h-5 text-gray-400" />
                     <div>
                       <p className="text-sm text-gray-600">Time</p>
@@ -124,13 +124,13 @@ export function BookingDetailModal({ bookingId, phone, isOpen, onClose, onSucces
               {/* Vendor Info */}
               {booking.vendorName && (
                 <div>
-                  <h3 className="font-bold text-gray-900 mb-3">Service Provider</h3>
+                  <h3 className="font-bold text-gray-900 mb-0">Service Provider</h3>
                   <div className="bg-gray-50 rounded-xl p-4">
                     <p className="font-semibold text-gray-900">{booking.vendorName}</p>
                     {booking.vendorPhone && (
                       <a
                         href={`tel:${booking.vendorPhone}`}
-                        className="flex items-center gap-2 text-primary mt-2 hover:underline"
+                        className="flex items-center gap-0 text-primary mt-0 hover:underline"
                       >
                         <Phone className="w-4 h-4" />
                         <span>{booking.vendorPhone}</span>
@@ -143,7 +143,7 @@ export function BookingDetailModal({ bookingId, phone, isOpen, onClose, onSucces
               {/* Pet Info */}
               {booking.petName && (
                 <div>
-                  <h3 className="font-bold text-gray-900 mb-3">Pet</h3>
+                  <h3 className="font-bold text-gray-900 mb-0">Pet</h3>
                   <div className="bg-gray-50 rounded-xl p-4">
                     <p className="font-semibold text-gray-900">{booking.petName}</p>
                   </div>
@@ -153,10 +153,10 @@ export function BookingDetailModal({ bookingId, phone, isOpen, onClose, onSucces
               {/* Address */}
               {booking.address && (
                 <div>
-                  <h3 className="font-bold text-gray-900 mb-3">Service Address</h3>
+                  <h3 className="font-bold text-gray-900 mb-0">Service Address</h3>
                   <div className="bg-gray-50 rounded-xl p-4">
-                    <div className="flex items-start gap-3">
-                      <MapPin className="w-5 h-5 text-gray-400 flex-shrink-0 mt-1" />
+                    <div className="flex items-start gap-0">
+                      <MapPin className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0" />
                       <div>
                         {typeof booking.address === 'string' ? (
                           <p className="text-gray-900">{booking.address}</p>
@@ -177,7 +177,7 @@ export function BookingDetailModal({ bookingId, phone, isOpen, onClose, onSucces
               {/* Notes */}
               {booking.notes && (
                 <div>
-                  <h3 className="font-bold text-gray-900 mb-3">Notes</h3>
+                  <h3 className="font-bold text-gray-900 mb-0">Notes</h3>
                   <div className="bg-gray-50 rounded-xl p-4">
                     <p className="text-gray-900">{booking.notes}</p>
                   </div>

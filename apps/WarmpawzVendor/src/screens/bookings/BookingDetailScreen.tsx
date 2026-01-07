@@ -344,7 +344,7 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
   },
   completeButtonText: {
-    color: '#ffffff',
+    color: colors.white,
   },
 });
 

@@ -274,6 +274,32 @@ export const AppointmentDetailApi = {
     ApiService.post(`/bookings/${bookingId}/activity`, activity),
 };
 
+// ✅ NEW: File Upload API (for vendor mobile)
+export const FileUploadApi = {
+  uploadFile: (file: any, bookingId?: string, uploadType?: string) => {
+    const formData = new FormData();
+    formData.append('file', {
+      uri: file.uri || file,
+      type: file.type || 'image/jpeg',
+      name: file.name || file.fileName || 'file.jpg',
+    } as any);
+    if (bookingId) formData.append('bookingId', bookingId);
+    if (uploadType) formData.append('uploadType', uploadType);
+    // Note: FormData requires special handling for React Native
+    return ApiService.post('/files/upload', formData);
+  },
+  uploadPrescription: (bookingId: string, file: any) => {
+    const formData = new FormData();
+    formData.append('file', {
+      uri: file.uri || file,
+      type: file.type || 'image/jpeg',
+      name: file.name || 'prescription.jpg',
+    } as any);
+    formData.append('bookingId', bookingId);
+    return ApiService.post(`/bookings/${bookingId}/prescription`, formData);
+  },
+};
+
 // ✅ NEW: Call API (Batch 2)
 export const CallApi = {
   initiateCall: (bookingId: string, callType: 'audio' | 'video', vendorId: string) => 
@@ -364,6 +390,8 @@ export const NotificationApi = {
 export const EmergencyApi = {
   reportEmergency: (vendorId: string, emergencyData: any) => 
     ApiService.post(`/emergency/report`, { vendorId, ...emergencyData }),
+  sendEmergencyAlert: (vendorId: string, alertData: { type: string; message: string; location?: any }) =>
+    ApiService.post(`/vendor/${vendorId}/emergency`, alertData),
 };
 
 // ✅ NEW: Location Sharing API (Batch 2)
@@ -380,8 +408,8 @@ export const LocationSharingApi = {
 
 // ✅ NEW: Route Optimization API (Batch 2)
 export const RouteOptimizationApi = {
-  optimizeRoute: (vendorId: string, bookingIds: string[]) => 
-    ApiService.post(`/route/optimize`, { vendorId, bookingIds }),
+  optimizeRoute: (vendorId: string, routeData: { bookings: string[]; startLocation?: any }) => 
+    ApiService.post(`/vendor/${vendorId}/route/optimize`, routeData),
   getOptimizedRoute: (routeId: string) => 
     ApiService.get(`/route/${routeId}`),
 };
@@ -390,6 +418,8 @@ export const RouteOptimizationApi = {
 export const RealTimeUpdatesApi = {
   getUpdates: (vendorId: string) => 
     ApiService.get(`/vendor/${vendorId}/updates`),
+  getRealTimeUpdates: (vendorId: string) => 
+    ApiService.get(`/vendor/${vendorId}/realtime`),
   connectStream: (vendorId: string) => {
     // WebSocket connection - returns WebSocket URL
     // ✅ MIGRATED: Using API Gateway WebSocket endpoint (if configured)
@@ -443,18 +473,26 @@ export const CommissionApi = {
   },
 };
 
-// ✅ NEW: Reports API (Batch 3)
+// ✅ NEW: Reports API (Batch 3 + Phase 1 Improvements)
 export const ReportsApi = {
   getReports: (vendorId: string) => 
     ApiService.get(`/vendor/${vendorId}/reports`),
-  generateReport: (vendorId: string, reportType: string, period: string) => 
-    ApiService.post(`/vendor/${vendorId}/reports/generate`, { reportType, period }),
+  generateReport: (vendorId: string, reportType: string, dateRange: { startDate: string; endDate: string }) => 
+    ApiService.post(`/vendor/${vendorId}/reports/generate`, { reportType, dateRange }),
+  getReportHistory: (vendorId: string, limit?: number) => {
+    const params = limit ? `?limit=${limit}` : '';
+    return ApiService.get(`/vendor/${vendorId}/reports/history${params}`);
+  },
+  downloadReport: (reportId: string) => 
+    ApiService.get(`/reports/${reportId}/download`),
+  getReportStatus: (reportId: string) => 
+    ApiService.get(`/reports/${reportId}/status`),
 };
 
 // ✅ NEW: Data Export API (Batch 3)
 export const DataExportApi = {
-  exportData: (vendorId: string, format: 'csv' | 'pdf' | 'excel', dataType: string) => 
-    ApiService.post(`/vendor/${vendorId}/export`, { format, dataType }),
+  exportData: (vendorId: string, format: 'csv' | 'pdf' | 'excel', dataType: string, dateRange?: any) => 
+    ApiService.post(`/vendor/${vendorId}/export`, { format, dataType, dateRange }),
 };
 
 // ✅ NEW: Performance Metrics API (Batch 3)
@@ -497,14 +535,18 @@ export const FinancialSummaryApi = {
 // Alias for backward compatibility
 export const FinancialApi = FinancialSummaryApi;
 
-// ✅ NEW: Tax Documents API (Batch 3)
+// ✅ NEW: Tax Documents API (Batch 3 + Phase 1 Improvements)
 export const TaxDocumentsApi = {
-  getDocuments: (vendorId: string) => 
-    ApiService.get(`/vendor/${vendorId}/tax-documents`),
-  downloadDocument: (documentId: string) => 
-    ApiService.get(`/tax-documents/${documentId}/download`),
+  getDocuments: (vendorId: string, year?: number) => {
+    const query = year ? `?year=${year}` : '';
+    return ApiService.get(`/vendor/${vendorId}/tax/documents${query}`);
+  },
+  downloadTaxDocument: (documentId: string) => 
+    ApiService.get(`/tax/documents/${documentId}/download`),
   generateDocument: (vendorId: string, type: string, year: number) => 
-    ApiService.post(`/vendor/${vendorId}/tax-documents/generate`, { type, year }),
+    ApiService.post(`/vendor/${vendorId}/tax/documents/generate`, { type, year }),
+  getTaxSummary: (vendorId: string, year: number) => 
+    ApiService.get(`/vendor/${vendorId}/tax/summary?year=${year}`),
 };
 
 // Alias for backward compatibility
@@ -550,6 +592,10 @@ export const SecurityApi = {
     ApiService.post(`/vendor/${vendorId}/security/enable-2fa`, {}),
   disable2FA: (vendorId: string) => 
     ApiService.post(`/vendor/${vendorId}/security/disable-2fa`, {}),
+  getSecuritySettings: (vendorId: string) => 
+    ApiService.get(`/vendor/${vendorId}/security`),
+  updateSecuritySettings: (vendorId: string, settings: any) => 
+    ApiService.put(`/vendor/${vendorId}/security`, settings),
 };
 
 // ✅ NEW: Notifications Settings API (Batch 4)
@@ -617,4 +663,30 @@ export const GPSTrackingApi = {
     ApiService.post(`/home-service/${bookingId}/end-ride`, { vendorId }),
   getActiveTrackings: (vendorId: string) => 
     ApiService.get(`/vendor/${vendorId}/active-trackings`),
+  getRoute: (bookingId: string) => 
+    ApiService.get(`/bookings/${bookingId}/route`),
+  trackRoute: (routeId: string) => 
+    ApiService.get(`/routes/${routeId}/track`),
+};
+
+// ✅ NEW: Analytics API (Phase 1 - Mobile Improvements)
+export const AnalyticsApi = {
+  getPerformanceMetrics: (vendorId: string, dateRange?: 'day' | 'week' | 'month' | 'year') => {
+    const query = dateRange ? `?range=${dateRange}` : '';
+    return ApiService.get(`/vendor/${vendorId}/analytics/performance${query}`);
+  },
+  getRevenueAnalytics: (vendorId: string, dateRange?: 'day' | 'week' | 'month' | 'year') => {
+    const query = dateRange ? `?range=${dateRange}` : '';
+    return ApiService.get(`/vendor/${vendorId}/analytics/revenue${query}`);
+  },
+  getCustomerMetrics: (vendorId: string) => 
+    ApiService.get(`/vendor/${vendorId}/analytics/customers`),
+  getServiceMetrics: (vendorId: string, serviceId?: string) => {
+    const query = serviceId ? `?serviceId=${serviceId}` : '';
+    return ApiService.get(`/vendor/${vendorId}/analytics/services${query}`);
+  },
+  getStaffMetrics: (vendorId: string, staffId?: string) => {
+    const query = staffId ? `?staffId=${staffId}` : '';
+    return ApiService.get(`/vendor/${vendorId}/analytics/staff${query}`);
+  },
 };

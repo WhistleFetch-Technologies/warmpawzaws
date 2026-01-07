@@ -256,7 +256,7 @@ export function DynamicVendorOnboardingForm({
     const error = errors[field.name];
     const commonClasses = `w-full rounded-xl border ${
       error ? 'border-red-300' : 'border-gray-200'
-    } px-4 py-3 text-gray-800 focus:border-primary focus:ring-2 focus:ring-primary outline-none transition-all placeholder:text-gray-400 bg-white`;
+    } px-4 py-0 text-gray-800 focus:border-primary focus:ring-2 focus:ring-primary outline-none transition-all placeholder:text-gray-400 bg-white`;
 
     switch (field.type) {
       case 'textarea':
@@ -311,7 +311,7 @@ export function DynamicVendorOnboardingForm({
 
       case 'file':
         return (
-          <div className="mt-1">
+          <div className="mt-0">
             {documentPreviews[field.name] ? (
               <div className="relative group overflow-hidden rounded-xl border border-gray-200">
                 <img 
@@ -326,23 +326,23 @@ export function DynamicVendorOnboardingForm({
                       setDocuments({ ...documents, [field.name]: null });
                       setDocumentPreviews({ ...documentPreviews, [field.name]: '' });
                     }}
-                    className="bg-white/20 backdrop-blur-md border border-white/50 text-white rounded-full p-2 hover:bg-white/40"
+                    className="bg-white/20 backdrop-blur-md border border-white/50 text-white rounded-full p-0 hover:bg-white/40"
                   >
                     <X className="w-5 h-5" />
                   </button>
                 </div>
-                <div className="absolute top-3 right-3 bg-green-500 text-white px-3 py-1 rounded-full text-xs font-medium flex items-center gap-1.5">
+                <div className="absolute top-0 right-3 bg-green-500 text-white px-0 py-0 rounded-full text-xs font-medium flex items-center gap-0.5">
                   <CheckCircle2 className="w-3.5 h-3.5" />
                   Uploaded
                 </div>
               </div>
             ) : (
               <label className="flex flex-col items-center justify-center h-48 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-primary hover:bg-orange-50/50 transition-all">
-                <div className="w-12 h-12 rounded-full bg-orange-100 flex items-center justify-center mb-3">
+                <div className="w-12 h-12 rounded-full bg-orange-100 flex items-center justify-center mb-0">
                   <Upload className="w-6 h-6 text-primary" />
                 </div>
                 <span className="text-sm font-semibold text-gray-700">Tap to upload document</span>
-                <span className="text-xs text-gray-400 mt-1">{field.documentLabel || field.label}</span>
+                <span className="text-xs text-gray-400 mt-0">{field.documentLabel || field.label}</span>
                 <input
                   type="file"
                   accept={field.acceptedFileTypes?.join(',') || 'image/*'}
@@ -359,7 +359,7 @@ export function DynamicVendorOnboardingForm({
 
       case 'map_pin':
         return (
-          <div className="space-y-4 mt-2">
+          <div className="space-y-4 mt-0">
             <button
               type="button"
               onClick={() => {
@@ -373,7 +373,7 @@ export function DynamicVendorOnboardingForm({
                   });
                 }
               }}
-              className="w-full py-3 bg-white border-2 border-primary text-primary rounded-xl font-bold flex items-center justify-center gap-2"
+              className="w-full py-0 bg-white border-2 border-primary text-primary rounded-xl font-bold flex items-center justify-center gap-0"
             >
               <MapPin className="w-5 h-5" />
               <span>Detect Location</span>
@@ -435,9 +435,9 @@ export function DynamicVendorOnboardingForm({
     <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
       {/* Header */}
       <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="px-6 py-4 flex items-center gap-3">
+        <div className="px-0 py-4 flex items-center gap-0">
           {onBack && (
-            <button onClick={onBack} className="p-2 -ml-2 hover:bg-gray-100 rounded-full">
+            <button onClick={onBack} className="p-0 -ml-0 hover:bg-gray-100 rounded-full">
               <ArrowLeft className="w-5 h-5" />
             </button>
           )}
@@ -450,8 +450,8 @@ export function DynamicVendorOnboardingForm({
         </div>
 
         {/* Progress Bar */}
-        <div className="px-6 pb-4">
-          <div className="flex gap-2">
+        <div className="px-0 pb-4">
+          <div className="flex gap-0">
             {allSections.map((_, index) => (
               <div
                 key={index}
@@ -465,10 +465,10 @@ export function DynamicVendorOnboardingForm({
       </div>
 
       {/* Form Content */}
-      <form onSubmit={handleSubmit} className="p-6 space-y-6">
+      <form onSubmit={handleSubmit} className="p-0 space-y-6">
         {/* Section Title */}
         <div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">{currentSectionData.title}</h2>
+          <h2 className="text-2xl font-bold text-gray-900 mb-0">{currentSectionData.title}</h2>
           {currentSectionData.description && (
             <p className="text-gray-600">{currentSectionData.description}</p>
           )}
@@ -480,16 +480,16 @@ export function DynamicVendorOnboardingForm({
           .sort((a, b) => a.order - b.order)
           .map((field) => (
             <div key={field.id}>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-0">
                 {field.label}
-                {field.validation?.required && <span className="text-red-500 ml-1">*</span>}
+                {field.validation?.required && <span className="text-red-500 ml-0">*</span>}
               </label>
               {renderField(field)}
               {field.helpText && (
-                <p className="text-xs text-gray-500 mt-1">{field.helpText}</p>
+                <p className="text-xs text-gray-500 mt-0">{field.helpText}</p>
               )}
               {errors[field.name] && (
-                <p className="text-xs text-red-500 mt-1">{errors[field.name]}</p>
+                <p className="text-xs text-red-500 mt-0">{errors[field.name]}</p>
               )}
             </div>
           ))}
@@ -497,10 +497,10 @@ export function DynamicVendorOnboardingForm({
         {/* Specializations (if available) */}
         {availableSpecializations.length > 0 && (
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-0">
               Specializations
             </label>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-0">
               {availableSpecializations.map((spec) => (
                 <button
                   key={spec.id}
@@ -512,13 +512,13 @@ export function DynamicVendorOnboardingForm({
                         : [...prev, spec.id]
                     );
                   }}
-                  className={`p-3 rounded-xl border-2 transition-all ${
+                  className={`p-0 rounded-xl border-2 transition-all ${
                     selectedSpecializations.includes(spec.id)
                       ? 'border-primary bg-orange-50'
                       : 'border-gray-200 hover:border-gray-300'
                   }`}
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-0">
                     <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
                       selectedSpecializations.includes(spec.id)
                         ? 'bg-primary border-primary'
@@ -537,12 +537,12 @@ export function DynamicVendorOnboardingForm({
         )}
 
         {/* Navigation Buttons */}
-        <div className="flex gap-3 pt-4">
+        <div className="flex gap-0 pt-4">
           {currentSection > 0 && (
             <button
               type="button"
               onClick={() => setCurrentSection(currentSection - 1)}
-              className="flex-1 py-3 px-4 border border-gray-300 rounded-xl font-medium text-gray-700 hover:bg-gray-50"
+              className="flex-1 py-0 px-4 border border-gray-300 rounded-xl font-medium text-gray-700 hover:bg-gray-50"
             >
               Previous
             </button>
@@ -551,14 +551,14 @@ export function DynamicVendorOnboardingForm({
             <button
               type="button"
               onClick={() => setCurrentSection(currentSection + 1)}
-              className="flex-1 py-3 px-4 bg-primary text-white rounded-xl font-medium hover:bg-primary-dark"
+              className="flex-1 py-0 px-4 bg-primary text-white rounded-xl font-medium hover:bg-primary-dark"
             >
               Next
             </button>
           ) : (
             <>
               <div className="flex-1">
-                <label className="flex items-center gap-2 cursor-pointer">
+                <label className="flex items-center gap-0 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={agreedToTerms}
@@ -570,13 +570,13 @@ export function DynamicVendorOnboardingForm({
                   </span>
                 </label>
                 {errors.terms && (
-                  <p className="text-xs text-red-500 mt-1">{errors.terms}</p>
+                  <p className="text-xs text-red-500 mt-0">{errors.terms}</p>
                 )}
               </div>
               <button
                 type="submit"
                 disabled={submitting}
-                className="flex-1 py-3 px-4 bg-primary text-white rounded-xl font-medium hover:bg-primary-dark disabled:opacity-50"
+                className="flex-1 py-0 px-4 bg-primary text-white rounded-xl font-medium hover:bg-primary-dark disabled:opacity-50"
               >
                 {submitting ? 'Submitting...' : 'Submit'}
               </button>

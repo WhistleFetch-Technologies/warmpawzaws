@@ -223,7 +223,7 @@ export function VendorServiceManagementScreen({
           disabled={saving}
         >
           {saving ? (
-            <ActivityIndicator color="#ffffff" />
+            <ActivityIndicator color={colors.white} />
           ) : (
             <Text style={styles.publishButtonText}>Publish Services</Text>
           )}
@@ -282,7 +282,7 @@ const styles = StyleSheet.create({
   },
   tabActive: {
     borderColor: colors.primary,
-    backgroundColor: '#FFF4E6',
+    backgroundColor: colors.primary.50,
   },
   tabText: {
     fontSize: typography.fontSizes.sm,
@@ -365,7 +365,7 @@ const styles = StyleSheet.create({
   publishButtonText: {
     fontSize: typography.fontSizes.md,
     fontWeight: typography.fontWeights.semibold,
-    color: '#ffffff',
+    color: colors.white,
   },
 });
 

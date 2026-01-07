@@ -62,21 +62,21 @@ export function VendorAvailabilitySetup({ vendorId, onComplete }: VendorAvailabi
 
   return (
     <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto p-4">
-      <div className="bg-white rounded-lg border-2 border-gray-200 p-6">
-        <div className="flex items-center gap-3 mb-6">
+      <div className="bg-white rounded-lg border-2 border-gray-200 p-0">
+        <div className="flex items-center gap-0 mb-0">
           <Calendar className="w-6 h-6 text-orange-600" />
           <h1 className="text-xl font-bold text-gray-900">Set Your Availability</h1>
         </div>
 
-        <p className="text-sm text-gray-600 mb-6">
+        <p className="text-sm text-gray-600 mb-0">
           Configure when you're available to receive bookings. You can update this anytime from your dashboard.
         </p>
 
         <div className="space-y-4">
           {DAYS_OF_WEEK.map((day) => (
             <div key={day} className="border-2 border-gray-200 rounded-lg p-4">
-              <div className="flex items-center justify-between mb-3">
-                <label className="flex items-center gap-2 cursor-pointer">
+              <div className="flex items-center justify-between mb-0">
+                <label className="flex items-center gap-0 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={availability[day].enabled}
@@ -88,28 +88,28 @@ export function VendorAvailabilitySetup({ vendorId, onComplete }: VendorAvailabi
               </div>
 
               {availability[day].enabled && (
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-0">
                   <div className="flex-1">
-                    <label className="block text-xs text-gray-600 mb-1">Start Time</label>
+                    <label className="block text-xs text-gray-600 mb-0">Start Time</label>
                     <select
                       value={availability[day].start}
                       onChange={(e: React.ChangeEvent<HTMLSelectElement>) => handleTimeChange(day, 'start', e.target.value)}
-                      className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
+                      className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                     >
                       {TIME_SLOTS.map(time => (
                         <option key={time} value={time}>{time}</option>
                       ))}
                     </select>
                   </div>
-                  <div className="pt-6">
+                  <div className="pt-0">
                     <Clock className="w-5 h-5 text-gray-400" />
                   </div>
                   <div className="flex-1">
-                    <label className="block text-xs text-gray-600 mb-1">End Time</label>
+                    <label className="block text-xs text-gray-600 mb-0">End Time</label>
                     <select
                       value={availability[day].end}
                       onChange={(e: React.ChangeEvent<HTMLSelectElement>) => handleTimeChange(day, 'end', e.target.value)}
-                      className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
+                      className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                     >
                       {TIME_SLOTS.map(time => (
                         <option key={time} value={time}>{time}</option>
@@ -125,7 +125,7 @@ export function VendorAvailabilitySetup({ vendorId, onComplete }: VendorAvailabi
         <button
           onClick={handleSubmit}
           disabled={loading}
-          className="w-full mt-6 py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-2 disabled:opacity-50"
+          className="w-full mt-0 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-0 disabled:opacity-50"
         >
           {loading ? (
             <>

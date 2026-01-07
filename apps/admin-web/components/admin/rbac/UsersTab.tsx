@@ -55,7 +55,7 @@ export function UsersTab() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+        <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-0">
           <Users className="w-5 h-5 text-orange-600" />
           Admin Users
         </h2>
@@ -64,13 +64,13 @@ export function UsersTab() {
 
       {/* Search */}
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+        <Search className="absolute left-3 top-0/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
         <input
           type="text"
           value={searchQuery}
           onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
           placeholder="Search users..."
-          className="w-full pl-10 pr-4 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+          className="w-full pl-0 pr-4 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
         />
       </div>
 
@@ -84,13 +84,13 @@ export function UsersTab() {
             <div className="flex items-start justify-between">
               <div className="flex-1">
                 <h3 className="font-semibold text-gray-900">{user.name}</h3>
-                <p className="text-sm text-gray-600 mb-2">{user.email}</p>
-                <div className="flex items-center gap-3">
-                  <span className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded">
+                <p className="text-sm text-gray-600 mb-0">{user.email}</p>
+                <div className="flex items-center gap-0">
+                  <span className="text-xs px-0 py-0 bg-blue-100 text-blue-700 rounded">
                     {user.role}
                   </span>
                   <span
-                    className={`text-xs px-2 py-1 rounded ${
+                    className={`text-xs px-0 py-0 rounded ${
                       user.status === 'active'
                         ? 'bg-green-100 text-green-700'
                         : 'bg-gray-100 text-gray-700'
@@ -100,14 +100,14 @@ export function UsersTab() {
                   </span>
                 </div>
                 {user.lastLogin && (
-                  <p className="text-xs text-gray-500 mt-2">
+                  <p className="text-xs text-gray-500 mt-0">
                     Last login: {new Date(user.lastLogin).toLocaleDateString()}
                   </p>
                 )}
               </div>
               <button
                 onClick={() => setSelectedUser(user)}
-                className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+                className="p-0 text-gray-600 hover:bg-gray-100 rounded-lg"
               >
                 <Edit className="w-4 h-4" />
               </button>

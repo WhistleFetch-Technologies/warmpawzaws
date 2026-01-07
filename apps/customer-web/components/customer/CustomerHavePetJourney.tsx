@@ -155,8 +155,8 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
         return (
           <>
             {/* Orange Top Section */}
-            <div className="flex flex-col items-center pt-12 pb-8 px-6">
-              <div className="w-24 h-24 bg-primary rounded-full flex items-center justify-center mb-6">
+            <div className="flex flex-col items-center pt-02 pb-8 px-0">
+              <div className="w-24 h-24 bg-primary rounded-full flex items-center justify-center mb-0">
                 <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
                   <path d="M14 20L14 28L18 32L30 32L34 28L34 20L30 16L18 16L14 20Z" stroke="white" strokeWidth="3" fill="none"/>
                   <path d="M24 12L24 16M16 16L18 18M32 16L30 18" stroke="white" strokeWidth="2.5" strokeLinecap="round"/>
@@ -167,13 +167,13 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
             </div>
 
             {/* White Bottom Section */}
-            <div className="flex-1 bg-white rounded-t-[40px] px-6 py-8 overflow-y-auto">
-              <p className="text-center text-black mb-6 text-base">
+            <div className="flex-1 bg-white rounded-t-[40px] px-0 py-8 overflow-y-auto">
+              <p className="text-center text-black mb-0 text-base">
                 Tell us about where you live
               </p>
 
-              <div className="mb-6">
-                <h3 className="text-black mb-3 text-sm font-medium">What type of home do you have?</h3>
+              <div className="mb-0">
+                <h3 className="text-black mb-0 text-sm font-medium">What type of home do you have?</h3>
                 <div className="space-y-3">
                   {[
                     { id: 'apartment', emoji: '🏢', label: 'Apartment' },
@@ -187,7 +187,7 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
                         tempSelections.homeType === option.id ? 'border-primary bg-orange-50' : 'border-gray-200'
                       }`}
                     >
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-0">
                         <span className="text-2xl">{option.emoji}</span>
                         <h3 className="text-black font-medium">{option.label}</h3>
                       </div>
@@ -196,8 +196,8 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
                 </div>
               </div>
 
-              <div className="mb-6">
-                <h3 className="text-black mb-3 text-sm font-medium">Do you have a yard or outdoor space?</h3>
+              <div className="mb-0">
+                <h3 className="text-black mb-0 text-sm font-medium">Do you have a yard or outdoor space?</h3>
                 <div className="space-y-3">
                   {[
                     { id: 'large-yard', emoji: '🌳', label: 'Yes, large fenced yard' },
@@ -211,7 +211,7 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
                         tempSelections.outdoorSpace === option.id ? 'border-primary bg-orange-50' : 'border-gray-200'
                       }`}
                     >
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-0">
                         <span className="text-2xl">{option.emoji}</span>
                         <h3 className="text-black font-medium">{option.label}</h3>
                       </div>
@@ -227,8 +227,8 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
         return (
           <>
             {/* Orange Top Section */}
-            <div className="flex flex-col items-center pt-12 pb-8 px-6">
-              <div className="w-24 h-24 bg-primary rounded-full flex items-center justify-center mb-6">
+            <div className="flex flex-col items-center pt-12 pb-8 px-0">
+              <div className="w-24 h-24 bg-primary rounded-full flex items-center justify-center mb-0">
                 <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
                   <circle cx="24" cy="24" r="18" stroke="white" strokeWidth="3" fill="none"/>
                   <path d="M24 10L24 24L32 28" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
@@ -238,13 +238,13 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
             </div>
 
             {/* White Bottom Section */}
-            <div className="flex-1 bg-white rounded-t-[40px] px-6 py-8 overflow-y-auto">
-              <p className="text-center text-black mb-6 text-base">
+            <div className="flex-1 bg-white rounded-t-[40px] px-0 py-8 overflow-y-auto">
+              <p className="text-center text-black mb-0 text-base">
                 Help us understand your daily routine
               </p>
 
-              <div className="mb-6">
-                <h3 className="text-black mb-3 text-sm font-medium">What&apos;s your typical work schedule?</h3>
+              <div className="mb-0">
+                <h3 className="text-black mb-0 text-sm font-medium">What&apos;s your typical work schedule?</h3>
                 <div className="space-y-3">
                   {[
                     { id: 'work-from-home', emoji: '🏠', label: 'Work from home' },
@@ -258,7 +258,7 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
                         tempSelections.workSchedule === option.id ? 'border-primary bg-orange-50' : 'border-gray-200'
                       }`}
                     >
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-0">
                         <span className="text-2xl">{option.emoji}</span>
                         <h3 className="text-black font-medium">{option.label}</h3>
                       </div>
@@ -267,8 +267,8 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
                 </div>
               </div>
 
-              <div className="mb-6">
-                <h3 className="text-black mb-3 text-sm font-medium">How would you describe your activity level?</h3>
+              <div className="mb-0">
+                <h3 className="text-black mb-0 text-sm font-medium">How would you describe your activity level?</h3>
                 <div className="space-y-3">
                   {[
                     { id: 'very-active', emoji: '🏃', label: 'Very Active (daily exercise/outdoors)' },
@@ -282,7 +282,7 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
                         tempSelections.activityLevel === option.id ? 'border-primary bg-orange-50' : 'border-gray-200'
                       }`}
                     >
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-0">
                         <span className="text-2xl">{option.emoji}</span>
                         <h3 className="text-black font-medium">{option.label}</h3>
                       </div>
@@ -291,8 +291,8 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
                 </div>
               </div>
 
-              <div className="mb-6">
-                <h3 className="text-black mb-3 text-sm font-medium">How often do you travel?</h3>
+              <div className="mb-0">
+                <h3 className="text-black mb-0 text-sm font-medium">How often do you travel?</h3>
                 <div className="space-y-3">
                   {[
                     { id: 'rarely', emoji: '🏡', label: 'Rarely or never' },
@@ -306,7 +306,7 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
                         tempSelections.travelFrequency === option.id ? 'border-primary bg-orange-50' : 'border-gray-200'
                       }`}
                     >
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-0">
                         <span className="text-2xl">{option.emoji}</span>
                         <h3 className="text-black font-medium">{option.label}</h3>
                       </div>
@@ -322,8 +322,8 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
         return (
           <>
             {/* Orange Top Section */}
-            <div className="flex flex-col items-center pt-12 pb-8 px-6">
-              <div className="w-24 h-24 bg-primary rounded-full flex items-center justify-center mb-6">
+            <div className="flex flex-col items-center pt-12 pb-8 px-0">
+              <div className="w-24 h-24 bg-primary rounded-full flex items-center justify-center mb-0">
                 <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
                   <path d="M18 12C18 9 20 7 23 7H25C28 7 30 9 30 12V14H18V12Z" fill="white"/>
                   <path d="M12 14H36C37 14 38 15 38 16V38C38 39 37 40 36 40H12C11 40 10 39 10 38V16C10 15 11 14 12 14Z" stroke="white" strokeWidth="3" fill="none"/>
@@ -334,15 +334,15 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
             </div>
 
             {/* White Bottom Section */}
-            <div className="flex-1 bg-white rounded-t-[40px] px-6 py-8 overflow-y-auto">
-              <p className="text-center text-black mb-6 text-base">
+            <div className="flex-1 bg-white rounded-t-[40px] px-0 py-8 overflow-y-auto">
+              <p className="text-center text-black mb-0 text-base">
                 Let&apos;s understand the investment involved ❤️
               </p>
 
               {/* Typical Costs Overview */}
-              <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 mb-6">
-                <p className="text-sm text-blue-900 mb-3">💡 Typical Costs Overview:</p>
-                <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 mb-0">
+                <p className="text-sm text-blue-900 mb-0">💡 Typical Costs Overview:</p>
+                <div className="grid grid-cols-2 gap-0 text-sm">
                   <div>
                     <p className="text-blue-700">Initial Setup</p>
                     <p className="font-semibold text-blue-900">₹20,000 - ₹50,000</p>
@@ -352,10 +352,10 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
                     <p className="font-semibold text-blue-900">₹3,000 - ₹12,000+</p>
                   </div>
                 </div>
-                <p className="text-xs text-blue-700 mt-2">Includes food, vet care, supplies & grooming</p>
+                <p className="text-xs text-blue-700 mt-0">Includes food, vet care, supplies & grooming</p>
               </div>
 
-              <div className="mb-6">
+              <div className="mb-0">
                 <h3 className="text-black mb-4 text-sm font-medium">What&apos;s your comfortable monthly budget?</h3>
                 <div className="space-y-3">
                   {[
@@ -370,10 +370,10 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
                         tempSelections.budget === option.id ? 'border-primary bg-orange-50' : 'border-gray-200'
                       }`}
                     >
-                      <div className="flex items-start gap-3">
+                      <div className="flex items-start gap-0">
                         <span className="text-2xl">{option.emoji}</span>
                         <div className="flex-1">
-                          <div className="flex items-baseline gap-2 mb-1">
+                          <div className="flex items-baseline gap-0 mb-0">
                             <h3 className="text-black font-medium">{option.label}</h3>
                           </div>
                           <p className="text-xs text-gray-600">{option.desc}</p>
@@ -386,10 +386,10 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
 
               {/* Pro Tip */}
               <div className="bg-orange-50 border-2 border-orange-200 rounded-2xl p-4">
-                <div className="flex items-start gap-3">
+                <div className="flex items-start gap-0">
                   <span className="text-xl">💡</span>
                   <div>
-                    <p className="text-sm font-semibold text-orange-900 mb-1">Pro Tip: Keep an emergency fund</p>
+                    <p className="text-sm font-semibold text-orange-900 mb-0">Pro Tip: Keep an emergency fund</p>
                     <p className="text-xs text-orange-800 leading-relaxed">
                       Save ₹15,000 - ₹50,000 for unexpected vet emergencies
                     </p>
@@ -412,9 +412,9 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
   return (
     <div className="min-h-screen bg-primary flex flex-col w-full max-w-[430px] mx-auto">
       {/* Status Bar */}
-      <div className="px-6 pt-3 pb-2 flex justify-between items-center">
+      <div className="px-0 pt-1 pb-0 flex justify-between items-center">
         <span className="text-black text-sm">09:41</span>
-        <div className="flex gap-1.5 items-center">
+        <div className="flex gap-0.5 items-center">
           <svg width="17" height="12" viewBox="0 0 17 12" fill="none">
             <rect y="8" width="3" height="4" rx="0.5" fill="black"/>
             <rect x="4.5" y="5" width="3" height="7" rx="0.5" fill="black"/>
@@ -435,13 +435,13 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
       {renderStep()}
 
       {/* Progress and Navigation - Fixed at bottom */}
-      <div className="bg-white px-6 pb-8">
+      <div className="bg-white px-0 pb-8">
         {/* Progress Bar */}
-        <div className="flex items-center gap-3 mb-4">
+        <div className="flex items-center gap-0 mb-4">
           <button
             onClick={handleBack}
             disabled={currentStep === 1}
-            className="p-2 disabled:opacity-30"
+            className="p-0 disabled:opacity-30"
           >
             <ChevronLeft className="w-5 h-5 text-black" />
           </button>
@@ -468,7 +468,7 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
         </button>
 
         {/* Home Indicator */}
-        <div className="flex justify-center mt-6">
+        <div className="flex justify-center mt-0">
           <div className="w-32 h-1 bg-black rounded-full"></div>
         </div>
       </div>

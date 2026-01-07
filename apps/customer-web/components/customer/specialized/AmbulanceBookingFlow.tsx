@@ -166,19 +166,19 @@ export function AmbulanceBookingFlow({ vendorId, customerPhone, onSuccess, onCan
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center p-12">
+      <div className="flex items-center justify-center p-02">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500"></div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-2xl mx-auto p-6">
-      <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6 flex items-start gap-3">
+    <div className="max-w-2xl mx-auto p-0">
+      <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-0 flex items-start gap-0">
         <AlertCircle className="text-red-600 flex-shrink-0 mt-0.5" size={20} />
         <div>
           <h3 className="font-semibold text-red-900">Emergency Ambulance Booking</h3>
-          <p className="text-sm text-red-700 mt-1">
+          <p className="text-sm text-red-700 mt-0">
             For life-threatening emergencies, please call emergency services directly.
           </p>
         </div>
@@ -187,16 +187,16 @@ export function AmbulanceBookingFlow({ vendorId, customerPhone, onSuccess, onCan
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Emergency Type */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label className="block text-sm font-medium text-gray-700 mb-0">
             Service Type
           </label>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-3 gap-0">
             {(['emergency', 'transfer', 'other'] as const).map((type) => (
               <button
                 key={type}
                 type="button"
                 onClick={() => setEmergencyType(type)}
-                className={`px-4 py-3 rounded-lg border-2 transition ${
+                className={`px-4 py-0 rounded-lg border-2 transition ${
                   emergencyType === type
                     ? 'border-orange-500 bg-orange-50 text-orange-700'
                     : 'border-gray-200 hover:border-gray-300'
@@ -211,7 +211,7 @@ export function AmbulanceBookingFlow({ vendorId, customerPhone, onSuccess, onCan
         {/* Patient Details */}
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-0">
               Patient Name *
             </label>
             <input
@@ -219,24 +219,24 @@ export function AmbulanceBookingFlow({ vendorId, customerPhone, onSuccess, onCan
               value={patientName}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPatientName(e.target.value)}
               required
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+              className="w-full px-4 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-0">
               Age
             </label>
             <input
               type="number"
               value={patientAge}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPatientAge(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+              className="w-full px-4 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
             />
           </div>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label className="block text-sm font-medium text-gray-700 mb-0">
             Medical Condition
           </label>
           <textarea
@@ -244,22 +244,22 @@ export function AmbulanceBookingFlow({ vendorId, customerPhone, onSuccess, onCan
             onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setCondition(e.target.value)}
             rows={3}
             placeholder="Describe the patient's condition..."
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+            className="w-full px-4 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
           />
         </div>
 
         {/* Urgency Level */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label className="block text-sm font-medium text-gray-700 mb-0">
             Urgency Level
           </label>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-3 gap-0">
             {(['critical', 'urgent', 'normal'] as const).map((level) => (
               <button
                 key={level}
                 type="button"
                 onClick={() => setUrgency(level)}
-                className={`px-4 py-3 rounded-lg border-2 transition ${
+                className={`px-4 py-0 rounded-lg border-2 transition ${
                   urgency === level
                     ? level === 'critical'
                       ? 'border-red-500 bg-red-50 text-red-700'
@@ -277,51 +277,51 @@ export function AmbulanceBookingFlow({ vendorId, customerPhone, onSuccess, onCan
 
         {/* Addresses */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label className="block text-sm font-medium text-gray-700 mb-0">
             Pickup Address *
           </label>
           <div className="relative">
-            <MapPin className="absolute left-3 top-3 text-gray-400" size={20} />
+            <MapPin className="absolute left-3 top-0 text-gray-400" size={20} />
             <input
               type="text"
               value={pickupAddress}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPickupAddress(e.target.value)}
               required
               placeholder="Enter pickup location"
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+              className="w-full pl-0 pr-4 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
             />
           </div>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label className="block text-sm font-medium text-gray-700 mb-0">
             Drop-off Address (if different)
           </label>
           <div className="relative">
-            <MapPin className="absolute left-3 top-3 text-gray-400" size={20} />
+            <MapPin className="absolute left-3 top-0 text-gray-400" size={20} />
             <input
               type="text"
               value={dropAddress}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDropAddress(e.target.value)}
               placeholder="Enter drop-off location (optional)"
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+              className="w-full pl-0 pr-4 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
             />
           </div>
         </div>
 
         {/* Contact */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label className="block text-sm font-medium text-gray-700 mb-0">
             Contact Phone *
           </label>
           <div className="relative">
-            <Phone className="absolute left-3 top-3 text-gray-400" size={20} />
+            <Phone className="absolute left-3 top-1 text-gray-400" size={20} />
             <input
               type="tel"
               value={contactPhone}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setContactPhone(e.target.value)}
               required
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+              className="w-full pl-0 pr-4 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
             />
           </div>
         </div>
@@ -329,7 +329,7 @@ export function AmbulanceBookingFlow({ vendorId, customerPhone, onSuccess, onCan
         {/* Vehicle Selection */}
         {vehicles.length > 0 ? (
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-0">
               Select Ambulance *
             </label>
             <div className="space-y-3">
@@ -346,24 +346,24 @@ export function AmbulanceBookingFlow({ vendorId, customerPhone, onSuccess, onCan
                 >
                   <div className="flex items-center justify-between">
                     <div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-0">
                         <span className="font-semibold text-gray-900">
                           {vehicle.vehicle_number}
                         </span>
-                        <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs">
+                        <span className="px-0 py-0 bg-blue-100 text-blue-700 rounded text-xs">
                           {getVehicleTypeLabel(vehicle.vehicle_type)}
                         </span>
                       </div>
-                      <div className="mt-2 flex items-center gap-4 text-sm text-gray-600">
-                        <span className="flex items-center gap-1">
+                      <div className="mt-0 flex items-center gap-4 text-sm text-gray-600">
+                        <span className="flex items-center gap-0">
                           <User size={14} />
                           Capacity: {vehicle.capacity}
                         </span>
-                        <span className="flex items-center gap-1">
+                        <span className="flex items-center gap-0">
                           ⭐ {vehicle.rating.toFixed(1)}
                         </span>
                         {vehicle.estimated_arrival && (
-                          <span className="flex items-center gap-1">
+                          <span className="flex items-center gap-0">
                             <Clock size={14} />
                             ETA: {vehicle.estimated_arrival} min
                           </span>
@@ -393,12 +393,12 @@ export function AmbulanceBookingFlow({ vendorId, customerPhone, onSuccess, onCan
         )}
 
         {/* Actions */}
-        <div className="flex gap-3">
+        <div className="flex gap-0">
           {onCancel && (
             <button
               type="button"
               onClick={onCancel}
-              className="flex-1 px-6 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+              className="flex-1 px-0 py-0 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
             >
               Cancel
             </button>
@@ -406,7 +406,7 @@ export function AmbulanceBookingFlow({ vendorId, customerPhone, onSuccess, onCan
           <button
             type="submit"
             disabled={processing || !selectedVehicle || !pickupAddress}
-            className="flex-1 px-6 py-3 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+            className="flex-1 px-0 py-0 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
           >
             {processing ? 'Booking...' : 'Book Ambulance'}
           </button>

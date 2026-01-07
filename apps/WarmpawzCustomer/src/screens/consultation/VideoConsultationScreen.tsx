@@ -245,7 +245,7 @@ export function VideoConsultationScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: colors.black,
   },
   videoContainer: {
     flex: 1,
@@ -259,7 +259,7 @@ const styles = StyleSheet.create({
   connectingText: {
     marginTop: spacing.md,
     fontSize: 16,
-    color: '#fff',
+    color: colors.white,
   },
   videoView: {
     flex: 1,
@@ -276,7 +276,7 @@ const styles = StyleSheet.create({
   },
   videoPlaceholderLabel: {
     fontSize: 18,
-    color: '#fff',
+    color: colors.white,
   },
   videoOffOverlay: {
     position: 'absolute',
@@ -290,7 +290,7 @@ const styles = StyleSheet.create({
   },
   videoOffText: {
     fontSize: 24,
-    color: '#fff',
+    color: colors.white,
   },
   endedView: {
     flex: 1,
@@ -300,7 +300,7 @@ const styles = StyleSheet.create({
   },
   endedText: {
     fontSize: 24,
-    color: '#fff',
+    color: colors.white,
   },
   callInfo: {
     padding: spacing.md,
@@ -310,7 +310,7 @@ const styles = StyleSheet.create({
   callDuration: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#fff',
+    color: colors.white,
     marginBottom: spacing.xs,
   },
   callStatus: {
@@ -337,10 +337,10 @@ const styles = StyleSheet.create({
   },
   controlButtonLabel: {
     fontSize: 12,
-    color: '#fff',
+    color: colors.white,
   },
   endCallButton: {
-    backgroundColor: '#dc2626',
+    backgroundColor: colors.error,
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.md,
     borderRadius: borderRadius.full,
@@ -352,7 +352,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   endCallButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 16,
     fontWeight: 'bold',
   },

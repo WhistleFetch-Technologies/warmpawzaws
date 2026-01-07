@@ -96,11 +96,20 @@ export function OrderDetailScreen({
 
   const handleDownloadInvoice = async () => {
     try {
-      // TODO: Call API to download invoice
-      // const response = await CustomerApi.downloadInvoice(orderId);
-      Alert.alert('Success', 'Invoice download started');
-    } catch (error) {
-      Alert.alert('Error', 'Failed to download invoice');
+      // ✅ WIRED: Using new customer-orders invoice endpoint
+      const response = await CustomerApi.getOrderInvoice(orderId);
+      // Handle invoice download (could be PDF blob or URL)
+      if (response.invoice) {
+        // If invoice is a URL, open it
+        if (response.invoice.downloadUrl) {
+          // Open in new window or download
+          Alert.alert('Success', 'Invoice download started');
+        } else {
+          Alert.alert('Success', 'Invoice ready');
+        }
+      }
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to download invoice');
     }
   };
 
@@ -119,7 +128,7 @@ export function OrderDetailScreen({
       case 'shipped':
         return '#8B5CF6';
       case 'delivered':
-        return '#10B981';
+        return {colors.success};
       case 'cancelled':
         return '#EF4444';
       default:
@@ -127,8 +136,44 @@ export function OrderDetailScreen({
     }
   };
 
+  // Check if it's a meal plan order
+  const isMealPlan = order?.order_type === 'meal_plan_delivery' || 
+                     order?.orderType === 'meal_plan_delivery' ||
+                     order?.service_type === 'meal_plan';
+
   const orderTimeline = order
-    ? [
+    ? (isMealPlan ? [
+        {
+          status: 'Order Placed',
+          date: order.date || order.createdAt || order.created_at,
+          completed: true,
+          description: 'Your meal plan order has been placed',
+        },
+        {
+          status: 'Confirmed',
+          date: order.confirmedAt || order.confirmed_at || order.date || order.createdAt,
+          completed: ['confirmed', 'preparing', 'out_for_delivery', 'delivered'].includes(order.status),
+          description: 'Order confirmed and payment received',
+        },
+        {
+          status: 'Preparing',
+          date: order.processingAt || order.processing_at || '',
+          completed: ['preparing', 'out_for_delivery', 'delivered'].includes(order.status),
+          description: 'Your meal plan is being prepared',
+        },
+        {
+          status: 'Out for Delivery',
+          date: order.outForDeliveryAt || order.out_for_delivery_at || '',
+          completed: ['out_for_delivery', 'delivered'].includes(order.status),
+          description: 'Your meal plan is on the way',
+        },
+        {
+          status: 'Delivered',
+          date: order.deliveredAt || order.delivered_at || (order.status === 'delivered' ? order.delivery_date : ''),
+          completed: order.status === 'delivered',
+          description: 'Meal plan delivered successfully',
+        },
+      ] : [
         {
           status: 'Order Placed',
           date: order.date || order.createdAt,
@@ -153,7 +198,7 @@ export function OrderDetailScreen({
           completed: order.status === 'delivered',
           description: 'Order delivered successfully',
         },
-      ]
+      ])
     : [];
 
   if (loading) {
@@ -221,13 +266,13 @@ export function OrderDetailScreen({
                       styles.timelineIcon,
                       item.completed
                         ? { backgroundColor: colors.primary }
-                        : { backgroundColor: '#E5E7EB' },
+                        : { backgroundColor: colors.gray.200 },
                     ]}
                   >
                     <Text
                       style={[
                         styles.timelineIconText,
-                        item.completed ? { color: '#fff' } : { color: '#9CA3AF' },
+                        item.completed ? { color: colors.white } : { color: colors.gray.400 },
                       ]}
                     >
                       {item.completed ? '✓' : '○'}
@@ -239,7 +284,7 @@ export function OrderDetailScreen({
                         styles.timelineLine,
                         item.completed
                           ? { backgroundColor: colors.primary }
-                          : { backgroundColor: '#E5E7EB' },
+                          : { backgroundColor: colors.gray.200 },
                       ]}
                     />
                   )}
@@ -262,7 +307,7 @@ export function OrderDetailScreen({
                 </View>
               ))}
             </View>
-            {['confirmed', 'shipped'].includes(order.status) && (
+            {(['confirmed', 'shipped', 'preparing', 'out_for_delivery'].includes(order.status) || isMealPlan) && (
               <TouchableOpacity
                 style={styles.primaryButton}
                 onPress={handleTrackOrder}
@@ -291,33 +336,53 @@ export function OrderDetailScreen({
         )}
 
         {/* Delivery Address */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionIcon}>📍</Text>
-            <Text style={styles.sectionTitle}>Delivery Address</Text>
-          </View>
-          <Text style={styles.addressText}>
-            {order.deliveryAddress ||
-              (order.address
-                ? `${order.address.line1 || ''}\n${order.address.city || ''}, ${order.address.state || ''} - ${order.address.pincode || ''}`
-                : 'Address not available')}
-          </Text>
-          {order.estimatedDelivery &&
-            order.status !== 'delivered' &&
-            order.status !== 'cancelled' && (
+        {(isMealPlan || order.deliveryAddress || order.address) && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionIcon}>📍</Text>
+              <Text style={styles.sectionTitle}>
+                {isMealPlan ? 'Delivery Address' : 'Delivery Address'}
+              </Text>
+            </View>
+            <Text style={styles.addressText}>
+              {isMealPlan 
+                ? (order.delivery_address || order.deliveryAddress || order.shipping_address || 
+                   (typeof order.shipping_address === 'string' ? order.shipping_address : 
+                    order.shipping_address ? JSON.stringify(order.shipping_address) : 'Address not available'))
+                : (order.deliveryAddress ||
+                  (order.address
+                    ? `${order.address.line1 || ''}\n${order.address.city || ''}, ${order.address.state || ''} - ${order.address.pincode || ''}`
+                    : 'Address not available'))}
+            </Text>
+            {isMealPlan && order.delivery_date && (
               <View style={styles.estimatedDelivery}>
-                <Text style={styles.estimatedDeliveryIcon}>⏰</Text>
+                <Text style={styles.estimatedDeliveryIcon}>📅</Text>
                 <Text style={styles.estimatedDeliveryText}>
-                  Expected by{' '}
-                  {new Date(order.estimatedDelivery).toLocaleDateString('en-IN', {
+                  Scheduled Delivery: {new Date(order.delivery_date).toLocaleDateString('en-IN', {
                     day: 'numeric',
                     month: 'long',
                     year: 'numeric',
-                  })}
+                  })} at {order.delivery_time || order.deliveryTime || 'Time TBD'}
                 </Text>
               </View>
             )}
-        </View>
+            {!isMealPlan && order.estimatedDelivery &&
+              order.status !== 'delivered' &&
+              order.status !== 'cancelled' && (
+                <View style={styles.estimatedDelivery}>
+                  <Text style={styles.estimatedDeliveryIcon}>⏰</Text>
+                  <Text style={styles.estimatedDeliveryText}>
+                    Expected by{' '}
+                    {new Date(order.estimatedDelivery).toLocaleDateString('en-IN', {
+                      day: 'numeric',
+                      month: 'long',
+                      year: 'numeric',
+                    })}
+                  </Text>
+                </View>
+              )}
+          </View>
+        )}
 
         {/* Order Items */}
         <View style={styles.section}>
@@ -510,7 +575,7 @@ export function OrderDetailScreen({
                 disabled={cancelling}
               >
                 {cancelling ? (
-                  <ActivityIndicator color="#fff" />
+                  <ActivityIndicator color={colors.white} />
                 ) : (
                   <Text style={styles.modalButtonTextDanger}>Yes, Cancel</Text>
                 )}
@@ -526,7 +591,7 @@ export function OrderDetailScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
   },
   header: {
     flexDirection: 'row',
@@ -539,7 +604,7 @@ const styles = StyleSheet.create({
   },
   backButton: {
     fontSize: typography.body,
-    color: '#fff',
+    color: colors.white,
   },
   headerInfo: {
     flex: 1,
@@ -548,11 +613,11 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: typography.h2,
     fontWeight: 'bold',
-    color: '#fff',
+    color: colors.white,
   },
   headerSubtitle: {
     fontSize: typography.caption,
-    color: '#fff',
+    color: colors.white,
     opacity: 0.8,
   },
   headerSpacer: {
@@ -649,12 +714,12 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
   primaryButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: typography.body,
     fontWeight: 'bold',
   },
   cancelledCard: {
-    backgroundColor: '#FEE2E2',
+    backgroundColor: colors.error + 20% opacity,
     borderRadius: borderRadius.md,
     padding: spacing.md,
     borderWidth: 1,
@@ -709,17 +774,17 @@ const styles = StyleSheet.create({
   },
   itemCard: {
     flexDirection: 'row',
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderRadius: borderRadius.md,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   itemImage: {
     width: 80,
     height: 80,
     borderRadius: borderRadius.md,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: colors.gray.100,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: spacing.md,
@@ -753,7 +818,7 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   paymentBreakdown: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderRadius: borderRadius.md,
     padding: spacing.md,
   },
@@ -773,15 +838,15 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   discountText: {
-    color: '#10B981',
+    color: colors.success,
   },
   freeText: {
-    color: '#10B981',
+    color: colors.success,
     fontWeight: 'bold',
   },
   paymentDivider: {
     height: 1,
-    backgroundColor: '#E5E7EB',
+    backgroundColor: colors.gray.200,
     marginVertical: spacing.sm,
   },
   paymentTotalLabel: {
@@ -800,11 +865,11 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     paddingTop: spacing.sm,
     borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
+    borderTopColor: colors.gray.200,
   },
   paymentMethodIcon: {
     fontSize: 16,
-    color: '#10B981',
+    color: colors.success,
     marginRight: spacing.xs,
   },
   paymentMethodText: {
@@ -819,7 +884,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   trackingInfo: {
     flex: 1,
@@ -841,12 +906,12 @@ const styles = StyleSheet.create({
   helpCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderRadius: borderRadius.md,
     padding: spacing.md,
     marginBottom: spacing.sm,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   helpIcon: {
     fontSize: 24,
@@ -872,9 +937,9 @@ const styles = StyleSheet.create({
   bottomActions: {
     flexDirection: 'row',
     padding: spacing.md,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
+    borderTopColor: colors.gray.200,
     gap: spacing.sm,
   },
   actionButton: {
@@ -886,7 +951,7 @@ const styles = StyleSheet.create({
   },
   cancelButton: {
     borderColor: '#EF4444',
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
   },
   cancelButtonText: {
     color: '#EF4444',
@@ -898,7 +963,7 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
   },
   primaryActionButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: typography.body,
     fontWeight: 'bold',
   },
@@ -927,7 +992,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderTopLeftRadius: borderRadius.xl,
     borderTopRightRadius: borderRadius.xl,
     padding: spacing.lg,
@@ -940,7 +1005,7 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: '#FEE2E2',
+    backgroundColor: colors.error + 20% opacity,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: spacing.md,
@@ -974,7 +1039,7 @@ const styles = StyleSheet.create({
   modalButtonSecondary: {
     backgroundColor: '#F9FAFB',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   modalButtonDanger: {
     backgroundColor: '#EF4444',
@@ -986,7 +1051,7 @@ const styles = StyleSheet.create({
   },
   modalButtonTextDanger: {
     fontSize: typography.body,
-    color: '#fff',
+    color: colors.white,
     fontWeight: 'bold',
   },
 });

@@ -187,7 +187,30 @@ export function registerOrderManagementEndpoints(app: Hono) {
         }
       );
 
-      // TODO: Process refund if payment was made
+      // Process refund if payment was made
+      try {
+        const payments = await select('payments', { order_id: orderId, payment_status: 'completed' });
+        if (payments.length > 0) {
+          const payment = payments[0];
+          
+          // Create refund request
+          const { insert } = require('../database/rds-connection');
+          await insert('refunds', {
+            payment_id: payment.id,
+            order_id: orderId,
+            amount: payment.amount,
+            refund_reason: `Order cancelled: ${reason || 'Customer request'}`,
+            refund_status: 'pending',
+            requested_by: 'system',
+            created_at: new Date().toISOString(),
+          });
+          
+          console.log(`✅ Refund request created for cancelled order ${orderId}`);
+        }
+      } catch (error: any) {
+        console.error('Error processing refund for cancelled order:', error);
+        // Don't fail the cancellation if refund processing fails
+      }
 
       return c.json({
         success: true,

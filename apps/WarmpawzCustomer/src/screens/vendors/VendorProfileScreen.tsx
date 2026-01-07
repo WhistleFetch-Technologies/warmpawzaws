@@ -268,7 +268,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -308,7 +308,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   vendorHeader: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
@@ -331,7 +331,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.sm,
   },
   verifiedText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 10,
     fontWeight: 'bold',
   },
@@ -351,7 +351,7 @@ const styles = StyleSheet.create({
   },
   tabs: {
     flexDirection: 'row',
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -396,7 +396,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   specialtyChip: {
-    backgroundColor: '#f3f4f6',
+    backgroundColor: colors.gray.100,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: borderRadius.full,
@@ -412,7 +412,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   serviceCard: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: spacing.md,
@@ -464,7 +464,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
   },
   bookButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 14,
     fontWeight: '600',
   },

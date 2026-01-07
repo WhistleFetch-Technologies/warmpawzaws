@@ -62,7 +62,7 @@ export function IncomingBookingsPanel({ vendorId, onUpdate }: IncomingBookingsPa
 
   if (loading && bookings.length === 0) {
     return (
-      <div className="flex items-center justify-center py-20">
+      <div className="flex items-center justify-center py-00">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#FF8C42]"></div>
       </div>
     );
@@ -74,7 +74,7 @@ export function IncomingBookingsPanel({ vendorId, onUpdate }: IncomingBookingsPa
         <p className="text-red-600 mb-4">{error}</p>
         <button
           onClick={loadBookings}
-          className="px-4 py-2 bg-[#FF8C42] text-white rounded-lg"
+          className="px-4 py-0 bg-[#FF8C42] text-white rounded-lg"
         >
           Retry
         </button>
@@ -98,10 +98,10 @@ export function IncomingBookingsPanel({ vendorId, onUpdate }: IncomingBookingsPa
           </p>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex gap-0">
           <button
             onClick={() => setFilter('pending')}
-            className={`px-3 py-1 rounded-lg text-sm font-medium ${
+            className={`px-0 py-0 rounded-lg text-sm font-medium ${
               filter === 'pending' ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-600'
             }`}
           >
@@ -109,7 +109,7 @@ export function IncomingBookingsPanel({ vendorId, onUpdate }: IncomingBookingsPa
           </button>
           <button
             onClick={() => setFilter('today')}
-            className={`px-3 py-1 rounded-lg text-sm font-medium ${
+            className={`px-0 py-0 rounded-lg text-sm font-medium ${
               filter === 'today' ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-600'
             }`}
           >
@@ -117,7 +117,7 @@ export function IncomingBookingsPanel({ vendorId, onUpdate }: IncomingBookingsPa
           </button>
           <button
             onClick={() => setFilter('all')}
-            className={`px-3 py-1 rounded-lg text-sm font-medium ${
+            className={`px-0 py-0 rounded-lg text-sm font-medium ${
               filter === 'all' ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-600'
             }`}
           >
@@ -128,7 +128,7 @@ export function IncomingBookingsPanel({ vendorId, onUpdate }: IncomingBookingsPa
 
       {bookings.length === 0 ? (
         <div className="text-center py-8 text-gray-500">
-          <Calendar className="w-12 h-12 mx-auto mb-2 text-gray-400" />
+          <Calendar className="w-12 h-12 mx-auto mb-0 text-gray-400" />
           <p className="font-medium">No booking requests</p>
           <p className="text-sm">
             {filter === 'pending'
@@ -140,18 +140,18 @@ export function IncomingBookingsPanel({ vendorId, onUpdate }: IncomingBookingsPa
         <div className="space-y-3">
           {bookings.map((booking) => (
             <div key={booking.id} className="border border-gray-200 rounded-xl p-4">
-              <div className="flex items-start justify-between mb-3">
+              <div className="flex items-start justify-between mb-0">
                 <div className="flex-1">
                   <h3 className="font-semibold text-gray-900">{booking.customer?.name || booking.customer_name}</h3>
                   <p className="text-sm text-gray-600">{booking.service?.name || booking.service_name}</p>
-                  <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
+                  <div className="flex items-center gap-0 mt-0 text-xs text-gray-500">
                     <Calendar className="w-3 h-3" />
                     <span>{new Date(booking.booking_date).toLocaleDateString()}</span>
-                    <Clock className="w-3 h-3 ml-2" />
+                    <Clock className="w-3 h-3 ml-0" />
                     <span>{booking.booking_time}</span>
                   </div>
                 </div>
-                <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                <span className={`px-0 py-0 rounded-full text-xs font-medium ${
                   booking.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
                   booking.status === 'confirmed' ? 'bg-green-100 text-green-700' :
                   'bg-red-100 text-red-700'
@@ -161,17 +161,17 @@ export function IncomingBookingsPanel({ vendorId, onUpdate }: IncomingBookingsPa
               </div>
 
               {booking.status === 'pending' && (
-                <div className="flex gap-2">
+                <div className="flex gap-0">
                   <button
                     onClick={() => handleAcceptClick(booking)}
-                    className="flex-1 px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2"
+                    className="flex-1 px-4 py-0 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-0"
                   >
                     <Check className="w-4 h-4" />
                     Accept
                   </button>
                   <button
                     onClick={() => handleDeclineClick(booking)}
-                    className="flex-1 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2"
+                    className="flex-1 px-4 py-0 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-0"
                   >
                     <X className="w-4 h-4" />
                     Decline

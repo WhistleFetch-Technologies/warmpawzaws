@@ -199,7 +199,40 @@ class CreateRefundHandler extends BaseHandler {
           [refund.id]
         );
 
-        // TODO: Integrate with Razorpay refund API
+        // Integrate with Razorpay refund API
+        try {
+          const { getRazorpayClient } = require('../utils/razorpay-client');
+          const razorpay = getRazorpayClient();
+          
+          // Get payment details
+          const payments = await select('payments', { id: refund.payment_id });
+          if (payments.length > 0 && payments[0].razorpay_payment_id) {
+            const refundResult = await razorpay.payments.refund({
+              payment_id: payments[0].razorpay_payment_id,
+              amount: Math.round(refund.amount * 100), // Convert to paise
+            });
+            
+            // Update refund with Razorpay refund ID
+            await client.query(
+              `UPDATE refunds 
+               SET razorpay_refund_id = $1, refund_status = 'processed', processed_at = NOW(), updated_at = NOW()
+               WHERE id = $2`,
+              [refundResult.id, refund.id]
+            );
+            
+            console.log(`✅ Razorpay refund processed: ${refundResult.id}`);
+          } else {
+            console.warn(`⚠️ Payment not found or missing Razorpay payment ID for refund ${refund.id}`);
+          }
+        } catch (error: any) {
+          console.error('Error processing Razorpay refund:', error);
+          // Update refund status to failed
+          await client.query(
+            `UPDATE refunds SET refund_status = 'failed', updated_at = NOW() WHERE id = $1`,
+            [refund.id]
+          );
+          throw error;
+        }
       }
 
       return { refund, newPaymentStatus };
@@ -287,7 +320,40 @@ class ApproveRefundHandler extends BaseHandler {
           [refundId]
         );
 
-        // TODO: Integrate with Razorpay refund API
+        // Integrate with Razorpay refund API
+        try {
+          const { getRazorpayClient } = require('../utils/razorpay-client');
+          const razorpay = getRazorpayClient();
+          
+          // Get payment details
+          const payments = await select('payments', { id: refund.payment_id });
+          if (payments.length > 0 && payments[0].razorpay_payment_id) {
+            const refundResult = await razorpay.payments.refund({
+              payment_id: payments[0].razorpay_payment_id,
+              amount: Math.round(refund.amount * 100), // Convert to paise
+            });
+            
+            // Update refund with Razorpay refund ID
+            await client.query(
+              `UPDATE refunds 
+               SET razorpay_refund_id = $1, refund_status = 'processed', processed_at = NOW(), updated_at = NOW()
+               WHERE id = $2`,
+              [refundResult.id, refund.id]
+            );
+            
+            console.log(`✅ Razorpay refund processed: ${refundResult.id}`);
+          } else {
+            console.warn(`⚠️ Payment not found or missing Razorpay payment ID for refund ${refund.id}`);
+          }
+        } catch (error: any) {
+          console.error('Error processing Razorpay refund:', error);
+          // Update refund status to failed
+          await client.query(
+            `UPDATE refunds SET refund_status = 'failed', updated_at = NOW() WHERE id = $1`,
+            [refund.id]
+          );
+          throw error;
+        }
       } else {
         // If rejected, revert payment status
         await client.query(

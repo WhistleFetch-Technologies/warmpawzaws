@@ -289,7 +289,7 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <Clock className="w-8 h-8 text-orange-500 animate-spin mx-auto mb-2" />
+          <Clock className="w-8 h-8 text-orange-500 animate-spin mx-auto mb-0" />
           <p className="text-gray-600">Loading schedule...</p>
         </div>
       </div>
@@ -300,11 +300,11 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="w-full max-w-[430px] mx-auto bg-white min-h-screen pb-24">
+      <div className="w-full max-w-[430px] mx-auto bg-white min-h-screen pb-04">
         <div className="sticky top-0 z-10 bg-white border-b border-gray-200">
           <div className="p-4">
             <div className="flex items-center justify-between mb-4">
-              <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+              <button onClick={onBack} className="p-0 hover:bg-gray-100 rounded-lg transition-colors">
                 <ChevronLeft className="w-6 h-6" />
               </button>
               <h1 className="flex-1 text-center font-semibold text-gray-900">Advanced Schedule</h1>
@@ -313,7 +313,7 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
 
             <div className="p-4 bg-gradient-to-r from-orange-50 to-red-50 rounded-xl border border-orange-200">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-0">
                   <div className={`w-12 h-12 rounded-full flex items-center justify-center ${isOnline ? 'bg-green-500' : 'bg-red-500'}`}>
                     <Power className="w-6 h-6 text-white" />
                   </div>
@@ -332,7 +332,7 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
                     isOnline ? 'bg-green-500' : 'bg-gray-300'
                   }`}
                 >
-                  <div className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-transform ${
+                  <div className={`absolute top-0 w-6 h-6 bg-white rounded-full transition-transform ${
                     isOnline ? 'translate-x-9' : 'translate-x-1'
                   }`} />
                 </button>
@@ -341,13 +341,13 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
           </div>
         </div>
 
-        <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
-          <div className="flex gap-2 overflow-x-auto pb-2">
+        <div className="px-4 py-0 bg-gray-50 border-b border-gray-200">
+          <div className="flex gap-0 overflow-x-auto pb-0">
             {DAYS.map(day => (
               <button
                 key={day.value}
                 onClick={() => setSelectedDay(day.value)}
-                className={`flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                className={`flex-shrink-0 px-4 py-0 rounded-lg text-sm font-medium transition-colors ${
                   selectedDay === day.value
                     ? 'bg-orange-500 text-white'
                     : 'bg-white text-gray-700 border border-gray-300'
@@ -364,21 +364,21 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
             <h2 className="font-semibold text-gray-900">{DAYS.find(d => d.value === selectedDay)?.label} Schedule</h2>
             <button
               onClick={copyToAllDays}
-              className="bg-blue-500 hover:bg-blue-600 text-white h-8 px-3 text-xs rounded-lg"
+              className="bg-blue-500 hover:bg-blue-600 text-white h-8 px-0 text-xs rounded-lg"
             >
               Copy to All Days
             </button>
           </div>
 
-          <div className="mb-6 p-4 bg-blue-50 rounded-xl border border-blue-200">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
+          <div className="mb-0 p-4 bg-blue-50 rounded-xl border border-blue-200">
+            <div className="flex items-center justify-between mb-0">
+              <div className="flex items-center gap-0">
                 <Settings className="w-5 h-5 text-blue-600" />
                 <h3 className="font-semibold text-gray-900">Service Configuration</h3>
               </div>
               <button
                 onClick={() => setShowServiceConfigModal(true)}
-                className="bg-blue-600 hover:bg-blue-700 text-white h-8 px-3 text-xs rounded-lg flex items-center gap-1"
+                className="bg-blue-600 hover:bg-blue-700 text-white h-8 px-0 text-xs rounded-lg flex items-center gap-0"
               >
                 <Plus className="w-3 h-3" />
                 Add Service
@@ -386,25 +386,25 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
             </div>
 
             {currentDayAvail && currentDayAvail.serviceConfigs.length === 0 ? (
-              <div className="text-center py-6 text-gray-500 text-sm">
+              <div className="text-center py-0 text-gray-500 text-sm">
                 No service configurations yet. Add service types to control slot durations and areas.
               </div>
             ) : (
               <div className="space-y-2">
                 {currentDayAvail?.serviceConfigs.map((config) => (
-                  <div key={config.serviceStyle} className="p-3 bg-white rounded-lg border border-blue-200">
+                  <div key={config.serviceStyle} className="p-0 bg-white rounded-lg border border-blue-200">
                     <div className="flex items-center justify-between">
                       <div className="flex-1">
                         <div className="font-medium text-gray-900 text-sm">
                           {SERVICE_STYLE_LABELS[config.serviceStyle] || config.serviceStyle}
                         </div>
-                        <div className="flex items-center gap-3 mt-1 text-xs text-gray-600">
-                          <span className="flex items-center gap-1">
+                        <div className="flex items-center gap-0 mt-0 text-xs text-gray-600">
+                          <span className="flex items-center gap-0">
                             <Clock className="w-3 h-3" />
                             {config.slotDuration} min slots
                           </span>
                           {config.serviceArea && (
-                            <span className="flex items-center gap-1">
+                            <span className="flex items-center gap-0">
                               <MapPin className="w-3 h-3" />
                               {config.serviceArea} km radius
                             </span>
@@ -413,7 +413,7 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
                       </div>
                       <button
                         onClick={() => removeServiceConfig(selectedDay, config.serviceStyle)}
-                        className="p-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition-colors"
+                        className="p-0 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition-colors"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -424,12 +424,12 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
             )}
           </div>
 
-          <div className="mb-6">
-            <div className="flex items-center justify-between mb-3">
+          <div className="mb-0">
+            <div className="flex items-center justify-between mb-0">
               <h3 className="font-semibold text-gray-900">Time Windows</h3>
               <button
                 onClick={() => setShowAddWindowModal(true)}
-                className="bg-orange-500 hover:bg-orange-600 text-white h-8 px-3 text-xs rounded-lg flex items-center gap-1"
+                className="bg-orange-500 hover:bg-orange-600 text-white h-8 px-0 text-xs rounded-lg flex items-center gap-0"
               >
                 <Plus className="w-3 h-3" />
                 Add Window
@@ -438,8 +438,8 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
 
             {currentDayAvail && currentDayAvail.timeWindows.length === 0 ? (
               <div className="text-center py-12 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300">
-                <Calendar className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                <p className="text-gray-600 mb-2">No time windows set</p>
+                <Calendar className="w-12 h-12 text-gray-400 mx-auto mb-0" />
+                <p className="text-gray-600 mb-0">No time windows set</p>
                 <p className="text-xs text-gray-500">Add time windows to define when you're available</p>
               </div>
             ) : (
@@ -453,17 +453,17 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
                         : 'bg-gray-50 border-gray-200 opacity-60'
                     }`}
                   >
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
+                    <div className="flex items-center justify-between mb-0">
+                      <div className="flex items-center gap-0">
                         <Clock className="w-5 h-5 text-orange-500" />
                         <span className="font-semibold text-gray-900">
                           {window.startTime} - {window.endTime}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-0">
                         <button
                           onClick={() => toggleTimeWindow(selectedDay, window.id)}
-                          className={`p-2 rounded-lg transition-colors ${
+                          className={`p-0 rounded-lg transition-colors ${
                             window.isEnabled ? 'bg-green-100 text-green-600' : 'bg-gray-200 text-gray-400'
                           }`}
                         >
@@ -471,7 +471,7 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
                         </button>
                         <button
                           onClick={() => removeTimeWindow(selectedDay, window.id)}
-                          className="p-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition-colors"
+                          className="p-0 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition-colors"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -479,8 +479,8 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
                     </div>
 
                     {currentDayAvail.serviceConfigs.length > 0 && window.isEnabled && (
-                      <div className="mt-3 pt-3 border-t border-gray-200">
-                        <div className="text-xs text-gray-500 mb-2">Slots will be generated for:</div>
+                      <div className="mt-0 pt-0 border-t border-gray-200">
+                        <div className="text-xs text-gray-500 mb-0">Slots will be generated for:</div>
                         <div className="space-y-1">
                           {currentDayAvail.serviceConfigs.map(config => {
                             const slots = calculateSlots(window.startTime, window.endTime, config.slotDuration);
@@ -501,10 +501,10 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
           </div>
 
           <div className="p-4 bg-green-50 rounded-xl border border-green-200">
-            <div className="flex items-start gap-2">
+            <div className="flex items-start gap-0">
               <AlertCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
               <div className="text-sm text-gray-700">
-                <p className="font-medium mb-1">How it works:</p>
+                <p className="font-medium mb-0">How it works:</p>
                 <ul className="space-y-1 text-xs text-gray-600">
                   <li>• Configure service types with slot durations</li>
                   <li>• Add time windows (e.g., 9 AM - 5 PM)</li>
@@ -522,7 +522,7 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
             <button
               onClick={saveAvailability}
               disabled={saving}
-              className="w-full bg-orange-500 hover:bg-orange-600 text-white h-12 rounded-lg flex items-center justify-center gap-2 disabled:opacity-50"
+              className="w-full bg-orange-500 hover:bg-orange-600 text-white h-12 rounded-lg flex items-center justify-center gap-0 disabled:opacity-50"
             >
               {saving ? (
                 <>
@@ -584,15 +584,15 @@ function AddTimeWindowModal({
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl w-full max-w-[400px]">
-        <div className="p-6">
+        <div className="p-0">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Add Time Window</h2>
 
           <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Start Time</label>
+            <label className="block text-sm font-medium text-gray-700 mb-0">Start Time</label>
             <select
               value={newTimeWindow.startTime}
               onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setNewTimeWindow({ ...newTimeWindow, startTime: e.target.value })}
-              className="w-full p-3 border border-gray-300 rounded-lg"
+              className="w-full p-0 border border-gray-300 rounded-lg"
             >
               {TIME_OPTIONS.map(time => (
                 <option key={time} value={time}>{time}</option>
@@ -600,12 +600,12 @@ function AddTimeWindowModal({
             </select>
           </div>
 
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">End Time</label>
+          <div className="mb-0">
+            <label className="block text-sm font-medium text-gray-700 mb-0">End Time</label>
             <select
               value={newTimeWindow.endTime}
               onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setNewTimeWindow({ ...newTimeWindow, endTime: e.target.value })}
-              className="w-full p-3 border border-gray-300 rounded-lg"
+              className="w-full p-0 border border-gray-300 rounded-lg"
             >
               {TIME_OPTIONS.map(time => (
                 <option key={time} value={time}>{time}</option>
@@ -613,7 +613,7 @@ function AddTimeWindowModal({
             </select>
           </div>
 
-          <div className="flex gap-3">
+          <div className="flex gap-0">
             <button
               onClick={onClose}
               className="flex-1 bg-gray-100 text-gray-700 hover:bg-gray-200 h-11 rounded-lg"
@@ -656,9 +656,9 @@ function AddServiceConfigModal({
     return (
       <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl w-full max-w-[400px]">
-          <div className="p-6">
+          <div className="p-0">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">Add Service Configuration</h2>
-            <p className="text-sm text-gray-600 mb-6">All service types have been configured for this day.</p>
+            <p className="text-sm text-gray-600 mb-0">All service types have been configured for this day.</p>
             <button
               onClick={onClose}
               className="w-full bg-gray-100 text-gray-700 hover:bg-gray-200 h-11 rounded-lg"
@@ -674,15 +674,15 @@ function AddServiceConfigModal({
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl w-full max-w-[400px] max-h-[90vh] overflow-y-auto">
-        <div className="p-6">
+        <div className="p-0">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Add Service Configuration</h2>
 
           <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Service Type</label>
+            <label className="block text-sm font-medium text-gray-700 mb-0">Service Type</label>
             <select
               value={serviceStyle}
               onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setServiceStyle(e.target.value)}
-              className="w-full p-3 border border-gray-300 rounded-lg"
+              className="w-full p-0 border border-gray-300 rounded-lg"
             >
               {availableStyles.map(style => (
                 <option key={style} value={style}>
@@ -693,11 +693,11 @@ function AddServiceConfigModal({
           </div>
 
           <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Slot Duration</label>
+            <label className="block text-sm font-medium text-gray-700 mb-0">Slot Duration</label>
             <select
               value={slotDuration}
               onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSlotDuration(Number(e.target.value))}
-              className="w-full p-3 border border-gray-300 rounded-lg"
+              className="w-full p-0 border border-gray-300 rounded-lg"
             >
               {SLOT_DURATIONS.map(duration => (
                 <option key={duration.value} value={duration.value}>
@@ -705,30 +705,30 @@ function AddServiceConfigModal({
                 </option>
               ))}
             </select>
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-xs text-gray-500 mt-0">
               Recommended: At Center (30 min), At Home (60 min), Tele (15 min)
             </p>
           </div>
 
           {serviceStyle === 'at_home' && (
-            <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Service Area (km)</label>
+            <div className="mb-0">
+              <label className="block text-sm font-medium text-gray-700 mb-0">Service Area (km)</label>
               <select
                 value={serviceArea}
                 onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setServiceArea(Number(e.target.value))}
-                className="w-full p-3 border border-gray-300 rounded-lg"
+                className="w-full p-0 border border-gray-300 rounded-lg"
               >
                 {SERVICE_AREAS.map(area => (
                   <option key={area} value={area}>{area} km</option>
                 ))}
               </select>
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-gray-500 mt-0">
                 Maximum distance for home visits
               </p>
             </div>
           )}
 
-          <div className="flex gap-3">
+          <div className="flex gap-0">
             <button
               onClick={onClose}
               className="flex-1 bg-gray-100 text-gray-700 hover:bg-gray-200 h-11 rounded-lg"

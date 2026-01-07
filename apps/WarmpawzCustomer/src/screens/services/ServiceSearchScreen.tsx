@@ -235,7 +235,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -258,14 +258,14 @@ const styles = StyleSheet.create({
   searchContainer: {
     flexDirection: 'row',
     padding: spacing.md,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
     gap: spacing.sm,
   },
   searchInput: {
     flex: 1,
-    backgroundColor: '#f3f4f6',
+    backgroundColor: colors.gray.100,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     fontSize: 16,
@@ -281,7 +281,7 @@ const styles = StyleSheet.create({
     fontSize: 20,
   },
   filtersContainer: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
@@ -309,7 +309,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: borderRadius.full,
-    backgroundColor: '#f3f4f6',
+    backgroundColor: colors.gray.100,
   },
   filterChipActive: {
     backgroundColor: colors.primary,
@@ -320,7 +320,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   filterChipTextActive: {
-    color: '#fff',
+    color: colors.white,
   },
   loadingContainer: {
     flex: 1,
@@ -331,7 +331,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   serviceCard: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: spacing.md,
@@ -383,7 +383,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
   },
   bookButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 14,
     fontWeight: '600',
   },

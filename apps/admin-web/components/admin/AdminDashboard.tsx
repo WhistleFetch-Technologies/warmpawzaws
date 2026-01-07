@@ -202,10 +202,10 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
       {/* Main Content */}
       <div className="flex-1 flex flex-col">
         {/* Top Bar */}
-        <div className="bg-white border-b px-6 py-4">
+        <div className="bg-white border-b px-0 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4 flex-1">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-0">
                 <div className="w-6 h-6 bg-gray-200 rounded"></div>
                 <div>
                   <h1 className="text-[#FF8C42]">Vendor Administration</h1>
@@ -214,22 +214,22 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
               </div>
 
               <div className="flex-1 max-w-md relative ml-8">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <Search className="absolute left-3 top-0/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                 <Input
                   placeholder="Search"
                   value={searchQuery}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
-                  className="pl-10 h-9 border-gray-300"
+                  className="pl-0 h-9 border-gray-300"
                 />
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-0">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={loadVendors}
-                className="h-9 gap-2"
+                className="h-9 gap-0"
               >
                 <RefreshCw className="w-4 h-4" />
                 Refresh
@@ -237,18 +237,18 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
 
               <Button
                 size="sm"
-                className="bg-[#FF8C42] hover:bg-[#FF7A2E] h-9 gap-2"
+                className="bg-[#FF8C42] hover:bg-[#FF7A2E] h-9 gap-0"
               >
                 <Plus className="w-4 h-4" />
                 Add Vendor
               </Button>
-              <button className="p-2 hover:bg-gray-100 rounded-lg">
+              <button className="p-0 hover:bg-gray-100 rounded-lg">
                 <Bell className="w-5 h-5 text-gray-600" />
               </button>
-              <button className="p-2 hover:bg-gray-100 rounded-lg">
+              <button className="p-0 hover:bg-gray-100 rounded-lg">
                 <MessageSquare className="w-5 h-5 text-gray-600" />
               </button>
-              <button className="p-2 hover:bg-gray-100 rounded-lg" onClick={handleSignOut}>
+              <button className="p-0 hover:bg-gray-100 rounded-lg" onClick={handleSignOut}>
                 <LogOut className="w-5 h-5 text-gray-600" />
               </button>
             </div>
@@ -256,29 +256,29 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
         </div>
 
         {/* Content Area */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-0">
           {activeView === 'vendor-admin' ? (
             <>
             {/* Stats Cards */}
-            <div className="grid grid-cols-4 gap-4 mb-6">
+            <div className="grid grid-cols-4 gap-4 mb-0">
             {/* Active Vendors */}
             <Card className="p-4 border-green-200 bg-green-50/50">
-              <div className="flex items-start justify-between mb-3">
-                <div className="p-2 bg-green-100 rounded-lg">
+              <div className="flex items-start justify-between mb-0">
+                <div className="p-0 bg-green-100 rounded-lg">
                   <Users className="w-5 h-5 text-green-600" />
                 </div>
-                <span className="text-xs text-green-600 bg-green-100 px-2 py-1 rounded">+12%</span>
+                <span className="text-xs text-green-600 bg-green-100 px-0 py-0 rounded">+12%</span>
               </div>
               <div>
-                <p className="text-gray-600 text-sm mb-1">Active Vendors</p>
-                <p className="text-2xl mb-2">{stats.approved}</p>
+                <p className="text-gray-600 text-sm mb-0">Active Vendors</p>
+                <p className="text-2xl mb-0">{stats.approved}</p>
                 {/* Mini line chart placeholder */}
                 <div className="h-8 flex items-end gap-0.5">
                   {[20, 30, 25, 40, 35, 50, 45, 55, 50, 60].map((h, i) => (
                     <div key={i} className="flex-1 bg-green-200 rounded-t" style={{ height: `${h}%` }}></div>
                   ))}
                 </div>
-                <div className="flex justify-between text-xs text-gray-500 mt-1">
+                <div className="flex justify-between text-xs text-gray-500 mt-0">
                   <span>Mon</span>
                   <span>Tue</span>
                   <span>Wed</span>
@@ -292,22 +292,22 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
 
             {/* Pending Applications */}
             <Card className="p-4 border-orange-200 bg-orange-50/50">
-              <div className="flex items-start justify-between mb-3">
-                <div className="p-2 bg-orange-100 rounded-lg">
+              <div className="flex items-start justify-between mb-0">
+                <div className="p-0 bg-orange-100 rounded-lg">
                   <Clock className="w-5 h-5 text-orange-600" />
                 </div>
-                <span className="text-xs text-orange-600 bg-orange-100 px-2 py-1 rounded">+3 today</span>
+                <span className="text-xs text-orange-600 bg-orange-100 px-0 py-0 rounded">+3 today</span>
               </div>
               <div>
-                <p className="text-gray-600 text-sm mb-1">Pending Applications</p>
-                <p className="text-2xl mb-2">{stats.pending}</p>
+                <p className="text-gray-600 text-sm mb-0">Pending Applications</p>
+                <p className="text-2xl mb-0">{stats.pending}</p>
                 {/* Mini bar chart placeholder */}
                 <div className="h-8 flex items-end gap-0.5">
                   {[40, 30, 50, 35, 60].map((h, i) => (
                     <div key={i} className="flex-1 bg-orange-300 rounded-t" style={{ height: `${h}%` }}></div>
                   ))}
                 </div>
-                <div className="flex justify-between text-xs text-gray-500 mt-1">
+                <div className="flex justify-between text-xs text-gray-500 mt-0">
                   <span>Mon</span>
                   <span>Tue</span>
                   <span>Wed</span>
@@ -319,14 +319,14 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
 
             {/* Compliance Issues */}
             <Card className="p-4 border-red-200 bg-red-50/50">
-              <div className="flex items-start justify-between mb-3">
-                <div className="p-2 bg-red-100 rounded-lg">
+              <div className="flex items-start justify-between mb-0">
+                <div className="p-0 bg-red-100 rounded-lg">
                   <AlertCircle className="w-5 h-5 text-red-600" />
                 </div>
               </div>
               <div>
-                <p className="text-gray-600 text-sm mb-1">Compliance Issues</p>
-                <div className="mb-2">
+                <p className="text-gray-600 text-sm mb-0">Compliance Issues</p>
+                <div className="mb-0">
                   <span className="text-sm">Past 7 Days</span>
                   <p className="text-xl">{stats.rejected}</p>
                   <span className="text-xs text-gray-500">Requires Attention</span>
@@ -337,7 +337,7 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
                     <div key={i} className="flex-1 bg-red-200 rounded-t" style={{ height: `${h}%` }}></div>
                   ))}
                 </div>
-                <div className="flex justify-between text-xs text-gray-500 mt-1">
+                <div className="flex justify-between text-xs text-gray-500 mt-0">
                   <span>Mo</span>
                   <span>Tu</span>
                   <span>We</span>
@@ -351,21 +351,21 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
 
             {/* Support Tickets */}
             <Card className="p-4 border-blue-200 bg-blue-50/50">
-              <div className="flex items-start justify-between mb-3">
-                <div className="p-2 bg-blue-100 rounded-lg">
+              <div className="flex items-start justify-between mb-0">
+                <div className="p-0 bg-blue-100 rounded-lg">
                   <Headphones className="w-5 h-5 text-blue-600" />
                 </div>
               </div>
               <div>
-                <p className="text-gray-600 text-sm mb-1">Support Tickets</p>
-                <p className="text-2xl mb-2">15</p>
+                <p className="text-gray-600 text-sm mb-0">Support Tickets</p>
+                <p className="text-2xl mb-0">15</p>
                 {/* Mini line chart */}
                 <div className="h-8 flex items-end gap-0.5">
                   {[40, 35, 50, 45, 55, 50, 60, 55, 65].map((h, i) => (
                     <div key={i} className="flex-1 bg-blue-200 rounded-t" style={{ height: `${h}%` }}></div>
                   ))}
                 </div>
-                <div className="flex justify-between text-xs text-gray-500 mt-1">
+                <div className="flex justify-between text-xs text-gray-500 mt-0">
                   <span>Mon</span>
                   <span>Tue</span>
                   <span>Wed</span>
@@ -380,16 +380,16 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
           </div>
 
           {/* Vendor Distribution & Quick Access */}
-          <div className="grid grid-cols-3 gap-6 mb-6">
+          <div className="grid grid-cols-3 gap-0 mb-0">
             {/* Vendor Distribution */}
             <Card className="p-4">
-              <div className="flex items-center gap-2 mb-4">
+              <div className="flex items-center gap-0 mb-4">
                 <Users className="w-5 h-5 text-blue-600" />
                 <h3>Vendor Distribution</h3>
               </div>
               
               <div className="mb-4">
-                <select className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                <select className="w-full px-0 py-0 border border-gray-300 rounded-lg text-sm">
                   <option>All Categories</option>
                 </select>
               </div>
@@ -411,19 +411,19 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
               {/* Legend */}
               <div className="space-y-2 text-sm">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-0">
                     <div className="w-3 h-3 rounded-full bg-blue-600"></div>
                     <span>Active Vendors (1,267)</span>
                   </div>
                 </div>
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-0">
                     <div className="w-3 h-3 rounded-full bg-blue-300"></div>
                     <span>Deactivated Vendors (342)</span>
                   </div>
                 </div>
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-0">
                     <div className="w-3 h-3 rounded-full bg-blue-200"></div>
                     <span>Pending Vendors (1,873)</span>
                   </div>
@@ -435,9 +435,9 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
             <Card className="p-4 col-span-2">
               <h3 className="mb-4">Quick Access</h3>
               
-              <div className="grid grid-cols-3 gap-3">
-                <button className="flex flex-col items-center gap-2 p-3 border border-gray-200 rounded-lg hover:border-[#FF8C42] hover:bg-orange-50 transition-colors">
-                  <div className="p-2 bg-red-100 rounded-lg">
+              <div className="grid grid-cols-3 gap-0">
+                <button className="flex flex-col items-center gap-0 p-0 border border-gray-200 rounded-lg hover:border-[#FF8C42] hover:bg-orange-50 transition-colors">
+                  <div className="p-0 bg-red-100 rounded-lg">
                     <XCircle className="w-5 h-5 text-red-600" />
                   </div>
                   <div className="text-center">
@@ -446,8 +446,8 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
                   </div>
                 </button>
 
-                <button className="flex flex-col items-center gap-2 p-3 border border-gray-200 rounded-lg hover:border-[#FF8C42] hover:bg-orange-50 transition-colors">
-                  <div className="p-2 bg-green-100 rounded-lg">
+                <button className="flex flex-col items-center gap-0 p-0 border border-gray-200 rounded-lg hover:border-[#FF8C42] hover:bg-orange-50 transition-colors">
+                  <div className="p-0 bg-green-100 rounded-lg">
                     <CalendarCheck className="w-5 h-5 text-green-600" />
                   </div>
                   <div className="text-center">
@@ -456,8 +456,8 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
                   </div>
                 </button>
 
-                <button className="flex flex-col items-center gap-2 p-3 border border-gray-200 rounded-lg hover:border-[#FF8C42] hover:bg-orange-50 transition-colors">
-                  <div className="p-2 bg-red-100 rounded-lg">
+                <button className="flex flex-col items-center gap-0 p-0 border border-gray-200 rounded-lg hover:border-[#FF8C42] hover:bg-orange-50 transition-colors">
+                  <div className="p-0 bg-red-100 rounded-lg">
                     <DollarSign className="w-5 h-5 text-red-600" />
                   </div>
                   <div className="text-center">
@@ -466,8 +466,8 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
                   </div>
                 </button>
 
-                <button className="flex flex-col items-center gap-2 p-3 border border-gray-200 rounded-lg hover:border-[#FF8C42] hover:bg-orange-50 transition-colors">
-                  <div className="p-2 bg-blue-100 rounded-lg">
+                <button className="flex flex-col items-center gap-0 p-0 border border-gray-200 rounded-lg hover:border-[#FF8C42] hover:bg-orange-50 transition-colors">
+                  <div className="p-0 bg-blue-100 rounded-lg">
                     <CheckCircle className="w-5 h-5 text-blue-600" />
                   </div>
                   <div className="text-center">
@@ -476,8 +476,8 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
                   </div>
                 </button>
 
-                <button className="flex flex-col items-center gap-2 p-3 border border-gray-200 rounded-lg hover:border-[#FF8C42] hover:bg-orange-50 transition-colors">
-                  <div className="p-2 bg-purple-100 rounded-lg">
+                <button className="flex flex-col items-center gap-0 p-0 border border-gray-200 rounded-lg hover:border-[#FF8C42] hover:bg-orange-50 transition-colors">
+                  <div className="p-0 bg-purple-100 rounded-lg">
                     <Send className="w-5 h-5 text-purple-600" />
                   </div>
                   <div className="text-center">
@@ -486,8 +486,8 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
                   </div>
                 </button>
 
-                <button className="flex flex-col items-center gap-2 p-3 border border-gray-200 rounded-lg hover:border-[#FF8C42] hover:bg-orange-50 transition-colors">
-                  <div className="p-2 bg-blue-100 rounded-lg">
+                <button className="flex flex-col items-center gap-0 p-0 border border-gray-200 rounded-lg hover:border-[#FF8C42] hover:bg-orange-50 transition-colors">
+                  <div className="p-0 bg-blue-100 rounded-lg">
                     <DownloadIcon className="w-5 h-5 text-blue-600" />
                   </div>
                   <div className="text-center">
@@ -501,20 +501,20 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
 
           {/* Tabs */}
           <div className="mb-4">
-            <div className="flex gap-2 border-b">
-              <button className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">
+            <div className="flex gap-0 border-b">
+              <button className="px-4 py-0 text-sm text-gray-600 hover:text-gray-900">
                 New Vendor Applications
               </button>
-              <button className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">
+              <button className="px-4 py-0 text-sm text-gray-600 hover:text-gray-900">
                 Deactivation Requests
               </button>
-              <button className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">
+              <button className="px-4 py-0 text-sm text-gray-600 hover:text-gray-900">
                 Rate Changes
               </button>
-              <button className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">
+              <button className="px-4 py-0 text-sm text-gray-600 hover:text-gray-900">
                 Re-Verification List
               </button>
-              <button className="px-4 py-2 text-sm text-[#FF8C42] border-b-2 border-[#FF8C42]">
+              <button className="px-4 py-0 text-sm text-[#FF8C42] border-b-2 border-[#FF8C42]">
                 Vendor Settings
               </button>
             </div>
@@ -523,8 +523,8 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
           {/* Collapsible Sections */}
           <Accordion type="single" collapsible className="space-y-4">
             <AccordionItem value="refund" className="bg-white rounded-lg border">
-              <AccordionTrigger className="px-4 py-3 hover:no-underline">
-                <div className="flex items-center gap-2">
+              <AccordionTrigger className="px-4 py-0 hover:no-underline">
+                <div className="flex items-center gap-0">
                   <RefreshCw className="w-4 h-4" />
                   <span>Refund Policies</span>
                 </div>
@@ -535,8 +535,8 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
             </AccordionItem>
 
             <AccordionItem value="reservation" className="bg-white rounded-lg border">
-              <AccordionTrigger className="px-4 py-3 hover:no-underline">
-                <div className="flex items-center gap-2">
+              <AccordionTrigger className="px-4 py-0 hover:no-underline">
+                <div className="flex items-center gap-0">
                   <DollarSign className="w-4 h-4" />
                   <span>Reservation & Payment Type</span>
                 </div>
@@ -547,8 +547,8 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
             </AccordionItem>
 
             <AccordionItem value="booking" className="bg-white rounded-lg border">
-              <AccordionTrigger className="px-4 py-3 hover:no-underline">
-                <div className="flex items-center gap-2">
+              <AccordionTrigger className="px-4 py-0 hover:no-underline">
+                <div className="flex items-center gap-0">
                   <Calendar className="w-4 h-4" />
                   <span>Booking Rules</span>
                 </div>
@@ -582,7 +582,7 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
               {/* Status Badge */}
               <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                 <div>
-                  <p className="text-sm text-gray-600 mb-1">Current Status</p>
+                  <p className="text-sm text-gray-600 mb-0">Current Status</p>
                   <Badge
                     className={
                       selectedVendor.status === 'approved'
@@ -602,8 +602,8 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
 
               {/* Business Info */}
               <div>
-                <h4 className="font-semibold mb-3">Business Information</h4>
-                <div className="grid grid-cols-2 gap-3 text-sm">
+                <h4 className="font-semibold mb-0">Business Information</h4>
+                <div className="grid grid-cols-2 gap-0 text-sm">
                   <div>
                     <p className="text-gray-600">Business Name</p>
                     <p className="font-medium">{selectedVendor.businessName}</p>
@@ -625,8 +625,8 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
 
               {/* Services */}
               <div>
-                <h4 className="font-semibold mb-3">Services Offered</h4>
-                <div className="flex flex-wrap gap-2">
+                <h4 className="font-semibold mb-0">Services Offered</h4>
+                <div className="flex flex-wrap gap-0">
                   {selectedVendor.services?.map((service: string, idx: number) => (
                     <Badge key={idx} variant="default">
                       {service}
@@ -637,7 +637,7 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
 
               {/* Address */}
               <div>
-                <h4 className="font-semibold mb-3">Business Address</h4>
+                <h4 className="font-semibold mb-0">Business Address</h4>
                 <div className="text-sm">
                   <p>{selectedVendor.address}</p>
                   <p>{selectedVendor.city}, {selectedVendor.state} - {selectedVendor.pincode}</p>
@@ -646,8 +646,8 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
 
               {/* Documents */}
               <div>
-                <h4 className="font-semibold mb-3">Business Documents</h4>
-                <div className="grid grid-cols-2 gap-3 text-sm">
+                <h4 className="font-semibold mb-0">Business Documents</h4>
+                <div className="grid grid-cols-2 gap-0 text-sm">
                   <div>
                     <p className="text-gray-600">GSTIN</p>
                     <p className="font-medium">{selectedVendor.gstin || 'Not provided'}</p>
@@ -673,7 +673,7 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
             </div>
           )}
 
-          <DialogFooter className="flex gap-2">
+          <DialogFooter className="flex gap-0">
             {selectedVendor?.status === 'pending' && (
               <>
                 <Button
@@ -682,7 +682,7 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
                   disabled={actionLoading}
                   className="text-red-600 hover:text-red-700 border-red-200 hover:bg-red-50"
                 >
-                  <XCircle className="w-4 h-4 mr-2" />
+                  <XCircle className="w-4 h-4 mr-0" />
                   Reject
                 </Button>
                 <Button
@@ -690,7 +690,7 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
                   disabled={actionLoading}
                   className="bg-green-600 hover:bg-green-700"
                 >
-                  <CheckCircle className="w-4 h-4 mr-2" />
+                  <CheckCircle className="w-4 h-4 mr-0" />
                   Approve
                 </Button>
               </>

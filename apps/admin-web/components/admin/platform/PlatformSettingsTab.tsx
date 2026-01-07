@@ -110,48 +110,48 @@ export function PlatformSettingsTab() {
     <div className="space-y-6">
       {/* AWS & Cloud Settings */}
       <div className="bg-white rounded-lg border-2 border-gray-200 p-4">
-        <div className="flex items-center gap-2 mb-4">
+        <div className="flex items-center gap-0 mb-4">
           <Cloud className="w-5 h-5 text-orange-600" />
           <h2 className="text-lg font-semibold text-gray-900">Cloud & Maps</h2>
         </div>
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">S3 Bucket</label>
+            <label className="block text-sm font-medium text-gray-700 mb-0">S3 Bucket</label>
             <input
               type="text"
               value={settings.aws.s3Bucket}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSetting('aws', 's3Bucket', e.target.value)}
-              className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+              className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
               placeholder="my-bucket-name"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">S3 Region</label>
+            <label className="block text-sm font-medium text-gray-700 mb-0">S3 Region</label>
             <input
               type="text"
               value={settings.aws.s3Region}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSetting('aws', 's3Region', e.target.value)}
-              className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+              className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
               placeholder="us-east-1"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">SQS Queue URL</label>
+            <label className="block text-sm font-medium text-gray-700 mb-0">SQS Queue URL</label>
             <input
               type="text"
               value={settings.aws.sqsQueueUrl}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSetting('aws', 'sqsQueueUrl', e.target.value)}
-              className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+              className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
               placeholder="https://sqs.region.amazonaws.com/account/queue"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Google Maps API Key</label>
+            <label className="block text-sm font-medium text-gray-700 mb-0">Google Maps API Key</label>
             <input
               type="text"
               value={settings.aws.googleMapsApiKey}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSetting('aws', 'googleMapsApiKey', e.target.value)}
-              className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+              className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
               placeholder="AIza..."
             />
           </div>
@@ -160,48 +160,48 @@ export function PlatformSettingsTab() {
 
       {/* Payment Gateway Settings */}
       <div className="bg-white rounded-lg border-2 border-gray-200 p-4">
-        <div className="flex items-center gap-2 mb-4">
+        <div className="flex items-center gap-0 mb-4">
           <CreditCard className="w-5 h-5 text-orange-600" />
           <h2 className="text-lg font-semibold text-gray-900">Payment Gateway</h2>
         </div>
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Razorpay Key ID</label>
+            <label className="block text-sm font-medium text-gray-700 mb-0">Razorpay Key ID</label>
             <input
               type="text"
               value={settings.payments.razorpayKeyId}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSetting('payments', 'razorpayKeyId', e.target.value)}
-              className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+              className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
               placeholder="rzp_live_..."
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Razorpay Key Secret</label>
+            <label className="block text-sm font-medium text-gray-700 mb-0">Razorpay Key Secret</label>
             <input
               type="password"
               value={settings.payments.razorpayKeySecret}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSetting('payments', 'razorpayKeySecret', e.target.value)}
-              className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+              className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
               placeholder="••••••••"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Stripe Publishable Key</label>
+            <label className="block text-sm font-medium text-gray-700 mb-0">Stripe Publishable Key</label>
             <input
               type="text"
               value={settings.payments.stripePublishableKey}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSetting('payments', 'stripePublishableKey', e.target.value)}
-              className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+              className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
               placeholder="pk_live_..."
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Stripe Secret Key</label>
+            <label className="block text-sm font-medium text-gray-700 mb-0">Stripe Secret Key</label>
             <input
               type="password"
               value={settings.payments.stripeSecretKey}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSetting('payments', 'stripeSecretKey', e.target.value)}
-              className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+              className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
               placeholder="sk_live_..."
             />
           </div>
@@ -210,28 +210,28 @@ export function PlatformSettingsTab() {
 
       {/* Logistics Settings */}
       <div className="bg-white rounded-lg border-2 border-gray-200 p-4">
-        <div className="flex items-center gap-2 mb-4">
+        <div className="flex items-center gap-0 mb-4">
           <Truck className="w-5 h-5 text-orange-600" />
           <h2 className="text-lg font-semibold text-gray-900">Logistics Integration</h2>
         </div>
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Shiprocket API Key</label>
+            <label className="block text-sm font-medium text-gray-700 mb-0">Shiprocket API Key</label>
             <input
               type="text"
               value={settings.logistics.shiprocketApiKey}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSetting('logistics', 'shiprocketApiKey', e.target.value)}
-              className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+              className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
               placeholder="API key"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Shiprocket API Secret</label>
+            <label className="block text-sm font-medium text-gray-700 mb-0">Shiprocket API Secret</label>
             <input
               type="password"
               value={settings.logistics.shiprocketApiSecret}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSetting('logistics', 'shiprocketApiSecret', e.target.value)}
-              className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+              className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
               placeholder="••••••••"
             />
           </div>
@@ -242,7 +242,7 @@ export function PlatformSettingsTab() {
       <button
         onClick={handleSave}
         disabled={saving}
-        className="w-full py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-0 disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {saving ? (
           <>

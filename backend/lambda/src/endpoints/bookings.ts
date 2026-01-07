@@ -204,13 +204,35 @@ class CreateBookingHandler extends BaseHandler {
                   longitude: parseFloat(addressObj.longitude),
                 };
 
+                // Get buffer time from vendor settings (default 5 minutes)
+                let bufferMinutes = 5;
+                try {
+                  const vendorSettings = await query(`
+                    SELECT buffer_time_minutes, service_style_buffer_times
+                    FROM vendor_settings
+                    WHERE vendor_id = $1
+                  `, [vendorId]);
+                  
+                  if (vendorSettings.rows.length > 0) {
+                    const settings = vendorSettings.rows[0];
+                    // Check service-style specific buffer, fallback to general buffer
+                    if (settings.service_style_buffer_times && typeof settings.service_style_buffer_times === 'object') {
+                      bufferMinutes = settings.service_style_buffer_times[serviceType] || settings.buffer_time_minutes || 5;
+                    } else {
+                      bufferMinutes = settings.buffer_time_minutes || 5;
+                    }
+                  }
+                } catch (error) {
+                  console.warn('Error fetching buffer time, using default:', error);
+                }
+
                 const commuteResult = await calculateStaffETA(
                   staffId,
                   customerLocation,
                   bookingDateTime,
                   {
                     googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY,
-                    bufferMinutes: 5, // 5 minute buffer
+                    bufferMinutes, // Dynamic buffer from vendor settings
                   }
                 );
 

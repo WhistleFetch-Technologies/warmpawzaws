@@ -13,12 +13,13 @@ import {
   SafeAreaView,
 } from 'react-native';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
+import { CustomerApi } from '../../services/api';
 
 interface CustomerOnboardingScreenProps {
   onComplete: (stage: 'planning' | 'have-pet' | 'end-of-life') => void;
 }
 
-export function CustomerOnboardingScreen({ onComplete }: CustomerOnboardingScreenProps) {
+export function CustomerOnboardingScreen({ phone, customerId, onComplete }: CustomerOnboardingScreenProps) {
   const [selectedStage, setSelectedStage] = useState<string | null>(null);
 
   // Cleanup
@@ -28,8 +29,22 @@ export function CustomerOnboardingScreen({ onComplete }: CustomerOnboardingScree
     };
   }, []);
 
-  const handleSelect = (stage: string) => {
+  const handleSelect = async (stage: string) => {
     setSelectedStage(stage);
+    
+    // ✅ API Integration: Save onboarding status
+    if (customerId || phone) {
+      try {
+        await CustomerApi.updateOnboardingStatus(customerId || phone!, stage, {
+          selectedStage: stage,
+          timestamp: new Date().toISOString(),
+        });
+      } catch (error) {
+        console.error('Error saving onboarding status:', error);
+        // Continue even if API call fails
+      }
+    }
+    
     // Auto-proceed after selection
     setTimeout(() => {
       onComplete(stage as 'planning' | 'have-pet' | 'end-of-life');
@@ -209,7 +224,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#eff6ff',
   },
   cardSelectedGreen: {
-    borderColor: '#10b981',
+    borderColor: colors.success,
     backgroundColor: '#f0fdf4',
   },
   cardSelectedPurple: {
@@ -231,7 +246,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#3b82f6',
   },
   greenIcon: {
-    backgroundColor: '#10b981',
+    backgroundColor: colors.success,
   },
   purpleIcon: {
     backgroundColor: '#8b5cf6',
@@ -285,7 +300,7 @@ const styles = StyleSheet.create({
   },
   progressFill: {
     height: '100%',
-    backgroundColor: '#10b981',
+    backgroundColor: colors.success,
     borderRadius: borderRadius.full,
   },
 });

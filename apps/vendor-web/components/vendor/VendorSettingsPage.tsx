@@ -97,11 +97,11 @@ export function VendorSettingsPage({ vendorId }: VendorSettingsPageProps) {
   }
 
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Settings</h1>
+    <div className="p-0">
+      <h1 className="text-2xl font-bold text-gray-900 mb-0">Settings</h1>
 
       {/* Tabs */}
-      <div className="flex bg-white rounded-lg p-1 shadow-sm mb-6 w-fit">
+      <div className="flex bg-white rounded-lg p-0 shadow-sm mb-0 w-fit">
         {[
           { id: 'profile', label: 'Profile', icon: '👤' },
           { id: 'bank', label: 'Bank Account', icon: '🏦' },
@@ -111,7 +111,7 @@ export function VendorSettingsPage({ vendorId }: VendorSettingsPageProps) {
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id as any)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2 ${
+            className={`px-4 py-0 rounded-lg text-sm font-medium transition flex items-center gap-0 ${
               activeTab === tab.id
                 ? 'bg-orange-500 text-white'
                 : 'text-gray-600 hover:bg-gray-100'
@@ -125,123 +125,123 @@ export function VendorSettingsPage({ vendorId }: VendorSettingsPageProps) {
 
       {/* Profile Tab */}
       {activeTab === 'profile' && profile && (
-        <div className="bg-white rounded-2xl p-6 shadow-sm">
+        <div className="bg-white rounded-2xl p-0 shadow-sm">
           <h2 className="text-lg font-semibold mb-4">Business Profile</h2>
           <div className="grid md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Business Name</label>
+              <label className="block text-sm font-medium text-gray-700 mb-0">Business Name</label>
               <input
                 type="text"
                 value={profile.business_name}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, business_name: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
+                className="w-full px-0 py-0 border rounded-lg focus:ring-2 focus:ring-orange-500"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Owner Name</label>
+              <label className="block text-sm font-medium text-gray-700 mb-0">Owner Name</label>
               <input
                 type="text"
                 value={profile.owner_name}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, owner_name: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
+                className="w-full px-0 py-0 border rounded-lg focus:ring-2 focus:ring-orange-500"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+              <label className="block text-sm font-medium text-gray-700 mb-0">Phone</label>
               <input
                 type="tel"
                 value={profile.phone}
                 disabled
-                className="w-full px-3 py-2 border rounded-lg bg-gray-50"
+                className="w-full px-0 py-0 border rounded-lg bg-gray-50"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+              <label className="block text-sm font-medium text-gray-700 mb-0">Email</label>
               <input
                 type="email"
                 value={profile.email}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, email: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
+                className="w-full px-0 py-0 border rounded-lg focus:ring-2 focus:ring-orange-500"
               />
             </div>
             <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
+              <label className="block text-sm font-medium text-gray-700 mb-0">Address</label>
               <input
                 type="text"
                 value={profile.address}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, address: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
+                className="w-full px-0 py-0 border rounded-lg focus:ring-2 focus:ring-orange-500"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
+              <label className="block text-sm font-medium text-gray-700 mb-0">City</label>
               <input
                 type="text"
                 value={profile.city}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, city: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
+                className="w-full px-0 py-0 border rounded-lg focus:ring-2 focus:ring-orange-500"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">State</label>
+              <label className="block text-sm font-medium text-gray-700 mb-0">State</label>
               <input
                 type="text"
                 value={profile.state}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, state: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
+                className="w-full px-0 py-0 border rounded-lg focus:ring-2 focus:ring-orange-500"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Pincode</label>
+              <label className="block text-sm font-medium text-gray-700 mb-0">Pincode</label>
               <input
                 type="text"
                 value={profile.pincode}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, pincode: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
+                className="w-full px-0 py-0 border rounded-lg focus:ring-2 focus:ring-orange-500"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">GST Number</label>
+              <label className="block text-sm font-medium text-gray-700 mb-0">GST Number</label>
               <input
                 type="text"
                 value={profile.gst_number || ''}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, gst_number: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
+                className="w-full px-0 py-0 border rounded-lg focus:ring-2 focus:ring-orange-500"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">PAN Number</label>
+              <label className="block text-sm font-medium text-gray-700 mb-0">PAN Number</label>
               <input
                 type="text"
                 value={profile.pan_number || ''}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, pan_number: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
+                className="w-full px-0 py-0 border rounded-lg focus:ring-2 focus:ring-orange-500"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Operating Hours</label>
+              <label className="block text-sm font-medium text-gray-700 mb-0">Operating Hours</label>
               <input
                 type="text"
                 value={profile.operating_hours || ''}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, operating_hours: e.target.value })}
                 placeholder="e.g., Mon-Sat 9:00 AM - 8:00 PM"
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
+                className="w-full px-0 py-0 border rounded-lg focus:ring-2 focus:ring-orange-500"
               />
             </div>
             <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+              <label className="block text-sm font-medium text-gray-700 mb-0">Description</label>
               <textarea
                 value={profile.description || ''}
                 onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setProfile({ ...profile, description: e.target.value })}
                 rows={3}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
+                className="w-full px-0 py-0 border rounded-lg focus:ring-2 focus:ring-orange-500"
               />
             </div>
           </div>
           <button
             onClick={handleSaveProfile}
             disabled={saving}
-            className="mt-6 px-6 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-50"
+            className="mt-0 px-0 py-0 bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-50"
           >
             {saving ? 'Saving...' : 'Save Profile'}
           </button>
@@ -250,64 +250,64 @@ export function VendorSettingsPage({ vendorId }: VendorSettingsPageProps) {
 
       {/* Bank Account Tab */}
       {activeTab === 'bank' && (
-        <div className="bg-white rounded-2xl p-6 shadow-sm">
+        <div className="bg-white rounded-2xl p-0 shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold">Bank Account Details</h2>
             {bankDetails?.is_verified && (
-              <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm flex items-center gap-1">
+              <span className="px-0 py-0 bg-green-100 text-green-700 rounded-full text-sm flex items-center gap-0">
                 ✓ Verified
               </span>
             )}
           </div>
           
           {!bankDetails?.is_verified && (
-            <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-700">
+            <div className="mb-4 p-0 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-700">
               ⚠️ Bank account verification is required to receive payouts
             </div>
           )}
 
           <div className="grid md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Account Holder Name</label>
+              <label className="block text-sm font-medium text-gray-700 mb-0">Account Holder Name</label>
               <input
                 type="text"
                 value={bankDetails?.account_holder_name || ''}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBankDetails({ ...bankDetails!, account_holder_name: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
+                className="w-full px-0 py-0 border rounded-lg focus:ring-2 focus:ring-orange-500"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Account Number</label>
+              <label className="block text-sm font-medium text-gray-700 mb-0">Account Number</label>
               <input
                 type="text"
                 value={bankDetails?.account_number || ''}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBankDetails({ ...bankDetails!, account_number: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
+                className="w-full px-0 py-0 border rounded-lg focus:ring-2 focus:ring-orange-500"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">IFSC Code</label>
+              <label className="block text-sm font-medium text-gray-700 mb-0">IFSC Code</label>
               <input
                 type="text"
                 value={bankDetails?.ifsc_code || ''}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBankDetails({ ...bankDetails!, ifsc_code: e.target.value.toUpperCase() })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
+                className="w-full px-0 py-0 border rounded-lg focus:ring-2 focus:ring-orange-500"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Bank Name</label>
+              <label className="block text-sm font-medium text-gray-700 mb-0">Bank Name</label>
               <input
                 type="text"
                 value={bankDetails?.bank_name || ''}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBankDetails({ ...bankDetails!, bank_name: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
+                className="w-full px-0 py-0 border rounded-lg focus:ring-2 focus:ring-orange-500"
               />
             </div>
           </div>
           <button
             onClick={handleSaveBankDetails}
             disabled={saving}
-            className="mt-6 px-6 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-50"
+            className="mt-0 px-0 py-0 bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-50"
           >
             {saving ? 'Saving...' : bankDetails?.is_verified ? 'Update & Re-verify' : 'Save & Verify'}
           </button>
@@ -316,7 +316,7 @@ export function VendorSettingsPage({ vendorId }: VendorSettingsPageProps) {
 
       {/* Schedule Tab */}
       {activeTab === 'schedule' && (
-        <div className="bg-white rounded-2xl p-6 shadow-sm">
+        <div className="bg-white rounded-2xl p-0 shadow-sm">
           <h2 className="text-lg font-semibold mb-4">Working Schedule</h2>
           <ScheduleManager vendorId={vendorId} />
         </div>
@@ -324,7 +324,7 @@ export function VendorSettingsPage({ vendorId }: VendorSettingsPageProps) {
 
       {/* Notifications Tab */}
       {activeTab === 'notifications' && (
-        <div className="bg-white rounded-2xl p-6 shadow-sm">
+        <div className="bg-white rounded-2xl p-0 shadow-sm">
           <h2 className="text-lg font-semibold mb-4">Notification Preferences</h2>
           <NotificationPreferences vendorId={vendorId} />
         </div>
@@ -377,11 +377,11 @@ function ScheduleManager({ vendorId }: { vendorId: string }) {
   return (
     <div className="space-y-3">
       {schedule.map((day, idx) => (
-        <div key={idx} className="flex items-center gap-4 py-2 border-b">
+        <div key={idx} className="flex items-center gap-4 py-0 border-b">
           <div className="w-28">
             <span className="font-medium text-gray-700">{days[day.day_of_week]}</span>
           </div>
-          <label className="flex items-center gap-2 cursor-pointer">
+          <label className="flex items-center gap-0 cursor-pointer">
             <input
               type="checkbox"
               checked={day.is_open}
@@ -404,7 +404,7 @@ function ScheduleManager({ vendorId }: { vendorId: string }) {
                   newSchedule[idx].open_time = e.target.value;
                   setSchedule(newSchedule);
                 }}
-                className="px-2 py-1 border rounded"
+                className="px-0 py-0 border rounded"
               />
               <span className="text-gray-400">to</span>
               <input
@@ -415,7 +415,7 @@ function ScheduleManager({ vendorId }: { vendorId: string }) {
                   newSchedule[idx].close_time = e.target.value;
                   setSchedule(newSchedule);
                 }}
-                className="px-2 py-1 border rounded"
+                className="px-0 py-0 border rounded"
               />
             </>
           )}
@@ -426,7 +426,7 @@ function ScheduleManager({ vendorId }: { vendorId: string }) {
       ))}
       <button
         onClick={handleSave}
-        className="mt-4 px-6 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600"
+        className="mt-4 px-0 py-0 bg-orange-500 text-white rounded-lg hover:bg-orange-600"
       >
         Save Schedule
       </button>
@@ -458,7 +458,7 @@ function NotificationPreferences({ vendorId }: { vendorId: string }) {
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="font-medium text-gray-900 mb-3">Notification Types</h3>
+        <h3 className="font-medium text-gray-900 mb-0">Notification Types</h3>
         <div className="space-y-3">
           {[
             { key: 'newBooking', label: 'New Bookings', desc: 'Get notified when a new booking is made' },
@@ -467,7 +467,7 @@ function NotificationPreferences({ vendorId }: { vendorId: string }) {
             { key: 'payments', label: 'Payments & Settlements', desc: 'Payment received and payout updates' },
             { key: 'promotions', label: 'Platform Updates', desc: 'Tips, news, and promotional updates' },
           ].map((item) => (
-            <label key={item.key} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg cursor-pointer">
+            <label key={item.key} className="flex items-center justify-between p-0 bg-gray-50 rounded-lg cursor-pointer">
               <div>
                 <span className="font-medium text-gray-700">{item.label}</span>
                 <p className="text-sm text-gray-500">{item.desc}</p>
@@ -484,7 +484,7 @@ function NotificationPreferences({ vendorId }: { vendorId: string }) {
       </div>
 
       <div>
-        <h3 className="font-medium text-gray-900 mb-3">Channels</h3>
+        <h3 className="font-medium text-gray-900 mb-0">Channels</h3>
         <div className="flex gap-4">
           {[
             { key: 'smsEnabled', label: 'SMS', icon: '📱' },
@@ -493,7 +493,7 @@ function NotificationPreferences({ vendorId }: { vendorId: string }) {
           ].map((channel) => (
             <label
               key={channel.key}
-              className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-lg cursor-pointer border-2 transition ${
+              className={`flex-1 flex items-center justify-center gap-0 p-0 rounded-lg cursor-pointer border-2 transition ${
                 (prefs as any)[channel.key] ? 'border-orange-500 bg-orange-50' : 'border-gray-200'
               }`}
             >
@@ -512,7 +512,7 @@ function NotificationPreferences({ vendorId }: { vendorId: string }) {
 
       <button
         onClick={handleSave}
-        className="px-6 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600"
+        className="px-0 py-0 bg-orange-500 text-white rounded-lg hover:bg-orange-600"
       >
         Save Preferences
       </button>

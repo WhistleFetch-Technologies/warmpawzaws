@@ -104,7 +104,7 @@ export function CenterBookingPage({
   return (
     <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-white border-b px-4 py-4 flex items-center gap-3">
+      <div className="sticky top-0 z-10 bg-white border-b px-4 py-4 flex items-center gap-0">
         <button
           onClick={onBack}
           className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors"
@@ -115,9 +115,9 @@ export function CenterBookingPage({
       </div>
 
       {/* Content */}
-      <div className="px-6 py-6 space-y-6">
+      <div className="px-0 py-0 space-y-6">
         {/* Pet Selection */}
-        <div className="bg-white rounded-2xl p-5 shadow-sm">
+        <div className="bg-white rounded-2xl p-0 shadow-sm">
           <h3 className="font-bold text-gray-900 mb-4">Select Pet</h3>
           {loadingPets ? (
             <div className="space-y-3">

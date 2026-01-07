@@ -1,6 +1,7 @@
 'use client';
 
 import { BookingFlow } from '@/components/customer/BookingFlow';
+import { SearchFirstGuard } from '@/components/search/SearchFirstGuard';
 import { useEffect, useState } from 'react';
 
 interface BookingPageClientProps {
@@ -28,6 +29,10 @@ export function BookingPageClient({ serviceId }: BookingPageClientProps) {
     );
   }
 
-  return <BookingFlow serviceId={serviceId} customerPhone={phone} />;
+  return (
+    <SearchFirstGuard>
+      <BookingFlow serviceId={serviceId} customerPhone={phone} />
+    </SearchFirstGuard>
+  );
 }
 

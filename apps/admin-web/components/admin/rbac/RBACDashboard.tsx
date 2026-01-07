@@ -1,0 +1,263 @@
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import { Shield, Users, Key, Activity, TrendingUp, AlertCircle } from 'lucide-react';
+import { apiClient } from '@/lib/api-client';
+
+interface RBACStats {
+  totalRoles: number;
+  totalPermissions: number;
+  totalUsers: number;
+  activeRoles: number;
+  recentChanges: number;
+  securityAlerts: number;
+}
+
+interface RecentActivity {
+  activityId: string;
+  action: string;
+  user: string;
+  role?: string;
+  timestamp: string;
+  type: 'role_created' | 'role_updated' | 'role_deleted' | 'permission_granted' | 'permission_revoked' | 'user_assigned';
+}
+
+interface SecurityAlert {
+  alertId: string;
+  severity: 'low' | 'medium' | 'high';
+  message: string;
+  timestamp: string;
+}
+
+export function RBACDashboard() {
+  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState<RBACStats>({
+    totalRoles: 0,
+    totalPermissions: 0,
+    totalUsers: 0,
+    activeRoles: 0,
+    recentChanges: 0,
+    securityAlerts: 0,
+  });
+  const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
+  const [securityAlerts, setSecurityAlerts] = useState<SecurityAlert[]>([]);
+
+  useEffect(() => {
+    loadDashboardData();
+  }, []);
+
+  const loadDashboardData = async () => {
+    try {
+      setLoading(true);
+      const [statsData, activityData, alertsData] = await Promise.all([
+        apiClient.get<any>('/admin/rbac/stats'),
+        apiClient.get<any>('/admin/rbac/activity'),
+        apiClient.get<any>('/admin/rbac/alerts'),
+      ]);
+
+      if (statsData.success) setStats(statsData.stats);
+      if (activityData.success) setRecentActivity(activityData.activities || []);
+      if (alertsData.success) setSecurityAlerts(alertsData.alerts || []);
+    } catch (error) {
+      console.error('Error loading RBAC dashboard:', error);
+      alert('Failed to load RBAC dashboard data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getActivityIcon = (type: RecentActivity['type']) => {
+    switch (type) {
+      case 'role_created':
+      case 'role_updated':
+      case 'role_deleted':
+        return '🎭';
+      case 'permission_granted':
+      case 'permission_revoked':
+        return '🔑';
+      case 'user_assigned':
+        return '👤';
+      default:
+        return '📝';
+    }
+  };
+
+  const getSeverityColor = (severity: SecurityAlert['severity']) => {
+    switch (severity) {
+      case 'high':
+        return 'bg-red-100 text-red-700';
+      case 'medium':
+        return 'bg-yellow-100 text-yellow-700';
+      case 'low':
+        return 'bg-blue-100 text-blue-700';
+      default:
+        return 'bg-gray-100 text-gray-700';
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="w-8 h-8 border-4 border-orange-600 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-0">
+        <div className="p-0 bg-purple-100 rounded-xl">
+          <Shield className="w-6 h-6 text-purple-600" />
+        </div>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">RBAC Dashboard</h1>
+          <p className="text-sm text-gray-600">Role-Based Access Control Overview</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <div className="bg-white rounded-xl border-2 border-gray-200 p-4">
+          <div className="flex items-center gap-0 mb-0">
+            <Shield className="w-4 h-4 text-gray-400" />
+            <p className="text-sm text-gray-600">Total Roles</p>
+          </div>
+          <p className="text-2xl font-bold text-gray-900">{stats.totalRoles}</p>
+        </div>
+
+        <div className="bg-white rounded-xl border-2 border-gray-200 p-4">
+          <div className="flex items-center gap-0 mb-0">
+            <Key className="w-4 h-4 text-gray-400" />
+            <p className="text-sm text-gray-600">Permissions</p>
+          </div>
+          <p className="text-2xl font-bold text-gray-900">{stats.totalPermissions}</p>
+        </div>
+
+        <div className="bg-white rounded-xl border-2 border-gray-200 p-4">
+          <div className="flex items-center gap-0 mb-0">
+            <Users className="w-4 h-4 text-gray-400" />
+            <p className="text-sm text-gray-600">Total Users</p>
+          </div>
+          <p className="text-2xl font-bold text-gray-900">{stats.totalUsers}</p>
+        </div>
+
+        <div className="bg-white rounded-xl border-2 border-gray-200 p-4">
+          <div className="flex items-center gap-0 mb-0">
+            <Activity className="w-4 h-4 text-gray-400" />
+            <p className="text-sm text-gray-600">Active Roles</p>
+          </div>
+          <p className="text-2xl font-bold text-green-600">{stats.activeRoles}</p>
+        </div>
+
+        <div className="bg-white rounded-xl border-2 border-gray-200 p-4">
+          <div className="flex items-center gap-0 mb-0">
+            <TrendingUp className="w-4 h-4 text-gray-400" />
+            <p className="text-sm text-gray-600">Recent Changes</p>
+          </div>
+          <p className="text-2xl font-bold text-blue-600">{stats.recentChanges}</p>
+        </div>
+
+        <div className="bg-white rounded-xl border-2 border-gray-200 p-4">
+          <div className="flex items-center gap-0 mb-0">
+            <AlertCircle className="w-4 h-4 text-gray-400" />
+            <p className="text-sm text-gray-600">Security Alerts</p>
+          </div>
+          <p className="text-2xl font-bold text-red-600">{stats.securityAlerts}</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-0">
+        <div className="bg-white rounded-xl border-2 border-gray-200">
+          <div className="border-b border-gray-200 px-0 py-4">
+            <h3 className="font-semibold text-gray-900">Recent Activity</h3>
+          </div>
+          <div className="p-0">
+            {recentActivity.length === 0 ? (
+              <p className="text-center text-gray-500 py-8">No recent activity</p>
+            ) : (
+              <div className="space-y-3">
+                {recentActivity.slice(0, 8).map((activity) => (
+                  <div key={activity.activityId} className="flex items-start gap-0 p-0 bg-gray-50 rounded-lg">
+                    <span className="text-2xl">{getActivityIcon(activity.type)}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-gray-900">{activity.action}</p>
+                      <p className="text-xs text-gray-600">
+                        by {activity.user} • {new Date(activity.timestamp).toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl border-2 border-gray-200">
+          <div className="border-b border-gray-200 px-0 py-4">
+            <h3 className="font-semibold text-gray-900">Security Alerts</h3>
+          </div>
+          <div className="p-0">
+            {securityAlerts.length === 0 ? (
+              <div className="text-center py-8">
+                <Shield className="w-12 h-12 text-green-500 mx-auto mb-0" />
+                <p className="text-green-600 font-medium">All Clear!</p>
+                <p className="text-sm text-gray-500">No security alerts</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {securityAlerts.slice(0, 8).map((alert) => (
+                  <div key={alert.alertId} className="flex items-start gap-0 p-0 bg-gray-50 rounded-lg">
+                    <AlertCircle className={`w-5 h-5 flex-shrink-0 ${
+                      alert.severity === 'high' ? 'text-red-600' :
+                      alert.severity === 'medium' ? 'text-yellow-600' :
+                      'text-blue-600'
+                    }`} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-0 mb-0">
+                        <span className={`px-0 py-0.5 text-xs font-medium rounded ${getSeverityColor(alert.severity)}`}>
+                          {alert.severity.toUpperCase()}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-900">{alert.message}</p>
+                      <p className="text-xs text-gray-600 mt-0">
+                        {new Date(alert.timestamp).toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-gradient-to-r from-purple-50 to-blue-50 rounded-xl border-2 border-purple-200 p-0">
+        <div className="flex items-start gap-4">
+          <div className="p-0 bg-purple-100 rounded-xl">
+            <Shield className="w-6 h-6 text-purple-600" />
+          </div>
+          <div className="flex-1">
+            <h3 className="font-semibold text-gray-900 mb-0">Security Best Practices</h3>
+            <ul className="space-y-2 text-sm text-gray-700">
+              <li className="flex items-start gap-0">
+                <span className="text-purple-600 mt-0.5">•</span>
+                <span>Regularly review and audit role assignments</span>
+              </li>
+              <li className="flex items-start gap-0">
+                <span className="text-purple-600 mt-0.5">•</span>
+                <span>Follow the principle of least privilege</span>
+              </li>
+              <li className="flex items-start gap-0">
+                <span className="text-purple-600 mt-0.5">•</span>
+                <span>Monitor for unusual permission changes</span>
+              </li>
+              <li className="flex items-start gap-0">
+                <span className="text-purple-600 mt-0.5">•</span>
+                <span>Keep role definitions up to date with business needs</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

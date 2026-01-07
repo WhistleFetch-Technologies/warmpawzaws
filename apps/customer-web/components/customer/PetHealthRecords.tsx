@@ -111,7 +111,7 @@ export function PetHealthRecords({ phone, petId, onBack }: PetHealthRecordsProps
   return (
     <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
       {/* Header */}
-      <div className="bg-gradient-to-r from-primary to-primary-dark px-6 pt-12 pb-6 sticky top-0 z-20">
+      <div className="bg-gradient-to-r from-primary to-primary-dark px-0 pt-12 pb-0 sticky top-0 z-20">
         <div className="flex items-center gap-4 mb-4">
           <button
             onClick={onBack}
@@ -129,10 +129,10 @@ export function PetHealthRecords({ phone, petId, onBack }: PetHealthRecordsProps
       </div>
 
       {/* Content */}
-      <div className="px-6 py-6 space-y-6">
+      <div className="px-0 py-0 space-y-6">
         {/* Quick Health Info */}
         {pet?.healthRecords && (
-          <div className="bg-white rounded-2xl p-5 shadow-sm">
+          <div className="bg-white rounded-2xl p-0 shadow-sm">
             <h3 className="font-bold text-gray-900 mb-4">Quick Health Info</h3>
             <div className="space-y-3">
               {pet.healthRecords.lastCheckup && (
@@ -146,19 +146,19 @@ export function PetHealthRecords({ phone, petId, onBack }: PetHealthRecordsProps
               {pet.healthRecords.allergies && (
                 <div>
                   <span className="text-gray-600">Allergies</span>
-                  <p className="font-semibold text-gray-900 mt-1">{pet.healthRecords.allergies}</p>
+                  <p className="font-semibold text-gray-900 mt-0">{pet.healthRecords.allergies}</p>
                 </div>
               )}
               {pet.healthRecords.medications && (
                 <div>
                   <span className="text-gray-600">Current Medications</span>
-                  <p className="font-semibold text-gray-900 mt-1">{pet.healthRecords.medications}</p>
+                  <p className="font-semibold text-gray-900 mt-0">{pet.healthRecords.medications}</p>
                 </div>
               )}
               {pet.healthRecords.conditions && (
                 <div>
                   <span className="text-gray-600">Medical Conditions</span>
-                  <p className="font-semibold text-gray-900 mt-1">{pet.healthRecords.conditions}</p>
+                  <p className="font-semibold text-gray-900 mt-0">{pet.healthRecords.conditions}</p>
                 </div>
               )}
             </div>
@@ -166,7 +166,7 @@ export function PetHealthRecords({ phone, petId, onBack }: PetHealthRecordsProps
         )}
 
         {/* Health Records List */}
-        <div className="bg-white rounded-2xl p-5 shadow-sm">
+        <div className="bg-white rounded-2xl p-0 shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-bold text-gray-900">Health Records</h3>
             <button
@@ -178,9 +178,9 @@ export function PetHealthRecords({ phone, petId, onBack }: PetHealthRecordsProps
           </div>
 
           {records.length === 0 ? (
-            <div className="text-center py-12">
+            <div className="text-center py-02">
               <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-              <p className="text-gray-600 mb-2">No health records yet</p>
+              <p className="text-gray-600 mb-0">No health records yet</p>
               <p className="text-sm text-gray-500">Add a record to get started</p>
             </div>
           ) : (
@@ -189,22 +189,22 @@ export function PetHealthRecords({ phone, petId, onBack }: PetHealthRecordsProps
                 .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
                 .map((record) => (
                   <div key={record.id} className="bg-gray-50 rounded-xl p-4 border border-gray-200">
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="flex items-center gap-3">
+                    <div className="flex items-start justify-between mb-0">
+                      <div className="flex items-center gap-0">
                         <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-xl ${getRecordTypeColor(record.type)}`}>
                           {getRecordTypeIcon(record.type)}
                         </div>
                         <div className="flex-1">
                           <h4 className="font-semibold text-gray-900">{record.title}</h4>
-                          <span className={`text-xs px-2 py-1 rounded-full ${getRecordTypeColor(record.type)}`}>
+                          <span className={`text-xs px-0 py-1 rounded-full ${getRecordTypeColor(record.type)}`}>
                             {record.type.charAt(0).toUpperCase() + record.type.slice(1)}
                           </span>
                         </div>
                       </div>
                     </div>
-                    <p className="text-sm text-gray-600 mb-3">{record.description}</p>
+                    <p className="text-sm text-gray-600 mb-0">{record.description}</p>
                     <div className="flex items-center gap-4 text-xs text-gray-500">
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-0">
                         <Calendar className="w-3 h-3" />
                         <span>{formatDate(record.date)}</span>
                       </div>

@@ -72,7 +72,7 @@ export function ProblemGridNavigation({
   if (loading) {
     return (
       <div className={className}>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-0">
           {[1, 2, 3, 4].map((i) => (
             <div key={i} className="h-24 bg-gray-100 rounded-xl animate-pulse"></div>
           ))}
@@ -83,7 +83,7 @@ export function ProblemGridNavigation({
 
   return (
     <div className={className}>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-0">
         {problems.map((problem) => {
           const IconComponent = ICON_MAP[problem.icon] || Heart;
           return (
@@ -92,14 +92,14 @@ export function ProblemGridNavigation({
               onClick={() => onProblemSelect(problem.problemId, problem)}
               className="bg-white rounded-xl border-2 border-gray-200 p-4 hover:border-primary hover:shadow-md transition-all text-left active:scale-[0.98]"
             >
-              <div className="flex items-center gap-3 mb-2">
+              <div className="flex items-center gap-0 mb-0">
                 <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
                   <IconComponent className="w-5 h-5 text-primary" />
                 </div>
                 <div className="flex-1">
                   <h3 className="font-semibold text-gray-900 text-sm">{problem.title}</h3>
                   {problem.severity && (
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${
+                    <span className={`text-xs px-0 py-0.5 rounded-full ${
                       problem.severity === 'high' ? 'bg-red-100 text-red-700' :
                       problem.severity === 'medium' ? 'bg-yellow-100 text-yellow-700' :
                       'bg-green-100 text-green-700'
@@ -110,7 +110,7 @@ export function ProblemGridNavigation({
                 </div>
               </div>
               {problem.description && (
-                <p className="text-xs text-gray-600 line-clamp-2">{problem.description}</p>
+                <p className="text-xs text-gray-600 line-clamp-0">{problem.description}</p>
               )}
             </button>
           );

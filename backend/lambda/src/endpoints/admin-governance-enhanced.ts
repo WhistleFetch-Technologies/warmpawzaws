@@ -16,7 +16,7 @@
 
 import { Hono } from 'hono';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
-import { query, select, insert, update } from '../database/rds-connection';
+import { query, select, insert, update, deleteRows } from '../database/rds-connection';
 import { publishToSNS } from '../utils/aws-clients';
 
 // ============================================================================
@@ -312,8 +312,8 @@ class CalculateTaxHandler extends BaseHandler {
   private async getTaxRules(serviceType?: string, location?: any) {
     // Get applicable tax rules
     let queryStr = `
-      SELECT * FROM tax_rules
-      WHERE is_active = true
+      SELECT * FROM gst_rules
+      WHERE enabled = true
     `;
     const params: any[] = [];
     let paramIndex = 1;
@@ -459,6 +459,94 @@ class CreateBannerHandler extends BaseHandler {
   }
 }
 
+class UpdateBannerHandler extends BaseHandler {
+  async handle(context: HandlerContext): Promise<HandlerResponse> {
+    const bannerId = context.event.pathParameters?.id;
+    if (!bannerId) {
+      return this.error('Banner ID is required', 400);
+    }
+
+    const body = this.parseBody(context.event);
+    const {
+      title,
+      description,
+      imageUrl,
+      linkUrl,
+      position,
+      priority,
+      startDate,
+      endDate,
+      isActive,
+      ctaText,
+    } = body;
+
+    try {
+      const updateData: any = {};
+      if (title !== undefined) updateData.title = title;
+      if (description !== undefined) updateData.description = description;
+      if (imageUrl !== undefined) updateData.image_url = imageUrl;
+      if (linkUrl !== undefined) updateData.link_url = linkUrl;
+      if (position !== undefined) updateData.position = position;
+      if (priority !== undefined) updateData.priority = priority;
+      if (startDate !== undefined) updateData.start_date = startDate ? new Date(startDate) : null;
+      if (endDate !== undefined) updateData.end_date = endDate ? new Date(endDate) : null;
+      if (isActive !== undefined) updateData.is_active = isActive;
+      if (ctaText !== undefined) updateData.cta_text = ctaText;
+      updateData.updated_at = new Date().toISOString();
+
+      await update('banners', { id: bannerId }, updateData);
+
+      // Publish banner change event
+      await publishToSNS('banner-change', {
+        action: 'update',
+        bannerId,
+        position: position || undefined,
+      });
+
+      const updated = await select('banners', { id: bannerId });
+      return this.success({
+        banner: updated[0],
+        message: 'Banner updated successfully',
+      });
+    } catch (error: any) {
+      console.error('Error updating banner:', error);
+      return this.error(`Failed to update banner: ${error.message}`, 500);
+    }
+  }
+}
+
+class DeleteBannerHandler extends BaseHandler {
+  async handle(context: HandlerContext): Promise<HandlerResponse> {
+    const bannerId = context.event.pathParameters?.id;
+    if (!bannerId) {
+      return this.error('Banner ID is required', 400);
+    }
+
+    try {
+      const banner = await select('banners', { id: bannerId });
+      if (banner.length === 0) {
+        return this.error('Banner not found', 404);
+      }
+
+      await deleteRows('banners', { id: bannerId });
+
+      // Publish banner change event
+      await publishToSNS('banner-change', {
+        action: 'delete',
+        bannerId,
+        position: banner[0].position,
+      });
+
+      return this.success({
+        message: 'Banner deleted successfully',
+      });
+    } catch (error: any) {
+      console.error('Error deleting banner:', error);
+      return this.error(`Failed to delete banner: ${error.message}`, 500);
+    }
+  }
+}
+
 // ============================================================================
 // HONO ROUTER SETUP
 // ============================================================================
@@ -470,6 +558,8 @@ export function registerAdminGovernanceEnhancedEndpoints(app: Hono) {
   const calculateTaxHandler = new CalculateTaxHandler();
   const getBannersHandler = new GetBannersHandler();
   const createBannerHandler = new CreateBannerHandler();
+  const updateBannerHandler = new UpdateBannerHandler();
+  const deleteBannerHandler = new DeleteBannerHandler();
 
   // Capability refresh
   app.post('/admin/capabilities/refresh', async (c) => {
@@ -495,12 +585,18 @@ export function registerAdminGovernanceEnhancedEndpoints(app: Hono) {
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
-  // Tax calculation
+  // Tax calculation (enhanced with tax calculation service)
   app.post('/admin/tax/calculate', async (c) => {
-    const event = createApiGatewayEvent(c.req);
-    const context = createLambdaContext();
-    const result = await calculateTaxHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    try {
+      const body = await c.req.json();
+      const { taxCalculationService } = await import('../../lib/services/tax-calculation-service');
+      
+      const result = await taxCalculationService.calculateTax(body);
+      return c.json({ taxCalculation: result });
+    } catch (error: any) {
+      console.error('Error calculating tax:', error);
+      return c.json({ error: error.message || 'Failed to calculate tax' }, 500);
+    }
   });
 
   // Banner management
@@ -516,6 +612,22 @@ export function registerAdminGovernanceEnhancedEndpoints(app: Hono) {
     const event = createApiGatewayEvent(c.req);
     const context = createLambdaContext();
     const result = await createBannerHandler.execute(event, context);
+    return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
+  app.put('/admin/banners/:id', async (c) => {
+    const event = createApiGatewayEvent(c.req);
+    event.pathParameters = { id: c.req.param('id') };
+    const context = createLambdaContext();
+    const result = await updateBannerHandler.execute(event, context);
+    return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
+  app.delete('/admin/banners/:id', async (c) => {
+    const event = createApiGatewayEvent(c.req);
+    event.pathParameters = { id: c.req.param('id') };
+    const context = createLambdaContext();
+    const result = await deleteBannerHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }

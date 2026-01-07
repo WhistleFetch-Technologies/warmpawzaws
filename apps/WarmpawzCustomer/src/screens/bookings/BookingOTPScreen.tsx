@@ -227,7 +227,7 @@ export function BookingOTPScreen({
           disabled={otp.join('').length !== 6 || loading}
         >
           {loading ? (
-            <ActivityIndicator size="small" color="#fff" />
+            <ActivityIndicator size="small" color={colors.white} />
           ) : (
             <Text style={styles.verifyButtonText}>Verify OTP</Text>
           )}
@@ -248,7 +248,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -309,11 +309,11 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textAlign: 'center',
     color: colors.text,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
   },
   otpInputFilled: {
     borderColor: colors.primary,
-    backgroundColor: '#fff7ed',
+    backgroundColor: colors.primary.50,
   },
   resendContainer: {
     marginBottom: spacing.lg,
@@ -340,10 +340,10 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
   verifyButtonDisabled: {
-    backgroundColor: '#9ca3af',
+    backgroundColor: colors.gray.400,
   },
   verifyButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 18,
     fontWeight: 'bold',
   },

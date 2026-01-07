@@ -163,8 +163,8 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
     <div className="min-h-screen bg-gray-50 max-w-[430px] mx-auto">
       {/* Header */}
       <div className="bg-white sticky top-0 z-10 border-b border-gray-200">
-        <div className="px-6 py-4 flex items-center gap-3">
-          <button onClick={onBack} className="p-2 -ml-2 hover:bg-gray-100 rounded-full">
+        <div className="px-0 py-4 flex items-center gap-0">
+          <button onClick={onBack} className="p-0 -ml-0 hover:bg-gray-100 rounded-full">
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div className="flex-1">
@@ -173,11 +173,11 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
           </div>
           <button
             onClick={() => setShowFilters(!showFilters)}
-            className="relative p-2 hover:bg-gray-100 rounded-full"
+            className="relative p-0 hover:bg-gray-100 rounded-full"
           >
             <SlidersHorizontal className="w-5 h-5" />
             {activeFiltersCount > 0 && (
-              <span className="absolute -top-1 -right-1 w-5 h-5 bg-primary text-white rounded-full text-xs flex items-center justify-center">
+              <span className="absolute -top-0 -right-1 w-5 h-5 bg-primary text-white rounded-full text-xs flex items-center justify-center">
                 {activeFiltersCount}
               </span>
             )}
@@ -185,15 +185,15 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
         </div>
 
         {/* Search Bar */}
-        <div className="px-6 pb-4">
+        <div className="px-0 pb-4">
           <div className="relative">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <Search className="w-4 h-4 absolute left-3 top-0/2 -translate-y-1/2 text-gray-400" />
             <input
               type="text"
               placeholder="Search clinics..."
               value={searchQuery}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              className="w-full pl-0 pr-4 py-0 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
             />
           </div>
         </div>
@@ -201,7 +201,7 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
 
       {/* Filters Panel */}
       {showFilters && (
-        <div className="bg-white border-b border-gray-200 px-6 py-4 space-y-4">
+        <div className="bg-white border-b border-gray-200 px-0 py-4 space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="font-semibold">Filters</h3>
             <button onClick={clearFilters} className="text-sm text-primary">
@@ -210,7 +210,7 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-2">Max Distance: {maxDistance} km</label>
+            <label className="block text-sm font-medium mb-0">Max Distance: {maxDistance} km</label>
             <input
               type="range"
               min="1"
@@ -222,7 +222,7 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-2">Min Rating: {minRating > 0 ? minRating.toFixed(1) : 'Any'}</label>
+            <label className="block text-sm font-medium mb-0">Min Rating: {minRating > 0 ? minRating.toFixed(1) : 'Any'}</label>
             <input
               type="range"
               min="0"
@@ -235,7 +235,7 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
           </div>
 
           <div className="space-y-2">
-            <label className="flex items-center gap-2">
+            <label className="flex items-center gap-0">
               <input
                 type="checkbox"
                 checked={multispecialtyOnly}
@@ -244,7 +244,7 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
               />
               <span className="text-sm">Multispecialty only</span>
             </label>
-            <label className="flex items-center gap-2">
+            <label className="flex items-center gap-0">
               <input
                 type="checkbox"
                 checked={openNowOnly}
@@ -256,11 +256,11 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-2">Sort by</label>
+            <label className="block text-sm font-medium mb-0">Sort by</label>
             <select
               value={sortBy}
               onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSortBy(e.target.value as any)}
-              className="w-full p-2 border border-gray-300 rounded-lg"
+              className="w-full p-0 border border-gray-300 rounded-lg"
             >
               <option value="distance">Distance</option>
               <option value="rating">Rating</option>
@@ -273,7 +273,7 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
       {/* Clinics List */}
       <div className="p-4 space-y-3">
         {filteredClinics.length === 0 ? (
-          <div className="text-center py-12 bg-white rounded-xl">
+          <div className="text-center py-0 bg-white rounded-xl">
             <p className="text-gray-500">No clinics found</p>
           </div>
         ) : (
@@ -297,27 +297,27 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
                 )}
                 <div className="flex-1 min-w-0">
                   <h3 className="font-semibold text-gray-900 truncate">{clinic.name}</h3>
-                  <div className="flex items-center gap-2 mt-1">
+                  <div className="flex items-center gap-0 mt-0">
                     <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
                     <span className="text-sm font-medium">{clinic.rating.toFixed(1)}</span>
                     <span className="text-xs text-gray-500">({clinic.reviews})</span>
                   </div>
-                  <div className="flex items-center gap-1 mt-1 text-gray-600">
+                  <div className="flex items-center gap-0 mt-0 text-gray-600">
                     <MapPin className="w-3 h-3" />
                     <span className="text-xs truncate">{clinic.address}</span>
                   </div>
-                  <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
-                    <span className="flex items-center gap-1">
+                  <div className="flex items-center gap-4 mt-0 text-xs text-gray-500">
+                    <span className="flex items-center gap-0">
                       <Users className="w-3 h-3" />
                       {clinic.doctors} doctors
                     </span>
-                    <span className="flex items-center gap-1">
+                    <span className="flex items-center gap-0">
                       <Clock className="w-3 h-3" />
                       {clinic.operatingHours}
                     </span>
                   </div>
                   {clinic.isMultispecialty && (
-                    <span className="inline-block mt-2 px-2 py-1 bg-purple-100 text-purple-700 rounded-full text-xs">
+                    <span className="inline-block mt-0 px-0 py-0 bg-purple-100 text-purple-700 rounded-full text-xs">
                       Multispecialty
                     </span>
                   )}

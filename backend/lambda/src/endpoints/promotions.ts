@@ -16,7 +16,7 @@
  */
 
 import { Hono } from 'hono';
-import { select, insert, update, query } from '../database/rds-connection';
+import { select, insert, update, query, deleteRows } from '../database/rds-connection';
 
 export function registerPromotionEndpoints(app: Hono) {
   /**
@@ -245,6 +245,310 @@ export function registerPromotionEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error applying coupon:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  // ============================================================================
+  // ADMIN ENDPOINTS - PROMOTIONS CRUD
+  // ============================================================================
+
+  /**
+   * GET /admin/promotions
+   * Get all promotions (admin)
+   */
+  app.get("/admin/promotions", async (c) => {
+    try {
+      const { type, status } = c.req.query();
+      
+      let queryStr = 'SELECT * FROM promotions WHERE 1=1';
+      const params: any[] = [];
+      let paramIndex = 1;
+
+      if (type) {
+        queryStr += ` AND discount_type = $${paramIndex}`;
+        params.push(type);
+        paramIndex++;
+      }
+
+      if (status === 'active') {
+        queryStr += ` AND is_active = true AND (end_date IS NULL OR end_date >= NOW())`;
+      } else if (status === 'inactive') {
+        queryStr += ` AND is_active = false`;
+      } else if (status === 'expired') {
+        queryStr += ` AND end_date < NOW()`;
+      }
+
+      queryStr += ` ORDER BY created_at DESC`;
+
+      const result = await query(queryStr, params);
+      const rows = Array.isArray(result) ? result : (result as any).rows || [];
+
+      return c.json({
+        success: true,
+        promotions: rows,
+        total: rows.length,
+      });
+    } catch (error: any) {
+      console.error('Error fetching promotions:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /admin/promotions
+   * Create promotion (admin)
+   */
+  app.post("/admin/promotions", async (c) => {
+    try {
+      const body = await c.req.json();
+      const {
+        code,
+        name,
+        description,
+        discount_type,
+        discount_value,
+        min_order_value,
+        max_discount,
+        valid_from,
+        valid_until,
+        usage_limit,
+        usage_limit_per_user,
+        applicable_to,
+        is_active = true,
+      } = body;
+
+      if (!code || !name || !discount_type || discount_value === undefined) {
+        return c.json({ error: 'code, name, discount_type, and discount_value are required' }, 400);
+      }
+
+      const promotion = await insert('promotions', {
+        code: code.toUpperCase(),
+        name,
+        description,
+        discount_type,
+        discount_value,
+        min_order_amount: min_order_value,
+        max_discount_amount: max_discount,
+        start_date: valid_from ? new Date(valid_from) : new Date(),
+        end_date: valid_until ? new Date(valid_until) : null,
+        max_uses: usage_limit,
+        max_uses_per_user: usage_limit_per_user,
+        applicable_to: applicable_to || 'all',
+        is_active,
+      });
+
+      return c.json({
+        success: true,
+        promotion: promotion[0],
+        message: 'Promotion created successfully',
+      });
+    } catch (error: any) {
+      console.error('Error creating promotion:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * PUT /admin/promotions/:id
+   * Update promotion (admin)
+   */
+  app.put("/admin/promotions/:id", async (c) => {
+    try {
+      const { id } = c.req.param();
+      const body = await c.req.json();
+
+      const updateData: any = {};
+      if (body.code !== undefined) updateData.code = body.code.toUpperCase();
+      if (body.name !== undefined) updateData.name = body.name;
+      if (body.description !== undefined) updateData.description = body.description;
+      if (body.discount_type !== undefined) updateData.discount_type = body.discount_type;
+      if (body.discount_value !== undefined) updateData.discount_value = body.discount_value;
+      if (body.min_order_value !== undefined) updateData.min_order_amount = body.min_order_value;
+      if (body.max_discount !== undefined) updateData.max_discount_amount = body.max_discount;
+      if (body.valid_from !== undefined) updateData.start_date = new Date(body.valid_from);
+      if (body.valid_until !== undefined) updateData.end_date = body.valid_until ? new Date(body.valid_until) : null;
+      if (body.usage_limit !== undefined) updateData.max_uses = body.usage_limit;
+      if (body.usage_limit_per_user !== undefined) updateData.max_uses_per_user = body.usage_limit_per_user;
+      if (body.applicable_to !== undefined) updateData.applicable_to = body.applicable_to;
+      if (body.is_active !== undefined) updateData.is_active = body.is_active;
+
+      await update('promotions', { id }, updateData);
+
+      const updated = await select('promotions', { id });
+      return c.json({
+        success: true,
+        promotion: updated[0],
+        message: 'Promotion updated successfully',
+      });
+    } catch (error: any) {
+      console.error('Error updating promotion:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * DELETE /admin/promotions/:id
+   * Delete promotion (admin)
+   */
+  app.delete("/admin/promotions/:id", async (c) => {
+    try {
+      const { id } = c.req.param();
+
+      await deleteRows('promotions', { id });
+
+      return c.json({
+        success: true,
+        message: 'Promotion deleted successfully',
+      });
+    } catch (error: any) {
+      console.error('Error deleting promotion:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  // ============================================================================
+  // ADMIN ENDPOINTS - COUPONS CRUD
+  // ============================================================================
+
+  /**
+   * GET /admin/coupons
+   * Get all coupons (admin)
+   */
+  app.get("/admin/coupons", async (c) => {
+    try {
+      const { type, status } = c.req.query();
+      
+      let queryStr = 'SELECT * FROM coupons WHERE 1=1';
+      const params: any[] = [];
+      let paramIndex = 1;
+
+      if (type) {
+        queryStr += ` AND discount_type = $${paramIndex}`;
+        params.push(type);
+        paramIndex++;
+      }
+
+      if (status === 'active') {
+        queryStr += ` AND is_active = true AND (end_date IS NULL OR end_date >= NOW())`;
+      } else if (status === 'inactive') {
+        queryStr += ` AND is_active = false`;
+      } else if (status === 'expired') {
+        queryStr += ` AND end_date < NOW()`;
+      }
+
+      queryStr += ` ORDER BY created_at DESC`;
+
+      const result = await query(queryStr, params);
+      const rows = Array.isArray(result) ? result : (result as any).rows || [];
+
+      return c.json({
+        success: true,
+        coupons: rows,
+        total: rows.length,
+      });
+    } catch (error: any) {
+      console.error('Error fetching coupons:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /admin/coupons
+   * Create coupon (admin)
+   */
+  app.post("/admin/coupons", async (c) => {
+    try {
+      const body = await c.req.json();
+      const {
+        code,
+        discount_type,
+        discount_value,
+        min_order_value,
+        max_discount,
+        valid_from,
+        valid_until,
+        usage_limit,
+        is_active = true,
+      } = body;
+
+      if (!code || !discount_type || discount_value === undefined) {
+        return c.json({ error: 'code, discount_type, and discount_value are required' }, 400);
+      }
+
+      const coupon = await insert('coupons', {
+        code: code.toUpperCase(),
+        discount_type,
+        discount_value,
+        min_order_amount: min_order_value,
+        max_discount_amount: max_discount,
+        start_date: valid_from ? new Date(valid_from) : new Date(),
+        end_date: valid_until ? new Date(valid_until) : null,
+        max_uses: usage_limit,
+        is_active,
+      });
+
+      return c.json({
+        success: true,
+        coupon: coupon[0],
+        message: 'Coupon created successfully',
+      });
+    } catch (error: any) {
+      console.error('Error creating coupon:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * PUT /admin/coupons/:id
+   * Update coupon (admin)
+   */
+  app.put("/admin/coupons/:id", async (c) => {
+    try {
+      const { id } = c.req.param();
+      const body = await c.req.json();
+
+      const updateData: any = {};
+      if (body.code !== undefined) updateData.code = body.code.toUpperCase();
+      if (body.discount_type !== undefined) updateData.discount_type = body.discount_type;
+      if (body.discount_value !== undefined) updateData.discount_value = body.discount_value;
+      if (body.min_order_value !== undefined) updateData.min_order_amount = body.min_order_value;
+      if (body.max_discount !== undefined) updateData.max_discount_amount = body.max_discount;
+      if (body.valid_from !== undefined) updateData.start_date = new Date(body.valid_from);
+      if (body.valid_until !== undefined) updateData.end_date = body.valid_until ? new Date(body.valid_until) : null;
+      if (body.usage_limit !== undefined) updateData.max_uses = body.usage_limit;
+      if (body.is_active !== undefined) updateData.is_active = body.is_active;
+
+      await update('coupons', { id }, updateData);
+
+      const updated = await select('coupons', { id });
+      return c.json({
+        success: true,
+        coupon: updated[0],
+        message: 'Coupon updated successfully',
+      });
+    } catch (error: any) {
+      console.error('Error updating coupon:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * DELETE /admin/coupons/:id
+   * Delete coupon (admin)
+   */
+  app.delete("/admin/coupons/:id", async (c) => {
+    try {
+      const { id } = c.req.param();
+
+      await deleteRows('coupons', { id });
+
+      return c.json({
+        success: true,
+        message: 'Coupon deleted successfully',
+      });
+    } catch (error: any) {
+      console.error('Error deleting coupon:', error);
       return c.json({ error: error.message }, 500);
     }
   });

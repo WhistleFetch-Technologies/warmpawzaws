@@ -74,7 +74,7 @@ export function VendorBookingDetailModal({
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center">
       <div className="bg-white w-full max-w-[430px] rounded-t-[32px] sm:rounded-[32px] max-h-[90vh] overflow-y-auto">
-        <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between rounded-t-[32px] z-10">
+        <div className="sticky top-0 bg-white border-b border-gray-200 px-0 py-4 flex items-center justify-between rounded-t-[32px] z-10">
           <h2 className="font-bold text-gray-800">Booking Details</h2>
           <button
             onClick={onClose}
@@ -85,16 +85,16 @@ export function VendorBookingDetailModal({
         </div>
 
         {loading ? (
-          <div className="flex flex-col items-center justify-center py-20">
-            <div className="w-12 h-12 border-4 border-[#FF8C42] border-t-transparent rounded-full animate-spin mb-4"></div>
+          <div className="flex flex-col items-center justify-center py-00">
+            <div className="w-12 h-12 border-4 border-[primary] border-t-transparent rounded-full animate-spin mb-4"></div>
             <p className="text-gray-600">Loading...</p>
           </div>
         ) : !booking ? (
-          <div className="text-center py-20">
+          <div className="text-center py-00">
             <p className="text-gray-600">Booking not found</p>
           </div>
         ) : (
-          <div className="p-6 space-y-6 pb-24">
+          <div className="p-0 space-y-6 pb-24">
             <div className="flex items-center justify-between">
               <span className={`px-4 py-2 rounded-full font-semibold border ${getStatusColor(booking.status)}`}>
                 {booking.status === 'in_progress' ? 'In Progress' : 
@@ -106,8 +106,8 @@ export function VendorBookingDetailModal({
             </div>
 
             {booking.otp_code && booking.status !== 'completed' && booking.status !== 'cancelled' && (
-              <div className="bg-gradient-to-r from-orange-50 to-amber-50 border-2 border-orange-300 rounded-2xl p-6">
-                <div className="flex items-center gap-2 mb-3">
+              <div className="bg-gradient-to-r from-orange-50 to-amber-50 border-2 border-orange-300 rounded-2xl p-0">
+                <div className="flex items-center gap-0 mb-0">
                   <div className="w-10 h-10 bg-orange-500 rounded-full flex items-center justify-center">
                     <span className="text-xl">🔐</span>
                   </div>
@@ -117,8 +117,8 @@ export function VendorBookingDetailModal({
                   </div>
                 </div>
                 
-                <div className="bg-white rounded-xl p-4 mb-3">
-                  <div className="flex items-center justify-center gap-3">
+                <div className="bg-white rounded-xl p-4 mb-0">
+                  <div className="flex items-center justify-center gap-0">
                     <span className="text-4xl font-bold text-orange-600 tracking-[0.5em] font-mono">
                       {booking.otp_code}
                     </span>
@@ -127,7 +127,7 @@ export function VendorBookingDetailModal({
 
                 <button
                   onClick={handleCopyOtp}
-                  className="w-full bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
+                  className="w-full bg-orange-500 hover:bg-orange-600 text-white py-0 rounded-xl flex items-center justify-center gap-0 transition-colors"
                 >
                   {copiedOtp ? (
                     <>
@@ -145,7 +145,7 @@ export function VendorBookingDetailModal({
             )}
 
             <div className="space-y-4">
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-0">
                 <User className="w-5 h-5 text-gray-400" />
                 <div>
                   <p className="text-sm text-gray-600">Customer</p>
@@ -153,17 +153,17 @@ export function VendorBookingDetailModal({
                 </div>
               </div>
 
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-0">
                 <Phone className="w-5 h-5 text-gray-400" />
                 <div>
                   <p className="text-sm text-gray-600">Phone</p>
-                  <a href={`tel:${booking.customer?.phone || booking.customer_phone}`} className="font-semibold text-[#FF8C42]">
+                  <a href={`tel:${booking.customer?.phone || booking.customer_phone}`} className="font-semibold text-[primary]">
                     {booking.customer?.phone || booking.customer_phone || 'N/A'}
                   </a>
                 </div>
               </div>
 
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-0">
                 <Calendar className="w-5 h-5 text-gray-400" />
                 <div>
                   <p className="text-sm text-gray-600">Date & Time</p>
@@ -173,7 +173,7 @@ export function VendorBookingDetailModal({
                 </div>
               </div>
 
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-0">
                 <FileText className="w-5 h-5 text-gray-400" />
                 <div>
                   <p className="text-sm text-gray-600">Service</p>

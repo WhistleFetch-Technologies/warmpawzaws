@@ -4,41 +4,52 @@
   "description": "AWS Lambda handlers for Warmpawz platform",
   "main": "dist/handler.js",
   "scripts": {
-    "build": "npm run clean && tsc && npm run package",
+    "build": "npm run clean && npm run build:bundle && npm run package",
+    "build:ts": "tsc --noEmit",
+    "build:skip-ts": "npm run clean && npm run build:bundle && npm run package",
+    "build:bundle": "node esbuild.config.js",
+    "build:legacy": "npm run clean && tsc && npm run package",
     "package": "cd dist && zip -r ../api-handler.zip . && cd ..",
     "test": "jest",
+    "test:local": "./test-local.sh",
+    "start:local": "npx serverless offline --config serverless.local.yml",
     "lint": "eslint src --ext .ts",
     "clean": "rm -rf dist api-handler.zip"
   },
   "dependencies": {
-    "@aws-sdk/client-sns": "^3.450.0",
-    "@aws-sdk/client-sqs": "^3.450.0",
-    "@aws-sdk/client-s3": "^3.450.0",
-    "@aws-sdk/client-sts": "^3.450.0",
-    "@aws-sdk/s3-request-presigner": "^3.450.0",
     "@aws-sdk/client-chime-sdk-meetings": "^3.450.0",
     "@aws-sdk/client-cognito-identity-provider": "^3.450.0",
+    "@aws-sdk/client-s3": "^3.450.0",
     "@aws-sdk/client-secrets-manager": "^3.450.0",
-    "pg": "^8.11.3",
-    "hono": "^4.6.14",
+    "@aws-sdk/client-sns": "^3.450.0",
+    "@aws-sdk/client-sqs": "^3.450.0",
+    "@aws-sdk/client-sts": "^3.450.0",
+    "@aws-sdk/s3-request-presigner": "^3.450.0",
+    "@warmpawz/api-contracts": "file:../../packages/api-contracts",
     "aws-lambda": "^1.0.7",
     "firebase-admin": "^12.0.0",
-    "jose": "^5.2.0"
+    "hono": "^4.6.14",
+    "jose": "^5.2.0",
+    "pg": "^8.11.3",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@types/aws-lambda": "^8.10.130",
+    "@types/jest": "^29.5.11",
     "@types/node": "^20.10.0",
     "@types/pg": "^8.10.9",
-    "@types/aws-lambda": "^8.10.130",
-    "typescript": "^5.3.3",
-    "jest": "^29.7.0",
-    "@types/jest": "^29.5.11",
-    "ts-jest": "^29.1.1",
-    "eslint": "^8.56.0",
     "@typescript-eslint/eslint-plugin": "^6.19.0",
-    "@typescript-eslint/parser": "^6.19.0"
+    "@typescript-eslint/parser": "^6.19.0",
+    "esbuild": "^0.27.2",
+    "eslint": "^8.56.0",
+    "jest": "^29.7.0",
+    "serverless": "^4.29.4",
+    "serverless-offline": "^14.4.0",
+    "ts-jest": "^29.1.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
   },
   "engines": {
     "node": ">=18.0.0"
   }
 }
-

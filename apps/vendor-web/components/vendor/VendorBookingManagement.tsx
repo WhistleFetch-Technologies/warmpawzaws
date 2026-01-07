@@ -291,7 +291,7 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
       <div className="w-full max-w-[430px] mx-auto bg-white min-h-screen pb-20">
         {/* Header */}
         <div className="p-4 bg-white border-b border-gray-200 sticky top-0 z-10">
-          <div className="flex items-center gap-3 mb-4">
+          <div className="flex items-center gap-0 mb-4">
             <button onClick={onBack} className="w-8 h-8 flex items-center justify-center">
               <ArrowLeft className="w-5 h-5 text-gray-700" />
             </button>
@@ -299,19 +299,19 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
               <h1 className="font-semibold text-gray-900">{vendorData?.business_name || vendorData?.fullName || 'Booking Management'}</h1>
               <p className="text-xs text-gray-500">{vendorData?.address || 'India'}</p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-0">
               <Search className="w-5 h-5 text-gray-400" />
               <Filter className="w-5 h-5 text-gray-400" />
             </div>
           </div>
 
           {/* Tab Navigation */}
-          <div className="flex gap-2">
+          <div className="flex gap-0">
             <button
               onClick={() => setActiveTab('bookings')}
-              className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+              className={`flex-1 py-0.5 rounded-lg text-sm font-medium transition-colors ${
                 activeTab === 'bookings'
-                  ? 'bg-[#FF8C42] text-white'
+                  ? 'bg-[primary] text-white'
                   : 'bg-gray-100 text-gray-600'
               }`}
             >
@@ -319,9 +319,9 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
             </button>
             <button
               onClick={() => setActiveTab('earnings')}
-              className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+              className={`flex-1 py-0.5 rounded-lg text-sm font-medium transition-colors ${
                 activeTab === 'earnings'
-                  ? 'bg-[#FF8C42] text-white'
+                  ? 'bg-[primary] text-white'
                   : 'bg-gray-100 text-gray-600'
               }`}
             >
@@ -329,9 +329,9 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
             </button>
             <button
               onClick={() => setActiveTab('payouts')}
-              className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+              className={`flex-1 py-0.5 rounded-lg text-sm font-medium transition-colors ${
                 activeTab === 'payouts'
-                  ? 'bg-[#FF8C42] text-white'
+                  ? 'bg-[primary] text-white'
                   : 'bg-gray-100 text-gray-600'
               }`}
             >
@@ -342,9 +342,9 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
 
         {/* Schedule Section */}
         <div className="p-4 bg-white border-b border-gray-100">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between mb-0">
             <h2 className="font-semibold text-gray-900">Schedule</h2>
-            <div className="flex items-center gap-2 text-sm text-gray-600">
+            <div className="flex items-center gap-0 text-sm text-gray-600">
               <Calendar className="w-4 h-4" />
               <input
                 type="date"
@@ -356,12 +356,12 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
           </div>
 
           {/* Filter Tabs */}
-          <div className="flex gap-2">
+          <div className="flex gap-0">
             <button
               onClick={() => setActiveFilter('today')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              className={`px-4 py-0 rounded-lg text-sm font-medium transition-colors ${
                 activeFilter === 'today'
-                  ? 'bg-[#FF8C42] text-white'
+                  ? 'bg-[primary] text-white'
                   : 'bg-gray-100 text-gray-600'
               }`}
             >
@@ -369,9 +369,9 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
             </button>
             <button
               onClick={() => setActiveFilter('week')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              className={`px-4 py-0 rounded-lg text-sm font-medium transition-colors ${
                 activeFilter === 'week'
-                  ? 'bg-[#FF8C42] text-white'
+                  ? 'bg-[primary] text-white'
                   : 'bg-gray-100 text-gray-600'
               }`}
             >
@@ -379,9 +379,9 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
             </button>
             <button
               onClick={() => setActiveFilter('month')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              className={`px-4 py-0 rounded-lg text-sm font-medium transition-colors ${
                 activeFilter === 'month'
-                  ? 'bg-[#FF8C42] text-white'
+                  ? 'bg-[primary] text-white'
                   : 'bg-gray-100 text-gray-600'
               }`}
             >
@@ -395,10 +395,10 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
           <>
             {/* View Toggle */}
             <div className="p-4 bg-white border-b border-gray-100">
-              <div className="flex gap-2">
+              <div className="flex gap-0">
                 <button
                   onClick={() => setActiveView('consultations')}
-                  className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  className={`flex-1 py-0 rounded-lg text-sm font-medium transition-colors ${
                     activeView === 'consultations'
                       ? 'bg-gray-900 text-white'
                       : 'bg-gray-100 text-gray-600'
@@ -408,7 +408,7 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
                 </button>
                 <button
                   onClick={() => setActiveView('locations')}
-                  className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  className={`flex-1 py-0 rounded-lg text-sm font-medium transition-colors ${
                     activeView === 'locations'
                       ? 'bg-gray-900 text-white'
                       : 'bg-gray-100 text-gray-600'
@@ -421,24 +421,24 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
 
             {/* Instant Consultations Stats */}
             <div className="p-4 bg-white border-b border-gray-100">
-              <h3 className="text-sm font-semibold text-gray-900 mb-3">Instant Consultations</h3>
+              <h3 className="text-sm font-semibold text-gray-900 mb-0">Instant Consultations</h3>
               <div className="flex items-center justify-between">
                 <div className="text-center flex-1">
-                  <div className="w-12 h-12 bg-gray-100 rounded-lg mx-auto mb-1 flex items-center justify-center">
+                  <div className="w-12 h-12 bg-gray-100 rounded-lg mx-auto mb-0 flex items-center justify-center">
                     <Phone className="w-6 h-6 text-gray-600" />
                   </div>
                   <div className="font-semibold text-gray-900">{stats.calls}</div>
                   <div className="text-xs text-gray-500">Calls</div>
                 </div>
                 <div className="text-center flex-1">
-                  <div className="w-12 h-12 bg-gray-100 rounded-lg mx-auto mb-1 flex items-center justify-center">
+                  <div className="w-12 h-12 bg-gray-100 rounded-lg mx-auto mb-0 flex items-center justify-center">
                     <Video className="w-6 h-6 text-gray-600" />
                   </div>
                   <div className="font-semibold text-gray-900">{stats.online}</div>
                   <div className="text-xs text-gray-500">Online</div>
                 </div>
                 <div className="text-center flex-1">
-                  <div className="w-12 h-12 bg-gray-100 rounded-lg mx-auto mb-1 flex items-center justify-center">
+                  <div className="w-12 h-12 bg-gray-100 rounded-lg mx-auto mb-0 flex items-center justify-center">
                     <Phone className="w-6 h-6 text-gray-600" />
                   </div>
                   <div className="font-semibold text-gray-900">{stats.phone}</div>
@@ -449,11 +449,11 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
 
             {/* Today's Appointments */}
             <div className="p-4 bg-white">
-              <h3 className="text-sm font-semibold text-gray-900 mb-3">Today's Appointments</h3>
+              <h3 className="text-sm font-semibold text-gray-900 mb-0">Today's Appointments</h3>
               
               {loading ? (
                 <div className="text-center py-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#FF8C42] mx-auto"></div>
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[primary] mx-auto"></div>
                 </div>
               ) : bookings.length === 0 ? (
                 <div className="text-center py-8 text-gray-500 text-sm">
@@ -464,19 +464,19 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
                   {bookings.map((booking) => (
                     <div 
                       key={booking.id} 
-                      className="border border-gray-200 rounded-xl p-3 cursor-pointer hover:shadow-lg hover:border-[#FF8C42] transition-all"
+                      className="border border-gray-200 rounded-xl p-0 cursor-pointer hover:shadow-lg hover:border-[primary] transition-all"
                     >
-                      <div className="flex items-start justify-between mb-2">
+                      <div className="flex items-start justify-between mb-0">
                         <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
+                          <div className="flex items-center gap-0 mb-0">
                             <span className="text-sm font-semibold text-gray-900">{booking.time}</span>
                             <span className="text-sm text-gray-600">{booking.customerName}</span>
                           </div>
-                          <div className="flex items-center gap-1 text-xs text-gray-500 mb-1">
+                          <div className="flex items-center gap-0 text-xs text-gray-500 mb-0">
                             <span>🐕</span>
                             <span>{booking.petName} - {booking.petType}</span>
                           </div>
-                          <div className="flex items-center gap-1 text-xs text-gray-500">
+                          <div className="flex items-center gap-0 text-xs text-gray-500">
                             <MapPin className="w-3 h-3" />
                             <span>{booking.location}</span>
                           </div>
@@ -487,16 +487,16 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
                       {booking.status !== 'completed' && booking.status !== 'cancelled' && (() => {
                         if (booking.status === 'pending') {
                           return (
-                            <div className="mt-3 grid grid-cols-2 gap-2">
+                            <div className="mt-0 grid grid-cols-2 gap-0">
                               <button
-                                className="px-4 py-2.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-sm font-medium transition-colors"
+                                className="px-4 py-0.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-sm font-medium transition-colors"
                                 onClick={() => handleCancelBooking(booking.id)}
                                 disabled={completingBooking}
                               >
                                 Reject
                               </button>
                               <button
-                                className="px-4 py-2.5 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium transition-colors"
+                                className="px-4 py-0.5 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium transition-colors"
                                 onClick={() => handleAcceptBooking(booking)}
                                 disabled={completingBooking}
                               >
@@ -512,32 +512,32 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
                         if (isDogWalking) {
                           if (booking.status === 'in_progress') {
                             return (
-                              <div className="mt-3">
+                              <div className="mt-0">
                                 <button
                                   onClick={() => handleEndSession(booking)}
                                   disabled={completingBooking}
-                                  className="w-full px-4 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+                                  className="w-full px-4 py-0.5 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-0 transition-colors disabled:opacity-50"
                                 >
                                   <Square className="w-4 h-4" />
                                   End Session & Complete
                                 </button>
-                                <p className="text-xs text-gray-500 mt-1 text-center">
+                                <p className="text-xs text-gray-500 mt-0 text-center">
                                   🗺️ Customer is tracking your location
                                 </p>
                               </div>
                             );
                           } else {
                             return (
-                              <div className="mt-3">
+                              <div className="mt-0">
                                 <button
                                   onClick={() => handleCompleteBooking(booking)}
                                   disabled={completingBooking}
-                                  className="w-full px-4 py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+                                  className="w-full px-4 py-0.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-0 transition-colors disabled:opacity-50"
                                 >
                                   <Play className="w-4 h-4" />
                                   Start Session with OTP
                                 </button>
-                                <p className="text-xs text-gray-500 mt-1 text-center">
+                                <p className="text-xs text-gray-500 mt-0 text-center">
                                   Enter customer OTP to start walk & enable live tracking
                                 </p>
                               </div>
@@ -545,16 +545,16 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
                           }
                         } else {
                           return (
-                            <div className="mt-3">
+                            <div className="mt-0">
                               <button
                                 onClick={() => handleCompleteBooking(booking)}
                                 disabled={completingBooking}
-                                className="w-full px-4 py-2.5 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+                                className="w-full px-4 py-0.5 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-0 transition-colors disabled:opacity-50"
                               >
                                 <CheckCircle className="w-4 h-4" />
                                 {booking.communicationType === 'video' ? 'Mark Complete' : 'Complete with OTP'}
                               </button>
-                              <p className="text-xs text-gray-500 mt-1 text-center">
+                              <p className="text-xs text-gray-500 mt-0 text-center">
                                 {booking.communicationType === 'video' 
                                   ? 'Tele consultation - No OTP required' 
                                   : 'Ask customer for 4-digit OTP to complete'}
@@ -565,15 +565,15 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
                       })()}
                       
                       {booking.status === 'completed' && (
-                        <div className="mt-3 px-3 py-2 bg-green-50 border border-green-200 rounded-lg text-center">
+                        <div className="mt-0 px-0 py-0 bg-green-50 border border-green-200 rounded-lg text-center">
                           <span className="text-sm font-medium text-green-700">✓ Completed</span>
                         </div>
                       )}
                       
-                      <div className="mt-2 pt-2 border-t border-gray-100">
+                      <div className="mt-0 pt-0 border-t border-gray-100">
                         <a 
                           href={`tel:${booking.phone}`}
-                          className="flex items-center gap-2 text-xs text-[#FF8C42]"
+                          className="flex items-center gap-0 text-xs text-[primary]"
                         >
                           <Phone className="w-3 h-3" />
                           {booking.phone}
@@ -587,13 +587,13 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
 
             {/* Available Time Slots */}
             <div className="p-4 bg-white border-t border-gray-100">
-              <h3 className="text-sm font-semibold text-gray-900 mb-3">Available Time Slots</h3>
+              <h3 className="text-sm font-semibold text-gray-900 mb-0">Available Time Slots</h3>
               
-              <div className="grid grid-cols-4 gap-2">
+              <div className="grid grid-cols-4 gap-0">
                 {timeSlots.map((slot, index) => (
                   <button
                     key={index}
-                    className={`p-3 rounded-lg text-sm font-medium transition-all ${
+                    className={`p-0 rounded-lg text-sm font-medium transition-all ${
                       slot.booked
                         ? 'bg-pink-100 text-pink-700 border border-pink-200'
                         : slot.available
@@ -608,15 +608,15 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
               </div>
               
               <div className="flex items-center gap-4 mt-4 text-xs text-gray-600">
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-0">
                   <div className="w-3 h-3 bg-blue-100 border border-blue-200 rounded"></div>
                   <span>Available</span>
                 </div>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-0">
                   <div className="w-3 h-3 bg-pink-100 border border-pink-200 rounded"></div>
                   <span>Booked</span>
                 </div>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-0">
                   <div className="w-3 h-3 bg-gray-100 border border-gray-200 rounded"></div>
                   <span>Unavailable</span>
                 </div>
@@ -648,7 +648,7 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
         
         return (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl w-full max-w-[380px] p-6">
+            <div className="bg-white rounded-2xl w-full max-w-[380px] p-0">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="font-semibold text-gray-900">
                   {isStartSession ? 'Start Walking Session' : 'Enter Customer OTP'}
@@ -661,11 +661,11 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
                 </button>
               </div>
               
-              <div className="mb-4 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+              <div className="mb-4 p-0 bg-orange-50 border border-orange-200 rounded-lg">
                 <p className="text-sm text-gray-700">
                   <strong>{selectedBooking.customerName}</strong> has a 4-digit OTP for this booking.
                 </p>
-                <p className="text-xs text-gray-600 mt-1">
+                <p className="text-xs text-gray-600 mt-0">
                   {isStartSession 
                     ? 'Enter OTP to start the walk. Live tracking will be enabled for the customer.'
                     : 'Ask the customer to share their OTP from "My Bookings" to complete this service.'}
@@ -673,7 +673,7 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
               </div>
 
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-700 mb-0">
                   4-Digit OTP
                 </label>
                 <input
@@ -682,25 +682,25 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
                   value={otpInput}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => setOtpInput(e.target.value.replace(/[^0-9]/g, ''))}
                   placeholder="0000"
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg text-center text-2xl tracking-widest focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
+                  className="w-full px-4 py-0 border border-gray-300 rounded-lg text-center text-2xl tracking-widest focus:outline-none focus:ring-2 focus:ring-[primary]"
                   autoFocus
                 />
                 {otpError && (
-                  <p className="text-sm text-red-600 mt-2">{otpError}</p>
+                  <p className="text-sm text-red-600 mt-0">{otpError}</p>
                 )}
               </div>
 
-              <div className="flex gap-2">
+              <div className="flex gap-0">
                 <button
                   onClick={() => setShowOTPModal(false)}
-                  className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50"
+                  className="flex-1 px-4 py-0.5 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={isStartSession ? handleStartSession : handleOTPSubmit}
                   disabled={completingBooking || otpInput.length !== 4}
-                  className={`flex-1 px-4 py-2.5 text-white rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed ${
+                  className={`flex-1 px-4 py-0.5 text-white rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed ${
                     isStartSession ? 'bg-blue-500 hover:bg-blue-600' : 'bg-green-500 hover:bg-green-600'
                   }`}
                 >

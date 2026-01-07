@@ -38,7 +38,7 @@ export function EnhancedVendorDiscoveryByProblem({
   return (
     <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
       {/* Header with Filters */}
-      <div className="bg-gradient-to-r from-primary to-primary-dark px-6 pt-12 pb-6 sticky top-0 z-20">
+      <div className="bg-gradient-to-r from-primary to-primary-dark px-0 pt-12 pb-0 sticky top-0 z-20">
         <div className="flex items-center gap-4 mb-4">
           <button
             onClick={onBack}
@@ -62,11 +62,11 @@ export function EnhancedVendorDiscoveryByProblem({
         {showFilters && (
           <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4 space-y-3">
             <div>
-              <label className="block text-sm font-semibold text-white mb-2">Sort By</label>
+              <label className="block text-sm font-semibold text-white mb-0">Sort By</label>
               <select
                 value={filters.sortBy}
                 onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilters({ ...filters, sortBy: e.target.value })}
-                className="w-full px-4 py-2 bg-white rounded-xl focus:outline-none"
+                className="w-full px-4 py-0 bg-white rounded-xl focus:outline-none"
               >
                 <option value="rating">Highest Rated</option>
                 <option value="distance">Nearest</option>
@@ -75,11 +75,11 @@ export function EnhancedVendorDiscoveryByProblem({
               </select>
             </div>
             <div>
-              <label className="block text-sm font-semibold text-white mb-2">Min Rating</label>
+              <label className="block text-sm font-semibold text-white mb-0">Min Rating</label>
               <select
                 value={filters.minRating}
                 onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilters({ ...filters, minRating: e.target.value })}
-                className="w-full px-4 py-2 bg-white rounded-xl focus:outline-none"
+                className="w-full px-4 py-0 bg-white rounded-xl focus:outline-none"
               >
                 <option value="">All Ratings</option>
                 <option value="4">4+ Stars</option>
@@ -88,11 +88,11 @@ export function EnhancedVendorDiscoveryByProblem({
               </select>
             </div>
             <div>
-              <label className="block text-sm font-semibold text-white mb-2">Service Style</label>
+              <label className="block text-sm font-semibold text-white mb-0">Service Style</label>
               <select
                 value={filters.serviceStyle}
                 onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilters({ ...filters, serviceStyle: e.target.value })}
-                className="w-full px-4 py-2 bg-white rounded-xl focus:outline-none"
+                className="w-full px-4 py-0 bg-white rounded-xl focus:outline-none"
               >
                 <option value="">All Styles</option>
                 <option value="at_home">At Home</option>

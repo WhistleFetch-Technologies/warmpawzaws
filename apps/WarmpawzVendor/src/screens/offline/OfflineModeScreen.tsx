@@ -154,7 +154,7 @@ export function OfflineModeScreen({ vendorId, onBack }: OfflineModeScreenProps) 
               disabled={syncing}
             >
               {syncing ? (
-                <ActivityIndicator color="#ffffff" />
+                <ActivityIndicator color={colors.white} />
               ) : (
                 <Text style={styles.syncButtonText}>Sync Now</Text>
               )}
@@ -300,7 +300,7 @@ const styles = StyleSheet.create({
   syncButtonText: {
     fontSize: typography.fontSizes.md,
     fontWeight: typography.fontWeights.semibold,
-    color: '#ffffff',
+    color: colors.white,
   },
   clearButton: {
     backgroundColor: colors.error,
@@ -312,10 +312,10 @@ const styles = StyleSheet.create({
   clearButtonText: {
     fontSize: typography.fontSizes.md,
     fontWeight: typography.fontWeights.semibold,
-    color: '#ffffff',
+    color: colors.white,
   },
   offlineInfo: {
-    backgroundColor: '#FFF4E6',
+    backgroundColor: colors.primary.50,
     borderWidth: 2,
     borderColor: colors.warning,
     borderRadius: borderRadius.xl,

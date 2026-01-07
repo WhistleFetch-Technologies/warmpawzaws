@@ -110,7 +110,7 @@ export function ServiceBookingHistory({ phone, serviceType, serviceName, onClose
       <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center">
         <div className="bg-white w-full max-w-[430px] rounded-t-[32px] sm:rounded-[32px] max-h-[90vh] overflow-y-auto">
           {/* Header */}
-          <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
+          <div className="sticky top-0 bg-white border-b border-gray-200 px-0 py-4 flex items-center justify-between z-10">
             <h2 className="font-bold text-gray-800">My {serviceName} Bookings</h2>
             <button
               onClick={onClose}
@@ -121,9 +121,9 @@ export function ServiceBookingHistory({ phone, serviceType, serviceName, onClose
           </div>
 
           {/* Content */}
-          <div className="px-6 py-6">
+          <div className="px-0 py-0">
             {loading ? (
-              <div className="flex items-center justify-center py-12">
+              <div className="flex items-center justify-center py-02">
                 <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
               </div>
             ) : bookings.length === 0 ? (
@@ -142,25 +142,25 @@ export function ServiceBookingHistory({ phone, serviceType, serviceName, onClose
                     }}
                     className="w-full bg-white rounded-xl border-2 border-gray-200 p-4 hover:border-primary hover:shadow-md transition-all text-left active:scale-[0.98]"
                   >
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex items-center gap-3">
+                    <div className="flex items-start justify-between mb-0">
+                      <div className="flex items-center gap-0">
                         <div className="text-3xl">{getServiceEmoji(booking.serviceType)}</div>
                         <div className="flex-1">
-                          <h3 className="font-bold text-gray-900 mb-1">{booking.serviceName}</h3>
+                          <h3 className="font-bold text-gray-900 mb-0">{booking.serviceName}</h3>
                           <p className="text-sm text-gray-600">{booking.vendorName}</p>
                         </div>
                       </div>
-                      <span className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${getStatusColor(booking.status)}`}>
+                      <span className={`px-0.5 py-1 rounded-full text-xs font-semibold border ${getStatusColor(booking.status)}`}>
                         {booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
                       </span>
                     </div>
 
-                    <div className="space-y-2 mb-3">
-                      <div className="flex items-center gap-2 text-sm text-gray-600">
+                    <div className="space-y-2 mb-0">
+                      <div className="flex items-center gap-0 text-sm text-gray-600">
                         <Calendar className="w-4 h-4" />
                         <span>{formatDate(booking.scheduledDate)}</span>
                       </div>
-                      <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <div className="flex items-center gap-0 text-sm text-gray-600">
                         <Clock className="w-4 h-4" />
                         <span>{booking.scheduledTime}</span>
                       </div>

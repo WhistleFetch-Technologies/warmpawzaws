@@ -73,7 +73,7 @@ export function CustomerBookingsPage({ phone, onBack, onNavigate }: CustomerBook
     <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
       {/* Header */}
       <div className="sticky top-0 z-10 bg-white border-b px-4 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-0">
           <button
             onClick={onBack}
             className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors"
@@ -84,7 +84,7 @@ export function CustomerBookingsPage({ phone, onBack, onNavigate }: CustomerBook
         </div>
         <button
           onClick={() => onNavigate('services')}
-          className="px-4 py-2 bg-primary text-white rounded-xl font-medium hover:bg-primary-dark transition-colors flex items-center gap-2"
+          className="px-4 py-0 bg-primary text-white rounded-xl font-medium hover:bg-primary-dark transition-colors flex items-center gap-0"
         >
           <Plus className="w-4 h-4" />
           New Booking
@@ -98,7 +98,7 @@ export function CustomerBookingsPage({ phone, onBack, onNavigate }: CustomerBook
             <button
               key={status}
               onClick={() => setActiveTab(status)}
-              className={`py-3 text-sm font-medium capitalize border-b-2 transition-colors whitespace-nowrap ${
+              className={`py-0 text-sm font-medium capitalize border-b-2 transition-colors whitespace-nowrap ${
                 activeTab === status
                   ? 'border-primary text-primary'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
@@ -111,17 +111,17 @@ export function CustomerBookingsPage({ phone, onBack, onNavigate }: CustomerBook
       </div>
 
       {/* Content */}
-      <div className="px-4 py-6">
+      <div className="px-4 py-0">
         {loading ? (
-          <div className="flex items-center justify-center py-12">
+          <div className="flex items-center justify-center py-02">
             <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
           </div>
         ) : error ? (
           <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-center">
-            <p className="text-red-700 mb-2">{error}</p>
+            <p className="text-red-700 mb-0">{error}</p>
             <button
               onClick={fetchBookings}
-              className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+              className="px-4 py-0 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
             >
               Retry
             </button>
@@ -129,13 +129,13 @@ export function CustomerBookingsPage({ phone, onBack, onNavigate }: CustomerBook
         ) : filteredBookings.length === 0 ? (
           <div className="bg-white rounded-xl border p-12 text-center">
             <Calendar className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-            <h3 className="font-bold text-gray-900 mb-2">
+            <h3 className="font-bold text-gray-900 mb-0">
               {activeTab === 'all' ? "You haven't made any bookings yet." : `No ${activeTab} bookings found.`}
             </h3>
             {activeTab === 'all' && (
               <button
                 onClick={() => onNavigate('services')}
-                className="mt-4 px-6 py-3 bg-primary text-white rounded-xl font-medium hover:bg-primary-dark transition-colors"
+                className="mt-4 px-0 py-0 bg-primary text-white rounded-xl font-medium hover:bg-primary-dark transition-colors"
               >
                 Book a Service
               </button>
@@ -149,22 +149,22 @@ export function CustomerBookingsPage({ phone, onBack, onNavigate }: CustomerBook
                 onClick={() => onNavigate('booking-details', { bookingId: booking.id })}
                 className="bg-white rounded-xl border-2 border-gray-200 p-4 hover:border-primary hover:shadow-md transition-all active:scale-[0.98] cursor-pointer"
               >
-                <div className="flex items-start justify-between mb-3">
+                <div className="flex items-start justify-between mb-0">
                   <div className="flex-1">
-                    <h3 className="font-bold text-gray-900 mb-1">{booking.serviceName}</h3>
+                    <h3 className="font-bold text-gray-900 mb-0">{booking.serviceName}</h3>
                     <p className="text-sm text-gray-600">{booking.vendorName}</p>
                   </div>
-                  <span className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${getStatusColor(booking.status)}`}>
+                  <span className={`px-0.5 py-1 rounded-full text-xs font-semibold border ${getStatusColor(booking.status)}`}>
                     {booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
                   </span>
                 </div>
 
-                <div className="space-y-2 mb-3">
-                  <div className="flex items-center gap-2 text-sm text-gray-600">
+                <div className="space-y-2 mb-0">
+                  <div className="flex items-center gap-0 text-sm text-gray-600">
                     <Calendar className="w-4 h-4" />
                     <span>{new Date(booking.scheduledDate).toLocaleDateString()}</span>
                   </div>
-                  <div className="flex items-center gap-2 text-sm text-gray-600">
+                  <div className="flex items-center gap-0 text-sm text-gray-600">
                     <Clock className="w-4 h-4" />
                     <span>{booking.scheduledTime}</span>
                   </div>

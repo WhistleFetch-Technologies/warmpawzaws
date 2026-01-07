@@ -18,7 +18,7 @@ import {
   Image,
 } from 'react-native';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
-import { CustomerApi } from '../../services/api';
+import { CustomerApi, RewardsApi } from '../../services/api';
 
 interface RewardsLoyaltyScreenProps {
   phone: string;
@@ -93,7 +93,7 @@ export function RewardsLoyaltyScreen({
     try {
       setLoading(true);
       if (customerId) {
-        const response = await CustomerApi.getLoyaltyProfile(customerId);
+        const response = await RewardsApi.getPoints(customerId);
         const profileData = (response as any).profile || response;
         
         setLoyaltyProfile({
@@ -143,8 +143,9 @@ export function RewardsLoyaltyScreen({
 
   const loadRewardsCatalog = async () => {
     try {
-      const response = await CustomerApi.getRewardsCatalog();
-      const rewardsData = (response as any).rewards || (response as any).catalog || Array.isArray(response) ? response : [];
+      if (customerId) {
+        const response = await RewardsApi.getAvailableRewards(customerId);
+        const rewardsData = (response as any).rewards || (response as any).catalog || Array.isArray(response) ? response : [];
       
       const formattedRewards: RewardItem[] = rewardsData.map((reward: any) => ({
         id: reward.id || reward.rewardId,
@@ -167,14 +168,13 @@ export function RewardsLoyaltyScreen({
   const loadPointsHistory = async () => {
     try {
       if (customerId) {
-        const response = await CustomerApi.getLoyaltyProfile(customerId);
-        const profileData = (response as any).profile || response;
-        const historyData = profileData.history || [];
+        const response = await RewardsApi.getHistory(customerId, 50, 0);
+        const historyData = response.history || response || [];
         
         const formattedHistory: PointsHistory[] = historyData.map((item: any) => ({
           id: item.id || item.transactionId,
-          type: (item.type || item.transactionType === 'earned' ? 'earned' : 'redeemed') as any,
-          amount: Math.abs(item.points || 0),
+          type: (item.type || 'earned') as any,
+          amount: Math.abs(item.points || item.amount || 0),
           description: item.description || item.actionKey || 'Transaction',
           date: item.timestamp || item.created_at || item.date || new Date().toISOString(),
           source: item.source || item.referenceType || '',
@@ -208,7 +208,10 @@ export function RewardsLoyaltyScreen({
 
     try {
       setRedeeming(true);
-      await CustomerApi.redeemPoints(customerId, selectedReward.pointsCost, selectedReward.id);
+      await RewardsApi.redeemPoints(customerId, {
+        points: selectedReward.pointsCost,
+        rewardId: selectedReward.id,
+      });
       
       Alert.alert(
         'Success',
@@ -242,7 +245,7 @@ export function RewardsLoyaltyScreen({
       case 'Gold':
         return '#F59E0B';
       case 'Silver':
-        return '#9CA3AF';
+        return {colors.gray.400};
       case 'Bronze':
       default:
         return '#CD7F32';
@@ -593,7 +596,7 @@ export function RewardsLoyaltyScreen({
                         {
                           color:
                             item.type === 'earned'
-                              ? '#10B981'
+                              ? {colors.success}
                               : item.type === 'redeemed'
                               ? '#EF4444'
                               : '#6B7280',
@@ -696,7 +699,7 @@ export function RewardsLoyaltyScreen({
                 disabled={redeeming}
               >
                 {redeeming ? (
-                  <ActivityIndicator color="#fff" />
+                  <ActivityIndicator color={colors.white} />
                 ) : (
                   <Text style={styles.modalButtonTextPrimary}>Confirm</Text>
                 )}
@@ -712,7 +715,7 @@ export function RewardsLoyaltyScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
   },
   header: {
     flexDirection: 'row',
@@ -725,12 +728,12 @@ const styles = StyleSheet.create({
   },
   backButton: {
     fontSize: typography.fontSizes.md,
-    color: '#fff',
+    color: colors.white,
   },
   headerTitle: {
     fontSize: typography.fontSizes['2xl'],
     fontWeight: 'bold',
-    color: '#fff',
+    color: colors.white,
     flex: 1,
     textAlign: 'center',
   },
@@ -746,7 +749,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     backgroundColor: '#F9FAFB',
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: colors.gray.200,
   },
   tab: {
     flex: 1,
@@ -792,23 +795,23 @@ const styles = StyleSheet.create({
   tierName: {
     fontSize: typography.fontSizes.lg,
     fontWeight: 'bold',
-    color: '#fff',
+    color: colors.white,
     marginBottom: spacing.xs,
   },
   pointsLabel: {
     fontSize: typography.fontSizes.sm,
-    color: '#fff',
+    color: colors.white,
     opacity: 0.9,
   },
   pointsAmount: {
     fontSize: 56,
     fontWeight: 'bold',
-    color: '#fff',
+    color: colors.white,
     marginBottom: spacing.xs,
   },
   pointsSubtext: {
     fontSize: typography.fontSizes.md,
-    color: '#fff',
+    color: colors.white,
     opacity: 0.9,
     marginBottom: spacing.md,
   },
@@ -824,12 +827,12 @@ const styles = StyleSheet.create({
   },
   progressFill: {
     height: '100%',
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderRadius: borderRadius.full,
   },
   progressText: {
     fontSize: typography.fontSizes.xs,
-    color: '#fff',
+    color: colors.white,
     textAlign: 'center',
   },
   statsGrid: {
@@ -844,7 +847,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   statIcon: {
     fontSize: 32,
@@ -874,7 +877,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   benefitItem: {
     flexDirection: 'row',
@@ -902,7 +905,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   quickActionIcon: {
     fontSize: 32,
@@ -922,13 +925,13 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   rewardIcon: {
     width: 64,
     height: 64,
     borderRadius: borderRadius.md,
-    backgroundColor: '#E5E7EB',
+    backgroundColor: colors.gray.200,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: spacing.md,
@@ -972,11 +975,11 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
   },
   redeemButtonDisabled: {
-    backgroundColor: '#E5E7EB',
+    backgroundColor: colors.gray.200,
   },
   redeemButtonText: {
     fontSize: typography.fontSizes.md,
-    color: '#fff',
+    color: colors.white,
     fontWeight: 'bold',
   },
   redeemButtonTextDisabled: {
@@ -996,7 +999,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   historyIcon: {
     width: 48,
@@ -1058,7 +1061,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderTopLeftRadius: borderRadius.xl,
     borderTopRightRadius: borderRadius.xl,
     maxHeight: '90%',
@@ -1069,7 +1072,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: colors.gray.200,
   },
   modalTitle: {
     fontSize: typography.fontSizes.xl,
@@ -1080,7 +1083,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: colors.gray.100,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1097,7 +1100,7 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   redeemRewardIcon: {
     fontSize: 64,
@@ -1136,7 +1139,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: spacing.md,
     borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
+    borderTopColor: colors.gray.200,
   },
   redeemBalanceLabel: {
     fontSize: typography.fontSizes.md,
@@ -1153,7 +1156,7 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     padding: spacing.md,
     borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
+    borderTopColor: colors.gray.200,
   },
   modalButton: {
     flex: 1,
@@ -1164,7 +1167,7 @@ const styles = StyleSheet.create({
   modalButtonSecondary: {
     backgroundColor: '#F9FAFB',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   modalButtonPrimary: {
     backgroundColor: colors.primary,
@@ -1176,7 +1179,7 @@ const styles = StyleSheet.create({
   },
   modalButtonTextPrimary: {
     fontSize: typography.fontSizes.md,
-    color: '#fff',
+    color: colors.white,
     fontWeight: 'bold',
   },
 });

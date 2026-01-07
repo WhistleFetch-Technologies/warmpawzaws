@@ -44,31 +44,31 @@ export function GeneralSettingsTab() {
     <div className="space-y-4">
       <div className="bg-white rounded-lg border-2 border-gray-200 p-4 space-y-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Platform Name</label>
+          <label className="block text-sm font-medium text-gray-700 mb-0">Platform Name</label>
           <input
             type="text"
             value={settings.platformName}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSettings(prev => ({ ...prev, platformName: e.target.value }))}
-            className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
+            className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Timezone</label>
+          <label className="block text-sm font-medium text-gray-700 mb-0">Timezone</label>
           <input
             type="text"
             value={settings.timezone}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSettings(prev => ({ ...prev, timezone: e.target.value }))}
-            className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
+            className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
             placeholder="UTC"
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Date Format</label>
+          <label className="block text-sm font-medium text-gray-700 mb-0">Date Format</label>
           <input
             type="text"
             value={settings.dateFormat}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSettings(prev => ({ ...prev, dateFormat: e.target.value }))}
-            className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
+            className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
             placeholder="DD/MM/YYYY"
           />
         </div>
@@ -76,7 +76,7 @@ export function GeneralSettingsTab() {
       <button
         onClick={handleSave}
         disabled={loading}
-        className="w-full py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 flex items-center justify-center gap-2 disabled:opacity-50"
+        className="w-full py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 flex items-center justify-center gap-0 disabled:opacity-50"
       >
         {loading ? (
           <>

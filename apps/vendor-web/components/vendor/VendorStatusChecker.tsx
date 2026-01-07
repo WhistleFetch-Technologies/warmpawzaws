@@ -95,18 +95,18 @@ export function VendorStatusChecker({ vendorId, onStatusChange }: VendorStatusCh
   const config = getStatusConfig(status);
 
   return (
-    <div className={`rounded-xl border-2 ${config.borderColor} ${config.bgColor} p-6`}>
+    <div className={`rounded-xl border-2 ${config.borderColor} ${config.bgColor} p-0`}>
       <div className="flex items-center gap-4">
         <div className="flex-shrink-0">
           {config.icon}
         </div>
         <div className="flex-1">
-          <h3 className={`font-semibold ${config.color} mb-1`}>
+          <h3 className={`font-semibold ${config.color} mb-0`}>
             {status ? status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' ') : 'Unknown Status'}
           </h3>
           <p className="text-sm text-gray-700">{config.message}</p>
           {lastChecked && (
-            <p className="text-xs text-gray-500 mt-2">
+            <p className="text-xs text-gray-500 mt-0">
               Last checked: {lastChecked.toLocaleTimeString()}
             </p>
           )}

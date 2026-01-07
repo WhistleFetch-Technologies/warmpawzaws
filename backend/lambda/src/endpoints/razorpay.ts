@@ -46,8 +46,12 @@ class CreateRazorpayOrderHandler extends BaseHandler {
 
     const booking = bookings[0];
 
-    // ✅ Create Razorpay Order via API
-    const orderData = {
+    // ✅ Get vendor details for marketplace mode
+    const vendors = await select('vendors', { id: booking.vendor_id });
+    const vendor = vendors.length > 0 ? vendors[0] : null;
+
+    // ✅ Create Razorpay Order with marketplace mode (automatic transfers)
+    const orderData: any = {
       amount: Math.round(amount * 100), // Convert to paise
       currency: currency,
       receipt: `booking_${bookingId}`,
@@ -57,6 +61,29 @@ class CreateRazorpayOrderHandler extends BaseHandler {
         vendorId: booking.vendor_id,
       },
     };
+
+    // ✅ If vendor has linked account and marketplace mode enabled, add transfers
+    if (vendor?.razorpay_account_id && vendor.bank_verified) {
+      // Get vendor tier to calculate commission
+      const tierCommission = await getVendorTierCommission(booking.vendor_id);
+      const commissionAmount = Math.round((amount * tierCommission / 100) * 100); // In paise
+      const vendorShare = Math.round(amount * 100) - commissionAmount;
+
+      // Add transfer configuration for marketplace mode
+      orderData.transfers = [
+        {
+          account: vendor.razorpay_account_id,
+          amount: vendorShare,
+          currency: currency,
+          notes: {
+            booking_id: bookingId,
+            vendor_id: booking.vendor_id,
+            commission_rate: tierCommission.toString(),
+          },
+          on_hold: false,
+        },
+      ];
+    }
 
     const razorpayOrder = await razorpayRequest('/orders', 'POST', orderData);
 
@@ -124,6 +151,25 @@ class VerifyPaymentHandler extends BaseHandler {
       { payment_status: 'paid' }
     );
 
+    // ✅ Trigger automatic settlement if marketplace mode is enabled
+    try {
+      const vendors = await select('vendors', { id: payment.vendor_id });
+      const vendor = vendors.length > 0 ? vendors[0] : null;
+      
+      if (vendor?.razorpay_account_id && vendor.bank_verified) {
+        // Queue automatic settlement
+        const { sendToSQS } = await import('../utils/aws-clients');
+        await sendToSQS('settlement-queue', {
+          type: 'auto_settle_booking',
+          bookingId: payment.booking_id,
+          vendorId: payment.vendor_id,
+          paymentId: payment.id,
+        });
+      }
+    } catch (error) {
+      console.error('Failed to queue automatic settlement:', error);
+    }
+
     // ✅ Publish payment processed event
     try {
       const { publishPaymentProcessed } = await import('../utils/sns-client');
@@ -182,11 +228,31 @@ class RazorpayWebhookHandler extends BaseHandler {
       // Update booking
       const payments = await select('payments', { razorpay_payment_id: payment.id });
       if (payments.length > 0) {
+        const paymentRecord = payments[0];
         await update(
           'bookings',
-          { id: payments[0].booking_id },
+          { id: paymentRecord.booking_id },
           { payment_status: 'paid' }
         );
+
+        // ✅ Trigger automatic settlement if marketplace mode is enabled
+        try {
+          const vendors = await select('vendors', { id: paymentRecord.vendor_id });
+          const vendor = vendors.length > 0 ? vendors[0] : null;
+          
+          if (vendor?.razorpay_account_id && vendor.bank_verified) {
+            // Queue automatic settlement
+            const { sendToSQS } = await import('../utils/aws-clients');
+            await sendToSQS('settlement-queue', {
+              type: 'auto_settle_booking',
+              bookingId: paymentRecord.booking_id,
+              vendorId: paymentRecord.vendor_id,
+              paymentId: paymentRecord.id,
+            });
+          }
+        } catch (error) {
+          console.error('Failed to queue automatic settlement from webhook:', error);
+        }
       }
     } else if (event === 'payment.failed') {
       const payment = payload_data.payment.entity;
@@ -244,20 +310,8 @@ class MarketplaceSettlementHandler extends BaseHandler {
     const vendorId = booking.vendor_id;
     const amount = parseFloat(booking.total_amount) || 0;
 
-    // ✅ SQL: Get vendor tier
-    const tiers = await select('vendor_tiers', { vendor_id: vendorId });
-    const tierInfo = tiers.length > 0 ? tiers[0] : { current_tier: 'Bronze' };
-
-    // Tier-based commission rates
-    const TIER_CONFIG: Record<string, { commissionRate: number }> = {
-      Bronze: { commissionRate: 20 },
-      Silver: { commissionRate: 15 },
-      Gold: { commissionRate: 12 },
-      Platinum: { commissionRate: 10 },
-    };
-
-    const tierConfig = TIER_CONFIG[tierInfo.current_tier] || TIER_CONFIG.Bronze;
-    const commissionRate = tierConfig.commissionRate;
+    // ✅ Get vendor tier commission from database
+    const commissionRate = await getVendorTierCommission(vendorId);
     const commissionAmount = (amount * commissionRate) / 100;
     const vendorShare = amount - commissionAmount;
 
@@ -499,5 +553,80 @@ function createLambdaContext(): any {
     functionName: 'razorpay-handler',
     functionVersion: '$LATEST',
   };
+}
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+/**
+ * Get vendor tier commission rate from database
+ */
+async function getVendorTierCommission(vendorId: string): Promise<number> {
+  try {
+    // First, try to get from vendor_tier_subscriptions (active subscription)
+    const subscriptionResult = await query(`
+      SELECT vt.commission_rate
+      FROM vendor_tier_subscriptions vts
+      JOIN vendor_tiers vt ON vts.tier_id = vt.id
+      WHERE vts.vendor_id = $1
+        AND vts.status = 'active'
+        AND vts.expires_at > NOW()
+      ORDER BY vts.created_at DESC
+      LIMIT 1
+    `, [vendorId]);
+
+    const subscriptionRows = Array.isArray(subscriptionResult) 
+      ? subscriptionResult 
+      : (subscriptionResult as any).rows || [];
+
+    if (subscriptionRows.length > 0 && subscriptionRows[0].commission_rate) {
+      return parseFloat(subscriptionRows[0].commission_rate);
+    }
+
+    // If no active subscription, get vendor's current tier from vendors table
+    const vendors = await select('vendors', { id: vendorId });
+    if (vendors.length > 0 && vendors[0].tier) {
+      const tierResult = await query(`
+        SELECT commission_rate
+        FROM vendor_tiers
+        WHERE tier_name = $1 AND is_active = true
+        LIMIT 1
+      `, [vendors[0].tier]);
+
+      const tierRows = Array.isArray(tierResult) 
+        ? tierResult 
+        : (tierResult as any).rows || [];
+
+      if (tierRows.length > 0 && tierRows[0].commission_rate) {
+        return parseFloat(tierRows[0].commission_rate);
+      }
+    }
+
+    // Get default tier (Bronze or is_default = true)
+    const defaultTierResult = await query(`
+      SELECT commission_rate
+      FROM vendor_tiers
+      WHERE (is_default = true OR tier_name = 'Bronze')
+        AND is_active = true
+      ORDER BY is_default DESC, tier_level ASC
+      LIMIT 1
+    `);
+
+    const defaultRows = Array.isArray(defaultTierResult) 
+      ? defaultTierResult 
+      : (defaultTierResult as any).rows || [];
+
+    if (defaultRows.length > 0 && defaultRows[0].commission_rate) {
+      return parseFloat(defaultRows[0].commission_rate);
+    }
+
+    // Fallback to 15% if no tier found
+    return 15.0;
+  } catch (error) {
+    console.error('Error getting vendor tier commission:', error);
+    // Fallback to 15% on error
+    return 15.0;
+  }
 }
 

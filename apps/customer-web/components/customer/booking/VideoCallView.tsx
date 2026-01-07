@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Video, Phone, PhoneOff, Mic, MicOff } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { ChimeSDKManager } from '@/lib/chime-sdk';
 
 interface VideoCallViewProps {
   bookingId: string;
@@ -18,6 +19,9 @@ export function VideoCallView({ bookingId, participantType, onEndCall }: VideoCa
   const [callDuration, setCallDuration] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const chimeManagerRef = useRef<ChimeSDKManager | null>(null);
+  const localVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteVideoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
     initializeCall();
@@ -49,14 +53,33 @@ export function VideoCallView({ bookingId, participantType, onEndCall }: VideoCa
         attendee_info: any;
       }>(`/video-call/${bookingId}/meeting-info`);
 
-      if (response.meeting_id) {
+      if (response.meeting_id && response.attendee_info) {
         setMeetingInfo(response);
-        // TODO: Initialize AWS Chime SDK here
-        // For now, simulate connection
-        setTimeout(() => {
-          setIsConnected(true);
-          setLoading(false);
-        }, 2000);
+        
+        // Initialize AWS Chime SDK
+        const manager = new ChimeSDKManager();
+        await manager.initialize({
+          meetingId: response.meeting_id,
+          attendeeId: response.attendee_info.attendee_id,
+          joinToken: response.attendee_info.join_token,
+          mediaRegion: response.attendee_info.media_region || 'ap-south-1',
+        });
+        
+        chimeManagerRef.current = manager;
+        
+        // Join the meeting
+        await manager.join();
+        
+        // Start video streams
+        if (localVideoRef.current) {
+          await manager.startLocalVideo(localVideoRef.current);
+        }
+        if (remoteVideoRef.current) {
+          await manager.startRemoteVideo(remoteVideoRef.current);
+        }
+        
+        setIsConnected(true);
+        setLoading(false);
       }
     } catch (err: any) {
       console.error('Error initializing video call:', err);
@@ -65,23 +88,45 @@ export function VideoCallView({ bookingId, participantType, onEndCall }: VideoCa
     }
   };
 
-  const toggleMute = () => {
-    setIsMuted(!isMuted);
-    // TODO: Implement actual mute/unmute with Chime SDK
+  const toggleMute = async () => {
+    if (chimeManagerRef.current) {
+      try {
+        const newMuted = await chimeManagerRef.current.toggleMute();
+        setIsMuted(newMuted);
+      } catch (err) {
+        console.error('Error toggling mute:', err);
+      }
+    }
   };
 
-  const toggleVideo = () => {
-    setIsVideoOff(!isVideoOff);
-    // TODO: Implement actual video toggle with Chime SDK
+  const toggleVideo = async () => {
+    if (chimeManagerRef.current) {
+      try {
+        const newVideoOff = await chimeManagerRef.current.toggleVideo();
+        setIsVideoOff(!newVideoOff);
+      } catch (err) {
+        console.error('Error toggling video:', err);
+      }
+    }
   };
 
   const endCall = async () => {
     try {
+      // End Chime call
+      if (chimeManagerRef.current) {
+        await chimeManagerRef.current.endCall();
+        chimeManagerRef.current = null;
+      }
+      
+      // Notify backend
       await apiClient.post(`/video-call/${bookingId}/end`, {});
       setIsConnected(false);
       onEndCall?.();
     } catch (err) {
       console.error('Error ending call:', err);
+      // Still disconnect even if backend call fails
+      setIsConnected(false);
+      onEndCall?.();
     }
   };
 
@@ -93,10 +138,10 @@ export function VideoCallView({ bookingId, participantType, onEndCall }: VideoCa
 
   if (loading) {
     return (
-      <div className="bg-white rounded-2xl p-6 shadow-sm">
+      <div className="bg-white rounded-2xl p-0 shadow-sm">
         <div className="flex items-center justify-center py-8">
           <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-          <span className="ml-3 text-gray-600">Connecting...</span>
+          <span className="ml-0 text-gray-600">Connecting...</span>
         </div>
       </div>
     );
@@ -104,13 +149,13 @@ export function VideoCallView({ bookingId, participantType, onEndCall }: VideoCa
 
   if (error) {
     return (
-      <div className="bg-white rounded-2xl p-6 shadow-sm">
+      <div className="bg-white rounded-2xl p-0 shadow-sm">
         <div className="text-center py-8">
           <Video className="w-12 h-12 text-gray-400 mx-auto mb-4" />
           <p className="text-gray-600 mb-4">{error}</p>
           <button
             onClick={onEndCall}
-            className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+            className="px-4 py-0 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
           >
             Close
           </button>
@@ -120,9 +165,9 @@ export function VideoCallView({ bookingId, participantType, onEndCall }: VideoCa
   }
 
   return (
-    <div className="bg-white rounded-2xl p-6 shadow-sm">
+    <div className="bg-white rounded-2xl p-0 shadow-sm">
       <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-0">
           <Video className="w-5 h-5 text-primary" />
           <h3 className="font-bold text-gray-900">Video Call</h3>
         </div>
@@ -136,29 +181,31 @@ export function VideoCallView({ bookingId, participantType, onEndCall }: VideoCa
         {isConnected ? (
           <>
             {/* Remote Video */}
-            <div className="w-full h-full flex items-center justify-center">
-              <div className="text-white text-center">
-                <Video className="w-16 h-16 mx-auto mb-2 opacity-50" />
-                <p className="text-sm">Remote video feed</p>
-                <p className="text-xs text-gray-400 mt-1">
-                  AWS Chime SDK integration pending
-                </p>
-              </div>
-            </div>
+            <video
+              ref={remoteVideoRef}
+              autoPlay
+              playsInline
+              className="w-full h-full object-cover"
+              style={{ display: isVideoOff ? 'none' : 'block' }}
+            />
 
             {/* Local Video (Picture-in-Picture) */}
             {!isVideoOff && (
-              <div className="absolute bottom-4 right-4 w-32 h-24 bg-gray-800 rounded-lg border-2 border-white">
-                <div className="w-full h-full flex items-center justify-center">
-                  <Video className="w-8 h-8 text-white opacity-50" />
-                </div>
+              <div className="absolute bottom-4 right-4 w-32 h-24 bg-gray-800 rounded-lg border-2 border-white overflow-hidden">
+                <video
+                  ref={localVideoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="w-full h-full object-cover"
+                />
               </div>
             )}
           </>
         ) : (
           <div className="w-full h-full flex items-center justify-center">
             <div className="text-white text-center">
-              <Phone className="w-16 h-16 mx-auto mb-2 opacity-50" />
+              <Phone className="w-16 h-16 mx-auto mb-0 opacity-50" />
               <p className="text-sm">Connecting...</p>
             </div>
           </div>

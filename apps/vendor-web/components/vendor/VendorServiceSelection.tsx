@@ -101,27 +101,27 @@ export function VendorServiceSelection({ vendorId, roleId, onComplete }: VendorS
 
   return (
     <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto p-4">
-      <div className="bg-white rounded-lg border-2 border-gray-200 p-6">
-        <h1 className="text-xl font-bold text-gray-900 mb-2">Select Your Services</h1>
-        <p className="text-sm text-gray-600 mb-6">
+      <div className="bg-white rounded-lg border-2 border-gray-200 p-0">
+        <h1 className="text-xl font-bold text-gray-900 mb-0">Select Your Services</h1>
+        <p className="text-sm text-gray-600 mb-0">
           Choose the services you want to offer. You can add more later from your dashboard.
         </p>
 
         <div className="relative mb-4">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+          <Search className="absolute left-3 top-0/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
             placeholder="Search services..."
-            className="w-full pl-10 pr-4 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
+            className="w-full pl-0 pr-4 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
           />
         </div>
 
-        <div className="space-y-4 max-h-96 overflow-y-auto mb-6">
+        <div className="space-y-4 max-h-96 overflow-y-auto mb-0">
           {Object.entries(groupedServices).map(([category, categoryServices]) => (
             <div key={category}>
-              <h3 className="font-semibold text-gray-900 mb-2">{category}</h3>
+              <h3 className="font-semibold text-gray-900 mb-0">{category}</h3>
               <div className="space-y-2">
                 {categoryServices.map((service) => {
                   const isSelected = selectedServices.includes(service.id);
@@ -129,13 +129,13 @@ export function VendorServiceSelection({ vendorId, roleId, onComplete }: VendorS
                     <button
                       key={service.id}
                       onClick={() => toggleService(service.id)}
-                      className={`w-full p-3 rounded-lg border-2 text-left transition-all ${
+                      className={`w-full p-0 rounded-lg border-2 text-left transition-all ${
                         isSelected
                           ? 'border-orange-500 bg-orange-50'
                           : 'border-gray-200 hover:border-gray-300'
                       }`}
                     >
-                      <div className="flex items-start gap-3">
+                      <div className="flex items-start gap-0">
                         {isSelected && (
                           <Check className="w-5 h-5 text-orange-600 flex-shrink-0 mt-0.5" />
                         )}
@@ -152,7 +152,7 @@ export function VendorServiceSelection({ vendorId, roleId, onComplete }: VendorS
           ))}
         </div>
 
-        <div className="flex items-center justify-between mb-4 p-3 bg-gray-50 rounded-lg">
+        <div className="flex items-center justify-between mb-4 p-0 bg-gray-50 rounded-lg">
           <span className="text-sm text-gray-600">Selected:</span>
           <span className="font-semibold text-gray-900">{selectedServices.length} services</span>
         </div>
@@ -160,7 +160,7 @@ export function VendorServiceSelection({ vendorId, roleId, onComplete }: VendorS
         <button
           onClick={handleSubmit}
           disabled={saving || selectedServices.length === 0}
-          className="w-full py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-0 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {saving ? (
             <>

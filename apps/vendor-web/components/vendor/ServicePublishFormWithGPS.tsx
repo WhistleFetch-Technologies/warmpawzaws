@@ -74,8 +74,8 @@ export function ServicePublishFormWithGPS({
       <div className="p-4 space-y-6">
         <div className="border border-gray-200 rounded-xl p-4">
           <div className="flex items-start justify-between mb-4">
-            <div className="flex items-start gap-3">
-              {service.serviceStyle === 'at_home' && <Home className="w-5 h-5 text-[#FF8C42] mt-0.5" />}
+            <div className="flex items-start gap-0">
+              {service.serviceStyle === 'at_home' && <Home className="w-5 h-5 text-[primary] mt-0.5" />}
               {service.serviceStyle === 'tele' && <Video className="w-5 h-5 text-blue-600 mt-0.5" />}
               {service.serviceStyle === 'at_center' && <Building2 className="w-5 h-5 text-green-600 mt-0.5" />}
               
@@ -85,13 +85,13 @@ export function ServicePublishFormWithGPS({
                   {service.serviceStyle === 'tele' && 'Tele Service'}
                   {service.serviceStyle === 'at_center' && 'Centre Service'}
                 </h3>
-                <p className="text-sm text-gray-600 mt-1">{service.category}</p>
+                <p className="text-sm text-gray-600 mt-0">{service.category}</p>
               </div>
             </div>
 
             {gpsRequired && (
-              <div className="flex items-center gap-2">
-                <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-medium flex items-center gap-1">
+              <div className="flex items-center gap-0">
+                <span className="px-0 py-0 bg-blue-100 text-blue-800 rounded text-xs font-medium flex items-center gap-0">
                   <Navigation className="w-3 h-3" />
                   GPS Required
                 </span>
@@ -101,21 +101,21 @@ export function ServicePublishFormWithGPS({
           </div>
 
           {gpsRequired && (
-            <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-              <div className="flex items-start gap-3">
+            <div className="mt-4 p-0 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-start gap-0">
                 <Shield className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
                 <div className="flex-1 text-sm">
-                  <p className="font-semibold text-blue-900 mb-1">GPS Tracking Mandatory</p>
+                  <p className="font-semibold text-blue-900 mb-0">GPS Tracking Mandatory</p>
                   <p className="text-blue-800">
                     All home services require real-time GPS tracking for safety and transparency. 
                     Staff location will be shared with customers during service delivery.
                   </p>
-                  <div className="mt-2 space-y-1 text-xs text-blue-700">
-                    <div className="flex items-center gap-2">
+                  <div className="mt-0 space-y-1 text-xs text-blue-700">
+                    <div className="flex items-center gap-0">
                       <CheckCircle className="w-3 h-3" />
                       <span>Staff GPS tracking: Mandatory</span>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-0">
                       <Info className="w-3 h-3" />
                       <span>Customer GPS sharing: Optional (for route optimization)</span>
                     </div>
@@ -127,23 +127,23 @@ export function ServicePublishFormWithGPS({
         </div>
 
         <div className="border border-gray-200 rounded-xl p-4">
-          <label className="block text-sm font-medium text-gray-700 mb-3">Publish At</label>
+          <label className="block text-sm font-medium text-gray-700 mb-0">Publish At</label>
           
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-0">
             <button
               onClick={() => setPublishLevel('vendor')}
               className={`p-4 rounded-lg border-2 text-left transition-colors ${
                 publishLevel === 'vendor'
-                  ? 'border-[#FF8C42] bg-orange-50'
+                  ? 'border-[primary] bg-orange-50'
                   : 'border-gray-200 hover:border-gray-300'
               }`}
             >
-              <div className="flex items-center gap-2 mb-2">
+              <div className="flex items-center gap-0 mb-0">
                 <input
                   type="radio"
                   checked={publishLevel === 'vendor'}
                   onChange={() => setPublishLevel('vendor')}
-                  className="w-4 h-4 text-[#FF8C42]"
+                  className="w-4 h-4 text-[primary]"
                 />
                 <span className="font-medium">Vendor Level</span>
               </div>
@@ -157,19 +157,19 @@ export function ServicePublishFormWithGPS({
               disabled={!hasCentres}
               className={`p-4 rounded-lg border-2 text-left transition-colors ${
                 publishLevel === 'centre'
-                  ? 'border-[#FF8C42] bg-orange-50'
+                  ? 'border-[primary] bg-orange-50'
                   : hasCentres
                     ? 'border-gray-200 hover:border-gray-300'
                     : 'border-gray-200 bg-gray-50 cursor-not-allowed'
               }`}
             >
-              <div className="flex items-center gap-2 mb-2">
+              <div className="flex items-center gap-0 mb-0">
                 <input
                   type="radio"
                   checked={publishLevel === 'centre'}
                   onChange={() => setPublishLevel('centre')}
                   disabled={!hasCentres}
-                  className="w-4 h-4 text-[#FF8C42]"
+                  className="w-4 h-4 text-[primary]"
                 />
                 <span className="font-medium">Centre Level</span>
               </div>
@@ -184,10 +184,10 @@ export function ServicePublishFormWithGPS({
 
         {publishLevel === 'centre' && hasCentres && (
           <div className="border border-gray-200 rounded-xl p-4">
-            <label className="block text-sm font-medium text-gray-700 mb-3">Select Centres</label>
+            <label className="block text-sm font-medium text-gray-700 mb-0">Select Centres</label>
             <div className="space-y-2">
               {(vendorData.centres || []).map((centre: any) => (
-                <label key={centre.id} className="flex items-center gap-2 cursor-pointer">
+                <label key={centre.id} className="flex items-center gap-0 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={selectedCentres.includes(centre.id)}
@@ -207,17 +207,17 @@ export function ServicePublishFormWithGPS({
           </div>
         )}
 
-        <div className="flex gap-2">
+        <div className="flex gap-0">
           <button
             onClick={onCancel}
-            className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg font-medium"
+            className="flex-1 px-4 py-0 border border-gray-300 text-gray-700 rounded-lg font-medium"
           >
             Cancel
           </button>
           <button
             onClick={handlePublish}
             disabled={publishLevel === 'centre' && selectedCentres.length === 0}
-            className="flex-1 px-4 py-2 bg-[#FF8C42] text-white rounded-lg font-medium disabled:opacity-50"
+            className="flex-1 px-4 py-0 bg-[primary] text-white rounded-lg font-medium disabled:opacity-50"
           >
             Publish Service
           </button>

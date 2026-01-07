@@ -101,7 +101,7 @@ export function CalendarSlotPicker({
   return (
     <div className="space-y-6">
       {/* Calendar */}
-      <div className="bg-white rounded-2xl p-5 shadow-sm">
+      <div className="bg-white rounded-2xl p-0 shadow-sm">
         <div className="flex items-center justify-between mb-4">
           <button
             onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1))}
@@ -121,16 +121,16 @@ export function CalendarSlotPicker({
         </div>
 
         {/* Day Names */}
-        <div className="grid grid-cols-7 gap-2 mb-2">
+        <div className="grid grid-cols-7 gap-0 mb-0">
           {dayNames.map((day) => (
-            <div key={day} className="text-center text-xs font-semibold text-gray-600 py-2">
+            <div key={day} className="text-center text-xs font-semibold text-gray-600 py-0">
               {day}
             </div>
           ))}
         </div>
 
         {/* Calendar Days */}
-        <div className="grid grid-cols-7 gap-2">
+        <div className="grid grid-cols-7 gap-0">
           {days.map((date, idx) => {
             if (!date) {
               return <div key={idx} className="aspect-square" />;
@@ -164,18 +164,18 @@ export function CalendarSlotPicker({
 
       {/* Time Slots */}
       {selectedDateState && (
-        <div className="bg-white rounded-2xl p-5 shadow-sm">
-          <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+        <div className="bg-white rounded-2xl p-0 shadow-sm">
+          <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-0">
             <Clock className="w-5 h-5" />
             Available Time Slots
           </h3>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-3 gap-0">
             {timeSlots.map((slot) => (
               <button
                 key={slot.time}
                 onClick={() => slot.available && handleTimeSlotClick(slot.time)}
                 disabled={!slot.available}
-                className={`px-4 py-3 rounded-xl font-medium transition-all ${
+                className={`px-4 py-0 rounded-xl font-medium transition-all ${
                   selectedTimeSlot === slot.time
                     ? 'bg-primary text-white'
                     : slot.available

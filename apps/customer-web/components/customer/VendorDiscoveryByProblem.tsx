@@ -153,12 +153,12 @@ export function VendorDiscoveryByProblem({
           </div>
         )}
         <div className="flex-1 min-w-0">
-          <h3 className="font-bold text-gray-900 mb-1 truncate">
+          <h3 className="font-bold text-gray-900 mb-0 truncate">
             {vendor.businessName || vendor.vendorName}
           </h3>
           {vendor.rating && (
-            <div className="flex items-center gap-2 mb-2">
-              <div className="flex items-center gap-1">
+            <div className="flex items-center gap-0 mb-0">
+              <div className="flex items-center gap-0">
                 <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
                 <span className="text-sm font-semibold">{vendor.rating.toFixed(1)}</span>
               </div>
@@ -168,7 +168,7 @@ export function VendorDiscoveryByProblem({
             </div>
           )}
           {vendor.location?.address && (
-            <div className="flex items-center gap-1 text-sm text-gray-600 mb-2">
+            <div className="flex items-center gap-0 text-sm text-gray-600 mb-0">
               <MapPin className="w-4 h-4" />
               <span className="truncate">{vendor.location.address}</span>
             </div>
@@ -198,7 +198,7 @@ export function VendorDiscoveryByProblem({
   return (
     <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
       {/* Header */}
-      <div className="bg-gradient-to-r from-primary to-primary-dark px-6 pt-12 pb-6 sticky top-0 z-20">
+      <div className="bg-gradient-to-r from-primary to-primary-dark px-0 pt-12 pb-0 sticky top-0 z-20">
         <div className="flex items-center gap-4 mb-4">
           <button
             onClick={onBack}
@@ -214,10 +214,10 @@ export function VendorDiscoveryByProblem({
 
         {/* Tabs */}
         {(showCenterTab && showStaffTab) && (
-          <div className="flex gap-2 bg-white/20 backdrop-blur-sm rounded-xl p-1">
+          <div className="flex gap-0 bg-white/20 backdrop-blur-sm rounded-xl p-0">
             <button
               onClick={() => setViewMode('vendors')}
-              className={`flex-1 px-4 py-2 rounded-lg font-medium transition-all ${
+              className={`flex-1 px-4 py-0 rounded-lg font-medium transition-all ${
                 viewMode === 'vendors'
                   ? 'bg-white text-primary'
                   : 'text-white/90 hover:text-white'
@@ -227,7 +227,7 @@ export function VendorDiscoveryByProblem({
             </button>
             <button
               onClick={() => setViewMode('specialists')}
-              className={`flex-1 px-4 py-2 rounded-lg font-medium transition-all ${
+              className={`flex-1 px-4 py-0 rounded-lg font-medium transition-all ${
                 viewMode === 'specialists'
                   ? 'bg-white text-primary'
                   : 'text-white/90 hover:text-white'
@@ -240,7 +240,7 @@ export function VendorDiscoveryByProblem({
       </div>
 
       {/* Content */}
-      <div className="px-6 py-6">
+      <div className="px-0 py-0">
         {viewMode === 'vendors' && centers.length > 0 ? (
           <div className="space-y-3">
             {centers.map((vendor) => renderVendorCard(vendor))}
@@ -256,7 +256,7 @@ export function VendorDiscoveryByProblem({
         ) : (
           <div className="bg-white rounded-xl border p-12 text-center">
             <p className="text-gray-600">No vendors found for this problem</p>
-            <p className="text-sm text-gray-500 mt-2">Try a different search</p>
+            <p className="text-sm text-gray-500 mt-0">Try a different search</p>
           </div>
         )}
       </div>

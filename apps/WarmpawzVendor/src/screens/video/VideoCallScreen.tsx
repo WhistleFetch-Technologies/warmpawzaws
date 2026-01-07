@@ -195,7 +195,7 @@ export function VideoCallScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000000',
+    backgroundColor: colors.black,
   },
   videoContainer: {
     flex: 1,
@@ -207,7 +207,7 @@ const styles = StyleSheet.create({
   },
   connectingText: {
     fontSize: typography.fontSizes.lg,
-    color: '#ffffff',
+    color: colors.white,
     marginTop: spacing.md,
   },
   customerName: {
@@ -235,7 +235,7 @@ const styles = StyleSheet.create({
   },
   videoPlaceholderLabel: {
     fontSize: typography.fontSizes.md,
-    color: '#ffffff',
+    color: colors.white,
   },
   videoOffOverlay: {
     position: 'absolute',
@@ -246,7 +246,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
   },
   videoOffText: {
-    color: '#ffffff',
+    color: colors.white,
     fontSize: typography.fontSizes.sm,
   },
   endedView: {
@@ -254,7 +254,7 @@ const styles = StyleSheet.create({
   },
   endedText: {
     fontSize: typography.fontSizes.xl,
-    color: '#ffffff',
+    color: colors.white,
   },
   callInfo: {
     padding: spacing.lg,
@@ -263,7 +263,7 @@ const styles = StyleSheet.create({
   callDuration: {
     fontSize: typography.fontSizes['2xl'],
     fontWeight: typography.fontWeights.bold,
-    color: '#ffffff',
+    color: colors.white,
     marginBottom: spacing.xs,
   },
   callStatus: {
@@ -299,7 +299,7 @@ const styles = StyleSheet.create({
   },
   backButtonText: {
     fontSize: typography.fontSizes.md,
-    color: '#ffffff',
+    color: colors.white,
   },
 });
 

@@ -199,7 +199,7 @@ export function MapsRouteScreen({
               <Marker
                 coordinate={destination}
                 title="Destination"
-                pinColor="#dc2626"
+                pinColor={colors.error}
               />
             )}
           </MapView>
@@ -262,7 +262,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -292,7 +292,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f3f4f6',
+    backgroundColor: colors.gray.100,
   },
   mapPlaceholderText: {
     marginTop: spacing.md,
@@ -301,7 +301,7 @@ const styles = StyleSheet.create({
   },
   routeInfo: {
     maxHeight: 300,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
@@ -349,7 +349,7 @@ const styles = StyleSheet.create({
     marginRight: spacing.md,
   },
   stepNumberText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 14,
     fontWeight: 'bold',
   },

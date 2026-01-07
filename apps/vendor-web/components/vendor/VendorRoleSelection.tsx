@@ -180,7 +180,7 @@ export function VendorRoleSelection({ onRoleSelect }: VendorRoleSelectionProps) 
   return (
     <div className="min-h-screen bg-primary flex flex-col w-full max-w-[430px] mx-auto">
       {/* Orange Top Section */}
-      <div className="flex flex-col items-center pt-12 pb-6 px-6">
+      <div className="flex flex-col items-center pt-12 pb-0 px-0">
         <div className="mb-4 w-24 h-24 bg-white rounded-full flex items-center justify-center shadow-xl">
           <img src="/logo.png" alt="Warmpawz" className="w-20 h-20 object-contain" />
         </div>
@@ -188,7 +188,7 @@ export function VendorRoleSelection({ onRoleSelect }: VendorRoleSelectionProps) 
       </div>
 
       {/* White Bottom Section */}
-      <div className="flex-1 bg-white rounded-t-[32px] px-4 py-6 overflow-y-auto shadow-[0_-4px_20px_rgba(0,0,0,0.1)]">
+      <div className="flex-1 bg-white rounded-t-[32px] px-4 py-0 overflow-y-auto shadow-[0_-4px_20px_rgba(0,0,0,0.1)]">
         <p className="text-center text-gray-600 mb-4 text-sm">
           Join as a seller, veterinarian or service provider
         </p>
@@ -198,13 +198,13 @@ export function VendorRoleSelection({ onRoleSelect }: VendorRoleSelectionProps) 
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
           </div>
         ) : error ? (
-          <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3 mb-4">
+          <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-0 mb-4">
             <p className="text-yellow-700 text-center text-xs">{error}</p>
           </div>
         ) : null}
 
         {/* Role Cards */}
-        <div className="space-y-3 mb-6">
+        <div className="space-y-3 mb-0">
           {roles.map((role) => {
             const category = role.vendorTypes && role.vendorTypes.length > 0 ? role.vendorTypes[0] : 'service';
             const color = getCategoryColor(category);
@@ -218,26 +218,26 @@ export function VendorRoleSelection({ onRoleSelect }: VendorRoleSelectionProps) 
                 onClick={() => onRoleSelect(role.id)}
                 className="w-full bg-white border-2 border-gray-200 rounded-xl p-4 hover:border-primary transition-all text-left group active:scale-[0.98] shadow-sm"
               >
-                <div className="flex items-start gap-3">
+                <div className="flex items-start gap-0">
                   <div className={`w-12 h-12 ${bgColorClass} rounded-xl flex items-center justify-center flex-shrink-0`}>
                     {getIconSvg(category)}
                   </div>
 
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-gray-900 font-semibold text-sm mb-1">{role.name}</h3>
-                    <p className="text-xs text-gray-500 mb-2 leading-tight line-clamp-2">
+                    <h3 className="text-gray-900 font-semibold text-sm mb-0">{role.name}</h3>
+                    <p className="text-xs text-gray-500 mb-0 leading-tight line-clamp-0">
                       {role.description}
                     </p>
                     
                     {displayBadges && displayBadges.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5">
+                      <div className="flex flex-wrap gap-0.5">
                         {displayBadges.slice(0, 2).map((badge, idx) => (
-                          <span key={idx} className={`text-xs px-2 py-0.5 rounded-full border ${borderColorClass}`}>
+                          <span key={idx} className={`text-xs px-0 py-0.5 rounded-full border ${borderColorClass}`}>
                             {badge}
                           </span>
                         ))}
                         {displayBadges.length > 2 && (
-                          <span className="text-xs px-2 py-0.5 rounded-full border border-gray-200 bg-gray-50 text-gray-600">
+                          <span className="text-xs px-0 py-0.5 rounded-full border border-gray-200 bg-gray-50 text-gray-600">
                             +{displayBadges.length - 2}
                           </span>
                         )}
@@ -245,7 +245,7 @@ export function VendorRoleSelection({ onRoleSelect }: VendorRoleSelectionProps) 
                     )}
                   </div>
 
-                  <ArrowRight className="w-5 h-5 text-gray-400 group-hover:text-primary flex-shrink-0 mt-1" />
+                  <ArrowRight className="w-5 h-5 text-gray-400 group-hover:text-primary flex-shrink-0 mt-0" />
                 </div>
               </button>
             );

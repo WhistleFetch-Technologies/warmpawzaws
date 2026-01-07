@@ -221,7 +221,7 @@ const styles = StyleSheet.create({
   },
   trackingCardSelected: {
     borderColor: colors.primary,
-    backgroundColor: '#FFF4E6',
+    backgroundColor: colors.primary.50,
   },
   trackingCardContent: {
     flex: 1,

@@ -120,12 +120,12 @@ export function PetBookingDetails({
 
   if (!booking) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center w-full max-w-[430px] mx-auto p-6">
+      <div className="min-h-screen bg-white flex items-center justify-center w-full max-w-[430px] mx-auto p-0">
         <div className="text-center">
           <p className="text-gray-600 mb-4">Booking not found</p>
           <button
             onClick={onBack}
-            className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors"
+            className="px-4 py-0 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors"
           >
             Go Back
           </button>
@@ -141,7 +141,7 @@ export function PetBookingDetails({
   return (
     <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
       {/* Header */}
-      <div className="bg-gradient-to-r from-primary to-primary-dark px-6 pt-12 pb-6 sticky top-0 z-20">
+      <div className="bg-gradient-to-r from-primary to-primary-dark px-0 pt-02 pb-0 sticky top-0 z-20">
         <div className="flex items-center gap-4 mb-4">
           <button
             onClick={onBack}
@@ -157,7 +157,7 @@ export function PetBookingDetails({
 
         {/* Booking Summary */}
         <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-4">
-          <div className="flex items-center gap-4 mb-3">
+          <div className="flex items-center gap-4 mb-0">
             <div className="w-16 h-16 bg-white/30 rounded-xl flex items-center justify-center text-3xl">
               {getServiceIcon(booking.serviceType)}
             </div>
@@ -166,16 +166,16 @@ export function PetBookingDetails({
               <p className="text-white/90 text-sm">{booking.vendorName}</p>
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-2 text-center">
-            <div className="bg-white/20 rounded-lg p-2">
+          <div className="grid grid-cols-3 gap-0 text-center">
+            <div className="bg-white/20 rounded-lg p-0">
               <p className="text-white/80 text-xs">Total</p>
               <p className="text-white font-semibold">{booking.totalSessions}</p>
             </div>
-            <div className="bg-white/20 rounded-lg p-2">
+            <div className="bg-white/20 rounded-lg p-0">
               <p className="text-white/80 text-xs">Completed</p>
               <p className="text-white font-semibold">{booking.completedSessions}</p>
             </div>
-            <div className="bg-white/20 rounded-lg p-2">
+            <div className="bg-white/20 rounded-lg p-0">
               <p className="text-white/80 text-xs">Upcoming</p>
               <p className="text-white font-semibold">{booking.upcomingSessions}</p>
             </div>
@@ -184,9 +184,9 @@ export function PetBookingDetails({
       </div>
 
       {/* Content */}
-      <div className="px-6 py-6 space-y-6">
+      <div className="px-0 py-0 space-y-6">
         {/* Booking Info */}
-        <div className="bg-white rounded-2xl p-5 shadow-sm">
+        <div className="bg-white rounded-2xl p-0 shadow-sm">
           <h3 className="font-bold text-gray-900 mb-4">Booking Information</h3>
           <div className="space-y-3">
             <div className="flex items-center justify-between">
@@ -215,7 +215,7 @@ export function PetBookingDetails({
               <span className="text-gray-600">Schedule</span>
               <span className="font-semibold text-gray-900 capitalize">{booking.schedule}</span>
             </div>
-            <div className="flex items-center justify-between pt-3 border-t">
+            <div className="flex items-center justify-between pt-1 border-t">
               <span className="text-gray-600">Total Price</span>
               <span className="text-2xl font-bold text-primary">₹{booking.price}</span>
             </div>
@@ -224,24 +224,24 @@ export function PetBookingDetails({
 
         {/* Active Sessions */}
         {activeSessions.length > 0 && (
-          <div className="bg-white rounded-2xl p-5 shadow-sm">
+          <div className="bg-white rounded-2xl p-0 shadow-sm">
             <h3 className="font-bold text-gray-900 mb-4">Active Sessions</h3>
             <div className="space-y-3">
               {activeSessions.map((session) => (
                 <div key={session.id} className="bg-green-50 border-2 border-green-200 rounded-xl p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="px-2.5 py-1 bg-green-100 text-green-700 rounded-full text-xs font-semibold">
+                  <div className="flex items-center justify-between mb-0">
+                    <span className="px-0.5 py-0 bg-green-100 text-green-700 rounded-full text-xs font-semibold">
                       Active
                     </span>
                     <span className="text-sm text-gray-600">{session.timeSlot}</span>
                   </div>
                   {session.otp && (
-                    <div className="mt-3 p-3 bg-orange-50 rounded-lg border border-orange-200">
-                      <div className="flex items-center justify-between mb-1">
+                    <div className="mt-0 p-0 bg-orange-50 rounded-lg border border-orange-200">
+                      <div className="flex items-center justify-between mb-0">
                         <span className="text-xs font-semibold text-orange-700">Service OTP</span>
                         <button
                           onClick={() => handleCopyOtp(session.otp!, session.id)}
-                          className="flex items-center gap-1 text-xs text-orange-600 hover:text-orange-700"
+                          className="flex items-center gap-0 text-xs text-orange-600 hover:text-orange-700"
                         >
                           {copiedOtp === session.id ? (
                             <>
@@ -256,13 +256,13 @@ export function PetBookingDetails({
                           )}
                         </button>
                       </div>
-                      <p className="text-2xl font-bold text-orange-600 text-center mt-1 tracking-widest">
+                      <p className="text-2xl font-bold text-orange-600 text-center mt-0 tracking-widest">
                         {session.otp}
                       </p>
                     </div>
                   )}
                   {session.startTime && (
-                    <div className="flex items-center gap-2 mt-3 text-sm text-gray-600">
+                    <div className="flex items-center gap-0 mt-0 text-sm text-gray-600">
                       <Clock className="w-4 h-4" />
                       <span>Started: {session.startTime}</span>
                     </div>
@@ -275,18 +275,18 @@ export function PetBookingDetails({
 
         {/* Upcoming Sessions */}
         {upcomingSessions.length > 0 && (
-          <div className="bg-white rounded-2xl p-5 shadow-sm">
+          <div className="bg-white rounded-2xl p-0 shadow-sm">
             <h3 className="font-bold text-gray-900 mb-4">Upcoming Sessions</h3>
             <div className="space-y-3">
               {upcomingSessions.map((session) => (
                 <div key={session.id} className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="px-2.5 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-semibold">
+                  <div className="flex items-center justify-between mb-0">
+                    <span className="px-0.5 py-0 bg-blue-100 text-blue-700 rounded-full text-xs font-semibold">
                       Scheduled
                     </span>
                     <span className="text-sm text-gray-600">{session.timeSlot}</span>
                   </div>
-                  <div className="flex items-center gap-2 text-sm text-gray-600">
+                  <div className="flex items-center gap-0 text-sm text-gray-600">
                     <Calendar className="w-4 h-4" />
                     <span>{new Date(session.date).toLocaleDateString()}</span>
                   </div>
@@ -298,29 +298,29 @@ export function PetBookingDetails({
 
         {/* Completed Sessions */}
         {completedSessions.length > 0 && (
-          <div className="bg-white rounded-2xl p-5 shadow-sm">
+          <div className="bg-white rounded-2xl p-0 shadow-sm">
             <h3 className="font-bold text-gray-900 mb-4">Completed Sessions</h3>
             <div className="space-y-3">
               {completedSessions.map((session) => (
                 <div key={session.id} className="bg-gray-50 border border-gray-200 rounded-xl p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="px-2.5 py-1 bg-gray-100 text-gray-700 rounded-full text-xs font-semibold">
+                  <div className="flex items-center justify-between mb-0">
+                    <span className="px-0.5 py-0 bg-gray-100 text-gray-700 rounded-full text-xs font-semibold">
                       Completed
                     </span>
                     <span className="text-sm text-gray-600">{session.timeSlot}</span>
                   </div>
-                  <div className="flex items-center gap-2 text-sm text-gray-600 mb-2">
+                  <div className="flex items-center gap-0 text-sm text-gray-600 mb-0">
                     <Calendar className="w-4 h-4" />
                     <span>{new Date(session.date).toLocaleDateString()}</span>
                   </div>
                   {session.duration && (
-                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                    <div className="flex items-center gap-0 text-sm text-gray-600">
                       <Timer className="w-4 h-4" />
                       <span>Duration: {session.duration} min</span>
                     </div>
                   )}
                   {session.rating && (
-                    <div className="flex items-center gap-1 mt-2">
+                    <div className="flex items-center gap-0 mt-0">
                       {[...Array(5)].map((_, i) => (
                         <Star
                           key={i}

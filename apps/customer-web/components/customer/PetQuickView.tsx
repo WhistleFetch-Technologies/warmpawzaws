@@ -133,7 +133,7 @@ export function PetQuickView({ petId, phone, onBack, onViewFullProfile }: PetQui
 
   if (!pet) {
     return (
-      <div className="min-h-screen bg-white w-full max-w-[430px] mx-auto p-6">
+      <div className="min-h-screen bg-white w-full max-w-[430px] mx-auto p-0">
         <p className="text-center text-gray-600">Pet not found</p>
       </div>
     );
@@ -142,7 +142,7 @@ export function PetQuickView({ petId, phone, onBack, onViewFullProfile }: PetQui
   return (
     <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto pb-8">
       {/* Header */}
-      <div className="bg-gradient-to-r from-primary to-primary-dark px-6 pt-12 pb-8 sticky top-0 z-20">
+      <div className="bg-gradient-to-r from-primary to-primary-dark px-0 pt-12 pb-8 sticky top-0 z-20">
         <div className="flex items-center gap-4 mb-4">
           <button 
             onClick={onBack} 
@@ -168,16 +168,16 @@ export function PetQuickView({ petId, phone, onBack, onViewFullProfile }: PetQui
                 </div>
               )}
             </div>
-            <div className="flex-1 grid grid-cols-3 gap-2 text-center">
-              <div className="bg-white/20 rounded-lg p-2">
+            <div className="flex-1 grid grid-cols-3 gap-0 text-center">
+              <div className="bg-white/20 rounded-lg p-0">
                 <p className="text-white/80 text-xs">Age</p>
                 <p className="text-white font-semibold">{pet.age}</p>
               </div>
-              <div className="bg-white/20 rounded-lg p-2">
+              <div className="bg-white/20 rounded-lg p-0">
                 <p className="text-white/80 text-xs">Gender</p>
                 <p className="text-white font-semibold">{pet.gender}</p>
               </div>
-              <div className="bg-white/20 rounded-lg p-2">
+              <div className="bg-white/20 rounded-lg p-0">
                 <p className="text-white/80 text-xs">Weight</p>
                 <p className="text-white font-semibold">{pet.weight}</p>
               </div>
@@ -186,12 +186,12 @@ export function PetQuickView({ petId, phone, onBack, onViewFullProfile }: PetQui
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-2">
+        <div className="flex gap-0">
           {(['upcoming', 'active', 'completed', 'details'] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={`flex-1 py-2 rounded-lg font-medium text-sm transition-all ${
+              className={`flex-1 py-0 rounded-lg font-medium text-sm transition-all ${
                 activeTab === tab
                   ? 'bg-white text-primary'
                   : 'bg-white/20 text-white'
@@ -204,34 +204,34 @@ export function PetQuickView({ petId, phone, onBack, onViewFullProfile }: PetQui
       </div>
 
       {/* Content */}
-      <div className="px-6 py-6 space-y-4">
+      <div className="px-0 py-0 space-y-4">
         {activeTab === 'upcoming' && (
           <div className="space-y-3">
             {upcomingSessions.length === 0 ? (
-              <div className="text-center py-12 bg-white rounded-2xl">
+              <div className="text-center py-0 bg-white rounded-2xl">
                 <Package className="w-12 h-12 text-gray-300 mx-auto mb-4" />
                 <p className="text-gray-600">No upcoming sessions</p>
               </div>
             ) : (
               upcomingSessions.map((session) => (
                 <div key={session.id} className="bg-white rounded-2xl p-4 shadow-sm">
-                  <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center justify-between mb-0">
                     <h4 className="font-semibold text-gray-900">{session.serviceType}</h4>
                     <span className="text-xs text-gray-500">{session.vendorName}</span>
                   </div>
-                  <div className="flex items-center gap-2 text-sm text-gray-600">
+                  <div className="flex items-center gap-0 text-sm text-gray-600">
                     <Calendar className="w-4 h-4" />
                     <span>{new Date(session.date).toLocaleDateString()}</span>
-                    <Clock className="w-4 h-4 ml-2" />
+                    <Clock className="w-4 h-4 ml-0" />
                     <span>{session.timeSlot}</span>
                   </div>
                   {session.otp && (
-                    <div className="mt-3 p-3 bg-orange-50 rounded-lg border border-orange-200">
+                    <div className="mt-0 p-0 bg-orange-50 rounded-lg border border-orange-200">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-semibold text-orange-700">OTP</span>
                         <button
                           onClick={() => handleCopyOtp(session.otp!, session.id)}
-                          className="flex items-center gap-1 text-xs text-orange-600 hover:text-orange-700"
+                          className="flex items-center gap-0 text-xs text-orange-600 hover:text-orange-700"
                         >
                           {copiedOtp === session.id ? (
                             <>
@@ -246,7 +246,7 @@ export function PetQuickView({ petId, phone, onBack, onViewFullProfile }: PetQui
                           )}
                         </button>
                       </div>
-                      <p className="text-2xl font-bold text-orange-600 mt-1 text-center">{session.otp}</p>
+                      <p className="text-2xl font-bold text-orange-600 mt-0 text-center">{session.otp}</p>
                     </div>
                   )}
                 </div>
@@ -258,24 +258,24 @@ export function PetQuickView({ petId, phone, onBack, onViewFullProfile }: PetQui
         {activeTab === 'active' && (
           <div className="space-y-3">
             {activeSessions.length === 0 ? (
-              <div className="text-center py-12 bg-white rounded-2xl">
+              <div className="text-center py-02 bg-white rounded-2xl">
                 <Activity className="w-12 h-12 text-gray-300 mx-auto mb-4" />
                 <p className="text-gray-600">No active sessions</p>
               </div>
             ) : (
               activeSessions.map((session) => (
                 <div key={session.id} className="bg-white rounded-2xl p-4 shadow-sm border-2 border-green-200">
-                  <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center justify-between mb-0">
                     <h4 className="font-semibold text-gray-900">{session.serviceType}</h4>
-                    <span className="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-semibold">Active</span>
+                    <span className="px-0 py-0 bg-green-100 text-green-700 rounded-full text-xs font-semibold">Active</span>
                   </div>
-                  <div className="flex items-center gap-2 text-sm text-gray-600 mb-3">
+                  <div className="flex items-center gap-0 text-sm text-gray-600 mb-0">
                     <Clock className="w-4 h-4" />
                     <span>Started: {session.startTime}</span>
                   </div>
                   {session.otp && (
-                    <div className="p-3 bg-orange-50 rounded-lg border border-orange-200">
-                      <p className="text-xs font-semibold text-orange-700 mb-1">Service OTP</p>
+                    <div className="p-0 bg-orange-50 rounded-lg border border-orange-200">
+                      <p className="text-xs font-semibold text-orange-700 mb-0">Service OTP</p>
                       <p className="text-2xl font-bold text-orange-600 text-center">{session.otp}</p>
                     </div>
                   )}
@@ -288,29 +288,29 @@ export function PetQuickView({ petId, phone, onBack, onViewFullProfile }: PetQui
         {activeTab === 'completed' && (
           <div className="space-y-3">
             {completedSessions.length === 0 ? (
-              <div className="text-center py-12 bg-white rounded-2xl">
+              <div className="text-center py-02 bg-white rounded-2xl">
                 <Check className="w-12 h-12 text-gray-300 mx-auto mb-4" />
                 <p className="text-gray-600">No completed sessions</p>
               </div>
             ) : (
               completedSessions.map((session) => (
                 <div key={session.id} className="bg-white rounded-2xl p-4 shadow-sm">
-                  <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center justify-between mb-0">
                     <h4 className="font-semibold text-gray-900">{session.serviceType}</h4>
-                    <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded-full text-xs font-semibold">Completed</span>
+                    <span className="px-0 py-1 bg-gray-100 text-gray-700 rounded-full text-xs font-semibold">Completed</span>
                   </div>
-                  <div className="flex items-center gap-2 text-sm text-gray-600 mb-2">
+                  <div className="flex items-center gap-0 text-sm text-gray-600 mb-0">
                     <Calendar className="w-4 h-4" />
                     <span>{new Date(session.date).toLocaleDateString()}</span>
                   </div>
                   {session.duration && (
-                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                    <div className="flex items-center gap-0 text-sm text-gray-600">
                       <Timer className="w-4 h-4" />
                       <span>Duration: {session.duration} min</span>
                     </div>
                   )}
                   {session.rating && (
-                    <div className="flex items-center gap-1 mt-2">
+                    <div className="flex items-center gap-0 mt-0">
                       {[...Array(5)].map((_, i) => (
                         <Star
                           key={i}
@@ -326,34 +326,34 @@ export function PetQuickView({ petId, phone, onBack, onViewFullProfile }: PetQui
         )}
 
         {activeTab === 'details' && (
-          <div className="bg-white rounded-2xl p-5 shadow-sm space-y-4">
+          <div className="bg-white rounded-2xl p-0 shadow-sm space-y-4">
             <h3 className="font-bold text-gray-900">Pet Details</h3>
             <div className="space-y-3">
               <div>
-                <p className="text-xs text-gray-500 mb-1">Name</p>
+                <p className="text-xs text-gray-500 mb-0">Name</p>
                 <p className="font-medium text-gray-900">{pet.name}</p>
               </div>
               <div>
-                <p className="text-xs text-gray-500 mb-1">Breed</p>
+                <p className="text-xs text-gray-500 mb-0">Breed</p>
                 <p className="font-medium text-gray-900">{pet.breed}</p>
               </div>
               <div>
-                <p className="text-xs text-gray-500 mb-1">Age</p>
+                <p className="text-xs text-gray-500 mb-0">Age</p>
                 <p className="font-medium text-gray-900">{pet.age}</p>
               </div>
               <div>
-                <p className="text-xs text-gray-500 mb-1">Gender</p>
+                <p className="text-xs text-gray-500 mb-0">Gender</p>
                 <p className="font-medium text-gray-900">{pet.gender}</p>
               </div>
               <div>
-                <p className="text-xs text-gray-500 mb-1">Weight</p>
+                <p className="text-xs text-gray-500 mb-0">Weight</p>
                 <p className="font-medium text-gray-900">{pet.weight}</p>
               </div>
             </div>
             {onViewFullProfile && (
               <button
                 onClick={onViewFullProfile}
-                className="w-full py-3 bg-primary text-white rounded-xl font-medium hover:bg-primary-dark transition-colors mt-4"
+                className="w-full py-1 bg-primary text-white rounded-xl font-medium hover:bg-primary-dark transition-colors mt-4"
               >
                 View Full Profile
               </button>

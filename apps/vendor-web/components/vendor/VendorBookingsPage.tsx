@@ -92,25 +92,25 @@ export function VendorBookingsPage({ vendorId }: VendorBookingsPageProps) {
   };
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
+    <div className="p-0">
+      <div className="flex items-center justify-between mb-0">
         <h1 className="text-2xl font-bold text-gray-900">Bookings</h1>
         <button
           onClick={loadBookings}
-          className="p-2 hover:bg-gray-100 rounded-lg"
+          className="p-0 hover:bg-gray-100 rounded-lg"
         >
           🔄
         </button>
       </div>
 
       {/* Filters */}
-      <div className="flex gap-4 mb-6">
-        <div className="flex bg-white rounded-lg p-1 shadow-sm">
+      <div className="flex gap-4 mb-0">
+        <div className="flex bg-white rounded-lg p-0 shadow-sm">
           {['today', 'upcoming', 'all'].map((d) => (
             <button
               key={d}
               onClick={() => setDateFilter(d)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+              className={`px-4 py-0 rounded-lg text-sm font-medium transition ${
                 dateFilter === d
                   ? 'bg-orange-500 text-white'
                   : 'text-gray-600 hover:bg-gray-100'
@@ -123,7 +123,7 @@ export function VendorBookingsPage({ vendorId }: VendorBookingsPageProps) {
         <select
           value={filter}
           onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilter(e.target.value)}
-          className="px-4 py-2 bg-white border rounded-lg text-sm"
+          className="px-4 py-0 bg-white border rounded-lg text-sm"
         >
           <option value="all">All Status</option>
           <option value="pending">Pending</option>
@@ -139,10 +139,10 @@ export function VendorBookingsPage({ vendorId }: VendorBookingsPageProps) {
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500"></div>
         </div>
       ) : bookings.length === 0 ? (
-        <div className="text-center py-12 bg-white rounded-2xl">
+        <div className="text-center py-0 bg-white rounded-2xl">
           <span className="text-6xl">📅</span>
           <h2 className="mt-4 text-xl font-semibold text-gray-900">No bookings found</h2>
-          <p className="text-gray-500 mt-2">
+          <p className="text-gray-500 mt-0">
             {dateFilter === 'today' ? 'No bookings scheduled for today' : 'No bookings match your filters'}
           </p>
         </div>
@@ -159,35 +159,35 @@ export function VendorBookingsPage({ vendorId }: VendorBookingsPageProps) {
                     {getServiceTypeIcon(booking.service_type)}
                   </div>
                   <div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-0">
                       <h3 className="font-semibold text-gray-900">{booking.customer_name}</h3>
-                      <span className={`text-xs px-2 py-1 rounded-full ${getStatusColor(booking.status)}`}>
+                      <span className={`text-xs px-0 py-0 rounded-full ${getStatusColor(booking.status)}`}>
                         {booking.status.replace('_', ' ')}
                       </span>
                     </div>
                     <p className="text-sm text-gray-500">{booking.service_name}</p>
-                    <div className="flex items-center gap-3 mt-2 text-sm text-gray-500">
+                    <div className="flex items-center gap-0 mt-0 text-sm text-gray-500">
                       <span>📅 {new Date(booking.booking_date).toLocaleDateString()}</span>
                       <span>⏰ {booking.booking_time}</span>
                       <span className="font-semibold text-orange-500">₹{booking.total_amount}</span>
                     </div>
                     {booking.notes && (
-                      <p className="text-sm text-gray-400 mt-1 italic">"{booking.notes}"</p>
+                      <p className="text-sm text-gray-400 mt-0 italic">"{booking.notes}"</p>
                     )}
                   </div>
                 </div>
-                <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-0">
                   {booking.status === 'pending' && (
                     <>
                       <button
                         onClick={() => handleStatusUpdate(booking.id, 'confirmed')}
-                        className="px-3 py-1 bg-green-500 text-white text-sm rounded-lg hover:bg-green-600"
+                        className="px-0 py-0 bg-green-500 text-white text-sm rounded-lg hover:bg-green-600"
                       >
                         ✓ Confirm
                       </button>
                       <button
                         onClick={() => handleStatusUpdate(booking.id, 'cancelled')}
-                        className="px-3 py-1 bg-red-100 text-red-600 text-sm rounded-lg hover:bg-red-200"
+                        className="px-0 py-0 bg-red-100 text-red-600 text-sm rounded-lg hover:bg-red-200"
                       >
                         ✗ Cancel
                       </button>
@@ -196,7 +196,7 @@ export function VendorBookingsPage({ vendorId }: VendorBookingsPageProps) {
                   {booking.status === 'confirmed' && (
                     <button
                       onClick={() => handleStatusUpdate(booking.id, 'in_progress')}
-                      className="px-3 py-1 bg-blue-500 text-white text-sm rounded-lg hover:bg-blue-600"
+                      className="px-0 py-0 bg-blue-500 text-white text-sm rounded-lg hover:bg-blue-600"
                     >
                       ▶ Start
                     </button>
@@ -204,14 +204,14 @@ export function VendorBookingsPage({ vendorId }: VendorBookingsPageProps) {
                   {booking.status === 'in_progress' && (
                     <button
                       onClick={() => handleStatusUpdate(booking.id, 'completed')}
-                      className="px-3 py-1 bg-green-500 text-white text-sm rounded-lg hover:bg-green-600"
+                      className="px-0 py-0 bg-green-500 text-white text-sm rounded-lg hover:bg-green-600"
                     >
                       ✓ Complete
                     </button>
                   )}
                   <a
                     href={`tel:${booking.customer_phone}`}
-                    className="px-3 py-1 bg-gray-100 text-gray-600 text-sm rounded-lg text-center hover:bg-gray-200"
+                    className="px-0 py-0 bg-gray-100 text-gray-600 text-sm rounded-lg text-center hover:bg-gray-200"
                   >
                     📞 Call
                   </a>

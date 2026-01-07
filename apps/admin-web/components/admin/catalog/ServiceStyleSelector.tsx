@@ -1,6 +1,5 @@
 'use client';
 
-import React from 'react';
 import { Check, Home, Building2, Phone, Repeat, Package as PackageIcon, Globe } from 'lucide-react';
 
 interface ServiceStyle {
@@ -52,34 +51,33 @@ const SERVICE_STYLES: ServiceStyle[] = [
 interface ServiceStyleSelectorProps {
   selectedStyle: string;
   onSelect: (styleId: string) => void;
-  className?: string;
 }
 
-export function ServiceStyleSelector({ selectedStyle, onSelect, className = '' }: ServiceStyleSelectorProps) {
+export function ServiceStyleSelector({ selectedStyle, onSelect }: ServiceStyleSelectorProps) {
   return (
-    <div className={`grid grid-cols-2 gap-2 ${className}`}>
+    <div className="grid grid-cols-2 gap-0">
       {SERVICE_STYLES.map((style) => (
         <button
           key={style.id}
           type="button"
           onClick={() => onSelect(style.id)}
           className={`
-            relative p-2.5 rounded-lg border-2 transition-all text-left min-h-[80px]
+            relative p-0.5 rounded-lg border-2 transition-all text-left
             ${selectedStyle === style.id
-              ? 'border-[#FF8C42] bg-orange-50'
+              ? 'border-primary bg-primary/10'
               : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
             }
           `}
         >
           {selectedStyle === style.id && (
-            <div className="absolute top-2 right-2 w-4 h-4 bg-[#FF8C42] rounded-full flex items-center justify-center">
+            <div className="absolute top-0 right-2 w-4 h-4 bg-primary rounded-full flex items-center justify-center">
               <Check className="w-2.5 h-2.5 text-white" />
             </div>
           )}
-          <div className="flex items-start gap-2">
-            <div className="text-[#FF8C42] scale-75">{style.icon}</div>
+          <div className="flex items-start gap-0">
+            <div className="text-primary scale-75">{style.icon}</div>
             <div className="flex-1">
-              <div className="text-xs mb-0.5 font-medium">{style.label}</div>
+              <div className="text-xs mb-0.5">{style.label}</div>
               <div className="text-[10px] text-gray-500 leading-tight">{style.description}</div>
             </div>
           </div>
@@ -88,4 +86,3 @@ export function ServiceStyleSelector({ selectedStyle, onSelect, className = '' }
     </div>
   );
 }
-

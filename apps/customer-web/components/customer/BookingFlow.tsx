@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
-import { SpecializedServiceRouter } from './specialized/SpecializedServiceRouter';
+// Removed SpecializedServiceRouter - now integrated into unified flow
 
 interface Service {
   id: string;
@@ -48,7 +48,7 @@ declare global {
   }
 }
 
-// Specialized service types that need custom booking flows
+// Specialized service types - now handled within unified flow
 const SPECIALIZED_SERVICES = [
   'ambulance', 'emergency',
   'diagnostics', 'diagnostic', 'lab', 'laboratory',
@@ -59,12 +59,26 @@ const SPECIALIZED_SERVICES = [
   'adoption', 'breeder', 'breeding',
 ];
 
+// Helper to determine specialized service type
+const getSpecializedServiceType = (service: Service | null): string | null => {
+  if (!service) return null;
+  const serviceName = (service.name || '').toLowerCase();
+  const serviceStyle = (service.service_style || '').toLowerCase();
+  
+  for (const type of SPECIALIZED_SERVICES) {
+    if (serviceName.includes(type) || serviceStyle.includes(type)) {
+      return type;
+    }
+  }
+  return null;
+};
+
 export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
   const router = useRouter();
   const [step, setStep] = useState<'details' | 'datetime' | 'pet' | 'address' | 'payment' | 'confirmed'>('details');
   const [loading, setLoading] = useState(true);
   const [service, setService] = useState<Service | null>(null);
-  const [isSpecialized, setIsSpecialized] = useState(false);
+  const [specializedType, setSpecializedType] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [selectedTime, setSelectedTime] = useState<string>('');
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
@@ -77,6 +91,9 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
   const [useWallet, setUseWallet] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [bookingId, setBookingId] = useState<string | null>(null);
+  
+  // Specialized service specific state
+  const [specializedData, setSpecializedData] = useState<any>({});
 
   useEffect(() => {
     loadServiceDetails();
@@ -89,6 +106,12 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
       loadTimeSlots();
     }
   }, [selectedDate, service]);
+
+  useEffect(() => {
+    if (selectedDate && selectedTime && service?.service_style === 'at_home' && selectedAddress) {
+      loadAvailableStaff();
+    }
+  }, [selectedDate, selectedTime, selectedAddress, service]);
 
   const loadRazorpayScript = () => {
     const script = document.createElement('script');
@@ -104,19 +127,60 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
       if (response.service) {
         setService(response.service);
         
-        // Check if this is a specialized service
-        const serviceName = (response.service.name || '').toLowerCase();
-        const serviceStyle = (response.service.service_style || '').toLowerCase();
-        const isSpecializedService = SPECIALIZED_SERVICES.some(type => 
-          serviceName.includes(type) || serviceStyle.includes(type) || serviceId.toLowerCase().includes(type)
-        );
+        // Determine specialized service type (if any)
+        const specialized = getSpecializedServiceType(response.service);
+        setSpecializedType(specialized);
         
-        setIsSpecialized(isSpecializedService);
+        // Load specialized service data if needed
+        if (specialized) {
+          await loadSpecializedServiceData(specialized, response.service.vendor_id);
+        }
       }
     } catch (err) {
       console.error('Error loading service:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadSpecializedServiceData = async (type: string, vendorId: string) => {
+    try {
+      // Load specialized service-specific data (tables, rooms, vehicles, tests, etc.)
+      switch (type) {
+        case 'pet_cafe':
+        case 'cafe':
+          const cafeRes = await apiClient.get<any>(`/vendor/${vendorId}/cafe/tables`);
+          if (cafeRes.success && cafeRes.tables) {
+            setSpecializedData({ tables: cafeRes.tables });
+          }
+          break;
+        case 'pet_resort':
+        case 'resort':
+        case 'boarding':
+          const resortRes = await apiClient.get<any>(`/vendor/${vendorId}/resort/rooms`);
+          if (resortRes.success && resortRes.rooms) {
+            setSpecializedData({ rooms: resortRes.rooms });
+          }
+          break;
+        case 'ambulance':
+        case 'emergency':
+          const ambulanceRes = await apiClient.get<any>(`/vendor/${vendorId}/ambulance/vehicles`);
+          if (ambulanceRes.success && ambulanceRes.vehicles) {
+            setSpecializedData({ vehicles: ambulanceRes.vehicles.filter((v: any) => v.is_available) });
+          }
+          break;
+        case 'diagnostics':
+        case 'diagnostic':
+        case 'lab':
+        case 'laboratory':
+          const diagnosticsRes = await apiClient.get<any>(`/vendor/${vendorId}/diagnostics/tests`);
+          if (diagnosticsRes.success && diagnosticsRes.tests) {
+            setSpecializedData({ tests: diagnosticsRes.tests.filter((t: any) => t.is_available) });
+          }
+          break;
+      }
+    } catch (err) {
+      console.error('Error loading specialized service data:', err);
     }
   };
 
@@ -135,6 +199,10 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
     }
   };
 
+  const [availableStaff, setAvailableStaff] = useState<any[]>([]);
+  const [selectedStaff, setSelectedStaff] = useState<string>('');
+  const [commuteInfo, setCommuteInfo] = useState<{ time: number; distance: number; arrival: string } | null>(null);
+
   const loadTimeSlots = async () => {
     try {
       const response = await apiClient.get<any>(
@@ -143,8 +211,61 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
       if (response.slots) {
         setTimeSlots(response.slots);
       }
+      
+      // For home services, also load available staff with commute time
+      if (service?.service_style === 'at_home' && selectedDate && selectedTime) {
+        await loadAvailableStaff();
+      }
     } catch (err) {
       console.error('Error loading time slots:', err);
+    }
+  };
+
+  const loadAvailableStaff = async () => {
+    if (!service || !selectedDate || !selectedTime || !selectedAddress) return;
+    
+    try {
+      // Get address coordinates
+      const address = addresses.find(a => a.id === selectedAddress);
+      if (!address) return;
+      
+      // Get customer ID for previous provider prioritization
+      const customerRes = await apiClient.get<any>(`/customer/by-phone?phone=${encodeURIComponent(customerPhone)}`);
+      const customerId = customerRes.customer?.id;
+      
+      const params = new URLSearchParams({
+        serviceId: serviceId,
+        serviceStyle: 'at_home',
+        date: selectedDate,
+        time: selectedTime,
+        ...(customerId && { customerId }),
+      });
+      
+      // If address has coordinates, add them
+      if (address.latitude && address.longitude) {
+        params.append('latitude', address.latitude.toString());
+        params.append('longitude', address.longitude.toString());
+      }
+      
+      const staffRes = await apiClient.get<any>(`/customer/discover-staff?${params}`);
+      
+      if (staffRes.staff) {
+        setAvailableStaff(staffRes.staff);
+        // Auto-select first staff (which will be previous provider if available)
+        if (staffRes.staff.length > 0 && !selectedStaff) {
+          setSelectedStaff(staffRes.staff[0].id);
+          // Set commute info
+          if (staffRes.staff[0].commuteTime) {
+            setCommuteInfo({
+              time: staffRes.staff[0].commuteTime,
+              distance: staffRes.staff[0].distance || 0,
+              arrival: staffRes.staff[0].estimatedArrival || '',
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Error loading available staff:', err);
     }
   };
 
@@ -175,19 +296,31 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
     
     setProcessing(true);
     try {
-      // Create booking first
-      const bookingRes = await apiClient.post<any>('/bookings', {
+      // Build booking data with specialized service support
+      const bookingData: any = {
         service_id: serviceId,
         vendor_id: service.vendor_id,
         customer_phone: customerPhone,
         pet_id: selectedPet || undefined,
-        address_id: service.service_style === 'at_home' ? selectedAddress : undefined,
-        booking_date: selectedDate,
-        booking_time: selectedTime,
-        notes,
-        total_amount: service.price,
+        address_id: (service.service_style === 'at_home' || specializedType) ? selectedAddress : undefined,
+        booking_date: selectedDate || new Date().toISOString().split('T')[0],
+        booking_time: selectedTime || new Date().toTimeString().split(' ')[0].substring(0, 5),
+        notes: notes || '',
+        total_amount: calculateTotal(),
         use_wallet: useWallet,
-      });
+      };
+
+      // Add specialized service-specific data
+      if (specializedType) {
+        bookingData.service_type = specializedType;
+        bookingData.specialized_data = JSON.stringify({
+          ...specializedData,
+          type: specializedType,
+        });
+      }
+
+      // Create booking
+      const bookingRes = await apiClient.post<any>('/bookings', bookingData);
 
       if (!bookingRes.booking_id) {
         throw new Error('Failed to create booking');
@@ -241,7 +374,7 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
           contact: customerPhone,
         },
         theme: {
-          color: '#f97316',
+          color: colors.primary, // Using design token primary color
         },
         modal: {
           ondismiss: () => {
@@ -260,21 +393,8 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
     }
   };
 
-  // Route to specialized service if detected
-  if (!loading && service && isSpecialized) {
-    return (
-      <SpecializedServiceRouter
-        serviceType={service.service_style || service.name || serviceId}
-        vendorId={service.vendor_id}
-        customerPhone={customerPhone}
-        onSuccess={(bookingId) => {
-          setBookingId(bookingId);
-          router.push(`/bookings/${bookingId}`);
-        }}
-        onCancel={() => router.push('/')}
-      />
-    );
-  }
+  // Specialized services are now handled within the unified flow
+  // No parallel routing - all services go through the same flow
 
   if (loading) {
     return (
@@ -290,7 +410,7 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
         <div className="text-center">
           <span className="text-6xl">😿</span>
           <h2 className="mt-4 text-xl font-semibold">Service not found</h2>
-          <a href="/" className="mt-4 inline-block px-6 py-2 bg-orange-500 text-white rounded-full">
+          <a href="/" className="mt-4 inline-block px-0 py-0 bg-orange-500 text-white rounded-full">
             Go Home
           </a>
         </div>
@@ -314,7 +434,7 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
 
       {/* Progress */}
       <div className="max-w-4xl mx-auto px-4 py-4">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-0">
           {['details', 'datetime', 'pet', service.service_style === 'at_home' ? 'address' : null, 'payment'].filter(Boolean).map((s, i, arr) => (
             <React.Fragment key={s}>
               <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
@@ -334,7 +454,7 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
       {/* Content */}
       <main className="max-w-4xl mx-auto px-4 pb-32">
         {step === 'details' && (
-          <div className="bg-white rounded-2xl p-6 shadow-sm">
+          <div className="bg-white rounded-2xl p-0 shadow-sm">
             <h2 className="text-xl font-bold mb-4">Service Details</h2>
             <div className="space-y-4">
               <div className="flex items-center gap-4">
@@ -357,7 +477,7 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
             </div>
             <button
               onClick={() => setStep('datetime')}
-              className="w-full mt-6 py-3 bg-orange-500 text-white rounded-xl font-medium"
+              className="w-full mt-0 py-0 bg-orange-500 text-white rounded-xl font-medium"
             >
               Continue
             </button>
@@ -365,13 +485,13 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
         )}
 
         {step === 'datetime' && (
-          <div className="bg-white rounded-2xl p-6 shadow-sm">
+          <div className="bg-white rounded-2xl p-0 shadow-sm">
             <h2 className="text-xl font-bold mb-4">Select Date & Time</h2>
             
             {/* Date Selection */}
-            <div className="mb-6">
-              <h3 className="font-medium text-gray-700 mb-3">Select Date</h3>
-              <div className="flex gap-2 overflow-x-auto pb-2">
+            <div className="mb-0">
+              <h3 className="font-medium text-gray-700 mb-0">Select Date</h3>
+              <div className="flex gap-0 overflow-x-auto pb-0">
                 {getNextDays().map((day) => (
                   <button
                     key={day.date}
@@ -379,7 +499,7 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
                       setSelectedDate(day.date);
                       setSelectedTime('');
                     }}
-                    className={`flex-shrink-0 px-4 py-3 rounded-xl text-center min-w-[80px] ${
+                    className={`flex-shrink-0 px-4 py-0 rounded-xl text-center min-w-[80px] ${
                       selectedDate === day.date
                         ? 'bg-orange-500 text-white'
                         : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -394,15 +514,15 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
             {/* Time Selection */}
             {selectedDate && (
               <div>
-                <h3 className="font-medium text-gray-700 mb-3">Select Time</h3>
-                <div className="grid grid-cols-4 gap-2">
+                <h3 className="font-medium text-gray-700 mb-0">Select Time</h3>
+                <div className="grid grid-cols-4 gap-0">
                   {timeSlots.length > 0 ? (
                     timeSlots.map((slot) => (
                       <button
                         key={slot.time}
                         onClick={() => slot.available && setSelectedTime(slot.time)}
                         disabled={!slot.available}
-                        className={`px-3 py-2 rounded-lg text-sm ${
+                        className={`px-0 py-0 rounded-lg text-sm ${
                           selectedTime === slot.time
                             ? 'bg-orange-500 text-white'
                             : slot.available
@@ -417,13 +537,69 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
                     <p className="col-span-4 text-gray-500 text-center py-4">Select a date to see available slots</p>
                   )}
                 </div>
+                
+                {/* Previous Providers & Available Staff (for home services) */}
+                {selectedTime && service?.service_style === 'at_home' && availableStaff.length > 0 && (
+                  <div className="mt-4 p-0 bg-blue-50 rounded-lg">
+                    <h4 className="font-medium text-gray-700 mb-0">Available Service Providers</h4>
+                    <div className="space-y-2">
+                      {availableStaff.slice(0, 5).map((staff: any) => (
+                        <button
+                          key={staff.id}
+                          onClick={() => {
+                            setSelectedStaff(staff.id);
+                            setCommuteInfo({
+                              time: staff.commuteTime || 0,
+                              distance: staff.distance || 0,
+                              arrival: staff.estimatedArrival || '',
+                            });
+                          }}
+                          className={`w-full text-left p-0 rounded-lg border-2 transition ${
+                            selectedStaff === staff.id
+                              ? 'border-orange-500 bg-orange-50'
+                              : 'border-gray-200 hover:border-gray-300'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="font-medium text-gray-900">
+                                {staff.name}
+                                {staff.isPreviousProvider && (
+                                  <span className="ml-0 text-xs bg-green-100 text-green-700 px-0 py-0.5 rounded">Previous</span>
+                                )}
+                              </p>
+                              {staff.commuteTime && (
+                                <p className="text-xs text-gray-500">
+                                  {staff.commuteTime} min commute • {staff.distance?.toFixed(1)} km away
+                                </p>
+                              )}
+                            </div>
+                            {selectedStaff === staff.id && (
+                              <span className="text-orange-500">✓</span>
+                            )}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                    {commuteInfo && selectedStaff && (
+                      <div className="mt-0 p-0 bg-white rounded border border-orange-200">
+                        <p className="text-sm text-gray-700">
+                          <span className="font-medium">Staff will arrive at:</span> {commuteInfo.arrival || 'Calculating...'}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-0">
+                          Includes {commuteInfo.time} min commute time
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
             <button
               onClick={() => setStep('pet')}
               disabled={!selectedDate || !selectedTime}
-              className="w-full mt-6 py-3 bg-orange-500 text-white rounded-xl font-medium disabled:opacity-50"
+              className="w-full mt-0 py-0 bg-orange-500 text-white rounded-xl font-medium disabled:opacity-50"
             >
               Continue
             </button>
@@ -431,7 +607,7 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
         )}
 
         {step === 'pet' && (
-          <div className="bg-white rounded-2xl p-6 shadow-sm">
+          <div className="bg-white rounded-2xl p-0 shadow-sm">
             <h2 className="text-xl font-bold mb-4">Select Pet (Optional)</h2>
             <div className="space-y-3">
               {pets.length > 0 ? (
@@ -466,7 +642,7 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
             </div>
             <button
               onClick={() => setStep(service.service_style === 'at_home' ? 'address' : 'payment')}
-              className="w-full mt-6 py-3 bg-orange-500 text-white rounded-xl font-medium"
+              className="w-full mt-0 py-0 bg-orange-500 text-white rounded-xl font-medium"
             >
               {selectedPet ? 'Continue' : 'Skip'}
             </button>
@@ -474,7 +650,7 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
         )}
 
         {step === 'address' && service.service_style === 'at_home' && (
-          <div className="bg-white rounded-2xl p-6 shadow-sm">
+          <div className="bg-white rounded-2xl p-0 shadow-sm">
             <h2 className="text-xl font-bold mb-4">Select Address</h2>
             <div className="space-y-3">
               {addresses.length > 0 ? (
@@ -501,7 +677,7 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
             <button
               onClick={() => setStep('payment')}
               disabled={!selectedAddress}
-              className="w-full mt-6 py-3 bg-orange-500 text-white rounded-xl font-medium disabled:opacity-50"
+              className="w-full mt-0 py-0 bg-orange-500 text-white rounded-xl font-medium disabled:opacity-50"
             >
               Continue
             </button>
@@ -510,7 +686,7 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
 
         {step === 'payment' && (
           <div className="space-y-4">
-            <div className="bg-white rounded-2xl p-6 shadow-sm">
+            <div className="bg-white rounded-2xl p-0 shadow-sm">
               <h2 className="text-xl font-bold mb-4">Review Booking</h2>
               <div className="space-y-3">
                 <div className="flex justify-between">
@@ -537,11 +713,11 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
                 onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNotes(e.target.value)}
                 placeholder="Add notes for the provider (optional)"
                 rows={2}
-                className="w-full mt-4 px-4 py-3 border rounded-xl focus:ring-2 focus:ring-orange-500"
+                className="w-full mt-4 px-4 py-0 border rounded-xl focus:ring-2 focus:ring-orange-500"
               />
             </div>
 
-            <div className="bg-white rounded-2xl p-6 shadow-sm">
+            <div className="bg-white rounded-2xl p-1 shadow-sm">
               <h2 className="text-xl font-bold mb-4">Payment</h2>
               <div className="space-y-3">
                 <div className="flex justify-between">
@@ -556,7 +732,7 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
                       useWallet ? 'border-green-500 bg-green-50' : 'border-gray-100'
                     }`}
                   >
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-0">
                       <span className="text-2xl">💰</span>
                       <div className="text-left">
                         <p className="font-medium">Use Wallet Balance</p>
@@ -578,7 +754,7 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
                   </div>
                 )}
 
-                <div className="flex justify-between text-lg font-bold border-t pt-3">
+                <div className="flex justify-between text-lg font-bold border-t pt-0">
                   <span>Total</span>
                   <span className="text-orange-600">₹{calculateTotal()}</span>
                 </div>
@@ -592,15 +768,15 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
             <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center text-4xl mx-auto">
               ✅
             </div>
-            <h2 className="text-2xl font-bold mt-6 text-gray-900">Booking Confirmed!</h2>
-            <p className="text-gray-500 mt-2">Your booking has been successfully placed</p>
+            <h2 className="text-2xl font-bold mt-0 text-gray-900">Booking Confirmed!</h2>
+            <p className="text-gray-500 mt-0">Your booking has been successfully placed</p>
             
-            <div className="mt-6 p-4 bg-gray-50 rounded-xl text-left">
-              <div className="flex justify-between mb-2">
+            <div className="mt-0 p-4 bg-gray-50 rounded-xl text-left">
+              <div className="flex justify-between mb-0">
                 <span className="text-gray-500">Service</span>
                 <span className="font-medium">{service.name}</span>
               </div>
-              <div className="flex justify-between mb-2">
+              <div className="flex justify-between mb-0">
                 <span className="text-gray-500">Date</span>
                 <span className="font-medium">{new Date(selectedDate).toLocaleDateString()}</span>
               </div>
@@ -610,11 +786,11 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
               </div>
             </div>
 
-            <div className="flex gap-3 mt-6">
-              <a href="/bookings" className="flex-1 py-3 border rounded-xl font-medium">
+            <div className="flex gap-0 mt-0">
+              <a href="/bookings" className="flex-1 py-0 border rounded-xl font-medium">
                 View Bookings
               </a>
-              <a href="/" className="flex-1 py-3 bg-orange-500 text-white rounded-xl font-medium">
+              <a href="/" className="flex-1 py-0 bg-orange-500 text-white rounded-xl font-medium">
                 Go Home
               </a>
             </div>

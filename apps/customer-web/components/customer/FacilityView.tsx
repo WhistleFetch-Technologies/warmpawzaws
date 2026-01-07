@@ -64,13 +64,13 @@ export function FacilityView({ facilityId, onBack, onBook }: FacilityViewProps) 
 
   if (!facility) {
     return (
-      <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto flex items-center justify-center p-6">
+      <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto flex items-center justify-center p-0">
         <div className="text-center">
           <p className="text-gray-600 mb-4">Facility not found</p>
           {onBack && (
             <button
               onClick={onBack}
-              className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors"
+              className="px-4 py-0 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors"
             >
               Go Back
             </button>
@@ -83,7 +83,7 @@ export function FacilityView({ facilityId, onBack, onBook }: FacilityViewProps) 
   return (
     <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
       {/* Header */}
-      <div className="bg-white border-b sticky top-0 z-10 px-6 py-4">
+      <div className="bg-white border-b sticky top-0 z-10 px-0 py-4">
         {onBack && (
           <button
             onClick={onBack}
@@ -104,7 +104,7 @@ export function FacilityView({ facilityId, onBack, onBook }: FacilityViewProps) 
             className="w-full h-full object-cover"
           />
           {facility.photos.length > 1 && (
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-0">
               {facility.photos.map((_, idx) => (
                 <button
                   key={idx}
@@ -120,11 +120,11 @@ export function FacilityView({ facilityId, onBack, onBook }: FacilityViewProps) 
       )}
 
       {/* Content */}
-      <div className="px-6 py-6 space-y-6">
+      <div className="px-0 py-0 space-y-6">
         {/* Rating & Reviews */}
         {facility.rating && (
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-0">
               <Star className="w-5 h-5 fill-yellow-400 text-yellow-400" />
               <span className="text-2xl font-bold">{facility.rating.toFixed(1)}</span>
             </div>
@@ -136,14 +136,14 @@ export function FacilityView({ facilityId, onBack, onBook }: FacilityViewProps) 
 
         {/* Location */}
         <div className="bg-white rounded-xl p-4 border border-gray-200">
-          <div className="flex items-start gap-3">
-            <MapPin className="w-5 h-5 text-primary flex-shrink-0 mt-1" />
+          <div className="flex items-start gap-0">
+            <MapPin className="w-5 h-5 text-primary flex-shrink-0 mt-0" />
             <div>
-              <h3 className="font-semibold text-gray-900 mb-1">Location</h3>
+              <h3 className="font-semibold text-gray-900 mb-0">Location</h3>
               <p className="text-gray-600">{facility.address}</p>
               <p className="text-gray-600">{facility.city}</p>
               {facility.distance && (
-                <p className="text-sm text-primary mt-2">{facility.distance.toFixed(1)} km away</p>
+                <p className="text-sm text-primary mt-0">{facility.distance.toFixed(1)} km away</p>
               )}
             </div>
           </div>
@@ -152,7 +152,7 @@ export function FacilityView({ facilityId, onBack, onBook }: FacilityViewProps) 
         {/* Description */}
         {facility.description && (
           <div>
-            <h3 className="font-semibold text-gray-900 mb-2">About</h3>
+            <h3 className="font-semibold text-gray-900 mb-0">About</h3>
             <p className="text-gray-600">{facility.description}</p>
           </div>
         )}
@@ -160,12 +160,12 @@ export function FacilityView({ facilityId, onBack, onBook }: FacilityViewProps) 
         {/* Amenities */}
         {facility.amenities && facility.amenities.length > 0 && (
           <div>
-            <h3 className="font-semibold text-gray-900 mb-3">Amenities</h3>
-            <div className="flex flex-wrap gap-2">
+            <h3 className="font-semibold text-gray-900 mb-0">Amenities</h3>
+            <div className="flex flex-wrap gap-0">
               {facility.amenities.map((amenity, idx) => (
                 <span
                   key={idx}
-                  className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-full text-sm"
+                  className="px-0 py-0.5 bg-gray-100 text-gray-700 rounded-full text-sm"
                 >
                   {amenity}
                 </span>
@@ -177,7 +177,7 @@ export function FacilityView({ facilityId, onBack, onBook }: FacilityViewProps) 
         {/* Hours */}
         {facility.hours && (
           <div className="bg-white rounded-xl p-4 border border-gray-200">
-            <h3 className="font-semibold text-gray-900 mb-3">Operating Hours</h3>
+            <h3 className="font-semibold text-gray-900 mb-0">Operating Hours</h3>
             <div className="space-y-2">
               {Object.entries(facility.hours).map(([day, hours]) => (
                 <div key={day} className="flex justify-between">
@@ -192,7 +192,7 @@ export function FacilityView({ facilityId, onBack, onBook }: FacilityViewProps) 
         {/* Contact */}
         {facility.phone && (
           <div className="bg-white rounded-xl p-4 border border-gray-200">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-0">
               <Phone className="w-5 h-5 text-primary" />
               <div>
                 <h3 className="font-semibold text-gray-900">Contact</h3>
@@ -208,7 +208,7 @@ export function FacilityView({ facilityId, onBack, onBook }: FacilityViewProps) 
         {onBook && (
           <button
             onClick={() => onBook(facility.id)}
-            className="w-full py-4 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark transition-colors flex items-center justify-center gap-2"
+            className="w-full py-4 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark transition-colors flex items-center justify-center gap-0"
           >
             Book Service
             <ChevronRight className="w-5 h-5" />

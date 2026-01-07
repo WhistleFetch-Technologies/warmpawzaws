@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, Calendar, Clock, MapPin } from 'lucide-react';
 import Image from 'next/image';
 import { apiClient } from '@/lib/api-client';
+import { AddressAutocomplete, type AddressComponents } from '@warmpawz/ui';
 
 interface CreateBookingPageProps {
   phone: string;
@@ -89,7 +90,7 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
 
   return (
     <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
-      <div className="sticky top-0 z-10 bg-white border-b px-4 py-4 flex items-center gap-3">
+      <div className="sticky top-0 z-10 bg-white border-b px-4 py-4 flex items-center gap-0">
         <button
           onClick={onBack}
           className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors"
@@ -99,8 +100,8 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
         <h1 className="text-lg font-bold">Create Booking</h1>
       </div>
 
-      <div className="px-4 py-6">
-        <form onSubmit={handleSubmit} className="space-y-6 bg-white p-6 rounded-xl shadow-sm">
+      <div className="px-4 py-0">
+        <form onSubmit={handleSubmit} className="space-y-6 bg-white p-0 rounded-xl shadow-sm">
           {/* Pet Selection */}
           <div className="space-y-2">
             <label className="block text-sm font-semibold text-gray-700">Select Pet *</label>
@@ -110,7 +111,7 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
               <select 
                 value={formData.petId} 
                 onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData({...formData, petId: e.target.value})}
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                 required
               >
                 <option value="">Select a pet</option>
@@ -129,12 +130,12 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
             <div className="space-y-2">
               <label className="block text-sm font-semibold text-gray-700">Date *</label>
               <div className="relative">
-                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Calendar className="absolute left-3 top-0/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
                   type="date"
                   value={formData.scheduledDate}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({...formData, scheduledDate: e.target.value})}
-                  className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                  className="w-full pl-0 pr-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                   min={new Date().toISOString().split('T')[0]}
                   required
                 />
@@ -143,12 +144,12 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
             <div className="space-y-2">
               <label className="block text-sm font-semibold text-gray-700">Time *</label>
               <div className="relative">
-                <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Clock className="absolute left-3 top-0/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
                   type="time"
                   value={formData.scheduledTime}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({...formData, scheduledTime: e.target.value})}
-                  className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                  className="w-full pl-0 pr-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                   required
                 />
               </div>
@@ -157,18 +158,24 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
 
           {/* Address */}
           <div className="space-y-4 border-t pt-4">
-            <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+            <label className="flex items-center gap-0 text-sm font-semibold text-gray-700">
               <MapPin className="w-4 h-4" /> Service Address
             </label>
-            <input
-              type="text"
-              placeholder="Street Address"
+            <AddressAutocomplete
               value={formData.address.street}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({
-                ...formData,
-                address: { ...formData.address, street: e.target.value }
-              })}
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+              onChange={(address: string, components?: AddressComponents) => {
+                setFormData({
+                  ...formData,
+                  address: {
+                    street: address,
+                    city: components?.city || formData.address.city,
+                    state: components?.state || formData.address.state,
+                    pincode: components?.pincode || formData.address.pincode,
+                  }
+                });
+              }}
+              placeholder="Search address, landmark, city..."
+              className="w-full"
             />
             <div className="grid grid-cols-2 gap-4">
               <input
@@ -179,7 +186,7 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
                   ...formData,
                   address: { ...formData.address, city: e.target.value }
                 })}
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
               />
               <input
                 type="text"
@@ -189,7 +196,7 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
                   ...formData,
                   address: { ...formData.address, state: e.target.value }
                 })}
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
               />
             </div>
             <input
@@ -200,7 +207,7 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
                 ...formData,
                 address: { ...formData.address, pincode: e.target.value }
               })}
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+              className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
             />
           </div>
 
@@ -212,7 +219,7 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
               value={formData.notes}
               onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData({...formData, notes: e.target.value})}
               rows={4}
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none resize-none"
+              className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none resize-none"
             />
           </div>
 

@@ -30,6 +30,7 @@ import { AdoptionServiceRouter } from './src/screens/services/AdoptionServiceRou
 import { InsuranceServicesScreen } from './src/screens/services/InsuranceServicesScreen';
 import { NutritionistServiceScreen } from './src/screens/services/NutritionistServiceScreen';
 import { PetCafeServicesScreen } from './src/screens/services/PetCafeServicesScreen';
+import { MealPlanOrderScreen } from './src/screens/services/MealPlanOrderScreen';
 import { PharmacyStoreScreen } from './src/screens/services/PharmacyStoreScreen';
 import { ShopDashboardScreen } from './src/screens/services/ShopDashboardScreen';
 import { ResortServicesScreen } from './src/screens/services/ResortServicesScreen';
@@ -47,6 +48,7 @@ import { HelpSupportScreen } from './src/screens/settings/HelpSupportScreen';
 import { OrderHistoryScreen } from './src/screens/orders/OrderHistoryScreen';
 import { OrderDetailScreen } from './src/screens/orders/OrderDetailScreen';
 import { OrderTrackingScreen } from './src/screens/orders/OrderTrackingScreen';
+import { MealPlanOrdersScreen } from './src/screens/orders/MealPlanOrdersScreen';
 import { WalletScreen } from './src/screens/wallet/WalletScreen';
 import { RewardsLoyaltyScreen } from './src/screens/rewards/RewardsLoyaltyScreen';
 import { ReferralSystemScreen } from './src/screens/rewards/ReferralSystemScreen';
@@ -97,6 +99,8 @@ import { ChangePasswordScreen } from './src/screens/settings/ChangePasswordScree
 import { EditProfileScreen } from './src/screens/profile/EditProfileScreen';
 import { WishlistScreen } from './src/screens/shop/WishlistScreen';
 import { OrderInvoiceScreen } from './src/screens/orders/OrderInvoiceScreen';
+// Phase 3: AI Chatbot
+import { AIChatbotScreen } from './src/screens/ai-chatbot/AIChatbotScreen';
 
 // Import theme
 import { colors } from './src/theme/colors';
@@ -113,6 +117,10 @@ export default function App() {
     // Check for existing session
     const checkSession = async () => {
       try {
+        // Initialize API service with network monitoring
+        const { ApiService } = require('./src/services/api');
+        await ApiService.initialize();
+        
         // TODO: Check AsyncStorage for existing session
         // For now, always show auth screen
         setIsLoading(false);
@@ -1140,6 +1148,17 @@ export default function App() {
                       />
                     )}
                   </Stack.Screen>
+                  <Stack.Screen name="AIChatbot">
+                    {(props) => (
+                      <AIChatbotScreen
+                        {...props}
+                        phone={session.phone}
+                        customerId={session.customerId}
+                        onBack={() => handleNavigate('HelpSupport')}
+                        onNavigate={handleNavigate}
+                      />
+                    )}
+                  </Stack.Screen>
                   <Stack.Screen name="Settings">
                     {(props) => (
                       <SettingsScreen
@@ -1188,6 +1207,17 @@ export default function App() {
                         phone={session.phone}
                         customerId={session.customerId}
                         onBack={() => handleNavigate('Home')}
+                        onNavigate={handleNavigate}
+                      />
+                    )}
+                  </Stack.Screen>
+                  <Stack.Screen name="MealPlanOrders">
+                    {(props) => (
+                      <MealPlanOrdersScreen
+                        {...props}
+                        phone={session.phone}
+                        customerId={session.customerId}
+                        onBack={() => handleNavigate('NutritionistServiceScreen')}
                         onNavigate={handleNavigate}
                       />
                     )}

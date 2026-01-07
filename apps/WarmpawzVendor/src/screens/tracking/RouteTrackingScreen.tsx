@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
+import { GPSTrackingApi } from '../../services/api';
 import { GPSTrackingScreen } from './GPSTrackingScreen';
 
 interface RouteTrackingScreenProps {
@@ -35,6 +36,35 @@ export function RouteTrackingScreen({
   onBack,
 }: RouteTrackingScreenProps) {
   const [showLiveTracking, setShowLiveTracking] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [loadedRouteData, setLoadedRouteData] = useState<any[]>(routeData);
+
+  // ✅ API Integration: Load route data if routeId is provided
+  React.useEffect(() => {
+    if (bookingId && routeData.length === 0) {
+      loadRouteData();
+    }
+  }, [bookingId]);
+
+  const loadRouteData = async () => {
+    try {
+      setLoading(true);
+      // ✅ API Integration: Get route from booking
+      const route = await GPSTrackingApi.getRoute(bookingId);
+      if (route && route.waypoints) {
+        setLoadedRouteData(route.waypoints);
+      } else if (route && route.path) {
+        // Handle different response formats
+        setLoadedRouteData(Array.isArray(route.path) ? route.path : []);
+      }
+    } catch (error) {
+      console.error('Error loading route data:', error);
+      // Use provided routeData or empty array
+      setLoadedRouteData(routeData);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   if (showLiveTracking) {
     return (
@@ -47,7 +77,9 @@ export function RouteTrackingScreen({
     );
   }
 
-  const allPoints = routeData.length > 0
+  const allPoints = loadedRouteData.length > 0
+    ? loadedRouteData
+    : routeData.length > 0
     ? routeData
     : startLocation && endLocation
     ? [startLocation, endLocation]
@@ -236,7 +268,7 @@ const styles = StyleSheet.create({
   liveTrackingButtonText: {
     fontSize: typography.fontSizes.md,
     fontWeight: typography.fontWeights.semibold,
-    color: '#ffffff',
+    color: colors.white,
   },
 });
 

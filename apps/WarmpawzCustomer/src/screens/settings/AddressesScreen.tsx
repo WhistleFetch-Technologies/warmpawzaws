@@ -606,7 +606,7 @@ export function AddressesScreen({
                 disabled={saving}
               >
                 {saving ? (
-                  <ActivityIndicator color="#fff" />
+                  <ActivityIndicator color={colors.white} />
                 ) : (
                   <Text style={styles.modalButtonTextPrimary}>
                     {editingAddress ? 'Update' : 'Save'}
@@ -624,7 +624,7 @@ export function AddressesScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
   },
   header: {
     flexDirection: 'row',
@@ -637,18 +637,18 @@ const styles = StyleSheet.create({
   },
   backButton: {
     fontSize: typography.body,
-    color: '#fff',
+    color: colors.white,
   },
   headerTitle: {
     fontSize: typography.h1,
     fontWeight: 'bold',
-    color: '#fff',
+    color: colors.white,
     flex: 1,
     textAlign: 'center',
   },
   addButton: {
     fontSize: typography.body,
-    color: '#fff',
+    color: colors.white,
     fontWeight: '600',
   },
   loadingContainer: {
@@ -689,7 +689,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
   },
   emptyStateButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: typography.body,
     fontWeight: 'bold',
   },
@@ -701,7 +701,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   addressHeader: {
     marginBottom: spacing.md,
@@ -736,7 +736,7 @@ const styles = StyleSheet.create({
   },
   defaultBadgeText: {
     fontSize: typography.caption,
-    color: '#fff',
+    color: colors.white,
     fontWeight: 'bold',
   },
   addressName: {
@@ -761,15 +761,15 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     paddingTop: spacing.md,
     borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
+    borderTopColor: colors.gray.200,
   },
   actionButton: {
     flex: 1,
     padding: spacing.sm,
     borderRadius: borderRadius.md,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
     alignItems: 'center',
   },
   actionButtonText: {
@@ -789,7 +789,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderTopLeftRadius: borderRadius.xl,
     borderTopRightRadius: borderRadius.xl,
     maxHeight: '90%',
@@ -800,7 +800,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: colors.gray.200,
   },
   modalTitle: {
     fontSize: typography.h2,
@@ -811,7 +811,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: colors.gray.100,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -842,12 +842,12 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     backgroundColor: '#F9FAFB',
     borderWidth: 2,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
     alignItems: 'center',
   },
   labelButtonActive: {
     borderColor: colors.primary,
-    backgroundColor: '#FEE2E2',
+    backgroundColor: colors.error + 20% opacity,
   },
   labelButtonText: {
     fontSize: typography.caption,
@@ -862,7 +862,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
     fontSize: typography.body,
     color: colors.text,
   },
@@ -875,15 +875,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#F9FAFB',
     borderRadius: borderRadius.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   stateItem: {
     padding: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: colors.gray.200,
   },
   stateItemSelected: {
-    backgroundColor: '#FEE2E2',
+    backgroundColor: colors.error + 20% opacity,
   },
   stateItemText: {
     fontSize: typography.body,
@@ -908,7 +908,7 @@ const styles = StyleSheet.create({
     marginRight: spacing.sm,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
   },
   checkboxIcon: {
     fontSize: 16,
@@ -924,7 +924,7 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     padding: spacing.md,
     borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
+    borderTopColor: colors.gray.200,
   },
   modalButton: {
     flex: 1,
@@ -935,7 +935,7 @@ const styles = StyleSheet.create({
   modalButtonSecondary: {
     backgroundColor: '#F9FAFB',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   modalButtonPrimary: {
     backgroundColor: colors.primary,
@@ -947,7 +947,7 @@ const styles = StyleSheet.create({
   },
   modalButtonTextPrimary: {
     fontSize: typography.body,
-    color: '#fff',
+    color: colors.white,
     fontWeight: 'bold',
   },
 });

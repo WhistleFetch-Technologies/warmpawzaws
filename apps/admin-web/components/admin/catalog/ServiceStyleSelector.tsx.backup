@@ -1,0 +1,88 @@
+'use client';
+
+import { Check, Home, Building2, Phone, Repeat, Package as PackageIcon, Globe } from 'lucide-react';
+
+interface ServiceStyle {
+  id: string;
+  icon: React.ReactNode;
+  label: string;
+  description: string;
+}
+
+const SERVICE_STYLES: ServiceStyle[] = [
+  { 
+    id: 'at-home', 
+    icon: <Home className="w-6 h-6" />, 
+    label: 'At Home Service', 
+    description: 'Services delivered at customer location' 
+  },
+  { 
+    id: 'at-center', 
+    icon: <Building2 className="w-6 h-6" />, 
+    label: 'At Center Service', 
+    description: 'Customers visit your facility' 
+  },
+  { 
+    id: 'tele-consultation', 
+    icon: <Phone className="w-6 h-6" />, 
+    label: 'Tele Consultation', 
+    description: 'Remote video/phone consultations' 
+  },
+  { 
+    id: 'hybrid', 
+    icon: <Repeat className="w-6 h-6" />, 
+    label: 'Hybrid (Multiple Options)', 
+    description: 'Combination of service styles' 
+  },
+  { 
+    id: 'product', 
+    icon: <PackageIcon className="w-6 h-6" />, 
+    label: 'Product (Physical Goods)', 
+    description: 'Tangible products for sale' 
+  },
+  { 
+    id: 'online', 
+    icon: <Globe className="w-6 h-6" />, 
+    label: 'Online Service', 
+    description: 'Digital services or courses' 
+  },
+];
+
+interface ServiceStyleSelectorProps {
+  selectedStyle: string;
+  onSelect: (styleId: string) => void;
+}
+
+export function ServiceStyleSelector({ selectedStyle, onSelect }: ServiceStyleSelectorProps) {
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      {SERVICE_STYLES.map((style) => (
+        <button
+          key={style.id}
+          type="button"
+          onClick={() => onSelect(style.id)}
+          className={`
+            relative p-2.5 rounded-lg border-2 transition-all text-left
+            ${selectedStyle === style.id
+              ? 'border-primary bg-primary/10'
+              : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+            }
+          `}
+        >
+          {selectedStyle === style.id && (
+            <div className="absolute top-2 right-2 w-4 h-4 bg-primary rounded-full flex items-center justify-center">
+              <Check className="w-2.5 h-2.5 text-white" />
+            </div>
+          )}
+          <div className="flex items-start gap-2">
+            <div className="text-primary scale-75">{style.icon}</div>
+            <div className="flex-1">
+              <div className="text-xs mb-0.5">{style.label}</div>
+              <div className="text-[10px] text-gray-500 leading-tight">{style.description}</div>
+            </div>
+          </div>
+        </button>
+      ))}
+    </div>
+  );
+}

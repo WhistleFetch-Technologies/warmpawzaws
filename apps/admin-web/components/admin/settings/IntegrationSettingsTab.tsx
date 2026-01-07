@@ -42,27 +42,27 @@ export function IntegrationSettingsTab() {
   return (
     <div className="space-y-4">
       <div className="bg-white rounded-lg border-2 border-gray-200 p-4 space-y-4">
-        <div className="flex items-center gap-2 mb-4">
+        <div className="flex items-center gap-0 mb-4">
           <Plug className="w-5 h-5 text-orange-600" />
           <h3 className="font-semibold text-gray-900">Integration Settings</h3>
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">API Key</label>
+          <label className="block text-sm font-medium text-gray-700 mb-0">API Key</label>
           <input
             type="password"
             value={settings.apiKey}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSettings(prev => ({ ...prev, apiKey: e.target.value }))}
-            className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
+            className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
             placeholder="Enter API key"
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Webhook URL</label>
+          <label className="block text-sm font-medium text-gray-700 mb-0">Webhook URL</label>
           <input
             type="url"
             value={settings.webhookUrl}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSettings(prev => ({ ...prev, webhookUrl: e.target.value }))}
-            className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
+            className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
             placeholder="https://example.com/webhook"
           />
         </div>
@@ -70,7 +70,7 @@ export function IntegrationSettingsTab() {
       <button
         onClick={handleSave}
         disabled={loading}
-        className="w-full py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 flex items-center justify-center gap-2 disabled:opacity-50"
+        className="w-full py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 flex items-center justify-center gap-0 disabled:opacity-50"
       >
         {loading ? (
           <>

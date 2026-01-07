@@ -164,7 +164,7 @@ export function PetVaccinationTracker({ phone, petId, onBack }: PetVaccinationTr
   return (
     <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
       {/* Header */}
-      <div className="bg-gradient-to-r from-primary to-primary-dark px-6 pt-12 pb-6 sticky top-0 z-20">
+      <div className="bg-gradient-to-r from-primary to-primary-dark px-0 pt-12 pb-0 sticky top-0 z-20">
         <div className="flex items-center gap-4 mb-4">
           <button
             onClick={onBack}
@@ -202,9 +202,9 @@ export function PetVaccinationTracker({ phone, petId, onBack }: PetVaccinationTr
       </div>
 
       {/* Content */}
-      <div className="px-6 py-6 space-y-6">
+      <div className="px-0 py-0 space-y-6">
         {/* Vaccinations List */}
-        <div className="bg-white rounded-2xl p-5 shadow-sm">
+        <div className="bg-white rounded-2xl p-0 shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-bold text-gray-900">Vaccination Records</h3>
             <button
@@ -216,9 +216,9 @@ export function PetVaccinationTracker({ phone, petId, onBack }: PetVaccinationTr
           </div>
 
           {vaccinations.length === 0 ? (
-            <div className="text-center py-12">
+            <div className="text-center py-02">
               <AlertCircle className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-              <p className="text-gray-600 mb-2">No vaccination records</p>
+              <p className="text-gray-600 mb-0">No vaccination records</p>
               <p className="text-sm text-gray-500">Add a vaccination to get started</p>
             </div>
           ) : (
@@ -240,12 +240,12 @@ export function PetVaccinationTracker({ phone, petId, onBack }: PetVaccinationTr
                         : 'bg-gray-50 border-gray-200'
                     }`}
                   >
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="flex items-center gap-3">
+                    <div className="flex items-start justify-between mb-0">
+                      <div className="flex items-center gap-0">
                         {getStatusIcon(vaccination.status)}
                         <div>
                           <h4 className="font-semibold text-gray-900">{vaccination.name}</h4>
-                          <span className={`text-xs px-2 py-1 rounded-full ${getStatusColor(vaccination.status)}`}>
+                          <span className={`text-xs px-0 py-1 rounded-full ${getStatusColor(vaccination.status)}`}>
                             {vaccination.status === 'up_to_date' ? 'Up to Date' : 
                              vaccination.status === 'due_soon' ? 'Due Soon' : 'Overdue'}
                           </span>
@@ -253,11 +253,11 @@ export function PetVaccinationTracker({ phone, petId, onBack }: PetVaccinationTr
                       </div>
                     </div>
                     <div className="space-y-2 text-sm text-gray-600">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-0">
                         <Calendar className="w-4 h-4" />
                         <span>Given: {formatDate(vaccination.dateGiven)}</span>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-0">
                         <Calendar className="w-4 h-4" />
                         <span>Next Due: {formatDate(vaccination.nextDueDate)}</span>
                       </div>
@@ -275,14 +275,14 @@ export function PetVaccinationTracker({ phone, petId, onBack }: PetVaccinationTr
         </div>
 
         {/* Recommended Vaccinations */}
-        <div className="bg-white rounded-2xl p-5 shadow-sm">
+        <div className="bg-white rounded-2xl p-0 shadow-sm">
           <h3 className="font-bold text-gray-900 mb-4">Recommended Vaccinations</h3>
           <div className="space-y-2 text-sm text-gray-600">
             <p>• Rabies (Required annually or every 3 years)</p>
             <p>• DHPP (Distemper, Hepatitis, Parvovirus, Parainfluenza)</p>
             <p>• Bordetella (Kennel Cough)</p>
             <p>• Canine Influenza</p>
-            <p className="text-xs text-gray-500 mt-3">
+            <p className="text-xs text-gray-500 mt-0">
               Consult your veterinarian for a complete vaccination schedule
             </p>
           </div>

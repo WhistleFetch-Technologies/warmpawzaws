@@ -101,13 +101,13 @@ export function IntegratedServicesComplete({
 
   if (!service) {
     return (
-      <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto flex items-center justify-center p-6">
+      <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto flex items-center justify-center p-0">
         <div className="text-center">
           <p className="text-gray-600 mb-4">Service not found</p>
           {onBack && (
             <button
               onClick={onBack}
-              className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors"
+              className="px-4 py-0 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors"
             >
               Go Back
             </button>
@@ -120,7 +120,7 @@ export function IntegratedServicesComplete({
   return (
     <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
       {/* Header */}
-      <div className="bg-gradient-to-r from-primary to-primary-dark px-6 pt-12 pb-6 sticky top-0 z-20">
+      <div className="bg-gradient-to-r from-primary to-primary-dark px-0 pt-12 pb-0 sticky top-0 z-20">
         <div className="flex items-center gap-4">
           {onBack && (
             <button
@@ -141,17 +141,17 @@ export function IntegratedServicesComplete({
       </div>
 
       {/* Content */}
-      <div className="px-6 py-6 space-y-6">
+      <div className="px-0 py-0 space-y-6">
         {/* Status Card */}
-        <div className="bg-white rounded-2xl p-5 border border-gray-200">
+        <div className="bg-white rounded-2xl p-0 border border-gray-200">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-bold text-gray-900">Service Status</h2>
-            <span className={`px-3 py-1 rounded-full text-sm font-semibold ${getStatusColor(service.status)}`}>
+            <span className={`px-0 py-0 rounded-full text-sm font-semibold ${getStatusColor(service.status)}`}>
               {getStatusLabel(service.status)}
             </span>
           </div>
           {service.estimatedArrival && (
-            <div className="flex items-center gap-2 text-gray-600">
+            <div className="flex items-center gap-0 text-gray-600">
               <Clock className="w-5 h-5" />
               <span>Estimated arrival: {service.estimatedArrival}</span>
             </div>
@@ -159,9 +159,9 @@ export function IntegratedServicesComplete({
         </div>
 
         {/* Provider Info */}
-        <div className="bg-white rounded-2xl p-5 border border-gray-200">
-          <h3 className="font-semibold text-gray-900 mb-3">Provider Details</h3>
-          <p className="text-gray-900 font-medium mb-2">{service.providerName}</p>
+        <div className="bg-white rounded-2xl p-0 border border-gray-200">
+          <h3 className="font-semibold text-gray-900 mb-0">Provider Details</h3>
+          <p className="text-gray-900 font-medium mb-0">{service.providerName}</p>
           {service.driverName && (
             <p className="text-sm text-gray-600">Driver: {service.driverName}</p>
           )}
@@ -171,7 +171,7 @@ export function IntegratedServicesComplete({
           {service.phone && (
             <a
               href={`tel:${service.phone}`}
-              className="flex items-center gap-2 text-primary mt-3 hover:underline"
+              className="flex items-center gap-0 text-primary mt-0 hover:underline"
             >
               <Phone className="w-5 h-5" />
               <span>{service.phone}</span>
@@ -181,13 +181,13 @@ export function IntegratedServicesComplete({
 
         {/* Location */}
         {service.location && (
-          <div className="bg-white rounded-2xl p-5 border border-gray-200">
-            <h3 className="font-semibold text-gray-900 mb-3">Location</h3>
-            <div className="flex items-start gap-3">
-              <MapPin className="w-5 h-5 text-primary flex-shrink-0 mt-1" />
+          <div className="bg-white rounded-2xl p-0 border border-gray-200">
+            <h3 className="font-semibold text-gray-900 mb-0">Location</h3>
+            <div className="flex items-start gap-0">
+              <MapPin className="w-5 h-5 text-primary flex-shrink-0 mt-0" />
               <div>
                 <p className="text-gray-900">{service.location.address}</p>
-                <button className="flex items-center gap-2 text-primary mt-2 hover:underline">
+                <button className="flex items-center gap-0 text-primary mt-0 hover:underline">
                   <Navigation className="w-4 h-4" />
                   <span>Get Directions</span>
                 </button>
@@ -202,7 +202,7 @@ export function IntegratedServicesComplete({
             {service.status === 'in_transit' || service.status === 'arrived' ? (
               <button
                 onClick={() => window.location.href = `tel:${service.phone}`}
-                className="w-full py-4 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark transition-colors flex items-center justify-center gap-2"
+                className="w-full py-4 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark transition-colors flex items-center justify-center gap-0"
               >
                 <Phone className="w-5 h-5" />
                 Call Provider
@@ -218,9 +218,9 @@ export function IntegratedServicesComplete({
         )}
 
         {service.status === 'completed' && (
-          <div className="bg-green-50 border border-green-200 rounded-2xl p-5 text-center">
+          <div className="bg-green-50 border border-green-200 rounded-2xl p-0 text-center">
             <CheckCircle className="w-16 h-16 text-green-600 mx-auto mb-4" />
-            <h3 className="font-bold text-green-900 mb-2">Service Completed</h3>
+            <h3 className="font-bold text-green-900 mb-0">Service Completed</h3>
             <p className="text-green-700">Thank you for using our service!</p>
           </div>
         )}

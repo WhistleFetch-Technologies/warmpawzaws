@@ -36,14 +36,14 @@ export function CustomDropdown({ options, value, onChange, placeholder = 'Select
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white hover:bg-gray-50 transition-colors flex items-center gap-2 min-w-[140px] justify-between"
+        className="px-0 py-0.5 border border-gray-200 rounded-lg text-sm bg-white hover:bg-gray-50 transition-colors flex items-center gap-0 min-w-[140px] justify-between"
       >
         <span>{selectedOption?.label || placeholder}</span>
         <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
       {isOpen && (
-        <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-50 min-w-[200px]">
+        <div className="absolute top-full left-0 mt-0 bg-white border border-gray-200 rounded-lg shadow-lg py-0 z-50 min-w-[200px]">
           {options.map((option) => (
             <button
               key={option.value}
@@ -51,7 +51,7 @@ export function CustomDropdown({ options, value, onChange, placeholder = 'Select
                 onChange(option.value);
                 setIsOpen(false);
               }}
-              className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 transition-colors flex items-center justify-between"
+              className="w-full px-0 py-0 text-left text-sm hover:bg-gray-50 transition-colors flex items-center justify-between"
             >
               <span>{option.label}</span>
               {value === option.value && (

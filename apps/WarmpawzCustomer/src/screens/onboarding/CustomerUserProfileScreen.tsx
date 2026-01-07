@@ -19,6 +19,7 @@ import {
 } from 'react-native';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { API_BASE_URL } from '../../config/aws';
+import { AddressAutocomplete, type AddressComponents } from '../../components/AddressAutocomplete';
 
 interface CustomerUserProfileScreenProps {
   phone: string;
@@ -335,15 +336,17 @@ export function CustomerUserProfileScreen({
             <Text style={styles.label}>
               Address <Text style={styles.required}>*</Text>
             </Text>
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              placeholder="Enter your full address"
-              placeholderTextColor={colors.textMuted}
+            <AddressAutocomplete
               value={profile.address}
-              onChangeText={(text) => setProfile({ ...profile, address: text })}
-              multiline
-              numberOfLines={3}
-              textAlignVertical="top"
+              onChange={(addr: string, components?: AddressComponents) => {
+                setProfile({ ...profile, address: addr });
+                // Auto-populate pincode if available
+                if (components?.pincode && !profile.pincode) {
+                  setProfile({ ...profile, pincode: components.pincode });
+                }
+              }}
+              placeholder="Search address, landmark, city..."
+              required
             />
           </View>
 
@@ -371,7 +374,7 @@ export function CustomerUserProfileScreen({
             disabled={loading}
           >
             {loading ? (
-              <ActivityIndicator color="#ffffff" />
+              <ActivityIndicator color={colors.white} />
             ) : (
               <Text style={styles.submitButtonText}>Create Profile</Text>
             )}
@@ -451,12 +454,12 @@ const styles = StyleSheet.create({
     width: 128,
     height: 128,
     borderRadius: 64,
-    backgroundColor: '#FFF4E6',
+    backgroundColor: colors.primary.50,
     borderWidth: 4,
     borderColor: colors.background,
     overflow: 'hidden',
     marginBottom: spacing.sm,
-    shadowColor: '#000',
+    shadowColor: colors.black,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -540,7 +543,7 @@ const styles = StyleSheet.create({
   submitButtonText: {
     fontSize: typography.fontSizes.md,
     fontWeight: typography.fontWeights.semibold,
-    color: '#ffffff',
+    color: colors.white,
   },
   backButton: {
     paddingVertical: spacing.sm,

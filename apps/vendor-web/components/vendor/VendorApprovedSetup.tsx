@@ -39,7 +39,7 @@ export function VendorApprovedSetup({ vendorId, roleId, onComplete }: VendorAppr
     <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto p-4 flex items-center justify-center">
       <div className="w-full space-y-8">
         <div className="text-center">
-          <div className="flex justify-center mb-6">
+          <div className="flex justify-center mb-0">
             <div className="w-28 h-28 bg-green-500 rounded-full flex items-center justify-center shadow-xl">
               <div className="w-20 h-20 border-4 border-white rounded-full flex items-center justify-center">
                 <Check className="w-10 h-10 text-white" strokeWidth={4} />
@@ -47,7 +47,7 @@ export function VendorApprovedSetup({ vendorId, roleId, onComplete }: VendorAppr
             </div>
           </div>
           
-          <div className="flex items-center justify-center gap-2 mb-2">
+          <div className="flex items-center justify-center gap-0 mb-0">
             <span className="text-3xl">🎉</span>
             <h1 className="text-3xl font-bold text-gray-900">You're</h1>
           </div>
@@ -59,12 +59,12 @@ export function VendorApprovedSetup({ vendorId, roleId, onComplete }: VendorAppr
           </div>
         </div>
 
-        <div className="bg-white rounded-xl p-6 shadow-md border-2 border-gray-200">
+        <div className="bg-white rounded-xl p-0 shadow-md border-2 border-gray-200">
           <h3 className="font-bold text-gray-900 text-lg mb-4 text-center">What happens next?</h3>
           
           <div className="space-y-5">
             <div className="flex gap-4">
-              <div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center flex-shrink-0 mt-1 text-orange-600 font-bold">1</div>
+              <div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0 text-orange-600 font-bold">1</div>
               <div>
                 <h4 className="font-semibold text-gray-900">Access your Dashboard</h4>
                 <p className="text-sm text-gray-600 leading-relaxed">
@@ -74,7 +74,7 @@ export function VendorApprovedSetup({ vendorId, roleId, onComplete }: VendorAppr
             </div>
             
             <div className="flex gap-4">
-              <div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center flex-shrink-0 mt-1 text-orange-600 font-bold">2</div>
+              <div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0 text-orange-600 font-bold">2</div>
               <div>
                 <h4 className="font-semibold text-gray-900">Configure Your Services</h4>
                 <p className="text-sm text-gray-600 leading-relaxed">
@@ -84,7 +84,7 @@ export function VendorApprovedSetup({ vendorId, roleId, onComplete }: VendorAppr
             </div>
             
             <div className="flex gap-4">
-              <div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center flex-shrink-0 mt-1 text-orange-600 font-bold">3</div>
+              <div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0 text-orange-600 font-bold">3</div>
               <div>
                 <h4 className="font-semibold text-gray-900">Start Receiving Bookings</h4>
                 <p className="text-sm text-gray-600 leading-relaxed">
@@ -98,7 +98,7 @@ export function VendorApprovedSetup({ vendorId, roleId, onComplete }: VendorAppr
         <button
           onClick={handleGetStarted}
           disabled={isSubmitting}
-          className="w-full py-4 bg-orange-600 text-white rounded-xl hover:bg-orange-700 font-semibold flex items-center justify-center gap-2 disabled:opacity-50"
+          className="w-full py-4 bg-orange-600 text-white rounded-xl hover:bg-orange-700 font-semibold flex items-center justify-center gap-0 disabled:opacity-50"
         >
           {isSubmitting ? (
             <>

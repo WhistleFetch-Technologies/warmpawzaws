@@ -118,14 +118,14 @@ export function SearchAutocomplete({ onSelect, placeholder, className = '' }: Au
     <div ref={wrapperRef} className={`relative ${className}`}>
       <form onSubmit={handleSubmit} className="relative">
         <div className="relative">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+          <Search className="absolute left-4 top-0/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
           <input
             type="text"
             value={value}
             onChange={handleChange}
             onFocus={() => setIsOpen(true)}
             placeholder={placeholder || "Search for services, vets, trainers..."}
-            className="w-full pl-12 pr-12 py-3 bg-white border border-gray-200 rounded-full shadow-sm focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+            className="w-full pl-12 pr-12 py-0 bg-white border border-gray-200 rounded-full shadow-sm focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
           />
           {value && (
             <button
@@ -135,7 +135,7 @@ export function SearchAutocomplete({ onSelect, placeholder, className = '' }: Au
                 setSuggestions([]);
                 setIsOpen(false);
               }}
-              className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+              className="absolute right-4 top-0/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
             >
               <X className="w-5 h-5" />
             </button>
@@ -145,10 +145,10 @@ export function SearchAutocomplete({ onSelect, placeholder, className = '' }: Au
 
       {/* Suggestions Dropdown */}
       {isOpen && (suggestions.length > 0 || showRecentSearches) && (
-        <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-xl border border-gray-200 max-h-96 overflow-y-auto z-50">
+        <div className="absolute top-full left-0 right-0 mt-0 bg-white rounded-2xl shadow-xl border border-gray-200 max-h-96 overflow-y-auto z-50">
           {showRecentSearches && (
-            <div className="p-3 border-b border-gray-100">
-              <div className="flex items-center gap-2 text-xs font-semibold text-gray-500 mb-2">
+            <div className="p-0 border-b border-gray-100">
+              <div className="flex items-center gap-0 text-xs font-semibold text-gray-500 mb-0">
                 <Clock className="w-4 h-4" />
                 Recent Searches
               </div>
@@ -157,7 +157,7 @@ export function SearchAutocomplete({ onSelect, placeholder, className = '' }: Au
                   <button
                     key={idx}
                     onClick={() => handleSelect(search)}
-                    className="w-full text-left px-3 py-2 hover:bg-gray-50 rounded-lg transition-colors flex items-center gap-2"
+                    className="w-full text-left px-0 py-0 hover:bg-gray-50 rounded-lg transition-colors flex items-center gap-0"
                   >
                     <Clock className="w-4 h-4 text-gray-400" />
                     <span className="text-sm text-gray-700">{search}</span>
@@ -168,9 +168,9 @@ export function SearchAutocomplete({ onSelect, placeholder, className = '' }: Au
           )}
 
           {suggestions.length > 0 && (
-            <div className="p-3">
+            <div className="p-0">
               {!showRecentSearches && (
-                <div className="flex items-center gap-2 text-xs font-semibold text-gray-500 mb-2">
+                <div className="flex items-center gap-0 text-xs font-semibold text-gray-500 mb-0">
                   <TrendingUp className="w-4 h-4" />
                   Suggestions
                 </div>
@@ -180,7 +180,7 @@ export function SearchAutocomplete({ onSelect, placeholder, className = '' }: Au
                   <button
                     key={idx}
                     onClick={() => handleSelect(suggestion.text)}
-                    className="w-full text-left px-3 py-2 hover:bg-gray-50 rounded-lg transition-colors flex items-center gap-2"
+                    className="w-full text-left px-0 py-0 hover:bg-gray-50 rounded-lg transition-colors flex items-center gap-0"
                   >
                     <Search className="w-4 h-4 text-gray-400" />
                     <span className="text-sm text-gray-700">{suggestion.text}</span>

@@ -24,7 +24,7 @@ export function ModuleDisabledMessage({
 
   if (variant === 'inline') {
     return (
-      <div className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg border border-gray-200">
+      <div className="flex items-center gap-0 p-0 bg-gray-50 rounded-lg border border-gray-200">
         {displayIcon}
         <div className="flex-1">
           <p className="text-xs text-gray-600">{reason}</p>
@@ -32,7 +32,7 @@ export function ModuleDisabledMessage({
         {onAction && (
           <button
             onClick={onAction}
-            className="px-3 py-1 text-xs h-7 border border-gray-300 rounded-lg hover:bg-gray-100"
+            className="px-0 py-0 text-xs h-7 border border-gray-300 rounded-lg hover:bg-gray-100"
           >
             {actionText}
           </button>
@@ -43,16 +43,16 @@ export function ModuleDisabledMessage({
 
   if (variant === 'banner') {
     return (
-      <div className="bg-yellow-50 border-l-4 border-yellow-400 p-3">
-        <div className="flex items-start gap-3">
+      <div className="bg-yellow-50 border-l-4 border-yellow-400 p-0">
+        <div className="flex items-start gap-0">
           <AlertCircle className="w-5 h-5 text-yellow-600 mt-0.5 flex-shrink-0" />
           <div className="flex-1">
             <p className="text-sm font-medium text-yellow-900">{moduleName} is disabled</p>
-            <p className="text-xs text-yellow-700 mt-1">{reason}</p>
+            <p className="text-xs text-yellow-700 mt-0">{reason}</p>
             {onAction && (
               <button
                 onClick={onAction}
-                className="mt-2 px-3 py-1 text-xs h-7 border border-yellow-300 text-yellow-700 hover:bg-yellow-100 rounded-lg flex items-center gap-1"
+                className="mt-0 px-0 py-0 text-xs h-7 border border-yellow-300 text-yellow-700 hover:bg-yellow-100 rounded-lg flex items-center gap-0"
               >
                 <Mail className="w-3 h-3" />
                 {actionText}
@@ -65,19 +65,19 @@ export function ModuleDisabledMessage({
   }
 
   return (
-    <div className="p-6 text-center bg-gray-50 border-2 border-dashed border-gray-300 rounded-lg">
-      <div className="flex flex-col items-center gap-3">
+    <div className="p-0 text-center bg-gray-50 border-2 border-dashed border-gray-300 rounded-lg">
+      <div className="flex flex-col items-center gap-0">
         <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center">
           {displayIcon}
         </div>
         <div>
-          <p className="font-semibold text-gray-900 mb-1">{moduleName} Not Available</p>
+          <p className="font-semibold text-gray-900 mb-0">{moduleName} Not Available</p>
           <p className="text-sm text-gray-600">{reason}</p>
         </div>
         {onAction && (
           <button
             onClick={onAction}
-            className="mt-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100 flex items-center gap-2"
+            className="mt-0 px-4 py-0 border border-gray-300 rounded-lg hover:bg-gray-100 flex items-center gap-0"
           >
             <Mail className="w-4 h-4" />
             {actionText}

@@ -101,7 +101,7 @@ export function ServicesByProblem({
   if (loading) {
     return (
       <div className={className}>
-        <div className="flex items-center gap-3 mb-6">
+        <div className="flex items-center gap-0 mb-0">
           <div className="w-10 h-10 bg-gray-200 rounded-full animate-pulse"></div>
           <div className="flex-1">
             <div className="h-6 bg-gray-200 rounded w-48 animate-pulse"></div>
@@ -119,7 +119,7 @@ export function ServicesByProblem({
   return (
     <div className={className}>
       {/* Header */}
-      <div className="flex items-center gap-3 mb-6">
+      <div className="flex items-center gap-0 mb-0">
         <button
           onClick={onBack}
           className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors"
@@ -133,7 +133,7 @@ export function ServicesByProblem({
       </div>
 
       {/* Sort Options */}
-      <div className="flex gap-2 overflow-x-auto pb-3 mb-4 scrollbar-hide">
+      <div className="flex gap-0 overflow-x-auto pb-0 mb-4 scrollbar-hide">
         {[
           { value: 'relevance', label: 'Most Relevant' },
           { value: 'rating', label: 'Top Rated' },
@@ -143,7 +143,7 @@ export function ServicesByProblem({
           <button
             key={option.value}
             onClick={() => setSortBy(option.value as any)}
-            className={`px-4 py-2 rounded-xl font-medium whitespace-nowrap transition-all ${
+            className={`px-4 py-0 rounded-xl font-medium whitespace-nowrap transition-all ${
               sortBy === option.value
                 ? 'bg-primary text-white'
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -174,22 +174,22 @@ export function ServicesByProblem({
                   </div>
                 )}
                 <div className="flex-1">
-                  <h3 className="font-bold text-gray-900 mb-1">{service.name}</h3>
-                  <p className="text-sm text-gray-600 mb-2 line-clamp-2">{service.description}</p>
+                  <h3 className="font-bold text-gray-900 mb-0">{service.name}</h3>
+                  <p className="text-sm text-gray-600 mb-0 line-clamp-0">{service.description}</p>
                   
-                  <div className="flex items-center gap-4 text-sm text-gray-600 mb-2">
-                    <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-4 text-sm text-gray-600 mb-0">
+                    <div className="flex items-center gap-0">
                       <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
                       <span className="font-semibold">{service.vendorRating.toFixed(1)}</span>
                       <span className="text-gray-400">({service.vendorReviews})</span>
                     </div>
                     {service.distance && (
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-0">
                         <MapPin className="w-4 h-4" />
                         <span>{service.distance.toFixed(1)} km</span>
                       </div>
                     )}
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-0">
                       <Clock className="w-4 h-4" />
                       <span>{service.duration} min</span>
                     </div>

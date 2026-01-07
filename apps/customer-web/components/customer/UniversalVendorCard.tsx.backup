@@ -1,0 +1,162 @@
+'use client';
+
+import { MapPin, Star, Clock, Phone, ChevronRight } from 'lucide-react';
+import Image from 'next/image';
+
+interface UniversalVendorCardProps {
+  vendor: {
+    id: string;
+    vendorId: string;
+    vendorName: string;
+    vendorRating?: number;
+    vendorReviewCount?: number;
+    vendorLocation?: string;
+    price?: number | string;
+    duration?: string;
+    serviceName?: string;
+    description?: string;
+    serviceStyle?: string;
+    vendorProfileImage?: string;
+  };
+  icon?: string;
+  colorClass?: string;
+  onViewDetails?: (vendorId: string) => void;
+  onBook?: (vendorId: string) => void;
+}
+
+export function UniversalVendorCard({ 
+  vendor, 
+  icon = '🏪', 
+  colorClass = 'from-blue-100 to-cyan-100',
+  onViewDetails,
+  onBook
+}: UniversalVendorCardProps) {
+  const rating = vendor.vendorRating || 4.5;
+  const reviewCount = vendor.vendorReviewCount || 0;
+  const location = vendor.vendorLocation || 'Location not specified';
+
+  const formatPrice = (price: number | string | undefined) => {
+    if (!price) return 'Contact for price';
+    const numPrice = typeof price === 'string' ? parseFloat(price) : price;
+    return `₹${numPrice.toLocaleString('en-IN')}`;
+  };
+
+  const getServiceStyleBadge = (style?: string) => {
+    if (!style) return null;
+    
+    const badges = {
+      'at_home': { label: 'Home Service', color: 'bg-green-100 text-green-700' },
+      'at_center': { label: 'Visit Center', color: 'bg-blue-100 text-blue-700' },
+      'tele': { label: 'Tele Consult', color: 'bg-purple-100 text-purple-700' }
+    };
+
+    const badge = badges[style as keyof typeof badges];
+    if (!badge) return null;
+
+    return (
+      <span className={`text-xs px-2 py-1 rounded-full ${badge.color}`}>
+        {badge.label}
+      </span>
+    );
+  };
+
+  return (
+    <div className="bg-white rounded-xl border-2 border-gray-200 p-4 hover:shadow-lg transition-shadow">
+      <div className="flex gap-4">
+        {/* Icon/Image */}
+        <div className={`w-20 h-20 bg-gradient-to-br ${colorClass} rounded-xl flex items-center justify-center text-3xl flex-shrink-0`}>
+          {vendor.vendorProfileImage ? (
+            <img 
+              src={vendor.vendorProfileImage} 
+              alt={vendor.vendorName}
+              className="w-full h-full object-cover rounded-xl"
+            />
+          ) : (
+            icon
+          )}
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 min-w-0">
+          {/* Vendor Name */}
+          <h3 className="font-bold text-gray-900 truncate">{vendor.vendorName}</h3>
+          
+          {/* Rating & Reviews */}
+          <div className="flex items-center gap-2 mt-1">
+            <div className="flex items-center gap-1">
+              <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
+              <span className="text-sm font-medium">{rating.toFixed(1)}</span>
+            </div>
+            {reviewCount > 0 && (
+              <>
+                <span className="text-gray-400">•</span>
+                <span className="text-sm text-gray-600">{reviewCount} reviews</span>
+              </>
+            )}
+            {vendor.serviceStyle && (
+              <>
+                <span className="text-gray-400">•</span>
+                {getServiceStyleBadge(vendor.serviceStyle)}
+              </>
+            )}
+          </div>
+
+          {/* Service Name */}
+          {vendor.serviceName && (
+            <p className="text-sm text-gray-700 mt-1 truncate">{vendor.serviceName}</p>
+          )}
+
+          {/* Description */}
+          {vendor.description && (
+            <p className="text-sm text-gray-600 mt-1 line-clamp-2">{vendor.description}</p>
+          )}
+
+          {/* Location & Duration */}
+          <div className="flex items-center gap-3 mt-2">
+            <div className="flex items-center gap-1 text-sm text-gray-600">
+              <MapPin className="w-4 h-4" />
+              <span className="truncate">{location}</span>
+            </div>
+            {vendor.duration && (
+              <>
+                <span className="text-gray-400">•</span>
+                <div className="flex items-center gap-1 text-sm text-gray-600">
+                  <Clock className="w-4 h-4" />
+                  <span>{vendor.duration}</span>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Price */}
+          <div className="mt-2">
+            <span className="text-lg font-bold text-primary">
+              {formatPrice(vendor.price)}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Action Buttons */}
+      <div className="flex gap-2 mt-3">
+        {onViewDetails && (
+          <button
+            onClick={() => onViewDetails(vendor.vendorId || vendor.id)}
+            className="flex-1 px-4 py-2 border-2 border-gray-200 rounded-xl font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+          >
+            View Details
+          </button>
+        )}
+        {onBook && (
+          <button
+            onClick={() => onBook(vendor.vendorId || vendor.id)}
+            className="flex-1 px-4 py-2 bg-primary text-white rounded-xl font-medium hover:bg-primary-dark transition-colors"
+          >
+            Book Now
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+

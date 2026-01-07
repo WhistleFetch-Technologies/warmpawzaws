@@ -110,21 +110,21 @@ export function ApplicationDetailModal({
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+        <div className="px-0 py-4 border-b border-gray-200 flex items-center justify-between">
           <div>
             <h2 className="text-xl">Application Details</h2>
             <p className="text-sm text-gray-500">Review vendor application</p>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg">
+          <button onClick={onClose} className="p-0 hover:bg-gray-100 rounded-lg">
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Tabs */}
-        <div className="px-6 border-b border-gray-200 flex gap-4">
+        <div className="px-0 border-b border-gray-200 flex gap-4">
           <button
             onClick={() => setActiveTab('details')}
-            className={`px-4 py-3 text-sm border-b-2 transition-colors ${
+            className={`px-4 py-0 text-sm border-b-2 transition-colors ${
               activeTab === 'details'
                 ? 'border-[#FF8C42] text-[#FF8C42]'
                 : 'border-transparent text-gray-600 hover:text-gray-900'
@@ -134,7 +134,7 @@ export function ApplicationDetailModal({
           </button>
           <button
             onClick={() => setActiveTab('documents')}
-            className={`px-4 py-3 text-sm border-b-2 transition-colors ${
+            className={`px-4 py-0 text-sm border-b-2 transition-colors ${
               activeTab === 'documents'
                 ? 'border-[#FF8C42] text-[#FF8C42]'
                 : 'border-transparent text-gray-600 hover:text-gray-900'
@@ -145,11 +145,11 @@ export function ApplicationDetailModal({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-0">
           {activeTab === 'details' && (
             <div className="space-y-6">
               {/* Basic Info */}
-              <div className="bg-gray-50 rounded-xl p-6">
+              <div className="bg-gray-50 rounded-xl p-0">
                 <h3 className="text-base mb-4">Basic Information</h3>
                 <div className="grid grid-cols-2 gap-4">
                   <InfoRow label="Full Name" value={application.fullName} />
@@ -162,7 +162,7 @@ export function ApplicationDetailModal({
               </div>
 
               {/* Address Info */}
-              <div className="bg-gray-50 rounded-xl p-6">
+              <div className="bg-gray-50 rounded-xl p-0">
                 <h3 className="text-base mb-4">Address Information</h3>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="col-span-2">
@@ -175,7 +175,7 @@ export function ApplicationDetailModal({
               </div>
 
               {/* Business Info */}
-              <div className="bg-gray-50 rounded-xl p-6">
+              <div className="bg-gray-50 rounded-xl p-0">
                 <h3 className="text-base mb-4">Business Information</h3>
                 <div className="grid grid-cols-2 gap-4">
                   <InfoRow label="Application ID" value={appId} />
@@ -196,19 +196,19 @@ export function ApplicationDetailModal({
         </div>
 
         {/* Footer Actions */}
-        <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
-          <div className="flex gap-2">
+        <div className="px-0 py-4 border-t border-gray-200 flex items-center justify-between">
+          <div className="flex gap-0">
             <Button
               variant="outline"
               onClick={handleRequestClarification}
               disabled={clarifying}
             >
-              <AlertCircle className="w-4 h-4 mr-2" />
+              <AlertCircle className="w-4 h-4 mr-0" />
               Request Info
             </Button>
           </div>
           
-          <div className="flex gap-2">
+          <div className="flex gap-0">
             <Button
               variant="outline"
               onClick={() => {
@@ -221,7 +221,7 @@ export function ApplicationDetailModal({
               disabled={rejecting || approving}
               className="text-red-600 hover:bg-red-50"
             >
-              <XCircle className="w-4 h-4 mr-2" />
+              <XCircle className="w-4 h-4 mr-0" />
               Reject
             </Button>
             <Button
@@ -229,7 +229,7 @@ export function ApplicationDetailModal({
               disabled={rejecting || approving || clarifying}
               className="bg-green-600 hover:bg-green-700"
             >
-              <CheckCircle className="w-4 h-4 mr-2" />
+              <CheckCircle className="w-4 h-4 mr-0" />
               {approving ? 'Approving...' : 'Approve'}
             </Button>
           </div>
@@ -242,7 +242,7 @@ export function ApplicationDetailModal({
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div className="text-xs text-gray-500 mb-1">{label}</div>
+      <div className="text-xs text-gray-500 mb-0">{label}</div>
       <div className="text-sm text-gray-900">{value || 'N/A'}</div>
     </div>
   );

@@ -112,10 +112,10 @@ export function CustomerHomeScreen({
 
   const quickServices = [
     { icon: 'medical-bag', label: 'Vet Care', color: '#3b82f6', screen: 'vet' },
-    { icon: 'content-cut', label: 'Grooming', color: '#f97316', screen: 'grooming' },
+    { icon: 'content-cut', label: 'Grooming', color: colors.primary, screen: 'grooming' },
     { icon: 'shopping', label: 'Shop', color: '#ec4899', screen: 'shop' },
     { icon: 'school', label: 'Training', color: '#8b5cf6', screen: 'training' },
-    { icon: 'walk', label: 'Walker', color: '#10b981', screen: 'walker' },
+    { icon: 'walk', label: 'Walker', color: colors.success, screen: 'walker' },
     { icon: 'home', label: 'Boarding', color: '#6366f1', screen: 'boarding' },
     { icon: 'heart', label: 'Adoption', color: '#ef4444', screen: 'adoption' },
     { icon: 'coffee', label: 'Pet Cafes', color: '#f59e0b', screen: 'cafes' },
@@ -163,14 +163,14 @@ export function CustomerHomeScreen({
               onPress={() => onNavigate('ServiceSearch')}
               style={styles.actionButton}
             >
-              <Icon name="magnify" size={20} color="#fff" />
+              <Icon name="magnify" size={20} color={colors.white} />
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => onNavigate('NotificationCenter')}
               style={styles.actionButton}
             >
               <View style={styles.notificationBadge}>
-                <Icon name="bell" size={20} color="#fff" />
+                <Icon name="bell" size={20} color={colors.white} />
                 <View style={styles.badgeDot} />
               </View>
             </TouchableOpacity>
@@ -206,7 +206,7 @@ export function CustomerHomeScreen({
                 </TouchableOpacity>
               ))}
               <TouchableOpacity onPress={onAddPet} style={styles.addPetCard}>
-                <Icon name="plus" size={24} color="#fff" />
+                <Icon name="plus" size={24} color={colors.white} />
                 <Text style={styles.addPetLabel}>Add Pet</Text>
               </TouchableOpacity>
             </ScrollView>
@@ -270,7 +270,7 @@ export function CustomerHomeScreen({
               <Text style={styles.dealOriginalPrice}>₹998</Text>
               <Text style={styles.dealDiscountPrice}>₹499</Text>
             </View>
-            <Icon name="stethoscope" size={40} color="#fff" style={styles.dealIcon} />
+            <Icon name="stethoscope" size={40} color={colors.white} style={styles.dealIcon} />
             <TouchableOpacity
               style={styles.dealButton}
               onPress={() => onNavigate('VetServiceRouter')}
@@ -287,7 +287,7 @@ export function CustomerHomeScreen({
               <Text style={styles.dealOriginalPrice}>₹1149</Text>
               <Text style={styles.dealDiscountPrice}>₹799</Text>
             </View>
-            <Icon name="content-cut" size={40} color="#fff" style={styles.dealIcon} />
+            <Icon name="content-cut" size={40} color={colors.white} style={styles.dealIcon} />
             <TouchableOpacity
               style={styles.dealButton}
               onPress={() => onNavigate('GroomingServiceRouter')}
@@ -307,7 +307,7 @@ export function CustomerHomeScreen({
         >
           <View style={styles.emergencyContent}>
             <View style={styles.emergencyIconContainer}>
-              <Icon name="alert" size={32} color="#fff" />
+              <Icon name="alert" size={32} color={colors.white} />
             </View>
             <View style={styles.emergencyText}>
               <View style={styles.emergencyBadge}>
@@ -389,7 +389,7 @@ const styles = StyleSheet.create({
   profilePlaceholder: {
     width: '100%',
     height: '100%',
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -404,11 +404,11 @@ const styles = StyleSheet.create({
   greeting: {
     fontSize: typography.fontSizes.lg,
     fontWeight: typography.fontWeights.semibold,
-    color: '#fff',
+    color: colors.white,
   },
   subtitle: {
     fontSize: typography.fontSizes.sm,
-    color: '#fff',
+    color: colors.white,
     opacity: 0.9,
   },
   headerActions: {
@@ -448,7 +448,7 @@ const styles = StyleSheet.create({
   },
   petCardSelected: {
     borderWidth: 2,
-    borderColor: '#fff',
+    borderColor: colors.white,
     borderRadius: borderRadius.md,
     padding: spacing.xs,
   },
@@ -463,7 +463,7 @@ const styles = StyleSheet.create({
   },
   addPetLabel: {
     fontSize: typography.fontSizes.xs,
-    color: '#fff',
+    color: colors.white,
     textAlign: 'center',
     marginTop: spacing.xs / 2,
   },
@@ -485,7 +485,7 @@ const styles = StyleSheet.create({
   },
   petName: {
     fontSize: typography.fontSizes.xs,
-    color: '#fff',
+    color: colors.white,
     marginTop: spacing.xs,
     textAlign: 'center',
   },
@@ -494,10 +494,10 @@ const styles = StyleSheet.create({
     paddingTop: spacing.md,
   },
   dashboardCard: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderRadius: borderRadius.xl,
     padding: spacing.lg,
-    shadowColor: '#000',
+    shadowColor: colors.black,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -521,7 +521,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.full,
   },
   activeBadgeText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: typography.fontSizes.xs,
     fontWeight: typography.fontWeights.bold,
   },
@@ -597,11 +597,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#3b82f6',
   },
   dealGreen: {
-    backgroundColor: '#10b981',
+    backgroundColor: colors.success,
   },
   dealBadge: {
     alignSelf: 'flex-start',
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
     borderRadius: borderRadius.full,
@@ -615,7 +615,7 @@ const styles = StyleSheet.create({
   dealTitle: {
     fontSize: typography.fontSizes.lg,
     fontWeight: typography.fontWeights.bold,
-    color: '#fff',
+    color: colors.white,
     marginBottom: spacing.sm,
   },
   dealPrice: {
@@ -626,14 +626,14 @@ const styles = StyleSheet.create({
   },
   dealOriginalPrice: {
     fontSize: typography.fontSizes.sm,
-    color: '#fff',
+    color: colors.white,
     textDecorationLine: 'line-through',
     opacity: 0.8,
   },
   dealDiscountPrice: {
     fontSize: typography.fontSizes.xl,
     fontWeight: typography.fontWeights.bold,
-    color: '#fff',
+    color: colors.white,
   },
   dealIcon: {
     position: 'absolute',
@@ -642,7 +642,7 @@ const styles = StyleSheet.create({
     opacity: 0.3,
   },
   dealButton: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.sm,
     borderRadius: borderRadius.md,
     alignItems: 'center',
@@ -701,7 +701,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   emergencyButton: {
-    backgroundColor: '#fee2e2',
+    backgroundColor: colors.error + 20% opacity,
     borderRadius: borderRadius.xl,
     padding: spacing.md,
     borderWidth: 2,
@@ -715,7 +715,7 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: borderRadius.lg,
-    backgroundColor: '#dc2626',
+    backgroundColor: colors.error,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: spacing.md,
@@ -725,14 +725,14 @@ const styles = StyleSheet.create({
   },
   emergencyBadge: {
     alignSelf: 'flex-start',
-    backgroundColor: '#dc2626',
+    backgroundColor: colors.error,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs / 2,
     borderRadius: borderRadius.full,
     marginBottom: spacing.xs,
   },
   emergencyBadgeText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: typography.fontSizes.xs,
     fontWeight: typography.fontWeights.bold,
   },
@@ -747,8 +747,8 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   emergencyButtonText: {
-    backgroundColor: '#dc2626',
-    color: '#fff',
+    backgroundColor: colors.error,
+    color: colors.white,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: borderRadius.full,

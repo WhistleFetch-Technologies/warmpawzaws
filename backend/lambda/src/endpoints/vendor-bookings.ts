@@ -17,6 +17,7 @@
 
 import { Hono } from 'hono';
 import { select, update, query } from '../database/rds-connection';
+import { logBookingStatusChange } from '../utils/audit-log';
 
 export function registerVendorBookingsEndpoints(app: Hono) {
   /**
@@ -147,6 +148,16 @@ export function registerVendorBookingsEndpoints(app: Hono) {
         return c.json({ error: 'Booking not found' }, 404);
       }
 
+      // Get current booking to track status change
+      const bookings = await select('bookings', { id: bookingId });
+      if (bookings.length === 0) {
+        return c.json({ error: 'Booking not found' }, 404);
+      }
+
+      const booking = bookings[0];
+      const oldStatus = booking.status;
+      const vendorId = c.req.header('x-vendor-id') || booking.vendor_id;
+
       // Update booking
       const updateData: any = { status };
       if (notes) {
@@ -160,6 +171,35 @@ export function registerVendorBookingsEndpoints(app: Hono) {
       }
 
       const updated = await update('bookings', { id: bookingId }, updateData);
+
+      // Log status change if status actually changed
+      if (oldStatus !== status) {
+        await logBookingStatusChange(
+          bookingId,
+          oldStatus,
+          status,
+          vendorId,
+          'vendor',
+          notes || 'Status updated by vendor'
+        );
+
+        // Publish notification event
+        try {
+          const { publishBookingStatusUpdated } = await import('../utils/sns-client');
+          await publishBookingStatusUpdated({
+            bookingId,
+            customerId: booking.customer_id,
+            vendorId: booking.vendor_id || vendorId,
+            oldStatus,
+            newStatus: status,
+            reason: notes || 'Status updated by vendor',
+            eventTimestamp: new Date().toISOString(),
+            eventId: crypto.randomUUID(),
+          });
+        } catch (error) {
+          console.error('Failed to publish booking status updated event:', error);
+        }
+      }
 
       return c.json({
         success: true,
@@ -179,17 +219,46 @@ export function registerVendorBookingsEndpoints(app: Hono) {
   app.post("/vendor/bookings/:bookingId/confirm", async (c) => {
     try {
       const { bookingId } = c.req.param();
+      const vendorId = c.req.header('x-vendor-id') || c.req.query('vendorId');
 
       const bookings = await select('bookings', { id: bookingId });
       if (bookings.length === 0) {
         return c.json({ error: 'Booking not found' }, 404);
       }
 
-      if (bookings[0].status !== 'pending') {
-        return c.json({ error: `Booking cannot be confirmed. Current status: ${bookings[0].status}` }, 400);
+      const booking = bookings[0];
+      if (booking.status !== 'pending') {
+        return c.json({ error: `Booking cannot be confirmed. Current status: ${booking.status}` }, 400);
       }
 
       const updated = await update('bookings', { id: bookingId }, { status: 'confirmed' });
+
+      // Log status change
+      await logBookingStatusChange(
+        bookingId,
+        'pending',
+        'confirmed',
+        vendorId || booking.vendor_id,
+        'vendor',
+        'Vendor confirmed booking'
+      );
+
+      // Publish notification event
+      try {
+        const { publishBookingStatusUpdated } = await import('../utils/sns-client');
+        await publishBookingStatusUpdated({
+          bookingId,
+          customerId: booking.customer_id,
+          vendorId: booking.vendor_id || vendorId,
+          oldStatus: 'pending',
+          newStatus: 'confirmed',
+          reason: 'Vendor confirmed booking',
+          eventTimestamp: new Date().toISOString(),
+          eventId: crypto.randomUUID(),
+        });
+      } catch (error) {
+        console.error('Failed to publish booking status updated event:', error);
+      }
 
       return c.json({
         success: true,
@@ -209,6 +278,7 @@ export function registerVendorBookingsEndpoints(app: Hono) {
   app.post("/vendor/bookings/:bookingId/cancel", async (c) => {
     try {
       const { bookingId } = c.req.param();
+      const vendorId = c.req.header('x-vendor-id') || c.req.query('vendorId');
       const { reason } = await c.req.json();
 
       const bookings = await select('bookings', { id: bookingId });
@@ -216,8 +286,10 @@ export function registerVendorBookingsEndpoints(app: Hono) {
         return c.json({ error: 'Booking not found' }, 404);
       }
 
-      if (!['pending', 'confirmed'].includes(bookings[0].status)) {
-        return c.json({ error: `Booking cannot be cancelled. Current status: ${bookings[0].status}` }, 400);
+      const booking = bookings[0];
+      const oldStatus = booking.status;
+      if (!['pending', 'confirmed'].includes(oldStatus)) {
+        return c.json({ error: `Booking cannot be cancelled. Current status: ${oldStatus}` }, 400);
       }
 
       const updated = await update('bookings',
@@ -228,6 +300,33 @@ export function registerVendorBookingsEndpoints(app: Hono) {
           cancelled_at: new Date().toISOString(),
         }
       );
+
+      // Log status change
+      await logBookingStatusChange(
+        bookingId,
+        oldStatus,
+        'cancelled',
+        vendorId || booking.vendor_id,
+        'vendor',
+        reason || 'Vendor cancelled booking'
+      );
+
+      // Publish notification event
+      try {
+        const { publishBookingStatusUpdated } = await import('../utils/sns-client');
+        await publishBookingStatusUpdated({
+          bookingId,
+          customerId: booking.customer_id,
+          vendorId: booking.vendor_id || vendorId,
+          oldStatus,
+          newStatus: 'cancelled',
+          reason: reason || 'Vendor cancelled booking',
+          eventTimestamp: new Date().toISOString(),
+          eventId: crypto.randomUUID(),
+        });
+      } catch (error) {
+        console.error('Failed to publish booking status updated event:', error);
+      }
 
       return c.json({
         success: true,
@@ -247,6 +346,7 @@ export function registerVendorBookingsEndpoints(app: Hono) {
   app.post("/vendor/bookings/:bookingId/complete", async (c) => {
     try {
       const { bookingId } = c.req.param();
+      const vendorId = c.req.header('x-vendor-id') || c.req.query('vendorId');
       const { notes } = await c.req.json();
 
       const bookings = await select('bookings', { id: bookingId });
@@ -254,8 +354,10 @@ export function registerVendorBookingsEndpoints(app: Hono) {
         return c.json({ error: 'Booking not found' }, 404);
       }
 
-      if (!['confirmed', 'in_progress'].includes(bookings[0].status)) {
-        return c.json({ error: `Booking cannot be completed. Current status: ${bookings[0].status}` }, 400);
+      const booking = bookings[0];
+      const oldStatus = booking.status;
+      if (!['confirmed', 'in_progress'].includes(oldStatus)) {
+        return c.json({ error: `Booking cannot be completed. Current status: ${oldStatus}` }, 400);
       }
 
       const updated = await update('bookings',
@@ -263,9 +365,36 @@ export function registerVendorBookingsEndpoints(app: Hono) {
         {
           status: 'completed',
           completed_at: new Date().toISOString(),
-          notes: notes || bookings[0].notes,
+          notes: notes || booking.notes,
         }
       );
+
+      // Log status change
+      await logBookingStatusChange(
+        bookingId,
+        oldStatus,
+        'completed',
+        vendorId || booking.vendor_id,
+        'vendor',
+        'Vendor marked booking as completed'
+      );
+
+      // Publish notification event
+      try {
+        const { publishBookingStatusUpdated } = await import('../utils/sns-client');
+        await publishBookingStatusUpdated({
+          bookingId,
+          customerId: booking.customer_id,
+          vendorId: booking.vendor_id || vendorId,
+          oldStatus,
+          newStatus: 'completed',
+          reason: 'Service completed',
+          eventTimestamp: new Date().toISOString(),
+          eventId: crypto.randomUUID(),
+        });
+      } catch (error) {
+        console.error('Failed to publish booking status updated event:', error);
+      }
 
       return c.json({
         success: true,

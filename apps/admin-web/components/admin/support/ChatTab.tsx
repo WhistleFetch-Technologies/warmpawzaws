@@ -50,13 +50,13 @@ export function ChatTab() {
           key={session.id}
           className="bg-white rounded-lg border-2 border-gray-200 p-4 hover:border-gray-300 cursor-pointer transition-colors"
         >
-          <div className="flex items-start gap-3">
+          <div className="flex items-start gap-0">
             <MessageSquare className="w-5 h-5 text-orange-600 mt-0.5" />
             <div className="flex-1">
               <h3 className="font-semibold text-gray-900">{session.customerName}</h3>
-              <p className="text-sm text-gray-600 mt-1">{session.lastMessage}</p>
+              <p className="text-sm text-gray-600 mt-0">{session.lastMessage}</p>
               {session.unreadCount > 0 && (
-                <span className="inline-block mt-2 text-xs px-2 py-1 bg-orange-100 text-orange-700 rounded">
+                <span className="inline-block mt-0 text-xs px-0 py-0 bg-orange-100 text-orange-700 rounded">
                   {session.unreadCount} unread
                 </span>
               )}

@@ -102,12 +102,12 @@ export function AdminRefundsPage() {
   };
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
+    <div className="p-0">
+      <div className="flex items-center justify-between mb-0">
         <h1 className="text-2xl font-bold text-gray-900">Refund Management</h1>
         <button
           onClick={loadData}
-          className="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200"
+          className="px-4 py-0 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200"
         >
           🔄 Refresh
         </button>
@@ -115,7 +115,7 @@ export function AdminRefundsPage() {
 
       {/* Stats */}
       {stats && (
-        <div className="grid grid-cols-5 gap-4 mb-6">
+        <div className="grid grid-cols-5 gap-4 mb-0">
           <div className="bg-white rounded-xl p-4 shadow-sm">
             <p className="text-sm text-gray-500">Total Requests</p>
             <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
@@ -141,7 +141,7 @@ export function AdminRefundsPage() {
       )}
 
       {/* Filter Tabs */}
-      <div className="flex bg-white rounded-lg p-1 shadow-sm mb-6 w-fit">
+      <div className="flex bg-white rounded-lg p-0 shadow-sm mb-0 w-fit">
         {[
           { id: 'all', label: 'All' },
           { id: 'pending', label: 'Pending' },
@@ -152,7 +152,7 @@ export function AdminRefundsPage() {
           <button
             key={tab.id}
             onClick={() => setFilter(tab.id)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+            className={`px-4 py-0 rounded-lg text-sm font-medium transition ${
               filter === tab.id ? 'bg-blue-500 text-white' : 'text-gray-600 hover:bg-gray-100'
             }`}
           >
@@ -193,7 +193,7 @@ export function AdminRefundsPage() {
                     <p className="text-sm text-gray-500">{refund.customer_phone}</p>
                   </td>
                   <td className="p-4">
-                    <span className={`text-xs px-2 py-1 rounded-full ${
+                    <span className={`text-xs px-0 py-0 rounded-full ${
                       refund.type === 'booking' ? 'bg-purple-100 text-purple-700' : 'bg-orange-100 text-orange-700'
                     }`}>
                       {refund.type === 'booking' ? '📅 Booking' : '📦 Order'}
@@ -206,14 +206,14 @@ export function AdminRefundsPage() {
                     ₹{refund.amount.toLocaleString()}
                   </td>
                   <td className="p-4">
-                    <span className={`text-xs px-2 py-1 rounded-full ${getStatusColor(refund.status)}`}>
+                    <span className={`text-xs px-0 py-0 rounded-full ${getStatusColor(refund.status)}`}>
                       {refund.status}
                     </span>
                   </td>
                   <td className="p-4">
                     <button
                       onClick={() => setSelectedRefund(refund)}
-                      className="px-3 py-1 bg-blue-100 text-blue-600 text-sm rounded-lg hover:bg-blue-200"
+                      className="px-0 py-0 bg-blue-100 text-blue-600 text-sm rounded-lg hover:bg-blue-200"
                     >
                       Review
                     </button>
@@ -264,13 +264,13 @@ function RefundDetailModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-2xl p-6 w-full max-w-2xl">
+      <div className="bg-white rounded-2xl p-0 w-full max-w-2xl">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-bold">Refund Request Review</h2>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg">✕</button>
+          <button onClick={onClose} className="p-0 hover:bg-gray-100 rounded-lg">✕</button>
         </div>
 
-        <div className="grid md:grid-cols-2 gap-4 mb-6">
+        <div className="grid md:grid-cols-2 gap-4 mb-0">
           <div>
             <label className="text-sm text-gray-500">Request ID</label>
             <p className="font-mono text-sm">{refund.id}</p>
@@ -290,7 +290,7 @@ function RefundDetailModal({
           </div>
           <div className="md:col-span-2">
             <label className="text-sm text-gray-500">Reason for Refund</label>
-            <p className="text-gray-900 p-3 bg-gray-50 rounded-lg">{refund.reason}</p>
+            <p className="text-gray-900 p-0 bg-gray-50 rounded-lg">{refund.reason}</p>
           </div>
           {refund.booking_id && (
             <div>
@@ -308,11 +308,11 @@ function RefundDetailModal({
 
         {(refund.status as any) === 'pending' && (
           <div className="border-t pt-4">
-            <h3 className="font-semibold mb-3">Take Action</h3>
-            <div className="flex gap-3 mb-4">
+            <h3 className="font-semibold mb-0">Take Action</h3>
+            <div className="flex gap-0 mb-4">
               <button
                 onClick={() => setAction('approve')}
-                className={`px-4 py-2 rounded-lg font-medium ${
+                className={`px-4 py-0 rounded-lg font-medium ${
                   action === 'approve' ? 'bg-green-500 text-white' : 'bg-green-100 text-green-700'
                 }`}
               >
@@ -320,7 +320,7 @@ function RefundDetailModal({
               </button>
               <button
                 onClick={() => setAction('reject')}
-                className={`px-4 py-2 rounded-lg font-medium ${
+                className={`px-4 py-0 rounded-lg font-medium ${
                   action === 'reject' ? 'bg-red-500 text-white' : 'bg-red-100 text-red-700'
                 }`}
               >
@@ -331,14 +331,14 @@ function RefundDetailModal({
             {action && (
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-0">
                     {action === 'approve' ? 'Admin Notes (optional)' : 'Rejection Reason'}
                   </label>
                   <textarea
                     value={notes}
                     onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNotes(e.target.value)}
                     rows={3}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-0 py-0 border rounded-lg focus:ring-2 focus:ring-blue-500"
                     placeholder={action === 'approve' ? 'Optional notes...' : 'Please provide a reason...'}
                     required={action === 'reject'}
                   />
@@ -356,7 +356,7 @@ function RefundDetailModal({
                     }
                   }}
                   disabled={processing}
-                  className={`w-full py-2 rounded-lg font-medium disabled:opacity-50 ${
+                  className={`w-full py-0 rounded-lg font-medium disabled:opacity-50 ${
                     action === 'approve'
                       ? 'bg-green-500 text-white hover:bg-green-600'
                       : 'bg-red-500 text-white hover:bg-red-600'
@@ -377,23 +377,23 @@ function RefundDetailModal({
               {refund.status === 'approved' ? '✓ Refund Processed' : '✕ Refund Rejected'}
             </p>
             {refund.refund_id && (
-              <p className="text-sm text-gray-600 mt-1">Refund ID: {refund.refund_id}</p>
+              <p className="text-sm text-gray-600 mt-0">Refund ID: {refund.refund_id}</p>
             )}
             {refund.admin_notes && (
-              <p className="text-sm text-gray-600 mt-1">Notes: {refund.admin_notes}</p>
+              <p className="text-sm text-gray-600 mt-0">Notes: {refund.admin_notes}</p>
             )}
             {refund.processed_at && (
-              <p className="text-xs text-gray-400 mt-2">
+              <p className="text-xs text-gray-400 mt-0">
                 Processed on {new Date(refund.processed_at).toLocaleString()}
               </p>
             )}
           </div>
         )}
 
-        <div className="flex justify-end gap-3 mt-6 pt-4 border-t">
+        <div className="flex justify-end gap-0 mt-0 pt-4 border-t">
           <button
             onClick={onClose}
-            className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+            className="px-4 py-0 border rounded-lg hover:bg-gray-50"
           >
             Close
           </button>

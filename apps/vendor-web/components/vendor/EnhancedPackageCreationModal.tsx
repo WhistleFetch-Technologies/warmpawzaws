@@ -185,13 +185,13 @@ export function EnhancedPackageCreationModal({
     <>
       <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl w-full max-w-[600px] max-h-[90vh] overflow-y-auto">
-          <div className="p-6 border-b border-gray-200">
-            <div className="flex items-center justify-between mb-2">
-              <h2 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
+          <div className="p-0 border-b border-gray-200">
+            <div className="flex items-center justify-between mb-0">
+              <h2 className="text-xl font-semibold text-gray-900 flex items-center gap-0">
                 <Package className="w-5 h-5 text-orange-500" />
                 {formData.isPackage ? 'Create Package/Plan' : 'Add Custom Service'}
               </h2>
-              <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg">
+              <button onClick={onClose} className="p-0 hover:bg-gray-100 rounded-lg">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -202,7 +202,7 @@ export function EnhancedPackageCreationModal({
             </p>
           </div>
 
-          <div className="p-6 space-y-4">
+          <div className="p-0 space-y-4">
             <div className="flex items-center space-x-2 p-4 bg-orange-50 rounded-lg border border-orange-200">
               <input
                 type="checkbox"
@@ -215,42 +215,42 @@ export function EnhancedPackageCreationModal({
                 <label htmlFor="is-package" className="cursor-pointer font-semibold text-orange-600">
                   This is a Package/Plan (Multiple services or subscription)
                 </label>
-                <p className="text-xs text-gray-600 mt-1">
+                <p className="text-xs text-gray-600 mt-0">
                   Enable this for combos, memberships, health plans, or subscription services
                 </p>
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Service/Package Name *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-0">Service/Package Name *</label>
               <input
                 type="text"
                 value={formData.serviceName}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, serviceName: e.target.value })}
                 placeholder={formData.isPackage ? "e.g., Premium Grooming Package" : "e.g., Advanced Dental Cleaning"}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+                className="w-full px-0 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Description *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-0">Description *</label>
               <textarea
                 value={formData.description}
                 onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData({ ...formData, description: e.target.value })}
                 placeholder="Detailed description of what's included..."
                 rows={3}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+                className="w-full px-0 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
               />
             </div>
 
             {formData.isPackage ? (
               <>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Package Type *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-0">Package Type *</label>
                   <select
                     value={formData.packageType}
                     onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData({ ...formData, packageType: e.target.value as any })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+                    className="w-full px-0 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
                   >
                     <option value="combo">Combo Package (Multiple services bundled)</option>
                     <option value="subscription">Subscription Plan (Recurring service access)</option>
@@ -259,8 +259,8 @@ export function EnhancedPackageCreationModal({
                   </select>
                 </div>
 
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                  <div className="flex items-start gap-2">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-0">
+                  <div className="flex items-start gap-0">
                     <Info className="w-4 h-4 text-blue-600 mt-0.5" />
                     <div className="text-xs text-blue-900">
                       {formData.packageType === 'combo' && (
@@ -281,12 +281,12 @@ export function EnhancedPackageCreationModal({
 
                 {(formData.packageType === 'combo' || formData.packageType === 'unlimited') && (
                   <div>
-                    <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center justify-between mb-0">
                       <label className="block text-sm font-medium text-gray-700">Included Services *</label>
                       <button
                         type="button"
                         onClick={() => setShowServiceSelector(true)}
-                        className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-1"
+                        className="px-0 py-0.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-0"
                         disabled={availableServices.length === 0}
                       >
                         <Plus className="w-3 h-3" />
@@ -296,8 +296,8 @@ export function EnhancedPackageCreationModal({
                     
                     <div className="space-y-2">
                       {formData.includedServices.map((service) => (
-                        <div key={service.id} className="border rounded-lg p-3 bg-green-50 border-green-200">
-                          <div className="flex items-start gap-2">
+                        <div key={service.id} className="border rounded-lg p-0 bg-green-50 border-green-200">
+                          <div className="flex items-start gap-0">
                             <Check className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
                             <div className="flex-1 min-w-0">
                               <h4 className="text-sm font-semibold text-gray-900">{service.name}</h4>
@@ -308,7 +308,7 @@ export function EnhancedPackageCreationModal({
                             <button
                               type="button"
                               onClick={() => removeIncludedService(service.id)}
-                              className="text-red-600 hover:text-red-700 hover:bg-red-50 p-1 rounded"
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50 p-0 rounded"
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
@@ -316,9 +316,9 @@ export function EnhancedPackageCreationModal({
                         </div>
                       ))}
                       {formData.includedServices.length === 0 && (
-                        <div className="text-center py-6 border-2 border-dashed rounded-lg">
-                          <Package className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                          <p className="text-sm text-gray-500 mb-1">No services selected</p>
+                        <div className="text-center py-0 border-2 border-dashed rounded-lg">
+                          <Package className="w-8 h-8 text-gray-400 mx-auto mb-0" />
+                          <p className="text-sm text-gray-500 mb-0">No services selected</p>
                           <p className="text-xs text-gray-400">
                             Click &quot;Select Services&quot; to choose from your enabled services
                           </p>
@@ -328,9 +328,9 @@ export function EnhancedPackageCreationModal({
                   </div>
                 )}
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-0">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-0 flex items-center gap-0">
                       <Calendar className="w-3 h-3" />
                       Validity Period (Days) *
                     </label>
@@ -340,17 +340,17 @@ export function EnhancedPackageCreationModal({
                       onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, validityDays: parseInt(e.target.value) || 0 })}
                       placeholder="30"
                       min="1"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+                      className="w-full px-0 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
                     />
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-gray-500 mt-0">
                       Package valid for {formData.validityDays} days after purchase
                     </p>
                   </div>
 
                   {(formData.packageType === 'subscription' || formData.packageType === 'unlimited') && (
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Usage Limit</label>
-                      <div className="flex gap-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-0">Usage Limit</label>
+                      <div className="flex gap-0">
                         <input
                           type="number"
                           value={formData.maxUsageCount === -1 ? '' : formData.maxUsageCount}
@@ -360,12 +360,12 @@ export function EnhancedPackageCreationModal({
                           })}
                           placeholder="Unlimited"
                           min="-1"
-                          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+                          className="flex-1 px-0 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
                         />
                         <select
                           value={formData.usageInterval}
                           onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData({ ...formData, usageInterval: e.target.value as any })}
-                          className="w-32 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+                          className="w-32 px-0 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
                         >
                           <option value="per_day">Per Day</option>
                           <option value="per_week">Per Week</option>
@@ -379,7 +379,7 @@ export function EnhancedPackageCreationModal({
 
                 {formData.packageType === 'membership' && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-0 flex items-center gap-0">
                       <Percent className="w-3 h-3" />
                       Membership Discount (%)
                     </label>
@@ -391,35 +391,35 @@ export function EnhancedPackageCreationModal({
                       min="0"
                       max="100"
                       step="0.5"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+                      className="w-full px-0 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
                     />
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-gray-500 mt-0">
                       Members get {formData.discountPercentage}% off on all services
                     </p>
                   </div>
                 )}
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-0 flex items-center gap-0">
                     <Star className="w-3 h-3" />
                     Special Benefits
                   </label>
-                  <div className="flex gap-2">
+                  <div className="flex gap-0">
                     <input
                       value={benefitInput}
                       onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBenefitInput(e.target.value)}
                       placeholder="e.g., Priority booking, Free consultation"
                       onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addBenefit())}
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+                      className="flex-1 px-0 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
                     />
-                    <button type="button" onClick={addBenefit} className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
+                    <button type="button" onClick={addBenefit} className="px-4 py-0 border border-gray-300 rounded-lg hover:bg-gray-50">
                       <Plus className="w-4 h-4" />
                     </button>
                   </div>
                   {formData.specialBenefits.length > 0 && (
-                    <div className="mt-2 space-y-1">
+                    <div className="mt-0 space-y-1">
                       {formData.specialBenefits.map((benefit, index) => (
-                        <div key={index} className="flex items-center justify-between bg-green-50 px-3 py-2 rounded">
+                        <div key={index} className="flex items-center justify-between bg-green-50 px-0 py-0 rounded">
                           <span className="text-sm">✓ {benefit}</span>
                           <button
                             type="button"
@@ -434,31 +434,31 @@ export function EnhancedPackageCreationModal({
                   )}
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-0">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Original Price (₹)</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-0">Original Price (₹)</label>
                     <input
                       type="number"
                       value={formData.originalPrice || ''}
                       onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, originalPrice: parseFloat(e.target.value) || 0 })}
                       placeholder="5000"
                       min="0"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+                      className="w-full px-0 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
                     />
-                    <p className="text-xs text-gray-500 mt-1">Total value if bought separately</p>
+                    <p className="text-xs text-gray-500 mt-0">Total value if bought separately</p>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Package Price (₹) *</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-0">Package Price (₹) *</label>
                     <input
                       type="number"
                       value={formData.packagePrice || ''}
                       onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, packagePrice: parseFloat(e.target.value) || 0 })}
                       placeholder="3999"
                       min="0"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+                      className="w-full px-0 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
                     />
                     {formData.originalPrice > formData.packagePrice && formData.packagePrice > 0 && (
-                      <p className="text-xs text-green-600 mt-1 font-semibold">
+                      <p className="text-xs text-green-600 mt-0 font-semibold">
                         Save {calculateSavings()}% (₹{formData.originalPrice - formData.packagePrice})
                       </p>
                     )}
@@ -466,42 +466,42 @@ export function EnhancedPackageCreationModal({
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Terms & Conditions</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-0">Terms & Conditions</label>
                   <textarea
                     value={formData.termsAndConditions}
                     onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData({ ...formData, termsAndConditions: e.target.value })}
                     placeholder="Package terms, restrictions, etc..."
                     rows={2}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+                    className="w-full px-0 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Cancellation Policy</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-0">Cancellation Policy</label>
                   <textarea
                     value={formData.cancellationPolicy}
                     onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData({ ...formData, cancellationPolicy: e.target.value })}
                     placeholder="Refund and cancellation terms..."
                     rows={2}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+                    className="w-full px-0 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
                   />
                 </div>
               </>
             ) : (
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-0">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Price (₹) *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-0">Price (₹) *</label>
                   <input
                     type="number"
                     value={formData.price || ''}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, price: parseFloat(e.target.value) || 0 })}
                     placeholder="500"
                     min="0"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+                    className="w-full px-0 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Duration (min)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-0">Duration (min)</label>
                   <input
                     type="number"
                     value={formData.duration}
@@ -509,24 +509,24 @@ export function EnhancedPackageCreationModal({
                     placeholder="30"
                     min="5"
                     step="5"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+                    className="w-full px-0 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
                   />
                 </div>
               </div>
             )}
           </div>
 
-          <div className="p-6 border-t border-gray-200 flex gap-3">
+          <div className="p-0 border-t border-gray-200 flex gap-0">
             <button
               onClick={() => { resetForm(); onClose(); }}
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+              className="flex-1 px-4 py-0 border border-gray-300 rounded-lg hover:bg-gray-50"
             >
               Cancel
             </button>
             <button
               onClick={handleSubmit}
               disabled={isSubmitting}
-              className="flex-1 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg disabled:opacity-50"
+              className="flex-1 px-4 py-0 bg-orange-500 hover:bg-orange-600 text-white rounded-lg disabled:opacity-50"
             >
               {isSubmitting ? 'Submitting...' : formData.isPackage ? 'Create Package' : 'Add Service'}
             </button>
@@ -536,13 +536,13 @@ export function EnhancedPackageCreationModal({
 
       {showServiceSelector && (
         <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl p-6 max-w-[500px] w-full max-h-[70vh] overflow-y-auto">
+          <div className="bg-white rounded-xl p-0 max-w-[500px] w-full max-h-[70vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="text-lg font-semibold text-gray-900">Select Services for Package</h3>
-                <p className="text-sm text-gray-600 mt-1">Choose from your enabled services to include in this package</p>
+                <p className="text-sm text-gray-600 mt-0">Choose from your enabled services to include in this package</p>
               </div>
-              <button onClick={() => setShowServiceSelector(false)} className="p-2 hover:bg-gray-100 rounded-lg">
+              <button onClick={() => setShowServiceSelector(false)} className="p-0 hover:bg-gray-100 rounded-lg">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -550,8 +550,8 @@ export function EnhancedPackageCreationModal({
             <div className="max-h-[50vh] overflow-y-auto mb-4">
               {availableServices.length === 0 ? (
                 <div className="text-center py-8">
-                  <Package className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                  <p className="text-sm text-gray-600 mb-2">No services available</p>
+                  <Package className="w-12 h-12 text-gray-400 mx-auto mb-0" />
+                  <p className="text-sm text-gray-600 mb-0">No services available</p>
                   <p className="text-xs text-gray-500">
                     Please enable some services first before creating a package
                   </p>
@@ -564,13 +564,13 @@ export function EnhancedPackageCreationModal({
                       <div
                         key={service.id}
                         onClick={() => toggleServiceSelection(service)}
-                        className={`border rounded-lg p-3 cursor-pointer transition-all ${
+                        className={`border rounded-lg p-0 cursor-pointer transition-all ${
                           isSelected 
                             ? 'bg-green-50 border-green-500 shadow-sm' 
                             : 'bg-white border-gray-200 hover:border-orange-500'
                         }`}
                       >
-                        <div className="flex items-start gap-3">
+                        <div className="flex items-start gap-0">
                           <div className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 mt-0.5 ${
                             isSelected 
                               ? 'bg-green-500 border-green-500' 
@@ -581,7 +581,7 @@ export function EnhancedPackageCreationModal({
                           <div className="flex-1 min-w-0">
                             <h4 className="text-sm font-semibold text-gray-900">{service.name}</h4>
                             {service.description && (
-                              <p className="text-xs text-gray-600 mt-0.5 line-clamp-2">{service.description}</p>
+                              <p className="text-xs text-gray-600 mt-0.5 line-clamp-0">{service.description}</p>
                             )}
                           </div>
                         </div>
@@ -592,10 +592,10 @@ export function EnhancedPackageCreationModal({
               )}
             </div>
 
-            <div className="flex gap-3 pt-4 border-t border-gray-200">
+            <div className="flex gap-0 pt-4 border-t border-gray-200">
               <button
                 onClick={() => setShowServiceSelector(false)}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                className="flex-1 px-4 py-0 border border-gray-300 rounded-lg hover:bg-gray-50"
               >
                 Done ({formData.includedServices.length} selected)
               </button>

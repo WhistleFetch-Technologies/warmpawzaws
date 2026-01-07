@@ -115,8 +115,8 @@ export function CustomerSidebar({
         isOpen ? 'translate-x-0' : 'translate-x-full'
       }`}>
         {/* Header */}
-        <div className="bg-gradient-to-r from-primary to-primary-dark px-6 py-6">
-          <div className="flex items-center justify-between mb-6">
+        <div className="bg-gradient-to-r from-primary to-primary-dark px-0 py-0">
+          <div className="flex items-center justify-between mb-0">
             <h2 className="text-white font-bold text-lg">My Account</h2>
             <button
               onClick={onClose}
@@ -127,10 +127,10 @@ export function CustomerSidebar({
           </div>
 
           {/* Tabs */}
-          <div className="flex gap-2">
+          <div className="flex gap-0">
             <button
               onClick={() => setActiveTab('bookings')}
-              className={`flex-1 py-2.5 rounded-lg font-medium transition-all ${
+              className={`flex-1 py-0.5 rounded-lg font-medium transition-all ${
                 activeTab === 'bookings'
                   ? 'bg-white text-primary'
                   : 'bg-white/20 text-white'
@@ -140,7 +140,7 @@ export function CustomerSidebar({
             </button>
             <button
               onClick={() => setActiveTab('profile')}
-              className={`flex-1 py-2.5 rounded-lg font-medium transition-all ${
+              className={`flex-1 py-0.5 rounded-lg font-medium transition-all ${
                 activeTab === 'profile'
                   ? 'bg-white text-primary'
                   : 'bg-white/20 text-white'
@@ -154,18 +154,18 @@ export function CustomerSidebar({
         {/* Content */}
         <div className="h-[calc(100%-180px)] overflow-y-auto">
           {activeTab === 'bookings' && (
-            <div className="p-6 space-y-4">
+            <div className="p-0 space-y-4">
               {loading ? (
-                <div className="text-center py-12">
+                <div className="text-center py-0">
                   <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
                   <p className="text-gray-600">Loading bookings...</p>
                 </div>
               ) : bookings.length === 0 ? (
-                <div className="text-center py-12">
+                <div className="text-center py-02">
                   <div className="w-20 h-20 bg-gray-100 rounded-full mx-auto mb-4 flex items-center justify-center">
                     <Package className="w-10 h-10 text-gray-400" />
                   </div>
-                  <h3 className="text-gray-800 font-semibold mb-2">No Bookings Yet</h3>
+                  <h3 className="text-gray-800 font-semibold mb-0">No Bookings Yet</h3>
                   <p className="text-gray-600 text-sm">
                     Your service bookings will appear here
                   </p>
@@ -188,24 +188,24 @@ export function CustomerSidebar({
 
                       {/* Booking Info */}
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between mb-2">
+                        <div className="flex items-start justify-between mb-0">
                           <div>
-                            <h3 className="font-bold text-gray-800 mb-1">
+                            <h3 className="font-bold text-gray-800 mb-0">
                               {booking.serviceType.charAt(0).toUpperCase() + booking.serviceType.slice(1)} Service
                             </h3>
                             <p className="text-sm text-gray-600">
                               {booking.petName} • {booking.vendorName}
                             </p>
                           </div>
-                          <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${getStatusColor(booking.status)}`}>
+                          <span className={`px-0.5 py-0 rounded-full text-xs font-semibold ${getStatusColor(booking.status)}`}>
                             {booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
                           </span>
                         </div>
 
                         {/* Progress */}
                         {booking.status === 'active' && (
-                          <div className="mb-3">
-                            <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
+                          <div className="mb-0">
+                            <div className="flex items-center justify-between text-xs text-gray-600 mb-0">
                               <span>{booking.completedSessions} of {booking.totalSessions} sessions</span>
                               <span>{Math.round((booking.completedSessions / booking.totalSessions) * 100)}%</span>
                             </div>
@@ -219,8 +219,8 @@ export function CustomerSidebar({
                         )}
 
                         {/* Details */}
-                        <div className="flex items-center gap-3 text-xs text-gray-600">
-                          <span className="flex items-center gap-1">
+                        <div className="flex items-center gap-0 text-xs text-gray-600">
+                          <span className="flex items-center gap-0">
                             <Calendar className="w-3 h-3" />
                             {new Date(booking.startDate).toLocaleDateString()}
                           </span>
@@ -229,7 +229,7 @@ export function CustomerSidebar({
                         </div>
 
                         {booking.status === 'active' && booking.upcomingSessions > 0 && (
-                          <div className="mt-2 text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded-md inline-block">
+                          <div className="mt-0 text-xs bg-blue-50 text-blue-700 px-0 py-1 rounded-md inline-block">
                             {booking.upcomingSessions} upcoming session{booking.upcomingSessions > 1 ? 's' : ''}
                           </div>
                         )}
@@ -242,7 +242,7 @@ export function CustomerSidebar({
           )}
 
           {activeTab === 'profile' && (
-            <div className="p-6 space-y-3">
+            <div className="p-0 space-y-3">
               <button 
                 onClick={() => {
                   onNavigate?.('customer-profile');
@@ -250,7 +250,7 @@ export function CustomerSidebar({
                 }}
                 className="w-full flex items-center justify-between p-4 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-all"
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-0">
                   <div className="w-10 h-10 bg-gradient-to-br from-blue-100 to-blue-200 rounded-full flex items-center justify-center">
                     <User className="w-5 h-5 text-blue-600" />
                   </div>
@@ -266,7 +266,7 @@ export function CustomerSidebar({
                 }}
                 className="w-full flex items-center justify-between p-4 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-all"
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-0">
                   <div className="w-10 h-10 bg-gradient-to-br from-green-100 to-green-200 rounded-full flex items-center justify-center">
                     <Package className="w-5 h-5 text-green-600" />
                   </div>
@@ -283,7 +283,7 @@ export function CustomerSidebar({
                 }}
                 className="w-full flex items-center justify-between p-4 bg-gradient-to-r from-yellow-50 to-orange-50 border-2 border-yellow-300 rounded-xl hover:shadow-md transition-all"
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-0">
                   <div className="w-10 h-10 bg-gradient-to-br from-yellow-400 to-orange-400 rounded-full flex items-center justify-center">
                     <Coins className="w-5 h-5 text-white" />
                   </div>
@@ -302,7 +302,7 @@ export function CustomerSidebar({
                 }}
                 className="w-full flex items-center justify-between p-4 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-all"
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-0">
                   <div className="w-10 h-10 bg-gradient-to-br from-pink-100 to-pink-200 rounded-full flex items-center justify-center">
                     <Heart className="w-5 h-5 text-pink-600" />
                   </div>
@@ -318,7 +318,7 @@ export function CustomerSidebar({
                 }}
                 className="w-full flex items-center justify-between p-4 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-all"
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-0">
                   <div className="w-10 h-10 bg-gradient-to-br from-purple-100 to-purple-200 rounded-full flex items-center justify-center">
                     <Settings className="w-5 h-5 text-purple-600" />
                   </div>
@@ -334,7 +334,7 @@ export function CustomerSidebar({
                 }}
                 className="w-full flex items-center justify-between p-4 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-all"
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-0">
                   <div className="w-10 h-10 bg-gradient-to-br from-orange-100 to-orange-200 rounded-full flex items-center justify-center">
                     <FileText className="w-5 h-5 text-orange-600" />
                   </div>
@@ -352,7 +352,7 @@ export function CustomerSidebar({
                 }}
                 className="w-full flex items-center justify-between p-4 bg-white border border-red-200 rounded-xl hover:bg-red-50 transition-all"
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-0">
                   <div className="w-10 h-10 bg-gradient-to-br from-red-100 to-red-200 rounded-full flex items-center justify-center">
                     <LogOut className="w-5 h-5 text-red-600" />
                   </div>

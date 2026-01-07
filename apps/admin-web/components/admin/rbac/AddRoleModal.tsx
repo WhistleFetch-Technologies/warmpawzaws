@@ -106,59 +106,59 @@ export function AddRoleModal({ role, onClose, onSuccess }: AddRoleModalProps) {
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg w-full max-w-md max-h-[90vh] overflow-y-auto">
-        <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+        <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-0 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-0">
             <Shield className="w-5 h-5 text-orange-600" />
             {role ? 'Edit Role' : 'Add Role'}
           </h2>
-          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg">
+          <button onClick={onClose} className="p-0 hover:bg-gray-100 rounded-lg">
             <X className="w-5 h-5 text-gray-500" />
           </button>
         </div>
 
         <div className="p-4 space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-700 mb-0">
               Role Name *
             </label>
             <input
               type="text"
               value={formData.name}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-              className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+              className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
               placeholder="e.g., Operations Manager"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-700 mb-0">
               Description
             </label>
             <textarea
               value={formData.description}
               onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData(prev => ({ ...prev, description: e.target.value }))}
               rows={3}
-              className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+              className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
               placeholder="Describe the role's responsibilities..."
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-0">
               Permissions ({formData.permissions.length} selected)
             </label>
-            <div className="border-2 border-gray-200 rounded-lg p-3 max-h-64 overflow-y-auto">
+            <div className="border-2 border-gray-200 rounded-lg p-0 max-h-64 overflow-y-auto">
               {Object.entries(permissionsByCategory).map(([category, perms]) => (
                 <div key={category} className="mb-4">
-                  <h4 className="font-medium text-sm text-gray-700 mb-2">{category}</h4>
+                  <h4 className="font-medium text-sm text-gray-700 mb-0">{category}</h4>
                   <div className="space-y-2">
                     {perms.map(perm => (
-                      <label key={perm.id} className="flex items-start gap-2 cursor-pointer">
+                      <label key={perm.id} className="flex items-start gap-0 cursor-pointer">
                         <input
                           type="checkbox"
                           checked={formData.permissions.includes(perm.id)}
                           onChange={() => togglePermission(perm.id)}
-                          className="mt-1 w-4 h-4 text-orange-600 rounded"
+                          className="mt-0 w-4 h-4 text-orange-600 rounded"
                         />
                         <div className="flex-1">
                           <span className="text-sm text-gray-900">{perm.name}</span>
@@ -172,11 +172,11 @@ export function AddRoleModal({ role, onClose, onSuccess }: AddRoleModalProps) {
             </div>
           </div>
 
-          <div className="flex gap-3 pt-4 border-t">
+          <div className="flex gap-0 pt-4 border-t">
             <button
               onClick={handleSubmit}
               disabled={loading}
-              className="flex-1 py-2.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-2 disabled:opacity-50"
+              className="flex-1 py-0.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-0 disabled:opacity-50"
             >
               {loading ? (
                 <>
@@ -192,7 +192,7 @@ export function AddRoleModal({ role, onClose, onSuccess }: AddRoleModalProps) {
             </button>
             <button
               onClick={onClose}
-              className="px-4 py-2.5 border-2 border-gray-200 rounded-lg hover:bg-gray-50"
+              className="px-4 py-0.5 border-2 border-gray-200 rounded-lg hover:bg-gray-50"
             >
               Cancel
             </button>

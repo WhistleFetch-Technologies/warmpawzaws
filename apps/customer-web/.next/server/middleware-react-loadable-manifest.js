@@ -1,1 +1,1 @@
-self.__REACT_LOADABLE_MANIFEST="{}";
+self.__REACT_LOADABLE_MANIFEST='{"lib/api-client.ts -> ./error-handling":{"id":8063,"files":["static/chunks/63.d322f6061030236e.js"]}}';

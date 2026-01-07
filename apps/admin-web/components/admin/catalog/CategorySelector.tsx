@@ -76,9 +76,9 @@ export function CategorySelector({
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full min-h-[44px] px-4 py-2.5 bg-white border-2 border-gray-200 rounded-lg flex items-center justify-between hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all"
+        className="w-full min-h-[44px] px-4 py-0.5 bg-white border-2 border-gray-200 rounded-lg flex items-center justify-between hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all"
       >
-        <div className="flex items-center gap-2 flex-1 text-left">
+        <div className="flex items-center gap-0 flex-1 text-left">
           {selectedCategory ? (
             <>
               <span className="text-lg">{getCategoryIcon(selectedCategory.icon)}</span>
@@ -102,20 +102,20 @@ export function CategorySelector({
             className="fixed inset-0 z-10"
             onClick={() => setIsOpen(false)}
           />
-          <div className="absolute z-20 w-full mt-1 bg-white border-2 border-gray-200 rounded-lg shadow-lg max-h-64 overflow-y-auto">
+          <div className="absolute z-20 w-full mt-0 bg-white border-2 border-gray-200 rounded-lg shadow-lg max-h-64 overflow-y-auto">
             {loading ? (
               <div className="p-4 text-center text-gray-500">Loading categories...</div>
             ) : categories.length === 0 ? (
               <div className="p-4 text-center text-gray-500">No categories available</div>
             ) : (
-              <div className="py-1">
+              <div className="py-0">
                 <button
                   type="button"
                   onClick={() => {
                     onChange(null);
                     setIsOpen(false);
                   }}
-                  className={`w-full px-4 py-2.5 text-left flex items-center gap-2 hover:bg-gray-50 transition-colors ${
+                  className={`w-full px-4 py-0.5 text-left flex items-center gap-0 hover:bg-gray-50 transition-colors ${
                     value === null ? 'bg-orange-50' : ''
                   }`}
                 >
@@ -132,7 +132,7 @@ export function CategorySelector({
                       onChange(category.id);
                       setIsOpen(false);
                     }}
-                    className={`w-full px-4 py-2.5 text-left flex items-center gap-2 hover:bg-gray-50 transition-colors ${
+                    className={`w-full px-4 py-0.5 text-left flex items-center gap-0 hover:bg-gray-50 transition-colors ${
                       value === category.id ? 'bg-orange-50' : ''
                     }`}
                   >

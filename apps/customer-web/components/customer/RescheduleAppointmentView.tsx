@@ -99,16 +99,16 @@ export function RescheduleAppointmentView({
   return (
     <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4 sticky top-0 z-10">
+      <div className="bg-white border-b border-gray-200 px-0 py-4 sticky top-0 z-10">
         <div className="flex items-center gap-4">
-          <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg">
+          <button onClick={onBack} className="p-0 hover:bg-gray-100 rounded-lg">
             <ArrowLeft className="w-5 h-5" />
           </button>
           <h1 className="font-semibold text-lg">Reschedule Appointment</h1>
         </div>
       </div>
 
-      <div className="px-6 py-6">
+      <div className="px-0 py-0">
         <CalendarSlotPicker
           selectedDate={selectedDate}
           onDateSelect={setSelectedDate}
@@ -119,7 +119,7 @@ export function RescheduleAppointmentView({
         {selectedDate && selectedTime && (
           <button
             onClick={() => handleReschedule(selectedDate, selectedTime)}
-            className="w-full mt-6 py-4 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark transition-colors"
+            className="w-full mt-0 py-4 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark transition-colors"
           >
             Confirm Reschedule
           </button>

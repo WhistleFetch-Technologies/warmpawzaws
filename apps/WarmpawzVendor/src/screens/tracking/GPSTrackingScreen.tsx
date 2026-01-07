@@ -427,7 +427,7 @@ const styles = StyleSheet.create({
   startButtonText: {
     fontSize: typography.fontSizes.md,
     fontWeight: typography.fontWeights.semibold,
-    color: '#ffffff',
+    color: colors.white,
   },
   stopButton: {
     backgroundColor: colors.error,
@@ -440,7 +440,7 @@ const styles = StyleSheet.create({
   stopButtonText: {
     fontSize: typography.fontSizes.md,
     fontWeight: typography.fontWeights.semibold,
-    color: '#ffffff',
+    color: colors.white,
   },
   completeButton: {
     backgroundColor: colors.primary,
@@ -452,7 +452,7 @@ const styles = StyleSheet.create({
   completeButtonText: {
     fontSize: typography.fontSizes.md,
     fontWeight: typography.fontWeights.semibold,
-    color: '#ffffff',
+    color: colors.white,
   },
 });
 
