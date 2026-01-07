@@ -153,7 +153,7 @@ export function UnifiedBookingEngine({
       
       // Load service if serviceId provided
       if (serviceId) {
-        const serviceData = await apiClient.get(`/services/${serviceId}`);
+        const serviceData: any = await apiClient.get(`/services/${serviceId}`);
         setService(serviceData);
         
         // Auto-set service style if available
@@ -163,7 +163,7 @@ export function UnifiedBookingEngine({
       }
 
       // Load customer data
-      const customer = await apiClient.get(`/customers/phone/${customerPhone}`);
+      const customer: any = await apiClient.get(`/customers/phone/${customerPhone}`);
       if (customer) {
         // Load pets
         const petsData = await apiClient.get(`/customers/${customer.id}/pets`);
