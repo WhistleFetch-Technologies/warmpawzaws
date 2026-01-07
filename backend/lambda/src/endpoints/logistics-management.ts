@@ -6,7 +6,7 @@
  */
 
 import { Hono } from 'hono';
-import { BaseHandler, HandlerContext, HandlerResponse } from '../lib/handlers/base-handler';
+import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler-enhanced';
 import { query, select, insert, update, deleteRecord } from '../database/rds-connection';
 
 // ============================================================================

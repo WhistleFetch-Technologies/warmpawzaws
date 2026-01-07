@@ -96,13 +96,6 @@ export class ChimeSDKManager {
   private setupEventObservers(): void {
     if (!this.audioVideo) return;
 
-    // Observe video tiles
-    this.audioVideo.observeVideoTiles((tile: VideoTile) => {
-      if (tile.boundVideoElement && this.remoteVideoElement) {
-        this.remoteVideoElement.srcObject = tile.boundVideoElement.srcObject;
-      }
-    });
-
     // Observe audio/video state changes
     this.audioVideo.realtimeSubscribeToMuteAndUnmuteLocalAudio((muted: boolean) => {
       console.log(`Audio ${muted ? 'muted' : 'unmuted'}`);
@@ -112,6 +105,15 @@ export class ChimeSDKManager {
       if (tile?.boundVideoElement && this.localVideoElement) {
         this.localVideoElement.srcObject = tile.boundVideoElement.srcObject;
       }
+    });
+
+    // Observe remote video tiles
+    this.audioVideo.addObserver({
+      videoTileDidUpdate: (tileState: any) => {
+        if (tileState.boundVideoElement && this.remoteVideoElement && !tileState.isContent) {
+          this.remoteVideoElement.srcObject = tileState.boundVideoElement.srcObject;
+        }
+      },
     });
   }
 

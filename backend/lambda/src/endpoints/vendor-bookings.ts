@@ -148,12 +148,6 @@ export function registerVendorBookingsEndpoints(app: Hono) {
         return c.json({ error: 'Booking not found' }, 404);
       }
 
-      // Get current booking to track status change
-      const bookings = await select('bookings', { id: bookingId });
-      if (bookings.length === 0) {
-        return c.json({ error: 'Booking not found' }, 404);
-      }
-
       const booking = bookings[0];
       const oldStatus = booking.status;
       const vendorId = c.req.header('x-vendor-id') || booking.vendor_id;
