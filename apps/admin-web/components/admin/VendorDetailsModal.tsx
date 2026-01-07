@@ -85,10 +85,10 @@ export function VendorDetailsModal({ isOpen, onClose, vendorId }: VendorDetailsM
         ) : (
           <>
             {/* Header */}
-            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-0 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-0">
                 <h2 className="text-lg">{vendor.name}</h2>
-                <span className={`px-3 py-1 text-xs rounded-full ${
+                <span className={`px-0 py-0 text-xs rounded-full ${
                   vendor.tierColor === 'gold' ? 'bg-yellow-100 text-yellow-700' :
                   vendor.tierColor === 'silver' ? 'bg-gray-200 text-gray-700' :
                   vendor.tierColor === 'premium' ? 'bg-purple-100 text-purple-700' :
@@ -97,21 +97,21 @@ export function VendorDetailsModal({ isOpen, onClose, vendorId }: VendorDetailsM
                   {vendor.tier}
                 </span>
               </div>
-              <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg">
+              <button onClick={onClose} className="p-0 hover:bg-gray-100 rounded-lg">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Quick Info Bar */}
-            <div className="px-6 py-3 bg-gray-50 border-b border-gray-200 flex items-center gap-6 text-sm">
-              <div className="flex items-center gap-1">
+            <div className="px-0 py-0 bg-gray-50 border-b border-gray-200 flex items-center gap-0 text-sm">
+              <div className="flex items-center gap-0">
                 <Star className="w-4 h-4 text-orange-500 fill-orange-500" />
                 <span>{vendor.rating}/5</span>
               </div>
               <div className="text-gray-600">
                 {vendor.complaints} complaints
               </div>
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-0">
                 <MapPin className="w-4 h-4 text-gray-400" />
                 <span>{vendor.location} | {vendor.experience} | {vendor.lastActive}</span>
               </div>
@@ -121,54 +121,54 @@ export function VendorDetailsModal({ isOpen, onClose, vendorId }: VendorDetailsM
             </div>
 
             {/* Stats Cards */}
-            <div className="px-6 py-6 grid grid-cols-4 gap-4">
+            <div className="px-0 py-0 grid grid-cols-4 gap-4">
               <div className="bg-white border border-gray-200 rounded-xl p-4">
-                <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center justify-between mb-0">
                   <span className="text-xs text-gray-600">Monthly Revenue</span>
                   <div className="w-8 h-8 bg-green-50 rounded-lg flex items-center justify-center">
                     <TrendingUp className="w-4 h-4 text-green-600" />
                   </div>
                 </div>
-                <div className="text-2xl mb-1">₹{vendor.monthlyRevenue.toLocaleString('en-IN')}</div>
+                <div className="text-2xl mb-0">₹{vendor.monthlyRevenue.toLocaleString('en-IN')}</div>
                 <div className="text-xs text-green-600">↑ {vendor.revenueChange}% from last month</div>
               </div>
 
               <div className="bg-white border border-gray-200 rounded-xl p-4">
-                <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center justify-between mb-0">
                   <span className="text-xs text-gray-600">Total Orders</span>
                   <div className="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center">
                     <ShoppingBag className="w-4 h-4 text-blue-600" />
                   </div>
                 </div>
-                <div className="text-2xl mb-1">{vendor.totalOrders}</div>
+                <div className="text-2xl mb-0">{vendor.totalOrders}</div>
                 <div className="text-xs text-gray-500">{vendor.ordersPeriod}</div>
               </div>
 
               <div className="bg-white border border-gray-200 rounded-xl p-4">
-                <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center justify-between mb-0">
                   <span className="text-xs text-gray-600">Products</span>
                   <div className="w-8 h-8 bg-yellow-50 rounded-lg flex items-center justify-center">
                     <Package className="w-4 h-4 text-yellow-600" />
                   </div>
                 </div>
-                <div className="text-2xl mb-1">{vendor.products}</div>
+                <div className="text-2xl mb-0">{vendor.products}</div>
                 <div className="text-xs text-gray-500">{vendor.productsType}</div>
               </div>
 
               <div className="bg-white border border-gray-200 rounded-xl p-4">
-                <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center justify-between mb-0">
                   <span className="text-xs text-gray-600">Compliance Score</span>
                   <div className="w-8 h-8 bg-purple-50 rounded-lg flex items-center justify-center">
                     <Shield className="w-4 h-4 text-purple-600" />
                   </div>
                 </div>
-                <div className="text-2xl mb-1">{vendor.complianceScore}%</div>
+                <div className="text-2xl mb-0">{vendor.complianceScore}%</div>
                 <div className="text-xs text-green-600">{vendor.complianceLabel}</div>
               </div>
             </div>
 
             {/* Information Sections */}
-            <div className="px-6 pb-6 grid grid-cols-3 gap-6">
+            <div className="px-0 pb-0 grid grid-cols-3 gap-0">
               {/* Basic Information */}
               <div>
                 <h3 className="text-sm mb-4">Basic Information</h3>
@@ -231,11 +231,11 @@ export function VendorDetailsModal({ isOpen, onClose, vendorId }: VendorDetailsM
 
             {/* Recent Orders */}
             {vendor.recentOrders && vendor.recentOrders.length > 0 && (
-              <div className="px-6 pb-6">
+              <div className="px-0 pb-0">
                 <h3 className="text-sm mb-4">Recent Orders</h3>
                 <div className="space-y-2">
                   {vendor.recentOrders.map((order, idx) => (
-                    <div key={idx} className="flex items-center justify-between py-3 border-b border-gray-200 last:border-0">
+                    <div key={idx} className="flex items-center justify-between py-0 border-b border-gray-200 last:border-0">
                       <div>
                         <div className="text-sm">{order.service}</div>
                         <div className="text-xs text-gray-500">{order.customer}</div>
@@ -256,11 +256,11 @@ export function VendorDetailsModal({ isOpen, onClose, vendorId }: VendorDetailsM
 function InfoItem({ icon, label, value }: { icon: string; label: string; value: string }) {
   return (
     <div className="text-sm">
-      <div className="flex items-center gap-2 text-gray-600 mb-1">
+      <div className="flex items-center gap-0 text-gray-600 mb-0">
         <span className="text-blue-600">{icon}</span>
         <span className="text-xs">{label}</span>
       </div>
-      <div className="text-gray-900 ml-6">{value}</div>
+      <div className="text-gray-900 ml-0">{value}</div>
     </div>
   );
 }

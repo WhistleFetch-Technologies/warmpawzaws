@@ -233,7 +233,7 @@ export function CustomerAuthScreen({ onAuthSuccess }: CustomerAuthScreenProps) {
               disabled={loading || otpCode.length !== 6}
             >
               {loading ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color={colors.white} />
               ) : (
                 <Text style={styles.verifyButtonText}>Verify & Continue</Text>
               )}
@@ -364,7 +364,7 @@ export function CustomerAuthScreen({ onAuthSuccess }: CustomerAuthScreenProps) {
             disabled={loading || phoneNumber.length !== 10}
           >
             {loading ? (
-              <ActivityIndicator color="#fff" />
+              <ActivityIndicator color={colors.white} />
             ) : (
               <Text style={styles.sendCodeButtonText}>Send Verification Code</Text>
             )}
@@ -484,7 +484,7 @@ const styles = StyleSheet.create({
   // White Card (Bottom 1/3)
   whiteCard: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderTopLeftRadius: borderRadius.xl * 2,
     borderTopRightRadius: borderRadius.xl * 2,
     paddingTop: spacing.lg,
@@ -520,7 +520,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   phoneInput: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderWidth: 1,
     borderColor: colors.primary,
     borderRadius: borderRadius.md,
@@ -529,7 +529,7 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   otpInput: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderWidth: 1,
     borderColor: colors.primary,
     borderRadius: borderRadius.md,
@@ -540,7 +540,7 @@ const styles = StyleSheet.create({
     letterSpacing: 4,
   },
   referralInput: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: borderRadius.md,
@@ -559,7 +559,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   sendCodeButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: typography.fontSizes.lg,
     fontWeight: typography.fontWeights.bold,
   },
@@ -574,7 +574,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   verifyButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: typography.fontSizes.lg,
     fontWeight: typography.fontWeights.bold,
   },

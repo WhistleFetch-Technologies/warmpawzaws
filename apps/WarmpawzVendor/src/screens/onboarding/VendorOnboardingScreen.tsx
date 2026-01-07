@@ -326,7 +326,7 @@ export function VendorOnboardingScreen({
               disabled={submitting}
             >
               {submitting ? (
-                <ActivityIndicator color="#ffffff" />
+                <ActivityIndicator color={colors.white} />
               ) : (
                 <Text style={styles.submitButtonText}>Submit Application</Text>
               )}
@@ -457,7 +457,7 @@ const styles = StyleSheet.create({
   },
   selectOptionSelected: {
     borderColor: colors.primary,
-    backgroundColor: '#FFF4E6',
+    backgroundColor: colors.primary.50,
   },
   selectOptionText: {
     fontSize: typography.fontSizes.md,
@@ -485,7 +485,7 @@ const styles = StyleSheet.create({
   },
   navButtonPrimary: {
     borderColor: colors.primary,
-    backgroundColor: '#FFF4E6',
+    backgroundColor: colors.primary.50,
   },
   navButtonText: {
     fontSize: typography.fontSizes.md,
@@ -510,7 +510,7 @@ const styles = StyleSheet.create({
   submitButtonText: {
     fontSize: typography.fontSizes.md,
     fontWeight: typography.fontWeights.semibold,
-    color: '#ffffff',
+    color: colors.white,
   },
 });
 

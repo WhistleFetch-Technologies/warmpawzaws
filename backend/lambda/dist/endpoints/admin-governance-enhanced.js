@@ -399,6 +399,84 @@ class CreateBannerHandler extends base_handler_1.BaseHandler {
         }
     }
 }
+class UpdateBannerHandler extends base_handler_1.BaseHandler {
+    async handle(context) {
+        const bannerId = context.event.pathParameters?.id;
+        if (!bannerId) {
+            return this.error('Banner ID is required', 400);
+        }
+        const body = this.parseBody(context.event);
+        const { title, description, imageUrl, linkUrl, position, priority, startDate, endDate, isActive, ctaText, } = body;
+        try {
+            const updateData = {};
+            if (title !== undefined)
+                updateData.title = title;
+            if (description !== undefined)
+                updateData.description = description;
+            if (imageUrl !== undefined)
+                updateData.image_url = imageUrl;
+            if (linkUrl !== undefined)
+                updateData.link_url = linkUrl;
+            if (position !== undefined)
+                updateData.position = position;
+            if (priority !== undefined)
+                updateData.priority = priority;
+            if (startDate !== undefined)
+                updateData.start_date = startDate ? new Date(startDate) : null;
+            if (endDate !== undefined)
+                updateData.end_date = endDate ? new Date(endDate) : null;
+            if (isActive !== undefined)
+                updateData.is_active = isActive;
+            if (ctaText !== undefined)
+                updateData.cta_text = ctaText;
+            updateData.updated_at = new Date().toISOString();
+            await (0, rds_connection_1.update)('banners', { id: bannerId }, updateData);
+            // Publish banner change event
+            await (0, aws_clients_1.publishToSNS)('banner-change', {
+                action: 'update',
+                bannerId,
+                position: position || undefined,
+            });
+            const updated = await (0, rds_connection_1.select)('banners', { id: bannerId });
+            return this.success({
+                banner: updated[0],
+                message: 'Banner updated successfully',
+            });
+        }
+        catch (error) {
+            console.error('Error updating banner:', error);
+            return this.error(`Failed to update banner: ${error.message}`, 500);
+        }
+    }
+}
+class DeleteBannerHandler extends base_handler_1.BaseHandler {
+    async handle(context) {
+        const bannerId = context.event.pathParameters?.id;
+        if (!bannerId) {
+            return this.error('Banner ID is required', 400);
+        }
+        try {
+            const banner = await (0, rds_connection_1.select)('banners', { id: bannerId });
+            if (banner.length === 0) {
+                return this.error('Banner not found', 404);
+            }
+            await (0, rds_connection_1.deleteRows)('banners', { id: bannerId });
+            // Publish banner change event
+            await (0, aws_clients_1.publishToSNS)('banner-change', {
+                action: 'delete',
+                bannerId,
+                position: banner[0].position,
+            });
+            return this.success({
+                message: 'Banner deleted successfully',
+            });
+        }
+        catch (error) {
+            console.error('Error deleting banner:', error);
+            return this.error(`Failed to delete banner: ${error.message}`, 500);
+        }
+    }
+}
 // ============================================================================
 // HONO ROUTER SETUP
 // ============================================================================
@@ -409,6 +487,8 @@ function registerAdminGovernanceEnhancedEndpoints(app) {
     const calculateTaxHandler = new CalculateTaxHandler();
     const getBannersHandler = new GetBannersHandler();
     const createBannerHandler = new CreateBannerHandler();
+    const updateBannerHandler = new UpdateBannerHandler();
+    const deleteBannerHandler = new DeleteBannerHandler();
     // Capability refresh
     app.post('/admin/capabilities/refresh', async (c) => {
         const event = createApiGatewayEvent(c.req);
@@ -449,6 +529,20 @@ function registerAdminGovernanceEnhancedEndpoints(app) {
         const event = createApiGatewayEvent(c.req);
         const context = createLambdaContext();
         const result = await createBannerHandler.execute(event, context);
+        return c.json(JSON.parse(result.body), result.statusCode);
+    });
+    app.put('/admin/banners/:id', async (c) => {
+        const event = createApiGatewayEvent(c.req);
+        event.pathParameters = { id: c.req.param('id') };
+        const context = createLambdaContext();
+        const result = await updateBannerHandler.execute(event, context);
+        return c.json(JSON.parse(result.body), result.statusCode);
+    });
+    app.delete('/admin/banners/:id', async (c) => {
+        const event = createApiGatewayEvent(c.req);
+        event.pathParameters = { id: c.req.param('id') };
+        const context = createLambdaContext();
+        const result = await deleteBannerHandler.execute(event, context);
         return c.json(JSON.parse(result.body), result.statusCode);
     });
 }

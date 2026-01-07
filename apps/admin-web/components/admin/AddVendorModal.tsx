@@ -168,19 +168,19 @@ export function AddVendorModal({ isOpen, onClose, onSuccess }: AddVendorModalPro
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+        <div className="bg-white border-b border-gray-200 px-0 py-4 flex items-center justify-between">
           <div>
-            <h2 className="text-lg mb-1">Add New Vendor</h2>
+            <h2 className="text-lg mb-0">Add New Vendor</h2>
             <p className="text-sm text-gray-500">Step {currentStep} of 5</p>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg">
+          <button onClick={onClose} className="p-0 hover:bg-gray-100 rounded-lg">
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Progress Bar */}
-        <div className="px-6 py-4 bg-gray-50">
-          <div className="flex items-center gap-2">
+        <div className="px-0 py-4 bg-gray-50">
+          <div className="flex items-center gap-0">
             {[1, 2, 3, 4, 5].map((step) => (
               <div key={step} className="flex-1">
                 <div className={`h-2 rounded-full ${step <= currentStep ? 'bg-[#FF8C42]' : 'bg-gray-200'}`} />
@@ -190,14 +190,14 @@ export function AddVendorModal({ isOpen, onClose, onSuccess }: AddVendorModalPro
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-0">
           {/* Step 1: Basic Information */}
           {currentStep === 1 && (
             <div className="space-y-4">
               <h3 className="text-sm mb-4">Basic Information</h3>
               
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Business Name *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-0">Business Name *</label>
                 <Input
                   value={formData.businessName}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleChange('businessName', e.target.value)}
@@ -206,7 +206,7 @@ export function AddVendorModal({ isOpen, onClose, onSuccess }: AddVendorModalPro
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Owner Name *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-0">Owner Name *</label>
                 <Input
                   value={formData.ownerName}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleChange('ownerName', e.target.value)}
@@ -216,7 +216,7 @@ export function AddVendorModal({ isOpen, onClose, onSuccess }: AddVendorModalPro
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Email Address *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-0">Email Address *</label>
                   <Input
                     type="email"
                     value={formData.email}
@@ -225,7 +225,7 @@ export function AddVendorModal({ isOpen, onClose, onSuccess }: AddVendorModalPro
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-0">Phone Number *</label>
                   <Input
                     type="tel"
                     value={formData.phone}
@@ -243,8 +243,8 @@ export function AddVendorModal({ isOpen, onClose, onSuccess }: AddVendorModalPro
               <h3 className="text-sm mb-4">Business Details</h3>
               
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Role/Category *</label>
-                <select value={formData.roleId} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => handleChange('roleId', e.target.value)} className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none">
+                <label className="block text-sm font-medium text-gray-700 mb-0">Role/Category *</label>
+                <select value={formData.roleId} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => handleChange('roleId', e.target.value)} className="w-full px-4 py-0 border border-gray-200 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none">
                   <option value="">Select role</option>
                   {availableRoles.map((role) => (
                     <option key={role.id} value={role.id}>
@@ -255,7 +255,7 @@ export function AddVendorModal({ isOpen, onClose, onSuccess }: AddVendorModalPro
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Experience *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-0">Experience *</label>
                 <Input
                   value={formData.experience}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleChange('experience', e.target.value)}
@@ -271,7 +271,7 @@ export function AddVendorModal({ isOpen, onClose, onSuccess }: AddVendorModalPro
               <h3 className="text-sm mb-4">Location & Address</h3>
               
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Address *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-0">Address *</label>
                 <Input
                   value={formData.address}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleChange('address', e.target.value)}
@@ -281,7 +281,7 @@ export function AddVendorModal({ isOpen, onClose, onSuccess }: AddVendorModalPro
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">City *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-0">City *</label>
                   <Input
                     value={formData.city}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleChange('city', e.target.value)}
@@ -289,7 +289,7 @@ export function AddVendorModal({ isOpen, onClose, onSuccess }: AddVendorModalPro
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">State *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-0">State *</label>
                   <Input
                     value={formData.state}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleChange('state', e.target.value)}
@@ -299,7 +299,7 @@ export function AddVendorModal({ isOpen, onClose, onSuccess }: AddVendorModalPro
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Pincode *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-0">Pincode *</label>
                 <Input
                   value={formData.pincode}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleChange('pincode', e.target.value)}
@@ -315,7 +315,7 @@ export function AddVendorModal({ isOpen, onClose, onSuccess }: AddVendorModalPro
               <h3 className="text-sm mb-4">Banking Details</h3>
               
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Bank Name *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-0">Bank Name *</label>
                 <Input
                   value={formData.bankName}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleChange('bankName', e.target.value)}
@@ -324,7 +324,7 @@ export function AddVendorModal({ isOpen, onClose, onSuccess }: AddVendorModalPro
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Account Number *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-0">Account Number *</label>
                 <Input
                   value={formData.accountNumber}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleChange('accountNumber', e.target.value)}
@@ -334,7 +334,7 @@ export function AddVendorModal({ isOpen, onClose, onSuccess }: AddVendorModalPro
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">IFSC Code *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-0">IFSC Code *</label>
                   <Input
                     value={formData.ifscCode}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleChange('ifscCode', e.target.value)}
@@ -342,7 +342,7 @@ export function AddVendorModal({ isOpen, onClose, onSuccess }: AddVendorModalPro
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Account Holder Name *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-0">Account Holder Name *</label>
                   <Input
                     value={formData.accountHolderName}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleChange('accountHolderName', e.target.value)}
@@ -360,8 +360,8 @@ export function AddVendorModal({ isOpen, onClose, onSuccess }: AddVendorModalPro
               
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Tier</label>
-                  <select value={formData.tier} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => handleChange('tier', e.target.value)} className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none">
+                  <label className="block text-sm font-medium text-gray-700 mb-0">Tier</label>
+                  <select value={formData.tier} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => handleChange('tier', e.target.value)} className="w-full px-4 py-0 border border-gray-200 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none">
                       <option value="">Select tier</option>
                       <option value="Bronze">Bronze</option>
                       <option value="Silver">Silver</option>
@@ -370,7 +370,7 @@ export function AddVendorModal({ isOpen, onClose, onSuccess }: AddVendorModalPro
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Commission %</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-0">Commission %</label>
                   <Input
                     value={formData.commission}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleChange('commission', e.target.value)}
@@ -383,12 +383,12 @@ export function AddVendorModal({ isOpen, onClose, onSuccess }: AddVendorModalPro
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
+        <div className="px-0 py-4 border-t border-gray-200 flex items-center justify-between">
           <Button variant="outline" onClick={prevStep} disabled={currentStep === 1}>
             Previous
           </Button>
           
-          <div className="flex gap-2">
+          <div className="flex gap-0">
             {currentStep < 5 ? (
               <Button onClick={nextStep} disabled={!canProceed()}>
                 Next

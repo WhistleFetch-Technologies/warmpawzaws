@@ -60,7 +60,7 @@ export function SystemHealthTab() {
   return (
     <div className="space-y-4">
       <div className="bg-white rounded-lg border-2 border-gray-200 p-4">
-        <div className="flex items-center gap-2 mb-4">
+        <div className="flex items-center gap-0 mb-4">
           <Activity className="w-5 h-5 text-orange-600" />
           <h2 className="text-lg font-semibold text-gray-900">System Status</h2>
         </div>
@@ -70,11 +70,11 @@ export function SystemHealthTab() {
       </div>
 
       <div className="bg-white rounded-lg border-2 border-gray-200 p-4">
-        <h3 className="font-semibold text-gray-900 mb-3">Services</h3>
+        <h3 className="font-semibold text-gray-900 mb-0">Services</h3>
         <div className="space-y-2">
           {health.services.map((service) => (
-            <div key={service.name} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded">
-              <div className="flex items-center gap-2">
+            <div key={service.name} className="flex items-center justify-between p-0 hover:bg-gray-50 rounded">
+              <div className="flex items-center gap-0">
                 {service.status === 'up' ? (
                   <CheckCircle className={`w-4 h-4 ${getStatusColor(service.status)}`} />
                 ) : (

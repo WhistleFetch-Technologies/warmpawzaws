@@ -205,7 +205,7 @@ export function CustomerPetsPageScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
   },
   header: {
     flexDirection: 'row',
@@ -221,16 +221,16 @@ const styles = StyleSheet.create({
   },
   backButtonText: {
     fontSize: typography.body,
-    color: '#fff',
+    color: colors.white,
   },
   title: {
     fontSize: typography.h1,
     fontWeight: 'bold',
-    color: '#fff',
+    color: colors.white,
     flex: 1,
   },
   addButton: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: borderRadius.md,
@@ -254,7 +254,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
     flexDirection: 'row',
     alignItems: 'center',
   },
@@ -262,7 +262,7 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: '#E5E7EB',
+    backgroundColor: colors.gray.200,
     overflow: 'hidden',
     marginRight: spacing.md,
   },
@@ -306,7 +306,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FCE7F3',
   },
   genderBadgeUnknown: {
-    backgroundColor: '#F3F4F6',
+    backgroundColor: colors.gray.100,
   },
   genderBadgeText: {
     fontSize: typography.caption,
@@ -360,7 +360,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
   },
   emptyStateButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: typography.body,
     fontWeight: 'bold',
   },

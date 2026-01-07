@@ -79,11 +79,11 @@ export function AddRegionModal({ onClose, onSuccess }: AddRegionModalProps) {
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg w-full max-w-md max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+        <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-0 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-900">Add Region</h2>
           <button
             onClick={onClose}
-            className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
+            className="p-0 hover:bg-gray-100 rounded-lg transition-colors"
           >
             <X className="w-5 h-5 text-gray-500" />
           </button>
@@ -93,7 +93,7 @@ export function AddRegionModal({ onClose, onSuccess }: AddRegionModalProps) {
         <div className="p-4 space-y-4">
           {/* Template Selection */}
           <div>
-            <label className="flex items-center gap-2 mb-3">
+            <label className="flex items-center gap-0 mb-0">
               <input
                 type="radio"
                 checked={useTemplate}
@@ -112,13 +112,13 @@ export function AddRegionModal({ onClose, onSuccess }: AddRegionModalProps) {
                       handleCreateFromTemplate(template.id);
                     }}
                     disabled={loading}
-                    className={`w-full p-3 border-2 rounded-lg text-left transition-colors ${
+                    className={`w-full p-0 border-2 rounded-lg text-left transition-colors ${
                       selectedTemplate === template.id
                         ? 'border-orange-500 bg-orange-50'
                         : 'border-gray-200 hover:border-gray-300'
                     } disabled:opacity-50 disabled:cursor-not-allowed`}
                   >
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-0">
                       <span className="text-2xl">{template.flag}</span>
                       <div className="flex-1">
                         <div className="font-medium text-gray-900">{template.name}</div>
@@ -135,7 +135,7 @@ export function AddRegionModal({ onClose, onSuccess }: AddRegionModalProps) {
 
           {/* Custom Region */}
           <div>
-            <label className="flex items-center gap-2 mb-3">
+            <label className="flex items-center gap-0 mb-0">
               <input
                 type="radio"
                 checked={!useTemplate}
@@ -147,53 +147,53 @@ export function AddRegionModal({ onClose, onSuccess }: AddRegionModalProps) {
             {!useTemplate && (
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-0">
                     Region Name *
                   </label>
                   <input
                     type="text"
                     value={formData.regionName}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, regionName: e.target.value }))}
-                    className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                    className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                     placeholder="e.g., Canada"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-0">
                     Region Code *
                   </label>
                   <input
                     type="text"
                     value={formData.regionCode}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, regionCode: e.target.value.toUpperCase() }))}
-                    className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                    className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                     placeholder="e.g., CA"
                     maxLength={2}
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-0">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-0">
                       Currency Code
                     </label>
                     <input
                       type="text"
                       value={formData.currencyCode}
                       onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, currencyCode: e.target.value.toUpperCase() }))}
-                      className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                      className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                       placeholder="CAD"
                       maxLength={3}
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-0">
                       Currency Symbol
                     </label>
                     <input
                       type="text"
                       value={formData.currencySymbol}
                       onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, currencySymbol: e.target.value }))}
-                      className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                      className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                       placeholder="$"
                     />
                   </div>
@@ -201,7 +201,7 @@ export function AddRegionModal({ onClose, onSuccess }: AddRegionModalProps) {
                 <button
                   onClick={handleCreateCustom}
                   disabled={loading}
-                  className="w-full py-2.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full py-0.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-0 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {loading ? (
                     <>

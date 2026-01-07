@@ -15,12 +15,12 @@ export function OperationsDashboard({ onBack }: OperationsDashboardProps) {
       <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="px-4 py-4">
           {onBack && (
-            <button onClick={onBack} className="mb-3 text-gray-600 hover:text-gray-900 flex items-center gap-2">
+            <button onClick={onBack} className="mb-0 text-gray-600 hover:text-gray-900 flex items-center gap-0">
               <ArrowLeft className="w-4 h-4" /> Back
             </button>
           )}
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-orange-100 rounded-lg">
+          <div className="flex items-center gap-0">
+            <div className="p-0 bg-orange-100 rounded-lg">
               <Activity className="w-6 h-6 text-orange-600" />
             </div>
             <div>

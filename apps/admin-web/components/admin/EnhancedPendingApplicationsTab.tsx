@@ -219,7 +219,7 @@ export function EnhancedPendingApplicationsTab({ onViewDetails }: EnhancedPendin
             <button
               key={tab.id}
               onClick={() => setActiveStatusTab(tab.id)}
-              className={`px-4 py-2 text-sm border-b-2 transition-colors ${
+              className={`px-4 py-0 text-sm border-b-2 transition-colors ${
                 activeStatusTab === tab.id
                   ? 'border-[#FF8C42] text-[#FF8C42]'
                   : 'border-transparent text-gray-600 hover:text-gray-900'
@@ -227,7 +227,7 @@ export function EnhancedPendingApplicationsTab({ onViewDetails }: EnhancedPendin
             >
               {tab.label}
               {tab.count > 0 && (
-                <span className={`ml-2 px-2 py-0.5 text-xs rounded-full ${
+                <span className={`ml-0 px-0 py-0.5 text-xs rounded-full ${
                   activeStatusTab === tab.id ? 'bg-[#FF8C42]/20' : 'bg-gray-100'
                 }`}>
                   {tab.count}
@@ -239,15 +239,15 @@ export function EnhancedPendingApplicationsTab({ onViewDetails }: EnhancedPendin
       </div>
 
       {/* Filters */}
-      <div className="mb-4 flex gap-3 items-center">
+      <div className="mb-4 flex gap-0 items-center">
         <div className="flex-1 relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+          <Search className="absolute left-3 top-0/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
           <input
             type="text"
             placeholder="Search vendors..."
             value={searchQuery}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm"
+            className="w-full pl-0 pr-4 py-0 border border-gray-300 rounded-lg text-sm"
           />
         </div>
         
@@ -276,16 +276,16 @@ export function EnhancedPendingApplicationsTab({ onViewDetails }: EnhancedPendin
         />
         
         <Button variant="outline" size="sm" onClick={loadVendors}>
-          <RefreshCw className="w-4 h-4 mr-1" />
+          <RefreshCw className="w-4 h-4 mr-0" />
           Refresh
         </Button>
       </div>
 
       {/* Vendor List */}
       {loading ? (
-        <div className="p-6 text-center text-gray-500">Loading applications...</div>
+        <div className="p-0 text-center text-gray-500">Loading applications...</div>
       ) : filteredVendors.length === 0 ? (
-        <div className="p-6 text-center text-gray-500">No applications found</div>
+        <div className="p-0 text-center text-gray-500">No applications found</div>
       ) : (
         <div className="space-y-3">
           {filteredVendors.map((vendor) => {
@@ -295,18 +295,18 @@ export function EnhancedPendingApplicationsTab({ onViewDetails }: EnhancedPendin
               <div key={vendor.id || vendor.vendorId} className="bg-white border rounded-lg p-4 hover:shadow-md transition-shadow">
                 <div className="flex items-center justify-between">
                   <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
+                    <div className="flex items-center gap-0 mb-0">
                       <h4 className="font-semibold text-gray-900">
                         {vendor.fullName || vendor.businessName || vendor.vendorName}
                       </h4>
-                      <span className={`px-2 py-1 text-xs rounded-full ${
+                      <span className={`px-0 py-0 text-xs rounded-full ${
                         vendor.priority === 'high' ? 'bg-red-100 text-red-700' :
                         vendor.priority === 'medium' ? 'bg-yellow-100 text-yellow-700' :
                         'bg-blue-100 text-blue-700'
                       }`}>
                         {vendor.priority || 'medium'}
                       </span>
-                      <span className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded-full">
+                      <span className="px-0 py-0 text-xs bg-gray-100 text-gray-700 rounded-full">
                         {vendor.category || vendor.serviceCategory || 'N/A'}
                       </span>
                     </div>
@@ -324,7 +324,7 @@ export function EnhancedPendingApplicationsTab({ onViewDetails }: EnhancedPendin
                     </div>
                   </div>
                   
-                  <div className="flex gap-2 ml-4">
+                  <div className="flex gap-0 ml-4">
                     <Button
                       size="sm"
                       variant="outline"
@@ -333,7 +333,7 @@ export function EnhancedPendingApplicationsTab({ onViewDetails }: EnhancedPendin
                         if (onViewDetails) onViewDetails(vendor);
                       }}
                     >
-                      <Eye className="w-4 h-4 mr-1" />
+                      <Eye className="w-4 h-4 mr-0" />
                       View
                     </Button>
                     
@@ -345,7 +345,7 @@ export function EnhancedPendingApplicationsTab({ onViewDetails }: EnhancedPendin
                           onClick={() => handleRequestInfo(vendor)}
                           className="text-blue-600 hover:bg-blue-50"
                         >
-                          <FileText className="w-4 h-4 mr-1" />
+                          <FileText className="w-4 h-4 mr-0" />
                           Request Info
                         </Button>
                         <Button
@@ -355,7 +355,7 @@ export function EnhancedPendingApplicationsTab({ onViewDetails }: EnhancedPendin
                           className="text-red-600 hover:bg-red-50"
                           disabled={isProcessing}
                         >
-                          <X className="w-4 h-4 mr-1" />
+                          <X className="w-4 h-4 mr-0" />
                           Reject
                         </Button>
                         <Button
@@ -364,7 +364,7 @@ export function EnhancedPendingApplicationsTab({ onViewDetails }: EnhancedPendin
                           disabled={isProcessing}
                           className="bg-green-600 hover:bg-green-700"
                         >
-                          <Check className="w-4 h-4 mr-1" />
+                          <Check className="w-4 h-4 mr-0" />
                           {isProcessing ? 'Processing...' : 'Approve'}
                         </Button>
                       </>

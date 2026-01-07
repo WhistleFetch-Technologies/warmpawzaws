@@ -66,12 +66,12 @@ export function ClarificationRequestedTab() {
   };
 
   if (loading) {
-    return <div className="p-6 text-center text-gray-500">Loading requests...</div>;
+    return <div className="p-0 text-center text-gray-500">Loading requests...</div>;
   }
 
   if (requests.length === 0) {
     return (
-      <div className="p-6 text-center">
+      <div className="p-0 text-center">
         <MessageSquare className="w-12 h-12 text-gray-400 mx-auto mb-4" />
         <p className="text-gray-500">No clarification requests pending.</p>
       </div>
@@ -79,7 +79,7 @@ export function ClarificationRequestedTab() {
   }
 
   return (
-    <div className="p-6">
+    <div className="p-0">
       <div className="space-y-4">
         {requests.map((request) => {
           const isOverdue = (request.status as any) === 'pending' && 
@@ -92,10 +92,10 @@ export function ClarificationRequestedTab() {
             >
               <div className="flex items-start justify-between">
                 <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-2">
+                  <div className="flex items-center gap-0 mb-0">
                     {isOverdue && (
                       <Badge variant="warning" className="bg-orange-200 text-orange-800">
-                        <Clock className="w-3 h-3 mr-1" />
+                        <Clock className="w-3 h-3 mr-0" />
                         Overdue
                       </Badge>
                     )}
@@ -115,33 +115,33 @@ export function ClarificationRequestedTab() {
                   
                   <h3 className="font-semibold text-gray-900">{request.vendorName}</h3>
                   <p className="text-sm text-gray-600">{request.businessName}</p>
-                  <p className="text-sm text-gray-700 mt-2">
+                  <p className="text-sm text-gray-700 mt-0">
                     <strong>Requested:</strong> {request.requestedInfo}
                   </p>
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-gray-500 mt-0">
                     {getDaysAgo(request.requestedAt)}
                   </p>
                   
                   {request.response && (
-                    <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div className="mt-0 p-0 bg-blue-50 border border-blue-200 rounded-lg">
                       <p className="text-sm text-blue-800">
                         <strong>Response:</strong> {request.response}
                       </p>
-                      <p className="text-xs text-blue-600 mt-1">
+                      <p className="text-xs text-blue-600 mt-0">
                         Responded: {new Date(request.respondedAt!).toLocaleDateString()}
                       </p>
                     </div>
                   )}
                 </div>
                 
-                <div className="flex gap-2 ml-4">
+                <div className="flex gap-0 ml-4">
                   <Button
                     size="sm"
                     variant="outline"
                     onClick={() => handleReview(request.id)}
                     disabled={request.status === 'reviewed'}
                   >
-                    <Eye className="w-4 h-4 mr-1" />
+                    <Eye className="w-4 h-4 mr-0" />
                     Review
                   </Button>
                 </div>

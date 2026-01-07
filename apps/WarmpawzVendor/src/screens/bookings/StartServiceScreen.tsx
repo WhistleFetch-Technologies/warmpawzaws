@@ -139,7 +139,7 @@ export function StartServiceScreen({
           disabled={loading || (requiresOTP && !otp.trim())}
         >
           {loading ? (
-            <ActivityIndicator color="#ffffff" />
+            <ActivityIndicator color={colors.white} />
           ) : (
             <Text style={styles.startButtonText}>
               {requiresOTP ? 'Start with OTP' : 'Start Service'}
@@ -233,7 +233,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   noOtpSection: {
-    backgroundColor: '#FFF4E6',
+    backgroundColor: colors.primary.50,
     borderWidth: 2,
     borderColor: colors.primary,
     borderRadius: borderRadius.xl,
@@ -268,7 +268,7 @@ const styles = StyleSheet.create({
   startButtonText: {
     fontSize: typography.fontSizes.md,
     fontWeight: typography.fontWeights.semibold,
-    color: '#ffffff',
+    color: colors.white,
   },
 });
 

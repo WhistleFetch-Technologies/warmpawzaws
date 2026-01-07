@@ -77,12 +77,12 @@ export function ServiceModeSelector({
   const availableOptions = supportedModes.map(mode => modeOptions[mode]);
 
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto p-6">
-      <div className="mb-6">
+    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto p-0">
+      <div className="mb-0">
         <button onClick={onBack} className="text-primary hover:underline text-sm mb-4">
           ← Back
         </button>
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">Select Service Mode</h2>
+        <h2 className="text-2xl font-bold text-gray-900 mb-0">Select Service Mode</h2>
         <p className="text-gray-600 text-sm">Choose how you'll deliver services</p>
       </div>
 
@@ -92,30 +92,30 @@ export function ServiceModeSelector({
             key={option.mode}
             type="button"
             onClick={() => onSelect(option.mode)}
-            className="w-full p-6 bg-white rounded-xl border-2 border-gray-200 hover:border-primary transition-all text-left"
+            className="w-full p-0 bg-white rounded-xl border-2 border-gray-200 hover:border-primary transition-all text-left"
           >
             <div className="flex items-start gap-4">
               <div className="flex-shrink-0">
                 {option.icon}
               </div>
               <div className="flex-1">
-                <div className="flex items-center gap-2 mb-2">
+                <div className="flex items-center gap-0 mb-0">
                   <h3 className="font-bold text-gray-900">{option.title}</h3>
                   {option.badge && (
-                    <span className="px-2 py-1 bg-orange-100 text-orange-700 rounded-full text-xs font-medium">
+                    <span className="px-0 py-0 bg-orange-100 text-orange-700 rounded-full text-xs font-medium">
                       {option.badge}
                     </span>
                   )}
                   {option.recommended && (
-                    <span className="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">
+                    <span className="px-0 py-0 bg-green-100 text-green-700 rounded-full text-xs font-medium">
                       Recommended
                     </span>
                   )}
                 </div>
-                <p className="text-sm text-gray-600 mb-3">{option.description}</p>
+                <p className="text-sm text-gray-600 mb-0">{option.description}</p>
                 <ul className="space-y-1">
                   {option.features.map((feature, idx) => (
-                    <li key={idx} className="text-xs text-gray-500 flex items-center gap-2">
+                    <li key={idx} className="text-xs text-gray-500 flex items-center gap-0">
                       <span className="w-1.5 h-1.5 bg-primary rounded-full"></span>
                       {feature}
                     </li>

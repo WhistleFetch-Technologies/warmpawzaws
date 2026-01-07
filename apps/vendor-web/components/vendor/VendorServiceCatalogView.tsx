@@ -140,7 +140,7 @@ export function VendorServiceCatalogView({
   return (
     <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
       <div className="bg-white border-b sticky top-0 z-10 p-4">
-        <div className="flex items-center gap-3 mb-4">
+        <div className="flex items-center gap-0 mb-4">
           <button onClick={onBack} className="w-8 h-8 flex items-center justify-center">
             <ArrowLeft className="w-5 h-5 text-gray-700" />
           </button>
@@ -148,22 +148,22 @@ export function VendorServiceCatalogView({
         </div>
 
         <div className="relative mb-4">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+          <Search className="absolute left-3 top-0/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
             placeholder="Search services..."
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
+            className="w-full pl-0 pr-4 py-0 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
           />
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex gap-0">
           {['all', 'at_home', 'at_center', 'tele'].map((style) => (
             <button
               key={style}
               onClick={() => setActiveStyle(style as any)}
-              className={`px-3 py-1 rounded-lg text-sm font-medium ${
+              className={`px-0 py-0 rounded-lg text-sm font-medium ${
                 activeStyle === style
                   ? 'bg-[#FF8C42] text-white'
                   : 'bg-gray-100 text-gray-600'
@@ -183,7 +183,7 @@ export function VendorServiceCatalogView({
         <div className="p-4 space-y-6">
           {Object.entries(groupedByCategory).map(([category, categoryServices]) => (
             <div key={category}>
-              <h2 className="font-semibold text-gray-900 mb-3">{category}</h2>
+              <h2 className="font-semibold text-gray-900 mb-0">{category}</h2>
               <div className="space-y-2">
                 {categoryServices.map((service) => {
                   const serviceId = service.serviceId || service.catalogId || '';
@@ -201,8 +201,8 @@ export function VendorServiceCatalogView({
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
                           <h3 className="font-semibold text-gray-900">{service.serviceName}</h3>
-                          <p className="text-sm text-gray-600 mt-1">{service.description}</p>
-                          <div className="flex items-center gap-3 mt-2">
+                          <p className="text-sm text-gray-600 mt-0">{service.description}</p>
+                          <div className="flex items-center gap-0 mt-0">
                             <span className="text-sm font-medium text-[#FF8C42]">₹{service.basePrice}</span>
                             <span className="text-xs text-gray-500">{service.duration || 30} mins</span>
                           </div>
@@ -217,7 +217,7 @@ export function VendorServiceCatalogView({
                           </div>
                         )}
                         {isEnabled && (
-                          <span className="ml-4 px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-medium">
+                          <span className="ml-4 px-0 py-0 bg-green-100 text-green-700 rounded text-xs font-medium">
                             Enabled
                           </span>
                         )}
@@ -236,7 +236,7 @@ export function VendorServiceCatalogView({
           <button
             onClick={handleAddSelected}
             disabled={adding}
-            className="w-full bg-[#FF8C42] text-white py-3 rounded-xl font-medium disabled:opacity-50"
+            className="w-full bg-[#FF8C42] text-white py-0 rounded-xl font-medium disabled:opacity-50"
           >
             {adding ? 'Adding...' : `Add ${selectedServices.size} Service${selectedServices.size > 1 ? 's' : ''}`}
           </button>

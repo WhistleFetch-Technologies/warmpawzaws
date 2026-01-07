@@ -202,15 +202,15 @@ export function MedicineDeliveryFlow({ vendorId, customerPhone, onSuccess, onCan
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center p-12">
+      <div className="flex items-center justify-center p-02">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500"></div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-4xl mx-auto p-6">
-      <h2 className="text-2xl font-bold text-gray-900 mb-6">Order Medicines</h2>
+    <div className="max-w-4xl mx-auto p-0">
+      <h2 className="text-2xl font-bold text-gray-900 mb-0">Order Medicines</h2>
 
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Search */}
@@ -220,7 +220,7 @@ export function MedicineDeliveryFlow({ vendorId, customerPhone, onSuccess, onCan
             value={searchQuery}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
             placeholder="Search medicines..."
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+            className="w-full px-4 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
           />
         </div>
 
@@ -244,17 +244,17 @@ export function MedicineDeliveryFlow({ vendorId, customerPhone, onSuccess, onCan
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-0">
                           <Pill className="text-orange-500" size={18} />
                           <span className="font-semibold text-gray-900">{medicine.name}</span>
                           {medicine.prescription_required && (
-                            <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded text-xs">
+                            <span className="px-0 py-0.5 bg-red-100 text-red-700 rounded text-xs">
                               Rx Required
                             </span>
                           )}
                         </div>
                         {medicine.brand && (
-                          <span className="text-sm text-gray-500 mt-1 block">Brand: {medicine.brand}</span>
+                          <span className="text-sm text-gray-500 mt-0 block">Brand: {medicine.brand}</span>
                         )}
                         {medicine.dosage && (
                           <span className="text-sm text-gray-500">Dosage: {medicine.dosage}</span>
@@ -267,7 +267,7 @@ export function MedicineDeliveryFlow({ vendorId, customerPhone, onSuccess, onCan
                             <p className="text-sm text-gray-500">× {quantity} = ₹{medicine.price * quantity}</p>
                           )}
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-0">
                           <button
                             type="button"
                             onClick={() => updateQuantity(medicine.id, quantity - 1)}
@@ -310,13 +310,13 @@ export function MedicineDeliveryFlow({ vendorId, customerPhone, onSuccess, onCan
 
         {/* Prescription Upload */}
         {requiresPrescription() && (
-          <div className="bg-white rounded-xl p-6 shadow-sm">
-            <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+          <div className="bg-white rounded-xl p-0 shadow-sm">
+            <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-0">
               <FileText className="text-orange-500" size={20} />
               Prescription Required
             </h3>
-            <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
-              <Upload className="mx-auto text-gray-400 mb-2" size={32} />
+            <div className="border-2 border-dashed border-gray-300 rounded-lg p-0 text-center">
+              <Upload className="mx-auto text-gray-400 mb-0" size={32} />
               <input
                 type="file"
                 accept="image/*,.pdf"
@@ -331,32 +331,32 @@ export function MedicineDeliveryFlow({ vendorId, customerPhone, onSuccess, onCan
                 {prescriptionUploaded ? '✓ Prescription Uploaded' : 'Upload Prescription'}
               </label>
               {prescriptionFile && (
-                <p className="text-sm text-gray-500 mt-2">{prescriptionFile.name}</p>
+                <p className="text-sm text-gray-500 mt-0">{prescriptionFile.name}</p>
               )}
-              <p className="text-xs text-gray-400 mt-2">Max file size: 5MB</p>
+              <p className="text-xs text-gray-400 mt-0">Max file size: 5MB</p>
             </div>
           </div>
         )}
 
         {/* Delivery Details */}
-        <div className="bg-white rounded-xl p-6 shadow-sm space-y-4">
+        <div className="bg-white rounded-xl p-1 shadow-sm space-y-4">
           <h3 className="font-semibold text-gray-900 mb-4">Delivery Details</h3>
           
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-0">
               Patient Name
             </label>
             <input
               type="text"
               value={patientName}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPatientName(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+              className="w-full px-4 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              <MapPin className="inline mr-1" size={16} />
+            <label className="block text-sm font-medium text-gray-700 mb-0">
+              <MapPin className="inline mr-0" size={16} />
               Delivery Address *
             </label>
             <textarea
@@ -365,14 +365,14 @@ export function MedicineDeliveryFlow({ vendorId, customerPhone, onSuccess, onCan
               required
               rows={3}
               placeholder="Enter complete delivery address"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+              className="w-full px-4 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                <Clock className="inline mr-1" size={16} />
+              <label className="block text-sm font-medium text-gray-700 mb-0">
+                <Clock className="inline mr-0" size={16} />
                 Delivery Date *
               </label>
               <input
@@ -381,11 +381,11 @@ export function MedicineDeliveryFlow({ vendorId, customerPhone, onSuccess, onCan
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDeliveryDate(e.target.value)}
                 min={new Date().toISOString().split('T')[0]}
                 required
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                className="w-full px-4 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-0">
                 Delivery Time *
               </label>
               <input
@@ -393,13 +393,13 @@ export function MedicineDeliveryFlow({ vendorId, customerPhone, onSuccess, onCan
                 value={deliveryTime}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDeliveryTime(e.target.value)}
                 required
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                className="w-full px-4 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-0">
               Additional Notes
             </label>
             <textarea
@@ -407,7 +407,7 @@ export function MedicineDeliveryFlow({ vendorId, customerPhone, onSuccess, onCan
               onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNotes(e.target.value)}
               rows={2}
               placeholder="Any special instructions..."
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+              className="w-full px-4 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
             />
           </div>
         </div>
@@ -419,12 +419,12 @@ export function MedicineDeliveryFlow({ vendorId, customerPhone, onSuccess, onCan
         )}
 
         {/* Actions */}
-        <div className="flex gap-3">
+        <div className="flex gap-0">
           {onCancel && (
             <button
               type="button"
               onClick={onCancel}
-              className="flex-1 px-6 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+              className="flex-1 px-0 py-0 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
             >
               Cancel
             </button>
@@ -432,7 +432,7 @@ export function MedicineDeliveryFlow({ vendorId, customerPhone, onSuccess, onCan
           <button
             type="submit"
             disabled={processing || Object.keys(selectedMedicines).length === 0}
-            className="flex-1 px-6 py-3 bg-orange-500 text-white rounded-lg font-semibold hover:bg-orange-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
+            className="flex-1 px-0 py-0 bg-orange-500 text-white rounded-lg font-semibold hover:bg-orange-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
           >
             {processing ? 'Placing Order...' : `Place Order - ₹${getTotalPrice()}`}
           </button>

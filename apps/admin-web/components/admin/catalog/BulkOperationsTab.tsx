@@ -42,8 +42,8 @@ export function BulkOperationsTab() {
 
   return (
     <div>
-      <div className="mb-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-2">Bulk Operations</h3>
+      <div className="mb-0">
+        <h3 className="text-lg font-semibold text-gray-900 mb-0">Bulk Operations</h3>
         <p className="text-sm text-gray-600">
           Perform bulk actions on multiple catalog items at once
         </p>
@@ -53,15 +53,15 @@ export function BulkOperationsTab() {
         {operations.map((operation) => (
           <div
             key={operation.id}
-            className="bg-white border rounded-lg p-6 hover:shadow-md transition-shadow cursor-pointer"
+            className="bg-white border rounded-lg p-0 hover:shadow-md transition-shadow cursor-pointer"
             onClick={() => setSelectedOperation(operation.id)}
           >
             <div className="flex items-start gap-4">
-              <div className="p-3 bg-blue-50 rounded-lg text-blue-600">
+              <div className="p-0 bg-blue-50 rounded-lg text-blue-600">
                 {operation.icon}
               </div>
               <div className="flex-1">
-                <h4 className="font-semibold text-gray-900 mb-1">{operation.name}</h4>
+                <h4 className="font-semibold text-gray-900 mb-0">{operation.name}</h4>
                 <p className="text-sm text-gray-600">{operation.description}</p>
               </div>
             </div>
@@ -70,7 +70,7 @@ export function BulkOperationsTab() {
       </div>
 
       {selectedOperation && (
-        <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+        <div className="mt-0 p-4 bg-blue-50 border border-blue-200 rounded-lg">
           <p className="text-sm text-blue-800">
             Operation "{operations.find(op => op.id === selectedOperation)?.name}" selected.
             Implementation details will be added here.

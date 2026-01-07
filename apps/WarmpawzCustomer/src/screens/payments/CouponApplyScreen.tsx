@@ -182,7 +182,7 @@ export function CouponApplyScreen({
               disabled={!couponCode || validating}
             >
               {validating ? (
-                <ActivityIndicator size="small" color="#fff" />
+                <ActivityIndicator size="small" color={colors.white} />
               ) : (
                 <Text style={styles.validateButtonText}>Validate</Text>
               )}
@@ -302,7 +302,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -335,14 +335,14 @@ const styles = StyleSheet.create({
   },
   amountLabel: {
     fontSize: 14,
-    color: '#fff',
+    color: colors.white,
     opacity: 0.9,
     marginBottom: spacing.xs,
   },
   amountValue: {
     fontSize: 32,
     fontWeight: 'bold',
-    color: '#fff',
+    color: colors.white,
   },
   section: {
     marginBottom: spacing.lg,
@@ -359,7 +359,7 @@ const styles = StyleSheet.create({
   },
   couponInput: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: borderRadius.md,
@@ -375,10 +375,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   validateButtonDisabled: {
-    backgroundColor: '#9ca3af',
+    backgroundColor: colors.gray.400,
   },
   validateButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 14,
     fontWeight: '600',
   },
@@ -423,7 +423,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   removeButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 18,
     fontWeight: 'bold',
   },
@@ -458,7 +458,7 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   couponCard: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: spacing.md,
@@ -471,7 +471,7 @@ const styles = StyleSheet.create({
   couponCardSelected: {
     borderColor: colors.primary,
     borderWidth: 2,
-    backgroundColor: '#fff7ed',
+    backgroundColor: colors.primary.50,
   },
   couponHeader: {
     flexDirection: 'row',
@@ -499,7 +499,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
   },
   couponDiscountText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 14,
     fontWeight: 'bold',
   },
@@ -526,7 +526,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   applyButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 18,
     fontWeight: 'bold',
   },

@@ -269,7 +269,7 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: typography.fontSizes.xs,
     fontWeight: typography.fontWeights.medium,
-    color: '#ffffff',
+    color: colors.white,
   },
   payoutDate: {
     fontSize: typography.fontSizes.sm,

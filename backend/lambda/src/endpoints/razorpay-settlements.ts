@@ -374,15 +374,71 @@ class ProcessSettlementHandler extends BaseHandler {
   }
 
   private async getTierCommission(vendorId: string): Promise<number> {
-    const result = await query(`
-      SELECT t.commission_rate
-      FROM vendors v
-      JOIN tiers t ON v.tier = t.name
-      WHERE v.id = $1
-    `, [vendorId]);
+    try {
+      // First, try to get from vendor_tier_subscriptions (active subscription)
+      const subscriptionResult = await query(`
+        SELECT vt.commission_rate
+        FROM vendor_tier_subscriptions vts
+        JOIN vendor_tiers vt ON vts.tier_id = vt.id
+        WHERE vts.vendor_id = $1
+          AND vts.status = 'active'
+          AND vts.expires_at > NOW()
+        ORDER BY vts.created_at DESC
+        LIMIT 1
+      `, [vendorId]);
 
-    const rows = Array.isArray(result) ? result : (result as any).rows || [];
-    return rows[0]?.commission_rate || 15; // Default 15% commission
+      const subscriptionRows = Array.isArray(subscriptionResult) 
+        ? subscriptionResult 
+        : (subscriptionResult as any).rows || [];
+
+      if (subscriptionRows.length > 0 && subscriptionRows[0].commission_rate) {
+        return parseFloat(subscriptionRows[0].commission_rate);
+      }
+
+      // If no active subscription, get vendor's current tier from vendors table
+      const vendors = await select('vendors', { id: vendorId });
+      if (vendors.length > 0 && vendors[0].tier) {
+        const tierResult = await query(`
+          SELECT commission_rate
+          FROM vendor_tiers
+          WHERE tier_name = $1 AND is_active = true
+          LIMIT 1
+        `, [vendors[0].tier]);
+
+        const tierRows = Array.isArray(tierResult) 
+          ? tierResult 
+          : (tierResult as any).rows || [];
+
+        if (tierRows.length > 0 && tierRows[0].commission_rate) {
+          return parseFloat(tierRows[0].commission_rate);
+        }
+      }
+
+      // Get default tier (Bronze or is_default = true)
+      const defaultTierResult = await query(`
+        SELECT commission_rate
+        FROM vendor_tiers
+        WHERE (is_default = true OR tier_name = 'Bronze')
+          AND is_active = true
+        ORDER BY is_default DESC, tier_level ASC
+        LIMIT 1
+      `);
+
+      const defaultRows = Array.isArray(defaultTierResult) 
+        ? defaultTierResult 
+        : (defaultTierResult as any).rows || [];
+
+      if (defaultRows.length > 0 && defaultRows[0].commission_rate) {
+        return parseFloat(defaultRows[0].commission_rate);
+      }
+
+      // Fallback to 15% if no tier found
+      return 15.0;
+    } catch (error) {
+      console.error('Error getting vendor tier commission:', error);
+      // Fallback to 15% on error
+      return 15.0;
+    }
   }
 }
 

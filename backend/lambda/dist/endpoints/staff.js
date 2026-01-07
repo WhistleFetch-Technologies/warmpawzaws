@@ -50,6 +50,7 @@ function registerStaffEndpoints(app) {
             const maxDistance = parseFloat(c.req.query('maxDistance') || '50');
             const serviceId = c.req.query('serviceId');
             const vendorId = c.req.query('vendorId');
+            const customerId = c.req.query('customerId'); // For previous provider prioritization
             if (!roleId) {
                 return c.json({ error: 'roleId is required' }, 400);
             }
@@ -144,13 +145,59 @@ function registerStaffEndpoints(app) {
                         };
                     }
                 }));
-                // Sort by commute time (shortest first), then by distance
+                // Get previous providers for this customer (if customerId provided)
+                let previousProviders = [];
+                if (customerId) {
+                    try {
+                        const previousBookings = await (0, rds_connection_1.query)(`
+              SELECT DISTINCT staff_id
+              FROM bookings
+              WHERE customer_id = $1
+              AND staff_id IS NOT NULL
+              AND status IN ('completed', 'confirmed')
+              ORDER BY created_at DESC
+              LIMIT 10
+            `, [customerId]);
+                        previousProviders = previousBookings.rows.map((r) => r.staff_id).filter(Boolean);
+                        // Get feedback/ratings for previous providers
+                        const feedback = await (0, rds_connection_1.query)(`
+              SELECT staff_id, AVG(rating) as avg_rating
+              FROM reviews
+              WHERE staff_id = ANY($1)
+              AND rating IS NOT NULL
+              GROUP BY staff_id
+            `, [previousProviders.length > 0 ? previousProviders : ['']]);
+                        const badProviders = feedback.rows
+                            .filter((f) => f.avg_rating < 3.0)
+                            .map((f) => f.staff_id);
+                        // Remove bad providers from previous providers list
+                        previousProviders = previousProviders.filter(id => !badProviders.includes(id));
+                    }
+                    catch (error) {
+                        console.warn('Error fetching previous providers:', error);
+                    }
+                }
+                // Sort: Previous providers first, then by commute time, then by distance
                 eligibleStaff = staffWithCommuteTime.sort((a, b) => {
+                    const aIsPrevious = previousProviders.includes(a.id);
+                    const bIsPrevious = previousProviders.includes(b.id);
+                    // Previous providers get priority
+                    if (aIsPrevious && !bIsPrevious)
+                        return -1;
+                    if (!aIsPrevious && bIsPrevious)
+                        return 1;
+                    // If both or neither are previous, sort by commute time
                     if (a.commuteTime !== b.commuteTime) {
                         return a.commuteTime - b.commuteTime;
                     }
+                    // Then by distance
                     return a.distance - b.distance;
                 });
+                // Mark previous providers
+                eligibleStaff = eligibleStaff.map((staff) => ({
+                    ...staff,
+                    isPreviousProvider: previousProviders.includes(staff.id),
+                }));
             }
             else if (serviceStyle === 'at_center') {
                 // Filter staff available at center

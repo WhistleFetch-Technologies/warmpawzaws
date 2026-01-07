@@ -139,11 +139,11 @@ export function CustomerSettings({ customerPhone }: CustomerSettingsProps) {
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 py-6 space-y-6">
+      <main className="max-w-4xl mx-auto px-4 py-0 space-y-6">
         {/* Notification Settings */}
         <section className="bg-white rounded-2xl shadow-sm overflow-hidden">
           <div className="p-4 border-b">
-            <h2 className="text-lg font-semibold flex items-center gap-2">
+            <h2 className="text-lg font-semibold flex items-center gap-0">
               <span className="text-2xl">🔔</span> Notifications
             </h2>
           </div>
@@ -192,7 +192,7 @@ export function CustomerSettings({ customerPhone }: CustomerSettingsProps) {
               <button
                 onClick={handleRegisterDevice}
                 disabled={saving}
-                className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium disabled:opacity-50"
+                className="w-full py-0 bg-orange-500 text-white rounded-lg font-medium disabled:opacity-50"
               >
                 {saving ? 'Registering...' : '📱 Enable Push on This Device'}
               </button>
@@ -203,7 +203,7 @@ export function CustomerSettings({ customerPhone }: CustomerSettingsProps) {
         {/* Account Settings */}
         <section className="bg-white rounded-2xl shadow-sm overflow-hidden">
           <div className="p-4 border-b">
-            <h2 className="text-lg font-semibold flex items-center gap-2">
+            <h2 className="text-lg font-semibold flex items-center gap-0">
               <span className="text-2xl">👤</span> Account
             </h2>
           </div>
@@ -226,7 +226,7 @@ export function CustomerSettings({ customerPhone }: CustomerSettingsProps) {
         {/* Support */}
         <section className="bg-white rounded-2xl shadow-sm overflow-hidden">
           <div className="p-4 border-b">
-            <h2 className="text-lg font-semibold flex items-center gap-2">
+            <h2 className="text-lg font-semibold flex items-center gap-0">
               <span className="text-2xl">❓</span> Support
             </h2>
           </div>
@@ -281,7 +281,7 @@ function SettingToggle({
         <p className="text-sm text-gray-500">{description}</p>
       </div>
       <div
-        className={`w-12 h-7 rounded-full p-1 transition ${
+        className={`w-12 h-7 rounded-full p-0 transition ${
           enabled ? 'bg-orange-500' : 'bg-gray-200'
         }`}
       >

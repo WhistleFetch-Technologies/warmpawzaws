@@ -252,7 +252,7 @@ const styles = StyleSheet.create({
   actionButtonText: {
     fontSize: typography.fontSizes.md,
     fontWeight: typography.fontWeights.semibold,
-    color: '#ffffff',
+    color: colors.white,
   },
   saveButton: {
     backgroundColor: colors.primary,
@@ -265,7 +265,7 @@ const styles = StyleSheet.create({
   saveButtonText: {
     fontSize: typography.fontSizes.md,
     fontWeight: typography.fontWeights.semibold,
-    color: '#ffffff',
+    color: colors.white,
   },
 });
 

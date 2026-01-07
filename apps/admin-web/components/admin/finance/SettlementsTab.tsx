@@ -50,15 +50,15 @@ export function SettlementsTab() {
         <div key={settlement.id} className="bg-white rounded-lg border-2 border-gray-200 p-4">
           <div className="flex items-start justify-between">
             <div className="flex-1">
-              <div className="flex items-center gap-2 mb-1">
+              <div className="flex items-center gap-0 mb-0">
                 <DollarSign className="w-4 h-4 text-gray-400" />
                 <span className="font-semibold text-gray-900">{settlement.vendorName}</span>
               </div>
               <p className="text-sm text-gray-600">
                 {settlement.currency} {settlement.amount.toFixed(2)}
               </p>
-              <p className="text-xs text-gray-500 mt-1">Period: {settlement.period}</p>
-              <span className={`inline-block mt-2 text-xs px-2 py-1 rounded ${
+              <p className="text-xs text-gray-500 mt-0">Period: {settlement.period}</p>
+              <span className={`inline-block mt-0 text-xs px-0 py-0 rounded ${
                 settlement.status === 'processed' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
               }`}>
                 {settlement.status}

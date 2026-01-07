@@ -1,0 +1,82 @@
+'use client';
+
+import React, { useState } from 'react';
+import { Layers, Plus, Save, Loader2 } from 'lucide-react';
+import { apiClient } from '@/lib/api-client';
+
+export function OnboardingDesigner() {
+  const [saving, setSaving] = useState(false);
+  const [steps, setSteps] = useState([
+    { id: '1', title: 'Welcome', description: 'Introduction to the platform' },
+    { id: '2', title: 'Profile Setup', description: 'Complete your profile' },
+    { id: '3', title: 'Services', description: 'Add your services' },
+  ]);
+
+  const handleSave = async () => {
+    try {
+      setSaving(true);
+      const data = await apiClient.put<any>('/admin/onboarding/design', { steps });
+      if (data.success) {
+        alert('Onboarding flow saved successfully');
+      } else {
+        alert(data.error || 'Failed to save onboarding flow');
+      }
+    } catch (error) {
+      console.error('Error saving onboarding:', error);
+      alert('An error occurred');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="p-3 bg-indigo-100 rounded-xl">
+            <Layers className="w-6 h-6 text-indigo-600" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Onboarding Designer</h1>
+            <p className="text-sm text-gray-600">Design vendor onboarding flow</p>
+          </div>
+        </div>
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50"
+        >
+          {saving ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Saving...
+            </>
+          ) : (
+            <>
+              <Save className="w-4 h-4" />
+              Save Flow
+            </>
+          )}
+        </button>
+      </div>
+
+      <div className="bg-white rounded-xl border-2 border-gray-200 p-6">
+        <div className="space-y-4">
+          {steps.map((step, index) => (
+            <div key={step.id} className="p-4 border-2 border-gray-200 rounded-lg">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-orange-100 text-orange-600 rounded-full flex items-center justify-center font-semibold">
+                  {index + 1}
+                </div>
+                <div className="flex-1">
+                  <p className="font-medium text-gray-900">{step.title}</p>
+                  <p className="text-sm text-gray-600">{step.description}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}

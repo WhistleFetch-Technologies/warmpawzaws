@@ -56,7 +56,7 @@ export function RateServiceModal({
         photos: []
       };
 
-      const response = await apiClient.post<any>('/reviews/create', payload);
+      const response = await apiClient.post<any>('/reviews', payload);
 
       if (response.success || response.reviewId) {
         alert('Review submitted successfully!');
@@ -86,9 +86,9 @@ export function RateServiceModal({
     const [hover, setHover] = useState(0);
     
     return (
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-0">
         {label && <span className="text-sm text-gray-600">{label}</span>}
-        <div className="flex gap-1">
+        <div className="flex gap-0">
           {[1, 2, 3, 4, 5].map((star) => (
             <button
               key={star}
@@ -121,7 +121,7 @@ export function RateServiceModal({
         style={{ animation: 'slideUp 0.3s ease-out' }}
       >
         {/* Header */}
-        <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between rounded-t-[32px] z-10">
+        <div className="sticky top-0 bg-white border-b border-gray-200 px-0 py-4 flex items-center justify-between rounded-t-[32px] z-10">
           <h2 className="font-bold text-gray-800">Rate Service</h2>
           <button
             onClick={onClose}
@@ -131,10 +131,10 @@ export function RateServiceModal({
           </button>
         </div>
 
-        <div className="p-6 space-y-6">
+        <div className="p-0 space-y-6">
           {/* Vendor Info */}
           <div className="text-center">
-            <h3 className="font-semibold text-lg mb-1">{vendorName}</h3>
+            <h3 className="font-semibold text-lg mb-0">{vendorName}</h3>
             <p className="text-sm text-gray-600">How was your experience?</p>
           </div>
 
@@ -145,7 +145,7 @@ export function RateServiceModal({
               onChange={setRating}
               size="lg"
             />
-            <p className="text-sm text-gray-600 mt-2">
+            <p className="text-sm text-gray-600 mt-0">
               {rating === 0 ? 'Tap to rate' :
                rating === 1 ? 'Poor' :
                rating === 2 ? 'Fair' :
@@ -181,11 +181,11 @@ export function RateServiceModal({
 
           {/* Review Text */}
           <div>
-            <label className="block text-sm font-medium mb-2">Write a review (optional)</label>
+            <label className="block text-sm font-medium mb-0">Write a review (optional)</label>
             <textarea
               value={review}
               onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setReview(e.target.value)}
-              className="w-full p-3 border border-gray-300 rounded-lg"
+              className="w-full p-0 border border-gray-300 rounded-lg"
               rows={4}
               placeholder="Share your experience..."
             />
@@ -193,11 +193,11 @@ export function RateServiceModal({
 
           {/* Would Recommend */}
           <div>
-            <label className="block text-sm font-medium mb-2">Would you recommend this service?</label>
-            <div className="flex gap-3">
+            <label className="block text-sm font-medium mb-0">Would you recommend this service?</label>
+            <div className="flex gap-0">
               <button
                 onClick={() => setWouldRecommend(true)}
-                className={`flex-1 px-4 py-2 rounded-lg border-2 ${
+                className={`flex-1 px-4 py-0 rounded-lg border-2 ${
                   wouldRecommend === true ? 'border-primary bg-orange-50' : 'border-gray-200'
                 }`}
               >
@@ -205,7 +205,7 @@ export function RateServiceModal({
               </button>
               <button
                 onClick={() => setWouldRecommend(false)}
-                className={`flex-1 px-4 py-2 rounded-lg border-2 ${
+                className={`flex-1 px-4 py-0 rounded-lg border-2 ${
                   wouldRecommend === false ? 'border-red-500 bg-red-50' : 'border-gray-200'
                 }`}
               >

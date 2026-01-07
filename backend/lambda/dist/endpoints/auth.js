@@ -143,7 +143,31 @@ class VerifyOtpHandler extends base_handler_1.BaseHandler {
         if (!phone || !otp) {
             return this.error('Phone and OTP are required', 400);
         }
-        const isValid = await verifyOtp(phone, otp);
+        // Check UAT mode - accept 123456 without database check
+        const UAT_MODE = process.env.UAT_MODE === 'true' || process.env.NODE_ENV === 'development';
+        let isValid = false;
+        if (UAT_MODE && otp === '123456') {
+            // In UAT mode, accept 123456 without checking database
+            console.log(`[AUTH] UAT MODE: Accepting fixed OTP 123456 for ${phone}`);
+            isValid = true;
+            // Try to mark any existing OTP as used to clean up
+            try {
+                const records = await (0, rds_connection_1.select)('otp_tokens', {
+                    phone,
+                    is_used: false,
+                });
+                if (records.length > 0) {
+                    await (0, rds_connection_1.query)('UPDATE otp_tokens SET is_used = true, used_at = NOW() WHERE id = $1', [records[0].id]);
+                }
+            }
+            catch (e) {
+                console.warn('[AUTH] Could not mark existing OTP as used:', e);
+            }
+        }
+        else {
+            // Normal verification
+            isValid = await verifyOtp(phone, otp);
+        }
         if (!isValid) {
             return this.error('Invalid or expired OTP', 401);
         }

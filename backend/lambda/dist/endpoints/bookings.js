@@ -202,9 +202,31 @@ class CreateBookingHandler extends base_handler_1.BaseHandler {
                                     latitude: parseFloat(addressObj.latitude),
                                     longitude: parseFloat(addressObj.longitude),
                                 };
+                                // Get buffer time from vendor settings (default 5 minutes)
+                                let bufferMinutes = 5;
+                                try {
+                                    const vendorSettings = await (0, rds_connection_1.query)(`
+                    SELECT buffer_time_minutes, service_style_buffer_times
+                    FROM vendor_settings
+                    WHERE vendor_id = $1
+                  `, [vendorId]);
+                                    if (vendorSettings.rows.length > 0) {
+                                        const settings = vendorSettings.rows[0];
+                                        // Check service-style specific buffer, fallback to general buffer
+                                        if (settings.service_style_buffer_times && typeof settings.service_style_buffer_times === 'object') {
+                                            bufferMinutes = settings.service_style_buffer_times[serviceType] || settings.buffer_time_minutes || 5;
+                                        }
+                                        else {
+                                            bufferMinutes = settings.buffer_time_minutes || 5;
+                                        }
+                                    }
+                                }
+                                catch (error) {
+                                    console.warn('Error fetching buffer time, using default:', error);
+                                }
                                 const commuteResult = await (0, commute_time_calculator_1.calculateStaffETA)(staffId, customerLocation, bookingDateTime, {
                                     googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY,
-                                    bufferMinutes: 5, // 5 minute buffer
+                                    bufferMinutes, // Dynamic buffer from vendor settings
                                 });
                                 // Store commute time in notes (or add to booking metadata if column exists)
                                 const commuteInfo = `Commute: ${commuteResult.durationMinutes}min, Distance: ${commuteResult.distanceKm}km`;

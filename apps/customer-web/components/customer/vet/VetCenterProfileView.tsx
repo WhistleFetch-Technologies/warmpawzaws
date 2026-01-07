@@ -117,7 +117,7 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
       <div className="min-h-screen bg-white flex items-center justify-center max-w-[430px] mx-auto">
         <div className="text-center">
           <p className="text-gray-600">Vet clinic not found</p>
-          <button onClick={onBack} className="mt-4 px-4 py-2 bg-primary text-white rounded-lg">
+          <button onClick={onBack} className="mt-4 px-4 py-0 bg-primary text-white rounded-lg">
             Go Back
           </button>
         </div>
@@ -137,7 +137,7 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
           {hasPhotos ? (
             <div className="relative h-64 bg-gray-200">
               <img src={photos[selectedPhotoIndex]} alt={centerName} className="w-full h-full object-cover" />
-              <div className="absolute bottom-3 right-3 bg-black/70 backdrop-blur-sm text-white px-3 py-1 rounded-full text-sm">
+              <div className="absolute bottom-0 right-3 bg-black/70 backdrop-blur-sm text-white px-0 py-0 rounded-full text-sm">
                 {selectedPhotoIndex + 1} / {photos.length}
               </div>
             </div>
@@ -154,7 +154,7 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
             <ArrowLeft className="w-5 h-5 text-gray-700" />
           </button>
 
-          <div className="absolute top-4 right-4 flex gap-2">
+          <div className="absolute top-4 right-4 flex gap-0">
             <button
               onClick={() => setIsFavorite(!isFavorite)}
               className="w-10 h-10 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center shadow-lg"
@@ -172,19 +172,19 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
 
         {/* Clinic Info Header */}
         <div className="p-4 border-b border-gray-100">
-          <div className="flex items-start justify-between mb-3">
+          <div className="flex items-start justify-between mb-0">
             <div className="flex-1">
-              <h1 className="text-2xl font-bold text-gray-900 mb-1">{centerName}</h1>
-              <p className="text-sm text-gray-600 mb-2">{facility.address || center.address}</p>
+              <h1 className="text-2xl font-bold text-gray-900 mb-0">{centerName}</h1>
+              <p className="text-sm text-gray-600 mb-0">{facility.address || center.address}</p>
               
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-1">
+              <div className="flex items-center gap-0">
+                <div className="flex items-center gap-0">
                   <Star className="w-5 h-5 fill-amber-500 text-amber-500" />
                   <span className="font-semibold text-lg">{rating?.averageRating?.toFixed(1) || '4.5'}</span>
                   <span className="text-sm text-gray-500">({rating?.totalReviews || 0} reviews)</span>
                 </div>
                 {facility.isPremium && (
-                  <span className="px-2 py-1 bg-amber-100 text-amber-700 rounded-full text-xs flex items-center gap-1">
+                  <span className="px-0 py-0 bg-amber-100 text-amber-700 rounded-full text-xs flex items-center gap-0">
                     <Award className="w-3 h-3" />
                     Premium
                   </span>
@@ -193,16 +193,16 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
-            <div className="text-center py-2 bg-gray-50 rounded-lg">
+          <div className="grid grid-cols-3 gap-0">
+            <div className="text-center py-0 bg-gray-50 rounded-lg">
               <div className="text-lg font-bold text-gray-900">{services.length}+</div>
               <div className="text-xs text-gray-500">Services</div>
             </div>
-            <div className="text-center py-2 bg-gray-50 rounded-lg">
+            <div className="text-center py-0 bg-gray-50 rounded-lg">
               <div className="text-lg font-bold text-gray-900">{facility.vets || 2}+</div>
               <div className="text-xs text-gray-500">Vets</div>
             </div>
-            <div className="text-center py-2 bg-gray-50 rounded-lg">
+            <div className="text-center py-0 bg-gray-50 rounded-lg">
               <div className="text-lg font-bold text-gray-900">24/7</div>
               <div className="text-xs text-gray-500">Emergency</div>
             </div>
@@ -215,7 +215,7 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
             <button
               key={tab}
               onClick={() => setActiveTab(tab as any)}
-              className={`flex-1 py-3 text-sm font-medium capitalize transition-colors ${
+              className={`flex-1 py-0 text-sm font-medium capitalize transition-colors ${
                 activeTab === tab
                   ? 'text-primary border-b-2 border-primary'
                   : 'text-gray-500'
@@ -231,22 +231,22 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
           {activeTab === 'overview' && (
             <div className="space-y-6">
               <div>
-                <h3 className="font-semibold text-gray-900 mb-2">About</h3>
+                <h3 className="font-semibold text-gray-900 mb-0">About</h3>
                 <p className="text-sm text-gray-600">
                   {facility.description || `${centerName} is a professional veterinary clinic offering comprehensive pet healthcare services.`}
                 </p>
               </div>
 
               <div>
-                <h3 className="font-semibold text-gray-900 mb-3">Features</h3>
-                <div className="grid grid-cols-2 gap-3">
+                <h3 className="font-semibold text-gray-900 mb-0">Features</h3>
+                <div className="grid grid-cols-2 gap-0">
                   {[
                     { icon: Stethoscope, label: 'Advanced Equipment' },
                     { icon: CheckCircle2, label: 'Certified Vets' },
                     { icon: Heart, label: 'Emergency Care' },
                     { icon: Clock, label: 'Quick Service' }
                   ].map((feature, index) => (
-                    <div key={index} className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
+                    <div key={index} className="flex items-center gap-0 p-0 bg-gray-50 rounded-lg">
                       <feature.icon className="w-5 h-5 text-primary" />
                       <span className="text-sm text-gray-700">{feature.label}</span>
                     </div>
@@ -255,24 +255,24 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
               </div>
 
               <div>
-                <h3 className="font-semibold text-gray-900 mb-3">Contact Information</h3>
+                <h3 className="font-semibold text-gray-900 mb-0">Contact Information</h3>
                 <div className="space-y-3">
-                  <div className="flex items-center gap-3 text-sm">
+                  <div className="flex items-center gap-0 text-sm">
                     <Phone className="w-5 h-5 text-gray-400" />
                     <span className="text-gray-700">{center.phone}</span>
                   </div>
-                  <div className="flex items-center gap-3 text-sm">
+                  <div className="flex items-center gap-0 text-sm">
                     <MapPin className="w-5 h-5 text-gray-400" />
                     <span className="text-gray-700">{facility.address || center.address}</span>
                   </div>
-                  <div className="flex items-center gap-3 text-sm">
+                  <div className="flex items-center gap-0 text-sm">
                     <Clock className="w-5 h-5 text-gray-400" />
                     <span className="text-gray-700">{facility.operatingHours || 'Mon-Sat: 9AM-7PM, 24/7 Emergency'}</span>
                   </div>
                 </div>
               </div>
 
-              <button className="w-full px-4 py-2 border-2 border-primary text-primary rounded-lg font-semibold hover:bg-orange-50 transition-colors flex items-center justify-center gap-2">
+              <button className="w-full px-4 py-0 border-2 border-primary text-primary rounded-lg font-semibold hover:bg-orange-50 transition-colors flex items-center justify-center gap-0">
                 <Navigation className="w-4 h-4" />
                 Get Directions
               </button>
@@ -284,22 +284,22 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
               {services.length > 0 ? (
                 services.map((service) => (
                   <div key={service.id} className="bg-white p-4 rounded-xl border border-gray-200">
-                    <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start justify-between gap-0">
                       <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
+                        <div className="flex items-center gap-0 mb-0">
                           <h4 className="font-semibold text-gray-900">{service.name}</h4>
                           {service.popular && (
-                            <span className="px-2 py-1 bg-orange-100 text-orange-700 rounded-full text-xs flex items-center gap-1">
+                            <span className="px-0 py-0 bg-orange-100 text-orange-700 rounded-full text-xs flex items-center gap-0">
                               <TrendingUp className="w-3 h-3" />
                               Popular
                             </span>
                           )}
                         </div>
                         {service.description && (
-                          <p className="text-sm text-gray-600 mb-2">{service.description}</p>
+                          <p className="text-sm text-gray-600 mb-0">{service.description}</p>
                         )}
-                        <div className="flex items-center gap-3 text-xs text-gray-500">
-                          <span className="flex items-center gap-1">
+                        <div className="flex items-center gap-0 text-xs text-gray-500">
+                          <span className="flex items-center gap-0">
                             <Clock className="w-3.5 h-3.5" />
                             {service.duration} mins
                           </span>
@@ -310,8 +310,8 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
                   </div>
                 ))
               ) : (
-                <div className="text-center py-12">
-                  <Stethoscope className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                <div className="text-center py-02">
+                  <Stethoscope className="w-12 h-12 text-gray-300 mx-auto mb-0" />
                   <p className="text-gray-500">No services available</p>
                 </div>
               )}
@@ -323,16 +323,16 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
               {reviews.length > 0 ? (
                 reviews.map((review) => (
                   <div key={review.id} className="bg-white p-4 rounded-xl border border-gray-200">
-                    <div className="flex items-start gap-3 mb-2">
+                    <div className="flex items-start gap-0 mb-0">
                       <div className="w-10 h-10 bg-gradient-to-br from-primary to-primary-dark rounded-full flex items-center justify-center text-white font-semibold">
                         {review.customerName.charAt(0)}
                       </div>
                       <div className="flex-1">
-                        <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center justify-between mb-0">
                           <h4 className="font-semibold text-gray-900">{review.customerName}</h4>
                           <span className="text-xs text-gray-500">{new Date(review.date).toLocaleDateString()}</span>
                         </div>
-                        <div className="flex items-center gap-1 mb-2">
+                        <div className="flex items-center gap-0 mb-0">
                           {[...Array(5)].map((_, i) => (
                             <Star key={i} className={`w-4 h-4 ${i < review.rating ? 'fill-amber-500 text-amber-500' : 'text-gray-300'}`} />
                           ))}
@@ -344,7 +344,7 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
                 ))
               ) : (
                 <div className="text-center py-12">
-                  <Star className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                  <Star className="w-12 h-12 text-gray-300 mx-auto mb-0" />
                   <p className="text-gray-500">No reviews yet</p>
                 </div>
               )}
@@ -356,7 +356,7 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
         <div className="fixed bottom-0 left-0 right-0 max-w-[430px] mx-auto bg-white border-t border-gray-200 p-4">
           <button
             onClick={() => onNavigate('select_service', { centerId })}
-            className="w-full py-3 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark transition-colors flex items-center justify-center gap-2"
+            className="w-full py-1 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark transition-colors flex items-center justify-center gap-0"
             disabled={services.length === 0}
           >
             <Calendar className="w-5 h-5" />

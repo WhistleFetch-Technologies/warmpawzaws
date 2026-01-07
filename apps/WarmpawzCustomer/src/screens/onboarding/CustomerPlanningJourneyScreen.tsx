@@ -805,7 +805,7 @@ export function CustomerPlanningJourneyScreen({
             disabled={!isStepValid() || loading}
           >
             {loading ? (
-              <ActivityIndicator color="#ffffff" />
+              <ActivityIndicator color={colors.white} />
             ) : (
               <Text style={styles.nextButtonText}>
                 {currentStep === 11 ? 'Complete' : 'Next →'}
@@ -898,7 +898,7 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeights.medium,
   },
   infoCard: {
-    backgroundColor: '#FFF4E6',
+    backgroundColor: colors.primary.50,
     borderWidth: 2,
     borderColor: '#FFE0B2',
     borderRadius: borderRadius.xl,
@@ -948,7 +948,7 @@ const styles = StyleSheet.create({
   },
   optionButtonSelected: {
     borderColor: colors.primary,
-    backgroundColor: '#FFF4E6',
+    backgroundColor: colors.primary.50,
   },
   optionButtonSmall: {
     width: '100%',
@@ -999,7 +999,7 @@ const styles = StyleSheet.create({
   },
   traitButtonSelected: {
     borderColor: colors.primary,
-    backgroundColor: '#FFF4E6',
+    backgroundColor: colors.primary.50,
   },
   traitText: {
     fontSize: typography.fontSizes.sm,
@@ -1028,7 +1028,7 @@ const styles = StyleSheet.create({
   },
   breedButtonSelected: {
     borderColor: colors.primary,
-    backgroundColor: '#FFF4E6',
+    backgroundColor: colors.primary.50,
   },
   breedContent: {
     flexDirection: 'row',
@@ -1129,7 +1129,7 @@ const styles = StyleSheet.create({
   },
   consText: {
     fontSize: typography.fontSizes.xs,
-    color: '#DC2626',
+    color: colors.error,
     marginBottom: spacing.xs / 2,
   },
   bestForContainer: {
@@ -1194,7 +1194,7 @@ const styles = StyleSheet.create({
   nextButtonText: {
     fontSize: typography.fontSizes.md,
     fontWeight: typography.fontWeights.semibold,
-    color: '#ffffff',
+    color: colors.white,
   },
 });
 

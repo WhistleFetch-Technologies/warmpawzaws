@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Plus, Package } from 'lucide-react';
+import { ArrowLeft, Plus, X, Package } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { VendorServiceCatalogView } from './VendorServiceCatalogView';
 import { VendorCustomServiceCreation } from './VendorCustomServiceCreation';
+import { VendorDistancePricing } from './VendorDistancePricing';
 
 interface VendorServiceManagementCompleteProps {
   vendorId: string;
@@ -27,6 +28,7 @@ export function VendorServiceManagementComplete({
   const [roleConfig, setRoleConfig] = useState<any>(null);
   const [showCustomServices, setShowCustomServices] = useState(false);
   const [showCatalogView, setShowCatalogView] = useState(false);
+  const [showDistancePricing, setShowDistancePricing] = useState(false);
 
   useEffect(() => {
     loadRoleConfiguration();
@@ -36,6 +38,7 @@ export function VendorServiceManagementComplete({
     try {
       setLoadingRoleConfig(true);
       const response = await apiClient.get<any>(`/vendor/${vendorId}/allowed-service-styles`);
+      
       if (response.success && Array.isArray(response.allowedStyles)) {
         setAllowedServiceStyles(response.allowedStyles);
         setRoleConfig(response.roleConfig);
@@ -82,7 +85,7 @@ export function VendorServiceManagementComplete({
         serviceStyle={vendorData?.serviceStyle}
         onClose={() => setShowCustomServices(false)}
         onServiceCreated={() => {
-          alert('✅ Custom service created!');
+          // Service created successfully
         }}
       />
     );
@@ -103,6 +106,15 @@ export function VendorServiceManagementComplete({
     );
   }
 
+  if (showDistancePricing) {
+    return (
+      <VendorDistancePricing
+        vendorId={vendorId}
+        onClose={() => setShowDistancePricing(false)}
+      />
+    );
+  }
+
   if (loadingRoleConfig) {
     return (
       <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto flex items-center justify-center">
@@ -115,30 +127,31 @@ export function VendorServiceManagementComplete({
   }
 
   const canCreateCustomServices = vendorData?.serviceStyle === 'at_center' || vendorData?.serviceStyle === 'both';
+  const isHomeServiceVendor = allowedServiceStyles.includes('at_home');
 
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="w-full max-w-[430px] mx-auto bg-white min-h-screen">
         <div className="p-4 bg-white border-b sticky top-0 z-10">
-          <div className="flex items-center gap-3 mb-3">
+          <div className="flex items-center gap-0 mb-0">
             <button onClick={onBack} className="w-8 h-8 flex items-center justify-center">
               <ArrowLeft className="w-5 h-5 text-gray-700" />
             </button>
             <div className="flex-1">
               <h1 className="font-semibold text-gray-900">Service Management</h1>
-              <p className="text-xs text-gray-500">{vendorData?.business_name || vendorData?.fullName}</p>
+              <p className="text-xs text-gray-500">{vendorData?.businessName || vendorData?.fullName}</p>
             </div>
           </div>
         </div>
 
         {fromStaffManagement && (
           <div className="mx-4 mt-4 p-4 bg-blue-50 border border-blue-200 rounded-xl">
-            <div className="flex items-start gap-3">
+            <div className="flex items-start gap-0">
               <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
                 <span className="text-white text-sm">ℹ️</span>
               </div>
               <div className="flex-1">
-                <h3 className="font-semibold text-blue-900 mb-1">Enable Services First</h3>
+                <h3 className="font-semibold text-blue-900 mb-0">Enable Services First</h3>
                 <p className="text-xs text-blue-800 leading-relaxed">
                   Select a service type below and enable the services you want to offer. After enabling services, click the back button to return to Staff Management and assign them to your team members.
                 </p>
@@ -147,60 +160,159 @@ export function VendorServiceManagementComplete({
           </div>
         )}
 
-        <div className="p-4 space-y-4">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900 mb-2">Select Service Type</h2>
-            <p className="text-sm text-gray-600 mb-4">Choose how you want to deliver services</p>
+        <div className="p-4">
+          <div className="mb-4">
+            <h2 className="font-semibold text-gray-900 mb-0">Select Service Type</h2>
+            <p className="text-sm text-gray-600">Choose how you want to deliver your services</p>
           </div>
 
-          {allowedServiceStyles.length === 0 ? (
-            <div className="text-center py-8">
-              <p className="text-gray-600">No service styles available for your role</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {allowedServiceStyles.map((style) => (
+          <div className="space-y-3">
+            {[
+              { value: 'at_home' as ServiceStyle, label: 'Home Services', icon: '🏠', color: 'bg-blue-50 border-blue-200 hover:bg-blue-100' },
+              { value: 'at_center' as ServiceStyle, label: 'Book at Clinic', icon: '🏥', color: 'bg-green-50 border-green-200 hover:bg-green-100' },
+              { value: 'tele' as ServiceStyle, label: 'Tele Consultation', icon: '📱', color: 'bg-purple-50 border-purple-200 hover:bg-purple-100' }
+            ]
+              .filter(type => Array.isArray(allowedServiceStyles) && allowedServiceStyles.includes(type.value))
+              .map(type => (
                 <button
-                  key={style}
-                  onClick={() => setSelectedServiceStyle(style)}
-                  className="w-full p-4 border-2 border-gray-200 rounded-xl hover:border-[#FF8C42] transition-all text-left"
+                  key={type.value}
+                  onClick={() => {
+                    if (type.value === 'at_home') {
+                      setShowDistancePricing(true);
+                    } else {
+                      // Navigate to service configuration for center/tele
+                      window.location.href = `/vendor/services?style=${type.value}`;
+                    }
+                  }}
+                  className={`w-full p-4 rounded-xl border-2 transition-all text-left ${type.color}`}
                 >
-                  <div className="flex items-start gap-3">
-                    <div className="text-3xl">{getStyleIcon(style)}</div>
+                  <div className="flex items-center gap-4">
+                    <div className="text-4xl">{type.icon}</div>
                     <div className="flex-1">
-                      <h3 className="font-semibold text-gray-900">{getStyleName(style)}</h3>
-                      <p className="text-sm text-gray-600 mt-1">{getStyleDescription(style)}</p>
+                      <h3 className="font-semibold text-gray-900">{type.label}</h3>
+                      <p className="text-xs text-gray-600 mt-0.5">{getStyleDescription(type.value)}</p>
+                    </div>
+                    <div className="text-gray-400">
+                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
                     </div>
                   </div>
                 </button>
               ))}
-            </div>
-          )}
-
-          <div className="pt-4 border-t border-gray-200">
-            <button
-              onClick={() => setShowCatalogView(true)}
-              className="w-full p-4 bg-[#FF8C42] text-white rounded-xl font-medium flex items-center justify-center gap-2"
-            >
-              <Plus className="w-5 h-5" />
-              Browse Service Catalog
-            </button>
           </div>
 
-          {canCreateCustomServices && (
-            <div className="pt-4 border-t border-gray-200">
-              <button
-                onClick={() => setShowCustomServices(true)}
-                className="w-full p-4 border-2 border-[#FF8C42] text-[#FF8C42] rounded-xl font-medium flex items-center justify-center gap-2"
-              >
-                <Package className="w-5 h-5" />
-                Create Custom Service
-              </button>
+          {(Array.isArray(allowedServiceStyles) ? allowedServiceStyles : []).length === 0 && (
+            <div className="text-center py-02">
+              <div className="w-16 h-16 bg-gray-100 rounded-full mx-auto mb-4 flex items-center justify-center">
+                <X className="w-8 h-8 text-gray-400" />
+              </div>
+              <h3 className="font-semibold text-gray-900 mb-0">No Service Styles Configured</h3>
+              <p className="text-sm text-gray-600">
+                No service styles are available for your vendor type. Please contact support.
+              </p>
             </div>
           )}
+        </div>
+
+        {canCreateCustomServices && (
+          <div className="p-4">
+            <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] rounded-2xl p-0 text-white">
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex-1">
+                  <h3 className="font-semibold mb-0 text-lg">Custom Services</h3>
+                  <p className="text-sm text-white/90 mb-4">
+                    Create your own specialized services tailored to your center's expertise
+                  </p>
+                </div>
+                <Plus className="w-6 h-6 flex-shrink-0" />
+              </div>
+              
+              <button
+                onClick={() => setShowCustomServices(true)}
+                className="w-full bg-white text-[#FF8C42] hover:bg-gray-100 font-semibold py-0 rounded-lg"
+              >
+                Manage Custom Services
+              </button>
+              
+              <p className="text-xs text-white/80 mt-0 text-center">
+                ⭐ Only available for center-based services
+              </p>
+            </div>
+          </div>
+        )}
+
+        <div className="p-4">
+          <div className="bg-gradient-to-r from-[#26C6DA] to-[#00ACC1] rounded-2xl p-0 text-white">
+            <div className="flex items-start justify-between mb-4">
+              <div className="flex-1">
+                <h3 className="font-semibold mb-0 text-lg">Service Catalog</h3>
+                <p className="text-sm text-white/90 mb-4">
+                  Browse and enable certified services from the admin catalog
+                </p>
+              </div>
+              <Package className="w-6 h-6 flex-shrink-0" />
+            </div>
+            
+            <button
+              onClick={() => setShowCatalogView(true)}
+              className="w-full bg-white text-[#26C6DA] hover:bg-gray-100 font-semibold py-0 rounded-lg"
+            >
+              Browse Service Catalog
+            </button>
+            
+            <p className="text-xs text-white/80 mt-0 text-center">
+              📋 All tele and home services are controlled from here
+            </p>
+          </div>
+        </div>
+
+        {isHomeServiceVendor && (
+          <div className="p-4">
+            <div className="bg-gradient-to-r from-orange-500 to-red-500 rounded-2xl p-0 text-white">
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex-1">
+                  <h3 className="font-semibold mb-0 text-lg">Distance Pricing</h3>
+                  <p className="text-sm text-white/90 mb-4">
+                    Configure pricing based on distance traveled for home services
+                  </p>
+                </div>
+              </div>
+              
+              <button
+                onClick={() => setShowDistancePricing(true)}
+                className="w-full bg-white text-orange-600 hover:bg-gray-100 font-semibold py-1 rounded-lg"
+              >
+                Configure Distance Pricing
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="p-4 mt-8">
+          <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
+            <h3 className="font-semibold text-orange-900 mb-0 text-sm">How it works:</h3>
+            <ol className="text-xs text-orange-800 space-y-2">
+              <li className="flex items-start gap-0">
+                <span className="font-bold flex-shrink-0">1.</span>
+                <span>Select a service type based on your role configuration</span>
+              </li>
+              <li className="flex items-start gap-0">
+                <span className="font-bold flex-shrink-0">2.</span>
+                <span>Enable services you want to offer from the catalog</span>
+              </li>
+              <li className="flex items-start gap-0">
+                <span className="font-bold flex-shrink-0">3.</span>
+                <span>For "Book at Clinic", customize pricing or add custom services</span>
+              </li>
+              <li className="flex items-start gap-0">
+                <span className="font-bold flex-shrink-0">4.</span>
+                <span>Publish to make them available to customers</span>
+              </li>
+            </ol>
+          </div>
         </div>
       </div>
     </div>
   );
 }
-

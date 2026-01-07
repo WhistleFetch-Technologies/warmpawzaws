@@ -128,7 +128,7 @@ export function TimeSlotSelector({
   return (
     <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-white border-b px-6 py-4 flex items-center gap-3">
+      <div className="sticky top-0 z-10 bg-white border-b px-0 py-4 flex items-center gap-0">
         <button
           onClick={onBack}
           className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors"
@@ -139,7 +139,7 @@ export function TimeSlotSelector({
       </div>
 
       {/* Content */}
-      <div className="px-6 py-6 space-y-6">
+      <div className="px-0 py-0 space-y-6">
         {/* Week Navigation */}
         <div className="bg-white rounded-2xl p-4 shadow-sm">
           <div className="flex items-center justify-between mb-4">
@@ -161,7 +161,7 @@ export function TimeSlotSelector({
           </div>
 
           {/* Date Picker */}
-          <div className="grid grid-cols-7 gap-2">
+          <div className="grid grid-cols-7 gap-0">
             {weekDates.map((date) => {
               const dateStr = formatDate(date);
               const isSelected = selectedDate === dateStr;
@@ -171,20 +171,20 @@ export function TimeSlotSelector({
                 <button
                   key={dateStr}
                   onClick={() => setSelectedDate(dateStr)}
-                  className={`p-2 rounded-xl border-2 transition-all ${
+                  className={`p-0 rounded-xl border-2 transition-all ${
                     isSelected
                       ? 'border-primary bg-orange-50'
                       : 'border-gray-200 hover:border-primary'
                   }`}
                 >
-                  <div className="text-xs text-gray-600 mb-1">{getDayName(date)}</div>
+                  <div className="text-xs text-gray-600 mb-0">{getDayName(date)}</div>
                   <div className={`text-lg font-semibold ${
                     isSelected ? 'text-primary' : 'text-gray-900'
                   }`}>
                     {date.getDate()}
                   </div>
                   {isTodayDate && (
-                    <div className="w-1 h-1 bg-primary rounded-full mx-auto mt-1"></div>
+                    <div className="w-1 h-1 bg-primary rounded-full mx-auto mt-0"></div>
                   )}
                 </button>
               );
@@ -193,14 +193,14 @@ export function TimeSlotSelector({
         </div>
 
         {/* Time Slots */}
-        <div className="bg-white rounded-2xl p-5 shadow-sm">
+        <div className="bg-white rounded-2xl p-0 shadow-sm">
           <h3 className="font-bold text-gray-900 mb-4">Available Time Slots</h3>
           
           {vendorOffline ? (
             <div className="text-center py-8">
-              <AlertCircle className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+              <AlertCircle className="w-12 h-12 text-gray-400 mx-auto mb-0" />
               <p className="text-gray-600 font-medium">Vendor is offline</p>
-              <p className="text-sm text-gray-500 mt-1">Please select another date</p>
+              <p className="text-sm text-gray-500 mt-0">Please select another date</p>
             </div>
           ) : loadingSlots ? (
             <div className="flex items-center justify-center py-8">
@@ -208,19 +208,19 @@ export function TimeSlotSelector({
             </div>
           ) : slots.length === 0 ? (
             <div className="text-center py-8">
-              <Clock className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+              <Clock className="w-12 h-12 text-gray-400 mx-auto mb-0" />
               <p className="text-gray-600 font-medium">No slots available</p>
-              <p className="text-sm text-gray-500 mt-1">Please select another date</p>
+              <p className="text-sm text-gray-500 mt-0">Please select another date</p>
             </div>
           ) : (
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-3 gap-0">
               {slots.map((time) => {
                 const isSelected = selectedTime === time;
                 return (
                   <button
                     key={time}
                     onClick={() => setSelectedTime(time)}
-                    className={`p-3 rounded-xl border-2 transition-all text-sm font-medium ${
+                    className={`p-0 rounded-xl border-2 transition-all text-sm font-medium ${
                       isSelected
                         ? 'border-primary bg-orange-50 text-primary'
                         : 'border-gray-200 hover:border-primary text-gray-900'

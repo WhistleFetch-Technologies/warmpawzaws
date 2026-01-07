@@ -162,7 +162,7 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-3xl w-full max-w-[430px] max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="sticky top-0 bg-gradient-to-r from-primary to-primary-dark px-6 py-6 flex items-center justify-between z-10">
+        <div className="sticky top-0 bg-gradient-to-r from-primary to-primary-dark px-0 py-0 flex items-center justify-between z-10">
           <h2 className="text-white font-bold text-lg">Add New Pet</h2>
           <button
             onClick={onClose}
@@ -173,7 +173,7 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
         </div>
 
         {/* Progress Steps */}
-        <div className="px-6 py-4 border-b border-gray-200">
+        <div className="px-0 py-4 border-b border-gray-200">
           <div className="flex items-center justify-between">
             {(['basic', 'health', 'vaccination'] as const).map((step, index) => (
               <div key={step} className="flex items-center flex-1">
@@ -187,14 +187,14 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
                   }`}>
                     {index < (['basic', 'health', 'vaccination'].indexOf(currentStep)) ? '✓' : index + 1}
                   </div>
-                  <span className={`text-xs mt-1 ${
+                  <span className={`text-xs mt-0 ${
                     currentStep === step ? 'text-primary font-semibold' : 'text-gray-500'
                   }`}>
                     {step === 'basic' ? 'Basic' : step === 'health' ? 'Health' : 'Vaccination'}
                   </span>
                 </div>
                 {index < 2 && (
-                  <div className={`flex-1 h-0.5 mx-2 ${
+                  <div className={`flex-1 h-0.5 mx-0 ${
                     index < (['basic', 'health', 'vaccination'].indexOf(currentStep))
                       ? 'bg-green-500'
                       : 'bg-gray-200'
@@ -206,14 +206,14 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
         </div>
 
         {/* Content */}
-        <div className="px-6 py-6">
+        <div className="px-0 py-0">
           {/* Basic Info Step */}
           {currentStep === 'basic' && (
             <div className="space-y-5">
               <h3 className="text-xl font-bold text-gray-900 mb-4">Basic Information</h3>
               
               {/* Photo Upload */}
-              <div className="flex flex-col items-center mb-6">
+              <div className="flex flex-col items-center mb-0">
                 <div className="relative">
                   <div className="w-32 h-32 rounded-full overflow-hidden bg-gray-200 border-4 border-white shadow-lg">
                     {photoPreview ? (
@@ -240,27 +240,27 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
                     className="hidden"
                   />
                 </div>
-                <p className="text-xs text-gray-500 mt-2">Tap to add photo</p>
+                <p className="text-xs text-gray-500 mt-0">Tap to add photo</p>
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Pet Name *</label>
+                <label className="block text-sm font-semibold text-gray-700 mb-0">Pet Name *</label>
                 <input
                   type="text"
                   value={petData.name}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPetData({ ...petData, name: e.target.value })}
                   placeholder="Enter pet name"
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                  className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                   required
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Type *</label>
+                <label className="block text-sm font-semibold text-gray-700 mb-0">Type *</label>
                 <select
                   value={petData.type}
                   onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setPetData({ ...petData, type: e.target.value })}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                  className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                 >
                   <option value="Dog">Dog</option>
                   <option value="Cat">Cat</option>
@@ -271,35 +271,35 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Breed *</label>
+                <label className="block text-sm font-semibold text-gray-700 mb-0">Breed *</label>
                 <input
                   type="text"
                   value={petData.breed}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPetData({ ...petData, breed: e.target.value })}
                   placeholder="Enter breed"
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                  className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                   required
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Age *</label>
+                  <label className="block text-sm font-semibold text-gray-700 mb-0">Age *</label>
                   <input
                     type="text"
                     value={petData.age}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPetData({ ...petData, age: e.target.value })}
                     placeholder="e.g., 2 years"
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                    className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                     required
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Gender</label>
+                  <label className="block text-sm font-semibold text-gray-700 mb-0">Gender</label>
                   <select
                     value={petData.gender}
                     onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setPetData({ ...petData, gender: e.target.value })}
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                    className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                   >
                     <option value="">Select</option>
                     <option value="Male">Male</option>
@@ -309,19 +309,19 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Weight</label>
+                <label className="block text-sm font-semibold text-gray-700 mb-0">Weight</label>
                 <input
                   type="text"
                   value={petData.weight}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPetData({ ...petData, weight: e.target.value })}
                   placeholder="e.g., 15 kg"
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                  className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                 />
               </div>
 
               <button
                 onClick={() => setCurrentStep('health')}
-                className="w-full py-3 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark transition-colors flex items-center justify-center gap-2"
+                className="w-full py-0 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark transition-colors flex items-center justify-center gap-0"
               >
                 Next: Health Info
                 <ChevronRight className="w-5 h-5" />
@@ -335,7 +335,7 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
               <h3 className="text-xl font-bold text-gray-900 mb-4">Health Information</h3>
               
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Last Checkup Date</label>
+                <label className="block text-sm font-semibold text-gray-700 mb-0">Last Checkup Date</label>
                 <input
                   type="date"
                   value={petData.healthRecords?.lastCheckup || ''}
@@ -343,12 +343,12 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
                     ...petData,
                     healthRecords: { ...petData.healthRecords!, lastCheckup: e.target.value }
                   })}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                  className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Allergies</label>
+                <label className="block text-sm font-semibold text-gray-700 mb-0">Allergies</label>
                 <textarea
                   value={petData.healthRecords?.allergies || ''}
                   onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setPetData({
@@ -357,12 +357,12 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
                   })}
                   placeholder="List any allergies"
                   rows={3}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none resize-none"
+                  className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none resize-none"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Current Medications</label>
+                <label className="block text-sm font-semibold text-gray-700 mb-0">Current Medications</label>
                 <textarea
                   value={petData.healthRecords?.medications || ''}
                   onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setPetData({
@@ -371,12 +371,12 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
                   })}
                   placeholder="List current medications"
                   rows={3}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none resize-none"
+                  className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none resize-none"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Medical Conditions</label>
+                <label className="block text-sm font-semibold text-gray-700 mb-0">Medical Conditions</label>
                 <textarea
                   value={petData.healthRecords?.conditions || ''}
                   onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setPetData({
@@ -385,21 +385,21 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
                   })}
                   placeholder="List any medical conditions"
                   rows={3}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none resize-none"
+                  className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none resize-none"
                 />
               </div>
 
-              <div className="flex gap-3">
+              <div className="flex gap-0">
                 <button
                   onClick={() => setCurrentStep('basic')}
-                  className="flex-1 py-3 border-2 border-gray-300 text-gray-700 rounded-xl font-semibold hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
+                  className="flex-1 py-0 border-2 border-gray-300 text-gray-700 rounded-xl font-semibold hover:bg-gray-50 transition-colors flex items-center justify-center gap-0"
                 >
                   <ChevronLeft className="w-5 h-5" />
                   Back
                 </button>
                 <button
                   onClick={() => setCurrentStep('vaccination')}
-                  className="flex-1 py-3 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark transition-colors flex items-center justify-center gap-2"
+                  className="flex-1 py-0 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark transition-colors flex items-center justify-center gap-0"
                 >
                   Next: Vaccination
                   <ChevronRight className="w-5 h-5" />
@@ -414,7 +414,7 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
               <h3 className="text-xl font-bold text-gray-900 mb-4">Vaccination Records</h3>
               
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Rabies</label>
+                <label className="block text-sm font-semibold text-gray-700 mb-0">Rabies</label>
                 <input
                   type="date"
                   value={petData.vaccinations?.rabies || ''}
@@ -422,12 +422,12 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
                     ...petData,
                     vaccinations: { ...petData.vaccinations!, rabies: e.target.value }
                   })}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                  className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Distemper</label>
+                <label className="block text-sm font-semibold text-gray-700 mb-0">Distemper</label>
                 <input
                   type="date"
                   value={petData.vaccinations?.distemper || ''}
@@ -435,12 +435,12 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
                     ...petData,
                     vaccinations: { ...petData.vaccinations!, distemper: e.target.value }
                   })}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                  className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Parvovirus</label>
+                <label className="block text-sm font-semibold text-gray-700 mb-0">Parvovirus</label>
                 <input
                   type="date"
                   value={petData.vaccinations?.parvovirus || ''}
@@ -448,12 +448,12 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
                     ...petData,
                     vaccinations: { ...petData.vaccinations!, parvovirus: e.target.value }
                   })}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                  className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Other Vaccinations</label>
+                <label className="block text-sm font-semibold text-gray-700 mb-0">Other Vaccinations</label>
                 <textarea
                   value={petData.vaccinations?.other || ''}
                   onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setPetData({
@@ -462,14 +462,14 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
                   })}
                   placeholder="List other vaccinations"
                   rows={3}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none resize-none"
+                  className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none resize-none"
                 />
               </div>
 
-              <div className="flex gap-3 pt-4">
+              <div className="flex gap-0 pt-4">
                 <button
                   onClick={() => setCurrentStep('health')}
-                  className="flex-1 py-3 border-2 border-gray-300 text-gray-700 rounded-xl font-semibold hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
+                  className="flex-1 py-0 border-2 border-gray-300 text-gray-700 rounded-xl font-semibold hover:bg-gray-50 transition-colors flex items-center justify-center gap-0"
                 >
                   <ChevronLeft className="w-5 h-5" />
                   Back
@@ -477,7 +477,7 @@ export function AddPetModal({ phone, isOpen, onClose, onSuccess }: AddPetModalPr
                 <button
                   onClick={handleSavePet}
                   disabled={loading}
-                  className="flex-1 py-3 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  className="flex-1 py-0 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-0"
                 >
                   {loading ? (
                     <>

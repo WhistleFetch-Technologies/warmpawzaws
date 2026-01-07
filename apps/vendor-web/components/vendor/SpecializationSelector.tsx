@@ -73,18 +73,18 @@ export function SpecializationSelector({
     <div className="space-y-4">
       {/* Search */}
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+        <Search className="absolute left-3 top-0/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
         <input
           type="text"
           placeholder="Search specializations..."
           value={searchQuery}
           onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
-          className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary outline-none"
+          className="w-full pl-0 pr-4 py-0 border border-gray-300 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary outline-none"
         />
       </div>
 
       {/* Specializations Grid */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-0">
         {filteredSpecializations.length === 0 ? (
           <div className="col-span-2 text-center py-8 text-gray-500">
             {searchQuery ? 'No specializations found' : 'No specializations available'}
@@ -103,7 +103,7 @@ export function SpecializationSelector({
                     : 'border-gray-200 hover:border-gray-300'
                 }`}
               >
-                <div className="flex items-start gap-3">
+                <div className="flex items-start gap-0">
                   <div className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 mt-0.5 ${
                     isSelected
                       ? 'bg-primary border-primary'
@@ -116,7 +116,7 @@ export function SpecializationSelector({
                   <div className="flex-1 min-w-0">
                     <div className="font-medium text-gray-900 text-sm">{spec.name}</div>
                     {spec.description && (
-                      <div className="text-xs text-gray-500 mt-1 line-clamp-2">
+                      <div className="text-xs text-gray-500 mt-0 line-clamp-0">
                         {spec.description}
                       </div>
                     )}
@@ -130,7 +130,7 @@ export function SpecializationSelector({
 
       {/* Selection Count */}
       {selectedSpecializations.length > 0 && (
-        <div className="text-sm text-gray-600 text-center pt-2">
+        <div className="text-sm text-gray-600 text-center pt-0">
           {selectedSpecializations.length} specialization{selectedSpecializations.length !== 1 ? 's' : ''} selected
         </div>
       )}

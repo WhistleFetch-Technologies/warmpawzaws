@@ -70,12 +70,12 @@ export function ReverificationTab() {
   };
 
   if (loading) {
-    return <div className="p-6 text-center text-gray-500">Loading requests...</div>;
+    return <div className="p-0 text-center text-gray-500">Loading requests...</div>;
   }
 
   if (requests.length === 0) {
     return (
-      <div className="p-6 text-center">
+      <div className="p-0 text-center">
         <Shield className="w-12 h-12 text-gray-400 mx-auto mb-4" />
         <p className="text-gray-500">No reverification requests pending.</p>
       </div>
@@ -83,7 +83,7 @@ export function ReverificationTab() {
   }
 
   return (
-    <div className="p-6">
+    <div className="p-0">
       <div className="space-y-4">
         {requests.map((request) => {
           const daysUntilExpiry = Math.ceil(
@@ -96,7 +96,7 @@ export function ReverificationTab() {
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   {isUrgent && (
-                    <div className="flex items-center gap-1 text-red-600 mb-2">
+                    <div className="flex items-center gap-0 text-red-600 mb-0">
                       <AlertTriangle className="w-4 h-4" />
                       <span className="text-xs font-semibold">URGENT - Expires in {daysUntilExpiry} days</span>
                     </div>
@@ -105,7 +105,7 @@ export function ReverificationTab() {
                   <h3 className="font-semibold text-gray-900">{request.vendorName}</h3>
                   <p className="text-sm text-gray-600">{request.businessName}</p>
                   
-                  <div className="mt-2 space-y-1">
+                  <div className="mt-0 space-y-1">
                     <p className="text-sm text-gray-700">
                       <strong>Document:</strong> {request.documentType}
                     </p>
@@ -119,14 +119,14 @@ export function ReverificationTab() {
                 </div>
                 
                 {(request.status as any) === 'pending' && (
-                  <div className="flex gap-2 ml-4">
+                  <div className="flex gap-0 ml-4">
                     <Button
                       size="sm"
                       variant="outline"
                       onClick={() => handleVerify(request.id)}
                       className="text-green-600 hover:bg-green-50"
                     >
-                      <Check className="w-4 h-4 mr-1" />
+                      <Check className="w-4 h-4 mr-0" />
                       Verify
                     </Button>
                     <Button
@@ -135,7 +135,7 @@ export function ReverificationTab() {
                       onClick={() => handleReject(request.id)}
                       className="text-red-600 hover:bg-red-50"
                     >
-                      <X className="w-4 h-4 mr-1" />
+                      <X className="w-4 h-4 mr-0" />
                       Reject
                     </Button>
                   </div>
@@ -143,7 +143,7 @@ export function ReverificationTab() {
                 
                 {(request.status as any) !== 'pending' && (
                   <div className="ml-4">
-                    <span className={`px-3 py-1 text-xs rounded-full ${
+                    <span className={`px-0 py-0 text-xs rounded-full ${
                       request.status === 'verified' 
                         ? 'bg-green-100 text-green-700' 
                         : 'bg-red-100 text-red-700'

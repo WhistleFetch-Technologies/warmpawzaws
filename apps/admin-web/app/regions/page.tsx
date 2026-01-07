@@ -1,9 +1,10 @@
 'use client';
 export const dynamic = 'force-dynamic';
 
-import React, { useState, useEffect } from 'react';
-import { apiClient } from '@/lib/api-client';
+import React, { useEffect } from 'react';
 import { AdminLayout } from '@/components/AdminLayout';
+import { useApiData, useCrud, useFormModal, useNotifications } from '@/hooks';
+import { validateRequired } from '@/lib/utils';
 
 // ============================================================================
 // TYPES
@@ -25,64 +26,43 @@ interface Region {
   created_at: string;
 }
 
+interface RegionFormData {
+  name: string;
+  code: string;
+  country: string;
+  state: string;
+  city: string;
+  timezone: string;
+  currency: string;
+  service_radius_km: number;
+  is_active: boolean;
+}
+
 // ============================================================================
 // MAIN COMPONENT
 // ============================================================================
 
 export default function RegionsPage() {
-  const [regions, setRegions] = useState<Region[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
-  
-  // Modal states
-  const [showModal, setShowModal] = useState(false);
-  const [editingRegion, setEditingRegion] = useState<Region | null>(null);
-  const [saving, setSaving] = useState(false);
-  
-  // Form state
-  const [formData, setFormData] = useState({
-    name: '',
-    code: '',
-    country: 'India',
-    state: '',
-    city: '',
-    timezone: 'Asia/Kolkata',
-    currency: 'INR',
-    service_radius_km: 10,
-    is_active: true,
+  // Reusable hooks for data management
+  const { data: regions, loading, error: dataError, refetch } = useApiData<Region>({
+    endpoint: '/admin/regions',
+    dataKey: 'regions',
   });
 
-  // ============================================================================
-  // DATA LOADING
-  // ============================================================================
+  const notifications = useNotifications({ autoClearSuccess: true });
+  const { error: crudError, success: crudSuccess, saving, deleting, create, update, remove } = useCrud<Region, RegionFormData>({
+    endpoint: '/admin/regions',
+    onSuccess: (message) => {
+      notifications.setSuccess(message);
+      refetch();
+    },
+    onError: (err) => {
+      notifications.setError(err.message || 'Operation failed');
+    },
+  });
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      
-      const response = await apiClient.get<any>('/admin/regions');
-      setRegions(response.regions || response || []);
-    } catch (err: any) {
-      console.error('Error loading regions:', err);
-      setError(err.message || 'Failed to load regions');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // ============================================================================
-  // ACTIONS
-  // ============================================================================
-
-  const handleCreate = () => {
-    setEditingRegion(null);
-    setFormData({
+  const modal = useFormModal<RegionFormData, Region>({
+    initialFormData: {
       name: '',
       code: '',
       country: 'India',
@@ -92,13 +72,19 @@ export default function RegionsPage() {
       currency: 'INR',
       service_radius_km: 10,
       is_active: true,
-    });
-    setShowModal(true);
-  };
-
-  const handleEdit = (region: Region) => {
-    setEditingRegion(region);
-    setFormData({
+    },
+    getDefaultFormData: () => ({
+      name: '',
+      code: '',
+      country: 'India',
+      state: '',
+      city: '',
+      timezone: 'Asia/Kolkata',
+      currency: 'INR',
+      service_radius_km: 10,
+      is_active: true,
+    }),
+    mapItemToFormData: (region) => ({
       name: region.name,
       code: region.code,
       country: region.country,
@@ -108,48 +94,38 @@ export default function RegionsPage() {
       currency: region.currency,
       service_radius_km: region.service_radius_km,
       is_active: region.is_active,
-    });
-    setShowModal(true);
-  };
+    }),
+  });
+
+  // Combine errors and success messages
+  const error = dataError || crudError || notifications.error;
+  const success = crudSuccess || notifications.success;
+
+  // ============================================================================
+  // ACTIONS
+  // ============================================================================
 
   const handleSave = async () => {
-    if (!formData.name || !formData.code) {
-      setError('Please fill all required fields');
+    // Validate required fields
+    const validation = validateRequired(modal.formData, ['name', 'code']);
+    if (!validation.isValid) {
+      notifications.setError(Object.values(validation.errors)[0]);
       return;
     }
-    
-    try {
-      setSaving(true);
-      setError(null);
-      
-      if (editingRegion) {
-        await apiClient.put(`/admin/regions/${editingRegion.id}`, formData);
-        setSuccess('Region updated successfully');
-      } else {
-        await apiClient.post('/admin/regions', formData);
-        setSuccess('Region created successfully');
-      }
-      
-      setShowModal(false);
-      setEditingRegion(null);
-      loadData();
-    } catch (err: any) {
-      setError(err.message || 'Failed to save region');
-    } finally {
-      setSaving(false);
+
+    if (modal.editingItem) {
+      await update(modal.editingItem.id, modal.formData);
+    } else {
+      await create(modal.formData);
+    }
+
+    if (!crudError) {
+      modal.closeModal();
     }
   };
 
-  const handleDelete = async (regionId: string) => {
-    if (!confirm('Are you sure you want to delete this region?')) return;
-    
-    try {
-      await apiClient.delete(`/admin/regions/${regionId}`);
-      setSuccess('Region deleted');
-      loadData();
-    } catch (err: any) {
-      setError(err.message || 'Failed to delete region');
-    }
+  const handleDelete = async (region: Region) => {
+    await remove(region);
   };
 
   // ============================================================================
@@ -180,7 +156,7 @@ export default function RegionsPage() {
               <p className="text-gray-500">Manage service regions and coverage areas</p>
             </div>
             <button
-              onClick={handleCreate}
+              onClick={modal.openCreate}
               className="px-4 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
             >
               + Add Region
@@ -193,14 +169,14 @@ export default function RegionsPage() {
           {error && (
             <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 flex items-center justify-between">
               <span>{error}</span>
-              <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600">✕</button>
+              <button onClick={notifications.clearError} className="text-red-400 hover:text-red-600">✕</button>
             </div>
           )}
           
           {success && (
             <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl text-green-700 flex items-center justify-between">
               <span>{success}</span>
-              <button onClick={() => setSuccess(null)} className="text-green-400 hover:text-green-600">✕</button>
+              <button onClick={notifications.clearSuccess} className="text-green-400 hover:text-green-600">✕</button>
             </div>
           )}
 
@@ -254,16 +230,17 @@ export default function RegionsPage() {
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2">
                           <button
-                            onClick={() => handleEdit(region)}
+                            onClick={() => modal.openEdit(region)}
                             className="text-orange-500 hover:text-orange-600 text-sm font-medium"
                           >
                             Edit
                           </button>
                           <button
-                            onClick={() => handleDelete(region.id)}
-                            className="text-red-500 hover:text-red-600 text-sm font-medium"
+                            onClick={() => handleDelete(region)}
+                            disabled={deleting}
+                            className="text-red-500 hover:text-red-600 text-sm font-medium disabled:opacity-50"
                           >
-                            Delete
+                            {deleting ? 'Deleting...' : 'Delete'}
                           </button>
                         </div>
                       </td>
@@ -277,15 +254,15 @@ export default function RegionsPage() {
       </div>
 
       {/* Region Modal */}
-      {showModal && (
+      {modal.isOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl w-full max-w-lg">
             <div className="p-6 border-b">
               <div className="flex items-center justify-between">
                 <h3 className="text-xl font-semibold text-gray-900">
-                  {editingRegion ? 'Edit Region' : 'Create Region'}
+                  {modal.editingItem ? 'Edit Region' : 'Create Region'}
                 </h3>
-                <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl">✕</button>
+                <button onClick={modal.closeModal} className="text-gray-400 hover:text-gray-600 text-2xl">✕</button>
               </div>
             </div>
             
@@ -295,8 +272,8 @@ export default function RegionsPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Region Name *</label>
                   <input
                     type="text"
-                    value={formData.name}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                    value={modal.formData.name}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => modal.setFormData(prev => ({ ...prev, name: e.target.value }))}
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
                     placeholder="e.g., Bangalore"
                   />
@@ -305,8 +282,8 @@ export default function RegionsPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Region Code *</label>
                   <input
                     type="text"
-                    value={formData.code}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, code: e.target.value.toUpperCase() }))}
+                    value={modal.formData.code}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => modal.setFormData(prev => ({ ...prev, code: e.target.value.toUpperCase() }))}
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none font-mono"
                     placeholder="BLR"
                     maxLength={3}
@@ -318,8 +295,8 @@ export default function RegionsPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Country</label>
                 <input
                   type="text"
-                  value={formData.country}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, country: e.target.value }))}
+                  value={modal.formData.country}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => modal.setFormData(prev => ({ ...prev, country: e.target.value }))}
                   className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 outline-none"
                 />
               </div>
@@ -329,8 +306,8 @@ export default function RegionsPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">State</label>
                   <input
                     type="text"
-                    value={formData.state}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, state: e.target.value }))}
+                    value={modal.formData.state}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => modal.setFormData(prev => ({ ...prev, state: e.target.value }))}
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 outline-none"
                   />
                 </div>
@@ -338,8 +315,8 @@ export default function RegionsPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
                   <input
                     type="text"
-                    value={formData.city}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, city: e.target.value }))}
+                    value={modal.formData.city}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => modal.setFormData(prev => ({ ...prev, city: e.target.value }))}
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 outline-none"
                   />
                 </div>
@@ -349,8 +326,8 @@ export default function RegionsPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Timezone</label>
                   <select
-                    value={formData.timezone}
-                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData(prev => ({ ...prev, timezone: e.target.value }))}
+                    value={modal.formData.timezone}
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => modal.setFormData(prev => ({ ...prev, timezone: e.target.value }))}
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 outline-none"
                   >
                     <option value="Asia/Kolkata">Asia/Kolkata (IST)</option>
@@ -361,8 +338,8 @@ export default function RegionsPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Currency</label>
                   <select
-                    value={formData.currency}
-                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData(prev => ({ ...prev, currency: e.target.value }))}
+                    value={modal.formData.currency}
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => modal.setFormData(prev => ({ ...prev, currency: e.target.value }))}
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 outline-none"
                   >
                     <option value="INR">INR (₹)</option>
@@ -376,8 +353,8 @@ export default function RegionsPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Service Radius (km)</label>
                 <input
                   type="number"
-                  value={formData.service_radius_km}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, service_radius_km: Number(e.target.value) }))}
+                  value={modal.formData.service_radius_km}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => modal.setFormData(prev => ({ ...prev, service_radius_km: Number(e.target.value) }))}
                   className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 outline-none"
                   min="1"
                 />
@@ -386,8 +363,8 @@ export default function RegionsPage() {
               <label className="flex items-center gap-2">
                 <input
                   type="checkbox"
-                  checked={formData.is_active}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, is_active: e.target.checked }))}
+                  checked={modal.formData.is_active}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => modal.setFormData(prev => ({ ...prev, is_active: e.target.checked }))}
                   className="rounded text-orange-500"
                 />
                 <span className="text-sm text-gray-700">Region is active</span>
@@ -396,7 +373,7 @@ export default function RegionsPage() {
             
             <div className="p-6 border-t bg-gray-50 flex justify-end gap-3 rounded-b-2xl">
               <button
-                onClick={() => setShowModal(false)}
+                onClick={modal.closeModal}
                 className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300 transition"
               >
                 Cancel
@@ -406,7 +383,7 @@ export default function RegionsPage() {
                 disabled={saving}
                 className="px-6 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition disabled:opacity-50"
               >
-                {saving ? 'Saving...' : editingRegion ? 'Update Region' : 'Create Region'}
+                {saving ? 'Saving...' : modal.editingItem ? 'Update Region' : 'Create Region'}
               </button>
             </div>
           </div>

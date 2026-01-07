@@ -56,11 +56,11 @@ export function EmergencyAlertScreen({
 
     setReporting(true);
     try {
-      const response = await EmergencyApi.reportEmergency({
-        vendorId,
-        bookingId,
-        emergencyType,
-        description,
+      // ✅ API Integration: Use sendEmergencyAlert API
+      const response = await EmergencyApi.sendEmergencyAlert(vendorId, {
+        type: emergencyType,
+        message: description,
+        location: bookingId ? { bookingId } : undefined,
       });
 
       if (response.success) {
@@ -197,7 +197,7 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
   },
   warningBox: {
-    backgroundColor: '#FFF4E6',
+    backgroundColor: colors.primary.50,
     borderWidth: 2,
     borderColor: colors.warning,
     borderRadius: borderRadius.xl,
@@ -273,7 +273,7 @@ const styles = StyleSheet.create({
   reportButtonText: {
     fontSize: typography.fontSizes.md,
     fontWeight: typography.fontWeights.semibold,
-    color: '#ffffff',
+    color: colors.white,
   },
   helpSection: {
     marginTop: spacing.xl,

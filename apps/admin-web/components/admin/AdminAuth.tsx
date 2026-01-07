@@ -157,20 +157,20 @@ export function AdminAuth({ onAuthSuccess }: AdminAuthProps) {
             <div className="inline-flex items-center justify-center w-16 h-16 bg-slate-900 rounded-full mb-4">
               <Shield className="w-8 h-8 text-white" />
             </div>
-            <h1 className="text-3xl text-slate-900 mb-2">WarmPawz Admin</h1>
+            <h1 className="text-3xl text-slate-900 mb-0">WarmPawz Admin</h1>
             <p className="text-gray-600">Platform Administration Portal</p>
           </div>
 
           {error && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-              <p className="font-semibold mb-2">❌ {error}</p>
+            <div className="mb-4 p-0 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+              <p className="font-semibold mb-0">❌ {error}</p>
               {error.includes('Admin access required') && (
-                <div className="mt-2 pt-2 border-t border-red-200">
-                  <p className="font-semibold text-xs mb-1">💡 How to fix:</p>
+                <div className="mt-0 pt-0 border-t border-red-200">
+                  <p className="font-semibold text-xs mb-0">💡 How to fix:</p>
                   <ol className="text-xs space-y-1 list-decimal ml-4">
                     <li>Click "Create new admin account" below</li>
                     <li>Fill in your details</li>
-                    <li>Use Master Key: <code className="bg-white px-1 py-0.5 rounded font-mono">warmpawz2025</code></li>
+                    <li>Use Master Key: <code className="bg-white px-0 py-0.5 rounded font-mono">warmpawz2025</code></li>
                     <li>Then sign in with your new credentials</li>
                   </ol>
                 </div>
@@ -188,25 +188,25 @@ export function AdminAuth({ onAuthSuccess }: AdminAuthProps) {
               >
                 🔄 Reset Test Account (Fix Login)
               </Button>
-              <p className="text-[10px] text-gray-500 mt-1">Use this if "Invalid credentials" persists for the test account</p>
+              <p className="text-[10px] text-gray-500 mt-0">Use this if "Invalid credentials" persists for the test account</p>
             </div>
           )}
 
           {!isSignUp && !error && (
-            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-700 text-sm">
-              <p className="font-semibold mb-1">👋 First time here?</p>
-              <p className="text-xs">Create an admin account below using the master key: <code className="bg-white px-1 py-0.5 rounded font-mono">warmpawz2025</code></p>
+            <div className="mb-4 p-0 bg-blue-50 border border-blue-200 rounded-lg text-blue-700 text-sm">
+              <p className="font-semibold mb-0">👋 First time here?</p>
+              <p className="text-xs">Create an admin account below using the master key: <code className="bg-white px-0 py-0.5 rounded font-mono">warmpawz2025</code></p>
             </div>
           )}
 
           {!isSignUp && !error && (
-            <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">
-              <p className="font-semibold mb-1">🚀 Quick Test Access</p>
-              <p className="text-xs mb-2">For testing, you can create an admin account with:</p>
+            <div className="mb-4 p-0 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">
+              <p className="font-semibold mb-0">🚀 Quick Test Access</p>
+              <p className="text-xs mb-0">For testing, you can create an admin account with:</p>
               <ul className="text-xs space-y-1">
-                <li>• Email: <code className="bg-white px-1 py-0.5 rounded font-mono">admin@warmpawz.com</code></li>
-                <li>• Password: <code className="bg-white px-1 py-0.5 rounded font-mono">warmpawz2025</code></li>
-                <li>• Master Key: <code className="bg-white px-1 py-0.5 rounded font-mono">warmpawz2025</code></li>
+                <li>• Email: <code className="bg-white px-0 py-0.5 rounded font-mono">admin@warmpawz.com</code></li>
+                <li>• Password: <code className="bg-white px-0 py-0.5 rounded font-mono">warmpawz2025</code></li>
+                <li>• Master Key: <code className="bg-white px-0 py-0.5 rounded font-mono">warmpawz2025</code></li>
               </ul>
             </div>
           )}
@@ -215,7 +215,7 @@ export function AdminAuth({ onAuthSuccess }: AdminAuthProps) {
             {isSignUp && (
               <>
                 <div>
-                  <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+                  <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-0">Full Name</label>
                   <Input
                     id="name"
                     type="text"
@@ -223,11 +223,11 @@ export function AdminAuth({ onAuthSuccess }: AdminAuthProps) {
                     value={formData.name}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, name: e.target.value })}
                     required={isSignUp}
-                    className="mt-1"
+                    className="mt-0"
                   />
                 </div>
                 <div>
-                  <label htmlFor="masterKey" className="block text-sm font-medium text-gray-700 mb-1">Master Key</label>
+                  <label htmlFor="masterKey" className="block text-sm font-medium text-gray-700 mb-0">Master Key</label>
                   <Input
                     id="masterKey"
                     type="password"
@@ -235,17 +235,17 @@ export function AdminAuth({ onAuthSuccess }: AdminAuthProps) {
                     value={formData.masterKey}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, masterKey: e.target.value })}
                     required={isSignUp}
-                    className="mt-1"
+                    className="mt-0"
                   />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Default: <code className="bg-gray-100 px-1 py-0.5 rounded">warmpawz2025</code>
+                  <p className="text-xs text-gray-500 mt-0">
+                    Default: <code className="bg-gray-100 px-0 py-0.5 rounded">warmpawz2025</code>
                   </p>
                 </div>
               </>
             )}
 
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-0">Email</label>
               <Input
                 id="email"
                 type="email"
@@ -253,12 +253,12 @@ export function AdminAuth({ onAuthSuccess }: AdminAuthProps) {
                 value={formData.email}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, email: e.target.value })}
                 required
-                className="mt-1"
+                className="mt-0"
               />
             </div>
 
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-0">Password</label>
               <Input
                 id="password"
                 type="password"
@@ -266,7 +266,7 @@ export function AdminAuth({ onAuthSuccess }: AdminAuthProps) {
                 value={formData.password}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, password: e.target.value })}
                 required
-                className="mt-1"
+                className="mt-0"
               />
             </div>
 
@@ -290,7 +290,7 @@ export function AdminAuth({ onAuthSuccess }: AdminAuthProps) {
                     password: 'warmpawz2025'
                   });
                 }}
-                className="text-xs text-blue-600 hover:underline mb-2 block w-full"
+                className="text-xs text-blue-600 hover:underline mb-0 block w-full"
               >
                 📋 Auto-fill with test credentials
               </button>
@@ -298,7 +298,7 @@ export function AdminAuth({ onAuthSuccess }: AdminAuthProps) {
           )}
 
           {!isSignUp && (
-            <div className="mt-2 text-center">
+            <div className="mt-0 text-center">
               <button
                 type="button"
                 onClick={() => {
@@ -313,7 +313,7 @@ export function AdminAuth({ onAuthSuccess }: AdminAuthProps) {
           )}
 
           {isSignUp && (
-            <div className="mt-6 text-center">
+            <div className="mt-0 text-center">
               <button
                 type="button"
                 onClick={() => {

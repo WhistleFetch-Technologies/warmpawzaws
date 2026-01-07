@@ -68,12 +68,12 @@ export function CustomerProfile({ phone, onBack, onNavigate }: CustomerProfilePr
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-0">
         <div className="text-center">
           <p className="text-red-600 mb-4">{error}</p>
           <button
             onClick={fetchProfile}
-            className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors"
+            className="px-4 py-0 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors"
           >
             Retry
           </button>
@@ -84,12 +84,12 @@ export function CustomerProfile({ phone, onBack, onNavigate }: CustomerProfilePr
 
   if (!profile) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-0">
         <div className="text-center">
           <p className="text-gray-600 mb-4">Profile not found</p>
           <button
             onClick={onBack}
-            className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors"
+            className="px-4 py-0 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors"
           >
             Go Back
           </button>
@@ -101,19 +101,19 @@ export function CustomerProfile({ phone, onBack, onNavigate }: CustomerProfilePr
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-primary text-white px-4 py-4 flex items-center gap-3 shadow-sm">
+      <div className="sticky top-0 z-10 bg-primary text-white px-4 py-4 flex items-center gap-0 shadow-sm">
         <button 
           onClick={onBack} 
-          className="p-1 hover:bg-white/20 rounded-lg transition-colors"
+          className="p-0 hover:bg-white/20 rounded-lg transition-colors"
         >
           <ArrowLeft className="w-6 h-6" />
         </button>
         <h1 className="text-lg font-bold">My Profile</h1>
       </div>
 
-      <div className="container mx-auto px-4 py-6 space-y-6 max-w-[430px]">
+      <div className="container mx-auto px-4 py-0 space-y-6 max-w-[430px]">
         {/* Personal Information */}
-        <div className="bg-white rounded-2xl p-5 shadow-sm">
+        <div className="bg-white rounded-2xl p-0 shadow-sm">
           <div className="flex items-center gap-4 mb-4">
             <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center">
               <User className="w-8 h-8 text-primary" />
@@ -125,12 +125,12 @@ export function CustomerProfile({ phone, onBack, onNavigate }: CustomerProfilePr
           </div>
           
           <div className="space-y-3 pt-4 border-t">
-            <div className="flex items-center gap-3 text-gray-700">
+            <div className="flex items-center gap-0 text-gray-700">
               <Phone className="w-4 h-4 text-gray-400" />
               <span>{profile.phone}</span>
             </div>
             {profile.email && (
-              <div className="flex items-center gap-3 text-gray-700">
+              <div className="flex items-center gap-0 text-gray-700">
                 <Mail className="w-4 h-4 text-gray-400" />
                 <span>{profile.email}</span>
               </div>
@@ -140,8 +140,8 @@ export function CustomerProfile({ phone, onBack, onNavigate }: CustomerProfilePr
 
         {/* Address */}
         {profile.address && (
-          <div className="bg-white rounded-2xl p-5 shadow-sm">
-            <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+          <div className="bg-white rounded-2xl p-0 shadow-sm">
+            <h3 className="font-semibold text-gray-900 mb-0 flex items-center gap-0">
               <MapPin className="w-4 h-4 text-primary" /> Address
             </h3>
             <div className="text-gray-600 text-sm space-y-1">
@@ -152,9 +152,9 @@ export function CustomerProfile({ phone, onBack, onNavigate }: CustomerProfilePr
         )}
 
         {/* My Pets */}
-        <div className="bg-white rounded-2xl p-5 shadow-sm">
+        <div className="bg-white rounded-2xl p-0 shadow-sm">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+            <h3 className="font-semibold text-gray-900 flex items-center gap-0">
               🐾 My Pets ({profile.pets?.length || 0})
             </h3>
             {onNavigate && (
@@ -172,7 +172,7 @@ export function CustomerProfile({ phone, onBack, onNavigate }: CustomerProfilePr
               {profile.pets.map((pet) => (
                 <div 
                   key={pet.id} 
-                  className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
+                  className="flex items-center justify-between p-0 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
                   onClick={() => onNavigate?.('pet-details', { petId: pet.id })}
                 >
                   <div>
@@ -189,7 +189,7 @@ export function CustomerProfile({ phone, onBack, onNavigate }: CustomerProfilePr
               {onNavigate && (
                 <button
                   onClick={() => onNavigate('add-pet')}
-                  className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors text-sm"
+                  className="px-4 py-0 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors text-sm"
                 >
                   Add Pet
                 </button>
@@ -199,21 +199,21 @@ export function CustomerProfile({ phone, onBack, onNavigate }: CustomerProfilePr
         </div>
 
         {/* Quick Actions */}
-        <div className="bg-white rounded-2xl p-5 shadow-sm">
+        <div className="bg-white rounded-2xl p-0 shadow-sm">
           <h3 className="font-semibold text-gray-900 mb-4">Quick Actions</h3>
           <div className="space-y-2">
             {onNavigate && (
               <>
                 <button
                   onClick={() => onNavigate('bookings')}
-                  className="w-full flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                  className="w-full flex items-center justify-between p-0 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
                 >
                   <span className="text-gray-700">View All Bookings</span>
                   <ChevronRight className="w-4 h-4 text-gray-400" />
                 </button>
                 <button
                   onClick={() => onNavigate('orders')}
-                  className="w-full flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                  className="w-full flex items-center justify-between p-0 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
                 >
                   <span className="text-gray-700">Order History</span>
                   <ChevronRight className="w-4 h-4 text-gray-400" />

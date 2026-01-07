@@ -118,33 +118,33 @@ export function IntegratedServicesSelector({
           : 'border-gray-100 bg-white hover:border-primary'
       }`}
     >
-      <div className="flex justify-between items-start mb-2">
+      <div className="flex justify-between items-start mb-0">
         <div>
           <h3 className="font-semibold text-gray-900">{provider.providerName}</h3>
           {provider.isClinicAttached ? (
-            <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs">
+            <span className="px-0 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs">
               Clinic Attached
             </span>
           ) : (
-            <span className="px-2 py-0.5 bg-gray-100 text-gray-700 rounded-full text-xs">
+            <span className="px-0 py-0.5 bg-gray-100 text-gray-700 rounded-full text-xs">
               Independent
             </span>
           )}
         </div>
         {provider.rating && (
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-0">
             <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
             <span className="text-sm font-semibold">{provider.rating.toFixed(1)}</span>
           </div>
         )}
       </div>
 
-      <div className="flex items-center gap-4 text-sm text-gray-600 mt-3">
-        <div className="flex items-center gap-1">
+      <div className="flex items-center gap-4 text-sm text-gray-600 mt-0">
+        <div className="flex items-center gap-0">
           <MapPin className="w-4 h-4" />
           <span>{provider.distance.toFixed(1)} km</span>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0">
           <Clock className="w-4 h-4" />
           <span>ETA: {provider.eta} min</span>
         </div>
@@ -159,7 +159,7 @@ export function IntegratedServicesSelector({
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-3xl w-full max-w-[430px] max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="sticky top-0 bg-gradient-to-r from-primary to-primary-dark px-6 py-6 flex items-center justify-between z-10">
+        <div className="sticky top-0 bg-gradient-to-r from-primary to-primary-dark px-0 py-0 flex items-center justify-between z-10">
           <h2 className="text-white font-bold text-lg">Select Service</h2>
           <button
             onClick={onClose}
@@ -170,8 +170,8 @@ export function IntegratedServicesSelector({
         </div>
 
         {/* Tabs */}
-        <div className="px-6 py-4 border-b border-gray-200">
-          <div className="flex gap-2">
+        <div className="px-0 py-4 border-b border-gray-200">
+          <div className="flex gap-0">
             {[
               { id: 'ambulance', label: 'Ambulance', icon: Ambulance },
               { id: 'diagnostic', label: 'Diagnostic', icon: Microscope },
@@ -182,13 +182,13 @@ export function IntegratedServicesSelector({
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex-1 px-4 py-2 rounded-xl font-medium transition-all ${
+                  className={`flex-1 px-4 py-0 rounded-xl font-medium transition-all ${
                     activeTab === tab.id
                       ? 'bg-primary text-white'
                       : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                   }`}
                 >
-                  <div className="flex items-center justify-center gap-2">
+                  <div className="flex items-center justify-center gap-0">
                     <Icon className="w-4 h-4" />
                     <span>{tab.label}</span>
                   </div>
@@ -199,9 +199,9 @@ export function IntegratedServicesSelector({
         </div>
 
         {/* Providers List */}
-        <div className="px-6 py-6">
+        <div className="px-0 py-0">
           {loading ? (
-            <div className="flex items-center justify-center py-12">
+            <div className="flex items-center justify-center py-02">
               <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
             </div>
           ) : providers.length === 0 ? (
@@ -210,7 +210,7 @@ export function IntegratedServicesSelector({
               <p className="text-gray-600">No providers available</p>
             </div>
           ) : (
-            <div className="space-y-3 mb-6">
+            <div className="space-y-3 mb-0">
               {providers.map((provider) => renderProviderCard(provider))}
             </div>
           )}
@@ -220,7 +220,7 @@ export function IntegratedServicesSelector({
             <button
               onClick={handleRequest}
               disabled={loading}
-              className="w-full py-3 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full py-1 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? 'Requesting...' : `Request ${activeTab === 'ambulance' ? 'Ambulance' : activeTab === 'diagnostic' ? 'Diagnostic' : 'Pharmacy'}`}
             </button>

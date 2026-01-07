@@ -168,7 +168,7 @@ export function MultiPetBookingPage({
   return (
     <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
       {/* Header */}
-      <div className="bg-gradient-to-r from-primary to-primary-dark px-6 pt-12 pb-6 sticky top-0 z-20">
+      <div className="bg-gradient-to-r from-primary to-primary-dark px-0 pt-02 pb-0 sticky top-0 z-20">
         <div className="flex items-center gap-4 mb-4">
           {onCancel && (
             <button
@@ -186,23 +186,23 @@ export function MultiPetBookingPage({
       </div>
 
       {/* Content */}
-      <div className="px-6 py-6 space-y-6">
+      <div className="px-0 py-0 space-y-6">
         {/* Service Info */}
-        <div className="bg-white rounded-2xl p-5 shadow-sm">
-          <div className="flex items-center justify-between mb-3">
+        <div className="bg-white rounded-2xl p-0 shadow-sm">
+          <div className="flex items-center justify-between mb-0">
             <h3 className="font-bold text-gray-900">Service Details</h3>
             <span className="text-sm text-gray-600">{service.vendorName}</span>
           </div>
           <div className="space-y-2 text-sm text-gray-600">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-0">
               <Calendar className="w-4 h-4" />
               <span>{new Date(scheduledDate).toLocaleDateString()}</span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-0">
               <Clock className="w-4 h-4" />
               <span>{scheduledTime}</span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-0">
               <DollarSign className="w-4 h-4" />
               <span>₹{service.price} per pet</span>
             </div>
@@ -210,7 +210,7 @@ export function MultiPetBookingPage({
         </div>
 
         {/* Pet Selection */}
-        <div className="bg-white rounded-2xl p-5 shadow-sm">
+        <div className="bg-white rounded-2xl p-0 shadow-sm">
           <h3 className="font-bold text-gray-900 mb-4">Select Pets</h3>
           {loading ? (
             <div className="space-y-3">
@@ -267,15 +267,15 @@ export function MultiPetBookingPage({
 
         {/* Pricing Breakdown */}
         {selectedPetIds.length > 0 && (
-          <div className="bg-white rounded-2xl p-5 shadow-sm">
+          <div className="bg-white rounded-2xl p-0 shadow-sm">
             <h3 className="font-bold text-gray-900 mb-4">Pricing Breakdown</h3>
             <div className="space-y-3">
               {pricing.breakdown.map((item) => (
-                <div key={item.petId} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
+                <div key={item.petId} className="flex items-center justify-between py-0 border-b border-gray-100 last:border-0">
                   <div>
                     <p className="font-semibold text-gray-900">{item.petName}</p>
                     {!item.isFirstPet && (
-                      <p className="text-xs text-green-600 flex items-center gap-1">
+                      <p className="text-xs text-green-600 flex items-center gap-0">
                         <Percent className="w-3 h-3" />
                         20% discount applied
                       </p>
@@ -293,21 +293,21 @@ export function MultiPetBookingPage({
                   </div>
                 </div>
               ))}
-              <div className="pt-3 border-t-2 border-gray-200">
-                <div className="flex items-center justify-between mb-2">
+              <div className="pt-1 border-t-2 border-gray-200">
+                <div className="flex items-center justify-between mb-0">
                   <span className="text-gray-600">Subtotal</span>
                   <span className="font-semibold text-gray-900">₹{pricing.basePrice}</span>
                 </div>
                 {pricing.discount > 0 && (
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-green-600 flex items-center gap-1">
+                  <div className="flex items-center justify-between mb-0">
+                    <span className="text-green-600 flex items-center gap-0">
                       <Percent className="w-4 h-4" />
                       Discount ({(pricing.numberOfPets || 0) - 1} additional pet{(pricing.numberOfPets || 0) > 2 ? 's' : ''})
                     </span>
                     <span className="font-semibold text-green-600">-₹{pricing.discount}</span>
                   </div>
                 )}
-                <div className="flex items-center justify-between pt-2 border-t border-gray-200">
+                <div className="flex items-center justify-between pt-0 border-t border-gray-200">
                   <span className="text-lg font-bold text-gray-900">Total</span>
                   <span className="text-2xl font-bold text-primary">₹{pricing.totalPrice}</span>
                 </div>
@@ -319,10 +319,10 @@ export function MultiPetBookingPage({
         {/* Info Banner */}
         {selectedPetIds.length > 1 && (
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-            <div className="flex items-start gap-3">
+            <div className="flex items-start gap-0">
               <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
               <div>
-                <p className="font-semibold text-blue-900 mb-1">Multi-Pet Discount</p>
+                <p className="font-semibold text-blue-900 mb-0">Multi-Pet Discount</p>
                 <p className="text-sm text-blue-700">
                   You're saving ₹{pricing.discount} with our 20% discount on additional pets!
                 </p>
@@ -335,7 +335,7 @@ export function MultiPetBookingPage({
         <button
           onClick={handleConfirmBooking}
           disabled={booking || selectedPetIds.length === 0}
-          className="w-full py-4 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          className="w-full py-4 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-0"
         >
           {booking ? (
             <>

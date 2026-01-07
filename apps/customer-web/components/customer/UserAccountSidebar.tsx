@@ -219,8 +219,8 @@ export function UserAccountSidebar({
       <div className="w-full max-w-[430px] mx-auto h-full bg-white flex flex-col">
         
         {/* Header - Fixed */}
-        <div className="bg-gradient-to-r from-primary to-primary-dark px-6 pt-12 pb-6 flex-shrink-0">
-          <div className="flex items-center justify-between mb-6">
+        <div className="bg-gradient-to-r from-primary to-primary-dark px-0 pt-12 pb-0 flex-shrink-0">
+          <div className="flex items-center justify-between mb-0">
             <button 
               onClick={handleClose}
               className="w-11 h-11 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm active:scale-95 transition-transform"
@@ -233,7 +233,7 @@ export function UserAccountSidebar({
                   setActiveView('menu');
                   setEditMode(false);
                 }}
-                className="text-white flex items-center gap-2 active:opacity-70 transition-opacity"
+                className="text-white flex items-center gap-0 active:opacity-70 transition-opacity"
               >
                 <ChevronLeft className="w-5 h-5" />
                 <span className="font-medium">Back</span>
@@ -246,7 +246,7 @@ export function UserAccountSidebar({
             <div className="flex items-center gap-4">
               <div className="w-16 h-16 bg-white/20 rounded-full animate-pulse"></div>
               <div className="flex-1">
-                <div className="h-5 bg-white/20 rounded w-32 mb-2"></div>
+                <div className="h-5 bg-white/20 rounded w-32 mb-0"></div>
                 <div className="h-4 bg-white/20 rounded w-24"></div>
               </div>
             </div>
@@ -272,7 +272,7 @@ export function UserAccountSidebar({
         {/* Scrollable Content Area */}
         <div className="flex-1 overflow-y-auto overscroll-contain relative">
           {activeView === 'menu' && (
-            <div className="p-5 space-y-3 pb-8">
+            <div className="p-0 space-y-3 pb-8">
               {menuItems.map((item, index) => (
                 <button
                   key={index}
@@ -306,9 +306,9 @@ export function UserAccountSidebar({
                     </div>
                     <span className="font-semibold text-gray-800 text-[15px]">{item.label}</span>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-0">
                     {item.badge !== undefined && item.badge > 0 && (
-                      <span className="min-w-[26px] h-[26px] px-2 bg-primary text-white rounded-full flex items-center justify-center text-xs font-bold">
+                      <span className="min-w-[26px] h-[26px] px-0 bg-primary text-white rounded-full flex items-center justify-center text-xs font-bold">
                         {item.badge}
                       </span>
                     )}
@@ -325,7 +325,7 @@ export function UserAccountSidebar({
                   localStorage.removeItem('customerId');
                   window.location.href = '/auth';
                 }}
-                className="w-full flex items-center justify-between p-4 bg-white border-2 border-red-200 rounded-2xl active:scale-[0.98] active:bg-red-50 transition-all shadow-sm mt-6"
+                className="w-full flex items-center justify-between p-4 bg-white border-2 border-red-200 rounded-2xl active:scale-[0.98] active:bg-red-50 transition-all shadow-sm mt-0"
               >
                 <div className="flex items-center gap-4">
                   <div className="w-14 h-14 bg-gradient-to-br from-red-100 to-red-200 rounded-2xl flex items-center justify-center">
@@ -340,8 +340,8 @@ export function UserAccountSidebar({
 
           {/* Profile View */}
           {activeView === 'profile' && (
-            <div className="p-5 pb-32">
-              <h3 className="text-2xl font-bold text-gray-800 mb-6">My Profile</h3>
+            <div className="p-0 pb-32">
+              <h3 className="text-2xl font-bold text-gray-800 mb-0">My Profile</h3>
               
               {loading ? (
                 <div className="text-center py-20">
@@ -352,20 +352,20 @@ export function UserAccountSidebar({
               ) : (
                 <>
                   {/* Edit/Save Buttons */}
-                  <div className="flex justify-end mb-6">
+                  <div className="flex justify-end mb-0">
                     {editMode ? (
-                      <div className="flex gap-3 w-full">
+                      <div className="flex gap-0 w-full">
                         <button
                           onClick={handleCancelEdit}
                           className="flex-1 h-12 border-2 border-gray-300 rounded-xl text-gray-700 font-medium hover:bg-gray-50 transition-colors"
                         >
-                          <X className="w-5 h-5 inline mr-2" />
+                          <X className="w-5 h-5 inline mr-0" />
                           Cancel
                         </button>
                         <button
                           onClick={handleSaveProfile}
                           disabled={saving}
-                          className="flex-1 h-12 bg-primary hover:bg-primary-dark rounded-xl text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                          className="flex-1 h-12 bg-primary hover:bg-primary-dark rounded-xl text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-0"
                         >
                           {saving ? (
                             <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
@@ -378,7 +378,7 @@ export function UserAccountSidebar({
                     ) : (
                       <button
                         onClick={() => setEditMode(true)}
-                        className="h-12 px-6 border-2 border-gray-300 rounded-xl text-gray-700 font-medium hover:bg-gray-50 transition-colors flex items-center gap-2"
+                        className="h-12 px-0 border-2 border-gray-300 rounded-xl text-gray-700 font-medium hover:bg-gray-50 transition-colors flex items-center gap-0"
                       >
                         <Edit2 className="w-5 h-5" />
                         Edit Profile
@@ -387,7 +387,7 @@ export function UserAccountSidebar({
                   </div>
 
                   {/* Photo */}
-                  <div className="flex flex-col items-center mb-10">
+                  <div className="flex flex-col items-center mb-0">
                     <div className="relative">
                       <div className="w-32 h-32 rounded-full overflow-hidden bg-gray-200 border-4 border-white shadow-lg">
                         {photoPreview ? (
@@ -422,68 +422,68 @@ export function UserAccountSidebar({
                   <div className="space-y-5">
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-xs font-semibold text-gray-500 mb-2.5">First Name</label>
+                        <label className="block text-xs font-semibold text-gray-500 mb-0.5">First Name</label>
                         {editMode ? (
                           <input
                             type="text"
                             value={profile.firstName}
                             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, firstName: e.target.value })}
-                            className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                            className="w-full px-4 py-0.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                           />
                         ) : (
-                          <p className="text-black font-medium px-4 py-3.5 bg-gray-50 rounded-xl">{profile.firstName || '-'}</p>
+                          <p className="text-black font-medium px-4 py-0.5 bg-gray-50 rounded-xl">{profile.firstName || '-'}</p>
                         )}
                       </div>
                       <div>
-                        <label className="block text-xs font-semibold text-gray-500 mb-2.5">Last Name</label>
+                        <label className="block text-xs font-semibold text-gray-500 mb-0.5">Last Name</label>
                         {editMode ? (
                           <input
                             type="text"
                             value={profile.lastName}
                             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, lastName: e.target.value })}
-                            className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                            className="w-full px-4 py-0.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                           />
                         ) : (
-                          <p className="text-black font-medium px-4 py-3.5 bg-gray-50 rounded-xl">{profile.lastName || '-'}</p>
+                          <p className="text-black font-medium px-4 py-0.5 bg-gray-50 rounded-xl">{profile.lastName || '-'}</p>
                         )}
                       </div>
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-gray-500 mb-2.5">Phone Number</label>
-                      <p className="text-black font-medium px-4 py-3.5 bg-gray-100 rounded-xl">{profile.phone}</p>
+                      <label className="block text-xs font-semibold text-gray-500 mb-0.5">Phone Number</label>
+                      <p className="text-black font-medium px-4 py-0.5 bg-gray-100 rounded-xl">{profile.phone}</p>
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-gray-500 mb-2.5">Email</label>
+                      <label className="block text-xs font-semibold text-gray-500 mb-0.5">Email</label>
                       {editMode ? (
                         <input
                           type="email"
                           value={profile.email}
                           onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, email: e.target.value })}
-                          className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                          className="w-full px-4 py-0.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                         />
                       ) : (
-                        <p className="text-black font-medium px-4 py-3.5 bg-gray-50 rounded-xl">{profile.email || '-'}</p>
+                        <p className="text-black font-medium px-4 py-0.5 bg-gray-50 rounded-xl">{profile.email || '-'}</p>
                       )}
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-gray-500 mb-2.5">Address</label>
+                      <label className="block text-xs font-semibold text-gray-500 mb-0.5">Address</label>
                       {editMode ? (
                         <textarea
                           value={profile.address}
                           onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setProfile({ ...profile, address: e.target.value })}
                           rows={3}
-                          className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none resize-none"
+                          className="w-full px-4 py-0.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none resize-none"
                         />
                       ) : (
-                        <p className="text-black font-medium px-4 py-3.5 bg-gray-50 rounded-xl">{profile.address || '-'}</p>
+                        <p className="text-black font-medium px-4 py-0.5 bg-gray-50 rounded-xl">{profile.address || '-'}</p>
                       )}
                     </div>
 
                     <div>
-                      <label className="block text-xs font-semibold text-gray-500 mb-2.5">Pincode</label>
+                      <label className="block text-xs font-semibold text-gray-500 mb-0.5">Pincode</label>
                       {editMode ? (
                         <input
                           type="text"
@@ -493,10 +493,10 @@ export function UserAccountSidebar({
                             setProfile({ ...profile, pincode: value });
                           }}
                           maxLength={6}
-                          className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                          className="w-full px-4 py-0.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                         />
                       ) : (
-                        <p className="text-black font-medium px-4 py-3.5 bg-gray-50 rounded-xl">{profile.pincode || '-'}</p>
+                        <p className="text-black font-medium px-4 py-0.5 bg-gray-50 rounded-xl">{profile.pincode || '-'}</p>
                       )}
                     </div>
                   </div>
@@ -507,8 +507,8 @@ export function UserAccountSidebar({
 
           {/* Bookings View */}
           {activeView === 'bookings' && (
-            <div className="p-5 pb-8">
-              <div className="flex items-center justify-between mb-6">
+            <div className="p-0 pb-8">
+              <div className="flex items-center justify-between mb-0">
                 <h3 className="text-2xl font-bold text-gray-800">My Bookings</h3>
                 {onViewCustomerProfile && (
                   <button
@@ -516,7 +516,7 @@ export function UserAccountSidebar({
                       onViewCustomerProfile();
                       handleClose();
                     }}
-                    className="text-sm text-primary hover:text-primary-dark font-medium flex items-center gap-1"
+                    className="text-sm text-primary hover:text-primary-dark font-medium flex items-center gap-0"
                   >
                     View Full History
                     <ChevronRight className="w-4 h-4" />
@@ -525,18 +525,18 @@ export function UserAccountSidebar({
               </div>
               
               {/* Stats */}
-              <div className="grid grid-cols-3 gap-3 mb-6">
+              <div className="grid grid-cols-3 gap-0 mb-0">
                 <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-2xl p-4 text-center border border-orange-200">
                   <p className="text-3xl font-bold text-primary">{bookings.length}</p>
-                  <p className="text-xs text-gray-600 mt-1.5">Total</p>
+                  <p className="text-xs text-gray-600 mt-0.5">Total</p>
                 </div>
                 <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-2xl p-4 text-center border border-green-200">
                   <p className="text-3xl font-bold text-green-600">{activeBookings.length}</p>
-                  <p className="text-xs text-gray-600 mt-1.5">Active</p>
+                  <p className="text-xs text-gray-600 mt-0.5">Active</p>
                 </div>
                 <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-2xl p-4 text-center border border-gray-200">
                   <p className="text-3xl font-bold text-gray-600">{completedBookings.length}</p>
-                  <p className="text-xs text-gray-600 mt-1.5">Done</p>
+                  <p className="text-xs text-gray-600 mt-0.5">Done</p>
                 </div>
               </div>
 
@@ -549,7 +549,7 @@ export function UserAccountSidebar({
               ) : bookings.length === 0 ? (
                 <div className="text-center py-20 bg-gray-50 rounded-2xl">
                   <Package className="w-20 h-20 text-gray-300 mx-auto mb-4" />
-                  <h3 className="text-gray-800 font-semibold text-lg mb-2">No Bookings Yet</h3>
+                  <h3 className="text-gray-800 font-semibold text-lg mb-0">No Bookings Yet</h3>
                   <p className="text-gray-600">Your service bookings will appear here</p>
                 </div>
               ) : (
@@ -563,27 +563,27 @@ export function UserAccountSidebar({
                       }}
                       className="w-full bg-white border border-gray-200 rounded-2xl p-4 shadow-sm active:scale-[0.98] transition-transform text-left"
                     >
-                      <div className="flex gap-3">
+                      <div className="flex gap-0">
                         <div className="w-14 h-14 bg-gradient-to-br from-orange-100 to-pink-100 rounded-xl flex items-center justify-center text-2xl flex-shrink-0">
                           {getServiceIcon(booking.serviceType)}
                         </div>
 
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-start justify-between mb-2">
+                          <div className="flex items-start justify-between mb-0">
                             <h4 className="font-bold text-gray-800">
                               {booking.serviceType.charAt(0).toUpperCase() + booking.serviceType.slice(1)}
                             </h4>
-                            <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${getStatusColor(booking.status)}`}>
+                            <span className={`px-0.5 py-0 rounded-full text-xs font-semibold ${getStatusColor(booking.status)}`}>
                               {booking.status}
                             </span>
                           </div>
-                          <p className="text-sm text-gray-600 mb-3">
+                          <p className="text-sm text-gray-600 mb-0">
                             {booking.petName} • {booking.vendorName}
                           </p>
 
                           {booking.status === 'active' && (
-                            <div className="mb-3">
-                              <div className="flex items-center justify-between text-xs text-gray-600 mb-1.5">
+                            <div className="mb-0">
+                              <div className="flex items-center justify-between text-xs text-gray-600 mb-0.5">
                                 <span>{booking.completedSessions}/{booking.totalSessions} sessions</span>
                                 <span>{Math.round((booking.completedSessions / booking.totalSessions) * 100)}%</span>
                               </div>
@@ -596,7 +596,7 @@ export function UserAccountSidebar({
                             </div>
                           )}
 
-                          <div className="flex items-center gap-2 text-sm text-gray-600">
+                          <div className="flex items-center gap-0 text-sm text-gray-600">
                             <span className="font-semibold text-primary">₹{booking.price}</span>
                             <span>•</span>
                             <span>{new Date(booking.startDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>

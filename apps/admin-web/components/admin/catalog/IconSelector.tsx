@@ -30,7 +30,7 @@ export function IconSelector({ value, onChange, onClose }: IconSelectorProps) {
         {onClose && (
           <button
             onClick={onClose}
-            className="p-1 hover:bg-gray-100 rounded"
+            className="p-0 hover:bg-gray-100 rounded"
           >
             <X className="w-4 h-4" />
           </button>
@@ -38,17 +38,17 @@ export function IconSelector({ value, onChange, onClose }: IconSelectorProps) {
       </div>
 
       <div className="relative mb-4">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+        <Search className="absolute left-3 top-0/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
         <input
           type="text"
           placeholder="Search icons..."
           value={searchQuery}
           onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
-          className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm"
+          className="w-full pl-0 pr-4 py-0 border border-gray-300 rounded-lg text-sm"
         />
       </div>
 
-      <div className="grid grid-cols-8 gap-2 max-h-64 overflow-y-auto">
+      <div className="grid grid-cols-8 gap-0 max-h-64 overflow-y-auto">
         {filteredIcons.map((icon) => (
           <button
             key={icon}
@@ -56,7 +56,7 @@ export function IconSelector({ value, onChange, onClose }: IconSelectorProps) {
               onChange(icon);
               onClose?.();
             }}
-            className={`p-2 text-2xl rounded-lg hover:bg-gray-100 transition-colors ${
+            className={`p-0 text-2xl rounded-lg hover:bg-gray-100 transition-colors ${
               value === icon ? 'bg-blue-100 border-2 border-blue-500' : 'border-2 border-transparent'
             }`}
           >

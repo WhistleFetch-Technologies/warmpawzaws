@@ -69,7 +69,7 @@ export function FollowUpBookingFlow({
   return (
     <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
       {/* Header */}
-      <div className="bg-gradient-to-r from-primary to-primary-dark px-6 pt-12 pb-6 sticky top-0 z-20">
+      <div className="bg-gradient-to-r from-primary to-primary-dark px-0 pt-12 pb-0 sticky top-0 z-20">
         <div className="flex items-center gap-4 mb-4">
           <button
             onClick={onBack}
@@ -85,11 +85,11 @@ export function FollowUpBookingFlow({
       </div>
 
       {/* Content */}
-      <div className="px-6 py-6 space-y-6">
+      <div className="px-0 py-0 space-y-6">
         {/* Previous Booking Info */}
         {previousBooking && (
-          <div className="bg-white rounded-2xl p-5 shadow-sm border-2 border-primary">
-            <div className="flex items-center gap-3 mb-3">
+          <div className="bg-white rounded-2xl p-0 shadow-sm border-2 border-primary">
+            <div className="flex items-center gap-0 mb-0">
               <CheckCircle className="w-6 h-6 text-green-600" />
               <h3 className="font-bold text-gray-900">Previous Appointment</h3>
             </div>

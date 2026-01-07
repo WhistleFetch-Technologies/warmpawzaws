@@ -109,7 +109,7 @@ export function PreviousProvidersCarousel({
           <div
             key={provider.providerId}
             onClick={() => handleRebook(provider)}
-            className="flex-shrink-0 w-80 bg-white rounded-xl border-2 border-gray-200 p-5 hover:border-primary transition-all cursor-pointer group active:scale-[0.98]"
+            className="flex-shrink-0 w-80 bg-white rounded-xl border-2 border-gray-200 p-0 hover:border-primary transition-all cursor-pointer group active:scale-[0.98]"
           >
             {/* Provider Header */}
             <div className="flex items-start gap-4 mb-4">
@@ -138,8 +138,8 @@ export function PreviousProvidersCarousel({
                 </p>
 
                 {/* Rating */}
-                <div className="flex items-center gap-2 mt-1">
-                  <div className="flex items-center gap-1">
+                <div className="flex items-center gap-0 mt-0">
+                  <div className="flex items-center gap-0">
                     <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
                     <span className="text-sm font-semibold">{provider.rating.toFixed(1)}</span>
                   </div>
@@ -152,12 +152,12 @@ export function PreviousProvidersCarousel({
 
             {/* Service Info */}
             <div className="space-y-2 mb-4">
-              <div className="flex items-center gap-2 text-sm text-gray-600">
+              <div className="flex items-center gap-0 text-sm text-gray-600">
                 <Calendar className="w-4 h-4" />
                 <span>Last service: {formatDate(provider.lastServiceDate)}</span>
               </div>
               {provider.distance && (
-                <div className="flex items-center gap-2 text-sm text-gray-600">
+                <div className="flex items-center gap-0 text-sm text-gray-600">
                   <MapPin className="w-4 h-4" />
                   <span>{provider.distance.toFixed(1)} km away</span>
                 </div>
@@ -168,7 +168,7 @@ export function PreviousProvidersCarousel({
             </div>
 
             {/* Rebook Button */}
-            <button className="w-full py-2 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark transition-colors flex items-center justify-center gap-2">
+            <button className="w-full py-0 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark transition-colors flex items-center justify-center gap-0">
               Rebook Now
               <ArrowRight className="w-4 h-4" />
             </button>

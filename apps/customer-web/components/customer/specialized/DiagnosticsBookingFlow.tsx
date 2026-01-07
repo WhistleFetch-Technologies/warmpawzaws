@@ -163,15 +163,15 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center p-12">
+      <div className="flex items-center justify-center p-02">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500"></div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-4xl mx-auto p-6">
-      <h2 className="text-2xl font-bold text-gray-900 mb-6">Book Diagnostic Tests</h2>
+    <div className="max-w-4xl mx-auto p-0">
+      <h2 className="text-2xl font-bold text-gray-900 mb-0">Book Diagnostic Tests</h2>
 
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Search and Filter */}
@@ -182,12 +182,12 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
               value={searchQuery}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
               placeholder="Search tests..."
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+              className="flex-1 px-4 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
             />
             <select
               value={categoryFilter}
               onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setCategoryFilter(e.target.value)}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+              className="px-4 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
             >
               <option value="">All Categories</option>
               {getCategories().map(cat => (
@@ -219,40 +219,40 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
                     type="checkbox"
                     checked={selectedTests.includes(test.id)}
                     onChange={() => toggleTest(test.id)}
-                    className="mt-1 w-5 h-5 text-orange-500 border-gray-300 rounded focus:ring-orange-500"
+                    className="mt-0 w-5 h-5 text-orange-500 border-gray-300 rounded focus:ring-orange-500"
                   />
                   <div className="flex-1">
                     <div className="flex items-start justify-between">
                       <div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-0">
                           <TestTube className="text-orange-500" size={18} />
                           <span className="font-semibold text-gray-900">{test.test_name}</span>
                           {test.test_code && (
-                            <span className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">
+                            <span className="px-0 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">
                               {test.test_code}
                             </span>
                           )}
                         </div>
                         {test.category && (
-                          <span className="text-sm text-gray-500 mt-1 block">{test.category}</span>
+                          <span className="text-sm text-gray-500 mt-0 block">{test.category}</span>
                         )}
                         {test.description && (
-                          <p className="text-sm text-gray-600 mt-1">{test.description}</p>
+                          <p className="text-sm text-gray-600 mt-0">{test.description}</p>
                         )}
-                        <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
+                        <div className="flex items-center gap-4 mt-0 text-sm text-gray-500">
                           {test.sample_type && (
                             <span>Sample: {test.sample_type}</span>
                           )}
                           {test.duration_minutes && (
-                            <span className="flex items-center gap-1">
+                            <span className="flex items-center gap-0">
                               <Clock size={14} />
                               {test.duration_minutes} min
                             </span>
                           )}
                         </div>
                         {test.preparation_instructions && (
-                          <div className="mt-2 p-2 bg-blue-50 rounded text-xs text-blue-700">
-                            <FileText size={12} className="inline mr-1" />
+                          <div className="mt-0 p-0 bg-blue-50 rounded text-xs text-blue-700">
+                            <FileText size={12} className="inline mr-0" />
                             {test.preparation_instructions}
                           </div>
                         )}
@@ -274,7 +274,7 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
             <div className="flex items-center justify-between">
               <div>
                 <p className="font-semibold text-gray-900">{selectedTests.length} test(s) selected</p>
-                <p className="text-sm text-gray-600 mt-1">
+                <p className="text-sm text-gray-600 mt-0">
                   {selectedTests.map(id => tests.find(t => t.id === id)?.test_name).filter(Boolean).join(', ')}
                 </p>
               </div>
@@ -284,11 +284,11 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
         )}
 
         {/* Patient Details */}
-        <div className="bg-white rounded-xl p-6 shadow-sm space-y-4">
+        <div className="bg-white rounded-xl p-1 shadow-sm space-y-4">
           <h3 className="font-semibold text-gray-900 mb-4">Patient Details</h3>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-0">
                 Patient Name *
               </label>
               <input
@@ -296,32 +296,32 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
                 value={patientName}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPatientName(e.target.value)}
                 required
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                className="w-full px-4 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-0">
                 Age
               </label>
               <input
                 type="number"
                 value={patientAge}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPatientAge(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                className="w-full px-4 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
               />
             </div>
           </div>
 
           {/* Sample Collection Type */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-0">
               Sample Collection
             </label>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-0">
               <button
                 type="button"
                 onClick={() => setPreferredSampleType('center')}
-                className={`px-4 py-3 rounded-lg border-2 transition ${
+                className={`px-4 py-0 rounded-lg border-2 transition ${
                   preferredSampleType === 'center'
                     ? 'border-orange-500 bg-orange-50 text-orange-700'
                     : 'border-gray-200 hover:border-gray-300'
@@ -332,7 +332,7 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
               <button
                 type="button"
                 onClick={() => setPreferredSampleType('home')}
-                className={`px-4 py-3 rounded-lg border-2 transition ${
+                className={`px-4 py-0 rounded-lg border-2 transition ${
                   preferredSampleType === 'home'
                     ? 'border-orange-500 bg-orange-50 text-orange-700'
                     : 'border-gray-200 hover:border-gray-300'
@@ -345,7 +345,7 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
 
           {preferredSampleType === 'home' && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-0">
                 Home Address *
               </label>
               <textarea
@@ -354,7 +354,7 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
                 required={preferredSampleType === 'home'}
                 rows={3}
                 placeholder="Enter complete address for home collection"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                className="w-full px-4 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
               />
             </div>
           )}
@@ -362,8 +362,8 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
           {/* Date and Time Selection */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                <Calendar className="inline mr-1" size={16} />
+              <label className="block text-sm font-medium text-gray-700 mb-0">
+                <Calendar className="inline mr-0" size={16} />
                 Preferred Date *
               </label>
               <input
@@ -372,12 +372,12 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSelectedDate(e.target.value)}
                 min={new Date().toISOString().split('T')[0]}
                 required
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                className="w-full px-4 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                <Clock className="inline mr-1" size={16} />
+              <label className="block text-sm font-medium text-gray-700 mb-0">
+                <Clock className="inline mr-0" size={16} />
                 Preferred Time *
               </label>
               <input
@@ -385,7 +385,7 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
                 value={selectedTime}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSelectedTime(e.target.value)}
                 required
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                className="w-full px-4 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
               />
             </div>
           </div>
@@ -398,12 +398,12 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
         )}
 
         {/* Actions */}
-        <div className="flex gap-3">
+        <div className="flex gap-0">
           {onCancel && (
             <button
               type="button"
               onClick={onCancel}
-              className="flex-1 px-6 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+              className="flex-1 px-0 py-0 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
             >
               Cancel
             </button>
@@ -411,7 +411,7 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
           <button
             type="submit"
             disabled={processing || selectedTests.length === 0}
-            className="flex-1 px-6 py-3 bg-orange-500 text-white rounded-lg font-semibold hover:bg-orange-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
+            className="flex-1 px-0 py-0 bg-orange-500 text-white rounded-lg font-semibold hover:bg-orange-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
           >
             {processing ? 'Booking...' : `Book Tests - ₹${getTotalPrice()}`}
           </button>

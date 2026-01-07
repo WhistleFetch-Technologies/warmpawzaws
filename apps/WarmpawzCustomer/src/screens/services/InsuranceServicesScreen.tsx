@@ -487,7 +487,7 @@ export function InsuranceServicesScreen({
           disabled={loading}
         >
           {loading ? (
-            <ActivityIndicator color="#fff" />
+            <ActivityIndicator color={colors.white} />
           ) : (
             <Text style={styles.primaryButtonText}>Purchase Policy</Text>
           )}
@@ -548,7 +548,7 @@ export function InsuranceServicesScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
   },
   header: {
     padding: spacing.md,
@@ -558,23 +558,23 @@ const styles = StyleSheet.create({
   },
   backButton: {
     fontSize: typography.body,
-    color: '#fff',
+    color: colors.white,
     marginBottom: spacing.sm,
   },
   headerTitle: {
     fontSize: typography.h1,
     fontWeight: 'bold',
-    color: '#fff',
+    color: colors.white,
   },
   title: {
     fontSize: typography.h1,
     fontWeight: 'bold',
-    color: '#fff',
+    color: colors.white,
     marginBottom: spacing.sm,
   },
   subtitle: {
     fontSize: typography.body,
-    color: '#fff',
+    color: colors.white,
     opacity: 0.9,
   },
   landingContent: {
@@ -593,7 +593,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   statNumber: {
     fontSize: typography.h2,
@@ -638,7 +638,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   providerHeader: {
     flexDirection: 'row',
@@ -732,12 +732,12 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     marginBottom: spacing.md,
     borderWidth: 2,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
     position: 'relative',
   },
   planCardPopular: {
     borderColor: colors.primary,
-    backgroundColor: '#FEE2E2',
+    backgroundColor: colors.error + 20% opacity,
   },
   popularBadge: {
     position: 'absolute',
@@ -749,7 +749,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.sm,
   },
   popularBadgeText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: typography.caption,
     fontWeight: 'bold',
   },
@@ -800,7 +800,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   selectPlanButton: {
-    backgroundColor: '#E5E7EB',
+    backgroundColor: colors.gray.200,
     borderRadius: borderRadius.md,
     padding: spacing.md,
     alignItems: 'center',
@@ -814,14 +814,14 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   selectPlanButtonTextPopular: {
-    color: '#fff',
+    color: colors.white,
   },
   purchaseContainer: {
     flex: 1,
     padding: spacing.md,
   },
   selectedPlanCard: {
-    backgroundColor: '#FEE2E2',
+    backgroundColor: colors.error + 20% opacity,
     borderRadius: borderRadius.md,
     padding: spacing.md,
     marginBottom: spacing.md,
@@ -895,7 +895,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
     paddingTop: spacing.md,
     borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
+    borderTopColor: colors.gray.200,
   },
   summaryTotalLabel: {
     fontSize: typography.h3,
@@ -951,7 +951,7 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   primaryButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: typography.body,
     fontWeight: 'bold',
   },

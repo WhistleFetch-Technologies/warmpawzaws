@@ -40,10 +40,10 @@ export function RadarProviderMap({
       {/* View Toggle */}
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-bold text-gray-900">Nearby Providers</h3>
-        <div className="flex items-center bg-gray-100 rounded-lg p-1">
+        <div className="flex items-center bg-gray-100 rounded-lg p-0">
           <button
             onClick={() => setViewMode('map')}
-            className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+            className={`px-0 py-0.5 rounded text-sm font-medium transition-colors ${
               viewMode === 'map'
                 ? 'bg-white text-gray-900 shadow-sm'
                 : 'text-gray-600 hover:text-gray-900'
@@ -53,7 +53,7 @@ export function RadarProviderMap({
           </button>
           <button
             onClick={() => setViewMode('list')}
-            className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+            className={`px-0 py-0.5 rounded text-sm font-medium transition-colors ${
               viewMode === 'list'
                 ? 'bg-white text-gray-900 shadow-sm'
                 : 'text-gray-600 hover:text-gray-900'
@@ -70,12 +70,12 @@ export function RadarProviderMap({
           <div className="text-center">
             <MapPin className="w-16 h-16 text-gray-400 mx-auto mb-4" />
             <p className="text-gray-600">Map view coming soon</p>
-            <p className="text-sm text-gray-500 mt-2">{providers.length} providers nearby</p>
+            <p className="text-sm text-gray-500 mt-0">{providers.length} providers nearby</p>
           </div>
           
           {/* User Location Marker */}
           {userLocation && (
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
+            <div className="absolute top-0/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
               <div className="w-4 h-4 bg-blue-500 rounded-full border-2 border-white shadow-lg"></div>
             </div>
           )}
@@ -94,15 +94,15 @@ export function RadarProviderMap({
                 </div>
                 <div className="flex-1">
                   <h4 className="font-semibold text-gray-900">{provider.name}</h4>
-                  <div className="flex items-center gap-3 text-sm text-gray-600 mt-1">
+                  <div className="flex items-center gap-0 text-sm text-gray-600 mt-0">
                     {provider.distance && (
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-0">
                         <Navigation className="w-4 h-4" />
                         <span>{provider.distance.toFixed(1)} km</span>
                       </div>
                     )}
                     {provider.rating && (
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-0">
                         <span className="font-semibold">{provider.rating.toFixed(1)}</span>
                         <span>⭐</span>
                       </div>

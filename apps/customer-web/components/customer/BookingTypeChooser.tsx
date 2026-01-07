@@ -141,10 +141,10 @@ export function BookingTypeChooser({ onTypeSelected, onProblemSearch }: BookingT
     <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
       {/* Mode Toggle */}
       <div className="bg-white border-b px-4 py-4">
-        <div className="flex gap-2 bg-gray-100 p-1 rounded-xl max-w-md mx-auto">
+        <div className="flex gap-0 bg-gray-100 p-0 rounded-xl max-w-md mx-auto">
           <button
             onClick={() => setSearchMode('type')}
-            className={`flex-1 px-4 py-2 rounded-lg font-medium transition-all ${
+            className={`flex-1 px-4 py-0 rounded-lg font-medium transition-all ${
               searchMode === 'type'
                 ? 'bg-white text-primary shadow-sm'
                 : 'text-gray-600 hover:text-gray-900'
@@ -154,7 +154,7 @@ export function BookingTypeChooser({ onTypeSelected, onProblemSearch }: BookingT
           </button>
           <button
             onClick={() => setSearchMode('problem')}
-            className={`flex-1 px-4 py-2 rounded-lg font-medium transition-all ${
+            className={`flex-1 px-4 py-0 rounded-lg font-medium transition-all ${
               searchMode === 'problem'
                 ? 'bg-white text-primary shadow-sm'
                 : 'text-gray-600 hover:text-gray-900'
@@ -166,7 +166,7 @@ export function BookingTypeChooser({ onTypeSelected, onProblemSearch }: BookingT
       </div>
 
       {/* Content */}
-      <div className="px-4 py-6">
+      <div className="px-4 py-0">
         {searchMode === 'type' ? (
           <div className="space-y-4">
             <h2 className="text-xl font-bold text-gray-900 mb-4">How would you like to book?</h2>
@@ -174,14 +174,14 @@ export function BookingTypeChooser({ onTypeSelected, onProblemSearch }: BookingT
             {/* Service Type Cards */}
             <button
               onClick={() => onTypeSelected('at_home')}
-              className="w-full bg-white rounded-2xl border-2 border-gray-200 p-6 hover:border-primary hover:shadow-lg transition-all text-left active:scale-[0.98]"
+              className="w-full bg-white rounded-2xl border-2 border-gray-200 p-0 hover:border-primary hover:shadow-lg transition-all text-left active:scale-[0.98]"
             >
               <div className="flex items-center gap-4">
                 <div className="w-16 h-16 bg-gradient-to-br from-green-100 to-green-200 rounded-xl flex items-center justify-center">
                   <Home className="w-8 h-8 text-green-600" />
                 </div>
                 <div className="flex-1">
-                  <h3 className="font-bold text-gray-900 text-lg mb-1">At Home Service</h3>
+                  <h3 className="font-bold text-gray-900 text-lg mb-0">At Home Service</h3>
                   <p className="text-sm text-gray-600">Professional service at your doorstep</p>
                 </div>
                 <ChevronRight className="w-5 h-5 text-gray-400" />
@@ -190,14 +190,14 @@ export function BookingTypeChooser({ onTypeSelected, onProblemSearch }: BookingT
 
             <button
               onClick={() => onTypeSelected('tele')}
-              className="w-full bg-white rounded-2xl border-2 border-gray-200 p-6 hover:border-primary hover:shadow-lg transition-all text-left active:scale-[0.98]"
+              className="w-full bg-white rounded-2xl border-2 border-gray-200 p-0 hover:border-primary hover:shadow-lg transition-all text-left active:scale-[0.98]"
             >
               <div className="flex items-center gap-4">
                 <div className="w-16 h-16 bg-gradient-to-br from-blue-100 to-blue-200 rounded-xl flex items-center justify-center">
                   <Video className="w-8 h-8 text-blue-600" />
                 </div>
                 <div className="flex-1">
-                  <h3 className="font-bold text-gray-900 text-lg mb-1">Tele Consultation</h3>
+                  <h3 className="font-bold text-gray-900 text-lg mb-0">Tele Consultation</h3>
                   <p className="text-sm text-gray-600">Video consultation with experts</p>
                 </div>
                 <ChevronRight className="w-5 h-5 text-gray-400" />
@@ -206,14 +206,14 @@ export function BookingTypeChooser({ onTypeSelected, onProblemSearch }: BookingT
 
             <button
               onClick={() => onTypeSelected('at_center')}
-              className="w-full bg-white rounded-2xl border-2 border-gray-200 p-6 hover:border-primary hover:shadow-lg transition-all text-left active:scale-[0.98]"
+              className="w-full bg-white rounded-2xl border-2 border-gray-200 p-0 hover:border-primary hover:shadow-lg transition-all text-left active:scale-[0.98]"
             >
               <div className="flex items-center gap-4">
                 <div className="w-16 h-16 bg-gradient-to-br from-purple-100 to-purple-200 rounded-xl flex items-center justify-center">
                   <Building2 className="w-8 h-8 text-purple-600" />
                 </div>
                 <div className="flex-1">
-                  <h3 className="font-bold text-gray-900 text-lg mb-1">Visit Center</h3>
+                  <h3 className="font-bold text-gray-900 text-lg mb-0">Visit Center</h3>
                   <p className="text-sm text-gray-600">Book appointment at our facility</p>
                 </div>
                 <ChevronRight className="w-5 h-5 text-gray-400" />
@@ -226,13 +226,13 @@ export function BookingTypeChooser({ onTypeSelected, onProblemSearch }: BookingT
             
             {/* Problem Search */}
             <div className="relative mb-4">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <Search className="absolute left-3 top-0/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
               <input
                 type="text"
                 value={problemQuery}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProblemQuery(e.target.value)}
                 placeholder="Search for a problem or symptom..."
-                className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                className="w-full pl-0 pr-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
               />
             </div>
 
@@ -245,16 +245,16 @@ export function BookingTypeChooser({ onTypeSelected, onProblemSearch }: BookingT
                     onClick={() => handleProblemSelect(problem)}
                     className="w-full bg-white rounded-xl border-2 border-gray-200 p-4 hover:border-primary hover:shadow-md transition-all text-left active:scale-[0.98]"
                   >
-                    <div className="flex items-start justify-between mb-2">
+                    <div className="flex items-start justify-between mb-0">
                       <h3 className="font-semibold text-gray-900">{problem.problem}</h3>
-                      <span className={`px-2 py-1 rounded-full text-xs font-semibold border ${getUrgencyColor(problem.urgency)}`}>
+                      <span className={`px-0 py-0 rounded-full text-xs font-semibold border ${getUrgencyColor(problem.urgency)}`}>
                         {problem.urgency}
                       </span>
                     </div>
-                    <p className="text-sm text-gray-600 mb-2">{problem.description}</p>
-                    <div className="flex flex-wrap gap-2">
+                    <p className="text-sm text-gray-600 mb-0">{problem.description}</p>
+                    <div className="flex flex-wrap gap-0">
                       {problem.mappedServiceStyles.map((style) => (
-                        <span key={style} className="px-2 py-1 bg-gray-100 text-gray-700 rounded-full text-xs">
+                        <span key={style} className="px-0 py-0 bg-gray-100 text-gray-700 rounded-full text-xs">
                           {style.replace('_', ' ')}
                         </span>
                       ))}
@@ -273,9 +273,9 @@ export function BookingTypeChooser({ onTypeSelected, onProblemSearch }: BookingT
                     onClick={() => handleProblemSelect(problem)}
                     className="w-full bg-white rounded-xl border-2 border-gray-200 p-4 hover:border-primary hover:shadow-md transition-all text-left active:scale-[0.98]"
                   >
-                    <div className="flex items-start justify-between mb-2">
+                    <div className="flex items-start justify-between mb-0">
                       <h3 className="font-semibold text-gray-900">{problem.problem}</h3>
-                      <span className={`px-2 py-1 rounded-full text-xs font-semibold border ${getUrgencyColor(problem.urgency)}`}>
+                      <span className={`px-0 py-0 rounded-full text-xs font-semibold border ${getUrgencyColor(problem.urgency)}`}>
                         {problem.urgency}
                       </span>
                     </div>

@@ -196,9 +196,9 @@ export function NotificationsScreen({
       case 'booking':
         return '#3B82F6';
       case 'payment':
-        return '#10B981';
+        return {colors.success};
       case 'success':
-        return '#10B981';
+        return {colors.success};
       case 'warning':
         return '#F59E0B';
       case 'error':
@@ -470,7 +470,7 @@ export function NotificationsScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
   },
   header: {
     flexDirection: 'row',
@@ -483,12 +483,12 @@ const styles = StyleSheet.create({
   },
   backButton: {
     fontSize: typography.fontSizes.md,
-    color: '#fff',
+    color: colors.white,
   },
   headerTitle: {
     fontSize: typography.fontSizes['2xl'],
     fontWeight: 'bold',
-    color: '#fff',
+    color: colors.white,
     flex: 1,
     textAlign: 'center',
   },
@@ -504,7 +504,7 @@ const styles = StyleSheet.create({
   },
   markAllButtonText: {
     fontSize: typography.fontSizes.xs,
-    color: '#fff',
+    color: colors.white,
     fontWeight: '600',
   },
   loadingContainer: {
@@ -516,7 +516,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     backgroundColor: '#F9FAFB',
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: colors.gray.200,
   },
   tab: {
     flex: 1,
@@ -552,7 +552,7 @@ const styles = StyleSheet.create({
   },
   badgeText: {
     fontSize: typography.fontSizes.xs,
-    color: '#fff',
+    color: colors.white,
     fontWeight: 'bold',
   },
   content: {
@@ -575,10 +575,10 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   notificationCardUnread: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderWidth: 2,
     borderColor: colors.primary,
   },
@@ -635,7 +635,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: colors.gray.100,
     justifyContent: 'center',
     alignItems: 'center',
     marginLeft: spacing.sm,
@@ -653,7 +653,7 @@ const styles = StyleSheet.create({
   },
   actionButtonText: {
     fontSize: typography.fontSizes.sm,
-    color: '#fff',
+    color: colors.white,
     fontWeight: '600',
   },
   emptyState: {
@@ -680,12 +680,12 @@ const styles = StyleSheet.create({
   footer: {
     padding: spacing.md,
     borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-    backgroundColor: '#fff',
+    borderTopColor: colors.gray.200,
+    backgroundColor: colors.white,
   },
   clearAllButton: {
     padding: spacing.md,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: colors.gray.100,
     borderRadius: borderRadius.md,
     alignItems: 'center',
   },

@@ -101,22 +101,22 @@ export function AdminVendorsPage() {
   );
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
+    <div className="p-0">
+      <div className="flex items-center justify-between mb-0">
         <h1 className="text-2xl font-bold text-gray-900">Vendor Management</h1>
-        <div className="flex gap-3">
+        <div className="flex gap-0">
           <input
             type="search"
             placeholder="Search vendors..."
             value={search}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
-            className="px-4 py-2 border rounded-lg w-64 focus:ring-2 focus:ring-blue-500"
+            className="px-4 py-0 border rounded-lg w-64 focus:ring-2 focus:ring-blue-500"
           />
         </div>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-5 gap-4 mb-6">
+      <div className="grid grid-cols-5 gap-4 mb-0">
         {[
           { label: 'All', value: vendors.length, filter: 'all', color: 'bg-gray-100' },
           { label: 'Pending', value: vendors.filter(v => (v.status as any) === 'pending').length, filter: 'pending', color: 'bg-yellow-100' },
@@ -173,12 +173,12 @@ export function AdminVendorsPage() {
                   </td>
                   <td className="p-4 text-gray-600">{vendor.city}</td>
                   <td className="p-4">
-                    <span className={`text-xs px-2 py-1 rounded-full ${getStatusColor(vendor.status)}`}>
+                    <span className={`text-xs px-0 py-0 rounded-full ${getStatusColor(vendor.status)}`}>
                       {vendor.status}
                     </span>
                   </td>
                   <td className="p-4">
-                    <span className={`text-xs px-2 py-1 rounded-full ${getTierColor(vendor.tier)}`}>
+                    <span className={`text-xs px-0 py-0 rounded-full ${getTierColor(vendor.tier)}`}>
                       {vendor.tier || 'Bronze'}
                     </span>
                   </td>
@@ -188,7 +188,7 @@ export function AdminVendorsPage() {
                   <td className="p-4">
                     <button
                       onClick={() => setSelectedVendor(vendor)}
-                      className="px-3 py-1 text-sm bg-blue-100 text-blue-600 rounded-lg hover:bg-blue-200"
+                      className="px-0 py-0 text-sm bg-blue-100 text-blue-600 rounded-lg hover:bg-blue-200"
                     >
                       Review
                     </button>
@@ -232,13 +232,13 @@ function VendorDetailModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-2xl p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+      <div className="bg-white rounded-2xl p-0 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-bold">Vendor Application Review</h2>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg">✕</button>
+          <button onClick={onClose} className="p-0 hover:bg-gray-100 rounded-lg">✕</button>
         </div>
 
-        <div className="grid md:grid-cols-2 gap-4 mb-6">
+        <div className="grid md:grid-cols-2 gap-4 mb-0">
           <div>
             <label className="text-sm text-gray-500">Business Name</label>
             <p className="font-medium">{vendor.business_name}</p>
@@ -267,11 +267,11 @@ function VendorDetailModal({
 
         {(vendor.status as any) === 'pending' && (
           <div className="border-t pt-4">
-            <h3 className="font-semibold mb-3">Take Action</h3>
-            <div className="flex gap-3 mb-4">
+            <h3 className="font-semibold mb-0">Take Action</h3>
+            <div className="flex gap-0 mb-4">
               <button
                 onClick={() => setAction('approve')}
-                className={`px-4 py-2 rounded-lg font-medium ${
+                className={`px-4 py-0 rounded-lg font-medium ${
                   action === 'approve' ? 'bg-green-500 text-white' : 'bg-green-100 text-green-700'
                 }`}
               >
@@ -279,7 +279,7 @@ function VendorDetailModal({
               </button>
               <button
                 onClick={() => setAction('changes')}
-                className={`px-4 py-2 rounded-lg font-medium ${
+                className={`px-4 py-0 rounded-lg font-medium ${
                   action === 'changes' ? 'bg-yellow-500 text-white' : 'bg-yellow-100 text-yellow-700'
                 }`}
               >
@@ -287,7 +287,7 @@ function VendorDetailModal({
               </button>
               <button
                 onClick={() => setAction('reject')}
-                className={`px-4 py-2 rounded-lg font-medium ${
+                className={`px-4 py-0 rounded-lg font-medium ${
                   action === 'reject' ? 'bg-red-500 text-white' : 'bg-red-100 text-red-700'
                 }`}
               >
@@ -300,7 +300,7 @@ function VendorDetailModal({
                 <p className="text-gray-600">Are you sure you want to approve this vendor?</p>
                 <button
                   onClick={() => onApprove(vendor.id)}
-                  className="w-full py-2 bg-green-500 text-white rounded-lg hover:bg-green-600"
+                  className="w-full py-0 bg-green-500 text-white rounded-lg hover:bg-green-600"
                 >
                   Confirm Approval
                 </button>
@@ -310,14 +310,14 @@ function VendorDetailModal({
             {(action === 'changes' || action === 'reject') && (
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-0">
                     {action === 'changes' ? 'What changes are needed?' : 'Rejection Reason'}
                   </label>
                   <textarea
                     value={comment}
                     onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setComment(e.target.value)}
                     rows={3}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-0 py-0 border rounded-lg focus:ring-2 focus:ring-blue-500"
                     placeholder={action === 'changes' ? 'Please provide details about required changes...' : 'Please provide a reason for rejection...'}
                     required
                   />
@@ -334,7 +334,7 @@ function VendorDetailModal({
                       onReject(vendor.id, comment);
                     }
                   }}
-                  className={`w-full py-2 rounded-lg ${
+                  className={`w-full py-0 rounded-lg ${
                     action === 'changes' 
                       ? 'bg-yellow-500 text-white hover:bg-yellow-600' 
                       : 'bg-red-500 text-white hover:bg-red-600'
@@ -347,10 +347,10 @@ function VendorDetailModal({
           </div>
         )}
 
-        <div className="flex justify-end gap-3 mt-6 pt-4 border-t">
+        <div className="flex justify-end gap-0 mt-0 pt-4 border-t">
           <button
             onClick={onClose}
-            className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+            className="px-4 py-0 border rounded-lg hover:bg-gray-50"
           >
             Close
           </button>

@@ -8,7 +8,7 @@ import { VendorApplicationSubmitted } from './VendorApplicationSubmitted';
 import { VendorApplicationUnderReview } from './VendorApplicationUnderReview';
 import { VendorApplicationRejected } from './VendorApplicationRejected';
 import { VendorClarificationRequested } from './VendorClarificationRequested';
-import { VendorDashboard } from './VendorDashboard';
+import { VendorCapabilityDashboard } from './VendorCapabilityDashboard';
 import { apiClient, isUatMode } from '@/lib/api-client';
 
 interface VendorSession {
@@ -221,12 +221,8 @@ export function VendorApp({ initialSession }: VendorAppProps) {
   // Active Vendor - Show Dashboard
   if (status === 'active' || status === 'approved') {
     return (
-      <VendorDashboard 
+      <VendorCapabilityDashboard 
         vendorId={vendorData?.id || session.vendorId || ''}
-        phone={session.phone}
-        vendorType={vendorData?.vendorType || selectedRole || ''}
-        serviceStyle={vendorData?.serviceStyle}
-        onLogout={handleLogout}
       />
     );
   }

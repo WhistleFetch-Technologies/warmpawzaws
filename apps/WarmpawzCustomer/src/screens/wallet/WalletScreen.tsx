@@ -164,7 +164,7 @@ export function WalletScreen({
   };
 
   const getTransactionColor = (type: string) => {
-    return type === 'credit' ? '#10B981' : '#EF4444';
+    return type === 'credit' ? {colors.success} : '#EF4444';
   };
 
   if (loading) {
@@ -413,7 +413,7 @@ export function WalletScreen({
                 disabled={processing || (!selectedAmount && !customAmount)}
               >
                 {processing ? (
-                  <ActivityIndicator color="#fff" />
+                  <ActivityIndicator color={colors.white} />
                 ) : (
                   <Text style={styles.modalButtonTextPrimary}>
                     Add ₹
@@ -533,7 +533,7 @@ export function WalletScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
   },
   header: {
     flexDirection: 'row',
@@ -546,12 +546,12 @@ const styles = StyleSheet.create({
   },
   backButton: {
     fontSize: typography.fontSizes.md,
-    color: '#fff',
+    color: colors.white,
   },
   headerTitle: {
     fontSize: typography.fontSizes['2xl'],
     fontWeight: 'bold',
-    color: '#fff',
+    color: colors.white,
     flex: 1,
     textAlign: 'center',
   },
@@ -576,14 +576,14 @@ const styles = StyleSheet.create({
   },
   balanceLabel: {
     fontSize: typography.fontSizes.md,
-    color: '#fff',
+    color: colors.white,
     opacity: 0.9,
     marginBottom: spacing.xs,
   },
   balanceAmount: {
     fontSize: 48,
     fontWeight: 'bold',
-    color: '#fff',
+    color: colors.white,
     marginBottom: spacing.md,
   },
   balanceStats: {
@@ -600,14 +600,14 @@ const styles = StyleSheet.create({
   },
   statLabel: {
     fontSize: typography.fontSizes.xs,
-    color: '#fff',
+    color: colors.white,
     opacity: 0.8,
     marginBottom: spacing.xs,
   },
   statValue: {
     fontSize: typography.fontSizes.md,
     fontWeight: 'bold',
-    color: '#fff',
+    color: colors.white,
   },
   statDivider: {
     width: 1,
@@ -616,7 +616,7 @@ const styles = StyleSheet.create({
   addMoneyButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     borderRadius: borderRadius.full,
@@ -643,7 +643,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   quickActionIcon: {
     fontSize: 32,
@@ -682,13 +682,13 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   transactionIcon: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: '#E5E7EB',
+    backgroundColor: colors.gray.200,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: spacing.md,
@@ -752,7 +752,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderTopLeftRadius: borderRadius.xl,
     borderTopRightRadius: borderRadius.xl,
     maxHeight: '90%',
@@ -763,7 +763,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: colors.gray.200,
   },
   modalTitle: {
     fontSize: typography.fontSizes.xl,
@@ -774,7 +774,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: colors.gray.100,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -807,12 +807,12 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
     position: 'relative',
   },
   quickAmountButtonActive: {
     borderColor: colors.primary,
-    backgroundColor: '#FEE2E2',
+    backgroundColor: colors.error + 20% opacity,
   },
   quickAmountButtonPopular: {
     borderColor: '#F59E0B',
@@ -828,7 +828,7 @@ const styles = StyleSheet.create({
   },
   popularBadgeText: {
     fontSize: typography.fontSizes.xs,
-    color: '#fff',
+    color: colors.white,
     fontWeight: 'bold',
   },
   quickAmountText: {
@@ -842,7 +842,7 @@ const styles = StyleSheet.create({
   },
   bonusText: {
     fontSize: typography.fontSizes.xs,
-    color: '#10B981',
+    color: colors.success,
     fontWeight: '600',
   },
   customAmountSection: {
@@ -859,7 +859,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
     fontSize: typography.fontSizes.lg,
     fontWeight: 'bold',
     color: colors.text,
@@ -874,7 +874,7 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     padding: spacing.md,
     borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
+    borderTopColor: colors.gray.200,
   },
   modalButton: {
     flex: 1,
@@ -885,7 +885,7 @@ const styles = StyleSheet.create({
   modalButtonSecondary: {
     backgroundColor: '#F9FAFB',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   modalButtonPrimary: {
     backgroundColor: colors.primary,
@@ -897,7 +897,7 @@ const styles = StyleSheet.create({
   },
   modalButtonTextPrimary: {
     fontSize: typography.fontSizes.md,
-    color: '#fff',
+    color: colors.white,
     fontWeight: 'bold',
   },
   filterTabs: {
@@ -905,7 +905,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: colors.gray.200,
   },
   filterTab: {
     flex: 1,
@@ -923,7 +923,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   filterTabTextActive: {
-    color: '#fff',
+    color: colors.white,
   },
 });
 

@@ -73,13 +73,13 @@ export function SoloProviderOnboarding({ roleId, onBack, onSuccess }: SoloProvid
     <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
       <div className="bg-white border-b border-gray-200 sticky top-0 z-10 px-4 py-4">
         {onBack && (
-          <button onClick={onBack} className="mb-3 text-gray-600 hover:text-gray-900 flex items-center gap-2">
+          <button onClick={onBack} className="mb-0 text-gray-600 hover:text-gray-900 flex items-center gap-0">
             <ArrowLeft className="w-4 h-4" />
             Back
           </button>
         )}
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-orange-100 rounded-lg">
+        <div className="flex items-center gap-0">
+          <div className="p-0 bg-orange-100 rounded-lg">
             <User className="w-6 h-6 text-orange-600" />
           </div>
           <div>
@@ -91,59 +91,59 @@ export function SoloProviderOnboarding({ roleId, onBack, onSuccess }: SoloProvid
 
       <div className="p-4 space-y-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-gray-700 mb-0">
             Your Name *
           </label>
           <input
             type="text"
             value={formData.name}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleFieldChange('name', e.target.value)}
-            className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
+            className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
             placeholder="Enter your full name"
           />
-          {errors.name && <p className="text-xs text-red-500 mt-1">{errors.name}</p>}
+          {errors.name && <p className="text-xs text-red-500 mt-0">{errors.name}</p>}
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-gray-700 mb-0">
             Phone Number *
           </label>
           <input
             type="tel"
             value={formData.phone}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleFieldChange('phone', e.target.value)}
-            className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
+            className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
             placeholder="Enter phone number"
           />
-          {errors.phone && <p className="text-xs text-red-500 mt-1">{errors.phone}</p>}
+          {errors.phone && <p className="text-xs text-red-500 mt-0">{errors.phone}</p>}
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-gray-700 mb-0">
             Email
           </label>
           <input
             type="email"
             value={formData.email}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleFieldChange('email', e.target.value)}
-            className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
+            className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
             placeholder="Enter email (optional)"
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-gray-700 mb-0">
             Service Area *
           </label>
           <input
             type="text"
             value={formData.serviceArea}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleFieldChange('serviceArea', e.target.value)}
-            className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
+            className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
             placeholder="e.g., South Delhi, Gurgaon"
           />
-          <p className="text-xs text-gray-500 mt-1">Areas where you provide services</p>
-          {errors.serviceArea && <p className="text-xs text-red-500 mt-1">{errors.serviceArea}</p>}
+          <p className="text-xs text-gray-500 mt-0">Areas where you provide services</p>
+          {errors.serviceArea && <p className="text-xs text-red-500 mt-0">{errors.serviceArea}</p>}
         </div>
 
         <StandardOnboardingFields
@@ -155,7 +155,7 @@ export function SoloProviderOnboarding({ roleId, onBack, onSuccess }: SoloProvid
         <button
           onClick={handleSubmit}
           disabled={loading}
-          className="w-full py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-2 disabled:opacity-50"
+          className="w-full py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-0 disabled:opacity-50"
         >
           {loading ? (
             <>

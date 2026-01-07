@@ -39,19 +39,19 @@ export function RejectVendorModal({
     <Dialog open={isOpen} onOpenChange={(open: boolean) => !open && handleClose()}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-0">
             <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
               <AlertTriangle className="w-5 h-5 text-red-600" />
             </div>
             <div>
               <DialogTitle>Reject Vendor Application</DialogTitle>
-              <p className="text-sm text-gray-500 mt-1">This action cannot be undone</p>
+              <p className="text-sm text-gray-500 mt-0">This action cannot be undone</p>
             </div>
           </div>
         </DialogHeader>
         
         <div className="space-y-4 mt-4">
-          <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+          <div className="bg-red-50 border border-red-200 rounded-lg p-0">
             <p className="text-sm text-red-800">
               You are about to reject the application for <strong>{vendorName}</strong>.
             </p>
@@ -67,10 +67,10 @@ export function RejectVendorModal({
               onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setReason(e.target.value)}
               placeholder="e.g., Incomplete documents, Invalid license, etc."
               rows={3}
-              className="mt-1.5"
+              className="mt-0.5"
               required
             />
-            <p className="text-xs text-gray-500 mt-1">This will be shared with the vendor</p>
+            <p className="text-xs text-gray-500 mt-0">This will be shared with the vendor</p>
           </div>
           
           <div>
@@ -83,11 +83,11 @@ export function RejectVendorModal({
               onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNotes(e.target.value)}
               placeholder="Any additional information for the vendor..."
               rows={2}
-              className="mt-1.5"
+              className="mt-0.5"
             />
           </div>
           
-          <div className="flex gap-2 justify-end pt-2">
+          <div className="flex gap-0 justify-end pt-0">
             <Button
               variant="outline"
               onClick={handleClose}
@@ -95,7 +95,7 @@ export function RejectVendorModal({
               Cancel
             </Button>
             <Button
-              variant="danger"
+              variant="destructive"
               onClick={handleSubmit}
               disabled={!reason.trim()}
             >

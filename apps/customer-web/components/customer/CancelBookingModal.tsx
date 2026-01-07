@@ -71,9 +71,9 @@ export function CancelBookingModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl p-6 max-w-md w-full">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-2 text-red-600">
+      <div className="bg-white rounded-2xl p-0 max-w-md w-full">
+        <div className="flex items-center justify-between mb-0">
+          <div className="flex items-center gap-0 text-red-600">
             <XCircle className="w-5 h-5" />
             <h2 className="font-bold text-lg">Cancel Booking</h2>
           </div>
@@ -95,7 +95,7 @@ export function CancelBookingModal({
                   ? 'bg-green-50 border-green-200' 
                   : 'bg-red-50 border-red-200'
               }`}>
-                <div className="flex items-start justify-between mb-3">
+                <div className="flex items-start justify-between mb-0">
                   <div>
                     <p className="text-sm font-medium text-gray-700">Refund Amount</p>
                     <p className={`text-2xl font-bold ${
@@ -104,7 +104,7 @@ export function CancelBookingModal({
                       ₹{refundInfo.refundAmount?.toFixed(2) || '0.00'}
                     </p>
                   </div>
-                  <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                  <span className={`px-0 py-0 rounded-full text-xs font-medium ${
                     refundInfo.eligible ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
                   }`}>
                     {refundInfo.refundPercentage || 0}% Refund
@@ -112,7 +112,7 @@ export function CancelBookingModal({
                 </div>
 
                 {refundInfo.cancellationFee > 0 && (
-                  <div className="flex justify-between text-sm pt-2 border-t border-gray-200">
+                  <div className="flex justify-between text-sm pt-0 border-t border-gray-200">
                     <span className="text-gray-600">Cancellation Fee:</span>
                     <span className="font-semibold text-red-600">
                       -₹{refundInfo.cancellationFee.toFixed(2)}
@@ -120,7 +120,7 @@ export function CancelBookingModal({
                   </div>
                 )}
 
-                <div className="flex items-start gap-2 mt-3 text-xs text-gray-600">
+                <div className="flex items-start gap-0 mt-0 text-xs text-gray-600">
                   <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
                   <span>
                     {refundInfo.hoursUntil || 0} hours until booking. 
@@ -133,11 +133,11 @@ export function CancelBookingModal({
 
           {/* Cancellation Reason */}
           <div>
-            <label className="block text-sm font-medium mb-2">Reason for cancellation *</label>
+            <label className="block text-sm font-medium mb-0">Reason for cancellation *</label>
             <textarea
               value={reason}
               onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setReason(e.target.value)}
-              className="w-full p-3 border border-gray-300 rounded-lg"
+              className="w-full p-0 border border-gray-300 rounded-lg"
               rows={3}
               placeholder="Please provide a reason..."
               required
@@ -145,17 +145,17 @@ export function CancelBookingModal({
           </div>
 
           {/* Actions */}
-          <div className="flex gap-3">
+          <div className="flex gap-0">
             <button
               onClick={onClose}
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg"
+              className="flex-1 px-4 py-0 border border-gray-300 rounded-lg"
             >
               Keep Booking
             </button>
             <button
               onClick={handleCancel}
               disabled={loading || !reason.trim()}
-              className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg font-semibold disabled:opacity-50"
+              className="flex-1 px-4 py-0 bg-red-600 text-white rounded-lg font-semibold disabled:opacity-50"
             >
               {loading ? 'Cancelling...' : 'Confirm Cancel'}
             </button>

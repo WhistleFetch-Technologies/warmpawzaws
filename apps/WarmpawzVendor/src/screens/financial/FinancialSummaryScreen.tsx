@@ -202,13 +202,13 @@ const styles = StyleSheet.create({
   },
   overviewTitle: {
     fontSize: typography.fontSizes.md,
-    color: '#ffffff',
+    color: colors.white,
     marginBottom: spacing.sm,
   },
   overviewAmount: {
     fontSize: typography.fontSizes['3xl'],
     fontWeight: typography.fontWeights.bold,
-    color: '#ffffff',
+    color: colors.white,
   },
   statsGrid: {
     flexDirection: 'row',
@@ -280,7 +280,7 @@ const styles = StyleSheet.create({
   actionButtonText: {
     fontSize: typography.fontSizes.md,
     fontWeight: typography.fontWeights.semibold,
-    color: '#ffffff',
+    color: colors.white,
   },
 });
 

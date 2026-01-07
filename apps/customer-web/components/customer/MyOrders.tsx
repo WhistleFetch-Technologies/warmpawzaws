@@ -126,7 +126,7 @@ export function MyOrders({ customerPhone }: MyOrdersProps) {
 
       {/* Filter Tabs */}
       <div className="max-w-4xl mx-auto px-4 py-4">
-        <div className="flex gap-2 overflow-x-auto pb-2">
+        <div className="flex gap-0 overflow-x-auto pb-0">
           {[
             { id: 'all', label: 'All' },
             { id: 'processing', label: 'Processing' },
@@ -137,7 +137,7 @@ export function MyOrders({ customerPhone }: MyOrdersProps) {
             <button
               key={tab.id}
               onClick={() => setFilter(tab.id)}
-              className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition ${
+              className={`px-4 py-0 rounded-full text-sm font-medium whitespace-nowrap transition ${
                 filter === tab.id
                   ? 'bg-orange-500 text-white'
                   : 'bg-white text-gray-600 hover:bg-gray-100'
@@ -152,15 +152,15 @@ export function MyOrders({ customerPhone }: MyOrdersProps) {
       {/* Orders List */}
       <main className="max-w-4xl mx-auto px-4 pb-24">
         {loading ? (
-          <div className="flex justify-center py-12">
+          <div className="flex justify-center py-0">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500"></div>
           </div>
         ) : orders.length === 0 ? (
-          <div className="text-center py-12 bg-white rounded-2xl">
+          <div className="text-center py-0 bg-white rounded-2xl">
             <span className="text-6xl">📦</span>
             <h2 className="mt-4 text-xl font-semibold text-gray-900">No orders found</h2>
-            <p className="text-gray-500 mt-2">Start shopping to see your orders here</p>
-            <a href="/" className="mt-6 inline-block px-6 py-2 bg-orange-500 text-white rounded-full">
+            <p className="text-gray-500 mt-0">Start shopping to see your orders here</p>
+            <a href="/" className="mt-0 inline-block px-0 py-0 bg-orange-500 text-white rounded-full">
               Browse Products
             </a>
           </div>
@@ -174,7 +174,7 @@ export function MyOrders({ customerPhone }: MyOrdersProps) {
                     <p className="text-sm text-gray-500">Order #{order.order_number}</p>
                     <p className="text-xs text-gray-400">{new Date(order.created_at).toLocaleDateString()}</p>
                   </div>
-                  <span className={`text-xs px-3 py-1 rounded-full flex items-center gap-1 ${getStatusColor(order.status)}`}>
+                  <span className={`text-xs px-0 py-0 rounded-full flex items-center gap-0 ${getStatusColor(order.status)}`}>
                     {getStatusIcon(order.status)} {order.status.replace(/_/g, ' ')}
                   </span>
                 </div>
@@ -182,7 +182,7 @@ export function MyOrders({ customerPhone }: MyOrdersProps) {
                 {/* Order Items */}
                 <div className="p-4 space-y-3">
                   {order.items.slice(0, 2).map((item) => (
-                    <div key={item.id} className="flex items-center gap-3">
+                    <div key={item.id} className="flex items-center gap-0">
                       <div className="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center">
                         {item.product_image ? (
                           <img src={item.product_image} alt={item.product_name} className="w-full h-full object-cover rounded-lg" />
@@ -207,18 +207,18 @@ export function MyOrders({ customerPhone }: MyOrdersProps) {
                     <p className="text-sm text-gray-500">Total</p>
                     <p className="text-lg font-bold text-gray-900">₹{order.total_amount.toLocaleString()}</p>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex gap-0">
                     {order.awb_number && order.status !== 'delivered' && order.status !== 'cancelled' && (
                       <button
                         onClick={() => handleTrackOrder(order.awb_number!)}
-                        className="px-4 py-2 bg-blue-100 text-blue-600 rounded-full text-sm font-medium"
+                        className="px-4 py-0 bg-blue-100 text-blue-600 rounded-full text-sm font-medium"
                       >
                         🔍 Track
                       </button>
                     )}
                     <button
                       onClick={() => setSelectedOrder(order)}
-                      className="px-4 py-2 bg-gray-100 text-gray-600 rounded-full text-sm font-medium"
+                      className="px-4 py-0 bg-gray-100 text-gray-600 rounded-full text-sm font-medium"
                     >
                       View Details
                     </button>
@@ -236,7 +236,7 @@ export function MyOrders({ customerPhone }: MyOrdersProps) {
           <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full sm:max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white p-4 border-b flex items-center justify-between">
               <h2 className="text-lg font-bold">Order Details</h2>
-              <button onClick={() => setSelectedOrder(null)} className="p-2 hover:bg-gray-100 rounded-full">✕</button>
+              <button onClick={() => setSelectedOrder(null)} className="p-0 hover:bg-gray-100 rounded-full">✕</button>
             </div>
 
             <div className="p-4 space-y-4">
@@ -245,13 +245,13 @@ export function MyOrders({ customerPhone }: MyOrdersProps) {
                   <p className="text-sm text-gray-500">Order #{selectedOrder.order_number}</p>
                   <p className="text-xs text-gray-400">{new Date(selectedOrder.created_at).toLocaleString()}</p>
                 </div>
-                <span className={`text-xs px-3 py-1 rounded-full ${getStatusColor(selectedOrder.status)}`}>
+                <span className={`text-xs px-0 py-0 rounded-full ${getStatusColor(selectedOrder.status)}`}>
                   {selectedOrder.status.replace(/_/g, ' ')}
                 </span>
               </div>
 
               {selectedOrder.awb_number && (
-                <div className="bg-blue-50 rounded-xl p-3">
+                <div className="bg-blue-50 rounded-xl p-0">
                   <p className="text-sm text-blue-800 font-medium">Tracking Info</p>
                   <p className="text-sm text-blue-600">AWB: {selectedOrder.awb_number}</p>
                   <p className="text-sm text-blue-600">Courier: {selectedOrder.courier_name}</p>
@@ -262,10 +262,10 @@ export function MyOrders({ customerPhone }: MyOrdersProps) {
               )}
 
               <div>
-                <h3 className="font-semibold mb-2">Items</h3>
+                <h3 className="font-semibold mb-0">Items</h3>
                 <div className="space-y-2">
                   {selectedOrder.items.map((item) => (
-                    <div key={item.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+                    <div key={item.id} className="flex items-center justify-between p-0 bg-gray-50 rounded-lg">
                       <div>
                         <p className="font-medium">{item.product_name}</p>
                         <p className="text-sm text-gray-500">Qty: {item.quantity}</p>
@@ -277,8 +277,8 @@ export function MyOrders({ customerPhone }: MyOrdersProps) {
               </div>
 
               <div>
-                <h3 className="font-semibold mb-2">Delivery Address</h3>
-                <p className="text-sm text-gray-600 bg-gray-50 p-3 rounded-lg">{selectedOrder.delivery_address}</p>
+                <h3 className="font-semibold mb-0">Delivery Address</h3>
+                <p className="text-sm text-gray-600 bg-gray-50 p-0 rounded-lg">{selectedOrder.delivery_address}</p>
               </div>
 
               <div className="flex items-center justify-between border-t pt-4">
@@ -286,11 +286,11 @@ export function MyOrders({ customerPhone }: MyOrdersProps) {
                 <p className="text-xl font-bold text-orange-600">₹{selectedOrder.total_amount.toLocaleString()}</p>
               </div>
 
-              <div className="flex gap-3 pt-2">
+              <div className="flex gap-0 pt-0">
                 {selectedOrder.awb_number && selectedOrder.status !== 'delivered' && selectedOrder.status !== 'cancelled' && (
                   <button
                     onClick={() => handleTrackOrder(selectedOrder.awb_number!)}
-                    className="flex-1 py-3 bg-blue-500 text-white rounded-xl font-medium"
+                    className="flex-1 py-0 bg-blue-500 text-white rounded-xl font-medium"
                   >
                     🔍 Track Order
                   </button>
@@ -298,7 +298,7 @@ export function MyOrders({ customerPhone }: MyOrdersProps) {
                 {(selectedOrder.status === 'delivered' || selectedOrder.payment_status === 'paid') && (
                   <button
                     onClick={() => setShowRefundModal(true)}
-                    className="flex-1 py-3 bg-red-100 text-red-600 rounded-xl font-medium"
+                    className="flex-1 py-0 bg-red-100 text-red-600 rounded-xl font-medium"
                   >
                     Request Refund
                   </button>
@@ -312,7 +312,7 @@ export function MyOrders({ customerPhone }: MyOrdersProps) {
       {/* Refund Request Modal */}
       {showRefundModal && selectedOrder && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md mx-4">
+          <div className="bg-white rounded-2xl p-0 w-full max-w-md mx-4">
             <h2 className="text-lg font-bold mb-4">Request Refund</h2>
             <p className="text-sm text-gray-600 mb-4">
               Order #{selectedOrder.order_number} - ₹{selectedOrder.total_amount.toLocaleString()}
@@ -322,21 +322,21 @@ export function MyOrders({ customerPhone }: MyOrdersProps) {
               onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setRefundReason(e.target.value)}
               placeholder="Please tell us why you want a refund..."
               rows={4}
-              className="w-full px-4 py-3 border rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+              className="w-full px-4 py-0 border rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
             />
-            <div className="flex gap-3 mt-4">
+            <div className="flex gap-0 mt-4">
               <button
                 onClick={() => {
                   setShowRefundModal(false);
                   setRefundReason('');
                 }}
-                className="flex-1 py-3 border rounded-xl font-medium"
+                className="flex-1 py-0 border rounded-xl font-medium"
               >
                 Cancel
               </button>
               <button
                 onClick={() => handleRequestRefund(selectedOrder.id)}
-                className="flex-1 py-3 bg-red-500 text-white rounded-xl font-medium"
+                className="flex-1 py-0 bg-red-500 text-white rounded-xl font-medium"
               >
                 Submit Request
               </button>

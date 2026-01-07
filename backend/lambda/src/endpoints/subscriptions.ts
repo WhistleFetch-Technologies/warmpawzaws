@@ -222,6 +222,193 @@ export function registerSubscriptionEndpoints(app: Hono) {
   });
 
   /**
+   * GET /customer/:customerId/subscriptions
+   * Get customer subscriptions (Phase 1 - Mobile Improvements)
+   */
+  app.get("/customer/:customerId/subscriptions", async (c) => {
+    try {
+      const { customerId } = c.req.param();
+
+      const subscriptions = await query(
+        `SELECT s.*, p.name as plan_name, p.price, p.interval, v.business_name as vendor_name
+         FROM customer_subscriptions s
+         INNER JOIN subscription_plans p ON s.plan_id = p.id
+         LEFT JOIN vendors v ON s.vendor_id = v.id
+         WHERE s.customer_id = $1
+         ORDER BY s.created_at DESC`,
+        [customerId]
+      );
+
+      return c.json({
+        success: true,
+        subscriptions: subscriptions.rows,
+        total: subscriptions.rows.length,
+      });
+    } catch (error: any) {
+      console.error('Error fetching customer subscriptions:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /subscriptions/:subscriptionId
+   * Get subscription details (Phase 1 - Mobile Improvements)
+   */
+  app.get("/subscriptions/:subscriptionId", async (c) => {
+    try {
+      const { subscriptionId } = c.req.param();
+
+      const subscriptions = await query(
+        `SELECT s.*, p.name as plan_name, p.price, p.interval, v.business_name as vendor_name
+         FROM customer_subscriptions s
+         INNER JOIN subscription_plans p ON s.plan_id = p.id
+         LEFT JOIN vendors v ON s.vendor_id = v.id
+         WHERE s.id = $1`,
+        [subscriptionId]
+      );
+
+      if (subscriptions.rows.length === 0) {
+        return c.json({ error: 'Subscription not found' }, 404);
+      }
+
+      return c.json({
+        success: true,
+        subscription: subscriptions.rows[0],
+      });
+    } catch (error: any) {
+      console.error('Error fetching subscription details:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /subscriptions/:subscriptionId/pause
+   * Pause a subscription (Phase 1 - Mobile Improvements)
+   */
+  app.post("/subscriptions/:subscriptionId/pause", async (c) => {
+    try {
+      const { subscriptionId } = c.req.param();
+      const { pauseUntil } = await c.req.json();
+
+      const subscriptions = await select('customer_subscriptions', { id: subscriptionId });
+      if (subscriptions.length === 0) {
+        return c.json({ error: 'Subscription not found' }, 404);
+      }
+
+      const pauseDate = pauseUntil ? new Date(pauseUntil) : null;
+
+      const updated = await update('customer_subscriptions',
+        { id: subscriptionId },
+        {
+          status: 'paused',
+          paused_at: new Date().toISOString(),
+          pause_until: pauseDate ? pauseDate.toISOString() : null,
+        }
+      );
+
+      return c.json({
+        success: true,
+        subscription: updated[0],
+        message: 'Subscription paused successfully',
+      });
+    } catch (error: any) {
+      console.error('Error pausing subscription:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /subscriptions/:subscriptionId/resume
+   * Resume a paused subscription (Phase 1 - Mobile Improvements)
+   */
+  app.post("/subscriptions/:subscriptionId/resume", async (c) => {
+    try {
+      const { subscriptionId } = c.req.param();
+
+      const subscriptions = await select('customer_subscriptions', { id: subscriptionId });
+      if (subscriptions.length === 0) {
+        return c.json({ error: 'Subscription not found' }, 404);
+      }
+
+      if (subscriptions[0].status !== 'paused') {
+        return c.json({ error: 'Subscription is not paused' }, 400);
+      }
+
+      const updated = await update('customer_subscriptions',
+        { id: subscriptionId },
+        {
+          status: 'active',
+          resumed_at: new Date().toISOString(),
+          pause_until: null,
+        }
+      );
+
+      return c.json({
+        success: true,
+        subscription: updated[0],
+        message: 'Subscription resumed successfully',
+      });
+    } catch (error: any) {
+      console.error('Error resuming subscription:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /subscriptions/:subscriptionId/usage
+   * Get subscription usage (Phase 1 - Mobile Improvements)
+   */
+  app.get("/subscriptions/:subscriptionId/usage", async (c) => {
+    try {
+      const { subscriptionId } = c.req.param();
+      const period = c.req.query('period') || 'month';
+
+      // Get subscription
+      const subscriptions = await select('customer_subscriptions', { id: subscriptionId });
+      if (subscriptions.length === 0) {
+        return c.json({ error: 'Subscription not found' }, 404);
+      }
+
+      // Calculate date range
+      const endDate = new Date();
+      const startDate = new Date();
+      if (period === 'week') {
+        startDate.setDate(startDate.getDate() - 7);
+      } else if (period === 'month') {
+        startDate.setMonth(startDate.getMonth() - 1);
+      } else if (period === 'year') {
+        startDate.setFullYear(startDate.getFullYear() - 1);
+      }
+
+      // Get usage data (bookings/services used)
+      const usage = await query(
+        `SELECT COUNT(*) as sessions_used, 
+                SUM(COALESCE(b.total_amount, 0)) as total_spent
+         FROM bookings b
+         WHERE b.customer_id = $1
+         AND b.created_at >= $2
+         AND b.created_at <= $3
+         AND b.status IN ('completed', 'confirmed')`,
+        [subscriptions[0].customer_id, startDate.toISOString(), endDate.toISOString()]
+      );
+
+      return c.json({
+        success: true,
+        usage: {
+          sessionsUsed: parseInt(usage.rows[0]?.sessions_used || '0', 10),
+          totalSpent: parseFloat(usage.rows[0]?.total_spent || '0'),
+          period,
+          startDate: startDate.toISOString(),
+          endDate: endDate.toISOString(),
+        },
+      });
+    } catch (error: any) {
+      console.error('Error fetching subscription usage:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
    * POST /subscriptions/process-renewals
    * Process subscription renewals (cron job)
    */
@@ -260,8 +447,58 @@ export function registerSubscriptionEndpoints(app: Hono) {
           }
         );
 
-        // TODO: Process payment via Razorpay
-        // This would create a payment record and charge the customer
+        // Process payment via Razorpay
+        try {
+          const { getRazorpayClient } = require('../utils/razorpay-client');
+          const razorpay = getRazorpayClient();
+          
+          // Get customer payment method (default or saved)
+          const paymentMethods = await select('payment_methods', {
+            customer_id: subscription.customer_id,
+            is_default: true,
+          });
+          
+          if (paymentMethods.length > 0 && paymentMethods[0].razorpay_payment_id) {
+            // Create payment using saved payment method
+            const payment = await razorpay.request('/payments/create/recurring', 'POST', {
+              amount: Math.round(subscription.amount * 100), // Convert to paise
+              currency: 'INR',
+              customer_id: paymentMethods[0].razorpay_customer_id,
+              token: paymentMethods[0].razorpay_token_id,
+              recurring: true,
+              description: `Subscription renewal: ${subscription.plan_name}`,
+            });
+            
+            // Create payment record
+            await insert('payments', {
+              customer_id: subscription.customer_id,
+              vendor_id: subscription.vendor_id,
+              amount: subscription.amount,
+              currency: 'INR',
+              payment_method: 'razorpay',
+              payment_status: payment.status === 'captured' ? 'completed' : 'pending',
+              razorpay_payment_id: payment.id,
+              subscription_id: subscription.id,
+              booking_id: null,
+            });
+            
+            console.log(`✅ Subscription payment processed: ${payment.id}`);
+          } else {
+            console.warn(`⚠️ No payment method found for customer ${subscription.customer_id}`);
+            // Mark subscription as payment_failed
+            await update('subscriptions', { id: subscription.id }, {
+              status: 'payment_failed',
+              last_payment_error: 'No payment method configured',
+            });
+          }
+        } catch (error: any) {
+          console.error('Error processing subscription payment:', error);
+          // Mark subscription as payment_failed
+          await update('subscriptions', { id: subscription.id }, {
+            status: 'payment_failed',
+            last_payment_error: error.message,
+          });
+        }
 
         processed.push(subscription.id);
       }

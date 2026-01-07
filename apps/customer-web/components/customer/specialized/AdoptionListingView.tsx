@@ -104,23 +104,23 @@ export function AdoptionListingView({ vendorId, customerPhone, onApply }: Adopti
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center p-12">
+      <div className="flex items-center justify-center p-02">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500"></div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-6xl mx-auto p-6">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+    <div className="max-w-6xl mx-auto p-0">
+      <div className="flex items-center justify-between mb-0">
+        <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-0">
           <Heart className="text-orange-500" size={28} />
           Available Pets
         </h2>
-        <div className="flex gap-2">
+        <div className="flex gap-0">
           <button
             onClick={() => setFilter('all')}
-            className={`px-4 py-2 rounded-lg transition ${
+            className={`px-4 py-0 rounded-lg transition ${
               filter === 'all'
                 ? 'bg-orange-500 text-white'
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -130,7 +130,7 @@ export function AdoptionListingView({ vendorId, customerPhone, onApply }: Adopti
           </button>
           <button
             onClick={() => setFilter('adoption')}
-            className={`px-4 py-2 rounded-lg transition ${
+            className={`px-4 py-0 rounded-lg transition ${
               filter === 'adoption'
                 ? 'bg-orange-500 text-white'
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -140,7 +140,7 @@ export function AdoptionListingView({ vendorId, customerPhone, onApply }: Adopti
           </button>
           <button
             onClick={() => setFilter('breeding')}
-            className={`px-4 py-2 rounded-lg transition ${
+            className={`px-4 py-0 rounded-lg transition ${
               filter === 'breeding'
                 ? 'bg-orange-500 text-white'
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -152,18 +152,18 @@ export function AdoptionListingView({ vendorId, customerPhone, onApply }: Adopti
       </div>
 
       {error && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 mb-6">
+        <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 mb-0">
           {error}
         </div>
       )}
 
       {pets.length === 0 ? (
-        <div className="text-center py-12 bg-white rounded-xl">
+        <div className="text-center py-0 bg-white rounded-xl">
           <Heart className="mx-auto text-gray-400 mb-4" size={48} />
           <p className="text-gray-500">No pets available at the moment</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-0">
           {pets.map((pet) => (
             <div
               key={pet.id}
@@ -180,14 +180,14 @@ export function AdoptionListingView({ vendorId, customerPhone, onApply }: Adopti
                 </div>
               )}
               <div className="p-4">
-                <div className="flex items-start justify-between mb-2">
+                <div className="flex items-start justify-between mb-0">
                   <div>
                     <h3 className="font-bold text-lg text-gray-900">{pet.name}</h3>
                     <p className="text-sm text-gray-500">
                       {pet.breed} • {pet.age} {pet.age_unit} old
                     </p>
                   </div>
-                  <span className={`px-2 py-1 rounded text-xs ${
+                  <span className={`px-0 py-0 rounded text-xs ${
                     pet.listing_type === 'adoption'
                       ? 'bg-green-100 text-green-700'
                       : 'bg-blue-100 text-blue-700'
@@ -196,7 +196,7 @@ export function AdoptionListingView({ vendorId, customerPhone, onApply }: Adopti
                   </span>
                 </div>
 
-                <div className="flex items-center gap-4 text-sm text-gray-600 mt-3">
+                <div className="flex items-center gap-4 text-sm text-gray-600 mt-0">
                   <span>{pet.gender}</span>
                   <span>•</span>
                   <span>{pet.size}</span>
@@ -205,14 +205,14 @@ export function AdoptionListingView({ vendorId, customerPhone, onApply }: Adopti
                 </div>
 
                 {pet.location_city && (
-                  <div className="flex items-center gap-1 text-sm text-gray-500 mt-2">
+                  <div className="flex items-center gap-0 text-sm text-gray-500 mt-0">
                     <MapPin size={14} />
                     {pet.location_city}, {pet.location_state}
                   </div>
                 )}
 
                 {pet.description && (
-                  <p className="text-sm text-gray-600 mt-3 line-clamp-2">
+                  <p className="text-sm text-gray-600 mt-0 line-clamp-0">
                     {pet.description}
                   </p>
                 )}
@@ -226,7 +226,7 @@ export function AdoptionListingView({ vendorId, customerPhone, onApply }: Adopti
                       e.stopPropagation();
                       handleApply(pet);
                     }}
-                    className="px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600"
+                    className="px-4 py-0 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600"
                   >
                     {pet.listing_type === 'adoption' ? 'Apply' : 'Inquire'}
                   </button>
@@ -241,7 +241,7 @@ export function AdoptionListingView({ vendorId, customerPhone, onApply }: Adopti
       {selectedPet && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
+            <div className="p-1">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-2xl font-bold text-gray-900">{selectedPet.name}</h3>
                 <button
@@ -291,31 +291,31 @@ export function AdoptionListingView({ vendorId, customerPhone, onApply }: Adopti
 
               {selectedPet.description && (
                 <div className="mb-4">
-                  <p className="text-sm text-gray-500 mb-1">Description</p>
+                  <p className="text-sm text-gray-500 mb-0">Description</p>
                   <p className="text-gray-700">{selectedPet.description}</p>
                 </div>
               )}
 
               {selectedPet.medical_history && (
                 <div className="mb-4">
-                  <p className="text-sm text-gray-500 mb-1">Medical History</p>
+                  <p className="text-sm text-gray-500 mb-0">Medical History</p>
                   <p className="text-gray-700">{selectedPet.medical_history}</p>
                 </div>
               )}
 
-              <div className="flex gap-3 mt-6">
+              <div className="flex gap-0 mt-0">
                 <button
                   onClick={() => {
                     handleApply(selectedPet);
                     setSelectedPet(null);
                   }}
-                  className="flex-1 px-6 py-3 bg-orange-500 text-white rounded-lg font-semibold hover:bg-orange-600"
+                  className="flex-1 px-0 py-0 bg-orange-500 text-white rounded-lg font-semibold hover:bg-orange-600"
                 >
                   {selectedPet.listing_type === 'adoption' ? 'Apply for Adoption' : 'Inquire'}
                 </button>
                 <button
                   onClick={() => setSelectedPet(null)}
-                  className="px-6 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                  className="px-0 py-0 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
                 >
                   Close
                 </button>

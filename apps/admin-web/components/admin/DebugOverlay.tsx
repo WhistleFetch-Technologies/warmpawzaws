@@ -72,7 +72,7 @@ export function DebugOverlay({ vendorData, roleConfiguration, currentUser }: Deb
       {!isVisible && (
         <button
           onClick={() => setIsVisible(true)}
-          className="fixed bottom-4 right-4 z-50 p-3 bg-purple-600 text-white rounded-full shadow-lg hover:bg-purple-700 transition-colors"
+          className="fixed bottom-4 right-4 z-50 p-0 bg-purple-600 text-white rounded-full shadow-lg hover:bg-purple-700 transition-colors"
           title="Show Debug Overlay (Ctrl+Shift+D)"
         >
           <Bug className="w-5 h-5" />
@@ -84,7 +84,7 @@ export function DebugOverlay({ vendorData, roleConfiguration, currentUser }: Deb
         <div className="fixed inset-y-0 right-0 z-50 w-full max-w-2xl bg-gray-900 text-white shadow-2xl overflow-y-auto">
           {/* Header */}
           <div className="sticky top-0 bg-purple-600 p-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-0">
               <Bug className="w-6 h-6" />
               <div>
                 <h2 className="font-bold text-lg">Debug Overlay</h2>
@@ -107,7 +107,7 @@ export function DebugOverlay({ vendorData, roleConfiguration, currentUser }: Deb
               <div className="space-y-2 text-sm">
                 <div className="flex items-center justify-between">
                   <span className="text-gray-400">Vendor ID:</span>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-0">
                     <code className="text-purple-400">{vendorData?.id || 'N/A'}</code>
                     <button
                       onClick={() => copyToClipboard(vendorData?.id, 'Vendor ID')}
@@ -123,7 +123,7 @@ export function DebugOverlay({ vendorData, roleConfiguration, currentUser }: Deb
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-gray-400">Role ID:</span>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-0">
                     <code className="text-yellow-400">{roleConfiguration?.roleId || 'N/A'}</code>
                     <button
                       onClick={() => copyToClipboard(roleConfiguration?.roleId, 'Role ID')}
@@ -142,7 +142,7 @@ export function DebugOverlay({ vendorData, roleConfiguration, currentUser }: Deb
                 onClick={() => toggleSection('role')}
                 className="w-full p-4 flex items-center justify-between hover:bg-gray-750 transition-colors"
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-0">
                   <Shield className="w-5 h-5 text-blue-400" />
                   <span className="font-semibold">Role Configuration</span>
                 </div>
@@ -157,13 +157,13 @@ export function DebugOverlay({ vendorData, roleConfiguration, currentUser }: Deb
                 <div className="p-4 pt-0 space-y-3">
                   <div className="space-y-2 text-sm">
                     <div>
-                      <div className="text-gray-400 mb-1">Role Name</div>
+                      <div className="text-gray-400 mb-0">Role Name</div>
                       <div className="text-white font-medium">{roleConfiguration.roleName}</div>
                     </div>
 
                     <div>
-                      <div className="text-gray-400 mb-1">Vendor Types</div>
-                      <div className="flex flex-wrap gap-1">
+                      <div className="text-gray-400 mb-0">Vendor Types</div>
+                      <div className="flex flex-wrap gap-0">
                         {roleConfiguration.vendorTypes?.map((type: string) => (
                           <Badge key={type} className="bg-blue-600 text-white">
                             {type}
@@ -173,8 +173,8 @@ export function DebugOverlay({ vendorData, roleConfiguration, currentUser }: Deb
                     </div>
 
                     <div>
-                      <div className="text-gray-400 mb-1">Service Styles Allowed</div>
-                      <div className="flex flex-wrap gap-1">
+                      <div className="text-gray-400 mb-0">Service Styles Allowed</div>
+                      <div className="flex flex-wrap gap-0">
                         {roleConfiguration.serviceStyles?.map((style: string) => (
                           <Badge key={style} className="bg-green-600 text-white">
                             {style}
@@ -184,14 +184,14 @@ export function DebugOverlay({ vendorData, roleConfiguration, currentUser }: Deb
                     </div>
 
                     <div>
-                      <div className="text-gray-400 mb-1">Centre Management</div>
+                      <div className="text-gray-400 mb-0">Centre Management</div>
                       <Badge className={roleConfiguration.centreManagementEnabled ? 'bg-green-600' : 'bg-red-600'}>
                         {roleConfiguration.centreManagementEnabled ? 'Enabled' : 'Disabled'}
                       </Badge>
                     </div>
 
                     <div>
-                      <div className="text-gray-400 mb-1">Staff Management</div>
+                      <div className="text-gray-400 mb-0">Staff Management</div>
                       <Badge className={roleConfiguration.staffManagementEnabled ? 'bg-green-600' : 'bg-red-600'}>
                         {roleConfiguration.staffManagementEnabled ? 'Enabled' : 'Disabled'}
                       </Badge>
@@ -204,7 +204,7 @@ export function DebugOverlay({ vendorData, roleConfiguration, currentUser }: Deb
                     onClick={() => copyJSON(roleConfiguration, 'Role Configuration')}
                     className="w-full"
                   >
-                    <Copy className="w-4 h-4 mr-2" />
+                    <Copy className="w-4 h-4 mr-0" />
                     Copy Full JSON
                   </Button>
                 </div>
@@ -217,7 +217,7 @@ export function DebugOverlay({ vendorData, roleConfiguration, currentUser }: Deb
                 onClick={() => toggleSection('capabilities')}
                 className="w-full p-4 flex items-center justify-between hover:bg-gray-750 transition-colors"
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-0">
                   <Settings className="w-5 h-5 text-purple-400" />
                   <span className="font-semibold">Resolved Capabilities</span>
                 </div>
@@ -230,7 +230,7 @@ export function DebugOverlay({ vendorData, roleConfiguration, currentUser }: Deb
 
               {expandedSections.capabilities && (
                 <div className="p-4 pt-0 space-y-3">
-                  <div className="bg-gray-900 rounded-lg p-3 space-y-2 text-sm">
+                  <div className="bg-gray-900 rounded-lg p-0 space-y-2 text-sm">
                     {[
                       { key: 'canManageCentres', label: 'Manage Centres', enabled: roleConfiguration?.centreManagementEnabled },
                       { key: 'canManageStaff', label: 'Manage Staff', enabled: roleConfiguration?.staffManagementEnabled },
@@ -242,7 +242,7 @@ export function DebugOverlay({ vendorData, roleConfiguration, currentUser }: Deb
                     ].map(({ key, label, enabled }) => (
                       <div key={key} className="flex items-center justify-between">
                         <span className="text-gray-400">{label}</span>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-0">
                           {enabled ? (
                             <>
                               <CheckCircle className="w-4 h-4 text-green-500" />
@@ -259,11 +259,11 @@ export function DebugOverlay({ vendorData, roleConfiguration, currentUser }: Deb
                     ))}
                   </div>
 
-                  <div className="bg-yellow-900 border border-yellow-700 rounded-lg p-3">
-                    <div className="flex items-start gap-2">
+                  <div className="bg-yellow-900 border border-yellow-700 rounded-lg p-0">
+                    <div className="flex items-start gap-0">
                       <AlertTriangle className="w-4 h-4 text-yellow-400 mt-0.5" />
                       <div className="text-xs text-yellow-200">
-                        <p className="font-semibold mb-1">Capability Resolution Rules:</p>
+                        <p className="font-semibold mb-0">Capability Resolution Rules:</p>
                         <ul className="list-disc list-inside space-y-1">
                           <li>Custom packages require centres.length &gt; 0</li>
                           <li>Service styles filtered by roleConfiguration</li>
@@ -282,7 +282,7 @@ export function DebugOverlay({ vendorData, roleConfiguration, currentUser }: Deb
                 onClick={() => toggleSection('services')}
                 className="w-full p-4 flex items-center justify-between hover:bg-gray-750 transition-colors"
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-0">
                   <Package className="w-5 h-5 text-green-400" />
                   <span className="font-semibold">
                     Published Services ({vendorData?.publishedServices?.length || 0})
@@ -300,8 +300,8 @@ export function DebugOverlay({ vendorData, roleConfiguration, currentUser }: Deb
                   {vendorData?.publishedServices && vendorData.publishedServices.length > 0 ? (
                     <>
                       {vendorData.publishedServices.map((service: any, index: number) => (
-                        <div key={service.id || index} className="bg-gray-900 rounded-lg p-3">
-                          <div className="flex items-start justify-between mb-2">
+                        <div key={service.id || index} className="bg-gray-900 rounded-lg p-0">
+                          <div className="flex items-start justify-between mb-0">
                             <div>
                               <div className="font-medium text-white">{service.name}</div>
                               <div className="text-xs text-gray-400">{service.category}</div>
@@ -325,7 +325,7 @@ export function DebugOverlay({ vendorData, roleConfiguration, currentUser }: Deb
                               <span className="text-white">{service.publishLevel || 'vendor'}</span>
                             </div>
                             {service.gpsRequired && (
-                              <div className="flex items-center gap-1 text-blue-400">
+                              <div className="flex items-center gap-0 text-blue-400">
                                 <CheckCircle className="w-3 h-3" />
                                 <span>GPS Required</span>
                               </div>
@@ -338,9 +338,9 @@ export function DebugOverlay({ vendorData, roleConfiguration, currentUser }: Deb
                         variant="outline"
                         size="sm"
                         onClick={() => copyJSON(vendorData.publishedServices, 'Published Services')}
-                        className="w-full mt-2"
+                        className="w-full mt-0"
                       >
-                        <Copy className="w-4 h-4 mr-2" />
+                        <Copy className="w-4 h-4 mr-0" />
                         Copy Services JSON
                       </Button>
                     </>
@@ -359,7 +359,7 @@ export function DebugOverlay({ vendorData, roleConfiguration, currentUser }: Deb
                 onClick={() => toggleSection('centres')}
                 className="w-full p-4 flex items-center justify-between hover:bg-gray-750 transition-colors"
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-0">
                   <Building className="w-5 h-5 text-yellow-400" />
                   <span className="font-semibold">
                     Centres ({vendorData?.centres?.length || 0})
@@ -377,8 +377,8 @@ export function DebugOverlay({ vendorData, roleConfiguration, currentUser }: Deb
                   {vendorData?.centres && vendorData.centres.length > 0 ? (
                     <>
                       {vendorData.centres.map((centre: any, index: number) => (
-                        <div key={centre.id || index} className="bg-gray-900 rounded-lg p-3">
-                          <div className="font-medium text-white mb-1">{centre.name}</div>
+                        <div key={centre.id || index} className="bg-gray-900 rounded-lg p-0">
+                          <div className="font-medium text-white mb-0">{centre.name}</div>
                           <div className="space-y-1 text-xs">
                             <div className="text-gray-400">{centre.address}</div>
                             <div className="flex items-center justify-between">
@@ -398,15 +398,15 @@ export function DebugOverlay({ vendorData, roleConfiguration, currentUser }: Deb
                         variant="outline"
                         size="sm"
                         onClick={() => copyJSON(vendorData.centres, 'Centres')}
-                        className="w-full mt-2"
+                        className="w-full mt-0"
                       >
-                        <Copy className="w-4 h-4 mr-2" />
+                        <Copy className="w-4 h-4 mr-0" />
                         Copy Centres JSON
                       </Button>
                     </>
                   ) : (
                     <div className="bg-gray-900 rounded-lg p-4 text-center">
-                      <div className="text-gray-500 mb-2">No centres configured</div>
+                      <div className="text-gray-500 mb-0">No centres configured</div>
                       {!roleConfiguration?.centreManagementEnabled && (
                         <div className="text-xs text-yellow-400">
                           Centre management is disabled for this role
@@ -424,7 +424,7 @@ export function DebugOverlay({ vendorData, roleConfiguration, currentUser }: Deb
                 onClick={() => toggleSection('staff')}
                 className="w-full p-4 flex items-center justify-between hover:bg-gray-750 transition-colors"
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-0">
                   <Users className="w-5 h-5 text-pink-400" />
                   <span className="font-semibold">
                     Staff ({vendorData?.staff?.length || 0})
@@ -442,8 +442,8 @@ export function DebugOverlay({ vendorData, roleConfiguration, currentUser }: Deb
                   {vendorData?.staff && vendorData.staff.length > 0 ? (
                     <>
                       {vendorData.staff.map((member: any, index: number) => (
-                        <div key={member.id || index} className="bg-gray-900 rounded-lg p-3">
-                          <div className="font-medium text-white mb-1">{member.fullName}</div>
+                        <div key={member.id || index} className="bg-gray-900 rounded-lg p-0">
+                          <div className="font-medium text-white mb-0">{member.fullName}</div>
                           <div className="space-y-1 text-xs">
                             <div className="flex items-center justify-between">
                               <span className="text-gray-400">Role:</span>
@@ -454,7 +454,7 @@ export function DebugOverlay({ vendorData, roleConfiguration, currentUser }: Deb
                               <span className="text-white">{member.email}</span>
                             </div>
                             {member.specializations && (
-                              <div className="flex flex-wrap gap-1 mt-1">
+                              <div className="flex flex-wrap gap-0 mt-0">
                                 {member.specializations.map((spec: string) => (
                                   <Badge key={spec} variant="default" className="text-xs">
                                     {spec}
@@ -470,15 +470,15 @@ export function DebugOverlay({ vendorData, roleConfiguration, currentUser }: Deb
                         variant="outline"
                         size="sm"
                         onClick={() => copyJSON(vendorData.staff, 'Staff')}
-                        className="w-full mt-2"
+                        className="w-full mt-0"
                       >
-                        <Copy className="w-4 h-4 mr-2" />
+                        <Copy className="w-4 h-4 mr-0" />
                         Copy Staff JSON
                       </Button>
                     </>
                   ) : (
                     <div className="bg-gray-900 rounded-lg p-4 text-center">
-                      <div className="text-gray-500 mb-2">No staff members</div>
+                      <div className="text-gray-500 mb-0">No staff members</div>
                       {!roleConfiguration?.staffManagementEnabled && (
                         <div className="text-xs text-yellow-400">
                           Staff management is disabled for this role
@@ -492,17 +492,17 @@ export function DebugOverlay({ vendorData, roleConfiguration, currentUser }: Deb
 
             {/* How to Use */}
             <Card className="bg-blue-900 border-blue-700 p-4">
-              <h3 className="font-semibold text-blue-100 mb-2">How to Use Debug Overlay</h3>
+              <h3 className="font-semibold text-blue-100 mb-0">How to Use Debug Overlay</h3>
               <div className="space-y-2 text-sm text-blue-200">
-                <div className="flex items-start gap-2">
-                  <span className="font-mono bg-blue-800 px-2 py-0.5 rounded">Ctrl+Shift+D</span>
+                <div className="flex items-start gap-0">
+                  <span className="font-mono bg-blue-800 px-0 py-0.5 rounded">Ctrl+Shift+D</span>
                   <span>Toggle overlay on/off</span>
                 </div>
-                <div className="flex items-start gap-2">
+                <div className="flex items-start gap-0">
                   <Copy className="w-4 h-4 mt-0.5 flex-shrink-0" />
                   <span>Click copy icons to copy individual values or full JSON to clipboard</span>
                 </div>
-                <div className="flex items-start gap-2">
+                <div className="flex items-start gap-0">
                   <Eye className="w-4 h-4 mt-0.5 flex-shrink-0" />
                   <span>Use to validate role configuration, capabilities, and published content</span>
                 </div>

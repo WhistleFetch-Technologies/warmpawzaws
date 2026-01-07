@@ -95,12 +95,12 @@ export function BookingDetailsComplete({ bookingId, phone, onBack, onSuccess }: 
 
   if (!booking) {
     return (
-      <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto flex items-center justify-center p-6">
+      <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto flex items-center justify-center p-0">
         <div className="text-center">
           <p className="text-gray-600 mb-4">Booking not found</p>
           <button
             onClick={onBack}
-            className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors"
+            className="px-4 py-0 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors"
           >
             Go Back
           </button>
@@ -112,7 +112,7 @@ export function BookingDetailsComplete({ bookingId, phone, onBack, onSuccess }: 
   return (
     <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
       {/* Header */}
-      <div className="bg-gradient-to-r from-primary to-primary-dark px-6 pt-12 pb-6 sticky top-0 z-20">
+      <div className="bg-gradient-to-r from-primary to-primary-dark px-0 pt-12 pb-0 sticky top-0 z-20">
         <div className="flex items-center gap-4 mb-4">
           <button
             onClick={onBack}
@@ -128,7 +128,7 @@ export function BookingDetailsComplete({ bookingId, phone, onBack, onSuccess }: 
 
         {/* Status Badge */}
         <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-0">
             {getStatusIcon(booking.status)}
             <div>
               <p className="text-white font-semibold">
@@ -146,9 +146,9 @@ export function BookingDetailsComplete({ bookingId, phone, onBack, onSuccess }: 
       </div>
 
       {/* Content */}
-      <div className="px-6 py-6 space-y-6">
+      <div className="px-0 py-0 space-y-6">
         {/* Service Info Card */}
-        <div className="bg-white rounded-2xl p-5 shadow-sm">
+        <div className="bg-white rounded-2xl p-0 shadow-sm">
           <h3 className="font-bold text-gray-900 mb-4">Service Information</h3>
           <div className="space-y-3">
             {booking.serviceName && (
@@ -157,7 +157,7 @@ export function BookingDetailsComplete({ bookingId, phone, onBack, onSuccess }: 
                 <p className="font-semibold text-gray-900">{booking.serviceName}</p>
               </div>
             )}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-0">
               <Calendar className="w-5 h-5 text-gray-400" />
               <div>
                 <p className="text-sm text-gray-600">Date</p>
@@ -166,7 +166,7 @@ export function BookingDetailsComplete({ bookingId, phone, onBack, onSuccess }: 
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-0">
               <Clock className="w-5 h-5 text-gray-400" />
               <div>
                 <p className="text-sm text-gray-600">Time</p>
@@ -184,14 +184,14 @@ export function BookingDetailsComplete({ bookingId, phone, onBack, onSuccess }: 
 
         {/* Vendor Info Card */}
         {booking.vendorName && (
-          <div className="bg-white rounded-2xl p-5 shadow-sm">
+          <div className="bg-white rounded-2xl p-0 shadow-sm">
             <h3 className="font-bold text-gray-900 mb-4">Service Provider</h3>
             <div className="space-y-3">
               <p className="font-semibold text-gray-900">{booking.vendorName}</p>
               {booking.vendorPhone && (
                 <a
                   href={`tel:${booking.vendorPhone}`}
-                  className="flex items-center gap-2 text-primary hover:underline"
+                  className="flex items-center gap-0 text-primary hover:underline"
                 >
                   <Phone className="w-4 h-4" />
                   <span>{booking.vendorPhone}</span>
@@ -203,7 +203,7 @@ export function BookingDetailsComplete({ bookingId, phone, onBack, onSuccess }: 
 
         {/* Pet Info Card */}
         {booking.petName && (
-          <div className="bg-white rounded-2xl p-5 shadow-sm">
+          <div className="bg-white rounded-2xl p-0 shadow-sm">
             <h3 className="font-bold text-gray-900 mb-4">Pet</h3>
             <p className="font-semibold text-gray-900">{booking.petName}</p>
           </div>
@@ -211,10 +211,10 @@ export function BookingDetailsComplete({ bookingId, phone, onBack, onSuccess }: 
 
         {/* Address Card */}
         {booking.address && (
-          <div className="bg-white rounded-2xl p-5 shadow-sm">
+          <div className="bg-white rounded-2xl p-0 shadow-sm">
             <h3 className="font-bold text-gray-900 mb-4">Service Address</h3>
-            <div className="flex items-start gap-3">
-              <MapPin className="w-5 h-5 text-gray-400 flex-shrink-0 mt-1" />
+            <div className="flex items-start gap-0">
+              <MapPin className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0" />
               <div>
                 {typeof booking.address === 'string' ? (
                   <p className="text-gray-900">{booking.address}</p>
@@ -233,9 +233,9 @@ export function BookingDetailsComplete({ bookingId, phone, onBack, onSuccess }: 
 
         {/* Prescriptions Card */}
         {booking.summary?.hasPrescription && booking.prescriptions && booking.prescriptions.length > 0 && (
-          <div className="bg-white rounded-2xl p-5 shadow-sm">
+          <div className="bg-white rounded-2xl p-0 shadow-sm">
             <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-0">
                 <FileText className="w-5 h-5 text-primary" />
                 <h3 className="font-bold text-gray-900">Prescriptions</h3>
               </div>
@@ -243,13 +243,13 @@ export function BookingDetailsComplete({ bookingId, phone, onBack, onSuccess }: 
             </div>
             <div className="space-y-3">
               {booking.prescriptions.slice(0, 2).map((prescription: any) => (
-                <div key={prescription.id} className="border border-gray-200 rounded-lg p-3">
+                <div key={prescription.id} className="border border-gray-200 rounded-lg p-0">
                   {prescription.diagnosis && (
-                    <p className="font-semibold text-gray-900 mb-1">{prescription.diagnosis}</p>
+                    <p className="font-semibold text-gray-900 mb-0">{prescription.diagnosis}</p>
                   )}
                   {prescription.medications && Array.isArray(prescription.medications) && (
                     <div className="text-sm text-gray-600">
-                      <p className="font-medium mb-1">Medications:</p>
+                      <p className="font-medium mb-0">Medications:</p>
                       <ul className="list-disc list-inside space-y-1">
                         {prescription.medications.map((med: any, idx: number) => (
                           <li key={idx}>
@@ -260,7 +260,7 @@ export function BookingDetailsComplete({ bookingId, phone, onBack, onSuccess }: 
                     </div>
                   )}
                   {prescription.follow_up_date && (
-                    <p className="text-xs text-gray-500 mt-2">
+                    <p className="text-xs text-gray-500 mt-0">
                       Follow-up: {new Date(prescription.follow_up_date).toLocaleDateString()}
                     </p>
                   )}
@@ -283,9 +283,9 @@ export function BookingDetailsComplete({ bookingId, phone, onBack, onSuccess }: 
 
         {/* Medical Records Card */}
         {booking.summary?.hasMedicalRecords && booking.medicalRecords && booking.medicalRecords.length > 0 && (
-          <div className="bg-white rounded-2xl p-5 shadow-sm">
+          <div className="bg-white rounded-2xl p-0 shadow-sm">
             <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-0">
                 <Activity className="w-5 h-5 text-primary" />
                 <h3 className="font-bold text-gray-900">Medical Records</h3>
               </div>
@@ -293,12 +293,12 @@ export function BookingDetailsComplete({ bookingId, phone, onBack, onSuccess }: 
             </div>
             <div className="space-y-2">
               {booking.medicalRecords.slice(0, 2).map((record: any) => (
-                <div key={record.id} className="border border-gray-200 rounded-lg p-3">
+                <div key={record.id} className="border border-gray-200 rounded-lg p-0">
                   <p className="font-semibold text-gray-900">{record.title || record.record_type}</p>
                   {record.description && (
-                    <p className="text-sm text-gray-600 mt-1 line-clamp-2">{record.description}</p>
+                    <p className="text-sm text-gray-600 mt-0 line-clamp-0">{record.description}</p>
                   )}
-                  <p className="text-xs text-gray-500 mt-2">
+                  <p className="text-xs text-gray-500 mt-0">
                     {new Date(record.created_at).toLocaleDateString()}
                   </p>
                 </div>
@@ -319,9 +319,9 @@ export function BookingDetailsComplete({ bookingId, phone, onBack, onSuccess }: 
 
         {/* GPS Tracking (for home services) */}
         {booking.service_type === 'at_home' || booking.service_type === 'home' && (
-          <div className="bg-white rounded-2xl p-5 shadow-sm">
+          <div className="bg-white rounded-2xl p-0 shadow-sm">
             <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-0">
                 <Navigation className="w-5 h-5 text-primary" />
                 <h3 className="font-bold text-gray-900">Live Tracking</h3>
               </div>
@@ -340,15 +340,15 @@ export function BookingDetailsComplete({ bookingId, phone, onBack, onSuccess }: 
 
         {/* Video Call (for tele services) */}
         {(booking.service_type === 'online' || booking.service_type === 'tele') && (
-          <div className="bg-white rounded-2xl p-5 shadow-sm">
+          <div className="bg-white rounded-2xl p-0 shadow-sm">
             <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-0">
                 <Video className="w-5 h-5 text-primary" />
                 <h3 className="font-bold text-gray-900">Video Consultation</h3>
               </div>
               <button
                 onClick={() => setShowVideoCall(!showVideoCall)}
-                className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors text-sm"
+                className="px-4 py-0 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors text-sm"
               >
                 {showVideoCall ? 'Hide' : 'Start Call'}
               </button>
@@ -370,14 +370,14 @@ export function BookingDetailsComplete({ bookingId, phone, onBack, onSuccess }: 
 
         {/* Chat Card */}
         {booking.chatEnabled && (
-          <div className="bg-white rounded-2xl p-5 shadow-sm">
+          <div className="bg-white rounded-2xl p-0 shadow-sm">
             <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-0">
                 <MessageSquare className="w-5 h-5 text-primary" />
                 <h3 className="font-bold text-gray-900">Chat</h3>
               </div>
               {booking.chat?.hasUnreadMessages && (
-                <span className="bg-red-500 text-white text-xs px-2 py-1 rounded-full">
+                <span className="bg-red-500 text-white text-xs px-0 py-0 rounded-full">
                   {booking.chat?.messageCount || 0} new
                 </span>
               )}
@@ -388,12 +388,12 @@ export function BookingDetailsComplete({ bookingId, phone, onBack, onSuccess }: 
                   {booking.chat.messages.slice(-3).map((msg: any) => (
                     <div
                       key={msg.id}
-                      className={`p-2 rounded-lg ${
+                      className={`p-0 rounded-lg ${
                         msg.sender_type === 'customer' ? 'bg-primary/10 ml-auto' : 'bg-gray-100'
                       }`}
                     >
                       <p className="text-sm text-gray-900">{msg.message}</p>
-                      <p className="text-xs text-gray-500 mt-1">
+                      <p className="text-xs text-gray-500 mt-0">
                         {new Date(msg.created_at).toLocaleTimeString()}
                       </p>
                     </div>
@@ -403,19 +403,19 @@ export function BookingDetailsComplete({ bookingId, phone, onBack, onSuccess }: 
                   onClick={() => {
                     window.location.href = `/chat?bookingId=${bookingId}`;
                   }}
-                  className="w-full mt-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors"
+                  className="w-full mt-0 px-4 py-0 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors"
                 >
                   Open Chat
                 </button>
               </div>
             ) : (
               <div className="text-center py-4">
-                <p className="text-gray-600 text-sm mb-3">No messages yet</p>
+                <p className="text-gray-600 text-sm mb-0">No messages yet</p>
                 <button
                   onClick={() => {
                     window.location.href = `/chat?bookingId=${bookingId}`;
                   }}
-                  className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors"
+                  className="px-4 py-0 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors"
                 >
                   Start Chat
                 </button>
@@ -426,7 +426,7 @@ export function BookingDetailsComplete({ bookingId, phone, onBack, onSuccess }: 
 
         {/* Notes Card */}
         {booking.notes && (
-          <div className="bg-white rounded-2xl p-5 shadow-sm">
+          <div className="bg-white rounded-2xl p-0 shadow-sm">
             <h3 className="font-bold text-gray-900 mb-4">Notes</h3>
             <p className="text-gray-900">{booking.notes}</p>
           </div>

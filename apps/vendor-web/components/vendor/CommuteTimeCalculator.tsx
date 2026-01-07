@@ -36,49 +36,49 @@ export function CommuteTimeCalculator({ providerId }: CommuteTimeCalculatorProps
   };
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg p-6 space-y-6">
-      <h2 className="flex items-center gap-2 text-lg font-semibold text-gray-900">
+    <div className="bg-white border border-gray-200 rounded-lg p-0 space-y-6">
+      <h2 className="flex items-center gap-0 text-lg font-semibold text-gray-900">
         <Navigation className="w-6 h-6 text-blue-600" />
         Commute Time Calculator
       </h2>
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="block mb-2 text-sm font-medium text-gray-700">From Latitude</label>
+          <label className="block mb-0 text-sm font-medium text-gray-700">From Latitude</label>
           <input 
             type="number" 
             value={fromLat} 
             onChange={e => setFromLat(e.target.value)} 
-            className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-orange-500" 
+            className="w-full p-0 border rounded-lg focus:ring-2 focus:ring-orange-500" 
             step="0.000001" 
           />
         </div>
         <div>
-          <label className="block mb-2 text-sm font-medium text-gray-700">From Longitude</label>
+          <label className="block mb-0 text-sm font-medium text-gray-700">From Longitude</label>
           <input 
             type="number" 
             value={fromLng} 
             onChange={e => setFromLng(e.target.value)} 
-            className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-orange-500" 
+            className="w-full p-0 border rounded-lg focus:ring-2 focus:ring-orange-500" 
             step="0.000001" 
           />
         </div>
         <div>
-          <label className="block mb-2 text-sm font-medium text-gray-700">To Latitude</label>
+          <label className="block mb-0 text-sm font-medium text-gray-700">To Latitude</label>
           <input 
             type="number" 
             value={toLat} 
             onChange={e => setToLat(e.target.value)} 
-            className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-orange-500" 
+            className="w-full p-0 border rounded-lg focus:ring-2 focus:ring-orange-500" 
             step="0.000001" 
           />
         </div>
         <div>
-          <label className="block mb-2 text-sm font-medium text-gray-700">To Longitude</label>
+          <label className="block mb-0 text-sm font-medium text-gray-700">To Longitude</label>
           <input 
             type="number" 
             value={toLng} 
             onChange={e => setToLng(e.target.value)} 
-            className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-orange-500" 
+            className="w-full p-0 border rounded-lg focus:ring-2 focus:ring-orange-500" 
             step="0.000001" 
           />
         </div>
@@ -86,7 +86,7 @@ export function CommuteTimeCalculator({ providerId }: CommuteTimeCalculatorProps
       <button 
         onClick={calculate} 
         disabled={loading}
-        className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
+        className="w-full bg-blue-600 text-white py-0 rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-0"
       >
         {loading ? (
           <>
@@ -111,7 +111,7 @@ export function CommuteTimeCalculator({ providerId }: CommuteTimeCalculatorProps
             <span className="text-sm font-medium text-gray-700">Buffer Time:</span>
             <span className="text-sm text-gray-900">{result.bufferTime} min</span>
           </div>
-          <div className="flex justify-between items-center border-t border-blue-200 pt-2">
+          <div className="flex justify-between items-center border-t border-blue-200 pt-0">
             <span className="text-sm font-semibold text-gray-900">Total Time:</span>
             <span className="text-sm font-semibold text-gray-900">{result.totalTime} min</span>
           </div>

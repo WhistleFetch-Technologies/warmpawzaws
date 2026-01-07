@@ -16,7 +16,7 @@ import {
   Alert,
 } from 'react-native';
 import { colors, spacing, borderRadius } from '../../theme/colors';
-import { ApiService } from '../../services/api';
+import { ApiService, CustomerApi } from '../../services/api';
 
 interface SettingsScreenProps {
   phone: string;
@@ -37,6 +37,51 @@ export function SettingsScreen({
   const [emailNotifications, setEmailNotifications] = useState(true);
   const [smsNotifications, setSmsNotifications] = useState(true);
   const [pushNotifications, setPushNotifications] = useState(true);
+  const [loading, setLoading] = useState(false);
+
+  // ✅ API Integration: Load settings on mount
+  React.useEffect(() => {
+    if (customerId) {
+      loadSettings();
+    }
+  }, [customerId]);
+
+  const loadSettings = async () => {
+    try {
+      setLoading(true);
+      const settings = await CustomerApi.getSettings(customerId!);
+      if (settings) {
+        setNotificationsEnabled(settings.notificationsEnabled ?? true);
+        setEmailNotifications(settings.emailNotifications ?? true);
+        setSmsNotifications(settings.smsNotifications ?? true);
+        setPushNotifications(settings.pushNotifications ?? true);
+      }
+    } catch (error) {
+      console.error('Error loading settings:', error);
+      // Use defaults on error
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaveSettings = async () => {
+    if (!customerId) return;
+    
+    try {
+      setLoading(true);
+      await CustomerApi.updateSettings(customerId, {
+        notificationsEnabled,
+        emailNotifications,
+        smsNotifications,
+        pushNotifications,
+      });
+      // Settings saved successfully
+    } catch (error) {
+      console.error('Error saving settings:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleLogout = () => {
     Alert.alert(
@@ -147,8 +192,11 @@ export function SettingsScreen({
               </View>
               <Switch
                 value={notificationsEnabled}
-                onValueChange={setNotificationsEnabled}
-                trackColor={{ false: '#e5e7eb', true: colors.primary }}
+                onValueChange={(value) => {
+                  setNotificationsEnabled(value);
+                  if (customerId) handleSaveSettings();
+                }}
+                trackColor={{ false: {colors.gray.200}, true: colors.primary }}
               />
             </View>
             {notificationsEnabled && (
@@ -163,7 +211,7 @@ export function SettingsScreen({
                   <Switch
                     value={emailNotifications}
                     onValueChange={setEmailNotifications}
-                    trackColor={{ false: '#e5e7eb', true: colors.primary }}
+                    trackColor={{ false: {colors.gray.200}, true: colors.primary }}
                   />
                 </View>
                 <View style={styles.toggleItem}>
@@ -176,7 +224,7 @@ export function SettingsScreen({
                   <Switch
                     value={smsNotifications}
                     onValueChange={setSmsNotifications}
-                    trackColor={{ false: '#e5e7eb', true: colors.primary }}
+                    trackColor={{ false: {colors.gray.200}, true: colors.primary }}
                   />
                 </View>
                 <View style={styles.toggleItem}>
@@ -189,7 +237,7 @@ export function SettingsScreen({
                   <Switch
                     value={pushNotifications}
                     onValueChange={setPushNotifications}
-                    trackColor={{ false: '#e5e7eb', true: colors.primary }}
+                    trackColor={{ false: {colors.gray.200}, true: colors.primary }}
                   />
                 </View>
               </>
@@ -220,7 +268,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -255,7 +303,7 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   sectionContent: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderRadius: borderRadius.md,
     borderWidth: 1,
     borderColor: colors.border,
@@ -304,7 +352,7 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   logoutButton: {
-    backgroundColor: '#fee2e2',
+    backgroundColor: colors.error + 20% opacity,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     alignItems: 'center',
@@ -312,7 +360,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   logoutButtonText: {
-    color: '#dc2626',
+    color: colors.error,
     fontSize: 16,
     fontWeight: 'bold',
   },

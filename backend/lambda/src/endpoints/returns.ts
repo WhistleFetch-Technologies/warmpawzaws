@@ -129,6 +129,140 @@ export function registerReturnsEndpoints(app: Hono) {
   });
 
   /**
+   * POST /customer/returns
+   * Create return request (Phase 1 - Mobile Improvements)
+   */
+  app.post("/customer/returns", async (c) => {
+    try {
+      const { orderId, items, reason, customerId } = await c.req.json();
+
+      if (!orderId || !items || !reason || !customerId) {
+        return c.json({ error: 'orderId, items, reason, and customerId are required' }, 400);
+      }
+
+      // Get order details
+      const orders = await select('orders', { id: orderId, customer_id: customerId });
+      if (orders.length === 0) {
+        return c.json({ error: 'Order not found' }, 404);
+      }
+
+      const order = orders[0];
+
+      // Create return request
+      const returnRequest = await insert('returns', {
+        order_id: orderId,
+        customer_id: customerId,
+        vendor_id: order.vendor_id,
+        items: items,
+        return_reason: reason,
+        description: null,
+        images: [],
+        status: 'pending',
+        pickup_address: null,
+      });
+
+      return c.json({
+        success: true,
+        returnRequest: returnRequest[0],
+        message: 'Return request created successfully',
+      });
+    } catch (error: any) {
+      console.error('Error creating return request:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /customer/returns/:returnId
+   * Get return status (Phase 1 - Mobile Improvements)
+   */
+  app.get("/customer/returns/:returnId", async (c) => {
+    try {
+      const { returnId } = c.req.param();
+
+      const returns = await select('returns', { id: returnId });
+      if (returns.length === 0) {
+        return c.json({ error: 'Return not found' }, 404);
+      }
+
+      return c.json({
+        success: true,
+        return: returns[0],
+      });
+    } catch (error: any) {
+      console.error('Error fetching return status:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /customer/:customerId/returns
+   * Get return history (Phase 1 - Mobile Improvements)
+   */
+  app.get("/customer/:customerId/returns", async (c) => {
+    try {
+      const { customerId } = c.req.param();
+
+      const returns = await query(
+        `SELECT * FROM returns 
+         WHERE customer_id = $1 
+         ORDER BY created_at DESC`,
+        [customerId]
+      );
+
+      return c.json({
+        success: true,
+        returns: returns.rows,
+        count: returns.rows.length,
+      });
+    } catch (error: any) {
+      console.error('Error fetching return history:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /customer/returns/:returnId/cancel
+   * Cancel return request (Phase 1 - Mobile Improvements)
+   */
+  app.post("/customer/returns/:returnId/cancel", async (c) => {
+    try {
+      const { returnId } = c.req.param();
+      const { customerId } = await c.req.json();
+
+      if (!customerId) {
+        return c.json({ error: 'customerId is required' }, 400);
+      }
+
+      const returns = await select('returns', { id: returnId, customer_id: customerId });
+      if (returns.length === 0) {
+        return c.json({ error: 'Return not found or unauthorized' }, 404);
+      }
+
+      if (returns[0].status !== 'pending') {
+        return c.json({ error: 'Only pending returns can be cancelled' }, 400);
+      }
+
+      const updated = await update('returns',
+        { id: returnId },
+        {
+          status: 'cancelled',
+          cancelled_at: new Date().toISOString(),
+        }
+      );
+
+      return c.json({
+        success: true,
+        return: updated[0],
+        message: 'Return cancelled successfully',
+      });
+    } catch (error: any) {
+      console.error('Error cancelling return:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
    * GET /returns/:returnId
    * Get return details
    */

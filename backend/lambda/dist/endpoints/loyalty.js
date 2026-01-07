@@ -265,5 +265,178 @@ function registerLoyaltyEndpoints(app) {
             return c.json({ error: error.message }, 500);
         }
     });
+    // ============================================================================
+    // ADMIN ENDPOINTS - LOYALTY MANAGEMENT
+    // ============================================================================
+    /**
+     * GET /admin/loyalty/rules
+     * Get all loyalty rules (admin)
+     */
+    app.get("/admin/loyalty/rules", async (c) => {
+        try {
+            const rules = await (0, rds_connection_1.select)('loyalty_rules', {});
+            return c.json({
+                success: true,
+                rules: rules,
+                total: rules.length,
+            });
+        }
+        catch (error) {
+            console.error('Error fetching loyalty rules:', error);
+            return c.json({ error: error.message }, 500);
+        }
+    });
+    /**
+     * POST /admin/loyalty/rules
+     * Create loyalty rule (admin)
+     */
+    app.post("/admin/loyalty/rules", async (c) => {
+        try {
+            const body = await c.req.json();
+            const { name, description, points_per_rupee, redemption_rate, min_points_to_redeem, max_redemption_per_transaction, expiry_days, is_active = true, } = body;
+            if (!name || points_per_rupee === undefined || redemption_rate === undefined) {
+                return c.json({ error: 'name, points_per_rupee, and redemption_rate are required' }, 400);
+            }
+            const rule = await (0, rds_connection_1.insert)('loyalty_rules', {
+                name,
+                description,
+                points_per_rupee,
+                redemption_rate,
+                min_points_to_redeem: min_points_to_redeem || 100,
+                max_redemption_per_transaction,
+                expiry_days,
+                is_active,
+            });
+            return c.json({
+                success: true,
+                rule: rule[0],
+                message: 'Loyalty rule created successfully',
+            });
+        }
+        catch (error) {
+            console.error('Error creating loyalty rule:', error);
+            return c.json({ error: error.message }, 500);
+        }
+    });
+    /**
+     * PUT /admin/loyalty/rules/:id
+     * Update loyalty rule (admin)
+     */
+    app.put("/admin/loyalty/rules/:id", async (c) => {
+        try {
+            const { id } = c.req.param();
+            const body = await c.req.json();
+            const updateData = {};
+            if (body.name !== undefined)
+                updateData.name = body.name;
+            if (body.description !== undefined)
+                updateData.description = body.description;
+            if (body.points_per_rupee !== undefined)
+                updateData.points_per_rupee = body.points_per_rupee;
+            if (body.redemption_rate !== undefined)
+                updateData.redemption_rate = body.redemption_rate;
+            if (body.min_points_to_redeem !== undefined)
+                updateData.min_points_to_redeem = body.min_points_to_redeem;
+            if (body.max_redemption_per_transaction !== undefined)
+                updateData.max_redemption_per_transaction = body.max_redemption_per_transaction;
+            if (body.expiry_days !== undefined)
+                updateData.expiry_days = body.expiry_days;
+            if (body.is_active !== undefined)
+                updateData.is_active = body.is_active;
+            await (0, rds_connection_1.update)('loyalty_rules', { id }, updateData);
+            const updated = await (0, rds_connection_1.select)('loyalty_rules', { id });
+            return c.json({
+                success: true,
+                rule: updated[0],
+                message: 'Loyalty rule updated successfully',
+            });
+        }
+        catch (error) {
+            console.error('Error updating loyalty rule:', error);
+            return c.json({ error: error.message }, 500);
+        }
+    });
+    /**
+     * DELETE /admin/loyalty/rules/:id
+     * Delete loyalty rule (admin)
+     */
+    app.delete("/admin/loyalty/rules/:id", async (c) => {
+        try {
+            const { id } = c.req.param();
+            await (0, rds_connection_1.deleteRows)('loyalty_rules', { id });
+            return c.json({
+                success: true,
+                message: 'Loyalty rule deleted successfully',
+            });
+        }
+        catch (error) {
+            console.error('Error deleting loyalty rule:', error);
+            return c.json({ error: error.message }, 500);
+        }
+    });
+    /**
+     * GET /admin/loyalty/stats
+     * Get loyalty program statistics (admin)
+     */
+    app.get("/admin/loyalty/stats", async (c) => {
+        try {
+            const [profiles, transactions] = await Promise.all([
+                (0, rds_connection_1.query)('SELECT COUNT(*) as count, SUM(total_points) as total FROM customer_loyalty_points'),
+                (0, rds_connection_1.query)(`
+          SELECT 
+            COUNT(*) FILTER (WHERE transaction_type = 'earned') as earned_count,
+            COUNT(*) FILTER (WHERE transaction_type = 'redeemed') as redeemed_count,
+            SUM(points) FILTER (WHERE transaction_type = 'earned') as total_earned,
+            SUM(points) FILTER (WHERE transaction_type = 'redeemed') as total_redeemed
+          FROM loyalty_transactions
+        `),
+            ]);
+            const profileCount = parseInt(profiles.rows[0]?.count || '0', 10);
+            const totalPoints = parseInt(profiles.rows[0]?.total || '0', 10);
+            const totalEarned = parseInt(transactions.rows[0]?.total_earned || '0', 10);
+            const totalRedeemed = parseInt(transactions.rows[0]?.total_redeemed || '0', 10);
+            const activePoints = totalEarned - totalRedeemed;
+            return c.json({
+                success: true,
+                stats: {
+                    totalCustomers: profileCount,
+                    totalPointsIssued: totalEarned,
+                    totalPointsRedeemed: totalRedeemed,
+                    activePoints: activePoints,
+                    averagePointsPerCustomer: profileCount > 0 ? Math.round(activePoints / profileCount) : 0,
+                },
+            });
+        }
+        catch (error) {
+            console.error('Error fetching loyalty stats:', error);
+            return c.json({ error: error.message }, 500);
+        }
+    });
+    /**
+     * GET /admin/loyalty/transactions
+     * Get loyalty transactions (admin)
+     */
+    app.get("/admin/loyalty/transactions", async (c) => {
+        try {
+            const limit = parseInt(c.req.query('limit') || '50', 10);
+            const offset = parseInt(c.req.query('offset') || '0', 10);
+            const transactions = await (0, rds_connection_1.query)(`SELECT 
+          lt.*,
+          c.name as customer_name
+         FROM loyalty_transactions lt
+         LEFT JOIN customers c ON lt.customer_id = c.id
+         ORDER BY lt.created_at DESC
+         LIMIT $1 OFFSET $2`, [limit, offset]);
+            return c.json({
+                success: true,
+                transactions: transactions.rows,
+                total: transactions.rows.length,
+            });
+        }
+        catch (error) {
+            console.error('Error fetching loyalty transactions:', error);
+            return c.json({ error: error.message }, 500);
+        }
+    });
 }
 //# sourceMappingURL=loyalty.js.map

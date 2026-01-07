@@ -112,17 +112,17 @@ export function BookingActions({ booking, phone, onSuccess }: BookingActionsProp
 
   return (
     <>
-      <div className="flex gap-2">
+      <div className="flex gap-0">
         <button
           onClick={() => setShowRescheduleModal(true)}
-          className="flex-1 px-4 py-2 border-2 border-primary text-primary rounded-xl font-medium hover:bg-primary hover:text-white transition-colors flex items-center justify-center gap-2"
+          className="flex-1 px-4 py-0 border-2 border-primary text-primary rounded-xl font-medium hover:bg-primary hover:text-white transition-colors flex items-center justify-center gap-0"
         >
           <RefreshCw className="w-4 h-4" />
           Reschedule
         </button>
         <button
           onClick={handleCancel}
-          className="flex-1 px-4 py-2 border-2 border-red-500 text-red-500 rounded-xl font-medium hover:bg-red-500 hover:text-white transition-colors flex items-center justify-center gap-2"
+          className="flex-1 px-4 py-0 border-2 border-red-500 text-red-500 rounded-xl font-medium hover:bg-red-500 hover:text-white transition-colors flex items-center justify-center gap-0"
         >
           <XCircle className="w-4 h-4" />
           Cancel
@@ -133,7 +133,7 @@ export function BookingActions({ booking, phone, onSuccess }: BookingActionsProp
       {showRescheduleModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl w-full max-w-[430px] max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-gradient-to-r from-primary to-primary-dark px-6 py-6 flex items-center justify-between z-10">
+            <div className="sticky top-0 bg-gradient-to-r from-primary to-primary-dark px-0 py-0 flex items-center justify-between z-10">
               <h2 className="text-white font-bold text-lg">Reschedule Booking</h2>
               <button
                 onClick={() => setShowRescheduleModal(false)}
@@ -143,16 +143,16 @@ export function BookingActions({ booking, phone, onSuccess }: BookingActionsProp
               </button>
             </div>
 
-            <div className="px-6 py-6 space-y-4">
+            <div className="px-0 py-0 space-y-4">
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">New Date *</label>
+                <label className="block text-sm font-semibold text-gray-700 mb-0">New Date *</label>
                 <div className="relative">
-                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <Calendar className="absolute left-3 top-0/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                   <input
                     type="date"
                     value={rescheduleData.newDate}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRescheduleData({...rescheduleData, newDate: e.target.value})}
-                    className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                    className="w-full pl-0 pr-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                     min={new Date().toISOString().split('T')[0]}
                     required
                   />
@@ -160,26 +160,26 @@ export function BookingActions({ booking, phone, onSuccess }: BookingActionsProp
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">New Time Slot</label>
+                <label className="block text-sm font-semibold text-gray-700 mb-0">New Time Slot</label>
                 <div className="relative">
-                  <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <Clock className="absolute left-3 top-0/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                   <input
                     type="time"
                     value={rescheduleData.newTimeSlot}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRescheduleData({...rescheduleData, newTimeSlot: e.target.value})}
-                    className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                    className="w-full pl-0 pr-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Reason (Optional)</label>
+                <label className="block text-sm font-semibold text-gray-700 mb-0">Reason (Optional)</label>
                 <textarea
                   value={rescheduleData.reason}
                   onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setRescheduleData({...rescheduleData, reason: e.target.value})}
                   placeholder="Why are you rescheduling?"
                   rows={3}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none resize-none"
+                  className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none resize-none"
                 />
               </div>
 
@@ -199,7 +199,7 @@ export function BookingActions({ booking, phone, onSuccess }: BookingActionsProp
       {showCancelModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl w-full max-w-[430px] max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-gradient-to-r from-red-500 to-red-600 px-6 py-6 flex items-center justify-between z-10">
+            <div className="sticky top-0 bg-gradient-to-r from-red-500 to-red-600 px-0 py-0 flex items-center justify-between z-10">
               <h2 className="text-white font-bold text-lg">Cancel Booking</h2>
               <button
                 onClick={() => setShowCancelModal(false)}
@@ -209,39 +209,39 @@ export function BookingActions({ booking, phone, onSuccess }: BookingActionsProp
               </button>
             </div>
 
-            <div className="px-6 py-6 space-y-4">
+            <div className="px-0 py-0 space-y-4">
               {refundPreview && (
                 <div className="bg-green-50 border border-green-200 rounded-xl p-4">
-                  <div className="flex items-center gap-2 mb-2">
+                  <div className="flex items-center gap-0 mb-0">
                     <IndianRupee className="w-5 h-5 text-green-600" />
                     <span className="font-semibold text-green-900">Refund Amount</span>
                   </div>
                   <p className="text-2xl font-bold text-green-600">
                     ₹{refundPreview.amount || 0}
                   </p>
-                  <p className="text-sm text-green-700 mt-1">
+                  <p className="text-sm text-green-700 mt-0">
                     {refundPreview.message || 'Refund will be processed within 5-7 business days'}
                   </p>
                 </div>
               )}
 
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Reason for Cancellation *</label>
+                <label className="block text-sm font-semibold text-gray-700 mb-0">Reason for Cancellation *</label>
                 <textarea
                   value={cancellationReason}
                   onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setCancellationReason(e.target.value)}
                   placeholder="Please tell us why you're cancelling..."
                   rows={4}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none resize-none"
+                  className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none resize-none"
                   required
                 />
               </div>
 
               <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-                <div className="flex items-start gap-2">
+                <div className="flex items-start gap-0">
                   <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
                   <div>
-                    <p className="font-semibold text-red-900 mb-1">Are you sure?</p>
+                    <p className="font-semibold text-red-900 mb-0">Are you sure?</p>
                     <p className="text-sm text-red-700">
                       This action cannot be undone. Your booking will be cancelled immediately.
                     </p>
@@ -249,17 +249,17 @@ export function BookingActions({ booking, phone, onSuccess }: BookingActionsProp
                 </div>
               </div>
 
-              <div className="flex gap-3">
+              <div className="flex gap-0">
                 <button
                   onClick={() => setShowCancelModal(false)}
-                  className="flex-1 px-4 py-3 border-2 border-gray-200 text-gray-700 rounded-xl font-medium hover:bg-gray-50 transition-colors"
+                  className="flex-1 px-4 py-0 border-2 border-gray-200 text-gray-700 rounded-xl font-medium hover:bg-gray-50 transition-colors"
                 >
                   Keep Booking
                 </button>
                 <button
                   onClick={confirmCancel}
                   disabled={loading || !cancellationReason.trim()}
-                  className="flex-1 px-4 py-3 bg-red-500 text-white rounded-xl font-medium hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 px-4 py-0 bg-red-500 text-white rounded-xl font-medium hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {loading ? 'Cancelling...' : 'Confirm Cancel'}
                 </button>

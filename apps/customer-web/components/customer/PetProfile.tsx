@@ -93,7 +93,7 @@ export function PetProfile({
 
     const config = statusConfig[status] || statusConfig.confirmed;
     return (
-      <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${config.className}`}>
+      <span className={`px-0.5 py-0 rounded-full text-xs font-semibold ${config.className}`}>
         {config.label}
       </span>
     );
@@ -108,7 +108,7 @@ export function PetProfile({
 
     const config = styleConfig[style] || { label: style, className: 'bg-gray-100 text-gray-700' };
     return (
-      <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${config.className}`}>
+      <span className={`px-0.5 py-0 rounded-full text-xs font-semibold ${config.className}`}>
         {config.label}
       </span>
     );
@@ -141,10 +141,10 @@ export function PetProfile({
       <div className="max-w-[430px] mx-auto bg-white min-h-screen">
         {/* Header */}
         <div className="sticky top-0 bg-primary text-white p-4 shadow-md z-10">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-0">
             <button 
               onClick={onBack} 
-              className="p-1 hover:bg-white/20 rounded-lg transition-colors"
+              className="p-0 hover:bg-white/20 rounded-lg transition-colors"
             >
               <ArrowLeft className="w-6 h-6" />
             </button>
@@ -156,19 +156,19 @@ export function PetProfile({
         </div>
 
         {/* Pet Header */}
-        <div className="p-6 bg-gradient-to-b from-primary/10 to-transparent">
-          <div className="flex items-center gap-4 mb-6">
+        <div className="p-0 bg-gradient-to-b from-primary/10 to-transparent">
+          <div className="flex items-center gap-4 mb-0">
             <div className="w-20 h-20 bg-gradient-to-br from-primary to-primary-dark rounded-full flex items-center justify-center text-4xl">
               {getPetEmoji(petType)}
             </div>
             <div className="flex-1">
               <h2 className="text-2xl font-semibold text-gray-900">{petName}</h2>
-              <div className="flex items-center gap-2 mt-1 text-sm text-gray-600">
-                <span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded">{petType}</span>
+              <div className="flex items-center gap-0 mt-0 text-sm text-gray-600">
+                <span className="px-0 py-0.5 bg-orange-100 text-orange-700 rounded">{petType}</span>
                 {petBreed && <span>• {petBreed}</span>}
               </div>
               {(petAge || petGender) && (
-                <div className="flex items-center gap-2 mt-1 text-sm text-gray-500">
+                <div className="flex items-center gap-0 mt-0 text-sm text-gray-500">
                   {petAge && <span>{petAge}</span>}
                   {petAge && petGender && <span>•</span>}
                   {petGender && <span>{petGender}</span>}
@@ -178,41 +178,41 @@ export function PetProfile({
           </div>
 
           {/* Stats Cards */}
-          <div className="grid grid-cols-4 gap-2">
-            <div className="bg-white rounded-xl p-3 text-center shadow-sm">
+          <div className="grid grid-cols-4 gap-0">
+            <div className="bg-white rounded-xl p-0 text-center shadow-sm">
               <div className="text-2xl font-bold text-primary">{stats.total}</div>
-              <div className="text-xs text-gray-500 mt-1">Total</div>
+              <div className="text-xs text-gray-500 mt-0">Total</div>
             </div>
-            <div className="bg-white rounded-xl p-3 text-center shadow-sm">
+            <div className="bg-white rounded-xl p-0 text-center shadow-sm">
               <div className="text-2xl font-bold text-blue-600">{stats.confirmed}</div>
-              <div className="text-xs text-gray-500 mt-1">Upcoming</div>
+              <div className="text-xs text-gray-500 mt-0">Upcoming</div>
             </div>
-            <div className="bg-white rounded-xl p-3 text-center shadow-sm">
+            <div className="bg-white rounded-xl p-0 text-center shadow-sm">
               <div className="text-2xl font-bold text-green-600">{stats.completed}</div>
-              <div className="text-xs text-gray-500 mt-1">Done</div>
+              <div className="text-xs text-gray-500 mt-0">Done</div>
             </div>
-            <div className="bg-white rounded-xl p-3 text-center shadow-sm">
+            <div className="bg-white rounded-xl p-0 text-center shadow-sm">
               <div className="text-2xl font-bold text-yellow-600">{stats.inProgress}</div>
-              <div className="text-xs text-gray-500 mt-1">Active</div>
+              <div className="text-xs text-gray-500 mt-0">Active</div>
             </div>
           </div>
         </div>
 
         {/* Service History */}
         <div className="px-4 pb-20">
-          <div className="flex items-center gap-2 mb-4">
+          <div className="flex items-center gap-0 mb-4">
             <TrendingUp className="w-5 h-5 text-primary" />
             <h3 className="font-semibold text-gray-900">Service History</h3>
           </div>
 
           {/* Tabs */}
           <div className="mb-4">
-            <div className="flex gap-2 overflow-x-auto scrollbar-hide">
+            <div className="flex gap-0 overflow-x-auto scrollbar-hide">
               {(['all', 'confirmed', 'in_progress', 'completed', 'cancelled'] as const).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setSelectedTab(tab)}
-                  className={`px-3 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-all ${
+                  className={`px-0 py-0 rounded-lg text-xs font-medium whitespace-nowrap transition-all ${
                     selectedTab === tab
                       ? 'bg-primary text-white'
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
@@ -220,7 +220,7 @@ export function PetProfile({
                 >
                   {tab === 'all' ? 'All' : tab === 'in_progress' ? 'Active' : tab.charAt(0).toUpperCase() + tab.slice(1)}
                   {tab !== 'all' && (
-                    <span className="ml-1">
+                    <span className="ml-0">
                       ({(() => {
                         if (tab === 'in_progress') return stats.inProgress || 0;
                         if (tab === 'confirmed') return stats.confirmed || 0;
@@ -237,21 +237,21 @@ export function PetProfile({
 
           {/* Bookings List */}
           {loading ? (
-            <div className="flex items-center justify-center py-12">
+            <div className="flex items-center justify-center py-0">
               <Loader className="w-8 h-8 animate-spin text-primary" />
             </div>
           ) : filteredBookings.length === 0 ? (
-            <div className="text-center py-12">
-              <Package className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+            <div className="text-center py-02">
+              <Package className="w-12 h-12 text-gray-300 mx-auto mb-0" />
               <p className="text-gray-500">No service history for {petName}</p>
-              <p className="text-sm text-gray-400 mt-1">Book your first service to get started!</p>
+              <p className="text-sm text-gray-400 mt-0">Book your first service to get started!</p>
             </div>
           ) : (
             <div className="space-y-3">
               {filteredBookings.map((booking) => (
                 <div key={booking.id} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
                   {/* Header */}
-                  <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-start justify-between mb-0">
                     <div className="flex-1">
                       <h3 className="font-semibold text-gray-900">{booking.serviceName || 'Service'}</h3>
                       <p className="text-sm text-gray-500">{booking.vendorName}</p>
@@ -260,25 +260,25 @@ export function PetProfile({
                   </div>
 
                   {/* Service Type */}
-                  <div className="flex items-center gap-2 mb-3">
+                  <div className="flex items-center gap-0 mb-0">
                     {getServiceStyleBadge(booking.serviceStyle)}
-                    <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded-full text-xs">{booking.vendorType}</span>
+                    <span className="px-0 py-1 bg-gray-100 text-gray-700 rounded-full text-xs">{booking.vendorType}</span>
                   </div>
 
                   {/* Date & Time */}
-                  <div className="grid grid-cols-2 gap-3 mb-3 text-sm">
-                    <div className="flex items-center gap-2 text-gray-600">
+                  <div className="grid grid-cols-2 gap-0 mb-0 text-sm">
+                    <div className="flex items-center gap-0 text-gray-600">
                       <Calendar className="w-4 h-4" />
                       <span>{formatDate(booking.scheduledDate)}</span>
                     </div>
-                    <div className="flex items-center gap-2 text-gray-600">
+                    <div className="flex items-center gap-0 text-gray-600">
                       <Clock className="w-4 h-4" />
                       <span>{booking.scheduledTime} ({booking.duration}m)</span>
                     </div>
                   </div>
 
                   {/* Price */}
-                  <div className="pt-3 border-t flex items-center justify-between">
+                  <div className="pt-0 border-t flex items-center justify-between">
                     <span className="text-sm text-gray-500">ID: {booking.id.slice(0, 8)}...</span>
                     <span className="font-semibold text-primary">₹{booking.price}</span>
                   </div>

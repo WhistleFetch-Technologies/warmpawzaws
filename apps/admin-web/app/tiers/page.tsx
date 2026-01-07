@@ -1,9 +1,10 @@
 'use client';
 export const dynamic = 'force-dynamic';
 
-import React, { useState, useEffect } from 'react';
-import { apiClient } from '@/lib/api-client';
+import React from 'react';
 import { AdminLayout } from '@/components/AdminLayout';
+import { useApiData, useCrud, useFormModal, useNotifications } from '@/hooks';
+import { validateRequired } from '@/lib/utils';
 
 // ============================================================================
 // TYPES
@@ -24,34 +25,23 @@ interface Tier {
   created_at: string;
 }
 
+interface TierFormData {
+  name: string;
+  display_name: string;
+  level: number;
+  commission_rate: number;
+  min_bookings: number;
+  min_revenue: number;
+  benefits: string[];
+  requirements: string[];
+  is_active: boolean;
+}
+
 // ============================================================================
 // MAIN COMPONENT
 // ============================================================================
 
 export default function TiersPage() {
-  const [tiers, setTiers] = useState<Tier[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
-  
-  // Modal states
-  const [showModal, setShowModal] = useState(false);
-  const [editingTier, setEditingTier] = useState<Tier | null>(null);
-  const [saving, setSaving] = useState(false);
-  
-  // Form state
-  const [formData, setFormData] = useState({
-    name: '',
-    display_name: '',
-    level: 1,
-    commission_rate: 10,
-    min_bookings: 0,
-    min_revenue: 0,
-    benefits: [] as string[],
-    requirements: [] as string[],
-    is_active: true,
-  });
-
   const availableBenefits = [
     'Lower commission rate',
     'Priority support',
@@ -63,36 +53,38 @@ export default function TiersPage() {
     'Dedicated account manager',
   ];
 
-  // ============================================================================
-  // DATA LOADING
-  // ============================================================================
+  // Reusable hooks
+  const { data: tiers, loading, error: dataError, refetch } = useApiData<Tier>({
+    endpoint: '/admin/tiers',
+    dataKey: 'tiers',
+  });
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  const notifications = useNotifications({ autoClearSuccess: true });
+  
+  const { saving, error: crudError, success: crudSuccess, create, update } = useCrud<Tier, TierFormData>({
+    endpoint: '/admin/tiers',
+    onSuccess: (message) => {
+      notifications.setSuccess(message);
+      refetch();
+    },
+    onError: (err) => {
+      notifications.setError(err.message || 'Operation failed');
+    },
+  });
 
-  const loadData = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      
-      const response = await apiClient.get<any>('/admin/tiers');
-      setTiers(response.tiers || response || []);
-    } catch (err: any) {
-      console.error('Error loading tiers:', err);
-      setError(err.message || 'Failed to load tiers');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // ============================================================================
-  // ACTIONS
-  // ============================================================================
-
-  const handleCreate = () => {
-    setEditingTier(null);
-    setFormData({
+  const modal = useFormModal<TierFormData, Tier>({
+    initialFormData: {
+      name: '',
+      display_name: '',
+      level: 1,
+      commission_rate: 10,
+      min_bookings: 0,
+      min_revenue: 0,
+      benefits: [],
+      requirements: [],
+      is_active: true,
+    },
+    getDefaultFormData: () => ({
       name: '',
       display_name: '',
       level: tiers.length + 1,
@@ -102,13 +94,8 @@ export default function TiersPage() {
       benefits: [],
       requirements: [],
       is_active: true,
-    });
-    setShowModal(true);
-  };
-
-  const handleEdit = (tier: Tier) => {
-    setEditingTier(tier);
-    setFormData({
+    }),
+    mapItemToFormData: (tier) => ({
       name: tier.name,
       display_name: tier.display_name,
       level: tier.level,
@@ -118,40 +105,37 @@ export default function TiersPage() {
       benefits: tier.benefits,
       requirements: tier.requirements,
       is_active: tier.is_active,
-    });
-    setShowModal(true);
-  };
+    }),
+  });
+
+  // Combine errors and success messages
+  const error = dataError || crudError || notifications.error;
+  const success = crudSuccess || notifications.success;
+
+  // ============================================================================
+  // ACTIONS
+  // ============================================================================
 
   const handleSave = async () => {
-    if (!formData.name || !formData.display_name) {
-      setError('Please fill all required fields');
+    const validation = validateRequired(modal.formData, ['name', 'display_name']);
+    if (!validation.isValid) {
+      notifications.setError(Object.values(validation.errors)[0]);
       return;
     }
-    
-    try {
-      setSaving(true);
-      setError(null);
-      
-      if (editingTier) {
-        await apiClient.put(`/admin/tiers/${editingTier.id}`, formData);
-        setSuccess('Tier updated successfully');
-      } else {
-        await apiClient.post('/admin/tiers', formData);
-        setSuccess('Tier created successfully');
-      }
-      
-      setShowModal(false);
-      setEditingTier(null);
-      loadData();
-    } catch (err: any) {
-      setError(err.message || 'Failed to save tier');
-    } finally {
-      setSaving(false);
+
+    if (modal.editingItem) {
+      await update(modal.editingItem.id, modal.formData);
+    } else {
+      await create(modal.formData);
+    }
+
+    if (!crudError) {
+      modal.closeModal();
     }
   };
 
   const toggleBenefit = (benefit: string) => {
-    setFormData(prev => ({
+    modal.setFormData(prev => ({
       ...prev,
       benefits: prev.benefits.includes(benefit)
         ? prev.benefits.filter(b => b !== benefit)
@@ -194,7 +178,7 @@ export default function TiersPage() {
               <p className="text-gray-500">Manage vendor tier levels and benefits</p>
             </div>
             <button
-              onClick={handleCreate}
+              onClick={modal.openCreate}
               className="px-4 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
             >
               + Add Tier
@@ -207,14 +191,14 @@ export default function TiersPage() {
           {error && (
             <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 flex items-center justify-between">
               <span>{error}</span>
-              <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600">✕</button>
+              <button onClick={notifications.clearError} className="text-red-400 hover:text-red-600">✕</button>
             </div>
           )}
           
           {success && (
             <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl text-green-700 flex items-center justify-between">
               <span>{success}</span>
-              <button onClick={() => setSuccess(null)} className="text-green-400 hover:text-green-600">✕</button>
+              <button onClick={notifications.clearSuccess} className="text-green-400 hover:text-green-600">✕</button>
             </div>
           )}
 
@@ -265,7 +249,7 @@ export default function TiersPage() {
                 </div>
                 
                 <button
-                  onClick={() => handleEdit(tier)}
+                  onClick={() => modal.openEdit(tier)}
                   className="w-full py-2 bg-slate-100 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-200 transition"
                 >
                   Edit Tier
@@ -277,15 +261,15 @@ export default function TiersPage() {
       </div>
 
       {/* Tier Modal */}
-      {showModal && (
+      {modal.isOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b sticky top-0 bg-white z-10">
               <div className="flex items-center justify-between">
                 <h3 className="text-xl font-semibold text-gray-900">
-                  {editingTier ? 'Edit Tier' : 'Create Tier'}
+                  {modal.editingItem ? 'Edit Tier' : 'Create Tier'}
                 </h3>
-                <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl">✕</button>
+                <button onClick={modal.closeModal} className="text-gray-400 hover:text-gray-600 text-2xl">✕</button>
               </div>
             </div>
             
@@ -295,8 +279,8 @@ export default function TiersPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Tier Name (ID) *</label>
                   <input
                     type="text"
-                    value={formData.name}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, name: e.target.value.toLowerCase() }))}
+                    value={modal.formData.name}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => modal.setFormData(prev => ({ ...prev, name: e.target.value.toLowerCase() }))}
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
                     placeholder="e.g., gold"
                   />
@@ -305,8 +289,8 @@ export default function TiersPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Display Name *</label>
                   <input
                     type="text"
-                    value={formData.display_name}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, display_name: e.target.value }))}
+                    value={modal.formData.display_name}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => modal.setFormData(prev => ({ ...prev, display_name: e.target.value }))}
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
                     placeholder="e.g., Gold"
                   />
@@ -318,8 +302,8 @@ export default function TiersPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Level *</label>
                   <input
                     type="number"
-                    value={formData.level}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, level: Number(e.target.value) }))}
+                    value={modal.formData.level}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => modal.setFormData(prev => ({ ...prev, level: Number(e.target.value) }))}
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 outline-none"
                     min="1"
                   />
@@ -328,8 +312,8 @@ export default function TiersPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Commission Rate (%) *</label>
                   <input
                     type="number"
-                    value={formData.commission_rate}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, commission_rate: Number(e.target.value) }))}
+                    value={modal.formData.commission_rate}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => modal.setFormData(prev => ({ ...prev, commission_rate: Number(e.target.value) }))}
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 outline-none"
                     min="0"
                     max="100"
@@ -340,8 +324,8 @@ export default function TiersPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Min Bookings</label>
                   <input
                     type="number"
-                    value={formData.min_bookings}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, min_bookings: Number(e.target.value) }))}
+                    value={modal.formData.min_bookings}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => modal.setFormData(prev => ({ ...prev, min_bookings: Number(e.target.value) }))}
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 outline-none"
                     min="0"
                   />
@@ -352,8 +336,8 @@ export default function TiersPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Min Revenue (₹)</label>
                 <input
                   type="number"
-                  value={formData.min_revenue}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, min_revenue: Number(e.target.value) }))}
+                  value={modal.formData.min_revenue}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => modal.setFormData(prev => ({ ...prev, min_revenue: Number(e.target.value) }))}
                   className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 outline-none"
                   min="0"
                 />
@@ -366,7 +350,7 @@ export default function TiersPage() {
                     <label key={benefit} className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer">
                       <input
                         type="checkbox"
-                        checked={formData.benefits.includes(benefit)}
+                        checked={modal.formData.benefits.includes(benefit)}
                         onChange={() => toggleBenefit(benefit)}
                         className="rounded text-orange-500"
                       />
@@ -379,8 +363,8 @@ export default function TiersPage() {
               <label className="flex items-center gap-2">
                 <input
                   type="checkbox"
-                  checked={formData.is_active}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, is_active: e.target.checked }))}
+                  checked={modal.formData.is_active}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => modal.setFormData(prev => ({ ...prev, is_active: e.target.checked }))}
                   className="rounded text-orange-500"
                 />
                 <span className="text-sm text-gray-700">Tier is active</span>
@@ -389,7 +373,7 @@ export default function TiersPage() {
             
             <div className="p-6 border-t bg-gray-50 flex justify-end gap-3 rounded-b-2xl">
               <button
-                onClick={() => setShowModal(false)}
+                onClick={modal.closeModal}
                 className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300 transition"
               >
                 Cancel
@@ -399,7 +383,7 @@ export default function TiersPage() {
                 disabled={saving}
                 className="px-6 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition disabled:opacity-50"
               >
-                {saving ? 'Saving...' : editingTier ? 'Update Tier' : 'Create Tier'}
+                {saving ? 'Saving...' : modal.editingItem ? 'Update Tier' : 'Create Tier'}
               </button>
             </div>
           </div>

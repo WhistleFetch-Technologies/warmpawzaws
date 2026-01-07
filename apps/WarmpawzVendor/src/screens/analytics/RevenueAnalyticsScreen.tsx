@@ -190,7 +190,7 @@ const styles = StyleSheet.create({
   },
   periodButtonActive: {
     borderColor: colors.primary,
-    backgroundColor: '#FFF4E6',
+    backgroundColor: colors.primary.50,
   },
   periodButtonText: {
     fontSize: typography.fontSizes.sm,
@@ -212,18 +212,18 @@ const styles = StyleSheet.create({
   },
   summaryTitle: {
     fontSize: typography.fontSizes.md,
-    color: '#ffffff',
+    color: colors.white,
     marginBottom: spacing.sm,
   },
   summaryAmount: {
     fontSize: typography.fontSizes['3xl'],
     fontWeight: typography.fontWeights.bold,
-    color: '#ffffff',
+    color: colors.white,
     marginBottom: spacing.xs,
   },
   growthText: {
     fontSize: typography.fontSizes.sm,
-    color: '#ffffff',
+    color: colors.white,
   },
   statsGrid: {
     flexDirection: 'row',

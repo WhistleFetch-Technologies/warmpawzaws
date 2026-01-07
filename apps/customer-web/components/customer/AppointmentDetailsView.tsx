@@ -134,11 +134,11 @@ export function AppointmentDetailsView({
 
   if (!appointment) {
     return (
-      <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto flex items-center justify-center px-6">
+      <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto flex items-center justify-center px-0">
         <div className="text-center">
           <AlertTriangle className="w-16 h-16 text-red-500 mx-auto mb-4" />
-          <h2 className="text-xl font-bold text-gray-900 mb-2">Appointment Not Found</h2>
-          <button onClick={onBack} className="mt-4 px-4 py-2 bg-primary text-white rounded-lg">
+          <h2 className="text-xl font-bold text-gray-900 mb-0">Appointment Not Found</h2>
+          <button onClick={onBack} className="mt-4 px-4 py-0 bg-primary text-white rounded-lg">
             Go Back
           </button>
         </div>
@@ -149,9 +149,9 @@ export function AppointmentDetailsView({
   return (
     <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4 sticky top-0 z-10">
+      <div className="bg-white border-b border-gray-200 px-0 py-4 sticky top-0 z-10">
         <div className="flex items-center gap-4">
-          <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg">
+          <button onClick={onBack} className="p-0 hover:bg-gray-100 rounded-lg">
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div className="flex-1">
@@ -161,12 +161,12 @@ export function AppointmentDetailsView({
         </div>
       </div>
 
-      <div className="px-6 py-6 space-y-4">
+      <div className="px-0 py-0 space-y-4">
         {/* Status Badge */}
         <div className="bg-white p-4 rounded-xl border border-gray-200">
           <div className="flex items-center justify-between">
             <span className="text-sm text-gray-600">Status</span>
-            <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+            <span className={`px-0 py-0 rounded-full text-xs font-medium ${
               appointment.status === 'confirmed' ? 'bg-blue-100 text-blue-700' :
               appointment.status === 'completed' ? 'bg-green-100 text-green-700' :
               appointment.status === 'cancelled' ? 'bg-red-100 text-red-700' :
@@ -178,18 +178,18 @@ export function AppointmentDetailsView({
         </div>
 
         {/* Service Info */}
-        <div className="bg-white p-5 rounded-xl border border-gray-200">
+        <div className="bg-white p-0 rounded-xl border border-gray-200">
           <h3 className="font-semibold text-lg mb-4">{appointment.serviceName}</h3>
           
           <div className="space-y-3">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-0">
               <Calendar className="w-5 h-5 text-gray-400" />
               <div>
                 <p className="text-xs text-gray-500">Date</p>
                 <p className="font-semibold text-gray-900">{formatDate(appointment.scheduledDate)}</p>
               </div>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-0">
               <Clock className="w-5 h-5 text-gray-400" />
               <div>
                 <p className="text-xs text-gray-500">Time</p>
@@ -201,10 +201,10 @@ export function AppointmentDetailsView({
 
         {/* Vendor Info */}
         {vendor && (
-          <div className="bg-white p-5 rounded-xl border border-gray-200">
+          <div className="bg-white p-0 rounded-xl border border-gray-200">
             <h3 className="font-semibold text-lg mb-4">Vendor Information</h3>
             <div className="space-y-3">
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-0">
                 <User className="w-5 h-5 text-gray-400" />
                 <div>
                   <p className="text-xs text-gray-500">Name</p>
@@ -212,7 +212,7 @@ export function AppointmentDetailsView({
                 </div>
               </div>
               {vendor.phone && (
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-0">
                   <Phone className="w-5 h-5 text-gray-400" />
                   <div>
                     <p className="text-xs text-gray-500">Phone</p>
@@ -226,11 +226,11 @@ export function AppointmentDetailsView({
 
         {/* Location */}
         {location && (
-          <div className="bg-white p-5 rounded-xl border border-gray-200">
+          <div className="bg-white p-0 rounded-xl border border-gray-200">
             <h3 className="font-semibold text-lg mb-4">Location</h3>
             <div className="space-y-3">
               {location.address && (
-                <div className="flex items-start gap-3">
+                <div className="flex items-start gap-0">
                   <MapPin className="w-5 h-5 text-gray-400 mt-0.5" />
                   <div className="flex-1">
                     <p className="text-xs text-gray-500">Address</p>
@@ -240,7 +240,7 @@ export function AppointmentDetailsView({
               )}
               <button
                 onClick={handleGetDirections}
-                className="w-full px-4 py-3 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark transition-colors flex items-center justify-center gap-2"
+                className="w-full px-4 py-0 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark transition-colors flex items-center justify-center gap-0"
               >
                 <Navigation className="w-5 h-5" />
                 Get Directions
@@ -250,11 +250,11 @@ export function AppointmentDetailsView({
         )}
 
         {/* Actions */}
-        <div className="flex gap-3">
+        <div className="flex gap-0">
           {canReschedule() && (
             <button
               onClick={() => onReschedule?.(appointmentId)}
-              className="flex-1 px-4 py-3 bg-white border-2 border-primary text-primary rounded-xl font-semibold hover:bg-orange-50 transition-colors"
+              className="flex-1 px-4 py-0 bg-white border-2 border-primary text-primary rounded-xl font-semibold hover:bg-orange-50 transition-colors"
             >
               Reschedule
             </button>
@@ -262,7 +262,7 @@ export function AppointmentDetailsView({
           {canCancel() && (
             <button
               onClick={() => setShowCancelModal(true)}
-              className="flex-1 px-4 py-3 bg-white border-2 border-red-500 text-red-600 rounded-xl font-semibold hover:bg-red-50 transition-colors"
+              className="flex-1 px-4 py-0 bg-white border-2 border-red-500 text-red-600 rounded-xl font-semibold hover:bg-red-50 transition-colors"
             >
               Cancel
             </button>
@@ -273,53 +273,53 @@ export function AppointmentDetailsView({
       {/* Cancel Modal */}
       {showCancelModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full">
+          <div className="bg-white rounded-2xl p-0 max-w-md w-full">
             <h3 className="font-bold text-lg mb-4">Cancel Appointment</h3>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium mb-2">Reason for cancellation</label>
+                <label className="block text-sm font-medium mb-0">Reason for cancellation</label>
                 <textarea
                   value={cancelReason}
                   onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setCancelReason(e.target.value)}
-                  className="w-full p-3 border border-gray-300 rounded-lg"
+                  className="w-full p-0 border border-gray-300 rounded-lg"
                   rows={3}
                   placeholder="Please provide a reason..."
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-2">Refund Method</label>
-                <div className="flex gap-3">
+                <label className="block text-sm font-medium mb-0">Refund Method</label>
+                <div className="flex gap-0">
                   <button
                     onClick={() => setRefundMethod('wallet')}
-                    className={`flex-1 px-4 py-2 rounded-lg border-2 ${
+                    className={`flex-1 px-4 py-0 rounded-lg border-2 ${
                       refundMethod === 'wallet' ? 'border-primary bg-orange-50' : 'border-gray-200'
                     }`}
                   >
-                    <WalletIcon className="w-5 h-5 mx-auto mb-1" />
+                    <WalletIcon className="w-5 h-5 mx-auto mb-0" />
                     <span className="text-xs">Wallet</span>
                   </button>
                   <button
                     onClick={() => setRefundMethod('original')}
-                    className={`flex-1 px-4 py-2 rounded-lg border-2 ${
+                    className={`flex-1 px-4 py-0 rounded-lg border-2 ${
                       refundMethod === 'original' ? 'border-primary bg-orange-50' : 'border-gray-200'
                     }`}
                   >
-                    <CreditCard className="w-5 h-5 mx-auto mb-1" />
+                    <CreditCard className="w-5 h-5 mx-auto mb-0" />
                     <span className="text-xs">Original</span>
                   </button>
                 </div>
               </div>
-              <div className="flex gap-3">
+              <div className="flex gap-0">
                 <button
                   onClick={() => setShowCancelModal(false)}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg"
+                  className="flex-1 px-4 py-0 border border-gray-300 rounded-lg"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleCancelAppointment}
                   disabled={cancelling}
-                  className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg font-semibold disabled:opacity-50"
+                  className="flex-1 px-4 py-0 bg-red-600 text-white rounded-lg font-semibold disabled:opacity-50"
                 >
                   {cancelling ? 'Cancelling...' : 'Confirm Cancel'}
                 </button>

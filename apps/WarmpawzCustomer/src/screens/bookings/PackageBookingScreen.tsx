@@ -282,7 +282,7 @@ export function PackageBookingScreen({
           disabled={!selectedPackage || !selectedPet || !startDate || loading}
         >
           {loading ? (
-            <ActivityIndicator size="small" color="#fff" />
+            <ActivityIndicator size="small" color={colors.white} />
           ) : (
             <Text style={styles.bookButtonText}>
               Book Package • ₹{selectedPackage?.price.toLocaleString() || '0'}
@@ -305,7 +305,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -339,7 +339,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   packageCard: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: spacing.md,
@@ -348,7 +348,7 @@ const styles = StyleSheet.create({
   },
   packageCardSelected: {
     borderColor: colors.primary,
-    backgroundColor: '#fff7ed',
+    backgroundColor: colors.primary.50,
   },
   packageHeader: {
     flexDirection: 'row',
@@ -378,7 +378,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   selectedCheck: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 14,
     fontWeight: 'bold',
   },
@@ -436,7 +436,7 @@ const styles = StyleSheet.create({
   petCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: spacing.sm,
@@ -445,7 +445,7 @@ const styles = StyleSheet.create({
   },
   petCardSelected: {
     borderColor: colors.primary,
-    backgroundColor: '#fff7ed',
+    backgroundColor: colors.primary.50,
   },
   petName: {
     flex: 1,
@@ -459,7 +459,7 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   dateButton: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: borderRadius.md,
@@ -483,10 +483,10 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   bookButtonDisabled: {
-    backgroundColor: '#9ca3af',
+    backgroundColor: colors.gray.400,
   },
   bookButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 16,
     fontWeight: 'bold',
   },

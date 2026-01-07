@@ -217,7 +217,23 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
         }
       );
 
-      // TODO: Create audit log entry if audit_logs table exists
+      // Create audit log entry
+      try {
+        const { logAuditEntry } = require('../utils/audit-log');
+        await logAuditEntry({
+          entityType: 'medical_record',
+          entityId: recordId,
+          action: 'update',
+          oldValues: { previous_record: existingRecord },
+          newValues: { updated_fields: Object.keys(body) },
+          actorType: updatedBy?.startsWith('vendor_') ? 'vendor' : 'customer',
+          actorId: updatedBy,
+          requestId: context.event.requestContext?.requestId,
+        });
+      } catch (error: any) {
+        // Audit logging is optional, don't fail if it doesn't work
+        console.warn('Failed to create audit log entry:', error);
+      }
 
       return c.json({
         success: true,

@@ -48,12 +48,12 @@ export function IndependentVendorOnboarding({ onSubmit, onBack }: IndependentVen
 
   if (success) {
     return (
-      <div className="min-h-screen bg-green-50 flex items-center justify-center max-w-[430px] mx-auto p-6">
+      <div className="min-h-screen bg-green-50 flex items-center justify-center max-w-[430px] mx-auto p-0">
         <div className="bg-white rounded-2xl shadow-xl p-8 text-center w-full">
-          <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
+          <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-0">
             <span className="text-4xl">✓</span>
           </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Onboarding Submitted!</h2>
+          <h2 className="text-2xl font-bold text-gray-900 mb-0">Onboarding Submitted!</h2>
           <p className="text-gray-600">Your application is under review</p>
         </div>
       </div>
@@ -61,10 +61,10 @@ export function IndependentVendorOnboarding({ onSubmit, onBack }: IndependentVen
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto p-6">
-      <div className="bg-white rounded-2xl shadow-lg p-6 space-y-6">
+    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto p-0">
+      <div className="bg-white rounded-2xl shadow-lg p-0 space-y-6">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Independent Vendor Onboarding</h2>
+          <h2 className="text-2xl font-bold text-gray-900 mb-0">Independent Vendor Onboarding</h2>
           <p className="text-gray-600 text-sm">Register your integrated service</p>
         </div>
 
@@ -76,16 +76,16 @@ export function IndependentVendorOnboarding({ onSubmit, onBack }: IndependentVen
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-0">
               Vendor Name *
             </label>
             <div className="relative">
-              <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <Building2 className="absolute left-3 top-0/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
               <input
                 type="text"
                 value={vendorName}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setVendorName(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary outline-none"
+                className="w-full pl-0 pr-4 py-0 border border-gray-300 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary outline-none"
                 placeholder="Enter vendor name"
                 required
               />
@@ -93,13 +93,13 @@ export function IndependentVendorOnboarding({ onSubmit, onBack }: IndependentVen
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-0">
               Vendor Type *
             </label>
             <select
               value={vendorType}
               onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setVendorType(e.target.value as any)}
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary outline-none"
+              className="w-full px-4 py-0 border border-gray-300 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary outline-none"
             >
               <option value="ambulance">Ambulance</option>
               <option value="pharmacy">Pharmacy</option>
@@ -108,15 +108,15 @@ export function IndependentVendorOnboarding({ onSubmit, onBack }: IndependentVen
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-0">
               Address *
             </label>
             <div className="relative">
-              <MapPin className="absolute left-3 top-3 w-5 h-5 text-gray-400" />
+              <MapPin className="absolute left-3 top-0 w-5 h-5 text-gray-400" />
               <textarea
                 value={address}
                 onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setAddress(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary outline-none resize-none"
+                className="w-full pl-0 pr-4 py-0 border border-gray-300 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary outline-none resize-none"
                 rows={3}
                 placeholder="Enter complete address"
                 required
@@ -125,16 +125,16 @@ export function IndependentVendorOnboarding({ onSubmit, onBack }: IndependentVen
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-0">
               Phone Number *
             </label>
             <div className="relative">
-              <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <Phone className="absolute left-3 top-0/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
               <input
                 type="tel"
                 value={phone}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPhone(e.target.value.replace(/[^0-9]/g, ''))}
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary outline-none"
+                className="w-full pl-0 pr-4 py-0 border border-gray-300 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary outline-none"
                 placeholder="9876543210"
                 maxLength={10}
                 required
@@ -142,12 +142,12 @@ export function IndependentVendorOnboarding({ onSubmit, onBack }: IndependentVen
             </div>
           </div>
 
-          <div className="flex gap-3 pt-4">
+          <div className="flex gap-0 pt-4">
             {onBack && (
               <button
                 type="button"
                 onClick={onBack}
-                className="flex-1 py-3 px-4 border border-gray-300 rounded-xl font-medium text-gray-700 hover:bg-gray-50"
+                className="flex-1 py-0 px-4 border border-gray-300 rounded-xl font-medium text-gray-700 hover:bg-gray-50"
               >
                 Back
               </button>
@@ -155,7 +155,7 @@ export function IndependentVendorOnboarding({ onSubmit, onBack }: IndependentVen
             <button
               type="submit"
               disabled={loading}
-              className="flex-1 py-3 px-4 bg-primary text-white rounded-xl font-medium hover:bg-primary-dark disabled:opacity-50"
+              className="flex-1 py-0 px-4 bg-primary text-white rounded-xl font-medium hover:bg-primary-dark disabled:opacity-50"
             >
               {loading ? 'Submitting...' : 'Submit Application'}
             </button>

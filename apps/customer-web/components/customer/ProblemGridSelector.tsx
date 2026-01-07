@@ -71,8 +71,8 @@ export function ProblemGridSelector({
   return (
     <div className="min-h-screen bg-primary max-w-[430px] mx-auto">
       {/* Header - Orange Background */}
-      <div className="px-6 pt-12 pb-6">
-        <div className="flex items-center gap-4 mb-2">
+      <div className="px-0 pt-02 pb-0">
+        <div className="flex items-center gap-4 mb-0">
           <button 
             onClick={onBack}
             className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center hover:bg-white/30 transition-colors"
@@ -91,18 +91,18 @@ export function ProblemGridSelector({
       </div>
 
       {/* Main Content - White Card with Top Radius */}
-      <div className="bg-white rounded-t-[32px] px-6 pt-6 min-h-[calc(100vh-140px)] pb-12">
+      <div className="bg-white rounded-t-[32px] px-0 pt-1 min-h-[calc(100vh-140px)] pb-12">
         
         {/* Search Bar */}
-        <div className="mb-6">
+        <div className="mb-0">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+            <Search className="absolute left-3 top-0/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
             <input
               type="text"
               placeholder="Search symptoms (e.g. itching, fever)..."
               value={searchQuery}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-gray-900 placeholder:text-gray-400"
+              className="w-full pl-0 pr-4 py-0 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-gray-900 placeholder:text-gray-400"
             />
           </div>
         </div>
@@ -110,12 +110,12 @@ export function ProblemGridSelector({
         {/* Problem Grid */}
         {filteredProblems.length === 0 ? (
           <div className="text-center py-16 text-gray-400">
-            <Search className="w-12 h-12 mx-auto mb-3 text-gray-200" />
+            <Search className="w-12 h-12 mx-auto mb-0 text-gray-200" />
             <p className="text-sm font-medium text-gray-600">No matching problems found</p>
-            <p className="text-xs mt-1">Try searching with different keywords</p>
+            <p className="text-xs mt-0">Try searching with different keywords</p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-0">
             {filteredProblems.map((problem) => {
               const isSelected = selectedProblemId === problem.id;
               const isProcessing = isSelected && processingSelection;
@@ -148,23 +148,23 @@ export function ProblemGridSelector({
                   }`}
                 >
                   {isProcessing && (
-                    <div className="flex items-center justify-center mb-2">
+                    <div className="flex items-center justify-center mb-0">
                       <Loader2 className="w-5 h-5 text-primary animate-spin" />
                     </div>
                   )}
                   {isSuccess && (
-                    <div className="flex items-center justify-center mb-2">
+                    <div className="flex items-center justify-center mb-0">
                       <Check className="w-5 h-5 text-green-600" />
                     </div>
                   )}
                   {!isProcessing && !isSuccess && problem.icon && (
-                    <div className="text-3xl mb-2 text-center">{problem.icon}</div>
+                    <div className="text-3xl mb-0 text-center">{problem.icon}</div>
                   )}
                   <h3 className="font-semibold text-gray-900 text-sm text-center">
                     {problem.displayName || problem.name}
                   </h3>
                   {problem.description && (
-                    <p className="text-xs text-gray-500 text-center mt-1 line-clamp-2">
+                    <p className="text-xs text-gray-500 text-center mt-0 line-clamp-0">
                       {problem.description}
                     </p>
                   )}

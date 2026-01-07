@@ -200,7 +200,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -246,7 +246,7 @@ const styles = StyleSheet.create({
   },
   categoryCard: {
     width: '48%',
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     alignItems: 'center',
@@ -255,7 +255,7 @@ const styles = StyleSheet.create({
   },
   categoryCardSelected: {
     borderColor: colors.primary,
-    backgroundColor: '#fff7ed',
+    backgroundColor: colors.primary.50,
   },
   categoryIcon: {
     fontSize: 32,
@@ -280,7 +280,7 @@ const styles = StyleSheet.create({
   problemCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     borderWidth: 2,
@@ -288,7 +288,7 @@ const styles = StyleSheet.create({
   },
   problemCardSelected: {
     borderColor: colors.primary,
-    backgroundColor: '#fff7ed',
+    backgroundColor: colors.primary.50,
   },
   problemIcon: {
     fontSize: 24,
@@ -312,7 +312,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   selectedCheck: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 14,
     fontWeight: 'bold',
   },

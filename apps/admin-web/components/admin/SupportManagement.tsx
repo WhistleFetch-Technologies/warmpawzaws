@@ -17,12 +17,12 @@ export function SupportManagement({ onBack }: SupportManagementProps) {
       <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="px-4 py-4">
           {onBack && (
-            <button onClick={onBack} className="mb-3 text-gray-600 hover:text-gray-900 flex items-center gap-2">
+            <button onClick={onBack} className="mb-0 text-gray-600 hover:text-gray-900 flex items-center gap-0">
               <ArrowLeft className="w-4 h-4" /> Back
             </button>
           )}
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-orange-100 rounded-lg">
+          <div className="flex items-center gap-0">
+            <div className="p-0 bg-orange-100 rounded-lg">
               <MessageSquare className="w-6 h-6 text-orange-600" />
             </div>
             <div>
@@ -34,7 +34,7 @@ export function SupportManagement({ onBack }: SupportManagementProps) {
         <div className="flex border-t border-gray-200">
           <button
             onClick={() => setActiveTab('tickets')}
-            className={`flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+            className={`flex-1 px-4 py-0 text-sm font-medium border-b-2 transition-colors ${
               activeTab === 'tickets' ? 'border-orange-500 text-orange-600' : 'border-transparent text-gray-500'
             }`}
           >
@@ -42,7 +42,7 @@ export function SupportManagement({ onBack }: SupportManagementProps) {
           </button>
           <button
             onClick={() => setActiveTab('chat')}
-            className={`flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+            className={`flex-1 px-4 py-0 text-sm font-medium border-b-2 transition-colors ${
               activeTab === 'chat' ? 'border-orange-500 text-orange-600' : 'border-transparent text-gray-500'
             }`}
           >

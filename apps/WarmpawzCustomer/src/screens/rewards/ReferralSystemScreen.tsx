@@ -18,7 +18,7 @@ import {
   Clipboard,
 } from 'react-native';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
-import { CustomerApi } from '../../services/api';
+import { CustomerApi, ReferralApi } from '../../services/api';
 
 interface ReferralSystemScreenProps {
   phone: string;
@@ -72,24 +72,20 @@ export function ReferralSystemScreen({
     try {
       setLoading(true);
       if (customerId) {
-        const response = await CustomerApi.getReferralProfile(customerId);
-        
-        // Extract referral stats from history
-        const history = response.history || [];
-        const completedCount = history.filter((h: any) => h.type === 'earned' && h.description?.toLowerCase().includes('referral')).length;
-        const totalEarnings = history
-          .filter((h: any) => h.type === 'earned' && h.description?.toLowerCase().includes('referral'))
-          .reduce((sum: number, h: any) => sum + (h.amount || 0), 0);
+        const [codeResponse, statsResponse] = await Promise.all([
+          ReferralApi.getReferralCode(customerId).catch(() => ({ referralCode: 'WARM' + customerId.slice(-4).toUpperCase() })),
+          ReferralApi.getReferralStats(customerId).catch(() => ({})),
+        ]);
         
         setProfile({
           customerId: customerId,
-          referralCode: response.referralCode || 'WARM' + customerId.slice(-4).toUpperCase(),
-          totalReferrals: completedCount,
-          completedReferrals: completedCount,
-          pendingReferrals: 0, // Would need separate API call
-          totalEarnings: totalEarnings,
-          monthlyReferrals: 0, // Would need filtered history
-          monthlyEarnings: 0, // Would need filtered history
+          referralCode: codeResponse.referralCode || 'WARM' + customerId.slice(-4).toUpperCase(),
+          totalReferrals: statsResponse.totalReferrals || 0,
+          completedReferrals: statsResponse.completedReferrals || 0,
+          pendingReferrals: statsResponse.pendingReferrals || 0,
+          totalEarnings: statsResponse.totalEarnings || 0,
+          monthlyReferrals: statsResponse.monthlyReferrals || 0,
+          monthlyEarnings: statsResponse.monthlyEarnings || 0,
         });
       }
     } catch (error: any) {
@@ -113,22 +109,19 @@ export function ReferralSystemScreen({
   const loadReferralHistory = async () => {
     try {
       if (customerId) {
-        const response = await CustomerApi.getReferralProfile(customerId);
-        const history = response.history || [];
+        const response = await ReferralApi.getReferralHistory(customerId, 50);
+        const history = response.history || response || [];
         
-        // Filter and format referral-related transactions
-        const referralHistory: ReferralHistory[] = history
-          .filter((h: any) => h.description?.toLowerCase().includes('referral') || h.source?.toLowerCase().includes('referral'))
-          .map((h: any, index: number) => ({
-            id: h.id || `ref-${index}`,
-            refereePhone: '', // Would need separate API
-            refereeName: '', // Would need separate API
-            status: h.type === 'earned' ? 'completed' : 'pending' as any,
-            appliedAt: h.timestamp || h.created_at || h.date || new Date().toISOString(),
-            completedAt: h.type === 'earned' ? (h.timestamp || h.created_at || h.date) : undefined,
-            referrerEarnings: h.type === 'earned' ? (h.amount || 0) : 0,
-            refereeEarnings: 0, // Would need separate API
-          }));
+        const referralHistory: ReferralHistory[] = history.map((h: any) => ({
+          id: h.id || h.referralId,
+          refereePhone: h.refereePhone || '',
+          refereeName: h.refereeName || '',
+          status: h.status || 'pending',
+          appliedAt: h.appliedAt || h.createdAt || new Date().toISOString(),
+          completedAt: h.completedAt,
+          referrerEarnings: h.referrerEarnings || 0,
+          refereeEarnings: h.refereeEarnings || 0,
+        }));
         
         setReferralHistory(referralHistory);
       }
@@ -148,7 +141,7 @@ export function ReferralSystemScreen({
   };
 
   const shareReferral = async () => {
-    if (!profile) return;
+    if (!profile || !customerId) return;
 
     const shareMessage = `Join Warmpawz! Use my code ${profile.referralCode} to join and get a welcome bonus!`;
 
@@ -157,6 +150,20 @@ export function ReferralSystemScreen({
         message: shareMessage,
         title: 'Join Warmpawz!',
       });
+      
+      // Track share event
+      if (result.action === Share.sharedAction) {
+        // Optionally track share event via API
+        try {
+          await ReferralApi.sendInvite({
+            customerId,
+            message: shareMessage,
+          });
+        } catch (error) {
+          // Silent fail for tracking
+          console.log('Share tracking failed:', error);
+        }
+      }
 
       if (result.action === Share.sharedAction) {
         Alert.alert('Shared!', 'Your referral code has been shared');
@@ -171,7 +178,7 @@ export function ReferralSystemScreen({
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'completed':
-        return '#10B981';
+        return {colors.success};
       case 'pending':
         return '#F59E0B';
       case 'expired':
@@ -502,7 +509,7 @@ export function ReferralSystemScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
   },
   header: {
     flexDirection: 'row',
@@ -515,12 +522,12 @@ const styles = StyleSheet.create({
   },
   backButton: {
     fontSize: typography.fontSizes.md,
-    color: '#fff',
+    color: colors.white,
   },
   headerTitle: {
     fontSize: typography.fontSizes['2xl'],
     fontWeight: 'bold',
-    color: '#fff',
+    color: colors.white,
     flex: 1,
     textAlign: 'center',
   },
@@ -536,7 +543,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     backgroundColor: '#F9FAFB',
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: colors.gray.200,
   },
   tab: {
     flex: 1,
@@ -592,7 +599,7 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   referralCodeLabel: {
     fontSize: typography.fontSizes.sm,
@@ -603,7 +610,7 @@ const styles = StyleSheet.create({
   referralCodeContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderRadius: borderRadius.md,
     padding: spacing.md,
     marginBottom: spacing.md,
@@ -623,7 +630,7 @@ const styles = StyleSheet.create({
   copyButton: {
     padding: spacing.sm,
     borderRadius: borderRadius.md,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: colors.gray.100,
   },
   copyButtonText: {
     fontSize: typography.fontSizes.lg,
@@ -643,7 +650,7 @@ const styles = StyleSheet.create({
   shareButtonText: {
     fontSize: typography.fontSizes.md,
     fontWeight: 'bold',
-    color: '#fff',
+    color: colors.white,
   },
   statsGrid: {
     flexDirection: 'row',
@@ -658,7 +665,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   statIcon: {
     fontSize: 32,
@@ -693,7 +700,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   stepNumber: {
     width: 40,
@@ -707,7 +714,7 @@ const styles = StyleSheet.create({
   stepNumberText: {
     fontSize: typography.fontSizes.lg,
     fontWeight: 'bold',
-    color: '#fff',
+    color: colors.white,
   },
   stepContent: {
     flex: 1,
@@ -729,7 +736,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   rewardsInfoTitle: {
     fontSize: typography.fontSizes.lg,
@@ -766,7 +773,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   monthlyStatsTitle: {
     fontSize: typography.fontSizes.md,
@@ -800,7 +807,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   historyHeader: {
     flexDirection: 'row',
@@ -852,7 +859,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
     paddingTop: spacing.xs,
     borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
+    borderTopColor: colors.gray.200,
   },
   historyEarningsLabel: {
     fontSize: typography.fontSizes.sm,
@@ -861,7 +868,7 @@ const styles = StyleSheet.create({
   historyEarningsValue: {
     fontSize: typography.fontSizes.md,
     fontWeight: 'bold',
-    color: '#10B981',
+    color: colors.success,
   },
   emptyState: {
     alignItems: 'center',

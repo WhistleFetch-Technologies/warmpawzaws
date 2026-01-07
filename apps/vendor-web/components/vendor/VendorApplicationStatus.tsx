@@ -74,30 +74,30 @@ export function VendorApplicationStatus({ vendorId, onApproved, onClarificationR
 
   if (!application) {
     return (
-      <div className="min-h-screen bg-white w-full max-w-[430px] mx-auto p-6">
+      <div className="min-h-screen bg-white w-full max-w-[430px] mx-auto p-0">
         <p className="text-center text-gray-600">Application not found</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto px-6 py-12">
+    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto px-0 py-12">
       <div className="text-center mb-8">
-        <div className="w-32 h-32 bg-orange-600 rounded-full mx-auto mb-6 flex items-center justify-center shadow-xl">
+        <div className="w-32 h-32 bg-orange-600 rounded-full mx-auto mb-0 flex items-center justify-center shadow-xl">
           <Clock className="w-16 h-16 text-white" strokeWidth={2.5} />
         </div>
         
-        <h1 className="text-2xl font-bold text-gray-900 mb-2">
+        <h1 className="text-2xl font-bold text-gray-900 mb-0">
           Application<br/>Under Review
         </h1>
       </div>
 
-      <div className="text-center mb-6">
+      <div className="text-center mb-0">
         <p className="text-gray-700 mb-4">
           We're reviewing your WARMPAWZ<br/>provider application
         </p>
         
-        <div className="inline-flex items-center gap-2 bg-orange-100 border border-orange-200 rounded-full px-4 py-2">
+        <div className="inline-flex items-center gap-0 bg-orange-100 border border-orange-200 rounded-full px-4 py-0">
           <Clock className="w-4 h-4 text-orange-600" />
           <span className="text-sm text-orange-600 font-medium">
             Submitted {getTimeAgo(application.submittedAt)}
@@ -105,21 +105,21 @@ export function VendorApplicationStatus({ vendorId, onApproved, onClarificationR
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border-2 border-gray-200 p-6 mb-6">
-        <div className="flex items-center gap-3 mb-5">
+      <div className="bg-white rounded-xl border-2 border-gray-200 p-0 mb-0">
+        <div className="flex items-center gap-0 mb-0">
           <FileText className="w-6 h-6 text-orange-600" />
           <h3 className="font-semibold text-gray-900">Review Process</h3>
         </div>
 
         <div className="space-y-4">
-          <div className="flex items-start gap-3">
+          <div className="flex items-start gap-0">
             <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
             <div>
               <p className="font-medium text-gray-900">Application Submitted</p>
               <p className="text-sm text-gray-600">Your application has been received</p>
             </div>
           </div>
-          <div className="flex items-start gap-3">
+          <div className="flex items-start gap-0">
             <div className="w-5 h-5 rounded-full border-2 border-orange-600 flex items-center justify-center flex-shrink-0 mt-0.5">
               <div className="w-2 h-2 bg-orange-600 rounded-full animate-pulse" />
             </div>
@@ -128,7 +128,7 @@ export function VendorApplicationStatus({ vendorId, onApproved, onClarificationR
               <p className="text-sm text-gray-600">Our team is reviewing your application</p>
             </div>
           </div>
-          <div className="flex items-start gap-3">
+          <div className="flex items-start gap-0">
             <div className="w-5 h-5 rounded-full border-2 border-gray-300 flex-shrink-0 mt-0.5" />
             <div>
               <p className="font-medium text-gray-500">Approval</p>

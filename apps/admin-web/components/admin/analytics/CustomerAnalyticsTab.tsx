@@ -47,7 +47,7 @@ export function CustomerAnalyticsTab() {
   return (
     <div className="space-y-4">
       <div className="bg-white rounded-lg border-2 border-gray-200 p-4">
-        <div className="flex items-center gap-2 mb-4">
+        <div className="flex items-center gap-0 mb-4">
           <Users className="w-5 h-5 text-orange-600" />
           <h3 className="font-semibold text-gray-900">Customer Statistics</h3>
         </div>

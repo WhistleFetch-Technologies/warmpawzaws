@@ -1,6 +1,9 @@
 'use client';
 
 import React from 'react';
+import { SearchFirstGuard } from '@/components/search/SearchFirstGuard';
+import { hasValidSearchContext } from '@/lib/search-context';
+import { useRouter } from 'next/navigation';
 import { AmbulanceBookingFlow } from './AmbulanceBookingFlow';
 import { DiagnosticsBookingFlow } from './DiagnosticsBookingFlow';
 import { MedicineDeliveryFlow } from './MedicineDeliveryFlow';
@@ -8,6 +11,7 @@ import { PetCafeBookingFlow } from './PetCafeBookingFlow';
 import { PetResortBookingFlow } from './PetResortBookingFlow';
 import { PetWalkerBookingFlow } from './PetWalkerBookingFlow';
 import { AdoptionListingView } from './AdoptionListingView';
+import { MealPlanBookingFlow } from './MealPlanBookingFlow';
 
 interface SpecializedServiceRouterProps {
   serviceType: string;
@@ -26,7 +30,9 @@ export function SpecializedServiceRouter({
 }: SpecializedServiceRouterProps) {
   const normalizedType = serviceType.toLowerCase().replace(/[_\s]/g, '_');
 
-  switch (normalizedType) {
+  // Wrap all specialized flows with SearchFirstGuard
+  const renderSpecializedFlow = () => {
+    switch (normalizedType) {
     case 'ambulance':
     case 'emergency':
       return (
@@ -115,19 +121,39 @@ export function SpecializedServiceRouter({
         />
       );
 
-    default:
+    case 'meal_plan':
+    case 'meal_plans':
+    case 'nutrition':
+    case 'nutritionist':
       return (
-        <div className="max-w-2xl mx-auto p-6">
-          <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-6 text-center">
-            <p className="text-yellow-700">
-              Specialized service type "{serviceType}" is not yet supported.
-            </p>
-            <p className="text-sm text-yellow-600 mt-2">
-              Please use the standard booking flow or contact support.
-            </p>
-          </div>
-        </div>
+        <MealPlanBookingFlow
+          vendorId={vendorId}
+          customerPhone={customerPhone}
+          onSuccess={onSuccess}
+          onCancel={onCancel}
+        />
       );
-  }
+
+      default:
+        return (
+          <div className="max-w-2xl mx-auto p-0">
+            <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-0 text-center">
+              <p className="text-yellow-700">
+                Specialized service type "{serviceType}" is not yet supported.
+              </p>
+              <p className="text-sm text-yellow-600 mt-0">
+                Please use the standard booking flow or contact support.
+              </p>
+            </div>
+          </div>
+        );
+    }
+  };
+
+  return (
+    <SearchFirstGuard>
+      {renderSpecializedFlow()}
+    </SearchFirstGuard>
+  );
 }
 

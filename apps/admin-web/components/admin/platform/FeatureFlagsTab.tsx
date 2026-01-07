@@ -201,7 +201,7 @@ export function FeatureFlagsTab() {
           value={searchQuery}
           onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
           placeholder="Search feature flags..."
-          className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+          className="w-full px-4 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
         />
       </div>
 
@@ -213,10 +213,10 @@ export function FeatureFlagsTab() {
             {categoryFlags.map((flag) => (
               <div
                 key={flag.id}
-                className="flex items-start justify-between p-3 border-2 border-gray-100 rounded-lg hover:border-gray-200 transition-colors"
+                className="flex items-start justify-between p-0 border-2 border-gray-100 rounded-lg hover:border-gray-200 transition-colors"
               >
                 <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
+                  <div className="flex items-center gap-0 mb-0">
                     <Flag className={`w-4 h-4 ${flag.enabled ? 'text-orange-600' : 'text-gray-400'}`} />
                     <span className="font-medium text-gray-900">{flag.name}</span>
                   </div>
@@ -224,7 +224,7 @@ export function FeatureFlagsTab() {
                 </div>
                 <button
                   onClick={() => toggleFlag(flag.id)}
-                  className={`ml-4 p-1 rounded-lg transition-colors ${
+                  className={`ml-4 p-0 rounded-lg transition-colors ${
                     flag.enabled
                       ? 'bg-orange-100 text-orange-600'
                       : 'bg-gray-100 text-gray-400'
@@ -246,7 +246,7 @@ export function FeatureFlagsTab() {
       <button
         onClick={handleSave}
         disabled={saving}
-        className="w-full py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-0 disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {saving ? (
           <>

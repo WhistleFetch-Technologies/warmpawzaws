@@ -111,12 +111,12 @@ export function CustomerUserProfile({ phone, journeyStage, onComplete }: Custome
       {/* Scrollable Content */}
       <div className="flex-1 overflow-y-auto pb-32">
         {/* Logo */}
-        <div className="flex justify-center pt-8 mb-6">
+        <div className="flex justify-center pt-8 mb-0">
           <img src="/logo.png" alt="Warmpawz" className="w-16 h-16 object-contain" />
         </div>
 
         {/* Orange Circle Icon */}
-        <div className="flex flex-col items-center mb-8 px-6">
+        <div className="flex flex-col items-center mb-8 px-0">
           <div className="w-24 h-24 bg-primary rounded-full flex items-center justify-center mb-4 shadow-lg shadow-primary/30">
             <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
               <circle cx="24" cy="18" r="8" fill="white"/>
@@ -127,25 +127,25 @@ export function CustomerUserProfile({ phone, journeyStage, onComplete }: Custome
         </div>
 
         {/* Content */}
-        <div className="px-6 mb-6">
-          <p className="text-center text-gray-600 mb-6 text-sm">
+        <div className="px-0 mb-0">
+          <p className="text-center text-gray-600 mb-0 text-sm">
             Let's set up your account 🌟<br />
             Almost there!
           </p>
 
           {/* Error Alert */}
           {error && (
-            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl flex items-start gap-3">
+            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl flex items-start gap-0">
               <span className="text-red-500 text-xl">⚠️</span>
               <p className="text-red-600 text-sm flex-1">{error}</p>
             </div>
           )}
 
           {/* Photo Upload */}
-          <div className="flex flex-col items-center mb-6">
+          <div className="flex flex-col items-center mb-0">
             <div 
               onClick={() => fileInputRef.current?.click()}
-              className="w-32 h-32 bg-orange-100 rounded-full overflow-hidden flex items-center justify-center cursor-pointer hover:bg-orange-200 transition-all border-4 border-white shadow-lg mb-3 relative group"
+              className="w-32 h-32 bg-orange-100 rounded-full overflow-hidden flex items-center justify-center cursor-pointer hover:bg-orange-200 transition-all border-4 border-white shadow-lg mb-0 relative group"
             >
               {photoPreview ? (
                 <>
@@ -156,7 +156,7 @@ export function CustomerUserProfile({ phone, journeyStage, onComplete }: Custome
                 </>
               ) : (
                 <div className="flex flex-col items-center">
-                  <Camera className="w-10 h-10 text-primary mb-2" />
+                  <Camera className="w-10 h-10 text-primary mb-0" />
                   <span className="text-xs text-primary">Add Photo</span>
                 </div>
               )}
@@ -177,7 +177,7 @@ export function CustomerUserProfile({ phone, journeyStage, onComplete }: Custome
           {/* First Name and Last Name */}
           <div className="grid grid-cols-2 gap-4 mb-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-0">
                 First Name <span className="text-red-500">*</span>
               </label>
               <input
@@ -185,11 +185,11 @@ export function CustomerUserProfile({ phone, journeyStage, onComplete }: Custome
                 value={profile.firstName}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, firstName: e.target.value })}
                 placeholder="John"
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/20 transition-all"
+                className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/20 transition-all"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 mb-0">
                 Last Name <span className="text-red-500">*</span>
               </label>
               <input
@@ -197,14 +197,14 @@ export function CustomerUserProfile({ phone, journeyStage, onComplete }: Custome
                 value={profile.lastName}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, lastName: e.target.value })}
                 placeholder="Doe"
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/20 transition-all"
+                className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/20 transition-all"
               />
             </div>
           </div>
 
           {/* Email */}
           <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-0">
               Email Address <span className="text-red-500">*</span>
             </label>
             <input
@@ -212,32 +212,32 @@ export function CustomerUserProfile({ phone, journeyStage, onComplete }: Custome
               value={profile.email}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, email: e.target.value })}
               placeholder="john.doe@example.com"
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/20 transition-all"
+              className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/20 transition-all"
             />
           </div>
 
           {/* Phone (Pre-filled, Read-only) */}
           <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-0">
               Phone Number <span className="text-red-500">*</span>
             </label>
             <div className="flex items-center border-2 border-gray-200 rounded-xl bg-gray-50">
-              <span className="pl-4 pr-2 text-gray-600 font-medium">+91</span>
+              <span className="pl-4 pr-0 text-gray-600 font-medium">+91</span>
               <input
                 type="tel"
                 value={profile.phone}
                 readOnly
-                className="flex-1 px-2 py-3 bg-gray-50 rounded-r-xl cursor-not-allowed outline-none"
+                className="flex-1 px-0 py-0 bg-gray-50 rounded-r-xl cursor-not-allowed outline-none"
               />
             </div>
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-xs text-gray-500 mt-0">
               Phone number from your login
             </p>
           </div>
 
           {/* Address */}
           <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-0">
               Address <span className="text-red-500">*</span>
             </label>
             <textarea
@@ -245,13 +245,13 @@ export function CustomerUserProfile({ phone, journeyStage, onComplete }: Custome
               onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setProfile({ ...profile, address: e.target.value })}
               placeholder="House No, Street, Area"
               rows={3}
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/20 transition-all resize-none"
+              className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/20 transition-all resize-none"
             />
           </div>
 
           {/* Pincode */}
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+          <div className="mb-0">
+            <label className="block text-sm font-medium text-gray-700 mb-0">
               Pincode <span className="text-red-500">*</span>
             </label>
             <input
@@ -263,12 +263,12 @@ export function CustomerUserProfile({ phone, journeyStage, onComplete }: Custome
               }}
               placeholder="400001"
               maxLength={6}
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/20 transition-all"
+              className="w-full px-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/20 transition-all"
             />
           </div>
 
           {/* Info Card */}
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-0">
             <p className="text-xs text-blue-900 text-center">
               🔒 Your information is secure and will be used<br />
               for service delivery and communication only.
@@ -278,14 +278,14 @@ export function CustomerUserProfile({ phone, journeyStage, onComplete }: Custome
       </div>
 
       {/* Fixed Bottom Navigation */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-4 max-w-[430px] mx-auto w-full">
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-0 py-4 max-w-[430px] mx-auto w-full">
         <button
           onClick={handleSubmit}
           disabled={loading}
           className="w-full h-14 bg-primary hover:bg-primary-dark text-white font-semibold rounded-2xl disabled:opacity-50 transition-all shadow-lg shadow-primary/30"
         >
           {loading ? (
-            <span className="flex items-center justify-center gap-2">
+            <span className="flex items-center justify-center gap-0">
               <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />

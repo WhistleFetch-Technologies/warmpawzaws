@@ -66,32 +66,32 @@ export function AssignRoleModal({ user, onClose, onSuccess }: AssignRoleModalPro
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg w-full max-w-md">
-        <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+        <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-0 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-0">
             <Users className="w-5 h-5 text-orange-600" />
             Assign Role
           </h2>
-          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg">
+          <button onClick={onClose} className="p-0 hover:bg-gray-100 rounded-lg">
             <X className="w-5 h-5 text-gray-500" />
           </button>
         </div>
 
         <div className="p-4 space-y-4">
           <div>
-            <p className="text-sm text-gray-600 mb-1">User</p>
+            <p className="text-sm text-gray-600 mb-0">User</p>
             <p className="font-medium text-gray-900">{user.name}</p>
             <p className="text-sm text-gray-500">{user.email}</p>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-0">
               Select Role
             </label>
             <div className="space-y-2 max-h-64 overflow-y-auto">
               {roles.map((role) => (
                 <label
                   key={role.id}
-                  className={`flex items-start gap-3 p-3 border-2 rounded-lg cursor-pointer transition-colors ${
+                  className={`flex items-start gap-0 p-0 border-2 rounded-lg cursor-pointer transition-colors ${
                     selectedRole === role.name
                       ? 'border-orange-500 bg-orange-50'
                       : 'border-gray-200 hover:border-gray-300'
@@ -102,7 +102,7 @@ export function AssignRoleModal({ user, onClose, onSuccess }: AssignRoleModalPro
                     name="role"
                     checked={selectedRole === role.name}
                     onChange={() => setSelectedRole(role.name)}
-                    className="mt-1 w-4 h-4 text-orange-600"
+                    className="mt-0 w-4 h-4 text-orange-600"
                   />
                   <div className="flex-1">
                     <div className="font-medium text-gray-900">{role.name}</div>
@@ -113,11 +113,11 @@ export function AssignRoleModal({ user, onClose, onSuccess }: AssignRoleModalPro
             </div>
           </div>
 
-          <div className="flex gap-3 pt-4 border-t">
+          <div className="flex gap-0 pt-4 border-t">
             <button
               onClick={handleSubmit}
               disabled={loading}
-              className="flex-1 py-2.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-2 disabled:opacity-50"
+              className="flex-1 py-0.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-0 disabled:opacity-50"
             >
               {loading ? (
                 <>
@@ -133,7 +133,7 @@ export function AssignRoleModal({ user, onClose, onSuccess }: AssignRoleModalPro
             </button>
             <button
               onClick={onClose}
-              className="px-4 py-2.5 border-2 border-gray-200 rounded-lg hover:bg-gray-50"
+              className="px-4 py-0.5 border-2 border-gray-200 rounded-lg hover:bg-gray-50"
             >
               Cancel
             </button>

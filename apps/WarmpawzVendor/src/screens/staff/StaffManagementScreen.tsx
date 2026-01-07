@@ -284,7 +284,7 @@ export function StaffManagementScreen({
                 disabled={saving}
               >
                 {saving ? (
-                  <ActivityIndicator color="#ffffff" />
+                  <ActivityIndicator color={colors.white} />
                 ) : (
                   <Text style={styles.saveButtonText}>
                     {editingStaff ? 'Update Staff' : 'Add Staff'}
@@ -383,7 +383,7 @@ const styles = StyleSheet.create({
   },
   deleteButtonText: {
     fontSize: typography.fontSizes.sm,
-    color: '#DC2626',
+    color: colors.error,
   },
   emptyState: {
     padding: spacing.xl,
@@ -407,7 +407,7 @@ const styles = StyleSheet.create({
   addButtonText: {
     fontSize: typography.fontSizes.md,
     fontWeight: typography.fontWeights.semibold,
-    color: '#ffffff',
+    color: colors.white,
   },
   modalContainer: {
     flex: 1,
@@ -481,7 +481,7 @@ const styles = StyleSheet.create({
   },
   roleButtonSelected: {
     borderColor: colors.primary,
-    backgroundColor: '#FFF4E6',
+    backgroundColor: colors.primary.50,
   },
   roleButtonText: {
     fontSize: typography.fontSizes.sm,
@@ -507,7 +507,7 @@ const styles = StyleSheet.create({
   saveButtonText: {
     fontSize: typography.fontSizes.md,
     fontWeight: typography.fontWeights.semibold,
-    color: '#ffffff',
+    color: colors.white,
   },
 });
 

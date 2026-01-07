@@ -131,7 +131,7 @@ export function UniversalVendorListView({ roleId, roleName, phone, onBack, onNav
   return (
     <div className="min-h-screen bg-white w-full max-w-[430px] mx-auto">
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-white border-b border-gray-100 px-6 pt-12 pb-4">
+      <div className="sticky top-0 z-10 bg-white border-b border-gray-100 px-0 pt-12 pb-4">
         <div className="flex items-center gap-4 mb-4">
           <button
             onClick={onBack}
@@ -146,29 +146,29 @@ export function UniversalVendorListView({ roleId, roleName, phone, onBack, onNav
         </div>
 
         {/* Search Type Toggle */}
-        <div className="flex gap-2 mb-4 bg-gray-100 rounded-xl p-1">
+        <div className="flex gap-0 mb-4 bg-gray-100 rounded-xl p-0">
           <button
             onClick={() => setSearchType('centers')}
-            className={`flex-1 px-4 py-2 rounded-lg font-medium transition-all ${
+            className={`flex-1 px-4 py-0 rounded-lg font-medium transition-all ${
               searchType === 'centers'
                 ? 'bg-white text-primary shadow-sm'
                 : 'text-gray-600 hover:text-gray-900'
             }`}
           >
-            <div className="flex items-center justify-center gap-2">
+            <div className="flex items-center justify-center gap-0">
               <Building2 className="w-4 h-4" />
               <span>Centers</span>
             </div>
           </button>
           <button
             onClick={() => setSearchType('staff')}
-            className={`flex-1 px-4 py-2 rounded-lg font-medium transition-all ${
+            className={`flex-1 px-4 py-0 rounded-lg font-medium transition-all ${
               searchType === 'staff'
                 ? 'bg-white text-primary shadow-sm'
                 : 'text-gray-600 hover:text-gray-900'
             }`}
           >
-            <div className="flex items-center justify-center gap-2">
+            <div className="flex items-center justify-center gap-0">
               <UserCircle2 className="w-4 h-4" />
               <span>Staff</span>
             </div>
@@ -177,18 +177,18 @@ export function UniversalVendorListView({ roleId, roleName, phone, onBack, onNav
 
         {/* Search Bar */}
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+          <Search className="absolute left-3 top-0/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
             placeholder={`Search ${searchType === 'staff' ? 'staff' : 'centers'}...`}
-            className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+            className="w-full pl-0 pr-4 py-0 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
           />
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              className="absolute right-3 top-0/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
             >
               <X className="w-5 h-5" />
             </button>
@@ -197,7 +197,7 @@ export function UniversalVendorListView({ roleId, roleName, phone, onBack, onNav
       </div>
 
       {/* Results */}
-      <div className="px-6 py-6">
+      <div className="px-0 py-0">
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="w-8 h-8 text-primary animate-spin" />

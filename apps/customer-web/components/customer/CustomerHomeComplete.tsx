@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { AIChatbotWidget } from './AIChatbotWidget';
 
 // ============================================================================
 // TYPES
@@ -259,12 +260,12 @@ export function CustomerHomeComplete({ phone }: { phone: string }) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20">
+    <div className="min-h-screen bg-gray-50 pb-00">
       {/* Orange Header */}
-      <header className="bg-primary px-4 pt-12 pb-6">
+      <header className="bg-primary px-4 pt-12 pb-0">
         <div className="flex items-center justify-between">
           {/* User Avatar & Greeting */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-0">
             <div className="w-12 h-12 rounded-full bg-white overflow-hidden border-2 border-white shadow-lg">
               {customer?.profile_photo_url ? (
                 <img src={customer.profile_photo_url} alt={customer.name} className="w-full h-full object-cover" />
@@ -279,23 +280,23 @@ export function CustomerHomeComplete({ phone }: { phone: string }) {
           </div>
           
           {/* Action Buttons */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-0">
             <button className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center text-white hover:bg-white/30 transition">
               🔍
             </button>
             <button className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center text-white hover:bg-white/30 transition relative">
               🔔
-              <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-[10px] flex items-center justify-center">2</span>
+              <span className="absolute -top-0 -right-1 w-4 h-4 bg-red-500 rounded-full text-[10px] flex items-center justify-center">2</span>
             </button>
           </div>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="px-4 -mt-2">
+      <main className="px-4 -mt-0">
         {/* Pets Carousel */}
         <section className="mb-4">
-          <div className="flex gap-4 overflow-x-auto pb-2 pt-2">
+          <div className="flex gap-4 overflow-x-auto pb-0 pt-0">
             {pets.map((pet) => (
               <button
                 key={pet.id}
@@ -313,7 +314,7 @@ export function CustomerHomeComplete({ phone }: { phone: string }) {
                     getPetEmoji(pet.species, pet.name)
                   )}
                 </div>
-                <p className={`text-xs mt-1 font-medium ${selectedPet?.id === pet.id ? 'text-primary' : 'text-gray-600'}`}>
+                <p className={`text-xs mt-0 font-medium ${selectedPet?.id === pet.id ? 'text-primary' : 'text-gray-600'}`}>
                   {pet.name}
                 </p>
               </button>
@@ -323,20 +324,20 @@ export function CustomerHomeComplete({ phone }: { phone: string }) {
               <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center text-2xl text-gray-400 hover:bg-gray-200 transition border-2 border-dashed border-gray-300">
                 +
               </div>
-              <p className="text-xs mt-1 text-gray-500">Add Pet</p>
+              <p className="text-xs mt-0 text-gray-500">Add Pet</p>
             </button>
           </div>
         </section>
 
         {/* Pet Dashboard Card */}
         {selectedPet && (
-          <section className="bg-white rounded-3xl p-5 shadow-lg mb-6">
+          <section className="bg-white rounded-3xl p-0 shadow-lg mb-0">
             <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-0">
                 <span className="text-2xl">🐾</span>
                 <h3 className="font-bold text-gray-900 text-lg">{selectedPet.name}'s Dashboard</h3>
               </div>
-              <span className="px-3 py-1 bg-green-100 text-green-600 text-xs font-semibold rounded-full">
+              <span className="px-0 py-0 bg-green-100 text-green-600 text-xs font-semibold rounded-full">
                 Active
               </span>
             </div>
@@ -345,10 +346,10 @@ export function CustomerHomeComplete({ phone }: { phone: string }) {
             </p>
             
             {/* Stats Grid */}
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-3 gap-0">
               {/* Weight */}
-              <div className="bg-gray-50 rounded-2xl p-3">
-                <div className="flex items-center gap-1 text-gray-500 text-xs mb-1">
+              <div className="bg-gray-50 rounded-2xl p-0">
+                <div className="flex items-center gap-0 text-gray-500 text-xs mb-0">
                   <span>📊</span>
                   <span>Weight</span>
                 </div>
@@ -357,8 +358,8 @@ export function CustomerHomeComplete({ phone }: { phone: string }) {
               </div>
               
               {/* Checkup */}
-              <div className="bg-gray-50 rounded-2xl p-3">
-                <div className="flex items-center gap-1 text-gray-500 text-xs mb-1">
+              <div className="bg-gray-50 rounded-2xl p-0">
+                <div className="flex items-center gap-0 text-gray-500 text-xs mb-0">
                   <span>📅</span>
                   <span>Checkup</span>
                 </div>
@@ -367,8 +368,8 @@ export function CustomerHomeComplete({ phone }: { phone: string }) {
               </div>
               
               {/* Mood */}
-              <div className="bg-gray-50 rounded-2xl p-3">
-                <div className="flex items-center gap-1 text-gray-500 text-xs mb-1">
+              <div className="bg-gray-50 rounded-2xl p-0">
+                <div className="flex items-center gap-0 text-gray-500 text-xs mb-0">
                   <span>❤️</span>
                   <span>Mood</span>
                 </div>
@@ -380,38 +381,38 @@ export function CustomerHomeComplete({ phone }: { phone: string }) {
         )}
 
         {/* Today's Hot Deals */}
-        <section className="mb-6">
-          <div className="flex items-center gap-2 mb-4">
+        <section className="mb-0">
+          <div className="flex items-center gap-0 mb-4">
             <span className="text-xl">⚡</span>
             <h3 className="font-bold text-gray-900 text-lg">Today's Hot Deals</h3>
           </div>
-          <div className="flex gap-4 overflow-x-auto pb-2">
+          <div className="flex gap-4 overflow-x-auto pb-0">
             {HOT_DEALS.map((deal) => (
               <div
                 key={deal.id}
                 className={`flex-shrink-0 w-44 bg-gradient-to-br ${deal.color} rounded-2xl p-4 text-white relative overflow-hidden`}
               >
                 {/* Discount Badge */}
-                <span className="absolute top-3 left-3 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                <span className="absolute top-0 left-3 bg-red-500 text-white text-xs font-bold px-0 py-0 rounded-full">
                   {deal.discount_percent}% OFF
                 </span>
                 
                 {/* Icon */}
-                <div className="absolute top-3 right-3 w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center text-2xl">
+                <div className="absolute top-0 right-3 w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center text-2xl">
                   {deal.icon}
                 </div>
                 
                 {/* Content */}
-                <div className="mt-12">
+                <div className="mt-0">
                   <h4 className="font-bold text-lg">{deal.title}</h4>
-                  <div className="flex items-center gap-2 mt-1">
+                  <div className="flex items-center gap-0 mt-0">
                     <span className="text-white/60 line-through text-sm">₹{deal.original_price}</span>
                     <span className="font-bold text-xl">₹{deal.discounted_price}</span>
                   </div>
                 </div>
                 
                 {/* Book Button */}
-                <button className="mt-4 w-full bg-white text-gray-800 font-semibold py-2 rounded-xl hover:bg-gray-100 transition">
+                <button className="mt-4 w-full bg-white text-gray-800 font-semibold py-0 rounded-xl hover:bg-gray-100 transition">
                   Book Now
                 </button>
               </div>
@@ -420,19 +421,19 @@ export function CustomerHomeComplete({ phone }: { phone: string }) {
         </section>
 
         {/* Quick Services */}
-        <section className="mb-6">
+        <section className="mb-0">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-bold text-gray-900 text-lg">Quick Services</h3>
             <button className="text-primary text-sm font-medium">See All</button>
           </div>
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-4 gap-0">
             {QUICK_SERVICES.map((service) => (
               <button
                 key={service.id}
                 onClick={() => router.push(`/search?category=${service.id}`)}
                 className="flex flex-col items-center"
               >
-                <div className={`w-14 h-14 rounded-2xl ${service.color} flex items-center justify-center text-2xl mb-2 hover:scale-105 transition`}>
+                <div className={`w-14 h-14 rounded-2xl ${service.color} flex items-center justify-center text-2xl mb-0 hover:scale-105 transition`}>
                   {service.icon}
                 </div>
                 <span className="text-xs text-gray-600 font-medium">{service.name}</span>
@@ -443,7 +444,7 @@ export function CustomerHomeComplete({ phone }: { phone: string }) {
 
         {/* Upcoming Appointments */}
         {upcomingBookings.length > 0 && (
-          <section className="mb-6">
+          <section className="mb-0">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-bold text-gray-900 text-lg">Upcoming Appointments</h3>
               <button className="text-primary text-sm font-medium">View All</button>
@@ -473,7 +474,7 @@ export function CustomerHomeComplete({ phone }: { phone: string }) {
 
       {/* Bottom Navigation - Matching Design */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg safe-area-bottom">
-        <div className="flex justify-around py-2 px-4">
+        <div className="flex justify-around py-0 px-4">
           {[
             { id: 'home', icon: '🏠', label: 'Home' },
             { id: 'services', icon: '🩺', label: 'Services' },
@@ -489,14 +490,14 @@ export function CustomerHomeComplete({ phone }: { phone: string }) {
                 if (item.id === 'services') router.push('/search');
                 if (item.id === 'store') router.push('/orders');
               }}
-              className={`flex flex-col items-center py-2 px-3 rounded-xl transition ${
+              className={`flex flex-col items-center py-0 px-0 rounded-xl transition ${
                 activeTab === item.id 
                   ? 'text-primary' 
                   : 'text-gray-400 hover:text-gray-600'
               }`}
             >
               <span className={`text-xl ${activeTab === item.id ? 'scale-110' : ''} transition`}>{item.icon}</span>
-              <span className={`text-xs mt-1 ${activeTab === item.id ? 'font-semibold' : ''}`}>{item.label}</span>
+              <span className={`text-xs mt-0 ${activeTab === item.id ? 'font-semibold' : ''}`}>{item.label}</span>
             </button>
           ))}
         </div>
@@ -509,6 +510,13 @@ export function CustomerHomeComplete({ phone }: { phone: string }) {
           <button onClick={() => setError(null)} className="text-white/80 hover:text-white">✕</button>
         </div>
       )}
+
+      {/* AI Chatbot Widget */}
+      <AIChatbotWidget
+        customerId={customer?.id}
+        customerPhone={customer?.phone}
+        onNavigate={(path) => router.push(path)}
+      />
     </div>
   );
 }

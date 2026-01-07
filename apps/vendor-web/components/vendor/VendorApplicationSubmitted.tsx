@@ -26,7 +26,7 @@ export function VendorApplicationSubmitted({ applicationId, onContinue }: Vendor
         </div>
 
         {/* Card Container */}
-        <div className="bg-white rounded-3xl p-6 shadow-lg space-y-6">
+        <div className="bg-white rounded-3xl p-0 shadow-lg space-y-6">
           {/* Status Message */}
           <div className="text-center">
             <p className="text-gray-700">
@@ -35,7 +35,7 @@ export function VendorApplicationSubmitted({ applicationId, onContinue }: Vendor
           </div>
 
           {/* What's Next Section */}
-          <div className="bg-orange-50 rounded-2xl p-5 space-y-3">
+          <div className="bg-orange-50 rounded-2xl p-0 space-y-3">
             <h3 className="text-primary font-semibold">What's Next?</h3>
             
             <div className="space-y-2 text-sm text-primary">
@@ -64,7 +64,7 @@ export function VendorApplicationSubmitted({ applicationId, onContinue }: Vendor
           </div>
 
           {/* Welcome Message */}
-          <div className="text-center pt-2">
+          <div className="text-center pt-0">
             <p className="text-sm text-gray-500">
               Welcome to WARMPAWZ Family 🐾
             </p>

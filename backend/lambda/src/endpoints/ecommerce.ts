@@ -110,6 +110,29 @@ export function registerEcommerceEndpoints(app: Hono) {
     }
   });
 
+  /**
+   * GET /ecommerce/categories
+   * Get e-commerce product categories
+   */
+  app.get("/ecommerce/categories", async (c) => {
+    try {
+      const categories = await query(
+        `SELECT * FROM ecommerce_categories
+         WHERE is_active = true
+         ORDER BY display_order ASC, name ASC`
+      );
+
+      return c.json({
+        success: true,
+        categories: categories.rows,
+        total: categories.rows.length,
+      });
+    } catch (error: any) {
+      console.error('Error fetching e-commerce categories:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
   // ============================================
   // SHOPPING CART
   // ============================================
@@ -233,9 +256,41 @@ export function registerEcommerceEndpoints(app: Hono) {
         return c.json({ error: 'customerId and items are required' }, 400);
       }
 
-      // Calculate totals
+      // Calculate totals with tax calculation service
       let subtotal = 0;
       const orderItems = [];
+      const taxCalculationItems = [];
+
+      // Get customer and vendor locations for tax calculation
+      let customerLocation = null;
+      let vendorLocation = null;
+      
+      if (customerId) {
+        const customers = await select('customers', { id: customerId });
+        if (customers.length > 0 && customers[0].address) {
+          const addr = typeof customers[0].address === 'string' 
+            ? JSON.parse(customers[0].address) 
+            : customers[0].address;
+          customerLocation = {
+            state: addr.state,
+            city: addr.city,
+            pincode: addr.pincode,
+          };
+        }
+      }
+
+      if (vendorId) {
+        const vendors = await select('vendors', { id: vendorId });
+        if (vendors.length > 0 && vendors[0].address) {
+          const addr = typeof vendors[0].address === 'string'
+            ? JSON.parse(vendors[0].address)
+            : vendors[0].address;
+          vendorLocation = {
+            state: addr.state,
+            city: addr.city,
+          };
+        }
+      }
 
       for (const item of items) {
         const products = await select('products', { id: item.productId });
@@ -251,16 +306,56 @@ export function registerEcommerceEndpoints(app: Hono) {
           price: product.price,
           total: itemTotal,
         });
+
+        // Add to tax calculation items
+        taxCalculationItems.push({
+          id: item.productId,
+          type: 'product' as const,
+          hsnCode: product.hsn_code,
+          amount: parseFloat(product.price || 0),
+          quantity: item.quantity || 1,
+          category: product.category,
+        });
       }
 
-      const taxAmount = subtotal * 0.18; // 18% GST (should come from settings)
+      // Calculate tax using tax calculation service
+      let taxAmount = 0;
+      let taxBreakdown = null;
+      let cgstAmount = 0;
+      let sgstAmount = 0;
+      let igstAmount = 0;
+      let gstRuleId = null;
+
+      if (taxCalculationItems.length > 0) {
+        try {
+          const { taxCalculationService } = await import('../lib/services/tax-calculation-service');
+          const taxResult = await taxCalculationService.calculateTax({
+            items: taxCalculationItems,
+            customerLocation,
+            vendorLocation,
+            vendorId: vendorId || undefined,
+          });
+          
+          taxAmount = taxResult.totalTax;
+          cgstAmount = taxResult.totalCGST;
+          sgstAmount = taxResult.totalSGST;
+          igstAmount = taxResult.totalIGST;
+          taxBreakdown = taxResult;
+          gstRuleId = taxResult.items[0]?.taxRuleId || null;
+        } catch (error) {
+          console.error('Error calculating tax, falling back to default 18%:', error);
+          // Fallback to default 18% if tax calculation fails
+          taxAmount = subtotal * 0.18;
+        }
+      }
+
       const shippingAmount = shippingAddress ? 50 : 0; // Should be calculated
       const totalAmount = subtotal + taxAmount + shippingAmount;
 
       // Generate order number
       const orderNumber = `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
 
-      // Create order
+      // Create order with tax breakdown
       const order = await insert('orders', {
         customer_id: customerId,
         vendor_id: vendorId || null,
@@ -268,12 +363,43 @@ export function registerEcommerceEndpoints(app: Hono) {
         order_status: 'pending',
         subtotal: subtotal,
         tax_amount: taxAmount,
+        cgst_amount: cgstAmount,
+        sgst_amount: sgstAmount,
+        igst_amount: igstAmount,
         shipping_amount: shippingAmount,
         total_amount: totalAmount,
         payment_method: paymentMethod || 'online',
         coupon_code: couponCode || null,
         shipping_address: shippingAddress || null,
+        tax_breakdown: taxBreakdown ? JSON.stringify(taxBreakdown) : null,
       });
+
+      // Award loyalty points for order (if first product or regular product)
+      if (customerId) {
+        try {
+          const { loyaltyPointsService } = await import('../lib/services/loyalty-points-service');
+          
+          // Check if this is first product purchase
+          const existingOrders = await select('orders', { customer_id: customerId });
+          const isFirstProduct = existingOrders.length === 0;
+          
+          // Award points for each product
+          for (const item of orderItems) {
+            const actionName = isFirstProduct ? 'buy_first_product' : 'buy_product';
+            await loyaltyPointsService.awardPoints({
+              customerId,
+              actionName,
+              amount: item.price * item.quantity,
+              referenceType: 'order',
+              referenceId: order[0].id,
+              description: `Purchase: ${item.name}`,
+            });
+          }
+        } catch (loyaltyError) {
+          console.error('Error awarding loyalty points for order:', loyaltyError);
+          // Don't fail order creation if loyalty points fail
+        }
+      }
 
       // Create order items
       for (const item of orderItems) {

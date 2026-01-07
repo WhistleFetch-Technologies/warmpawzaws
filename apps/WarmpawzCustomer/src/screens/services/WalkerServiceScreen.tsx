@@ -463,7 +463,7 @@ export function WalkerServiceScreen({
             disabled={loading}
           >
             {loading ? (
-              <ActivityIndicator color="#fff" />
+              <ActivityIndicator color={colors.white} />
             ) : (
               <Text style={styles.primaryButtonText}>Confirm Booking</Text>
             )}
@@ -493,7 +493,7 @@ export function WalkerServiceScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
   },
   header: {
     padding: spacing.md,
@@ -503,18 +503,18 @@ const styles = StyleSheet.create({
   },
   backButton: {
     fontSize: typography.body,
-    color: '#fff',
+    color: colors.white,
     marginBottom: spacing.sm,
   },
   headerTitle: {
     fontSize: typography.h1,
     fontWeight: 'bold',
-    color: '#fff',
+    color: colors.white,
     marginBottom: spacing.xs,
   },
   headerSubtitle: {
     fontSize: typography.body,
-    color: '#fff',
+    color: colors.white,
     opacity: 0.9,
   },
   section: {
@@ -536,7 +536,7 @@ const styles = StyleSheet.create({
     marginRight: spacing.sm,
   },
   stepNumberText: {
-    color: '#fff',
+    color: colors.white,
     fontWeight: 'bold',
     fontSize: typography.body,
   },
@@ -553,11 +553,11 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     padding: spacing.md,
     borderWidth: 2,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   petCardSelected: {
     borderColor: colors.primary,
-    backgroundColor: '#FEE2E2',
+    backgroundColor: colors.error + 20% opacity,
   },
   petName: {
     fontSize: typography.h3,
@@ -600,13 +600,13 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     borderRadius: borderRadius.md,
     borderWidth: 2,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
     backgroundColor: '#F9FAFB',
     alignItems: 'center',
   },
   optionButtonSelected: {
     borderColor: colors.primary,
-    backgroundColor: '#FEE2E2',
+    backgroundColor: colors.error + 20% opacity,
   },
   optionButtonText: {
     fontSize: typography.body,
@@ -620,12 +620,12 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     borderRadius: borderRadius.md,
     borderWidth: 2,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
     backgroundColor: '#F9FAFB',
   },
   optionCardSelected: {
     borderColor: colors.primary,
-    backgroundColor: '#FEE2E2',
+    backgroundColor: colors.error + 20% opacity,
   },
   optionCardText: {
     fontSize: typography.body,
@@ -645,7 +645,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   walkerInfo: {
     flex: 1,
@@ -715,7 +715,7 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   primaryButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: typography.body,
     fontWeight: 'bold',
   },

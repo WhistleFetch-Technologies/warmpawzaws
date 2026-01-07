@@ -14,6 +14,14 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResultV2, Context } from 'aws-lambda';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+// Enhanced handlers (Phase 2-5)
+import { registerAuthEndpointsEnhanced } from '../endpoints/auth-enhanced';
+import { registerVendorOnboardingEndpointsEnhanced } from '../endpoints/vendor-onboarding-enhanced';
+import { registerBookingEndpointsEnhanced } from '../endpoints/bookings-enhanced';
+import { registerPaymentEndpointsEnhanced } from '../endpoints/payments-enhanced';
+import { registerCustomerEndpointsEnhanced } from '../endpoints/customer-enhanced';
+
+// Legacy handlers (to be migrated gradually)
 import { registerAuthEndpoints } from '../endpoints/auth';
 import { registerVendorOnboardingEndpoints } from '../endpoints/vendor-onboarding';
 import { registerBookingEndpoints } from '../endpoints/bookings';
@@ -44,6 +52,8 @@ import { registerLoyaltyEndpoints } from '../endpoints/loyalty';
 import { registerPackageEndpoints } from '../endpoints/packages';
 import { registerPetEndpoints } from '../endpoints/pets';
 import { registerVendorServicesEndpoints } from '../endpoints/vendor-services';
+import { registerVendorProductsEndpoints } from '../endpoints/vendor-products';
+import { registerVendorOrdersEndpoints } from '../endpoints/vendor-orders';
 import { registerServiceCatalogEndpoints } from '../endpoints/service-catalog';
 import { registerSettlementEndpoints } from '../endpoints/settlements';
 import { registerRegionEndpoints } from '../endpoints/regions';
@@ -58,6 +68,7 @@ import { registerHealthEndpoints } from '../endpoints/health';
 import { registerDonationEndpoints } from '../endpoints/donations';
 import { registerReportEndpoints } from '../endpoints/reports';
 import { registerAddressEndpoints } from '../endpoints/addresses';
+import { registerCustomerPasswordEndpoints } from '../endpoints/customer-password';
 import { registerAdminIntegrationEndpoints } from '../endpoints/admin-integrations';
 import { registerLogisticsEndpoints } from '../endpoints/logistics';
 import { registerReturnsEndpoints } from '../endpoints/returns';
@@ -83,6 +94,27 @@ import { registerBookingDetailsEnhancedEndpoints } from '../endpoints/booking-de
 import { registerRazorpaySettlementEndpoints } from '../endpoints/razorpay-settlements';
 import { registerRefundPolicyEngineEndpoints } from '../endpoints/refund-policy-engine';
 import { registerAdminGovernanceEnhancedEndpoints } from '../endpoints/admin-governance-enhanced';
+import { registerAdminAdvancedEndpoints } from '../endpoints/admin-advanced';
+import { registerVendorSetupEndpoints } from '../endpoints/vendor-setup';
+import { registerCustomerAppointmentsEndpoints } from '../endpoints/customer-appointments';
+import { registerCustomerOrdersEndpoints } from '../endpoints/customer-orders';
+import { registerVendorAnalyticsEndpoints } from '../endpoints/vendor-analytics';
+import { registerPetCafeEndpoints } from '../endpoints/pet-cafe';
+import { registerVendorRadarEndpoints } from '../endpoints/vendor-radar';
+import { registerPetResortEndpoints } from '../endpoints/pet-resort';
+import { registerPetHolidaysEndpoints } from '../endpoints/pet-holidays';
+import { registerTaxManagementEndpoints } from '../endpoints/tax-management';
+import { registerLogisticsManagementEndpoints } from '../endpoints/logistics-management';
+import { registerPaymentGatewayManagementEndpoints } from '../endpoints/payment-gateway-management';
+import { registerLoyaltyActionRulesManagementEndpoints } from '../endpoints/loyalty-action-rules-management';
+import { registerCommunityEndpoints } from '../endpoints/community';
+import { registerReferralEndpoints } from '../endpoints/referrals';
+import { registerRewardsEndpoints } from '../endpoints/rewards';
+import { registerAdminSellersEndpoints } from '../endpoints/admin-sellers';
+import { registerAIChatbotEndpoints } from '../endpoints/ai-chatbot';
+import { registerSupportCrmEndpoints } from '../endpoints/support-crm';
+import { registerLocationSharingEndpoints } from '../endpoints/location-sharing';
+import { registerVendorSecurityEndpoints } from '../endpoints/vendor-security';
 
 // Create Hono app
 const app = new Hono();
@@ -100,13 +132,14 @@ app.get('/health', (c) => {
 });
 
 // Register all endpoints
-registerAuthEndpoints(app);
-registerVendorOnboardingEndpoints(app);
-registerBookingEndpoints(app);
-registerPaymentEndpoints(app);
+// Register enhanced handlers (Phase 2-5)
+registerAuthEndpointsEnhanced(app);
+registerVendorOnboardingEndpointsEnhanced(app);
+registerBookingEndpointsEnhanced(app);
+registerPaymentEndpointsEnhanced(app);
 registerRoleEndpoints(app);
 registerVendorDashboardEndpoints(app);
-registerCustomerEndpoints(app);
+registerCustomerEndpointsEnhanced(app);
 registerGpsTrackingEndpoints(app);
 registerAdminEndpoints(app);
 registerVideoCallEndpoints(app);
@@ -130,6 +163,8 @@ registerLoyaltyEndpoints(app);
 registerPackageEndpoints(app);
 registerPetEndpoints(app);
 registerVendorServicesEndpoints(app);
+registerVendorProductsEndpoints(app);
+registerVendorOrdersEndpoints(app);
 registerServiceCatalogEndpoints(app);
 registerSettlementEndpoints(app);
 registerRegionEndpoints(app);
@@ -144,6 +179,7 @@ registerHealthEndpoints(app);
 registerDonationEndpoints(app);
 registerReportEndpoints(app);
 registerAddressEndpoints(app);
+registerCustomerPasswordEndpoints(app);
 registerAdminIntegrationEndpoints(app);
 registerLogisticsEndpoints(app);
 registerReturnsEndpoints(app);
@@ -168,6 +204,28 @@ registerCommuteTimeEndpoints(app);
 registerBookingDetailsEnhancedEndpoints(app);
 registerRazorpaySettlementEndpoints(app);
 registerRefundPolicyEngineEndpoints(app);
+registerAdminGovernanceEnhancedEndpoints(app);
+registerAdminAdvancedEndpoints(app);
+registerVendorSetupEndpoints(app);
+registerCustomerAppointmentsEndpoints(app);
+registerCustomerOrdersEndpoints(app);
+registerVendorAnalyticsEndpoints(app);
+registerPetCafeEndpoints(app);
+registerVendorRadarEndpoints(app);
+registerPetResortEndpoints(app);
+registerPetHolidaysEndpoints(app);
+registerTaxManagementEndpoints(app);
+registerLogisticsManagementEndpoints(app);
+registerPaymentGatewayManagementEndpoints(app);
+registerLoyaltyActionRulesManagementEndpoints(app);
+registerCommunityEndpoints(app);
+registerReferralEndpoints(app);
+registerRewardsEndpoints(app);
+registerAdminSellersEndpoints(app);
+registerAIChatbotEndpoints(app);
+registerSupportCrmEndpoints(app);
+registerLocationSharingEndpoints(app);
+registerVendorSecurityEndpoints(app);
 
 // 404 handler
 app.notFound((c) => {

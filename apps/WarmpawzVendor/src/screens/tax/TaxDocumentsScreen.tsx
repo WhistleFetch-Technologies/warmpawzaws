@@ -47,31 +47,46 @@ export function TaxDocumentsScreen({ vendorId, onBack }: TaxDocumentsScreenProps
   const loadDocuments = async () => {
     try {
       setLoading(true);
-      const response = await TaxApi.getDocuments(vendorId);
-      setDocuments(response.documents || []);
+      const currentYear = new Date().getFullYear();
+      const response = await TaxApi.getDocuments(vendorId, currentYear);
+      setDocuments(response.documents || response || []);
     } catch (error) {
       console.error('Error loading documents:', error);
+      setDocuments([]);
     } finally {
       setLoading(false);
     }
   };
 
   const handleDownload = async (document: TaxDocument) => {
-    if (!document.fileUrl) {
-      Alert.alert('Error', 'Document not available');
-      return;
-    }
-
     setDownloading(document.id);
     try {
-      const fileUri = FileSystem.documentDirectory + `tax_${document.id}.pdf`;
-      const downloadResult = await FileSystem.downloadAsync(document.fileUrl, fileUri);
+      // Use TaxApi to download document
+      const downloadUrl = await TaxApi.downloadTaxDocument(document.id);
       
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(downloadResult.uri);
-        Alert.alert('Success', 'Document downloaded and shared!');
+      if (downloadUrl) {
+        const fileUri = FileSystem.documentDirectory + `tax_${document.id}.pdf`;
+        const downloadResult = await FileSystem.downloadAsync(downloadUrl, fileUri);
+        
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(downloadResult.uri);
+          Alert.alert('Success', 'Document downloaded and shared!');
+        } else {
+          Alert.alert('Success', 'Document downloaded!');
+        }
+      } else if (document.fileUrl) {
+        // Fallback to direct fileUrl
+        const fileUri = FileSystem.documentDirectory + `tax_${document.id}.pdf`;
+        const downloadResult = await FileSystem.downloadAsync(document.fileUrl, fileUri);
+        
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(downloadResult.uri);
+          Alert.alert('Success', 'Document downloaded and shared!');
+        } else {
+          Alert.alert('Success', 'Document downloaded!');
+        }
       } else {
-        Alert.alert('Success', 'Document downloaded!');
+        Alert.alert('Error', 'Document not available');
       }
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to download document');
@@ -112,7 +127,7 @@ export function TaxDocumentsScreen({ vendorId, onBack }: TaxDocumentsScreenProps
         disabled={downloading === item.id || !item.fileUrl}
       >
         {downloading === item.id ? (
-          <ActivityIndicator color="#ffffff" size="small" />
+          <ActivityIndicator color={colors.white} size="small" />
         ) : (
           <Text style={styles.downloadButtonText}>Download</Text>
         )}
@@ -212,7 +227,7 @@ const styles = StyleSheet.create({
   generateButtonText: {
     fontSize: typography.fontSizes.md,
     fontWeight: typography.fontWeights.semibold,
-    color: '#ffffff',
+    color: colors.white,
   },
   listContent: {
     padding: spacing.md,
@@ -258,7 +273,7 @@ const styles = StyleSheet.create({
   downloadButtonText: {
     fontSize: typography.fontSizes.sm,
     fontWeight: typography.fontWeights.semibold,
-    color: '#ffffff',
+    color: colors.white,
   },
   emptyState: {
     padding: spacing.xl,

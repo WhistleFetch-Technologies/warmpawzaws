@@ -188,9 +188,9 @@ export function UserAccountView({ phone, onBack, onViewBooking }: UserAccountVie
   return (
     <div className="min-h-screen bg-white flex flex-col w-full max-w-[430px] mx-auto">
       {/* Status Bar */}
-      <div className="px-6 pt-3 pb-2 flex justify-between items-center">
+      <div className="px-0 pt-0 pb-0 flex justify-between items-center">
         <span className="text-black text-sm">09:41</span>
-        <div className="flex gap-1.5 items-center">
+        <div className="flex gap-0.5 items-center">
           <svg width="17" height="12" viewBox="0 0 17 12" fill="none">
             <rect y="8" width="3" height="4" rx="0.5" fill="black"/>
             <rect x="4.5" y="5" width="3" height="7" rx="0.5" fill="black"/>
@@ -209,8 +209,8 @@ export function UserAccountView({ phone, onBack, onViewBooking }: UserAccountVie
       </div>
 
       {/* Header */}
-      <div className="bg-gradient-to-r from-primary to-primary-dark px-6 py-6">
-        <div className="flex items-center justify-between mb-6">
+      <div className="bg-gradient-to-r from-primary to-primary-dark px-0 py-0">
+        <div className="flex items-center justify-between mb-0">
           <button
             onClick={onBack}
             className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm hover:bg-white/30 transition-colors"
@@ -222,10 +222,10 @@ export function UserAccountView({ phone, onBack, onViewBooking }: UserAccountVie
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-2">
+        <div className="flex gap-0">
           <button
             onClick={() => setActiveTab('bookings')}
-            className={`flex-1 py-2.5 rounded-lg font-medium transition-all ${
+            className={`flex-1 py-0.5 rounded-lg font-medium transition-all ${
               activeTab === 'bookings'
                 ? 'bg-white text-primary'
                 : 'bg-white/20 text-white'
@@ -235,7 +235,7 @@ export function UserAccountView({ phone, onBack, onViewBooking }: UserAccountVie
           </button>
           <button
             onClick={() => setActiveTab('profile')}
-            className={`flex-1 py-2.5 rounded-lg font-medium transition-all ${
+            className={`flex-1 py-0.5 rounded-lg font-medium transition-all ${
               activeTab === 'profile'
                 ? 'bg-white text-primary'
                 : 'bg-white/20 text-white'
@@ -249,34 +249,34 @@ export function UserAccountView({ phone, onBack, onViewBooking }: UserAccountVie
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
         {activeTab === 'bookings' && (
-          <div className="p-6 space-y-4">
+          <div className="p-0 space-y-4">
             {/* Stats */}
-            <div className="grid grid-cols-3 gap-3 mb-6">
+            <div className="grid grid-cols-3 gap-0 mb-0">
               <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-2xl p-4 text-center border border-orange-200">
                 <p className="text-3xl font-bold text-primary">{bookings.length}</p>
-                <p className="text-xs text-gray-600 mt-1.5">Total</p>
+                <p className="text-xs text-gray-600 mt-0.5">Total</p>
               </div>
               <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-2xl p-4 text-center border border-green-200">
                 <p className="text-3xl font-bold text-green-600">{activeBookings.length}</p>
-                <p className="text-xs text-gray-600 mt-1.5">Active</p>
+                <p className="text-xs text-gray-600 mt-0.5">Active</p>
               </div>
               <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-2xl p-4 text-center border border-gray-200">
                 <p className="text-3xl font-bold text-gray-600">{completedBookings.length}</p>
-                <p className="text-xs text-gray-600 mt-1.5">Done</p>
+                <p className="text-xs text-gray-600 mt-0.5">Done</p>
               </div>
             </div>
 
             {loadingBookings ? (
-              <div className="text-center py-12">
+              <div className="text-center py-0">
                 <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
                 <p className="text-gray-600">Loading bookings...</p>
               </div>
             ) : bookings.length === 0 ? (
-              <div className="text-center py-12">
+              <div className="text-center py-02">
                 <div className="w-20 h-20 bg-gray-100 rounded-full mx-auto mb-4 flex items-center justify-center">
                   <Package className="w-10 h-10 text-gray-400" />
                 </div>
-                <h3 className="text-gray-800 font-semibold mb-2">No Bookings Yet</h3>
+                <h3 className="text-gray-800 font-semibold mb-0">No Bookings Yet</h3>
                 <p className="text-gray-600 text-sm">
                   Your service bookings will appear here
                 </p>
@@ -296,24 +296,24 @@ export function UserAccountView({ phone, onBack, onViewBooking }: UserAccountVie
 
                     {/* Booking Info */}
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between mb-2">
+                      <div className="flex items-start justify-between mb-0">
                         <div>
-                          <h3 className="font-bold text-gray-800 mb-1">
+                          <h3 className="font-bold text-gray-800 mb-0">
                             {booking.serviceType.charAt(0).toUpperCase() + booking.serviceType.slice(1)} Service
                           </h3>
                           <p className="text-sm text-gray-600">
                             {booking.petName} • {booking.vendorName}
                           </p>
                         </div>
-                        <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${getStatusColor(booking.status)}`}>
+                        <span className={`px-0.5 py-0 rounded-full text-xs font-semibold ${getStatusColor(booking.status)}`}>
                           {booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
                         </span>
                       </div>
 
                       {/* Progress */}
                       {booking.status === 'active' && (
-                        <div className="mb-3">
-                          <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
+                        <div className="mb-0">
+                          <div className="flex items-center justify-between text-xs text-gray-600 mb-0">
                             <span>{booking.completedSessions} of {booking.totalSessions} sessions</span>
                             <span>{Math.round((booking.completedSessions / booking.totalSessions) * 100)}%</span>
                           </div>
@@ -329,25 +329,25 @@ export function UserAccountView({ phone, onBack, onViewBooking }: UserAccountVie
                       {/* OTP Display */}
                       {booking.requiresOTP && booking.completionOTP && 
                        booking.status !== 'completed' && booking.status !== 'cancelled' && (
-                        <div className="mb-3 p-3 bg-gradient-to-r from-orange-50 to-amber-50 border-2 border-orange-300 rounded-xl">
-                          <div className="flex items-center justify-between mb-1">
+                        <div className="mb-0 p-0 bg-gradient-to-r from-orange-50 to-amber-50 border-2 border-orange-300 rounded-xl">
+                          <div className="flex items-center justify-between mb-0">
                             <span className="text-xs font-semibold text-orange-700 uppercase tracking-wide">🔐 Service OTP</span>
                             <span className="text-xs text-orange-600">Share with vendor</span>
                           </div>
-                          <div className="flex items-center justify-center gap-2 mt-2">
+                          <div className="flex items-center justify-center gap-0 mt-0">
                             <span className="text-3xl font-bold text-orange-600 tracking-widest">
                               {booking.completionOTP}
                             </span>
                           </div>
-                          <p className="text-xs text-center text-orange-600 mt-2">
+                          <p className="text-xs text-center text-orange-600 mt-0">
                             ⚠️ Share this OTP with the vendor to complete your service
                           </p>
                         </div>
                       )}
 
                       {/* Details */}
-                      <div className="flex items-center gap-3 text-xs text-gray-600">
-                        <span className="flex items-center gap-1">
+                      <div className="flex items-center gap-0 text-xs text-gray-600">
+                        <span className="flex items-center gap-0">
                           <Calendar className="w-3 h-3" />
                           {new Date(booking.startDate).toLocaleDateString()}
                         </span>
@@ -356,7 +356,7 @@ export function UserAccountView({ phone, onBack, onViewBooking }: UserAccountVie
                       </div>
 
                       {booking.status === 'active' && booking.upcomingSessions > 0 && (
-                        <div className="mt-2 text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded-md inline-block">
+                        <div className="mt-0 text-xs bg-blue-50 text-blue-700 px-0 py-0 rounded-md inline-block">
                           {booking.upcomingSessions} upcoming session{booking.upcomingSessions > 1 ? 's' : ''}
                         </div>
                       )}
@@ -369,7 +369,7 @@ export function UserAccountView({ phone, onBack, onViewBooking }: UserAccountVie
         )}
 
         {activeTab === 'profile' && (
-          <div className="p-6 space-y-3">
+          <div className="p-0 space-y-3">
             {loading ? (
               <div className="text-center py-20">
                 <div className="w-14 h-14 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto"></div>
@@ -379,12 +379,12 @@ export function UserAccountView({ phone, onBack, onViewBooking }: UserAccountVie
             ) : (
               <>
                 {/* Edit/Save Buttons */}
-                <div className="flex justify-end mb-6">
+                <div className="flex justify-end mb-0">
                   {editMode ? (
-                    <div className="flex gap-3 w-full">
+                    <div className="flex gap-0 w-full">
                       <button
                         onClick={handleCancelEdit}
-                        className="flex-1 h-12 border-2 border-gray-300 rounded-xl text-gray-700 font-medium hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
+                        className="flex-1 h-12 border-2 border-gray-300 rounded-xl text-gray-700 font-medium hover:bg-gray-50 transition-colors flex items-center justify-center gap-0"
                       >
                         <X className="w-5 h-5" />
                         Cancel
@@ -392,7 +392,7 @@ export function UserAccountView({ phone, onBack, onViewBooking }: UserAccountVie
                       <button
                         onClick={handleSaveProfile}
                         disabled={saving}
-                        className="flex-1 h-12 bg-primary hover:bg-primary-dark rounded-xl text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                        className="flex-1 h-12 bg-primary hover:bg-primary-dark rounded-xl text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-0"
                       >
                         {saving ? (
                           <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
@@ -405,7 +405,7 @@ export function UserAccountView({ phone, onBack, onViewBooking }: UserAccountVie
                   ) : (
                     <button
                       onClick={() => setEditMode(true)}
-                      className="h-12 px-6 border-2 border-gray-300 rounded-xl text-gray-700 font-medium hover:bg-gray-50 transition-colors flex items-center gap-2"
+                      className="h-12 px-0 border-2 border-gray-300 rounded-xl text-gray-700 font-medium hover:bg-gray-50 transition-colors flex items-center gap-0"
                     >
                       <Edit2 className="w-5 h-5" />
                       Edit Profile
@@ -414,7 +414,7 @@ export function UserAccountView({ phone, onBack, onViewBooking }: UserAccountVie
                 </div>
 
                 {/* Photo */}
-                <div className="flex flex-col items-center mb-10">
+                <div className="flex flex-col items-center mb-0">
                   <div className="relative">
                     <div className="w-32 h-32 rounded-full overflow-hidden bg-gray-200 border-4 border-white shadow-lg">
                       {photoPreview ? (
@@ -449,68 +449,68 @@ export function UserAccountView({ phone, onBack, onViewBooking }: UserAccountVie
                 <div className="space-y-5">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-semibold text-gray-500 mb-2.5">First Name</label>
+                      <label className="block text-xs font-semibold text-gray-500 mb-0.5">First Name</label>
                       {editMode ? (
                         <input
                           type="text"
                           value={profile.firstName}
                           onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, firstName: e.target.value })}
-                          className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                          className="w-full px-4 py-0.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                         />
                       ) : (
-                        <p className="text-black font-medium px-4 py-3.5 bg-gray-50 rounded-xl">{profile.firstName || '-'}</p>
+                        <p className="text-black font-medium px-4 py-0.5 bg-gray-50 rounded-xl">{profile.firstName || '-'}</p>
                       )}
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-gray-500 mb-2.5">Last Name</label>
+                      <label className="block text-xs font-semibold text-gray-500 mb-0.5">Last Name</label>
                       {editMode ? (
                         <input
                           type="text"
                           value={profile.lastName}
                           onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, lastName: e.target.value })}
-                          className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                          className="w-full px-4 py-0.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                         />
                       ) : (
-                        <p className="text-black font-medium px-4 py-3.5 bg-gray-50 rounded-xl">{profile.lastName || '-'}</p>
+                        <p className="text-black font-medium px-4 py-0.5 bg-gray-50 rounded-xl">{profile.lastName || '-'}</p>
                       )}
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-gray-500 mb-2.5">Phone Number</label>
-                    <p className="text-black font-medium px-4 py-3.5 bg-gray-100 rounded-xl">{profile.phone}</p>
+                    <label className="block text-xs font-semibold text-gray-500 mb-0.5">Phone Number</label>
+                    <p className="text-black font-medium px-4 py-0.5 bg-gray-100 rounded-xl">{profile.phone}</p>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-gray-500 mb-2.5">Email</label>
+                    <label className="block text-xs font-semibold text-gray-500 mb-0.5">Email</label>
                     {editMode ? (
                       <input
                         type="email"
                         value={profile.email}
                         onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, email: e.target.value })}
-                        className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                        className="w-full px-4 py-0.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                       />
                     ) : (
-                      <p className="text-black font-medium px-4 py-3.5 bg-gray-50 rounded-xl">{profile.email || '-'}</p>
+                      <p className="text-black font-medium px-4 py-0.5 bg-gray-50 rounded-xl">{profile.email || '-'}</p>
                     )}
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-gray-500 mb-2.5">Address</label>
+                    <label className="block text-xs font-semibold text-gray-500 mb-0.5">Address</label>
                     {editMode ? (
                       <textarea
                         value={profile.address}
                         onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setProfile({ ...profile, address: e.target.value })}
                         rows={3}
-                        className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none resize-none"
+                        className="w-full px-4 py-0.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none resize-none"
                       />
                     ) : (
-                      <p className="text-black font-medium px-4 py-3.5 bg-gray-50 rounded-xl">{profile.address || '-'}</p>
+                      <p className="text-black font-medium px-4 py-0.5 bg-gray-50 rounded-xl">{profile.address || '-'}</p>
                     )}
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-gray-500 mb-2.5">Pincode</label>
+                    <label className="block text-xs font-semibold text-gray-500 mb-0.5">Pincode</label>
                     {editMode ? (
                       <input
                         type="text"
@@ -520,10 +520,10 @@ export function UserAccountView({ phone, onBack, onViewBooking }: UserAccountVie
                           setProfile({ ...profile, pincode: value });
                         }}
                         maxLength={6}
-                        className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
+                        className="w-full px-4 py-0.5 border-2 border-gray-200 rounded-xl focus:border-primary focus:outline-none"
                       />
                     ) : (
-                      <p className="text-black font-medium px-4 py-3.5 bg-gray-50 rounded-xl">{profile.pincode || '-'}</p>
+                      <p className="text-black font-medium px-4 py-1.5 bg-gray-50 rounded-xl">{profile.pincode || '-'}</p>
                     )}
                   </div>
                 </div>

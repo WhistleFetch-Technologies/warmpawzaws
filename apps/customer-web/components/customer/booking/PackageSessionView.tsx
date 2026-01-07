@@ -45,10 +45,10 @@ export function PackageSessionView({ bookingId, packageId }: PackageSessionViewP
 
   if (loading) {
     return (
-      <div className="bg-white rounded-2xl p-6 shadow-sm">
+      <div className="bg-white rounded-2xl p-0 shadow-sm">
         <div className="flex items-center justify-center py-8">
           <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-          <span className="ml-3 text-gray-600">Loading sessions...</span>
+          <span className="ml-0 text-gray-600">Loading sessions...</span>
         </div>
       </div>
     );
@@ -56,7 +56,7 @@ export function PackageSessionView({ bookingId, packageId }: PackageSessionViewP
 
   if (!sessions || sessions.length === 0) {
     return (
-      <div className="bg-white rounded-2xl p-6 shadow-sm">
+      <div className="bg-white rounded-2xl p-0 shadow-sm">
         <div className="text-center py-8">
           <Calendar className="w-12 h-12 text-gray-400 mx-auto mb-4" />
           <p className="text-gray-600">No package sessions found</p>
@@ -70,7 +70,7 @@ export function PackageSessionView({ bookingId, packageId }: PackageSessionViewP
     : 0;
 
   return (
-    <div className="bg-white rounded-2xl p-6 shadow-sm">
+    <div className="bg-white rounded-2xl p-0 shadow-sm">
       <div className="flex items-center justify-between mb-4">
         <h3 className="font-bold text-gray-900">Package Sessions</h3>
         {progress && (
@@ -82,8 +82,8 @@ export function PackageSessionView({ bookingId, packageId }: PackageSessionViewP
 
       {/* Progress Bar */}
       {progress && (
-        <div className="mb-6">
-          <div className="flex items-center justify-between mb-2">
+        <div className="mb-0">
+          <div className="flex items-center justify-between mb-0">
             <span className="text-sm font-medium text-gray-700">Progress</span>
             <span className="text-sm font-bold text-primary">{completionPercentage}%</span>
           </div>
@@ -114,8 +114,8 @@ export function PackageSessionView({ bookingId, packageId }: PackageSessionViewP
                   : 'border-gray-200 bg-gray-50'
               }`}
             >
-              <div className="flex items-start gap-3">
-                <div className="flex-shrink-0 mt-1">
+              <div className="flex items-start gap-0">
+                <div className="flex-shrink-0 mt-0">
                   {isCompleted ? (
                     <CheckCircle className="w-5 h-5 text-green-600" />
                   ) : isInProgress ? (
@@ -125,12 +125,12 @@ export function PackageSessionView({ bookingId, packageId }: PackageSessionViewP
                   )}
                 </div>
                 <div className="flex-1">
-                  <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center justify-between mb-0">
                     <p className="font-semibold text-gray-900">
                       Session {index + 1}
                     </p>
                     <span
-                      className={`text-xs px-2 py-1 rounded-full ${
+                      className={`text-xs px-0 py-0 rounded-full ${
                         isCompleted
                           ? 'bg-green-100 text-green-700'
                           : isInProgress
@@ -142,19 +142,19 @@ export function PackageSessionView({ bookingId, packageId }: PackageSessionViewP
                     </span>
                   </div>
                   {session.scheduled_date && (
-                    <p className="text-sm text-gray-600 flex items-center gap-1">
+                    <p className="text-sm text-gray-600 flex items-center gap-0">
                       <Calendar className="w-4 h-4" />
                       {new Date(session.scheduled_date).toLocaleDateString()}
                       {session.scheduled_time && ` at ${session.scheduled_time}`}
                     </p>
                   )}
                   {session.completed_at && (
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-gray-500 mt-0">
                       Completed: {new Date(session.completed_at).toLocaleString()}
                     </p>
                   )}
                   {session.notes && (
-                    <p className="text-sm text-gray-600 mt-2">{session.notes}</p>
+                    <p className="text-sm text-gray-600 mt-0">{session.notes}</p>
                   )}
                 </div>
               </div>
@@ -165,7 +165,7 @@ export function PackageSessionView({ bookingId, packageId }: PackageSessionViewP
 
       {/* Summary */}
       {progress && (
-        <div className="mt-6 pt-6 border-t border-gray-200">
+        <div className="mt-0 pt-0 border-t border-gray-200">
           <div className="grid grid-cols-2 gap-4">
             <div className="text-center">
               <p className="text-2xl font-bold text-primary">{progress.completed}</p>

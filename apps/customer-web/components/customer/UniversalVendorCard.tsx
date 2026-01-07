@@ -54,7 +54,7 @@ export function UniversalVendorCard({
     if (!badge) return null;
 
     return (
-      <span className={`text-xs px-2 py-1 rounded-full ${badge.color}`}>
+      <span className={`text-xs px-0 py-0 rounded-full ${badge.color}`}>
         {badge.label}
       </span>
     );
@@ -82,8 +82,8 @@ export function UniversalVendorCard({
           <h3 className="font-bold text-gray-900 truncate">{vendor.vendorName}</h3>
           
           {/* Rating & Reviews */}
-          <div className="flex items-center gap-2 mt-1">
-            <div className="flex items-center gap-1">
+          <div className="flex items-center gap-0 mt-0">
+            <div className="flex items-center gap-0">
               <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
               <span className="text-sm font-medium">{rating.toFixed(1)}</span>
             </div>
@@ -103,24 +103,24 @@ export function UniversalVendorCard({
 
           {/* Service Name */}
           {vendor.serviceName && (
-            <p className="text-sm text-gray-700 mt-1 truncate">{vendor.serviceName}</p>
+            <p className="text-sm text-gray-700 mt-0 truncate">{vendor.serviceName}</p>
           )}
 
           {/* Description */}
           {vendor.description && (
-            <p className="text-sm text-gray-600 mt-1 line-clamp-2">{vendor.description}</p>
+            <p className="text-sm text-gray-600 mt-0 line-clamp-0">{vendor.description}</p>
           )}
 
           {/* Location & Duration */}
-          <div className="flex items-center gap-3 mt-2">
-            <div className="flex items-center gap-1 text-sm text-gray-600">
+          <div className="flex items-center gap-0 mt-0">
+            <div className="flex items-center gap-0 text-sm text-gray-600">
               <MapPin className="w-4 h-4" />
               <span className="truncate">{location}</span>
             </div>
             {vendor.duration && (
               <>
                 <span className="text-gray-400">•</span>
-                <div className="flex items-center gap-1 text-sm text-gray-600">
+                <div className="flex items-center gap-0 text-sm text-gray-600">
                   <Clock className="w-4 h-4" />
                   <span>{vendor.duration}</span>
                 </div>
@@ -129,7 +129,7 @@ export function UniversalVendorCard({
           </div>
 
           {/* Price */}
-          <div className="mt-2">
+          <div className="mt-0">
             <span className="text-lg font-bold text-primary">
               {formatPrice(vendor.price)}
             </span>
@@ -138,11 +138,11 @@ export function UniversalVendorCard({
       </div>
 
       {/* Action Buttons */}
-      <div className="flex gap-2 mt-3">
+      <div className="flex gap-0 mt-0">
         {onViewDetails && (
           <button
             onClick={() => onViewDetails(vendor.vendorId || vendor.id)}
-            className="flex-1 px-4 py-2 border-2 border-gray-200 rounded-xl font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+            className="flex-1 px-4 py-0 border-2 border-gray-200 rounded-xl font-medium text-gray-700 hover:bg-gray-50 transition-colors"
           >
             View Details
           </button>
@@ -150,7 +150,7 @@ export function UniversalVendorCard({
         {onBook && (
           <button
             onClick={() => onBook(vendor.vendorId || vendor.id)}
-            className="flex-1 px-4 py-2 bg-primary text-white rounded-xl font-medium hover:bg-primary-dark transition-colors"
+            className="flex-1 px-4 py-0 bg-primary text-white rounded-xl font-medium hover:bg-primary-dark transition-colors"
           >
             Book Now
           </button>

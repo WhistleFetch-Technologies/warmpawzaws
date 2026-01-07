@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { AdminVendorManagement } from './admin/AdminVendorManagement';
+import { UnifiedAdminSidebar } from './admin/layout/UnifiedAdminSidebar';
 
 // ============================================================================
 // TYPES
@@ -240,21 +242,51 @@ export function AdminApp() {
       setLoading(true);
       setError(null);
 
-      const [statsResponse, vendorsResponse] = await Promise.all([
-        apiClient.get<any>('/admin/vendors/stats'),
-        apiClient.get<any>('/admin/vendors?status=pending'),
-      ]);
-
-      if (statsResponse.success || statsResponse.activeVendors) {
-        setStats(statsResponse);
+      // Check if API base URL is configured
+      const apiBaseUrl = (window as any).__WARMPAWZ_RUNTIME_CONFIG__?.apiBaseUrl || 
+                         process.env.NEXT_PUBLIC_API_BASE_URL;
+      
+      if (!apiBaseUrl) {
+        setError('API_BASE_URL is not configured. Please check runtime-config.js or NEXT_PUBLIC_API_BASE_URL environment variable.');
+        setLoading(false);
+        return;
       }
 
-      if (vendorsResponse.success || vendorsResponse.vendors) {
-        setPendingVendors(vendorsResponse.vendors || []);
+      const [statsResponse, vendorsResponse] = await Promise.all([
+        apiClient.get<any>('/admin/vendors/stats').catch(err => {
+          console.error('Stats API error:', err);
+          return { error: err.message };
+        }),
+        apiClient.get<any>('/admin/vendors?status=pending').catch(err => {
+          console.error('Vendors API error:', err);
+          return { error: err.message };
+        }),
+      ]);
+
+      if (statsResponse && !statsResponse.error) {
+        if (statsResponse.success || statsResponse.activeVendors || statsResponse.stats) {
+          setStats(statsResponse.stats || statsResponse);
+        }
+      }
+
+      if (vendorsResponse && !vendorsResponse.error) {
+        if (vendorsResponse.success || vendorsResponse.vendors) {
+          setPendingVendors(vendorsResponse.vendors || []);
+        }
+      }
+
+      // Show error if both failed
+      if (statsResponse?.error && vendorsResponse?.error) {
+        setError(`Failed to load data: ${statsResponse.error}. Please ensure the API is running and accessible.`);
       }
     } catch (err: any) {
       console.error('Error loading dashboard:', err);
-      setError(err.message || 'Failed to load dashboard');
+      const errorMsg = err.message || 'Failed to load dashboard';
+      if (errorMsg.includes('API_BASE_URL')) {
+        setError('API configuration error: Please ensure runtime-config.js is loaded or NEXT_PUBLIC_API_BASE_URL is set.');
+      } else {
+        setError(`Failed to load dashboard: ${errorMsg}. Please check your API connection.`);
+      }
     } finally {
       setLoading(false);
     }
@@ -435,19 +467,8 @@ export function AdminApp() {
   };
 
   // ============================================================================
-  // RENDER
+  // RENDER HELPERS
   // ============================================================================
-
-  if (loading && activeTab === 'dashboard') {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading admin dashboard...</p>
-        </div>
-      </div>
-    );
-  }
 
   const menuItems = [
     { id: 'dashboard', icon: '📊', label: 'Dashboard' },
@@ -463,38 +484,43 @@ export function AdminApp() {
     { id: 'settings', icon: '⚙️', label: 'Platform Settings' },
   ];
 
-  return (
-    <div className="min-h-screen bg-slate-50">
-      {/* Sidebar */}
-      <aside className="fixed left-0 top-0 bottom-0 w-64 bg-slate-900 text-white overflow-y-auto">
-        <div className="p-6 border-b border-slate-700">
-          <h1 className="text-2xl font-bold flex items-center gap-3">
-            <img src="/logo.png" alt="Warmpawz" className="w-10 h-10 rounded-lg object-contain" />
-            Warmpawz
-          </h1>
-          <p className="text-sm text-slate-400 mt-1">Admin Portal</p>
+  // Map activeTab to UnifiedAdminSidebar view IDs
+  const getActiveView = () => {
+    if (activeTab === 'vendors') return 'vendor-admin';
+    if (activeTab === 'dashboard') return 'dashboard';
+    return activeTab;
+  };
+
+  // ============================================================================
+  // RENDER
+  // ============================================================================
+
+  if (loading && activeTab === 'dashboard') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading admin dashboard...</p>
         </div>
-        
-        <nav className="p-4 space-y-1">
-          {menuItems.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => setActiveTab(item.id)}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition ${
-                activeTab === item.id
-                  ? 'bg-orange-500 text-white'
-                  : 'text-slate-300 hover:bg-slate-800'
-              }`}
-            >
-              <span className="text-xl">{item.icon}</span>
-              <span className="text-sm font-medium">{item.label}</span>
-            </button>
-          ))}
-        </nav>
-      </aside>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex">
+      {/* Unified Sidebar */}
+      <UnifiedAdminSidebar 
+        activeView={getActiveView()} 
+        onNavigate={(view) => {
+          // Map UnifiedAdminSidebar view IDs back to activeTab
+          if (view === 'vendor-admin') setActiveTab('vendors');
+          else if (view === 'dashboard') setActiveTab('dashboard');
+          else setActiveTab(view);
+        }} 
+      />
 
       {/* Main Content */}
-      <main className="ml-64 p-8">
+      <main className="flex-1 flex flex-col">
         {/* Header */}
         <header className="flex items-center justify-between mb-8">
           <div>
@@ -503,39 +529,75 @@ export function AdminApp() {
             </h2>
             <p className="text-gray-500">Manage your platform</p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-0">
             <button
               onClick={loadDashboard}
-              className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition"
+              className="px-4 py-0 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition"
             >
               🔄 Refresh
             </button>
-            <button className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition">
+            <button className="px-4 py-0 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition">
               + Add New
             </button>
           </div>
         </header>
 
-        {/* Messages */}
-        {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 flex items-center justify-between">
-            <span>{error}</span>
-            <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600">✕</button>
+        {/* Top Bar */}
+        <div className="bg-white border-b px-0 py-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-[#FF8C42] text-xl font-bold">
+                {menuItems.find(m => m.id === activeTab)?.label || 'Dashboard'}
+              </h1>
+              <p className="text-xs text-gray-500">Manage your platform</p>
+            </div>
+            <div className="flex items-center gap-0">
+              <button
+                onClick={loadDashboard}
+                className="px-4 py-0 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition text-sm"
+              >
+                🔄 Refresh
+              </button>
+            </div>
           </div>
-        )}
-        
-        {successMessage && (
-          <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl text-green-700 flex items-center justify-between">
-            <span>{successMessage}</span>
-            <button onClick={() => setSuccessMessage(null)} className="text-green-400 hover:text-green-600">✕</button>
-          </div>
-        )}
+        </div>
 
-        {/* Dashboard Tab */}
-        {activeTab === 'dashboard' && stats && (
+        {/* Content Area */}
+        <div className="flex-1 overflow-y-auto p-0">
+          {/* Messages */}
+          {error && (
+            <div className="mb-0 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 flex items-center justify-between">
+              <div className="flex-1">
+                <p className="font-medium mb-0">⚠️ Error Loading Data</p>
+                <p className="text-sm">{error}</p>
+                <p className="text-xs mt-0 text-red-600">
+                  Tip: Check that runtime-config.js is loaded and API_BASE_URL is configured correctly.
+                </p>
+              </div>
+              <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600 ml-4">✕</button>
+            </div>
+          )}
+          
+          {successMessage && (
+            <div className="mb-0 p-4 bg-green-50 border border-green-200 rounded-xl text-green-700 flex items-center justify-between">
+              <span>{successMessage}</span>
+              <button onClick={() => setSuccessMessage(null)} className="text-green-400 hover:text-green-600">✕</button>
+            </div>
+          )}
+
+          {/* Vendors Tab - Use AdminVendorManagement */}
+          {activeTab === 'vendors' && (
+            <AdminVendorManagement onNavigate={(view) => {
+              if (view === 'vendor-admin') setActiveTab('vendors');
+              else setActiveTab(view);
+            }} />
+          )}
+
+          {/* Dashboard Tab */}
+          {activeTab === 'dashboard' && stats && (
           <div className="space-y-8">
             {/* Stats Grid */}
-            <div className="grid grid-cols-4 gap-6">
+            <div className="grid grid-cols-4 gap-0">
               <StatCard icon="✅" value={stats.activeVendors.count} label="Active Vendors" sublabel={`${stats.activeVendors.percentage}% of total`} color="green" />
               <StatCard icon="⏳" value={stats.pendingApplications.count} label="Pending Applications" sublabel={`${stats.pendingApplications.todayCount} today`} color="yellow" />
               <StatCard icon="🚫" value={stats.deactivatedVendors.count} label="Deactivated" color="gray" />
@@ -544,11 +606,11 @@ export function AdminApp() {
 
             {/* Pending Approvals */}
             <section className="bg-white rounded-2xl shadow-sm">
-              <div className="p-6 border-b">
+              <div className="p-0 border-b">
                 <h3 className="text-lg font-semibold text-gray-900">Pending Approvals</h3>
               </div>
               {pendingVendors.length === 0 ? (
-                <div className="p-12 text-center">
+                <div className="p-02 text-center">
                   <div className="text-5xl mb-4">✅</div>
                   <p className="text-gray-500">No pending applications</p>
                 </div>
@@ -566,22 +628,22 @@ export function AdminApp() {
                             <p className="text-sm text-gray-500">{vendor.phone} • {vendor.city}</p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-0">
                           <button
                             onClick={() => handleRequestClarification(vendor.id)}
-                            className="px-3 py-1.5 bg-yellow-100 text-yellow-700 rounded-lg text-sm font-medium hover:bg-yellow-200 transition"
+                            className="px-0 py-0.5 bg-yellow-100 text-yellow-700 rounded-lg text-sm font-medium hover:bg-yellow-200 transition"
                           >
                             Request Info
                           </button>
                           <button
                             onClick={() => handleRejectVendor(vendor.id)}
-                            className="px-3 py-1.5 bg-red-100 text-red-700 rounded-lg text-sm font-medium hover:bg-red-200 transition"
+                            className="px-0 py-0.5 bg-red-100 text-red-700 rounded-lg text-sm font-medium hover:bg-red-200 transition"
                           >
                             Reject
                           </button>
                           <button
                             onClick={() => handleApproveVendor(vendor.id)}
-                            className="px-3 py-1.5 bg-green-500 text-white rounded-lg text-sm font-medium hover:bg-green-600 transition"
+                            className="px-0 py-0.5 bg-green-500 text-white rounded-lg text-sm font-medium hover:bg-green-600 transition"
                           >
                             Approve
                           </button>
@@ -602,24 +664,24 @@ export function AdminApp() {
               <p className="text-gray-500">{roles.length} roles configured</p>
               <button
                 onClick={() => { setEditingRole(null); setShowRoleModal(true); }}
-                className="px-4 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+                className="px-4 py-0 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
               >
                 + Add Role
               </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-0">
               {roles.map((role) => (
-                <div key={role.id} className="bg-white rounded-2xl shadow-sm p-6">
+                <div key={role.id} className="bg-white rounded-2xl shadow-sm p-0">
                   <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-0">
                       <span className="text-3xl">{role.icon || '👤'}</span>
                       <div>
                         <h4 className="font-semibold text-gray-900">{role.display_name}</h4>
                         <p className="text-sm text-gray-500">{role.name}</p>
                       </div>
                     </div>
-                    <span className={`px-2 py-1 rounded-full text-xs ${role.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                    <span className={`px-0 py-0 rounded-full text-xs ${role.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
                       {role.is_active ? 'Active' : 'Inactive'}
                     </span>
                   </div>
@@ -627,10 +689,10 @@ export function AdminApp() {
                   <p className="text-sm text-gray-600 mb-4">{role.description}</p>
                   
                   <div className="mb-4">
-                    <p className="text-xs font-medium text-gray-500 mb-2">Service Styles</p>
-                    <div className="flex flex-wrap gap-1">
+                    <p className="text-xs font-medium text-gray-500 mb-0">Service Styles</p>
+                    <div className="flex flex-wrap gap-0">
                       {role.service_styles?.map((style) => (
-                        <span key={style} className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">
+                        <span key={style} className="px-0 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">
                           {style}
                         </span>
                       ))}
@@ -638,15 +700,15 @@ export function AdminApp() {
                   </div>
                   
                   <div className="mb-4">
-                    <p className="text-xs font-medium text-gray-500 mb-2">Capabilities ({role.capabilities?.length || 0})</p>
-                    <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto">
+                    <p className="text-xs font-medium text-gray-500 mb-0">Capabilities ({role.capabilities?.length || 0})</p>
+                    <div className="flex flex-wrap gap-0 max-h-20 overflow-y-auto">
                       {role.capabilities?.slice(0, 10).map((cap) => (
-                        <span key={cap} className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">
+                        <span key={cap} className="px-0 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">
                           {cap}
                         </span>
                       ))}
                       {(role.capabilities?.length || 0) > 10 && (
-                        <span className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">
+                        <span className="px-0 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">
                           +{(role.capabilities?.length || 0) - 10} more
                         </span>
                       )}
@@ -655,7 +717,7 @@ export function AdminApp() {
                   
                   <button
                     onClick={() => { setEditingRole(role); setShowRoleModal(true); }}
-                    className="w-full py-2 bg-slate-100 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-200 transition"
+                    className="w-full py-0 bg-slate-100 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-200 transition"
                   >
                     Edit Role
                   </button>
@@ -672,19 +734,19 @@ export function AdminApp() {
               <p className="text-gray-500">{tiers.length} tiers configured</p>
               <button
                 onClick={() => { setEditingTier(null); setShowTierModal(true); }}
-                className="px-4 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+                className="px-4 py-0 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
               >
                 + Add Tier
               </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-0">
               {tiers.map((tier) => (
-                <div key={tier.id} className="bg-white rounded-2xl shadow-sm p-6">
+                <div key={tier.id} className="bg-white rounded-2xl shadow-sm p-0">
                   <div className="text-center mb-4">
                     <span className="text-4xl">🏆</span>
-                    <h4 className="text-xl font-bold text-gray-900 mt-2">{tier.name}</h4>
-                    <p className="text-3xl font-bold text-orange-500 mt-2">{tier.commission_rate}%</p>
+                    <h4 className="text-xl font-bold text-gray-900 mt-0">{tier.name}</h4>
+                    <p className="text-3xl font-bold text-orange-500 mt-0">{tier.commission_rate}%</p>
                     <p className="text-sm text-gray-500">Commission Rate</p>
                   </div>
                   
@@ -693,10 +755,10 @@ export function AdminApp() {
                       <span className="font-medium">Min Bookings:</span> {tier.min_bookings}
                     </p>
                     <div>
-                      <p className="text-xs font-medium text-gray-500 mb-1">Benefits:</p>
+                      <p className="text-xs font-medium text-gray-500 mb-0">Benefits:</p>
                       <ul className="text-sm text-gray-600 space-y-1">
                         {tier.benefits?.map((benefit, idx) => (
-                          <li key={idx} className="flex items-center gap-2">
+                          <li key={idx} className="flex items-center gap-0">
                             <span className="text-green-500">✓</span> {benefit}
                           </li>
                         ))}
@@ -706,7 +768,7 @@ export function AdminApp() {
                   
                   <button
                     onClick={() => { setEditingTier(tier); setShowTierModal(true); }}
-                    className="w-full py-2 bg-slate-100 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-200 transition"
+                    className="w-full py-0 bg-slate-100 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-200 transition"
                   >
                     Edit Tier
                   </button>
@@ -716,70 +778,14 @@ export function AdminApp() {
           </div>
         )}
 
-        {/* Vendors Tab */}
-        {activeTab === 'vendors' && (
-          <div className="space-y-6">
-            <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-              <table className="w-full">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Vendor</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Role</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tier</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rating</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {allVendors.map((vendor) => (
-                    <tr key={vendor.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4">
-                        <div>
-                          <p className="font-medium text-gray-900">{vendor.business_name || vendor.owner_name}</p>
-                          <p className="text-sm text-gray-500">{vendor.phone}</p>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-600">{vendor.role_id}</td>
-                      <td className="px-6 py-4">
-                        <span className="px-2 py-1 bg-purple-100 text-purple-700 rounded-full text-xs">
-                          {vendor.tier || 'Standard'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className={`px-2 py-1 rounded-full text-xs ${
-                          vendor.status === 'active' ? 'bg-green-100 text-green-700' :
-                          vendor.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
-                          'bg-gray-100 text-gray-700'
-                        }`}>
-                          {vendor.status}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-1">
-                          <span className="text-yellow-500">⭐</span>
-                          <span className="text-sm">{vendor.rating || '-'}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <button className="text-orange-500 hover:text-orange-600 text-sm font-medium">
-                          View Details
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
+        {/* Vendors Tab - Already handled above with AdminVendorManagement */}
 
         {/* Promotions Tab */}
         {activeTab === 'promotions' && (
           <div className="space-y-6">
             <div className="flex justify-between items-center">
               <p className="text-gray-500">{promotions.length} promotions</p>
-              <button className="px-4 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition">
+              <button className="px-4 py-0 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition">
                 + Create Promotion
               </button>
             </div>
@@ -788,30 +794,30 @@ export function AdminApp() {
               <table className="w-full">
                 <thead className="bg-slate-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Code</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Discount</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Valid Until</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Usage</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                    <th className="px-0 py-0 text-left text-xs font-medium text-gray-500 uppercase">Code</th>
+                    <th className="px-0 py-0 text-left text-xs font-medium text-gray-500 uppercase">Discount</th>
+                    <th className="px-0 py-0 text-left text-xs font-medium text-gray-500 uppercase">Valid Until</th>
+                    <th className="px-0 py-0 text-left text-xs font-medium text-gray-500 uppercase">Usage</th>
+                    <th className="px-0 py-0 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                    <th className="px-0 py-0 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
                   {promotions.map((promo) => (
                     <tr key={promo.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 font-mono text-sm font-medium">{promo.code}</td>
-                      <td className="px-6 py-4 text-sm">
+                      <td className="px-0 py-4 font-mono text-sm font-medium">{promo.code}</td>
+                      <td className="px-0 py-4 text-sm">
                         {promo.discount_type === 'percentage' ? `${promo.discount_value}%` : `₹${promo.discount_value}`}
-                        {promo.max_discount && <span className="text-gray-400 text-xs ml-1">(max ₹{promo.max_discount})</span>}
+                        {promo.max_discount && <span className="text-gray-400 text-xs ml-0">(max ₹{promo.max_discount})</span>}
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-600">{promo.valid_until}</td>
-                      <td className="px-6 py-4 text-sm">{promo.used_count}/{promo.usage_limit || '∞'}</td>
-                      <td className="px-6 py-4">
-                        <span className={`px-2 py-1 rounded-full text-xs ${promo.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                      <td className="px-0 py-4 text-sm text-gray-600">{promo.valid_until}</td>
+                      <td className="px-0 py-4 text-sm">{promo.used_count}/{promo.usage_limit || '∞'}</td>
+                      <td className="px-0 py-4">
+                        <span className={`px-0 py-0 rounded-full text-xs ${promo.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
                           {promo.is_active ? 'Active' : 'Inactive'}
                         </span>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-0 py-4">
                         <button className="text-orange-500 hover:text-orange-600 text-sm font-medium">Edit</button>
                       </td>
                     </tr>
@@ -825,9 +831,9 @@ export function AdminApp() {
         {/* Settings Tab */}
         {activeTab === 'settings' && settings && (
           <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-0">
               {/* Payment Settings */}
-              <div className="bg-white rounded-2xl shadow-sm p-6">
+              <div className="bg-white rounded-2xl shadow-sm p-0">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">💳 Payment Settings</h3>
                 <div className="space-y-4">
                   <ToggleSetting 
@@ -859,7 +865,7 @@ export function AdminApp() {
               </div>
 
               {/* Feature Settings */}
-              <div className="bg-white rounded-2xl shadow-sm p-6">
+              <div className="bg-white rounded-2xl shadow-sm p-0">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">⚡ Features</h3>
                 <div className="space-y-4">
                   <ToggleSetting 
@@ -886,7 +892,7 @@ export function AdminApp() {
               </div>
 
               {/* Policy Settings */}
-              <div className="bg-white rounded-2xl shadow-sm p-6 md:col-span-2">
+              <div className="bg-white rounded-2xl shadow-sm p-0 md:col-span-2">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">📜 Policies</h3>
                 <div className="space-y-4">
                   <NumberSetting 
@@ -895,12 +901,12 @@ export function AdminApp() {
                     onChange={(v) => handleSaveSettings({ cancellation_window_hours: v })} 
                   />
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Refund Policy</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-0">Refund Policy</label>
                     <textarea
                       value={settings.refund_policy}
                       onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => handleSaveSettings({ refund_policy: e.target.value })}
                       rows={4}
-                      className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none transition resize-none"
+                      className="w-full px-4 py-0 border border-gray-200 rounded-xl focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none transition resize-none"
                     />
                   </div>
                 </div>
@@ -909,14 +915,87 @@ export function AdminApp() {
           </div>
         )}
 
+        {/* Redirect to dedicated pages */}
+        {activeTab === 'banners' && (
+          <div className="bg-white rounded-2xl shadow-sm p-02 text-center">
+            <div className="text-5xl mb-4">🖼️</div>
+            <h3 className="text-xl font-semibold text-gray-900">Banner Management</h3>
+            <p className="text-gray-500 mt-0 mb-4">Redirecting to Banner Management page...</p>
+            <button
+              onClick={() => window.location.href = '/banners'}
+              className="px-0 py-0 bg-primary text-white rounded-lg font-medium hover:bg-primary/90 transition"
+            >
+              Go to Banner Management
+            </button>
+          </div>
+        )}
+
+        {activeTab === 'loyalty' && (
+          <div className="bg-white rounded-2xl shadow-sm p-02 text-center">
+            <div className="text-5xl mb-4">🎁</div>
+            <h3 className="text-xl font-semibold text-gray-900">Loyalty & Rewards</h3>
+            <p className="text-gray-500 mt-0 mb-4">Redirecting to Loyalty Management page...</p>
+            <button
+              onClick={() => window.location.href = '/loyalty'}
+              className="px-0 py-0 bg-primary text-white rounded-lg font-medium hover:bg-primary/90 transition"
+            >
+              Go to Loyalty Management
+            </button>
+          </div>
+        )}
+
+        {/* Redirect to dedicated pages */}
+        {activeTab === 'catalog' && (
+          <div className="bg-white rounded-2xl shadow-sm p-02 text-center">
+            <div className="text-5xl mb-4">📚</div>
+            <h3 className="text-xl font-semibold text-gray-900">Service Catalog</h3>
+            <p className="text-gray-500 mt-0 mb-4">Redirecting to Service Catalog page...</p>
+            <button
+              onClick={() => window.location.href = '/catalog'}
+              className="px-0 py-0 bg-primary text-white rounded-lg font-medium hover:bg-primary/90 transition"
+            >
+              Go to Service Catalog
+            </button>
+          </div>
+        )}
+
+        {activeTab === 'reports' && (
+          <div className="bg-white rounded-2xl shadow-sm p-12 text-center">
+            <div className="text-5xl mb-4">📈</div>
+            <h3 className="text-xl font-semibold text-gray-900">Reports</h3>
+            <p className="text-gray-500 mt-0 mb-4">Redirecting to Reports page...</p>
+            <button
+              onClick={() => window.location.href = '/reports'}
+              className="px-0 py-0 bg-primary text-white rounded-lg font-medium hover:bg-primary/90 transition"
+            >
+              Go to Reports
+            </button>
+          </div>
+        )}
+
+        {activeTab === 'integrations' && (
+          <div className="bg-white rounded-2xl shadow-sm p-12 text-center">
+            <div className="text-5xl mb-4">🔗</div>
+            <h3 className="text-xl font-semibold text-gray-900">Integrations</h3>
+            <p className="text-gray-500 mt-0 mb-4">Redirecting to Integrations page...</p>
+            <button
+              onClick={() => window.location.href = '/integrations'}
+              className="px-1 py-0 bg-primary text-white rounded-lg font-medium hover:bg-primary/90 transition"
+            >
+              Go to Integrations
+            </button>
+          </div>
+        )}
+
         {/* Other tabs placeholder */}
-        {['taxes', 'banners', 'catalog', 'reports', 'integrations'].includes(activeTab) && (
+        {activeTab === 'taxes' && (
           <div className="bg-white rounded-2xl shadow-sm p-12 text-center">
             <div className="text-5xl mb-4">🚧</div>
             <h3 className="text-xl font-semibold text-gray-900">Coming Soon</h3>
-            <p className="text-gray-500 mt-2">This section is under development</p>
+            <p className="text-gray-500 mt-0">Tax management is under development</p>
           </div>
         )}
+        </div>
       </main>
 
       {/* Role Edit Modal */}
@@ -945,11 +1024,11 @@ function StatCard({ icon, value, label, sublabel, color }: { icon: string; value
   };
 
   return (
-    <div className={`${colorClasses[color]} rounded-2xl p-6`}>
-      <div className="text-3xl mb-3">{icon}</div>
+    <div className={`${colorClasses[color]} rounded-2xl p-1`}>
+      <div className="text-3xl mb-0">{icon}</div>
       <p className="text-3xl font-bold">{value}</p>
-      <p className="text-sm mt-1">{label}</p>
-      {sublabel && <p className="text-xs opacity-70 mt-1">{sublabel}</p>}
+      <p className="text-sm mt-0">{label}</p>
+      {sublabel && <p className="text-xs opacity-70 mt-0">{sublabel}</p>}
     </div>
   );
 }
@@ -976,7 +1055,7 @@ function NumberSetting({ label, value, onChange }: { label: string; value: numbe
         type="number"
         value={value}
         onChange={(e: React.ChangeEvent<HTMLInputElement>) => onChange(Number(e.target.value))}
-        className="w-24 px-3 py-2 border border-gray-200 rounded-lg text-right focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
+        className="w-24 px-1 py-0 border border-gray-200 rounded-lg text-right focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
       />
     </div>
   );
@@ -1030,7 +1109,7 @@ function RoleEditModal({
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
-        <div className="p-6 border-b sticky top-0 bg-white z-10">
+        <div className="p-1 border-b sticky top-0 bg-white z-10">
           <div className="flex items-center justify-between">
             <h3 className="text-xl font-semibold text-gray-900">
               {role ? 'Edit Role' : 'Create Role'}
@@ -1039,50 +1118,50 @@ function RoleEditModal({
           </div>
         </div>
         
-        <div className="p-6 space-y-6">
+        <div className="p-1 space-y-6">
           {/* Basic Info */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Name (ID)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-0">Name (ID)</label>
               <input
                 type="text"
                 value={formData.name}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
+                className="w-full px-4 py-0 border border-gray-200 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
                 placeholder="e.g., veterinarian"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Display Name</label>
+              <label className="block text-sm font-medium text-gray-700 mb-0">Display Name</label>
               <input
                 type="text"
                 value={formData.display_name}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, display_name: e.target.value }))}
-                className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
+                className="w-full px-4 py-0 border border-gray-200 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
                 placeholder="e.g., Veterinarian"
               />
             </div>
           </div>
           
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+            <label className="block text-sm font-medium text-gray-700 mb-0">Description</label>
             <textarea
               value={formData.description}
               onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData(prev => ({ ...prev, description: e.target.value }))}
               rows={2}
-              className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none resize-none"
+              className="w-full px-4 py-0 border border-gray-200 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none resize-none"
             />
           </div>
 
           {/* Service Styles */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Service Styles</label>
-            <div className="flex flex-wrap gap-2">
+            <label className="block text-sm font-medium text-gray-700 mb-0">Service Styles</label>
+            <div className="flex flex-wrap gap-0">
               {['centre', 'home', 'tele', 'ecommerce'].map((style) => (
                 <button
                   key={style}
                   onClick={() => toggleServiceStyle(style)}
-                  className={`px-4 py-2 rounded-lg transition ${
+                  className={`px-4 py-0 rounded-lg transition ${
                     formData.service_styles.includes(style)
                       ? 'bg-orange-500 text-white'
                       : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -1096,19 +1175,19 @@ function RoleEditModal({
 
           {/* Capabilities */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-0">
               Capabilities ({formData.capabilities.length} selected)
             </label>
             <div className="space-y-4 max-h-80 overflow-y-auto">
               {Object.entries(groupedCapabilities).map(([category, caps]) => (
                 <div key={category}>
-                  <p className="text-xs font-semibold text-gray-500 uppercase mb-2">{category}</p>
-                  <div className="flex flex-wrap gap-2">
+                  <p className="text-xs font-semibold text-gray-500 uppercase mb-0">{category}</p>
+                  <div className="flex flex-wrap gap-0">
                     {caps.map((cap) => (
                       <button
                         key={cap.id}
                         onClick={() => toggleCapability(cap.id)}
-                        className={`px-3 py-1 rounded-lg text-sm transition ${
+                        className={`px-1 py-0 rounded-lg text-sm transition ${
                           formData.capabilities.includes(cap.id)
                             ? 'bg-green-500 text-white'
                             : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -1124,16 +1203,16 @@ function RoleEditModal({
           </div>
         </div>
         
-        <div className="p-6 border-t bg-gray-50 flex justify-end gap-3">
+        <div className="p-1 border-t bg-gray-50 flex justify-end gap-0">
           <button
             onClick={onClose}
-            className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300 transition"
+            className="px-1 py-0 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300 transition"
           >
             Cancel
           </button>
           <button
             onClick={() => onSave(formData)}
-            className="px-6 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
+            className="px-1 py-0 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
           >
             Save Role
           </button>

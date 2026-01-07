@@ -54,16 +54,16 @@ export function StandardOnboardingFields({
   };
   
   return (
-    <div className="space-y-6 border-t border-gray-200 pt-6 mt-6">
+    <div className="space-y-6 border-t border-gray-200 pt-0 mt-0">
       {/* Section Header */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-0">
         <FileText className="w-5 h-5 text-primary" />
         <h3 className="font-medium text-gray-900">Identity & Tax Information</h3>
       </div>
       
       {/* PAN Number */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
+        <label className="block text-sm font-medium text-gray-700 mb-0">
           PAN Number *
         </label>
         <input
@@ -74,13 +74,13 @@ export function StandardOnboardingFields({
           className="w-full h-12 px-4 border border-gray-300 rounded-xl uppercase focus:border-primary focus:ring-2 focus:ring-primary outline-none"
           maxLength={10}
         />
-        <p className="text-xs text-gray-500 mt-1">Enter your 10-digit PAN number</p>
-        {errors.panNumber && <p className="text-xs text-red-500 mt-1">{errors.panNumber}</p>}
+        <p className="text-xs text-gray-500 mt-0">Enter your 10-digit PAN number</p>
+        {errors.panNumber && <p className="text-xs text-red-500 mt-0">{errors.panNumber}</p>}
       </div>
       
       {/* Aadhar Number */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
+        <label className="block text-sm font-medium text-gray-700 mb-0">
           Aadhar Number *
         </label>
         <input
@@ -91,13 +91,13 @@ export function StandardOnboardingFields({
           className="w-full h-12 px-4 border border-gray-300 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary outline-none"
           maxLength={14}
         />
-        <p className="text-xs text-gray-500 mt-1">Enter your 12-digit Aadhar number</p>
-        {errors.aadharNumber && <p className="text-xs text-red-500 mt-1">{errors.aadharNumber}</p>}
+        <p className="text-xs text-gray-500 mt-0">Enter your 12-digit Aadhar number</p>
+        {errors.aadharNumber && <p className="text-xs text-red-500 mt-0">{errors.aadharNumber}</p>}
       </div>
       
       {/* GST Number */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
+        <label className="block text-sm font-medium text-gray-700 mb-0">
           GST Number <span className="text-gray-400">(Optional)</span>
         </label>
         <input
@@ -108,19 +108,19 @@ export function StandardOnboardingFields({
           className="w-full h-12 px-4 border border-gray-300 rounded-xl uppercase focus:border-primary focus:ring-2 focus:ring-primary outline-none"
           maxLength={15}
         />
-        <p className="text-xs text-gray-500 mt-1">Enter your 15-digit GST number (if applicable)</p>
-        {errors.gstNumber && <p className="text-xs text-red-500 mt-1">{errors.gstNumber}</p>}
+        <p className="text-xs text-gray-500 mt-0">Enter your 15-digit GST number (if applicable)</p>
+        {errors.gstNumber && <p className="text-xs text-red-500 mt-0">{errors.gstNumber}</p>}
       </div>
       
       {/* Bank Details Section */}
-      <div className="flex items-center gap-2 pt-4">
+      <div className="flex items-center gap-0 pt-4">
         <Landmark className="w-5 h-5 text-primary" />
         <h3 className="font-medium text-gray-900">Bank Account Details</h3>
       </div>
       
       {/* Bank Name */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
+        <label className="block text-sm font-medium text-gray-700 mb-0">
           Bank Name *
         </label>
         <select
@@ -135,14 +135,14 @@ export function StandardOnboardingFields({
             </option>
           ))}
         </select>
-        <p className="text-xs text-gray-500 mt-1">Select your bank for payment processing</p>
-        {errors.bankName && <p className="text-xs text-red-500 mt-1">{errors.bankName}</p>}
+        <p className="text-xs text-gray-500 mt-0">Select your bank for payment processing</p>
+        {errors.bankName && <p className="text-xs text-red-500 mt-0">{errors.bankName}</p>}
       </div>
       
       {/* Bank Name Other */}
       {formData.bankName === 'Other (Please Specify)' && (
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label className="block text-sm font-medium text-gray-700 mb-0">
             Bank Name (Other) *
           </label>
           <input
@@ -152,13 +152,13 @@ export function StandardOnboardingFields({
             placeholder="Enter bank name"
             className="w-full h-12 px-4 border border-gray-300 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary outline-none"
           />
-          {errors.bankNameOther && <p className="text-xs text-red-500 mt-1">{errors.bankNameOther}</p>}
+          {errors.bankNameOther && <p className="text-xs text-red-500 mt-0">{errors.bankNameOther}</p>}
         </div>
       )}
       
       {/* Account Number */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
+        <label className="block text-sm font-medium text-gray-700 mb-0">
           Account Number *
         </label>
         <input
@@ -168,12 +168,12 @@ export function StandardOnboardingFields({
           placeholder="Enter account number"
           className="w-full h-12 px-4 border border-gray-300 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary outline-none"
         />
-        {errors.accountNumber && <p className="text-xs text-red-500 mt-1">{errors.accountNumber}</p>}
+        {errors.accountNumber && <p className="text-xs text-red-500 mt-0">{errors.accountNumber}</p>}
       </div>
       
       {/* IFSC Code */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
+        <label className="block text-sm font-medium text-gray-700 mb-0">
           IFSC Code *
         </label>
         <input
@@ -184,13 +184,13 @@ export function StandardOnboardingFields({
           className="w-full h-12 px-4 border border-gray-300 rounded-xl uppercase focus:border-primary focus:ring-2 focus:ring-primary outline-none"
           maxLength={11}
         />
-        <p className="text-xs text-gray-500 mt-1">Enter your 11-character IFSC code</p>
-        {errors.ifscCode && <p className="text-xs text-red-500 mt-1">{errors.ifscCode}</p>}
+        <p className="text-xs text-gray-500 mt-0">Enter your 11-character IFSC code</p>
+        {errors.ifscCode && <p className="text-xs text-red-500 mt-0">{errors.ifscCode}</p>}
       </div>
       
       {/* Account Holder Name */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
+        <label className="block text-sm font-medium text-gray-700 mb-0">
           Account Holder Name *
         </label>
         <input
@@ -200,7 +200,7 @@ export function StandardOnboardingFields({
           placeholder="Enter account holder name"
           className="w-full h-12 px-4 border border-gray-300 rounded-xl focus:border-primary focus:ring-2 focus:ring-primary outline-none"
         />
-        {errors.accountHolderName && <p className="text-xs text-red-500 mt-1">{errors.accountHolderName}</p>}
+        {errors.accountHolderName && <p className="text-xs text-red-500 mt-0">{errors.accountHolderName}</p>}
       </div>
     </div>
   );

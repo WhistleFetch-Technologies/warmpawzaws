@@ -83,6 +83,16 @@ const commute_time_1 = require("../endpoints/commute-time");
 const booking_details_enhanced_1 = require("../endpoints/booking-details-enhanced");
 const razorpay_settlements_1 = require("../endpoints/razorpay-settlements");
 const refund_policy_engine_1 = require("../endpoints/refund-policy-engine");
+const admin_governance_enhanced_1 = require("../endpoints/admin-governance-enhanced");
+const admin_advanced_1 = require("../endpoints/admin-advanced");
+const vendor_setup_1 = require("../endpoints/vendor-setup");
+const customer_appointments_1 = require("../endpoints/customer-appointments");
+const customer_orders_1 = require("../endpoints/customer-orders");
+const vendor_analytics_1 = require("../endpoints/vendor-analytics");
+const pet_cafe_1 = require("../endpoints/pet-cafe");
+const vendor_radar_1 = require("../endpoints/vendor-radar");
+const pet_resort_1 = require("../endpoints/pet-resort");
+const pet_holidays_1 = require("../endpoints/pet-holidays");
 // Create Hono app
 const app = new hono_1.Hono();
 // Configure CORS
@@ -164,6 +174,16 @@ app.get('/health', (c) => {
 (0, booking_details_enhanced_1.registerBookingDetailsEnhancedEndpoints)(app);
 (0, razorpay_settlements_1.registerRazorpaySettlementEndpoints)(app);
 (0, refund_policy_engine_1.registerRefundPolicyEngineEndpoints)(app);
+(0, admin_governance_enhanced_1.registerAdminGovernanceEnhancedEndpoints)(app);
+(0, admin_advanced_1.registerAdminAdvancedEndpoints)(app);
+(0, vendor_setup_1.registerVendorSetupEndpoints)(app);
+(0, customer_appointments_1.registerCustomerAppointmentsEndpoints)(app);
+(0, customer_orders_1.registerCustomerOrdersEndpoints)(app);
+(0, vendor_analytics_1.registerVendorAnalyticsEndpoints)(app);
+(0, pet_cafe_1.registerPetCafeEndpoints)(app);
+(0, vendor_radar_1.registerVendorRadarEndpoints)(app);
+(0, pet_resort_1.registerPetResortEndpoints)(app);
+(0, pet_holidays_1.registerPetHolidaysEndpoints)(app);
 // 404 handler
 app.notFound((c) => {
     return c.json({ error: 'Not Found' }, 404);

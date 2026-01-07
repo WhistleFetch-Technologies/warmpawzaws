@@ -39,7 +39,8 @@ export function DataExportScreen({ vendorId, onBack }: DataExportScreenProps) {
   const handleExport = async (exportType: string) => {
     setExporting(exportType);
     try {
-      const response = await DataExportApi.exportData(vendorId, exportType);
+      // ✅ API Integration: Use correct API signature (vendorId, format, dataType, dateRange?)
+      const response = await DataExportApi.exportData(vendorId, 'csv', exportType);
       
       if (response.fileUrl) {
         // Download and share file

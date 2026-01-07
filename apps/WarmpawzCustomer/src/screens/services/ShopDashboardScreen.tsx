@@ -714,7 +714,7 @@ export function ShopDashboardScreen({
           disabled={loading}
         >
           {loading ? (
-            <ActivityIndicator color="#fff" />
+            <ActivityIndicator color={colors.white} />
           ) : (
             <Text style={styles.primaryButtonText}>Place Order</Text>
           )}
@@ -768,7 +768,7 @@ export function ShopDashboardScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
   },
   header: {
     flexDirection: 'row',
@@ -781,12 +781,12 @@ const styles = StyleSheet.create({
   },
   backButton: {
     fontSize: typography.body,
-    color: '#fff',
+    color: colors.white,
   },
   headerTitle: {
     fontSize: typography.h1,
     fontWeight: 'bold',
-    color: '#fff',
+    color: colors.white,
     flex: 1,
     marginLeft: spacing.md,
   },
@@ -795,7 +795,7 @@ const styles = StyleSheet.create({
   },
   cartIcon: {
     fontSize: 24,
-    color: '#fff',
+    color: colors.white,
   },
   cartBadge: {
     position: 'absolute',
@@ -810,26 +810,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   cartBadgeText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 12,
     fontWeight: 'bold',
   },
   searchContainer: {
     padding: spacing.md,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
   },
   searchInput: {
     backgroundColor: '#F9FAFB',
     borderRadius: borderRadius.md,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
     fontSize: typography.body,
   },
   categoriesContainer: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: colors.gray.200,
   },
   categoriesContent: {
     paddingHorizontal: spacing.md,
@@ -857,7 +857,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   categoryChipTextActive: {
-    color: '#fff',
+    color: colors.white,
   },
   dashboardContent: {
     flex: 1,
@@ -880,17 +880,17 @@ const styles = StyleSheet.create({
   bannerTitle: {
     fontSize: typography.h1,
     fontWeight: 'bold',
-    color: '#fff',
+    color: colors.white,
     marginBottom: spacing.xs,
   },
   bannerSubtitle: {
     fontSize: typography.body,
-    color: '#fff',
+    color: colors.white,
     opacity: 0.9,
     marginBottom: spacing.md,
   },
   bannerButton: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderRadius: borderRadius.full,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
@@ -914,7 +914,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#E5E7EB',
+    backgroundColor: colors.gray.200,
   },
   bannerDotActive: {
     width: 24,
@@ -927,12 +927,12 @@ const styles = StyleSheet.create({
   },
   featureItem: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderRadius: borderRadius.md,
     padding: spacing.md,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   featureIcon: {
     fontSize: 24,
@@ -968,11 +968,11 @@ const styles = StyleSheet.create({
   },
   productCardHorizontal: {
     width: 200,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderRadius: borderRadius.md,
     marginRight: spacing.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
     overflow: 'hidden',
   },
   productsGrid: {
@@ -983,10 +983,10 @@ const styles = StyleSheet.create({
   },
   productCard: {
     width: '48%',
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderRadius: borderRadius.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
     overflow: 'hidden',
   },
   productImageContainer: {
@@ -1009,7 +1009,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.sm,
   },
   badgeText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 10,
     fontWeight: 'bold',
   },
@@ -1023,7 +1023,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.sm,
   },
   discountBadgeText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 10,
     fontWeight: 'bold',
   },
@@ -1118,7 +1118,7 @@ const styles = StyleSheet.create({
   },
   stockText: {
     fontSize: typography.caption,
-    color: '#10B981',
+    color: colors.success,
     fontWeight: '600',
     marginBottom: spacing.sm,
   },
@@ -1129,12 +1129,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   addToCartButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: typography.body,
     fontWeight: 'bold',
   },
   benefitsSection: {
-    backgroundColor: '#FEE2E2',
+    backgroundColor: colors.error + 20% opacity,
     borderRadius: borderRadius.md,
     padding: spacing.lg,
     margin: spacing.md,
@@ -1241,7 +1241,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   quantityButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: typography.h3,
     fontWeight: 'bold',
   },
@@ -1289,7 +1289,7 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: borderRadius.md,
-    backgroundColor: '#E5E7EB',
+    backgroundColor: colors.gray.200,
   },
   cartItemInfo: {
     flex: 1,
@@ -1344,7 +1344,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
     paddingTop: spacing.md,
     borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
+    borderTopColor: colors.gray.200,
   },
   cartSummaryTotalLabel: {
     fontSize: typography.h3,
@@ -1392,7 +1392,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
     paddingTop: spacing.md,
     borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
+    borderTopColor: colors.gray.200,
   },
   checkoutTotalLabel: {
     fontSize: typography.h3,
@@ -1448,7 +1448,7 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   primaryButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: typography.body,
     fontWeight: 'bold',
   },

@@ -26,11 +26,30 @@ interface SecurityScreenProps {
 
 export function SecurityScreen({ vendorId, onBack }: SecurityScreenProps) {
   const [changingPassword, setChangingPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [securitySettings, setSecuritySettings] = useState<any>(null);
   const [passwordData, setPasswordData] = useState({
     currentPassword: '',
     newPassword: '',
     confirmPassword: '',
   });
+
+  // ✅ API Integration: Load security settings on mount
+  React.useEffect(() => {
+    loadSecuritySettings();
+  }, [vendorId]);
+
+  const loadSecuritySettings = async () => {
+    try {
+      setLoading(true);
+      const settings = await SecurityApi.getSecuritySettings(vendorId);
+      setSecuritySettings(settings);
+    } catch (error) {
+      console.error('Error loading security settings:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleChangePassword = async () => {
     if (!passwordData.currentPassword || !passwordData.newPassword) {
@@ -50,10 +69,11 @@ export function SecurityScreen({ vendorId, onBack }: SecurityScreenProps) {
 
     setChangingPassword(true);
     try {
-      await SecurityApi.changePassword(vendorId, {
-        currentPassword: passwordData.currentPassword,
-        newPassword: passwordData.newPassword,
-      });
+      await SecurityApi.changePassword(
+        vendorId,
+        passwordData.currentPassword,
+        passwordData.newPassword
+      );
       Alert.alert('Success', 'Password changed successfully!');
       setPasswordData({
         currentPassword: '',
@@ -127,7 +147,7 @@ export function SecurityScreen({ vendorId, onBack }: SecurityScreenProps) {
             disabled={changingPassword}
           >
             {changingPassword ? (
-              <ActivityIndicator color="#ffffff" />
+              <ActivityIndicator color={colors.white} />
             ) : (
               <Text style={styles.saveButtonText}>Change Password</Text>
             )}
@@ -227,7 +247,7 @@ const styles = StyleSheet.create({
   saveButtonText: {
     fontSize: typography.fontSizes.md,
     fontWeight: typography.fontWeights.semibold,
-    color: '#ffffff',
+    color: colors.white,
   },
   infoBox: {
     backgroundColor: colors.background,
@@ -251,7 +271,7 @@ const styles = StyleSheet.create({
   enableButtonText: {
     fontSize: typography.fontSizes.sm,
     fontWeight: typography.fontWeights.semibold,
-    color: '#ffffff',
+    color: colors.white,
   },
 });
 

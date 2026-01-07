@@ -68,16 +68,16 @@ export function MyBookings({ phone, onBookingSelect }: MyBookingsProps) {
   return (
     <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
       {/* Header */}
-      <div className="bg-white border-b px-6 py-4 sticky top-0 z-10">
+      <div className="bg-white border-b px-0 py-4 sticky top-0 z-10">
         <h1 className="text-2xl font-bold text-gray-900 mb-4">My Bookings</h1>
         
         {/* Filter Tabs */}
-        <div className="flex gap-2 overflow-x-auto scrollbar-hide -mx-2 px-2">
+        <div className="flex gap-0 overflow-x-auto scrollbar-hide -mx-0 px-0">
           {(['all', 'pending', 'confirmed', 'active', 'completed', 'cancelled'] as const).map((status) => (
             <button
               key={status}
               onClick={() => setFilter(status)}
-              className={`px-4 py-2 rounded-lg font-medium whitespace-nowrap transition-all ${
+              className={`px-4 py-0 rounded-lg font-medium whitespace-nowrap transition-all ${
                 filter === status
                   ? 'bg-primary text-white'
                   : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
@@ -85,7 +85,7 @@ export function MyBookings({ phone, onBookingSelect }: MyBookingsProps) {
             >
               {status === 'all' ? 'All' : status.charAt(0).toUpperCase() + status.slice(1)}
               {status !== 'all' && (
-                <span className="ml-2 text-xs">
+                <span className="ml-0 text-xs">
                   ({bookings.filter(b => b.status === status).length})
                 </span>
               )}
@@ -95,15 +95,15 @@ export function MyBookings({ phone, onBookingSelect }: MyBookingsProps) {
       </div>
 
       {/* Bookings List */}
-      <div className="px-6 py-6">
+      <div className="px-0 py-0">
         {loading ? (
-          <div className="flex items-center justify-center py-12">
+          <div className="flex items-center justify-center py-02">
             <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
           </div>
         ) : filteredBookings.length === 0 ? (
           <div className="bg-white rounded-xl border p-12 text-center">
             <Calendar className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-            <h3 className="font-bold text-gray-900 mb-2">No bookings found</h3>
+            <h3 className="font-bold text-gray-900 mb-0">No bookings found</h3>
             <p className="text-gray-600">
               {filter === 'all' 
                 ? 'You don\'t have any bookings yet' 
@@ -118,24 +118,24 @@ export function MyBookings({ phone, onBookingSelect }: MyBookingsProps) {
                 onClick={() => onBookingSelect?.(booking.id)}
                 className="w-full bg-white rounded-xl border-2 border-gray-200 p-4 hover:border-primary hover:shadow-md transition-all text-left active:scale-[0.98]"
               >
-                <div className="flex items-start justify-between mb-3">
+                <div className="flex items-start justify-between mb-0">
                   <div className="flex-1">
-                    <h3 className="font-bold text-gray-900 mb-1">{booking.serviceName}</h3>
+                    <h3 className="font-bold text-gray-900 mb-0">{booking.serviceName}</h3>
                     {booking.vendorName && (
                       <p className="text-sm text-gray-600">{booking.vendorName}</p>
                     )}
                   </div>
-                  <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${getStatusColor(booking.status)}`}>
+                  <span className={`px-0.5 py-1 rounded-full text-xs font-semibold ${getStatusColor(booking.status)}`}>
                     {booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
                   </span>
                 </div>
 
-                <div className="space-y-2 mb-3">
-                  <div className="flex items-center gap-2 text-sm text-gray-600">
+                <div className="space-y-2 mb-0">
+                  <div className="flex items-center gap-0 text-sm text-gray-600">
                     <Calendar className="w-4 h-4" />
                     <span>{new Date(booking.scheduledDate).toLocaleDateString()}</span>
                   </div>
-                  <div className="flex items-center gap-2 text-sm text-gray-600">
+                  <div className="flex items-center gap-0 text-sm text-gray-600">
                     <Clock className="w-4 h-4" />
                     <span>{booking.scheduledTime}</span>
                   </div>

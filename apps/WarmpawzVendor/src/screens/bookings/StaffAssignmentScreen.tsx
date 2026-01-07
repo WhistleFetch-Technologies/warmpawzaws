@@ -181,7 +181,7 @@ export function StaffAssignmentScreen({
           disabled={saving || selectedStaff.length === 0}
         >
           {saving ? (
-            <ActivityIndicator color="#ffffff" />
+            <ActivityIndicator color={colors.white} />
           ) : (
             <Text style={styles.assignButtonText}>Assign Staff</Text>
           )}
@@ -240,7 +240,7 @@ const styles = StyleSheet.create({
   },
   staffCardSelected: {
     borderColor: colors.primary,
-    backgroundColor: '#FFF4E6',
+    backgroundColor: colors.primary.50,
   },
   staffInfo: {
     flex: 1,
@@ -275,7 +275,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
   },
   checkmark: {
-    color: '#ffffff',
+    color: colors.white,
     fontSize: typography.fontSizes.sm,
     fontWeight: typography.fontWeights.bold,
   },
@@ -306,7 +306,7 @@ const styles = StyleSheet.create({
   assignButtonText: {
     fontSize: typography.fontSizes.md,
     fontWeight: typography.fontWeights.semibold,
-    color: '#ffffff',
+    color: colors.white,
   },
   emptyState: {
     padding: spacing.xl,

@@ -127,12 +127,12 @@ export function CustomerPlanningJourney({ session, onComplete }: CustomerPlannin
         return (
           <>
             {/* Logo */}
-            <div className="flex justify-center pt-8 mb-6">
+            <div className="flex justify-center pt-8 mb-0">
               <Image src="/logo.png" alt="Warmpawz" width={64} height={64} className="object-contain" />
             </div>
 
             {/* Orange Circle Icon */}
-            <div className="flex flex-col items-center mb-8 px-6">
+            <div className="flex flex-col items-center mb-8 px-0">
               <div className="w-24 h-24 bg-primary rounded-full flex items-center justify-center mb-4">
                 <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
                   <path d="M24 8L24 24L32 32" stroke="white" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/>
@@ -143,17 +143,17 @@ export function CustomerPlanningJourney({ session, onComplete }: CustomerPlannin
             </div>
 
             {/* Content */}
-            <div className="px-6 mb-6">
-              <p className="text-center text-black mb-6">
+            <div className="px-0 mb-0">
+              <p className="text-center text-black mb-0">
                 Pets need daily attention and care 💕
               </p>
 
               {/* Info Card */}
-              <div className="bg-orange-50 border-2 border-orange-200 rounded-2xl p-4 mb-6">
-                <div className="flex items-start gap-3">
+              <div className="bg-orange-50 border-2 border-orange-200 rounded-2xl p-4 mb-0">
+                <div className="flex items-start gap-0">
                   <span className="text-xl">⏰</span>
                   <div>
-                    <p className="text-sm font-semibold text-orange-900 mb-2">Daily time needs (average):</p>
+                    <p className="text-sm font-semibold text-orange-900 mb-0">Daily time needs (average):</p>
                     <ul className="text-xs text-orange-800 space-y-1">
                       <li>• Feeding & water: 15-30 min</li>
                       <li>• Exercise/play: 30-120 min</li>
@@ -192,12 +192,12 @@ export function CustomerPlanningJourney({ session, onComplete }: CustomerPlannin
         return (
           <>
             {/* Logo */}
-            <div className="flex justify-center pt-8 mb-6">
+            <div className="flex justify-center pt-8 mb-0">
               <Image src="/logo.png" alt="Warmpawz" width={64} height={64} className="object-contain" />
             </div>
 
             {/* Orange Circle Icon */}
-            <div className="flex flex-col items-center mb-8 px-6">
+            <div className="flex flex-col items-center mb-8 px-0">
               <div className="w-24 h-24 bg-primary rounded-full flex items-center justify-center mb-4">
                 <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
                   <circle cx="24" cy="16" r="6" fill="white"/>
@@ -210,12 +210,12 @@ export function CustomerPlanningJourney({ session, onComplete }: CustomerPlannin
             </div>
 
             {/* Content */}
-            <div className="px-6 mb-6">
+            <div className="px-0 mb-0">
               <p className="text-black mb-4">Important factors for choosing the right pet</p>
 
               {/* Children */}
-              <div className="mb-6">
-                <p className="text-black mb-3 text-sm font-medium">Do you have children at home?</p>
+              <div className="mb-0">
+                <p className="text-black mb-0 text-sm font-medium">Do you have children at home?</p>
                 <div className="space-y-2">
                   {[
                     { id: 'no-children', label: 'No children' },
@@ -225,7 +225,7 @@ export function CustomerPlanningJourney({ session, onComplete }: CustomerPlannin
                     <button
                       key={option.id}
                       onClick={() => setData({ ...data, children: option.id })}
-                      className={`w-full border-2 rounded-xl p-3 text-left transition-all ${
+                      className={`w-full border-2 rounded-xl p-0 text-left transition-all ${
                         data.children === option.id ? 'border-primary bg-orange-50' : 'border-gray-200'
                       }`}
                     >
@@ -236,8 +236,8 @@ export function CustomerPlanningJourney({ session, onComplete }: CustomerPlannin
               </div>
 
               {/* Other Pets */}
-              <div className="mb-6">
-                <p className="text-black mb-3 text-sm font-medium">Do you have other pets?</p>
+              <div className="mb-0">
+                <p className="text-black mb-0 text-sm font-medium">Do you have other pets?</p>
                 <div className="space-y-2">
                   {[
                     { id: 'no-other-pets', label: 'No other pets' },
@@ -248,7 +248,7 @@ export function CustomerPlanningJourney({ session, onComplete }: CustomerPlannin
                     <button
                       key={option.id}
                       onClick={() => setData({ ...data, otherPets: option.id })}
-                      className={`w-full border-2 rounded-xl p-3 text-left transition-all ${
+                      className={`w-full border-2 rounded-xl p-0 text-left transition-all ${
                         data.otherPets === option.id ? 'border-primary bg-orange-50' : 'border-gray-200'
                       }`}
                     >
@@ -259,8 +259,8 @@ export function CustomerPlanningJourney({ session, onComplete }: CustomerPlannin
               </div>
 
               {/* Allergies */}
-              <div className="mb-6">
-                <p className="text-black mb-3 text-sm font-medium">Any allergies in your household?</p>
+              <div className="mb-0">
+                <p className="text-black mb-0 text-sm font-medium">Any allergies in your household?</p>
                 <div className="space-y-2">
                   {[
                     { id: 'no-allergies', label: 'No allergies' },
@@ -270,7 +270,7 @@ export function CustomerPlanningJourney({ session, onComplete }: CustomerPlannin
                     <button
                       key={option.id}
                       onClick={() => setData({ ...data, allergies: option.id })}
-                      className={`w-full border-2 rounded-xl p-3 text-left transition-all ${
+                      className={`w-full border-2 rounded-xl p-0 text-left transition-all ${
                         data.allergies === option.id ? 'border-primary bg-orange-50' : 'border-gray-200'
                       }`}
                     >
@@ -287,12 +287,12 @@ export function CustomerPlanningJourney({ session, onComplete }: CustomerPlannin
         return (
           <>
             {/* Logo */}
-            <div className="flex justify-center pt-8 mb-6">
+            <div className="flex justify-center pt-8 mb-0">
               <Image src="/logo.png" alt="Warmpawz" width={64} height={64} className="object-contain" />
             </div>
 
             {/* Orange Circle Icon */}
-            <div className="flex flex-col items-center mb-8 px-6">
+            <div className="flex flex-col items-center mb-8 px-0">
               <div className="w-24 h-24 bg-primary rounded-full flex items-center justify-center mb-4">
                 <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
                   <path d="M24 8L20 14L14 16L18 22L16 28L24 24L32 28L30 22L34 16L28 14L24 8Z" fill="white"/>
@@ -303,12 +303,12 @@ export function CustomerPlanningJourney({ session, onComplete }: CustomerPlannin
             </div>
 
             {/* Content */}
-            <div className="px-6 mb-6">
+            <div className="px-0 mb-0">
               <p className="text-black mb-4">What size and energy level fits your lifestyle?</p>
 
               {/* Dog Size */}
-              <div className="mb-6">
-                <p className="text-black mb-3 text-sm font-medium">Preferred dog size</p>
+              <div className="mb-0">
+                <p className="text-black mb-0 text-sm font-medium">Preferred dog size</p>
                 <div className="space-y-3">
                   {[
                     { id: 'small', emoji: '🐕', label: 'Small (under 25 lbs)', desc: 'Easier to handle, good for apartments' },
@@ -323,7 +323,7 @@ export function CustomerPlanningJourney({ session, onComplete }: CustomerPlannin
                         data.dogSize === option.id ? 'border-primary bg-orange-50' : 'border-gray-200'
                       }`}
                     >
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-0">
                         <span className="text-2xl">{option.emoji}</span>
                         <div className="flex-1">
                           <p className="text-black font-medium">{option.label}</p>
@@ -336,8 +336,8 @@ export function CustomerPlanningJourney({ session, onComplete }: CustomerPlannin
               </div>
 
               {/* Energy Level */}
-              <div className="mb-6">
-                <p className="text-black mb-3 text-sm font-medium">Preferred energy level</p>
+              <div className="mb-0">
+                <p className="text-black mb-0 text-sm font-medium">Preferred energy level</p>
                 <div className="space-y-3">
                   {[
                     { id: 'low', emoji: '😴', label: 'Low energy', desc: 'Calm, prefers lounging' },
@@ -351,7 +351,7 @@ export function CustomerPlanningJourney({ session, onComplete }: CustomerPlannin
                         data.energyLevel === option.id ? 'border-primary bg-orange-50' : 'border-gray-200'
                       }`}
                     >
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-0">
                         <span className="text-2xl">{option.emoji}</span>
                         <div className="flex-1">
                           <p className="text-black font-medium">{option.label}</p>
@@ -370,7 +370,7 @@ export function CustomerPlanningJourney({ session, onComplete }: CustomerPlannin
         return (
           <>
             {/* Orange Circle Icon */}
-            <div className="flex flex-col items-center pt-12 mb-6 px-6">
+            <div className="flex flex-col items-center pt-02 mb-0 px-0">
               <div className="w-24 h-24 bg-primary rounded-full flex items-center justify-center mb-4">
                 <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
                   <rect x="14" y="14" width="8" height="8" rx="2" fill="white"/>
@@ -383,8 +383,8 @@ export function CustomerPlanningJourney({ session, onComplete }: CustomerPlannin
             </div>
 
             {/* Content */}
-            <div className="px-6 mb-6">
-              <p className="text-center text-black mb-6 text-sm">
+            <div className="px-0 mb-0">
+              <p className="text-center text-black mb-0 text-sm">
                 Select all that are important to you
               </p>
 
@@ -405,7 +405,7 @@ export function CustomerPlanningJourney({ session, onComplete }: CustomerPlannin
                     <button
                       key={trait.label}
                       onClick={() => toggleTrait(trait.label)}
-                      className={`w-full border-2 rounded-xl p-3 text-left transition-all flex items-center gap-3 ${
+                      className={`w-full border-2 rounded-xl p-0 text-left transition-all flex items-center gap-0 ${
                         isSelected ? 'border-primary bg-orange-50' : 'border-gray-200'
                       }`}
                     >
@@ -413,7 +413,7 @@ export function CustomerPlanningJourney({ session, onComplete }: CustomerPlannin
                       <span className="text-black text-sm flex-1">{trait.label}</span>
                       {isSelected && (
                         <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                          <path d="M7 10L9 12L13 8" stroke="#FF8C42" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                          <path d="M7 10L9 12L13 8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="stroke-primary"/>
                         </svg>
                       )}
                     </button>
@@ -421,7 +421,7 @@ export function CustomerPlanningJourney({ session, onComplete }: CustomerPlannin
                 })}
               </div>
 
-              <p className="text-center text-gray-500 text-xs mt-6">
+              <p className="text-center text-gray-500 text-xs mt-0">
                 You can skip this step if you&apos;re not sure yet
               </p>
             </div>
@@ -432,7 +432,7 @@ export function CustomerPlanningJourney({ session, onComplete }: CustomerPlannin
         return (
           <>
             {/* Orange Circle Icon */}
-            <div className="flex flex-col items-center pt-12 mb-6 px-6">
+            <div className="flex flex-col items-center pt-12 mb-0 px-0">
               <div className="w-24 h-24 bg-primary rounded-full flex items-center justify-center mb-4">
                 <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
                   <circle cx="24" cy="24" r="16" stroke="white" strokeWidth="3" fill="none"/>
@@ -444,12 +444,12 @@ export function CustomerPlanningJourney({ session, onComplete }: CustomerPlannin
             </div>
 
             {/* Content */}
-            <div className="px-6 mb-6">
+            <div className="px-0 mb-0">
               <p className="text-center text-black mb-4 text-sm">
                 Based on your lifestyle and preferences
               </p>
 
-              <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-6">
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-0 mb-0">
                 <p className="text-blue-900 text-xs text-center">
                   💡 Select up to 3 breeds to compare
                 </p>
@@ -483,23 +483,23 @@ export function CustomerPlanningJourney({ session, onComplete }: CustomerPlannin
                       data.selectedBreeds.includes(breed.name) ? 'border-primary bg-orange-50' : 'border-gray-200'
                     }`}
                   >
-                    <div className="flex items-start gap-3 mb-3">
+                    <div className="flex items-start gap-0 mb-0">
                       <span className="text-3xl">🐕</span>
                       <div className="flex-1">
                         <h3 className="text-black font-medium">{breed.name}</h3>
-                        <p className="text-xs text-gray-600 mb-2">{breed.desc}</p>
-                        <div className="flex gap-2 mb-2">
+                        <p className="text-xs text-gray-600 mb-0">{breed.desc}</p>
+                        <div className="flex gap-0 mb-0">
                           {breed.tags.map((tag) => (
-                            <span key={tag} className="text-xs px-2 py-0.5 bg-gray-100 rounded">{tag}</span>
+                            <span key={tag} className="text-xs px-0 py-0.5 bg-gray-100 rounded">{tag}</span>
                           ))}
                         </div>
                       </div>
                     </div>
-                    <div className="flex flex-wrap gap-2 text-xs">
+                    <div className="flex flex-wrap gap-0 text-xs">
                       {breed.features.map((feature) => (
-                        <div key={feature} className="flex items-center gap-1">
+                        <div key={feature} className="flex items-center gap-0">
                           <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                            <path d="M3 6L5 8L9 4" stroke="#10B981" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                            <path d="M3 6L5 8L9 4" stroke="#4CAF50" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="stroke-green-500"/>
                           </svg>
                           <span className="text-gray-600">{feature}</span>
                         </div>
@@ -509,7 +509,7 @@ export function CustomerPlanningJourney({ session, onComplete }: CustomerPlannin
                 ))}
               </div>
 
-              <p className="text-center text-gray-500 text-xs mt-6">
+              <p className="text-center text-gray-500 text-xs mt-0">
                 Select at least one breed to continue
               </p>
             </div>
@@ -520,7 +520,7 @@ export function CustomerPlanningJourney({ session, onComplete }: CustomerPlannin
         return (
           <>
             {/* Orange Circle Icon */}
-            <div className="flex flex-col items-center pt-12 mb-6 px-6">
+            <div className="flex flex-col items-center pt-12 mb-0 px-0">
               <div className="w-24 h-24 bg-primary rounded-full flex items-center justify-center mb-4">
                 <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
                   <path d="M12 18L24 10L36 18L36 32L24 40L12 32L12 18Z" stroke="white" strokeWidth="3" fill="none"/>
@@ -531,8 +531,8 @@ export function CustomerPlanningJourney({ session, onComplete }: CustomerPlannin
             </div>
 
             {/* Content */}
-            <div className="px-6 mb-6">
-              <p className="text-center text-black mb-6 text-sm">
+            <div className="px-0 mb-0">
+              <p className="text-center text-black mb-0 text-sm">
                 Detailed pros & cons for your selections
               </p>
 
@@ -567,7 +567,7 @@ export function CustomerPlanningJourney({ session, onComplete }: CustomerPlannin
 
                   return (
                     <div key={breed} className="border-2 border-gray-200 rounded-xl p-4">
-                      <div className="flex items-start gap-3 mb-4">
+                      <div className="flex items-start gap-0 mb-4">
                         <span className="text-3xl">{info.emoji}</span>
                         <div>
                           <h3 className="text-black font-medium">{breed}</h3>
@@ -576,10 +576,10 @@ export function CustomerPlanningJourney({ session, onComplete }: CustomerPlannin
                       </div>
 
                       {/* Pros */}
-                      <div className="mb-3">
-                        <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                      <div className="mb-0">
+                        <div className="bg-green-50 border border-green-200 rounded-lg p-0">
                           {info.pros.map((pro, idx) => (
-                            <p key={idx} className={`text-xs ${idx === 0 ? 'font-medium text-green-900 mb-1' : 'text-green-800'}`}>
+                            <p key={idx} className={`text-xs ${idx === 0 ? 'font-medium text-green-900 mb-0' : 'text-green-800'}`}>
                               {idx > 0 && '✓ '}{pro}
                             </p>
                           ))}
@@ -587,10 +587,10 @@ export function CustomerPlanningJourney({ session, onComplete }: CustomerPlannin
                       </div>
 
                       {/* Cons */}
-                      <div className="mb-3">
-                        <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                      <div className="mb-0">
+                        <div className="bg-red-50 border border-red-200 rounded-lg p-0">
                           {info.cons.map((con, idx) => (
-                            <p key={idx} className={`text-xs ${idx === 0 ? 'font-medium text-red-900 mb-1' : 'text-red-800'}`}>
+                            <p key={idx} className={`text-xs ${idx === 0 ? 'font-medium text-red-900 mb-0' : 'text-red-800'}`}>
                               {idx > 0 && '✗ '}{con}
                             </p>
                           ))}
@@ -598,11 +598,11 @@ export function CustomerPlanningJourney({ session, onComplete }: CustomerPlannin
                       </div>
 
                       {/* Best For */}
-                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                        <p className="text-xs font-medium text-blue-900 mb-2">🌟 Best for:</p>
-                        <div className="flex flex-wrap gap-2">
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-0">
+                        <p className="text-xs font-medium text-blue-900 mb-0">🌟 Best for:</p>
+                        <div className="flex flex-wrap gap-0">
                           {info.bestFor.map((item, idx) => (
-                            <span key={idx} className="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded">
+                            <span key={idx} className="text-xs px-0 py-0 bg-blue-100 text-blue-800 rounded">
                               {item}
                             </span>
                           ))}
@@ -613,7 +613,7 @@ export function CustomerPlanningJourney({ session, onComplete }: CustomerPlannin
                 })}
               </div>
 
-              <p className="text-center text-blue-600 text-sm mt-6">
+              <p className="text-center text-blue-600 text-sm mt-0">
                 💡 Need more info? <span className="underline">Get detailed adoption guides & breeder info</span>
               </p>
             </div>
@@ -628,9 +628,9 @@ export function CustomerPlanningJourney({ session, onComplete }: CustomerPlannin
   return (
     <div className="min-h-screen bg-white flex flex-col w-full max-w-[430px] mx-auto">
       {/* Status Bar */}
-      <div className="px-6 pt-3 pb-2 flex justify-between items-center">
+      <div className="px-0 pt-1 pb-0 flex justify-between items-center">
         <span className="text-black text-sm">09:41</span>
-        <div className="flex gap-1.5 items-center">
+        <div className="flex gap-0.5 items-center">
           <svg width="17" height="12" viewBox="0 0 17 12" fill="none">
             <rect y="8" width="3" height="4" rx="0.5" fill="black"/>
             <rect x="4.5" y="5" width="3" height="7" rx="0.5" fill="black"/>
@@ -654,18 +654,18 @@ export function CustomerPlanningJourney({ session, onComplete }: CustomerPlannin
       </div>
 
       {/* Fixed Bottom Navigation */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-4 max-w-[430px] mx-auto w-full">
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-0 py-4 max-w-[430px] mx-auto w-full">
         {/* Progress Bar with Back Button */}
-        <div className="flex items-center gap-3 mb-4">
+        <div className="flex items-center gap-0 mb-4">
           <button
             onClick={handleBack}
             disabled={currentStep === 1}
-            className="p-2 disabled:opacity-30 disabled:cursor-not-allowed"
+            className="p-0 disabled:opacity-30 disabled:cursor-not-allowed"
           >
             <ChevronLeft className="w-5 h-5 text-black" />
           </button>
           
-          <div className="flex-1 flex items-center gap-2">
+          <div className="flex-1 flex items-center gap-0">
             <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
               <div 
                 className="h-full bg-primary transition-all duration-300 rounded-full"

@@ -66,7 +66,7 @@ export function RolesTab() {
             setEditingRole(null);
             setShowAddModal(true);
           }}
-          className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 flex items-center gap-2 text-sm font-medium"
+          className="px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 flex items-center gap-0 text-sm font-medium"
         >
           <Plus className="w-4 h-4" />
           Add Role
@@ -81,35 +81,35 @@ export function RolesTab() {
           >
             <div className="flex items-start justify-between">
               <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1">
+                <div className="flex items-center gap-0 mb-0">
                   <Shield className="w-5 h-5 text-orange-600" />
                   <h3 className="font-semibold text-gray-900">{role.name}</h3>
                   {role.isSystem && (
-                    <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded">
+                    <span className="text-xs px-0 py-0.5 bg-blue-100 text-blue-700 rounded">
                       System
                     </span>
                   )}
                 </div>
-                <p className="text-sm text-gray-600 mb-2">{role.description}</p>
+                <p className="text-sm text-gray-600 mb-0">{role.description}</p>
                 <div className="flex items-center gap-4 text-sm text-gray-500">
                   <span>{role.permissions.length} permissions</span>
                   <span>{role.userCount || 0} users</span>
                 </div>
               </div>
               {!role.isSystem && (
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-0">
                   <button
                     onClick={() => {
                       setEditingRole(role);
                       setShowAddModal(true);
                     }}
-                    className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+                    className="p-0 text-gray-600 hover:bg-gray-100 rounded-lg"
                   >
                     <Edit className="w-4 h-4" />
                   </button>
                   <button
                     onClick={() => handleDelete(role.id)}
-                    className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                    className="p-0 text-red-600 hover:bg-red-50 rounded-lg"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
