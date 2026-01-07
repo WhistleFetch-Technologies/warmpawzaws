@@ -367,7 +367,7 @@ export function UnifiedBookingEngine({
       }
       bookingData.customerId = customer.id;
 
-      const result = await apiClient.post('/bookings/create', bookingData);
+      const result: any = await apiClient.post('/bookings/create', bookingData);
 
       if (result.bookingId) {
         if (onSuccess) {
