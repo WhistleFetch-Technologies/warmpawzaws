@@ -53,42 +53,42 @@ jobs:
       - name: Build Admin Web
         run: |
           cd apps/admin-web
-          npm install
+          npm ci --legacy-peer-deps
           npm run build
         continue-on-error: true
 
       - name: Build Vendor Web
         run: |
           cd apps/vendor-web
-          npm install
+          npm ci --legacy-peer-deps
           npm run build
         continue-on-error: true
 
       - name: Build Customer Web
         run: |
           cd apps/customer-web
-          npm install
+          npm ci --legacy-peer-deps
           npm run build
         continue-on-error: true
 
       - name: Build Lambda Backend
         run: |
           cd backend/lambda
-          npm install
+          npm ci --legacy-peer-deps
           npm run build
         continue-on-error: true
 
       - name: Test Mobile Apps (Type Check)
         run: |
           cd apps/WarmpawzVendor
-          npm install
+          npm ci --legacy-peer-deps || npm install --legacy-peer-deps
           npx tsc --noEmit || echo "Type check failed, continuing..."
         continue-on-error: true
 
       - name: Test Mobile Apps (Type Check)
         run: |
           cd apps/WarmpawzCustomer
-          npm install
+          npm ci --legacy-peer-deps || npm install --legacy-peer-deps
           npx tsc --noEmit || echo "Type check failed, continuing..."
         continue-on-error: true
 
