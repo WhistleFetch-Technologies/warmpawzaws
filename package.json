@@ -53,9 +53,9 @@
           "lucide-react": "^0.487.0",
           "motion": "*",
           "next-themes": "^0.4.6",
-          "react": "^19.2.3",
+          "react": "^18.3.1",
           "react-day-picker": "^9.4.4",
-          "react-dom": "^19.2.3",
+          "react-dom": "^18.3.1",
           "react-hook-form": "^7.55.0",
           "react-resizable-panels": "^2.1.7",
           "react-router-dom": "^7.11.0",
@@ -67,8 +67,8 @@
       },
       "devDependencies": {
           "@types/node": "^20.10.0",
-          "@types/react": "^19.2.7",
-          "@types/react-dom": "^19.2.2",
+          "@types/react": "^18.3.12",
+          "@types/react-dom": "^18.3.1",
           "@vitejs/plugin-react-swc": "^3.10.2",
           "vite": "^6.4.1"
       },

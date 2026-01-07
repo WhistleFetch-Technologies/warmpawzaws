@@ -2,6 +2,9 @@ apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 
+// Apply autolinking - generates PackageList class
+apply from: file("../../node_modules/@react-native-community/cli-platform-android/native_modules.gradle"); applyNativeModulesAppBuildGradle(project)
+
 react {
     /* Autolinking */
 }
@@ -76,7 +79,8 @@ android {
             buildConfigField "String", "API_BASE_URL", '"http://localhost:3000"'
         }
         release {
-            signingConfig signingConfigs.release
+            // Use debug signing if release signing is not configured (for dev/staging in CI/CD)
+            signingConfig signingConfigs.release.storeFile != null ? signingConfigs.release : signingConfigs.debug
             minifyEnabled enableProguardInReleaseBuilds
             shrinkResources enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
@@ -108,7 +112,9 @@ android {
 
 dependencies {
     implementation("com.facebook.react:react-android")
-    implementation("com.facebook.react:flipper-integration")
+    
+    // Flipper is only for debug builds
+    debugImplementation("com.facebook.react:flipper-integration")
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")

@@ -44,7 +44,10 @@ export function RouteOptimizationScreen({
 
     setOptimizing(true);
     try {
-      const response = await RouteOptimizationApi.optimizeRoute(vendorId, bookingIds);
+      // ✅ API Integration: Use updated API signature
+      const response = await RouteOptimizationApi.optimizeRoute(vendorId, {
+        bookings: bookingIds,
+      });
       if (response.success) {
         setOptimizedRoute(response.route);
         setWaypoints(response.waypoints || []);
@@ -115,7 +118,7 @@ export function RouteOptimizationScreen({
             disabled={optimizing}
           >
             {optimizing ? (
-              <ActivityIndicator color="#ffffff" />
+              <ActivityIndicator color={colors.white} />
             ) : (
               <Text style={styles.optimizeButtonText}>Optimize Route</Text>
             )}
@@ -210,7 +213,7 @@ const styles = StyleSheet.create({
   optimizeButtonText: {
     fontSize: typography.fontSizes.md,
     fontWeight: typography.fontWeights.semibold,
-    color: '#ffffff',
+    color: colors.white,
   },
   routeInfo: {
     backgroundColor: colors.background,

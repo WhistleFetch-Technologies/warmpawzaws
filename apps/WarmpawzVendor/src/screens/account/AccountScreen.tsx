@@ -205,12 +205,12 @@ const styles = StyleSheet.create({
   actionButtonText: {
     fontSize: typography.fontSizes.md,
     fontWeight: typography.fontWeights.semibold,
-    color: '#ffffff',
+    color: colors.white,
   },
   dangerSection: {
     marginTop: spacing.xl,
     padding: spacing.md,
-    backgroundColor: '#FFF4E6',
+    backgroundColor: colors.gradientOrange50,
     borderWidth: 2,
     borderColor: colors.error,
     borderRadius: borderRadius.xl,
@@ -231,7 +231,7 @@ const styles = StyleSheet.create({
   dangerButtonText: {
     fontSize: typography.fontSizes.md,
     fontWeight: typography.fontWeights.semibold,
-    color: '#ffffff',
+    color: colors.white,
   },
 });
 

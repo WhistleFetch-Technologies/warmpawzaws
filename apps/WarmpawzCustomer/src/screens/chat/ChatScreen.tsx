@@ -199,7 +199,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -269,7 +269,7 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: borderRadius.xs,
   },
   messageBubbleOther: {
-    backgroundColor: '#e5e7eb',
+    backgroundColor: colors.gray.200,
     borderBottomLeftRadius: borderRadius.xs,
   },
   messageText: {
@@ -277,7 +277,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   messageTextOwn: {
-    color: '#fff',
+    color: colors.white,
   },
   messageTextOther: {
     color: colors.text,
@@ -295,14 +295,14 @@ const styles = StyleSheet.create({
   inputContainer: {
     flexDirection: 'row',
     padding: spacing.md,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderTopWidth: 1,
     borderTopColor: colors.border,
     alignItems: 'flex-end',
   },
   input: {
     flex: 1,
-    backgroundColor: '#f3f4f6',
+    backgroundColor: colors.gray.100,
     borderRadius: borderRadius.md,
     padding: spacing.sm,
     fontSize: 14,
@@ -317,10 +317,10 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
   },
   sendButtonDisabled: {
-    backgroundColor: '#9ca3af',
+    backgroundColor: colors.gray.400,
   },
   sendButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 14,
     fontWeight: '600',
   },

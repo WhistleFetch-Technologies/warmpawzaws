@@ -1,0 +1,123 @@
+'use client';
+
+import React, { useState } from 'react';
+import { X, Upload, Loader2 } from 'lucide-react';
+import { apiClient } from '@/lib/api-client';
+
+interface CreateBulkOperationModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onSuccess: () => void;
+}
+
+export function CreateBulkOperationModal({ isOpen, onClose, onSuccess }: CreateBulkOperationModalProps) {
+  const [processing, setProcessing] = useState(false);
+  const [operation, setOperation] = useState<'update_prices' | 'update_status' | 'delete'>('update_prices');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setSelectedFile(file);
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!selectedFile) {
+      alert('Please select a file');
+      return;
+    }
+
+    try {
+      setProcessing(true);
+      const fileContent = await selectedFile.text();
+      const data = await apiClient.post<any>('/admin/catalog/bulk-operations', {
+        operation,
+        data: fileContent,
+      });
+
+      if (data.success) {
+        alert(`Bulk operation completed: ${data.processed || 0} items processed`);
+        onSuccess();
+        onClose();
+      } else {
+        alert(data.error || 'Bulk operation failed');
+      }
+    } catch (error) {
+      console.error('Error processing bulk operation:', error);
+      alert('An error occurred');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-xl w-full max-w-md">
+        <div className="border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+          <h3 className="text-lg font-semibold text-gray-900">Bulk Operation</h3>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg">
+            <X className="w-5 h-5 text-gray-500" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Operation Type</label>
+            <select
+              value={operation}
+              onChange={(e) => setOperation(e.target.value as any)}
+              className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
+            >
+              <option value="update_prices">Update Prices</option>
+              <option value="update_status">Update Status</option>
+              <option value="delete">Delete Items</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Upload CSV File</label>
+            <input
+              type="file"
+              accept=".csv"
+              onChange={handleFileSelect}
+              className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
+            />
+            {selectedFile && (
+              <p className="text-sm text-gray-600 mt-2">Selected: {selectedFile.name}</p>
+            )}
+          </div>
+        </div>
+
+        <div className="border-t border-gray-200 px-6 py-4 flex gap-3">
+          <button
+            onClick={onClose}
+            className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-medium"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={!selectedFile || processing}
+            className="flex-1 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+            {processing ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Processing...
+              </>
+            ) : (
+              <>
+                <Upload className="w-4 h-4" />
+                Execute
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+

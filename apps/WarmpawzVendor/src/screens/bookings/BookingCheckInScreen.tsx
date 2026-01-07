@@ -137,7 +137,7 @@ export function BookingCheckInScreen({
           disabled={loading || !petCondition.trim()}
         >
           {loading ? (
-            <ActivityIndicator color="#ffffff" />
+            <ActivityIndicator color={colors.white} />
           ) : (
             <Text style={styles.checkInButtonText}>Complete Check-In</Text>
           )}
@@ -247,7 +247,7 @@ const styles = StyleSheet.create({
   checkInButtonText: {
     fontSize: typography.fontSizes.md,
     fontWeight: typography.fontWeights.semibold,
-    color: '#ffffff',
+    color: colors.white,
   },
 });
 

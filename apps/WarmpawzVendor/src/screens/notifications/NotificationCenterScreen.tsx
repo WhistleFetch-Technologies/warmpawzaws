@@ -239,7 +239,7 @@ const styles = StyleSheet.create({
   },
   filterButtonActive: {
     borderColor: colors.primary,
-    backgroundColor: '#FFF4E6',
+    backgroundColor: colors.gradientOrange50,
   },
   filterText: {
     fontSize: typography.fontSizes.sm,
@@ -268,7 +268,7 @@ const styles = StyleSheet.create({
   },
   unreadNotification: {
     borderColor: colors.primary,
-    backgroundColor: '#FFF4E6',
+    backgroundColor: colors.gradientOrange50,
   },
   notificationContent: {
     flex: 1,

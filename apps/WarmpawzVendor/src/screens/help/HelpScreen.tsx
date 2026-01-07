@@ -224,7 +224,7 @@ const styles = StyleSheet.create({
   submitButtonText: {
     fontSize: typography.fontSizes.md,
     fontWeight: typography.fontWeights.semibold,
-    color: '#ffffff',
+    color: colors.white,
   },
   contactInfo: {
     backgroundColor: colors.background,

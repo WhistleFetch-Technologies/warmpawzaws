@@ -18,7 +18,7 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
-import { AppointmentDetailApi } from '../../services/api';
+import { AppointmentDetailApi, FileUploadApi } from '../../services/api';
 
 interface FileUploadScreenProps {
   bookingId: string;
@@ -124,13 +124,13 @@ export function FileUploadScreen({
       formData.append('vendorId', vendorId);
       formData.append('uploadType', uploadType);
 
-      // Upload prescription
+      // ✅ API Integration: Use FileUploadApi for better React Native compatibility
+      let response;
       if (uploadType === 'prescription') {
-        const response = await AppointmentDetailApi.uploadPrescription({
-          bookingId,
-          vendorId,
-          file: selectedFile.uri,
-          fileName: selectedFile.name,
+        response = await FileUploadApi.uploadPrescription(bookingId, {
+          uri: selectedFile.uri,
+          type: selectedFile.type,
+          name: selectedFile.name,
         });
 
         if (response.success || response.url) {
@@ -148,15 +148,16 @@ export function FileUploadScreen({
           Alert.alert('Error', response.error || 'Failed to upload file');
         }
       } else {
-        // For other file types, use generic upload endpoint
-        // Use prescription upload endpoint as fallback
-        const response = await AppointmentDetailApi.uploadPrescription({
+        // For other file types, use generic file upload
+        response = await FileUploadApi.uploadFile(
+          {
+            uri: selectedFile.uri,
+            type: selectedFile.type,
+            name: selectedFile.name,
+          },
           bookingId,
-          vendorId,
-          file: selectedFile.uri,
-          fileName: selectedFile.name,
-          uploadType,
-        });
+          uploadType
+        );
 
         if (response.success || response.url) {
           Alert.alert('Success', 'File uploaded successfully!', [
@@ -228,7 +229,7 @@ export function FileUploadScreen({
           disabled={!selectedFile || uploading}
         >
           {uploading ? (
-            <ActivityIndicator color="#ffffff" />
+            <ActivityIndicator color={colors.white} />
           ) : (
             <Text style={styles.submitButtonText}>Upload File</Text>
           )}
@@ -330,7 +331,7 @@ const styles = StyleSheet.create({
   submitButtonText: {
     fontSize: typography.fontSizes.md,
     fontWeight: typography.fontWeights.semibold,
-    color: '#ffffff',
+    color: colors.white,
   },
 });
 

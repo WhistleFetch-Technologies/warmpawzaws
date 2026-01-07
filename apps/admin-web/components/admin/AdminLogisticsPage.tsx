@@ -126,12 +126,12 @@ export function AdminLogisticsPage() {
   };
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
+    <div className="p-0">
+      <div className="flex items-center justify-between mb-0">
         <h1 className="text-2xl font-bold text-gray-900">Logistics & Shipping</h1>
         <button
           onClick={loadData}
-          className="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200"
+          className="px-4 py-0 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200"
         >
           🔄 Refresh
         </button>
@@ -139,7 +139,7 @@ export function AdminLogisticsPage() {
 
       {/* Stats */}
       {stats && (
-        <div className="grid grid-cols-5 gap-4 mb-6">
+        <div className="grid grid-cols-5 gap-4 mb-0">
           <div className="bg-white rounded-xl p-4 shadow-sm">
             <p className="text-sm text-gray-500">Total Orders</p>
             <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
@@ -164,7 +164,7 @@ export function AdminLogisticsPage() {
       )}
 
       {/* Filter Tabs */}
-      <div className="flex bg-white rounded-lg p-1 shadow-sm mb-6 w-fit">
+      <div className="flex bg-white rounded-lg p-0 shadow-sm mb-0 w-fit">
         {[
           { id: 'all', label: 'All' },
           { id: 'pending', label: 'Pending' },
@@ -176,7 +176,7 @@ export function AdminLogisticsPage() {
           <button
             key={tab.id}
             onClick={() => setFilter(tab.id)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+            className={`px-4 py-0 rounded-lg text-sm font-medium transition ${
               filter === tab.id ? 'bg-blue-500 text-white' : 'text-gray-600 hover:bg-gray-100'
             }`}
           >
@@ -231,7 +231,7 @@ export function AdminLogisticsPage() {
                     )}
                   </td>
                   <td className="p-4">
-                    <span className={`text-xs px-2 py-1 rounded-full ${getStatusColor(order.status)}`}>
+                    <span className={`text-xs px-0 py-0 rounded-full ${getStatusColor(order.status)}`}>
                       {order.status.replace(/_/g, ' ')}
                     </span>
                   </td>
@@ -239,12 +239,12 @@ export function AdminLogisticsPage() {
                     ₹{order.total_amount.toLocaleString()}
                   </td>
                   <td className="p-4">
-                    <div className="flex gap-2">
-                      {order.status === 'pending' && (
+                    <div className="flex gap-0">
+                      {(order.status as any) === 'pending' && (
                         <button
                           onClick={() => handleCreateShipment(order.order_id)}
                           disabled={processing}
-                          className="px-3 py-1 bg-blue-500 text-white text-sm rounded-lg hover:bg-blue-600 disabled:opacity-50"
+                          className="px-0 py-0 bg-blue-500 text-white text-sm rounded-lg hover:bg-blue-600 disabled:opacity-50"
                         >
                           📦 Ship
                         </button>
@@ -252,14 +252,14 @@ export function AdminLogisticsPage() {
                       {order.awb_number && (
                         <button
                           onClick={() => handleTrackShipment(order.awb_number!)}
-                          className="px-3 py-1 bg-gray-100 text-gray-600 text-sm rounded-lg hover:bg-gray-200"
+                          className="px-0 py-0 bg-gray-100 text-gray-600 text-sm rounded-lg hover:bg-gray-200"
                         >
                           🔍 Track
                         </button>
                       )}
                       <button
                         onClick={() => setSelectedOrder(order)}
-                        className="px-3 py-1 bg-gray-100 text-gray-600 text-sm rounded-lg hover:bg-gray-200"
+                        className="px-0 py-0 bg-gray-100 text-gray-600 text-sm rounded-lg hover:bg-gray-200"
                       >
                         👁️
                       </button>
@@ -311,13 +311,13 @@ function OrderDetailModal({
 }) {
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-2xl p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+      <div className="bg-white rounded-2xl p-0 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-bold">Order Details</h2>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg">✕</button>
+          <button onClick={onClose} className="p-0 hover:bg-gray-100 rounded-lg">✕</button>
         </div>
 
-        <div className="grid md:grid-cols-2 gap-4 mb-6">
+        <div className="grid md:grid-cols-2 gap-4 mb-0">
           <div>
             <label className="text-sm text-gray-500">Order ID</label>
             <p className="font-mono">{order.order_id}</p>
@@ -343,8 +343,8 @@ function OrderDetailModal({
         </div>
 
         {order.awb_number && (
-          <div className="bg-blue-50 rounded-lg p-4 mb-6">
-            <h3 className="font-semibold mb-2">Shipment Info</h3>
+          <div className="bg-blue-50 rounded-lg p-4 mb-0">
+            <h3 className="font-semibold mb-0">Shipment Info</h3>
             <p className="text-sm"><span className="text-gray-500">AWB:</span> {order.awb_number}</p>
             <p className="text-sm"><span className="text-gray-500">Courier:</span> {order.courier_name}</p>
             {order.estimated_delivery && (
@@ -353,11 +353,11 @@ function OrderDetailModal({
           </div>
         )}
 
-        <div className="mb-6">
-          <h3 className="font-semibold mb-2">Items ({order.items?.length || 0})</h3>
+        <div className="mb-0">
+          <h3 className="font-semibold mb-0">Items ({order.items?.length || 0})</h3>
           <div className="space-y-2">
             {order.items?.map((item) => (
-              <div key={item.id} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+              <div key={item.id} className="flex justify-between items-center p-0 bg-gray-50 rounded-lg">
                 <div>
                   <p className="font-medium">{item.product_name}</p>
                   <p className="text-sm text-gray-500">Qty: {item.quantity}</p>
@@ -368,12 +368,12 @@ function OrderDetailModal({
           </div>
         </div>
 
-        <div className="flex gap-3 pt-4 border-t">
-          {order.status === 'pending' && (
+        <div className="flex gap-0 pt-4 border-t">
+          {(order.status as any) === 'pending' && (
             <button
               onClick={() => onCreateShipment(order.order_id)}
               disabled={processing}
-              className="flex-1 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50"
+              className="flex-1 py-0 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50"
             >
               {processing ? 'Creating...' : '📦 Create Shipment'}
             </button>
@@ -382,14 +382,14 @@ function OrderDetailModal({
             <>
               <button
                 onClick={() => onTrackShipment(order.awb_number!)}
-                className="flex-1 py-2 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200"
+                className="flex-1 py-0 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200"
               >
                 🔍 Track Shipment
               </button>
               <button
                 onClick={() => onCancelShipment(order.order_id)}
                 disabled={processing}
-                className="px-4 py-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 disabled:opacity-50"
+                className="px-4 py-0 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -397,7 +397,7 @@ function OrderDetailModal({
           )}
           <button
             onClick={onClose}
-            className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+            className="px-4 py-0 border rounded-lg hover:bg-gray-50"
           >
             Close
           </button>

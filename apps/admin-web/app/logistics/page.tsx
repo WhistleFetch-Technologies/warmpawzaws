@@ -1,4 +1,5 @@
 'use client';
+export const dynamic = 'force-dynamic';
 
 import { AdminLogisticsPage } from '@/components/admin/AdminLogisticsPage';
 

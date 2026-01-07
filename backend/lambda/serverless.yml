@@ -1,0 +1,159 @@
+# ============================================================================
+# SERVERLESS FRAMEWORK CONFIGURATION
+# ============================================================================
+# AWS Serverless Architecture:
+# - Lambda Functions
+# - API Gateway (HTTP API v2)
+# - CloudFront (CDN)
+# - RDS PostgreSQL
+# - Cognito (Authentication)
+# ============================================================================
+
+service: warmpawz-api
+
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: nodejs18.x
+  region: ${opt:region, 'ap-south-1'}
+  stage: ${opt:stage, 'dev'}
+  memorySize: 512
+  timeout: 30
+  
+  # Environment variables
+  environment:
+    NODE_ENV: ${self:provider.stage}
+    AWS_REGION: ${self:provider.region}
+    
+    # RDS Configuration
+    DB_HOST: ${ssm:/warmpawz/${self:provider.stage}/db/host}
+    DB_PORT: ${ssm:/warmpawz/${self:provider.stage}/db/port, '5432'}
+    DB_NAME: ${ssm:/warmpawz/${self:provider.stage}/db/name}
+    DB_USER: ${ssm:/warmpawz/${self:provider.stage}/db/user}
+    DB_PASSWORD: ${ssm:/warmpawz/${self:provider.stage}/db/password~true}
+    
+    # Cognito Configuration
+    COGNITO_USER_POOL_ID: ${ssm:/warmpawz/${self:provider.stage}/cognito/userPoolId}
+    COGNITO_CLIENT_ID: ${ssm:/warmpawz/${self:provider.stage}/cognito/clientId}
+    COGNITO_REGION: ${self:provider.region}
+    
+    # SNS Configuration
+    SNS_SMS_TOPIC_ARN: ${ssm:/warmpawz/${self:provider.stage}/sns/smsTopicArn}
+    
+    # Razorpay Configuration
+    RAZORPAY_KEY_ID: ${ssm:/warmpawz/${self:provider.stage}/razorpay/keyId}
+    RAZORPAY_KEY_SECRET: ${ssm:/warmpawz/${self:provider.stage}/razorpay/keySecret~true}
+    RAZORPAY_WEBHOOK_SECRET: ${ssm:/warmpawz/${self:provider.stage}/razorpay/webhookSecret~true}
+    
+    # Feature Flags
+    UAT_MODE: ${ssm:/warmpawz/${self:provider.stage}/features/uatMode, 'false'}
+  
+  # IAM Role Permissions
+  iam:
+    role:
+      statements:
+        # RDS Access
+        - Effect: Allow
+          Action:
+            - rds-db:connect
+          Resource: 
+            - arn:aws:rds-db:${self:provider.region}:*:dbuser:*/warmpawz_*
+        
+        # Cognito Access
+        - Effect: Allow
+          Action:
+            - cognito-idp:AdminCreateUser
+            - cognito-idp:AdminSetUserPassword
+            - cognito-idp:AdminInitiateAuth
+            - cognito-idp:AdminGetUser
+          Resource:
+            - arn:aws:cognito-idp:${self:provider.region}:*:userpool/${ssm:/warmpawz/${self:provider.stage}/cognito/userPoolId}
+        
+        # SNS Access
+        - Effect: Allow
+          Action:
+            - sns:Publish
+          Resource:
+            - ${ssm:/warmpawz/${self:provider.stage}/sns/smsTopicArn}
+        
+        # Secrets Manager Access
+        - Effect: Allow
+          Action:
+            - secretsmanager:GetSecretValue
+          Resource:
+            - arn:aws:secretsmanager:${self:provider.region}:*:secret:warmpawz/${self:provider.stage}/*
+        
+        # CloudWatch Logs
+        - Effect: Allow
+          Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+          Resource: '*'
+  
+  # VPC Configuration for RDS
+  vpc:
+    securityGroupIds:
+      - ${ssm:/warmpawz/${self:provider.stage}/vpc/securityGroupId}
+    subnetIds:
+      - ${ssm:/warmpawz/${self:provider.stage}/vpc/subnetId1}
+      - ${ssm:/warmpawz/${self:provider.stage}/vpc/subnetId2}
+  
+  # API Gateway Configuration
+  httpApi:
+    cors:
+      allowedOrigins:
+        - ${ssm:/warmpawz/${self:provider.stage}/cors/allowedOrigins}
+      allowedHeaders:
+        - Content-Type
+        - Authorization
+        - X-Requested-With
+        - X-Request-Id
+      allowedMethods:
+        - GET
+        - POST
+        - PUT
+        - DELETE
+        - PATCH
+        - OPTIONS
+      maxAge: 86400
+
+functions:
+  api:
+    handler: dist/handler.handler
+    description: Warmpawz API Gateway Handler
+    events:
+      - httpApi:
+          path: /{proxy+}
+          method: ANY
+      - httpApi:
+          path: /
+          method: ANY
+
+# CloudFront Distribution (via plugin)
+plugins:
+  - serverless-cloudfront-invalidate
+
+custom:
+  cloudfront:
+    distributionId: ${ssm:/warmpawz/${self:provider.stage}/cloudfront/distributionId}
+    paths:
+      - '/*'
+
+# Package Configuration
+package:
+  patterns:
+    - '!node_modules/**'
+    - '!src/**'
+    - '!*.ts'
+    - '!*.tsx'
+    - '!tsconfig.json'
+    - '!esbuild.config.js'
+    - 'dist/**'
+    - 'node_modules/@warmpawz/**'
+    - 'node_modules/zod/**'
+    - 'node_modules/hono/**'
+    - 'node_modules/jose/**'
+    - 'node_modules/pg/**'
+

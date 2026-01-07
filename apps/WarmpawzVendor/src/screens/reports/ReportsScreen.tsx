@@ -35,15 +35,33 @@ export function ReportsScreen({ vendorId, onBack, onNavigate }: ReportsScreenPro
   const loadReports = async () => {
     try {
       setLoading(true);
-      // Generate report for the selected period
-      const response = await ReportsApi.generateReport(vendorId, 'summary', selectedPeriod);
-      // If generateReport returns the report, use it; otherwise fetch all reports
-      if (response.report) {
-        setReports([response.report]);
+      // Get report history first
+      const historyResponse = await ReportsApi.getReportHistory(vendorId, 20);
+      if (historyResponse.reports && historyResponse.reports.length > 0) {
+        setReports(historyResponse.reports);
       } else {
-        const allReports = await ReportsApi.getReports(vendorId);
-        // Filter by period client-side if needed
-        setReports(allReports.reports || []);
+        // Generate new report for the selected period
+        const startDate = new Date();
+        const endDate = new Date();
+        if (selectedPeriod === 'week') {
+          startDate.setDate(startDate.getDate() - 7);
+        } else if (selectedPeriod === 'month') {
+          startDate.setMonth(startDate.getMonth() - 1);
+        } else if (selectedPeriod === 'year') {
+          startDate.setFullYear(startDate.getFullYear() - 1);
+        }
+        
+        const response = await ReportsApi.generateReport(vendorId, 'summary', {
+          startDate: startDate.toISOString(),
+          endDate: endDate.toISOString(),
+        });
+        // If generateReport returns the report, use it; otherwise fetch all reports
+        if (response.report) {
+          setReports([response.report]);
+        } else {
+          const allReports = await ReportsApi.getReports(vendorId);
+          setReports(allReports.reports || []);
+        }
       }
     } catch (error) {
       console.error('Error loading reports:', error);
@@ -53,6 +71,7 @@ export function ReportsScreen({ vendorId, onBack, onNavigate }: ReportsScreenPro
         setReports(allReports.reports || []);
       } catch (fallbackError) {
         console.error('Error loading reports (fallback):', fallbackError);
+        setReports([]);
       }
     } finally {
       setLoading(false);
@@ -194,7 +213,7 @@ const styles = StyleSheet.create({
   },
   periodButtonActive: {
     borderColor: colors.primary,
-    backgroundColor: '#FFF4E6',
+    backgroundColor: colors.gradientOrange50,
   },
   periodButtonText: {
     fontSize: typography.fontSizes.sm,
@@ -247,7 +266,7 @@ const styles = StyleSheet.create({
   actionButtonText: {
     fontSize: typography.fontSizes.md,
     fontWeight: typography.fontWeights.semibold,
-    color: '#ffffff',
+    color: colors.white,
   },
 });
 

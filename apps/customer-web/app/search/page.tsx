@@ -1,8 +1,9 @@
 'use client';
 
 import React, { Suspense, useState, useEffect } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { saveSearchContext, updateSearchContextSelection } from '@/lib/search-context';
 
 interface SearchResult {
   id: string;
@@ -26,14 +27,18 @@ export default function SearchPage() {
 
 function SearchContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const initialQuery = searchParams.get('q') || '';
   const initialCategory = searchParams.get('category') || '';
+  const vendorIdParam = searchParams.get('vendorId');
 
   const [query, setQuery] = useState(initialQuery);
   const [category, setCategory] = useState(initialCategory);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [vendorServices, setVendorServices] = useState<any[]>([]);
+  const [showVendorServices, setShowVendorServices] = useState(!!vendorIdParam);
 
   const categories = [
     { id: '', label: 'All', icon: '🔍' },
@@ -48,10 +53,47 @@ function SearchContent() {
   ];
 
   useEffect(() => {
-    if (query || category) {
+    if (vendorIdParam) {
+      // Load vendor services when vendorId is in URL
+      loadVendorServices(vendorIdParam);
+      setShowVendorServices(true);
+    } else if (query || category) {
       performSearch();
+      setShowVendorServices(false);
     }
-  }, [category]);
+  }, [category, vendorIdParam]);
+
+  const loadVendorServices = async (vendorId: string) => {
+    try {
+      setLoading(true);
+      // Update search context with vendor selection
+      updateSearchContextSelection(vendorId, undefined);
+      
+      // Load vendor services
+      const response = await apiClient.get<any>(`/vendor/${vendorId}/services`);
+      if (response.services) {
+        setVendorServices(response.services);
+        // Also save search context
+        saveSearchContext({
+          query: query || '',
+          category: category || undefined,
+          selectedVendorId: vendorId,
+          timestamp: Date.now(),
+          results: response.services.map((s: any) => ({
+            id: s.id,
+            type: 'service' as const,
+            name: s.service_name,
+            category: s.category,
+          })),
+        });
+      }
+    } catch (err: any) {
+      console.error('Error loading vendor services:', err);
+      setError(err.message || 'Failed to load vendor services');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const performSearch = async () => {
     try {
@@ -88,7 +130,16 @@ function SearchContent() {
         imageUrl: s.image_url,
       }));
 
-      setResults([...vendors, ...services]);
+      const allResults = [...vendors, ...services];
+      setResults(allResults);
+
+      // Save search context for search-first flow enforcement
+      saveSearchContext({
+        query: query || '',
+        category: category || undefined,
+        results: allResults,
+        timestamp: Date.now(),
+      });
     } catch (err: any) {
       console.error('Search error:', err);
       setError(err.message || 'Search failed');
@@ -115,7 +166,7 @@ function SearchContent() {
               <input
                 type="text"
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setQuery(e.target.value)}
                 placeholder="Search for services, vendors..."
                 className="w-full px-4 py-3 pl-12 border border-gray-200 rounded-full focus:outline-none focus:ring-2 focus:ring-orange-500"
               />
@@ -153,7 +204,54 @@ function SearchContent() {
 
       {/* Results */}
       <main className="max-w-7xl mx-auto px-4 py-6">
-        {loading ? (
+        {showVendorServices && vendorIdParam ? (
+          // Show vendor services
+          <div>
+            <div className="mb-4">
+              <button
+                onClick={() => {
+                  setShowVendorServices(false);
+                  router.push('/search');
+                }}
+                className="text-orange-500 hover:underline"
+              >
+                ← Back to search
+              </button>
+            </div>
+            {loading ? (
+              <div className="text-center py-12">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
+                <p className="mt-4 text-gray-600">Loading services...</p>
+              </div>
+            ) : vendorServices.length === 0 ? (
+              <div className="text-center py-12">
+                <p className="text-gray-500">No services available for this vendor</p>
+              </div>
+            ) : (
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {vendorServices.map((service: any) => (
+                  <a
+                    key={service.id}
+                    href={`/booking/${service.id}`}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      updateSearchContextSelection(vendorIdParam, service.id);
+                      router.push(`/booking/${service.id}`);
+                    }}
+                    className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition cursor-pointer"
+                  >
+                    <div className="p-4">
+                      <h3 className="font-semibold text-gray-900">{service.service_name}</h3>
+                      {service.price && (
+                        <p className="text-orange-500 font-semibold mt-2">₹{service.price}</p>
+                      )}
+                    </div>
+                  </a>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : loading ? (
           <div className="text-center py-12">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
             <p className="mt-4 text-gray-600">Searching...</p>
@@ -179,8 +277,21 @@ function SearchContent() {
             {results.map((result) => (
               <a
                 key={`${result.type}-${result.id}`}
-                href={result.type === 'vendor' ? `/vendor/${result.id}` : `/service/${result.id}`}
-                className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition"
+                href={result.type === 'service' ? `/booking/${result.id}` : `/search?vendorId=${result.id}`}
+                onClick={(e) => {
+                  e.preventDefault();
+                  // Update search context with selection before navigation
+                  if (result.type === 'vendor') {
+                    updateSearchContextSelection(result.id, undefined);
+                    // For vendors, redirect to search with vendorId to show services
+                    router.push(`/search?vendorId=${result.id}`);
+                  } else {
+                    updateSearchContextSelection(undefined, result.id);
+                    // For services, go directly to booking (will be guarded)
+                    router.push(`/booking/${result.id}`);
+                  }
+                }}
+                className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition cursor-pointer"
               >
                 <div className="h-40 bg-gradient-to-br from-orange-100 to-amber-100 flex items-center justify-center text-6xl">
                   {result.category === 'vet' ? '🏥' :

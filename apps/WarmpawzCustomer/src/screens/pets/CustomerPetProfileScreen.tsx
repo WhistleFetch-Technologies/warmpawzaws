@@ -472,7 +472,7 @@ export function CustomerPetProfileScreen({
               disabled={loading}
             >
               {loading ? (
-                <ActivityIndicator color="#ffffff" />
+                <ActivityIndicator color={colors.white} />
               ) : (
                 <Text style={styles.saveButtonText}>
                   {editingPet ? 'Update Pet' : 'Save Pet'}
@@ -514,7 +514,7 @@ export function CustomerPetProfileScreen({
             disabled={loading || pets.length === 0}
           >
             {loading ? (
-              <ActivityIndicator color="#ffffff" />
+              <ActivityIndicator color={colors.white} />
             ) : (
               <Text style={styles.completeButtonText}>Complete</Text>
             )}
@@ -607,7 +607,7 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: borderRadius.lg,
-    backgroundColor: '#FFF4E6',
+    backgroundColor: colors.gradientOrange50,
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
@@ -655,10 +655,10 @@ const styles = StyleSheet.create({
   },
   deleteButtonText: {
     fontSize: typography.fontSizes.xs,
-    color: '#DC2626',
+    color: colors.error,
   },
   emptyState: {
-    backgroundColor: '#FFF4E6',
+    backgroundColor: colors.gradientOrange50,
     borderWidth: 2,
     borderColor: '#FFE0B2',
     borderRadius: borderRadius.xl,
@@ -679,7 +679,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderStyle: 'dashed',
     borderColor: colors.primary,
-    backgroundColor: '#FFF4E6',
+    backgroundColor: colors.gradientOrange50,
     borderRadius: borderRadius.xl,
     padding: spacing.md,
     alignItems: 'center',
@@ -739,7 +739,7 @@ const styles = StyleSheet.create({
   completeButtonText: {
     fontSize: typography.fontSizes.md,
     fontWeight: typography.fontWeights.semibold,
-    color: '#ffffff',
+    color: colors.white,
   },
   modalContainer: {
     flex: 1,
@@ -785,7 +785,7 @@ const styles = StyleSheet.create({
     width: 96,
     height: 96,
     borderRadius: 48,
-    backgroundColor: '#FFF4E6',
+    backgroundColor: colors.gradientOrange50,
     borderWidth: 4,
     borderColor: colors.background,
     overflow: 'hidden',
@@ -846,7 +846,7 @@ const styles = StyleSheet.create({
   },
   typeButtonSelected: {
     borderColor: colors.primary,
-    backgroundColor: '#FFF4E6',
+    backgroundColor: colors.gradientOrange50,
   },
   typeButtonText: {
     fontSize: typography.fontSizes.sm,
@@ -871,7 +871,7 @@ const styles = StyleSheet.create({
   },
   genderButtonSelected: {
     borderColor: colors.primary,
-    backgroundColor: '#FFF4E6',
+    backgroundColor: colors.gradientOrange50,
   },
   genderButtonText: {
     fontSize: typography.fontSizes.md,
@@ -897,7 +897,7 @@ const styles = StyleSheet.create({
   saveButtonText: {
     fontSize: typography.fontSizes.md,
     fontWeight: typography.fontWeights.semibold,
-    color: '#ffffff',
+    color: colors.white,
   },
 });
 

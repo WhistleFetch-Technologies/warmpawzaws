@@ -330,7 +330,7 @@ export function CustomerProfileScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
   },
   header: {
     flexDirection: 'row',
@@ -343,23 +343,23 @@ const styles = StyleSheet.create({
   },
   backButton: {
     fontSize: typography.body,
-    color: '#fff',
+    color: colors.white,
   },
   headerTitle: {
     fontSize: typography.h1,
     fontWeight: 'bold',
-    color: '#fff',
+    color: colors.white,
     flex: 1,
     textAlign: 'center',
   },
   editButton: {
     fontSize: typography.body,
-    color: '#fff',
+    color: colors.white,
     fontWeight: '600',
   },
   saveButton: {
     fontSize: typography.body,
-    color: '#fff',
+    color: colors.white,
     fontWeight: '600',
   },
   saveButtonDisabled: {
@@ -392,7 +392,7 @@ const styles = StyleSheet.create({
     width: 120,
     height: 120,
     borderRadius: 60,
-    backgroundColor: '#E5E7EB',
+    backgroundColor: colors.gray.200,
     overflow: 'hidden',
     marginBottom: spacing.md,
     borderWidth: 4,
@@ -412,7 +412,7 @@ const styles = StyleSheet.create({
   photoPlaceholderText: {
     fontSize: 48,
     fontWeight: 'bold',
-    color: '#fff',
+    color: colors.white,
   },
   changePhotoButton: {
     paddingHorizontal: spacing.md,
@@ -420,7 +420,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     backgroundColor: '#F9FAFB',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   changePhotoButtonText: {
     fontSize: typography.body,
@@ -444,12 +444,12 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
     fontSize: typography.body,
     color: colors.text,
   },
   inputDisabled: {
-    backgroundColor: '#F3F4F6',
+    backgroundColor: colors.gray.100,
     color: colors.textSecondary,
   },
   textArea: {
@@ -475,7 +475,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   quickActionIcon: {
     fontSize: 32,

@@ -240,7 +240,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -269,7 +269,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   paymentMethodCard: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: spacing.md,
@@ -315,7 +315,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.sm,
   },
   defaultBadgeText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 10,
     fontWeight: 'bold',
   },
@@ -327,7 +327,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: borderRadius.sm,
-    backgroundColor: '#f3f4f6',
+    backgroundColor: colors.gray.100,
   },
   actionButtonText: {
     fontSize: 12,
@@ -335,10 +335,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   deleteButton: {
-    backgroundColor: '#fee2e2',
+    backgroundColor: colors.error + 20% opacity,
   },
   deleteButtonText: {
-    color: '#dc2626',
+    color: colors.error,
   },
   emptyContainer: {
     flex: 1,
@@ -363,7 +363,7 @@ const styles = StyleSheet.create({
   },
   footer: {
     padding: spacing.md,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
@@ -374,7 +374,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   addButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 16,
     fontWeight: 'bold',
   },

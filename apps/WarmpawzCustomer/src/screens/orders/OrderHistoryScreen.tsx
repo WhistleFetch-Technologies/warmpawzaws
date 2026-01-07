@@ -244,7 +244,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -272,7 +272,7 @@ const styles = StyleSheet.create({
   filters: {
     flexDirection: 'row',
     padding: spacing.md,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
     gap: spacing.sm,
@@ -281,7 +281,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: borderRadius.full,
-    backgroundColor: '#f3f4f6',
+    backgroundColor: colors.gray.100,
   },
   filterButtonActive: {
     backgroundColor: colors.primary,
@@ -292,13 +292,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   filterButtonTextActive: {
-    color: '#fff',
+    color: colors.white,
   },
   listContent: {
     padding: spacing.md,
   },
   orderCard: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: spacing.md,
@@ -366,7 +366,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: borderRadius.sm,
-    backgroundColor: '#f3f4f6',
+    backgroundColor: colors.gray.100,
   },
   actionButtonText: {
     fontSize: 12,

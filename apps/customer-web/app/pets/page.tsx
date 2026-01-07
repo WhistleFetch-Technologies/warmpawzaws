@@ -125,12 +125,12 @@ export default function PetsPage() {
                   type="text"
                   placeholder="Pet Name"
                   value={newPet.name || ''}
-                  onChange={(e) => setNewPet({ ...newPet, name: e.target.value })}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewPet({ ...newPet, name: e.target.value })}
                   className="w-full p-3 border rounded-lg"
                 />
                 <select
                   value={newPet.species}
-                  onChange={(e) => setNewPet({ ...newPet, species: e.target.value })}
+                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setNewPet({ ...newPet, species: e.target.value })}
                   className="w-full p-3 border rounded-lg"
                 >
                   <option value="dog">Dog</option>
@@ -142,7 +142,7 @@ export default function PetsPage() {
                   type="text"
                   placeholder="Breed"
                   value={newPet.breed || ''}
-                  onChange={(e) => setNewPet({ ...newPet, breed: e.target.value })}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewPet({ ...newPet, breed: e.target.value })}
                   className="w-full p-3 border rounded-lg"
                 />
                 <div className="grid grid-cols-2 gap-4">
@@ -150,20 +150,20 @@ export default function PetsPage() {
                     type="number"
                     placeholder="Age (years)"
                     value={newPet.age || ''}
-                    onChange={(e) => setNewPet({ ...newPet, age: parseInt(e.target.value) })}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewPet({ ...newPet, age: parseInt(e.target.value) })}
                     className="w-full p-3 border rounded-lg"
                   />
                   <input
                     type="number"
                     placeholder="Weight (kg)"
                     value={newPet.weight || ''}
-                    onChange={(e) => setNewPet({ ...newPet, weight: parseFloat(e.target.value) })}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewPet({ ...newPet, weight: parseFloat(e.target.value) })}
                     className="w-full p-3 border rounded-lg"
                   />
                 </div>
                 <select
                   value={newPet.gender}
-                  onChange={(e) => setNewPet({ ...newPet, gender: e.target.value })}
+                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setNewPet({ ...newPet, gender: e.target.value })}
                   className="w-full p-3 border rounded-lg"
                 >
                   <option value="male">Male</option>

@@ -282,7 +282,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -320,7 +320,7 @@ const styles = StyleSheet.create({
   },
   tabs: {
     flexDirection: 'row',
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -350,7 +350,7 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   infoCard: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     borderWidth: 1,
@@ -397,19 +397,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   rescheduleButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 16,
     fontWeight: '600',
   },
   cancelButton: {
     flex: 1,
-    backgroundColor: '#fee2e2',
+    backgroundColor: colors.error + 20% opacity,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     alignItems: 'center',
   },
   cancelButtonText: {
-    color: '#dc2626',
+    color: colors.error,
     fontSize: 16,
     fontWeight: '600',
   },
@@ -436,7 +436,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   prescriptionCard: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     borderWidth: 1,
@@ -461,7 +461,7 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   recordCard: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     borderWidth: 1,

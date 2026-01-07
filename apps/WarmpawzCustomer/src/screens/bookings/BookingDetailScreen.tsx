@@ -97,7 +97,7 @@ export function BookingDetailScreen({
         return '#3B82F6';
       case 'in_progress':
       case 'active':
-        return '#10B981';
+        return {colors.success};
       case 'completed':
         return '#6B7280';
       case 'cancelled':
@@ -419,7 +419,7 @@ export function BookingDetailScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
   },
   header: {
     flexDirection: 'row',
@@ -431,13 +431,13 @@ const styles = StyleSheet.create({
   },
   backButton: {
     fontSize: typography.body,
-    color: '#fff',
+    color: colors.white,
     marginRight: spacing.md,
   },
   headerTitle: {
     fontSize: typography.h1,
     fontWeight: 'bold',
-    color: '#fff',
+    color: colors.white,
     flex: 1,
   },
   loadingContainer: {
@@ -489,7 +489,7 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     marginBottom: spacing.md,
     borderWidth: 2,
-    borderColor: '#10B981',
+    borderColor: colors.success,
   },
   completionOtpCard: {
     backgroundColor: '#FEF3C7',
@@ -515,7 +515,7 @@ const styles = StyleSheet.create({
     color: '#047857',
   },
   otpDisplay: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderRadius: borderRadius.md,
     padding: spacing.lg,
     marginBottom: spacing.md,
@@ -524,12 +524,12 @@ const styles = StyleSheet.create({
   otpCode: {
     fontSize: 32,
     fontWeight: 'bold',
-    color: '#10B981',
+    color: colors.success,
     letterSpacing: 8,
     fontFamily: 'monospace',
   },
   otpButton: {
-    backgroundColor: '#10B981',
+    backgroundColor: colors.success,
     borderRadius: borderRadius.md,
     padding: spacing.md,
     alignItems: 'center',
@@ -538,7 +538,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F59E0B',
   },
   otpButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: typography.body,
     fontWeight: 'bold',
   },
@@ -556,11 +556,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#10B981',
+    borderColor: colors.success,
   },
   verifiedIcon: {
     fontSize: 24,
-    color: '#10B981',
+    color: colors.success,
     marginRight: spacing.md,
   },
   verifiedInfo: {
@@ -582,7 +582,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   sectionTitle: {
     fontSize: typography.h3,
@@ -598,7 +598,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: borderRadius.md,
-    backgroundColor: '#FEE2E2',
+    backgroundColor: colors.error + 20% opacity,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: spacing.md,
@@ -717,10 +717,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   cancelButton: {
-    backgroundColor: '#FEE2E2',
+    backgroundColor: colors.error + 20% opacity,
   },
   actionButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: typography.body,
     fontWeight: 'bold',
   },

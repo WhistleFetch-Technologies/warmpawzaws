@@ -218,7 +218,7 @@ export function BookingCheckInScreen({
           disabled={!locationPermission || checkingIn}
         >
           {checkingIn ? (
-            <ActivityIndicator size="small" color="#fff" />
+            <ActivityIndicator size="small" color={colors.white} />
           ) : (
             <Text style={styles.checkInButtonText}>Check In</Text>
           )}
@@ -261,7 +261,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -312,7 +312,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   bookingInfo: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: spacing.lg,
@@ -378,10 +378,10 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   checkInButtonDisabled: {
-    backgroundColor: '#9ca3af',
+    backgroundColor: colors.gray.400,
   },
   checkInButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 18,
     fontWeight: 'bold',
   },

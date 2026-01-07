@@ -26,7 +26,7 @@ interface ServiceDiscoveryScreenProps {
 }
 
 const CATEGORIES = [
-  { id: 'vet', name: 'Veterinary', icon: '🏥', color: '#FEE2E2' },
+  { id: 'vet', name: 'Veterinary', icon: '🏥', color: colors.error + 20% opacity },
   { id: 'grooming', name: 'Grooming', icon: '✂️', color: '#DBEAFE' },
   { id: 'training', name: 'Training', icon: '🎓', color: '#E9D5FF' },
   { id: 'walker', name: 'Walking', icon: '🚶', color: '#D1FAE5' },
@@ -304,7 +304,7 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   ratingContainer: {
-    backgroundColor: '#FFF4E6',
+    backgroundColor: colors.gradientOrange50,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs / 2,
     borderRadius: borderRadius.md,

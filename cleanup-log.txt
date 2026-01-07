@@ -1,0 +1,360 @@
+╔══════════════════════════════════════════════════════════════╗
+║       COMPREHENSIVE CLEANUP - Warmpawz Dev Environment      ║
+╚══════════════════════════════════════════════════════════════╝
+
+Region: ap-south-1
+Environment: dev
+New Account: 057442119249
+
+⚠️  WARNING: This will delete ALL warmpawz-dev resources
+Type 'YES' to continue:
+
+🚀 Starting comprehensive cleanup...
+
+1️⃣  RDS Cleanup (all scenarios)...
+  ℹ️  No RDS cluster found (already clean)
+
+2️⃣  S3 Bucket Cleanup (all accounts)...
+  📋 Found buckets to delete:
+    - warmpawz-dev-admin-frontend
+    - warmpawz-dev-admin-frontend-ap-south-1
+    - warmpawz-dev-backups-023394150666
+    - warmpawz-dev-customer-frontend
+    - warmpawz-dev-customer-frontend-ap-south-1
+    - warmpawz-dev-logs-023394150666
+    - warmpawz-dev-static-023394150666
+    - warmpawz-dev-user-uploads-023394150666
+    - warmpawz-dev-vendor-frontend
+    - warmpawz-dev-vendor-frontend-ap-south-1
+
+  🗑️  Processing bucket: warmpawz-dev-admin-frontend
+scripts/comprehensive-cleanup-dev.sh: line 124: jq: command not found
+    ✅ Bucket processed: warmpawz-dev-admin-frontend
+  🗑️  Processing bucket: warmpawz-dev-admin-frontend-ap-south-1
+scripts/comprehensive-cleanup-dev.sh: line 124: jq: command not found
+    ✅ Bucket processed: warmpawz-dev-admin-frontend-ap-south-1
+  🗑️  Processing bucket: warmpawz-dev-backups-023394150666
+scripts/comprehensive-cleanup-dev.sh: line 124: jq: command not found
+    ✅ Bucket processed: warmpawz-dev-backups-023394150666
+  🗑️  Processing bucket: warmpawz-dev-customer-frontend
+scripts/comprehensive-cleanup-dev.sh: line 124: jq: command not found
+    ✅ Bucket processed: warmpawz-dev-customer-frontend
+  🗑️  Processing bucket: warmpawz-dev-customer-frontend-ap-south-1
+scripts/comprehensive-cleanup-dev.sh: line 124: jq: command not found
+    ✅ Bucket processed: warmpawz-dev-customer-frontend-ap-south-1
+  🗑️  Processing bucket: warmpawz-dev-logs-023394150666
+scripts/comprehensive-cleanup-dev.sh: line 124: jq: command not found
+    ✅ Bucket processed: warmpawz-dev-logs-023394150666
+  🗑️  Processing bucket: warmpawz-dev-static-023394150666
+scripts/comprehensive-cleanup-dev.sh: line 124: jq: command not found
+    ✅ Bucket processed: warmpawz-dev-static-023394150666
+  🗑️  Processing bucket: warmpawz-dev-user-uploads-023394150666
+scripts/comprehensive-cleanup-dev.sh: line 124: jq: command not found
+    ✅ Bucket processed: warmpawz-dev-user-uploads-023394150666
+  🗑️  Processing bucket: warmpawz-dev-vendor-frontend
+scripts/comprehensive-cleanup-dev.sh: line 124: jq: command not found
+    ✅ Bucket processed: warmpawz-dev-vendor-frontend
+  🗑️  Processing bucket: warmpawz-dev-vendor-frontend-ap-south-1
+scripts/comprehensive-cleanup-dev.sh: line 124: jq: command not found
+    ✅ Bucket processed: warmpawz-dev-vendor-frontend-ap-south-1
+  ✅ All buckets cleaned
+
+3️⃣  Lambda Function Cleanup...
+  ℹ️  No Lambda functions found (already clean)
+
+4️⃣  CloudFront Distribution Cleanup...
+  ℹ️  No CloudFront distributions found (already clean)
+
+5️⃣  API Gateway Cleanup...
+  📋 Found API Gateways:
+    - 61fwctfp34
+    - 9i9gfwkby7
+    - f0ry6v9nug
+    - v3cdz887p5
+    - yg8e6gnxee
+  🗑️  Deleting API: 61fwctfp34
+  🗑️  Deleting API: 9i9gfwkby7
+  🗑️  Deleting API: f0ry6v9nug
+  🗑️  Deleting API: v3cdz887p5
+  🗑️  Deleting API: yg8e6gnxee
+  ✅ API Gateway cleanup complete
+
+6️⃣  DynamoDB Table Cleanup...
+  📋 Found DynamoDB tables:
+    - warmpawz-dev-analytics-events
+    - warmpawz-dev-cache
+    - warmpawz-dev-rate-limits
+    - warmpawz-dev-sessions
+  🗑️  Deleting table: warmpawz-dev-analytics-events
+{
+    "TableDescription": {
+        "TableName": "warmpawz-dev-analytics-events",
+        "TableStatus": "DELETING",
+        "ProvisionedThroughput": {
+            "NumberOfDecreasesToday": 0,
+            "ReadCapacityUnits": 0,
+            "WriteCapacityUnits": 0
+        },
+        "TableSizeBytes": 0,
+        "ItemCount": 0,
+        "TableArn": "arn:aws:dynamodb:ap-south-1:023394150666:table/warmpawz-dev-analytics-events",
+        "TableId": "3a48bc9f-414d-4be9-8c8a-354501a43b95",
+        "BillingModeSummary": {
+            "BillingMode": "PAY_PER_REQUEST",
+            "LastUpdateToPayPerRequestDateTime": 1767511968.716
+        },
+        "StreamSpecification": {
+            "StreamEnabled": true,
+            "StreamViewType": "NEW_AND_OLD_IMAGES"
+        },
+        "LatestStreamLabel": "2026-01-04T07:32:48.716",
+        "LatestStreamArn": "arn:aws:dynamodb:ap-south-1:023394150666:table/warmpawz-dev-analytics-events/stream/2026-01-04T07:32:48.716",
+        "SSEDescription": {
+            "Status": "ENABLED",
+            "SSEType": "KMS",
+            "KMSMasterKeyArn": "arn:aws:kms:ap-south-1:023394150666:key/924048ee-f5ac-498a-bf89-a3eb3108437c"
+        },
+        "DeletionProtectionEnabled": false
+    }
+}
+  🗑️  Deleting table: warmpawz-dev-cache
+{
+    "TableDescription": {
+        "TableName": "warmpawz-dev-cache",
+        "TableStatus": "DELETING",
+        "ProvisionedThroughput": {
+            "NumberOfDecreasesToday": 0,
+            "ReadCapacityUnits": 0,
+            "WriteCapacityUnits": 0
+        },
+        "TableSizeBytes": 0,
+        "ItemCount": 0,
+        "TableArn": "arn:aws:dynamodb:ap-south-1:023394150666:table/warmpawz-dev-cache",
+        "TableId": "3e0744c4-ed66-49bc-87d3-73173a3a8c3a",
+        "BillingModeSummary": {
+            "BillingMode": "PAY_PER_REQUEST",
+            "LastUpdateToPayPerRequestDateTime": 1767511967.734
+        },
+        "SSEDescription": {
+            "Status": "ENABLED",
+            "SSEType": "KMS",
+            "KMSMasterKeyArn": "arn:aws:kms:ap-south-1:023394150666:key/924048ee-f5ac-498a-bf89-a3eb3108437c"
+        },
+        "DeletionProtectionEnabled": false
+    }
+}
+  🗑️  Deleting table: warmpawz-dev-rate-limits
+{
+    "TableDescription": {
+        "TableName": "warmpawz-dev-rate-limits",
+        "TableStatus": "DELETING",
+        "ProvisionedThroughput": {
+            "NumberOfDecreasesToday": 0,
+            "ReadCapacityUnits": 0,
+            "WriteCapacityUnits": 0
+        },
+        "TableSizeBytes": 0,
+        "ItemCount": 0,
+        "TableArn": "arn:aws:dynamodb:ap-south-1:023394150666:table/warmpawz-dev-rate-limits",
+        "TableId": "c03ef7de-73f6-4f82-9126-4db2c0b287f7",
+        "BillingModeSummary": {
+            "BillingMode": "PAY_PER_REQUEST",
+            "LastUpdateToPayPerRequestDateTime": 1767511969.699
+        },
+        "SSEDescription": {
+            "Status": "ENABLED",
+            "SSEType": "KMS",
+            "KMSMasterKeyArn": "arn:aws:kms:ap-south-1:023394150666:key/924048ee-f5ac-498a-bf89-a3eb3108437c"
+        },
+        "DeletionProtectionEnabled": false
+    }
+}
+  🗑️  Deleting table: warmpawz-dev-sessions
+{
+    "TableDescription": {
+        "TableName": "warmpawz-dev-sessions",
+        "TableStatus": "DELETING",
+        "ProvisionedThroughput": {
+            "NumberOfDecreasesToday": 0,
+            "ReadCapacityUnits": 0,
+            "WriteCapacityUnits": 0
+        },
+        "TableSizeBytes": 0,
+        "ItemCount": 0,
+        "TableArn": "arn:aws:dynamodb:ap-south-1:023394150666:table/warmpawz-dev-sessions",
+        "TableId": "40ff45f4-c3d3-4735-83d4-dd688e8ba466",
+        "BillingModeSummary": {
+            "BillingMode": "PAY_PER_REQUEST",
+            "LastUpdateToPayPerRequestDateTime": 1767511969.378
+        },
+        "SSEDescription": {
+            "Status": "ENABLED",
+            "SSEType": "KMS",
+            "KMSMasterKeyArn": "arn:aws:kms:ap-south-1:023394150666:key/924048ee-f5ac-498a-bf89-a3eb3108437c"
+        },
+        "DeletionProtectionEnabled": false
+    }
+}
+  ✅ DynamoDB cleanup complete
+  🗑️  Deleting Terraform lock table: warmpawz-terraform-locks
+{
+    "TableDescription": {
+        "TableName": "warmpawz-terraform-locks",
+        "TableStatus": "DELETING",
+        "ProvisionedThroughput": {
+            "NumberOfDecreasesToday": 0,
+            "ReadCapacityUnits": 0,
+            "WriteCapacityUnits": 0
+        },
+        "TableSizeBytes": 0,
+        "ItemCount": 0,
+        "TableArn": "arn:aws:dynamodb:ap-south-1:023394150666:table/warmpawz-terraform-locks",
+        "TableId": "7ccc16d1-75af-483f-91ae-6ecf438d286f",
+        "BillingModeSummary": {
+            "BillingMode": "PAY_PER_REQUEST",
+            "LastUpdateToPayPerRequestDateTime": 1767433236.619
+        },
+        "DeletionProtectionEnabled": false
+    }
+}
+
+7️⃣  Secrets Manager Cleanup...
+  📋 Found secrets:
+    - warmpawz/dev/razorpay
+    - warmpawz/dev/google-maps
+    - warmpawz/dev/shiprocket
+    - warmpawz-dev-rds-master-20260104073255278800000004
+    - warmpawz-dev-rds-master-20260104074845214300000001
+    - warmpawz-dev-rds-master-20260104075251932200000007
+    - warmpawz-dev-rds-master-20260104082211346600000002
+    - warmpawz-dev-rds-master-20260104083655145300000007
+  🗑️  Deleting secret: warmpawz/dev/razorpay
+{
+    "ARN": "arn:aws:secretsmanager:ap-south-1:023394150666:secret:warmpawz/dev/razorpay-PXXjLo",
+    "Name": "warmpawz/dev/razorpay",
+    "DeletionDate": 1767534522.239
+}
+  🗑️  Deleting secret: warmpawz/dev/google-maps
+{
+    "ARN": "arn:aws:secretsmanager:ap-south-1:023394150666:secret:warmpawz/dev/google-maps-tBQ2s9",
+    "Name": "warmpawz/dev/google-maps",
+    "DeletionDate": 1767534522.755
+}
+  🗑️  Deleting secret: warmpawz/dev/shiprocket
+{
+    "ARN": "arn:aws:secretsmanager:ap-south-1:023394150666:secret:warmpawz/dev/shiprocket-daRX26",
+    "Name": "warmpawz/dev/shiprocket",
+    "DeletionDate": 1767534523.224
+}
+  🗑️  Deleting secret: warmpawz-dev-rds-master-20260104073255278800000004
+{
+    "ARN": "arn:aws:secretsmanager:ap-south-1:023394150666:secret:warmpawz-dev-rds-master-20260104073255278800000004-Ctp1gX",
+    "Name": "warmpawz-dev-rds-master-20260104073255278800000004",
+    "DeletionDate": 1767534523.716
+}
+  🗑️  Deleting secret: warmpawz-dev-rds-master-20260104074845214300000001
+{
+    "ARN": "arn:aws:secretsmanager:ap-south-1:023394150666:secret:warmpawz-dev-rds-master-20260104074845214300000001-Dp8KrB",
+    "Name": "warmpawz-dev-rds-master-20260104074845214300000001",
+    "DeletionDate": 1767534524.242
+}
+  🗑️  Deleting secret: warmpawz-dev-rds-master-20260104075251932200000007
+{
+    "ARN": "arn:aws:secretsmanager:ap-south-1:023394150666:secret:warmpawz-dev-rds-master-20260104075251932200000007-rGN3yB",
+    "Name": "warmpawz-dev-rds-master-20260104075251932200000007",
+    "DeletionDate": 1767534524.744
+}
+  🗑️  Deleting secret: warmpawz-dev-rds-master-20260104082211346600000002
+{
+    "ARN": "arn:aws:secretsmanager:ap-south-1:023394150666:secret:warmpawz-dev-rds-master-20260104082211346600000002-Y4IaZD",
+    "Name": "warmpawz-dev-rds-master-20260104082211346600000002",
+    "DeletionDate": 1767534525.239
+}
+  🗑️  Deleting secret: warmpawz-dev-rds-master-20260104083655145300000007
+{
+    "ARN": "arn:aws:secretsmanager:ap-south-1:023394150666:secret:warmpawz-dev-rds-master-20260104083655145300000007-hIlQN3",
+    "Name": "warmpawz-dev-rds-master-20260104083655145300000007",
+    "DeletionDate": 1767534525.723
+}
+  ✅ Secrets cleanup complete
+
+8️⃣  CloudWatch Log Group Cleanup...
+  📋 Found log groups:
+    - /aws/apigateway/warmpawz-dev
+    - /aws/lambda/warmpawz-dev-api-handler
+  🗑️  Deleting log group: /aws/apigateway/warmpawz-dev
+  🗑️  Deleting log group: /aws/lambda/warmpawz-dev-api-handler
+  ✅ CloudWatch cleanup complete
+
+9️⃣  SNS Topic Cleanup...
+  📋 Found SNS topics:
+    - arn:aws:sns:ap-south-1:023394150666:warmpawz-dev-booking-updates
+    - arn:aws:sns:ap-south-1:023394150666:warmpawz-dev-payment-events
+    - arn:aws:sns:ap-south-1:023394150666:warmpawz-dev-system-alerts
+    - arn:aws:sns:ap-south-1:023394150666:warmpawz-dev-user-notifications
+    - arn:aws:sns:ap-south-1:023394150666:warmpawz-dev-vendor-notifications
+  🗑️  Deleting topic: arn:aws:sns:ap-south-1:023394150666:warmpawz-dev-booking-updates
+  🗑️  Deleting topic: arn:aws:sns:ap-south-1:023394150666:warmpawz-dev-payment-events
+  🗑️  Deleting topic: arn:aws:sns:ap-south-1:023394150666:warmpawz-dev-system-alerts
+  🗑️  Deleting topic: arn:aws:sns:ap-south-1:023394150666:warmpawz-dev-user-notifications
+  🗑️  Deleting topic: arn:aws:sns:ap-south-1:023394150666:warmpawz-dev-vendor-notifications
+  ✅ SNS cleanup complete
+
+🔟 SQS Queue Cleanup...
+  📋 Found SQS queues:
+    - https://ap-south-1.queue.amazonaws.com/023394150666/warmpawz-dev-analytics-events
+    - https://ap-south-1.queue.amazonaws.com/023394150666/warmpawz-dev-booking-processing
+    - https://ap-south-1.queue.amazonaws.com/023394150666/warmpawz-dev-dlq
+    - https://ap-south-1.queue.amazonaws.com/023394150666/warmpawz-dev-dlq.fifo
+    - https://ap-south-1.queue.amazonaws.com/023394150666/warmpawz-dev-email-delivery
+    - https://ap-south-1.queue.amazonaws.com/023394150666/warmpawz-dev-notification-delivery
+    - https://ap-south-1.queue.amazonaws.com/023394150666/warmpawz-dev-order-processing.fifo
+    - https://ap-south-1.queue.amazonaws.com/023394150666/warmpawz-dev-payment-processing
+  🗑️  Deleting queue: https://ap-south-1.queue.amazonaws.com/023394150666/warmpawz-dev-analytics-events
+  🗑️  Deleting queue: https://ap-south-1.queue.amazonaws.com/023394150666/warmpawz-dev-booking-processing
+  🗑️  Deleting queue: https://ap-south-1.queue.amazonaws.com/023394150666/warmpawz-dev-dlq
+  🗑️  Deleting queue: https://ap-south-1.queue.amazonaws.com/023394150666/warmpawz-dev-dlq.fifo
+  🗑️  Deleting queue: https://ap-south-1.queue.amazonaws.com/023394150666/warmpawz-dev-email-delivery
+  🗑️  Deleting queue: https://ap-south-1.queue.amazonaws.com/023394150666/warmpawz-dev-notification-delivery
+  🗑️  Deleting queue: https://ap-south-1.queue.amazonaws.com/023394150666/warmpawz-dev-order-processing.fifo
+  🗑️  Deleting queue: https://ap-south-1.queue.amazonaws.com/023394150666/warmpawz-dev-payment-processing
+  ✅ SQS cleanup complete
+
+1️⃣1️⃣  Cognito Cleanup...
+  📋 Found Cognito user pools:
+    - ap-south-1_DcYSdrdgE
+    - ap-south-1_F19vwuWAn
+    - ap-south-1_O1tP96Ynx
+    - ap-south-1_eoIW3BDqE
+    - ap-south-1_m4WinHfcg
+  🗑️  Deleting user pool: ap-south-1_DcYSdrdgE
+    Failed
+  🗑️  Deleting user pool: ap-south-1_F19vwuWAn
+    Failed
+  🗑️  Deleting user pool: ap-south-1_O1tP96Ynx
+    Failed
+  🗑️  Deleting user pool: ap-south-1_eoIW3BDqE
+    Failed
+  🗑️  Deleting user pool: ap-south-1_m4WinHfcg
+    Failed
+  ✅ Cognito cleanup complete
+
+1️⃣2️⃣  VPC Cleanup...
+  ⚠️  Found VPCs (not auto-deleting - manual deletion recommended):
+    - vpc-098b75515df71bf6a
+  To delete VPCs manually: aws ec2 delete-vpc --vpc-id <VPC_ID>
+
+╔══════════════════════════════════════════════════════════════╗
+║                    CLEANUP COMPLETE                          ║
+╚══════════════════════════════════════════════════════════════╝
+
+✅ All warmpawz-dev resources have been cleaned up
+⚠️  Note: CloudFront distributions may take 15-30 minutes to delete
+⚠️  Note: RDS deletions may take 5-10 minutes to complete
+
+Next steps:
+1. Wait 2-3 minutes for deletions to propagate
+2. Run: aws s3 ls | grep warmpawz
+3. Verify no resources remain
+4. Trigger new deployment
+

@@ -9,7 +9,6 @@ import com.facebook.react.ReactPackage
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.load
 import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
 import com.facebook.react.defaults.DefaultReactNativeHost
-import com.facebook.react.flipper.ReactNativeFlipper
 import com.facebook.soloader.SoLoader
 
 class MainApplication : Application(), ReactApplication {
@@ -40,6 +39,20 @@ class MainApplication : Application(), ReactApplication {
       // If you opted-in for the New Architecture, we load the native entry point for this app.
       load()
     }
-    ReactNativeFlipper.initializeFlipper(this, reactNativeHost.reactInstanceManager)
+    
+    // Initialize Flipper only in debug builds
+    if (BuildConfig.DEBUG) {
+      try {
+        val ReactNativeFlipper = Class.forName("com.facebook.react.flipper.ReactNativeFlipper")
+        val initMethod = ReactNativeFlipper.getMethod(
+          "initializeFlipper",
+          android.content.Context::class.java,
+          com.facebook.react.ReactInstanceManager::class.java
+        )
+        initMethod.invoke(null, this, reactNativeHost.reactInstanceManager)
+      } catch (e: ClassNotFoundException) {
+        // Flipper not available, ignore
+      }
+    }
   }
 }

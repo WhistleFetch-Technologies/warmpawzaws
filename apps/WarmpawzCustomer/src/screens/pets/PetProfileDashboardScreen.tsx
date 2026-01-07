@@ -205,7 +205,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -246,7 +246,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   petInfoCard: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: spacing.lg,
@@ -269,7 +269,7 @@ const styles = StyleSheet.create({
   petAvatarText: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#fff',
+    color: colors.white,
   },
   petDetails: {
     flex: 1,
@@ -315,7 +315,7 @@ const styles = StyleSheet.create({
   },
   quickActionCard: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     alignItems: 'center',
@@ -333,7 +333,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   bookingCard: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: spacing.md,
@@ -357,7 +357,7 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   bookingStatus: {
-    backgroundColor: '#f3f4f6',
+    backgroundColor: colors.gray.100,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
     borderRadius: borderRadius.sm,
@@ -368,7 +368,7 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   vaccinationCard: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     borderWidth: 1,

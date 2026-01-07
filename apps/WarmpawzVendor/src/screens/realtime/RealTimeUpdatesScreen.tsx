@@ -15,6 +15,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
+import { RealTimeUpdatesApi } from '../../services/api';
 
 interface RealTimeUpdatesScreenProps {
   vendorId: string;
@@ -38,9 +39,13 @@ export function RealTimeUpdatesScreen({
 }: RealTimeUpdatesScreenProps) {
   const [updates, setUpdates] = useState<Update[]>([]);
   const [connected, setConnected] = useState(false);
+  const [loading, setLoading] = useState(true);
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
+    // ✅ API Integration: Load initial updates via HTTP
+    loadInitialUpdates();
+    // Then connect WebSocket for real-time updates
     connectWebSocket();
     return () => {
       if (wsRef.current) {
@@ -48,6 +53,21 @@ export function RealTimeUpdatesScreen({
       }
     };
   }, [vendorId]);
+
+  const loadInitialUpdates = async () => {
+    try {
+      setLoading(true);
+      const response = await RealTimeUpdatesApi.getRealTimeUpdates(vendorId);
+      if (response.updates && Array.isArray(response.updates)) {
+        setUpdates(response.updates);
+      }
+    } catch (error) {
+      console.error('Error loading initial updates:', error);
+      // Continue with WebSocket connection even if HTTP fails
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const connectWebSocket = () => {
     try {

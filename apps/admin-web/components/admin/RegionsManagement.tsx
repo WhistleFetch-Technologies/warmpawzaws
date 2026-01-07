@@ -1,0 +1,70 @@
+'use client';
+
+import React, { useState } from 'react';
+import { Globe, Plus } from 'lucide-react';
+import { RegionsListTab } from './regions/RegionsListTab';
+import { AddRegionModal } from './regions/AddRegionModal';
+
+interface RegionsManagementProps {
+  onBack?: () => void;
+}
+
+export function RegionsManagement({ onBack }: RegionsManagementProps) {
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const handleRegionAdded = () => {
+    setShowAddModal(false);
+    setRefreshKey(prev => prev + 1);
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+      {/* Header */}
+      <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
+        <div className="px-4 py-4">
+          {onBack && (
+            <button
+              onClick={onBack}
+              className="mb-0 text-gray-600 hover:text-gray-900 flex items-center gap-0"
+            >
+              ← Back
+            </button>
+          )}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-0">
+              <div className="p-0 bg-orange-100 rounded-lg">
+                <Globe className="w-6 h-6 text-orange-600" />
+              </div>
+              <div>
+                <h1 className="text-xl font-bold text-gray-900">Regions</h1>
+                <p className="text-sm text-gray-500">Manage global markets</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 flex items-center gap-0 text-sm font-medium"
+            >
+              <Plus className="w-4 h-4" />
+              Add
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="p-4">
+        <RegionsListTab key={refreshKey} />
+      </div>
+
+      {/* Add Region Modal */}
+      {showAddModal && (
+        <AddRegionModal
+          onClose={() => setShowAddModal(false)}
+          onSuccess={handleRegionAdded}
+        />
+      )}
+    </div>
+  );
+}
+

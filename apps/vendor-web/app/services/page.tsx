@@ -1,5 +1,7 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
@@ -212,13 +214,13 @@ export default function ServiceManagementPage() {
                   type="text"
                   placeholder="Service Name"
                   value={newService.service_name || ''}
-                  onChange={(e) => setNewService({ ...newService, service_name: e.target.value })}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewService({ ...newService, service_name: e.target.value })}
                   className="w-full p-3 border rounded-lg"
                 />
                 <textarea
                   placeholder="Description"
                   value={newService.description || ''}
-                  onChange={(e) => setNewService({ ...newService, description: e.target.value })}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNewService({ ...newService, description: e.target.value })}
                   className="w-full p-3 border rounded-lg"
                   rows={3}
                 />
@@ -226,7 +228,7 @@ export default function ServiceManagementPage() {
                   type="text"
                   placeholder="Category"
                   value={newService.category || ''}
-                  onChange={(e) => setNewService({ ...newService, category: e.target.value })}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewService({ ...newService, category: e.target.value })}
                   className="w-full p-3 border rounded-lg"
                 />
                 <div className="grid grid-cols-2 gap-4">
@@ -234,20 +236,20 @@ export default function ServiceManagementPage() {
                     type="number"
                     placeholder="Price (₹)"
                     value={newService.price || ''}
-                    onChange={(e) => setNewService({ ...newService, price: parseFloat(e.target.value) })}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewService({ ...newService, price: parseFloat(e.target.value) })}
                     className="w-full p-3 border rounded-lg"
                   />
                   <input
                     type="number"
                     placeholder="Duration (mins)"
                     value={newService.duration_minutes || ''}
-                    onChange={(e) => setNewService({ ...newService, duration_minutes: parseInt(e.target.value) })}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewService({ ...newService, duration_minutes: parseInt(e.target.value) })}
                     className="w-full p-3 border rounded-lg"
                   />
                 </div>
                 <select
                   value={newService.service_style}
-                  onChange={(e) => setNewService({ ...newService, service_style: e.target.value as any })}
+                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setNewService({ ...newService, service_style: e.target.value as any })}
                   className="w-full p-3 border rounded-lg"
                 >
                   <option value="at_vendor">At Clinic/Centre</option>

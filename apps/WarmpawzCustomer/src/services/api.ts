@@ -1,20 +1,48 @@
 /**
  * API Service Layer
  * Centralized API calls for Customer App
- * Identical endpoints to web app
+ * Enhanced with retry logic, offline support, and error recovery
+ * Phase 4: Error Handling Enhancement
  */
 
 import { API_BASE_URL } from '../config/aws';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { resilientFetch, NetworkMonitor, NetworkError, OfflineQueue } from '../lib/network-resilience';
+import NetInfo from '@react-native-community/netinfo';
 
 // Validate API Base URL is configured
 if (!API_BASE_URL || API_BASE_URL.includes('api.warmpawz.com')) {
   console.warn('⚠️ API_BASE_URL is not properly configured. Please set AWS_API_GATEWAY_URL environment variable.');
 }
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const SESSION_TOKEN_KEY = 'warmpawz_session_token';
 
+// Retry configuration
+const RETRY_CONFIG = {
+  maxRetries: 3,
+  baseDelayMs: 1000,
+  maxDelayMs: 10000,
+  backoffMultiplier: 2,
+  retryableStatusCodes: [408, 429, 500, 502, 503, 504],
+  retryableErrors: ['ETIMEDOUT', 'ECONNRESET', 'ENOTFOUND', 'EAI_AGAIN', 'Network request failed'],
+};
+
 export class ApiService {
+  private static networkMonitor = NetworkMonitor.getInstance();
+  private static offlineQueue = OfflineQueue.getInstance();
+  private static initialized = false;
+
+  // Initialize network monitoring
+  static async initialize() {
+    if (this.initialized) return;
+    
+    // Initial network state
+    const netInfo = await NetInfo.fetch();
+    this.networkMonitor.setIsConnected(netInfo.isConnected ?? false);
+    
+    this.initialized = true;
+  }
+
   private static async getAuthHeaders(): Promise<Record<string, string>> {
     const token = await AsyncStorage.getItem(SESSION_TOKEN_KEY);
     return {
@@ -23,66 +51,115 @@ export class ApiService {
     };
   }
 
-  static async get(endpoint: string) {
-    const headers = await this.getAuthHeaders();
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      method: 'GET',
-      headers,
-    });
-    
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Request failed' }));
-      throw new Error(error.error || 'Request failed');
+  private static async handleRequest<T>(
+    endpoint: string,
+    options: RequestInit,
+    retryConfig?: Partial<import('../lib/network-resilience').RetryConfig>
+  ): Promise<T> {
+    // Ensure initialized
+    if (!this.initialized) {
+      await this.initialize();
     }
-    
-    return response.json();
+
+    const url = `${API_BASE_URL}${endpoint}`;
+    const headers = await this.getAuthHeaders();
+
+    // Check if offline
+    if (!this.networkMonitor.getIsConnected()) {
+      // Queue request if it's a POST/PUT/DELETE
+      if (options.method && ['POST', 'PUT', 'DELETE'].includes(options.method)) {
+        await this.offlineQueue.enqueue({
+          url: endpoint,
+          method: options.method,
+          body: options.body as string,
+          headers,
+          priority: 'normal',
+        });
+        throw new NetworkError('No network connection. Request queued for later.', 'offline', undefined, true);
+      } else {
+        throw new NetworkError('No network connection', 'offline', undefined, false);
+      }
+    }
+
+    try {
+      const response = await resilientFetch(url, {
+        ...options,
+        headers: { ...headers, ...(options.headers as Record<string, string>) },
+      }, retryConfig);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
+        
+        // Handle 401 by clearing token
+        if (response.status === 401) {
+          await this.clearSessionToken();
+        }
+        
+        // Check if retryable
+        const retryableStatusCodes = retryConfig?.retryableStatusCodes || [408, 429, 500, 502, 503, 504];
+        if (retryableStatusCodes.includes(response.status)) {
+          throw new NetworkError(
+            errorData.error || `HTTP ${response.status}`,
+            response.status >= 500 ? 'server_error' : 'client_error',
+            response.status,
+            true
+          );
+        } else {
+          throw new NetworkError(
+            errorData.error || `HTTP ${response.status}`,
+            'client_error',
+            response.status,
+            false
+          );
+        }
+      }
+
+      return await response.json();
+    } catch (error: any) {
+      // Re-throw NetworkError as-is
+      if (error instanceof NetworkError) {
+        throw error;
+      }
+      
+      // Wrap other errors
+      throw new NetworkError(
+        error.message || 'Unknown error',
+        'unknown',
+        undefined,
+        false,
+        error
+      );
+    }
   }
 
-  static async post(endpoint: string, data: any) {
-    const headers = await this.getAuthHeaders();
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(data),
-    });
-    
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Request failed' }));
-      throw new Error(error.error || 'Request failed');
-    }
-    
-    return response.json();
+  static async get(endpoint: string, retryConfig?: Partial<typeof RETRY_CONFIG>) {
+    return this.handleRequest(endpoint, { method: 'GET' }, retryConfig);
   }
 
-  static async put(endpoint: string, data: any) {
-    const headers = await this.getAuthHeaders();
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      method: 'PUT',
-      headers,
-      body: JSON.stringify(data),
-    });
-    
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Request failed' }));
-      throw new Error(error.error || 'Request failed');
-    }
-    
-    return response.json();
+  static async post(endpoint: string, data: any, retryConfig?: Partial<typeof RETRY_CONFIG>) {
+    return this.handleRequest(
+      endpoint,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      },
+      retryConfig
+    );
   }
 
-  static async delete(endpoint: string) {
-    const headers = await this.getAuthHeaders();
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      method: 'DELETE',
-      headers,
-    });
-    
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Request failed' }));
-      throw new Error(error.error || 'Request failed');
-    }
-    
-    return response.json();
+  static async put(endpoint: string, data: any, retryConfig?: Partial<typeof RETRY_CONFIG>) {
+    return this.handleRequest(
+      endpoint,
+      {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      },
+      retryConfig
+    );
+  }
+
+  static async delete(endpoint: string, retryConfig?: Partial<typeof RETRY_CONFIG>) {
+    return this.handleRequest(endpoint, { method: 'DELETE' }, retryConfig);
   }
 
   static async saveSessionToken(token: string) {
@@ -164,18 +241,26 @@ export const CustomerApi = {
   rescheduleBooking: (bookingId: string, newDate: string, newTime: string, reason?: string) =>
     ApiService.post(`/bookings/${bookingId}/reschedule`, { newDate, newTimeSlot: newTime, reason }),
   
-  // Orders (E-commerce)
+  // Orders (E-commerce) - Updated to use new customer-orders endpoints
   getOrders: async (identifier: string) => {
-    // Support both phone and customerId
-    const response = await ApiService.get(`/customer/${identifier}/orders`).catch(() =>
-      ApiService.get(`/orders/customer/${identifier}`)
+    // Use new customer-orders endpoint
+    const response = await ApiService.get(`/customer/orders?customerId=${identifier}`).catch(() =>
+      ApiService.get(`/customer/${identifier}/orders`).catch(() =>
+        ApiService.get(`/orders/customer/${identifier}`)
+      )
     );
     return response.orders || response;
   },
-  getOrderDetails: (orderId: string) => ApiService.get(`/customer/shop/orders/${orderId}`),
+  getOrderDetails: (orderId: string) => ApiService.get(`/customer/orders/${orderId}`),
+  getOrderInvoice: (orderId: string) => ApiService.get(`/customer/orders/${orderId}/invoice`),
   getOrderTracking: (orderId: string) => ApiService.get(`/customer/shop/orders/${orderId}/track`),
   cancelOrder: (orderId: string, reason?: string) => 
     ApiService.post(`/customer/shop/orders/${orderId}/cancel`, { reason }),
+  getOrderHistory: async (customerId: string) => {
+    // Use new customer-orders endpoint
+    const response = await ApiService.get(`/customer/orders?customerId=${customerId}`);
+    return response.orders || response;
+  },
   
   // Support Tickets
   getSupportTickets: (phone: string) => ApiService.get(`/crm/tickets?customerPhone=${phone}`),
@@ -253,6 +338,13 @@ export const CustomerApi = {
   // Profile Management
   changePassword: (passwordData: { currentPassword: string; newPassword: string; customerId: string }) =>
     ApiService.post('/customer/change-password', passwordData),
+  // Settings
+  getSettings: (customerId: string) => ApiService.get(`/customer/${customerId}/settings`),
+  updateSettings: (customerId: string, settings: any) =>
+    ApiService.put(`/customer/${customerId}/settings`, settings),
+  // Onboarding
+  updateOnboardingStatus: (identifier: string, status: string, data?: any) =>
+    ApiService.post(`/customer/${identifier}/onboarding`, { status, data }),
   
   // Wishlist
   getWishlist: (customerId: string) => ApiService.get(`/customer/${customerId}/wishlist`),
@@ -263,6 +355,9 @@ export const CustomerApi = {
   getOrderInvoice: (orderId: string) => ApiService.get(`/orders/${orderId}/invoice`),
   reorder: (orderId: string, customerId: string) => 
     ApiService.post(`/customer/shop/orders/${orderId}/reorder`, { customerId }),
+  // Order Returns
+  createReturn: (returnData: { orderId: string; items: any[]; reason: string; customerId: string }) => 
+    ApiService.post('/customer/returns', returnData),
   
   // Events
   getEvents: (vendorId?: string) => {
@@ -392,16 +487,22 @@ export const PaymentApi = {
   // Request refund
   requestRefund: (paymentId: string, amount?: number, reason?: string) =>
     ApiService.post('/payment/refund', { paymentId, amount, reason }),
+  // Retry failed payment
+  retryPayment: (paymentId: string, orderId?: string, bookingId?: string, paymentMethod?: 'razorpay' | 'wallet') =>
+    ApiService.post('/payment/retry', { paymentId, orderId, bookingId, paymentMethod }),
+  // Get payment status
+  getPaymentStatus: (paymentId: string) => ApiService.get(`/payment/${paymentId}/status`),
 };
 
 // ✅ NEW: Appointment API (SQL-migrated endpoints)
 export const AppointmentApi = {
-  getAppointments: (customerId: string) => ApiService.get(`/appointments/customer/${customerId}`),
-  getAppointment: (appointmentId: string) => ApiService.get(`/appointment/${appointmentId}`),
+  // Use new customer-appointments endpoints
+  getAppointments: (customerId: string) => ApiService.get(`/customer/appointments?customerId=${customerId}`),
+  getAppointment: (appointmentId: string) => ApiService.get(`/customer/appointments/${appointmentId}`),
   cancelAppointment: (appointmentId: string, reason?: string) => 
-    ApiService.post(`/appointment/${appointmentId}/cancel`, { reason }),
+    ApiService.post(`/customer/appointments/${appointmentId}/cancel`, { reason }),
   rescheduleAppointment: (appointmentId: string, newDate: string, newTime: string, reason?: string) =>
-    ApiService.post(`/appointment/${appointmentId}/reschedule`, { newDate, newTimeSlot: newTime, reason }),
+    ApiService.post(`/customer/appointments/${appointmentId}/reschedule`, { appointment_date: newDate, appointment_time: newTime, reason }),
 };
 
 // ✅ NEW: Booking OTP API (SQL-migrated endpoints)
@@ -467,6 +568,11 @@ export const WalletApi = {
   getTopupOffers: (customerId: string) => ApiService.get(`/customer/${customerId}/wallet/topup-offers`),
   initiateTopup: (customerId: string, amount: number, bonusOffer?: any) => 
     ApiService.post(`/customer/${customerId}/wallet/topup/initiate`, { amount, bonusOffer }),
+  // Alias for backward compatibility
+  topUpWallet: (customerId: string, amount: number, bonusOffer?: any) => 
+    ApiService.post(`/customer/${customerId}/wallet/topup/initiate`, { amount, bonusOffer }),
+  topUp: (customerId: string, amount: number, paymentMethod?: string) => 
+    ApiService.post(`/wallet/${customerId}/credit`, { amount, referenceType: 'topup', paymentMethod }),
   verifyTopup: (customerId: string, paymentId: string, orderId: string, signature: string) => 
     ApiService.post(`/customer/${customerId}/wallet/topup/verify`, { paymentId, orderId, signature }),
   getTransactions: (customerId: string, params?: { limit?: number; offset?: number; type?: string }) => {
@@ -824,5 +930,170 @@ export const RadarLocationSystemApi = {
     if (maxDistance) params.append('maxDistance', maxDistance.toString());
     return ApiService.get(`/home-services/providers/nearby?${params}`);
   },
+};
+
+// ✅ NEW: AI Chatbot API (Phase 3 - AI Chatbot Integration)
+export const AIChatbotApi = {
+  chat: (data: {
+    message: string;
+    customerId?: string;
+    customerPhone?: string;
+    conversationId?: string;
+    context?: any;
+    petId?: string;
+  }) => ApiService.post('/ai-chatbot/chat', data),
+  
+  symptomsChecker: (data: {
+    symptoms: string;
+    petId?: string;
+    petType?: string;
+    petAge?: string;
+    customerId?: string;
+    customerPhone?: string;
+  }) => ApiService.post('/ai-chatbot/symptoms-checker', data),
+  
+  bookingAssist: (data: {
+    query: string;
+    customerId?: string;
+    customerPhone?: string;
+    location?: { lat: number; lng: number };
+    petId?: string;
+  }) => ApiService.post('/ai-chatbot/booking-assist', data),
+  
+  escalateToAgent: (data: {
+    conversationId: string;
+    customerId?: string;
+    customerPhone?: string;
+    reason?: string;
+    conversationHistory?: string;
+  }) => ApiService.post('/ai-chatbot/escalate-to-agent', data),
+  
+  getConversation: (conversationId: string) => 
+    ApiService.get(`/ai-chatbot/conversation/${conversationId}`),
+};
+
+// ✅ NEW: Support & CRM API (Phase 3 - AI Chatbot Integration)
+export const SupportCrmApi = {
+  createTicket: (data: {
+    customerId?: string;
+    customerPhone?: string;
+    subject: string;
+    message: string;
+    source?: string;
+    priority?: string;
+    category?: string;
+    bookingId?: string;
+    orderId?: string;
+  }) => ApiService.post('/support/tickets', data),
+  
+  getTickets: (params?: {
+    customerId?: string;
+    customerPhone?: string;
+    status?: string;
+    limit?: number;
+    offset?: number;
+  }) => {
+    const query = params ? new URLSearchParams(Object.entries(params).map(([k,v]) => [k, String(v)])).toString() : '';
+    return ApiService.get(`/support/tickets${query ? `?${query}` : ''}`);
+  },
+  
+  getTicket: (ticketId: string) => ApiService.get(`/support/tickets/${ticketId}`),
+  
+  respondToTicket: (ticketId: string, data: {
+    message: string;
+    responderId?: string;
+    responderType?: 'agent' | 'customer';
+  }) => ApiService.post(`/support/tickets/${ticketId}/respond`, data),
+  
+  updateTicketStatus: (ticketId: string, status: string, resolution?: string) =>
+    ApiService.put(`/support/tickets/${ticketId}/status`, { status, resolution }),
+};
+
+// ✅ NEW: Community API (Phase 1 - Mobile Improvements)
+export const CommunityApi = {
+  getPosts: (customerId: string, limit?: number, offset?: number) => {
+    const params = new URLSearchParams({ customerId });
+    if (limit) params.append('limit', limit.toString());
+    if (offset) params.append('offset', offset.toString());
+    return ApiService.get(`/community/posts?${params}`);
+  },
+  createPost: (postData: { customerId: string; content: string; images?: string[]; petId?: string }) => 
+    ApiService.post('/community/posts', postData),
+  likePost: (postId: string, customerId: string) => 
+    ApiService.post(`/community/posts/${postId}/like`, { customerId }),
+  unlikePost: (postId: string, customerId: string) => 
+    ApiService.delete(`/community/posts/${postId}/like?customerId=${customerId}`),
+  commentPost: (postId: string, comment: { customerId: string; comment: string }) => 
+    ApiService.post(`/community/posts/${postId}/comments`, comment),
+  getComments: (postId: string, limit?: number) => {
+    const params = limit ? `?limit=${limit}` : '';
+    return ApiService.get(`/community/posts/${postId}/comments${params}`);
+  },
+  deletePost: (postId: string, customerId: string) => 
+    ApiService.delete(`/community/posts/${postId}?customerId=${customerId}`),
+};
+
+// ✅ NEW: Referral API (Phase 1 - Mobile Improvements)
+export const ReferralApi = {
+  getReferralCode: (customerId: string) => 
+    ApiService.get(`/customer/${customerId}/referral`),
+  getReferralStats: (customerId: string) => 
+    ApiService.get(`/customer/${customerId}/referral/stats`),
+  sendInvite: (inviteData: { customerId: string; email?: string; phone?: string; message?: string }) => 
+    ApiService.post('/referral/invite', inviteData),
+  getReferralHistory: (customerId: string, limit?: number) => {
+    const params = limit ? `?limit=${limit}` : '';
+    return ApiService.get(`/customer/${customerId}/referral/history${params}`);
+  },
+  claimReward: (customerId: string, rewardId: string) => 
+    ApiService.post(`/customer/${customerId}/referral/claim`, { rewardId }),
+};
+
+// ✅ NEW: Rewards API (Phase 1 - Mobile Improvements)
+export const RewardsApi = {
+  getPoints: (customerId: string) => 
+    ApiService.get(`/customer/${customerId}/rewards/points`),
+  getHistory: (customerId: string, limit?: number, offset?: number) => {
+    const params = new URLSearchParams({ customerId });
+    if (limit) params.append('limit', limit.toString());
+    if (offset) params.append('offset', offset.toString());
+    return ApiService.get(`/customer/${customerId}/rewards/history?${params}`);
+  },
+  getAvailableRewards: (customerId: string) => 
+    ApiService.get(`/customer/${customerId}/rewards/available`),
+  redeemPoints: (customerId: string, rewardData: { points: number; rewardId: string }) => 
+    ApiService.post(`/customer/${customerId}/rewards/redeem`, rewardData),
+  getRewardDetails: (rewardId: string) => 
+    ApiService.get(`/rewards/${rewardId}`),
+};
+
+// ✅ NEW: Subscription API (Phase 1 - Mobile Improvements)
+export const SubscriptionApi = {
+  getSubscriptions: (customerId: string) => 
+    ApiService.get(`/customer/${customerId}/subscriptions`),
+  getSubscriptionDetails: (subscriptionId: string) => 
+    ApiService.get(`/subscriptions/${subscriptionId}`),
+  cancelSubscription: (subscriptionId: string, reason?: string) => 
+    ApiService.post(`/subscriptions/${subscriptionId}/cancel`, { reason }),
+  pauseSubscription: (subscriptionId: string, pauseUntil?: string) => 
+    ApiService.post(`/subscriptions/${subscriptionId}/pause`, { pauseUntil }),
+  resumeSubscription: (subscriptionId: string) => 
+    ApiService.post(`/subscriptions/${subscriptionId}/resume`, {}),
+  getSubscriptionUsage: (subscriptionId: string, period?: string) => {
+    const params = period ? `?period=${period}` : '';
+    return ApiService.get(`/subscriptions/${subscriptionId}/usage${params}`);
+  },
+};
+
+// ✅ NEW: Order Return API (Phase 1 - Mobile Improvements)
+export const OrderReturnApi = {
+  createReturn: (returnData: { orderId: string; items: any[]; reason: string; customerId: string }) => 
+    ApiService.post('/customer/returns', returnData),
+  getReturnStatus: (returnId: string) => 
+    ApiService.get(`/customer/returns/${returnId}`),
+  getReturnHistory: (customerId: string) => 
+    ApiService.get(`/customer/${customerId}/returns`),
+  cancelReturn: (returnId: string, customerId: string) => 
+    ApiService.post(`/customer/returns/${returnId}/cancel`, { customerId }),
 };
 

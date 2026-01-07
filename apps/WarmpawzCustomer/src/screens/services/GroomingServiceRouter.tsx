@@ -551,7 +551,7 @@ export function GroomingServiceRouter({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
   },
   header: {
@@ -588,7 +588,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.lg,
     padding: spacing.lg,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   optionIcon: {
     fontSize: 48,
@@ -613,7 +613,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   vendorName: {
     fontSize: typography.h3,
@@ -641,7 +641,7 @@ const styles = StyleSheet.create({
   imagePlaceholder: {
     width: '100%',
     height: 200,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: colors.gray.100,
     borderRadius: borderRadius.md,
     justifyContent: 'center',
     alignItems: 'center',
@@ -687,7 +687,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   packageCard: {
     borderColor: colors.primary,
@@ -730,7 +730,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   petName: {
     fontSize: typography.h3,
@@ -808,7 +808,7 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   primaryButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: typography.body,
     fontWeight: 'bold',
   },

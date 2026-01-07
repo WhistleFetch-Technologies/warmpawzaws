@@ -269,7 +269,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -298,7 +298,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xs,
   },
   unreadBadgeText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 12,
     fontWeight: 'bold',
   },
@@ -308,7 +308,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   actionsBar: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
@@ -322,7 +322,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: borderRadius.full,
-    backgroundColor: '#f3f4f6',
+    backgroundColor: colors.gray.100,
   },
   filterButtonActive: {
     backgroundColor: colors.primary,
@@ -333,7 +333,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   filterButtonTextActive: {
-    color: '#fff',
+    color: colors.white,
   },
   markAllReadButton: {
     alignSelf: 'flex-end',
@@ -348,7 +348,7 @@ const styles = StyleSheet.create({
   },
   notificationCard: {
     flexDirection: 'row',
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: spacing.md,
@@ -364,7 +364,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: '#f3f4f6',
+    backgroundColor: colors.gray.100,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: spacing.md,

@@ -1,0 +1,138 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { Clock, Calendar, Save, ArrowLeft } from 'lucide-react';
+import { apiClient } from '@/lib/api-client';
+
+interface CenterAvailabilityManagerProps {
+  vendorId: string;
+  vendorName: string;
+  onBack: () => void;
+}
+
+const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+const DAY_LABELS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+export function CenterAvailabilityManager({
+  vendorId,
+  vendorName,
+  onBack
+}: CenterAvailabilityManagerProps) {
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [availability, setAvailability] = useState<any>(null);
+
+  useEffect(() => {
+    loadAvailability();
+  }, [vendorId]);
+
+  const loadAvailability = async () => {
+    try {
+      setLoading(true);
+      const response = await apiClient.get<any>(`/vendor/${vendorId}/center-availability`);
+      if (response.success) {
+        setAvailability(response.availability);
+      }
+    } catch (error) {
+      console.error('Error loading availability:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSave = async () => {
+    try {
+      setSaving(true);
+      await apiClient.put(`/vendor/${vendorId}/center-availability`, availability);
+      alert('✅ Availability settings saved successfully!');
+    } catch (error: any) {
+      alert(error.message || 'Failed to save settings');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading || !availability) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[primary]"></div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+      <div className="bg-white border-b sticky top-0 z-10 p-4">
+        <div className="flex items-center gap-0 mb-4">
+          <button onClick={onBack} className="w-8 h-8 flex items-center justify-center">
+            <ArrowLeft className="w-5 h-5 text-gray-700" />
+          </button>
+          <div className="flex-1">
+            <h1 className="font-semibold text-gray-900">Center Availability</h1>
+            <p className="text-sm text-gray-600">{vendorName}</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="p-4 space-y-4">
+        {DAYS.map((day, index) => (
+          <div key={day} className="bg-white border border-gray-200 rounded-lg p-4">
+            <div className="flex items-center justify-between mb-0">
+              <span className="font-medium">{DAY_LABELS[index]}</span>
+              <label className="flex items-center gap-0">
+                <input
+                  type="checkbox"
+                  checked={availability[day]?.isOpen || false}
+                  onChange={(e) => setAvailability((prev: any) => ({
+                    ...prev,
+                    [day]: { ...prev[day], isOpen: e.target.checked }
+                  }))}
+                  className="w-4 h-4"
+                />
+                <span className="text-sm">Open</span>
+              </label>
+            </div>
+            {availability[day]?.isOpen && (
+              <div className="grid grid-cols-2 gap-0">
+                <div>
+                  <label className="block text-xs text-gray-600 mb-0">Open</label>
+                  <input
+                    type="time"
+                    value={availability[day]?.open || '09:00'}
+                    onChange={(e) => setAvailability((prev: any) => ({
+                      ...prev,
+                      [day]: { ...prev[day], open: e.target.value }
+                    }))}
+                    className="w-full px-0 py-0 border border-gray-300 rounded-lg text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-600 mb-0">Close</label>
+                  <input
+                    type="time"
+                    value={availability[day]?.close || '18:00'}
+                    onChange={(e) => setAvailability((prev: any) => ({
+                      ...prev,
+                      [day]: { ...prev[day], close: e.target.value }
+                    }))}
+                    className="w-full px-0 py-0 border border-gray-300 rounded-lg text-sm"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="w-full px-4 py-0 bg-[primary] text-white rounded-lg font-medium disabled:opacity-50 flex items-center justify-center gap-0"
+        >
+          <Save className="w-5 h-5" />
+          {saving ? 'Saving...' : 'Save Availability'}
+        </button>
+      </div>
+    </div>
+  );
+}
+

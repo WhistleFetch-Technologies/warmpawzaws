@@ -98,7 +98,7 @@ export default function ProfilePage() {
                 <input
                   type="text"
                   value={editData.full_name || ''}
-                  onChange={(e) => setEditData({ ...editData, full_name: e.target.value })}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditData({ ...editData, full_name: e.target.value })}
                   className="w-full p-3 border rounded-lg"
                 />
               </div>
@@ -107,7 +107,7 @@ export default function ProfilePage() {
                 <input
                   type="email"
                   value={editData.email || ''}
-                  onChange={(e) => setEditData({ ...editData, email: e.target.value })}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditData({ ...editData, email: e.target.value })}
                   className="w-full p-3 border rounded-lg"
                 />
               </div>
@@ -117,7 +117,7 @@ export default function ProfilePage() {
                   <input
                     type="text"
                     value={editData.city || ''}
-                    onChange={(e) => setEditData({ ...editData, city: e.target.value })}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditData({ ...editData, city: e.target.value })}
                     className="w-full p-3 border rounded-lg"
                   />
                 </div>
@@ -126,7 +126,7 @@ export default function ProfilePage() {
                   <input
                     type="text"
                     value={editData.state || ''}
-                    onChange={(e) => setEditData({ ...editData, state: e.target.value })}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditData({ ...editData, state: e.target.value })}
                     className="w-full p-3 border rounded-lg"
                   />
                 </div>
@@ -135,7 +135,7 @@ export default function ProfilePage() {
                 <label className="block text-sm text-gray-500 mb-1">Address</label>
                 <textarea
                   value={editData.address || ''}
-                  onChange={(e) => setEditData({ ...editData, address: e.target.value })}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setEditData({ ...editData, address: e.target.value })}
                   className="w-full p-3 border rounded-lg"
                   rows={3}
                 />

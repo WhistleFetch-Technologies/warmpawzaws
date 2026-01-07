@@ -1,0 +1,20 @@
+[0;34mℹ️ Starting Comprehensive Batch E2E Testing[0m
+==========================================
+Testing all migrated batches...
+
+
+==========================================
+[0;34mℹ️ Testing Common Endpoints[0m
+==========================================
+[0;32m✅ Health Check: PASSED (Status: 200)[0m
+[0;32m✅ Get Regions: PASSED (Status: 200)[0m
+[0;32m✅ Get Roles: PASSED (Status: 200)[0m
+
+==========================================
+[0;34mℹ️ Final Summary[0m
+==========================================
+Total Tests: 3
+[0;32m✅ Passed: 3[0m
+[0;31m❌ Failed: 0[0m
+Pass Rate: 100%
+[0;32m✅ All tests passed! ✅[0m

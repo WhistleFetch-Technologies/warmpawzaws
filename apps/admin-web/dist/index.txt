@@ -1,0 +1,10 @@
+2:I[9107,[],"ClientPageRoot"]
+3:I[6990,["579","static/chunks/579-24f18ec8f73ccf71.js","931","static/chunks/app/page-34d87c970472df1c.js"],"default",1]
+4:I[9294,["322","static/chunks/322-679d5b773f8971f7.js","185","static/chunks/app/layout-a91b6059a52d9972.js"],"Providers"]
+5:I[4707,[],""]
+6:I[3490,["648","static/chunks/648-028d9e8d5ae01e6c.js","601","static/chunks/app/error-1208fe92d9e66d23.js"],"default"]
+7:I[6423,[],""]
+8:I[5447,["648","static/chunks/648-028d9e8d5ae01e6c.js","160","static/chunks/app/not-found-9b9c1d3291b6ebc3.js"],"default"]
+0:["3RZ6GPwxo2bHfDcl1Z_G9",[[["",{"children":["__PAGE__",{}]},"$undefined","$undefined",true],["",{"children":["__PAGE__",{},[["$L1",["$","$L2",null,{"props":{"params":{},"searchParams":{}},"Component":"$3"}],null],null],null]},[[[["$","link","0",{"rel":"stylesheet","href":"/_next/static/css/20ed8de01f24270f.css","precedence":"next","crossOrigin":"$undefined"}]],["$","html",null,{"lang":"en","suppressHydrationWarning":true,"children":["$","body",null,{"className":"__className_f367f3","suppressHydrationWarning":true,"children":[["$","script",null,{"src":"/runtime-config.js"}],["$","$L4",null,{"children":["$","$L5",null,{"parallelRouterKey":"children","segmentPath":["children"],"error":"$6","errorStyles":[],"errorScripts":[],"template":["$","$L7",null,{}],"templateStyles":"$undefined","templateScripts":"$undefined","notFound":["$","$L8",null,{}],"notFoundStyles":[]}]}]]}]}]],null],null],["$L9",null]]]]
+9:[["$","meta","0",{"name":"viewport","content":"width=device-width, initial-scale=1"}],["$","meta","1",{"charSet":"utf-8"}],["$","title","2",{"children":"Warmpawz Admin Portal"}],["$","meta","3",{"name":"description","content":"Platform administration and governance"}],["$","meta","4",{"name":"next-size-adjust"}]]
+1:null

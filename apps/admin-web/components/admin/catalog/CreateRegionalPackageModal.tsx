@@ -1,0 +1,158 @@
+'use client';
+
+import React, { useState } from 'react';
+import { apiClient } from '@/lib/api-client';
+import { X, Save, Loader2 } from 'lucide-react';
+
+interface CreateRegionalPackageModalProps {
+  isOpen: boolean;
+  regionId?: string;
+  onClose: () => void;
+  onSuccess: () => void;
+}
+
+export function CreateRegionalPackageModal({
+  isOpen,
+  regionId,
+  onClose,
+  onSuccess,
+}: CreateRegionalPackageModalProps) {
+  if (!isOpen) return null;
+  const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState({
+    name: '',
+    description: '',
+    price: '',
+    originalPrice: '',
+    services: [] as string[],
+  });
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.name || !formData.price) {
+      alert('Please fill in all required fields');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const response = await apiClient.post<any>(`/admin/regions/${regionId}/packages`, {
+        ...formData,
+        price: parseFloat(formData.price),
+        originalPrice: formData.originalPrice ? parseFloat(formData.originalPrice) : parseFloat(formData.price),
+      });
+
+      if (response.success) {
+        onSuccess();
+        onClose();
+      } else {
+        alert('Failed to create package');
+      }
+    } catch (error) {
+      console.error('Error creating package:', error);
+      alert('Error creating package');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-lg w-full max-w-md max-h-[90vh] overflow-y-auto">
+        <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-0 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-gray-900">Create Regional Package</h2>
+          <button
+            onClick={onClose}
+            className="p-0 hover:bg-gray-100 rounded-lg"
+          >
+            <X className="w-5 h-5 text-gray-500" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-4 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-0">
+              Package Name *
+            </label>
+            <input
+              type="text"
+              value={formData.name}
+              onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+              className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-0">
+              Description
+            </label>
+            <textarea
+              value={formData.description}
+              onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+              className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
+              rows={3}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-0">
+              Price (₹) *
+            </label>
+            <input
+              type="number"
+              value={formData.price}
+              onChange={(e) => setFormData(prev => ({ ...prev, price: e.target.value }))}
+              className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
+              min="0"
+              step="0.01"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-0">
+              Original Price (₹)
+            </label>
+            <input
+              type="number"
+              value={formData.originalPrice}
+              onChange={(e) => setFormData(prev => ({ ...prev, originalPrice: e.target.value }))}
+              className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
+              min="0"
+              step="0.01"
+            />
+            <p className="text-xs text-gray-500 mt-0">Leave empty if no discount</p>
+          </div>
+
+          <div className="flex gap-0 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 px-4 py-0 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-medium"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="flex-1 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-0 disabled:opacity-50"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Creating...
+                </>
+              ) : (
+                <>
+                  <Save className="w-4 h-4" />
+                  Create
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}

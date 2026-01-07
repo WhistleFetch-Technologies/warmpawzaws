@@ -207,7 +207,7 @@ export function ChangePasswordScreen({
             disabled={!currentPassword || !newPassword || !confirmPassword || changing || newPassword !== confirmPassword}
           >
             {changing ? (
-              <ActivityIndicator size="small" color="#fff" />
+              <ActivityIndicator size="small" color={colors.white} />
             ) : (
               <Text style={styles.changeButtonText}>Change Password</Text>
             )}
@@ -229,7 +229,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -268,7 +268,7 @@ const styles = StyleSheet.create({
   passwordInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: borderRadius.md,
@@ -298,7 +298,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   requirementsContainer: {
-    backgroundColor: '#f3f4f6',
+    backgroundColor: colors.gray.100,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: spacing.lg,
@@ -322,10 +322,10 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   changeButtonDisabled: {
-    backgroundColor: '#9ca3af',
+    backgroundColor: colors.gray.400,
   },
   changeButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 16,
     fontWeight: 'bold',
   },

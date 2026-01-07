@@ -2,8 +2,11 @@
  * AWS Configuration for Customer App
  * Migrated from Supabase to AWS API Gateway
  * 
+ * ✅ FIXED: Removed Supabase function path (/make-server-3dd53475)
+ * ✅ API Gateway routes are registered directly at root level
+ * 
  * Uses environment variables for configuration:
- * - AWS_API_GATEWAY_URL: Base URL for API Gateway (e.g., https://xxx.execute-api.ap-south-1.amazonaws.com)
+ * - AWS_API_GATEWAY_URL: Base URL for API Gateway
  * 
  * For React Native, set these in:
  * - iOS: Info.plist or via react-native-config
@@ -12,17 +15,17 @@
  */
 
 // Get API Gateway URL from environment variable
-// Fallback to placeholder for development (should be set in production)
+// Priority: ENV VAR > DEV fallback > PROD fallback
 const AWS_API_GATEWAY_URL = process.env.AWS_API_GATEWAY_URL || 
   process.env.EXPO_PUBLIC_API_GATEWAY_URL ||
-  'https://api.warmpawz.com'; // Placeholder - MUST be set in production
+  (__DEV__ ? 'https://dev.api.warmpawz.com' : 'https://api.warmpawz.com');
 
-// API Base URL with Lambda function path
-export const API_BASE_URL = `${AWS_API_GATEWAY_URL}/make-server-3dd53475`;
+// ✅ FIXED: API Base URL - NO Supabase path, direct API Gateway access
+export const API_BASE_URL = AWS_API_GATEWAY_URL;
 
 // Validate configuration in development
-if (__DEV__ && AWS_API_GATEWAY_URL === 'https://api.warmpawz.com') {
-  console.warn('⚠️ AWS_API_GATEWAY_URL is using placeholder. Set environment variable for production.');
+if (__DEV__) {
+  console.log('🔧 [DEV] API Gateway URL:', AWS_API_GATEWAY_URL);
 }
 
 // Export for use in API service

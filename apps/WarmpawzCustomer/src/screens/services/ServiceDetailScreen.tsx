@@ -250,7 +250,7 @@ const styles = StyleSheet.create({
   },
   ratingContainer: {
     alignSelf: 'flex-start',
-    backgroundColor: '#FFF4E6',
+    backgroundColor: colors.gradientOrange50,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs / 2,
     borderRadius: borderRadius.md,
@@ -318,7 +318,7 @@ const styles = StyleSheet.create({
   bookButtonText: {
     fontSize: typography.fontSizes.md,
     fontWeight: typography.fontWeights.semibold,
-    color: '#ffffff',
+    color: colors.white,
   },
 });
 

@@ -327,7 +327,7 @@ export function EmergencyBookingScreen({
           disabled={!selectedService || !selectedPet || !location || loading}
         >
           {loading ? (
-            <ActivityIndicator size="small" color="#fff" />
+            <ActivityIndicator size="small" color={colors.white} />
           ) : (
             <Text style={styles.bookButtonText}>🚨 REQUEST EMERGENCY SERVICE</Text>
           )}
@@ -354,7 +354,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -381,7 +381,7 @@ const styles = StyleSheet.create({
   sosBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fee2e2',
+    backgroundColor: colors.error + 20% opacity,
     padding: spacing.md,
     borderRadius: borderRadius.lg,
     marginBottom: spacing.md,
@@ -398,7 +398,7 @@ const styles = StyleSheet.create({
   sosTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#dc2626',
+    color: colors.error,
     marginBottom: spacing.xs,
   },
   sosSubtitle: {
@@ -417,7 +417,7 @@ const styles = StyleSheet.create({
   serviceCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: spacing.sm,
@@ -426,7 +426,7 @@ const styles = StyleSheet.create({
   },
   serviceCardSelected: {
     borderColor: colors.primary,
-    backgroundColor: '#fff7ed',
+    backgroundColor: colors.gradientOrange50,
   },
   serviceIcon: {
     fontSize: 32,
@@ -460,14 +460,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   selectedCheck: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 14,
     fontWeight: 'bold',
   },
   petCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: spacing.sm,
@@ -476,7 +476,7 @@ const styles = StyleSheet.create({
   },
   petCardSelected: {
     borderColor: colors.primary,
-    backgroundColor: '#fff7ed',
+    backgroundColor: colors.gradientOrange50,
   },
   petName: {
     fontSize: 16,
@@ -493,7 +493,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: spacing.md,
-    backgroundColor: '#f3f4f6',
+    backgroundColor: colors.gray.100,
     borderRadius: borderRadius.md,
   },
   locationLoadingText: {
@@ -504,7 +504,7 @@ const styles = StyleSheet.create({
   locationCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     borderWidth: 1,
@@ -541,12 +541,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   getLocationButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 14,
     fontWeight: '600',
   },
   textInput: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: borderRadius.md,
@@ -557,7 +557,7 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
   bookButton: {
-    backgroundColor: '#dc2626',
+    backgroundColor: colors.error,
     padding: spacing.lg,
     borderRadius: borderRadius.md,
     alignItems: 'center',
@@ -565,16 +565,16 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   bookButtonDisabled: {
-    backgroundColor: '#9ca3af',
+    backgroundColor: colors.gray.400,
   },
   bookButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 16,
     fontWeight: 'bold',
   },
   footer: {
     padding: spacing.md,
-    backgroundColor: '#f3f4f6',
+    backgroundColor: colors.gray.100,
     borderRadius: borderRadius.md,
     marginBottom: spacing.lg,
   },

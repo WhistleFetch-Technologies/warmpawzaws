@@ -17,7 +17,8 @@ import {
   TextInput,
 } from 'react-native';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
-import { CustomerApi } from '../../services/api';
+import { CustomerApi, PaymentApi } from '../../services/api';
+import RazorpayCheckout from 'react-native-razorpay';
 
 type ViewType = 
   | 'landing'
@@ -147,26 +148,113 @@ export function PetCafeServicesScreen({
 
     try {
       setLoading(true);
+      const totalAmount = selectedTable.price || 0;
+
+      // Get customer ID
+      const customer = await CustomerApi.getCustomerByPhone(phone);
+      const customerId = customer?.id;
+
+      if (!customerId) {
+        Alert.alert('Error', 'Customer not found. Please try again.');
+        return;
+      }
+
+      // Create booking first
       const bookingData = {
         vendorId: selectedCafe.id,
         serviceId: selectedTable.id,
         customerPhone: phone,
+        customerId: customerId,
         date: date,
         time: time,
         notes: `Cafe Reservation: ${guestCount} Pax, ${petCount} Pets. Note: ${specialRequest}`,
         petDetails: { count: petCount },
         status: 'pending',
-        price: selectedTable.price || 0,
+        price: totalAmount,
+        serviceType: 'at_center',
+        bookingType: 'scheduled',
       };
 
-      const response = await CustomerApi.createBooking(bookingData);
-      
-      Alert.alert('Success', 'Table reservation requested!', [
-        { text: 'OK', onPress: () => setCurrentView('confirmation') },
-      ]);
-    } catch (error) {
+      const bookingResponse = await CustomerApi.createBooking(bookingData);
+      const bookingId = bookingResponse.bookingId || bookingResponse.id || bookingResponse.booking?.id;
+
+      if (!bookingId) {
+        throw new Error('Failed to create booking');
+      }
+
+      // Handle payment if amount > 0
+      if (totalAmount > 0) {
+        try {
+          // Create Razorpay order
+          const orderRes = await PaymentApi.createRazorpayOrder({
+            amount: totalAmount,
+            currency: 'INR',
+            receipt: bookingId,
+            bookingId: bookingId,
+            customerId: customerId,
+            vendorId: selectedCafe.id,
+          });
+
+          if (!orderRes.order_id) {
+            throw new Error('Failed to create payment order');
+          }
+
+          // Open Razorpay checkout
+          const options = {
+            description: `Pet Cafe Table Reservation - ${selectedCafe.name}`,
+            image: 'https://your-logo-url.com/logo.png',
+            currency: 'INR',
+            key: orderRes.razorpay_key || 'YOUR_RAZORPAY_KEY', // Should come from env/config
+            amount: totalAmount * 100, // Convert to paise
+            name: 'Warmpawz',
+            order_id: orderRes.order_id,
+            prefill: {
+              contact: phone,
+            },
+            theme: {
+              color: '#FF8C42',
+            },
+          };
+
+          const razorpayResponse = await RazorpayCheckout.open(options);
+
+          // Verify payment
+          await PaymentApi.verifyRazorpayPayment({
+            razorpayOrderId: razorpayResponse.razorpay_order_id,
+            razorpayPaymentId: razorpayResponse.razorpay_payment_id,
+            razorpaySignature: razorpayResponse.razorpay_signature,
+            bookingId: bookingId,
+            customerId: customerId,
+          });
+
+          Alert.alert('Success', 'Table reservation confirmed and payment successful!', [
+            { text: 'OK', onPress: () => setCurrentView('confirmation') },
+          ]);
+        } catch (paymentError: any) {
+          console.error('Payment error:', paymentError);
+          if (paymentError.error) {
+            // Payment failed or cancelled
+            if (paymentError.error.code === 'BAD_REQUEST_ERROR') {
+              Alert.alert('Payment Failed', paymentError.error.description || 'Payment failed. Please try again.');
+            } else {
+              // User cancelled
+              Alert.alert('Payment Cancelled', 'Your booking has been created but payment was cancelled. Please complete payment later.');
+            }
+          } else {
+            Alert.alert('Payment Error', 'Payment processing failed. Your booking is pending payment.');
+          }
+          // Still show confirmation as booking was created
+          setCurrentView('confirmation');
+        }
+      } else {
+        // Free booking - no payment needed
+        Alert.alert('Success', 'Table reservation requested!', [
+          { text: 'OK', onPress: () => setCurrentView('confirmation') },
+        ]);
+      }
+    } catch (error: any) {
       console.error('Error creating reservation:', error);
-      Alert.alert('Error', 'Failed to create reservation. Please try again.');
+      Alert.alert('Error', error.message || 'Failed to create reservation. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -422,7 +510,7 @@ export function PetCafeServicesScreen({
           disabled={loading}
         >
           {loading ? (
-            <ActivityIndicator color="#fff" />
+            <ActivityIndicator color={colors.white} />
           ) : (
             <Text style={styles.primaryButtonText}>Confirm Reservation</Text>
           )}
@@ -482,7 +570,7 @@ export function PetCafeServicesScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
   },
   header: {
     padding: spacing.md,
@@ -492,23 +580,23 @@ const styles = StyleSheet.create({
   },
   backButton: {
     fontSize: typography.body,
-    color: '#fff',
+    color: colors.white,
     marginBottom: spacing.sm,
   },
   headerTitle: {
     fontSize: typography.h1,
     fontWeight: 'bold',
-    color: '#fff',
+    color: colors.white,
   },
   title: {
     fontSize: typography.h1,
     fontWeight: 'bold',
-    color: '#fff',
+    color: colors.white,
     marginBottom: spacing.sm,
   },
   subtitle: {
     fontSize: typography.body,
-    color: '#fff',
+    color: colors.white,
     opacity: 0.9,
   },
   landingContent: {
@@ -516,7 +604,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   heroCard: {
-    backgroundColor: '#FEE2E2',
+    backgroundColor: colors.error + 20% opacity,
     borderRadius: borderRadius.md,
     padding: spacing.lg,
     alignItems: 'center',
@@ -549,7 +637,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   statNumber: {
     fontSize: typography.h2,
@@ -572,14 +660,14 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
     flexDirection: 'row',
     alignItems: 'center',
   },
   cafeImagePlaceholder: {
     width: 80,
     height: 80,
-    backgroundColor: '#E5E7EB',
+    backgroundColor: colors.gray.200,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -641,7 +729,7 @@ const styles = StyleSheet.create({
   cafeImagePlaceholderLarge: {
     width: '100%',
     height: 200,
-    backgroundColor: '#E5E7EB',
+    backgroundColor: colors.gray.200,
     borderRadius: borderRadius.md,
     justifyContent: 'center',
     alignItems: 'center',
@@ -683,14 +771,14 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.md,
     borderWidth: 2,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
   tableCardSelected: {
     borderColor: colors.primary,
-    backgroundColor: '#FEE2E2',
+    backgroundColor: colors.error + 20% opacity,
   },
   tableInfo: {
     flex: 1,
@@ -758,7 +846,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
     fontSize: typography.body,
     color: colors.text,
   },
@@ -781,7 +869,7 @@ const styles = StyleSheet.create({
   },
   counterButtonText: {
     fontSize: typography.h2,
-    color: '#fff',
+    color: colors.white,
     fontWeight: 'bold',
   },
   counterValue: {
@@ -835,10 +923,10 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   primaryButtonDisabled: {
-    backgroundColor: '#E5E7EB',
+    backgroundColor: colors.gray.200,
   },
   primaryButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: typography.body,
     fontWeight: 'bold',
   },

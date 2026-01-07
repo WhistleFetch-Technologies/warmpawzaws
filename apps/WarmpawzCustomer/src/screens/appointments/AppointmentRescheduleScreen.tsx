@@ -212,7 +212,7 @@ export function AppointmentRescheduleScreen({
           disabled={!selectedDate || !selectedTime || loading}
         >
           {loading ? (
-            <ActivityIndicator size="small" color="#fff" />
+            <ActivityIndicator size="small" color={colors.white} />
           ) : (
             <Text style={styles.rescheduleButtonText}>Reschedule Appointment</Text>
           )}
@@ -233,7 +233,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -258,7 +258,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   currentAppointment: {
-    backgroundColor: '#fff7ed',
+    backgroundColor: colors.gradientOrange50,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: spacing.lg,
@@ -285,7 +285,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   dateInput: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: borderRadius.md,
@@ -304,7 +304,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   timeSlot: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     borderWidth: 2,
@@ -314,7 +314,7 @@ const styles = StyleSheet.create({
   },
   timeSlotSelected: {
     borderColor: colors.primary,
-    backgroundColor: '#fff7ed',
+    backgroundColor: colors.gradientOrange50,
   },
   timeSlotText: {
     fontSize: 14,
@@ -325,7 +325,7 @@ const styles = StyleSheet.create({
     color: colors.primary,
   },
   reasonInput: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: borderRadius.md,
@@ -344,10 +344,10 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   rescheduleButtonDisabled: {
-    backgroundColor: '#9ca3af',
+    backgroundColor: colors.gray.400,
   },
   rescheduleButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 16,
     fontWeight: 'bold',
   },

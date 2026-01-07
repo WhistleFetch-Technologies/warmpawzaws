@@ -1,0 +1,24 @@
+Processing: appointment-detail-endpoints-sql.tsx
+Processing: appointment-reminder-system-sql.tsx
+Processing: consultation-notes-endpoints-sql.tsx
+Processing: pharmacy-prescription-endpoints-sql.tsx
+Processing: customer-medical-records-sql.tsx
+Processing: bank-verification-endpoints-sql.tsx
+Processing: expiry-management-endpoints-sql.tsx
+Processing: cafe-table-management-sql.tsx
+Processing: patient-monitoring-endpoints-sql.tsx
+Processing: critical-flow-fixes-sql.tsx
+Processing: enhanced-service-publishing-sql.tsx
+Processing: multi-service-scheduling-sql.tsx
+Processing: qa-gap-fixes-sql.tsx
+Processing: referral-system-sql.tsx
+Processing: pet-endpoints-sql.tsx
+Processing: medicine-reorder-endpoints-sql.tsx
+Processing: doctor-discovery-endpoints-sql.tsx
+Processing: ecommerce-policies-endpoints-sql.tsx
+Processing: ecommerce-routes-sql.tsx
+Processing: elasticsearch-complete-sql.tsx
+Processing: enhanced-refund-system-sql.tsx
+
+✅ Endpoint verification complete!
+Results saved to: endpoint-verification-results.md
