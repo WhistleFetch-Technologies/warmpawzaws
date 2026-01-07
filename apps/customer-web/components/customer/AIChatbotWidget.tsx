@@ -172,7 +172,7 @@ export function AIChatbotWidget({
         .map(m => `${m.type}: ${m.content}`)
         .join('\n');
       
-      const response = await aiChatbotApi.escalateToAgent({
+      const response: any = await aiChatbotApi.escalateToAgent({
         conversationId: convId,
         customerId,
         customerPhone,
