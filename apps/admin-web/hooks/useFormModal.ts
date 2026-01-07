@@ -5,13 +5,13 @@
 
 import { useState, useCallback, useEffect } from 'react';
 
-interface UseFormModalOptions<TFormData, TItem = any> {
+export interface UseFormModalOptions<TFormData, TItem = any> {
   initialFormData: TFormData;
   getDefaultFormData?: () => TFormData;
   mapItemToFormData?: (item: TItem) => TFormData;
 }
 
-interface UseFormModalReturn<TFormData, TItem> {
+export interface UseFormModalReturn<TFormData, TItem> {
   isOpen: boolean;
   formData: TFormData;
   editingItem: TItem | null;

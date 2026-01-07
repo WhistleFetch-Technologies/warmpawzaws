@@ -5,7 +5,7 @@
 
 import { useState, useCallback, useEffect } from 'react';
 
-interface UseNotificationsReturn {
+export interface UseNotificationsReturn {
   success: string | null;
   error: string | null;
   setSuccess: (message: string | null) => void;
@@ -15,7 +15,7 @@ interface UseNotificationsReturn {
   clearAll: () => void;
 }
 
-interface UseNotificationsOptions {
+export interface UseNotificationsOptions {
   autoClearSuccess?: boolean;
   autoClearError?: boolean;
   clearDelay?: number; // milliseconds

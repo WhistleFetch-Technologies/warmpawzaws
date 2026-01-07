@@ -6,7 +6,7 @@
 import { useState, useCallback } from 'react';
 import { apiClient } from '@/lib/api-client';
 
-interface UseCrudOptions<T, TCreate = T, TUpdate = Partial<T>> {
+export interface UseCrudOptions<T, TCreate = T, TUpdate = Partial<T>> {
   endpoint: string;
   onSuccess?: (message: string) => void;
   onError?: (error: Error) => void;
@@ -16,7 +16,7 @@ interface UseCrudOptions<T, TCreate = T, TUpdate = Partial<T>> {
   confirmDelete?: (item: T) => boolean | Promise<boolean>; // Custom delete confirmation
 }
 
-interface UseCrudReturn<T, TCreate = T, TUpdate = Partial<T>> {
+export interface UseCrudReturn<T, TCreate = T, TUpdate = Partial<T>> {
   saving: boolean;
   deleting: boolean;
   error: string | null;
