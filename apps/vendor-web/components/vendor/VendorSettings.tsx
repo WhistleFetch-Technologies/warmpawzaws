@@ -24,7 +24,7 @@ export function VendorSettings() {
       
       if (id) {
         setVendorId(id);
-        const response = await apiClient.get(`/vendor/${id}/settings`);
+        const response: any = await apiClient.get(`/vendor/${id}/settings`);
         setSettings(response.settings || response);
       }
     } catch (error) {
