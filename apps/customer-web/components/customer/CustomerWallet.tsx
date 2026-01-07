@@ -213,7 +213,7 @@ export function CustomerWallet({ customerPhone }: CustomerWalletProps) {
           contact: customerPhone,
         },
         theme: {
-          color: colors.primary, // Using design token primary color
+          color: '#F97316', // Orange primary color
         },
         modal: {
           ondismiss: () => {
