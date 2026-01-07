@@ -1,19 +1,15 @@
-/**
- * Warmpawz Design System
- * 
- * A unified design system for Warmpawz web and mobile applications.
- * 
- * Usage:
- * import { Button, Input, Card, tokens } from '@warmpawz/ui';
- * 
- * Or import specific modules:
- * import { colors, typography } from '@warmpawz/ui/tokens';
- * import { Button, Input } from '@warmpawz/ui/components';
- */
-
-// Tokens
-export * from './tokens';
-
-// Components
-export * from './components';
-
+// Export all UI components
+export * from './button';
+export * from './address-autocomplete';
+export * from './badge';
+export * from './card';
+export * from './checkbox';
+export * from './dialog';
+export * from './input';
+export * from './label';
+export * from './select';
+export * from './switch';
+export * from './table';
+export * from './tabs';
+export * from './textarea';
+export * from './accordion';
