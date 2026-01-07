@@ -128,7 +128,7 @@ export function OrderDetailScreen({
       case 'shipped':
         return '#8B5CF6';
       case 'delivered':
-        return {colors.success};
+        return colors.success;
       case 'cancelled':
         return '#EF4444';
       default:
