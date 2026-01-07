@@ -596,7 +596,7 @@ export function RewardsLoyaltyScreen({
                         {
                           color:
                             item.type === 'earned'
-                              ? {colors.success}
+                              ? colors.success
                               : item.type === 'redeemed'
                               ? '#EF4444'
                               : '#6B7280',

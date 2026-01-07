@@ -188,7 +188,7 @@ export function NutritionistServiceScreen({
               <Icon 
                 name="account-plus" 
                 size={24} 
-                color={consultationType === 'initial' ? {colors.white} : colors.text} 
+                color={consultationType === 'initial' ? colors.white : colors.text} 
               />
               <Text
                 style={[
@@ -209,7 +209,7 @@ export function NutritionistServiceScreen({
               <Icon 
                 name="account-check" 
                 size={24} 
-                color={consultationType === 'followup' ? {colors.white} : colors.text} 
+                color={consultationType === 'followup' ? colors.white : colors.text} 
               />
               <Text
                 style={[
