@@ -404,7 +404,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: colors.gray.200,
+    backgroundColor: colors.gray['200'],
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -419,7 +419,7 @@ const styles = StyleSheet.create({
   timelineConnector: {
     width: 2,
     height: 40,
-    backgroundColor: colors.gray.200,
+    backgroundColor: colors.gray['200'],
     marginTop: spacing.xs,
   },
   timelineConnectorCompleted: {

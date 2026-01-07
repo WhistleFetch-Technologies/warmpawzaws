@@ -593,7 +593,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
   },
   statNumber: {
     fontSize: typography.h2,
@@ -638,7 +638,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
   },
   providerHeader: {
     flexDirection: 'row',
@@ -732,7 +732,7 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     marginBottom: spacing.md,
     borderWidth: 2,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
     position: 'relative',
   },
   planCardPopular: {
@@ -800,7 +800,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   selectPlanButton: {
-    backgroundColor: colors.gray.200,
+    backgroundColor: colors.gray['200'],
     borderRadius: borderRadius.md,
     padding: spacing.md,
     alignItems: 'center',
@@ -895,7 +895,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
     paddingTop: spacing.md,
     borderTopWidth: 1,
-    borderTopColor: colors.gray.200,
+    borderTopColor: colors.gray['200'],
   },
   summaryTotalLabel: {
     fontSize: typography.h3,

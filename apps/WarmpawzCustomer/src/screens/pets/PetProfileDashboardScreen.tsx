@@ -357,7 +357,7 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   bookingStatus: {
-    backgroundColor: colors.gray.100,
+    backgroundColor: colors.gray['100'],
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
     borderRadius: borderRadius.sm,

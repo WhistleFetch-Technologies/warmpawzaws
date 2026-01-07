@@ -342,7 +342,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   topUpButtonDisabled: {
-    backgroundColor: colors.gray.400,
+    backgroundColor: colors.gray['400'],
   },
   topUpButtonText: {
     color: colors.white,

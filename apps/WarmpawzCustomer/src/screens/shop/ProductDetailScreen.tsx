@@ -529,7 +529,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: spacing.sm,
     borderBottomWidth: 1,
-    borderBottomColor: colors.gray.100,
+    borderBottomColor: colors.gray['100'],
   },
   specLabel: {
     fontSize: 14,
@@ -550,7 +550,7 @@ const styles = StyleSheet.create({
   },
   addToCartButton: {
     flex: 1,
-    backgroundColor: colors.gray.100,
+    backgroundColor: colors.gray['100'],
     padding: spacing.md,
     borderRadius: borderRadius.md,
     alignItems: 'center',

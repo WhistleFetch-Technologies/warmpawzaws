@@ -553,7 +553,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     padding: spacing.md,
     borderWidth: 2,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
   },
   petCardSelected: {
     borderColor: colors.primary,
@@ -600,7 +600,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     borderRadius: borderRadius.md,
     borderWidth: 2,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
     backgroundColor: '#F9FAFB',
     alignItems: 'center',
   },
@@ -620,7 +620,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     borderRadius: borderRadius.md,
     borderWidth: 2,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
     backgroundColor: '#F9FAFB',
   },
   optionCardSelected: {
@@ -645,7 +645,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
   },
   walkerInfo: {
     flex: 1,

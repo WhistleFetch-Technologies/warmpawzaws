@@ -265,7 +265,7 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     flex: 1,
-    backgroundColor: colors.gray.100,
+    backgroundColor: colors.gray['100'],
     padding: spacing.md,
     borderRadius: borderRadius.md,
     fontSize: 16,
@@ -309,7 +309,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: borderRadius.full,
-    backgroundColor: colors.gray.100,
+    backgroundColor: colors.gray['100'],
   },
   filterChipActive: {
     backgroundColor: colors.primary,

@@ -396,7 +396,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   specialtyChip: {
-    backgroundColor: colors.gray.100,
+    backgroundColor: colors.gray['100'],
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: borderRadius.full,

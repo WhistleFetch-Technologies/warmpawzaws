@@ -192,7 +192,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   continueShoppingButton: {
-    backgroundColor: colors.gray.100,
+    backgroundColor: colors.gray['100'],
     padding: spacing.md,
     borderRadius: borderRadius.md,
     alignItems: 'center',

@@ -701,7 +701,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
   },
   addressHeader: {
     marginBottom: spacing.md,
@@ -761,7 +761,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     paddingTop: spacing.md,
     borderTopWidth: 1,
-    borderTopColor: colors.gray.200,
+    borderTopColor: colors.gray['200'],
   },
   actionButton: {
     flex: 1,
@@ -769,7 +769,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     backgroundColor: colors.white,
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
     alignItems: 'center',
   },
   actionButtonText: {
@@ -800,7 +800,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: colors.gray.200,
+    borderBottomColor: colors.gray['200'],
   },
   modalTitle: {
     fontSize: typography.h2,
@@ -811,7 +811,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: colors.gray.100,
+    backgroundColor: colors.gray['100'],
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -842,7 +842,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     backgroundColor: '#F9FAFB',
     borderWidth: 2,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
     alignItems: 'center',
   },
   labelButtonActive: {
@@ -862,7 +862,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
     fontSize: typography.body,
     color: colors.text,
   },
@@ -875,12 +875,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#F9FAFB',
     borderRadius: borderRadius.md,
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
   },
   stateItem: {
     padding: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: colors.gray.200,
+    borderBottomColor: colors.gray['200'],
   },
   stateItemSelected: {
     backgroundColor: colors.error + 20% opacity,
@@ -924,7 +924,7 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     padding: spacing.md,
     borderTopWidth: 1,
-    borderTopColor: colors.gray.200,
+    borderTopColor: colors.gray['200'],
   },
   modalButton: {
     flex: 1,
@@ -935,7 +935,7 @@ const styles = StyleSheet.create({
   modalButtonSecondary: {
     backgroundColor: '#F9FAFB',
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
   },
   modalButtonPrimary: {
     backgroundColor: colors.primary,

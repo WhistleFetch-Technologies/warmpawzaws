@@ -355,7 +355,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
   },
   bookingDetailsLabel: {
     fontSize: typography.caption,
@@ -434,7 +434,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
   },
   reasonTitle: {
     fontSize: typography.body,
@@ -447,7 +447,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
     fontSize: typography.body,
     color: colors.text,
     minHeight: 120,
@@ -488,10 +488,10 @@ const styles = StyleSheet.create({
   cancelButtonSecondary: {
     backgroundColor: '#F9FAFB',
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
   },
   cancelButtonDisabled: {
-    backgroundColor: colors.gray.200,
+    backgroundColor: colors.gray['200'],
   },
   cancelButtonText: {
     color: colors.white,

@@ -516,7 +516,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     backgroundColor: '#F9FAFB',
     borderBottomWidth: 1,
-    borderBottomColor: colors.gray.200,
+    borderBottomColor: colors.gray['200'],
   },
   tab: {
     flex: 1,
@@ -575,7 +575,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
   },
   notificationCardUnread: {
     backgroundColor: colors.white,
@@ -635,7 +635,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: colors.gray.100,
+    backgroundColor: colors.gray['100'],
     justifyContent: 'center',
     alignItems: 'center',
     marginLeft: spacing.sm,
@@ -680,12 +680,12 @@ const styles = StyleSheet.create({
   footer: {
     padding: spacing.md,
     borderTopWidth: 1,
-    borderTopColor: colors.gray.200,
+    borderTopColor: colors.gray['200'],
     backgroundColor: colors.white,
   },
   clearAllButton: {
     padding: spacing.md,
-    backgroundColor: colors.gray.100,
+    backgroundColor: colors.gray['100'],
     borderRadius: borderRadius.md,
     alignItems: 'center',
   },

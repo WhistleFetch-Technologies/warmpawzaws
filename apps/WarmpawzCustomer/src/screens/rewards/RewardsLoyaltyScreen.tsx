@@ -245,7 +245,7 @@ export function RewardsLoyaltyScreen({
       case 'Gold':
         return '#F59E0B';
       case 'Silver':
-        return {colors.gray.400};
+        return colors.gray['400'];
       case 'Bronze':
       default:
         return '#CD7F32';
@@ -749,7 +749,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     backgroundColor: '#F9FAFB',
     borderBottomWidth: 1,
-    borderBottomColor: colors.gray.200,
+    borderBottomColor: colors.gray['200'],
   },
   tab: {
     flex: 1,
@@ -847,7 +847,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
   },
   statIcon: {
     fontSize: 32,
@@ -877,7 +877,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
   },
   benefitItem: {
     flexDirection: 'row',
@@ -905,7 +905,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
   },
   quickActionIcon: {
     fontSize: 32,
@@ -925,13 +925,13 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
   },
   rewardIcon: {
     width: 64,
     height: 64,
     borderRadius: borderRadius.md,
-    backgroundColor: colors.gray.200,
+    backgroundColor: colors.gray['200'],
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: spacing.md,
@@ -975,7 +975,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
   },
   redeemButtonDisabled: {
-    backgroundColor: colors.gray.200,
+    backgroundColor: colors.gray['200'],
   },
   redeemButtonText: {
     fontSize: typography.fontSizes.md,
@@ -999,7 +999,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
   },
   historyIcon: {
     width: 48,
@@ -1072,7 +1072,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: colors.gray.200,
+    borderBottomColor: colors.gray['200'],
   },
   modalTitle: {
     fontSize: typography.fontSizes.xl,
@@ -1083,7 +1083,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: colors.gray.100,
+    backgroundColor: colors.gray['100'],
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1100,7 +1100,7 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
   },
   redeemRewardIcon: {
     fontSize: 64,
@@ -1139,7 +1139,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: spacing.md,
     borderTopWidth: 1,
-    borderTopColor: colors.gray.200,
+    borderTopColor: colors.gray['200'],
   },
   redeemBalanceLabel: {
     fontSize: typography.fontSizes.md,
@@ -1156,7 +1156,7 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     padding: spacing.md,
     borderTopWidth: 1,
-    borderTopColor: colors.gray.200,
+    borderTopColor: colors.gray['200'],
   },
   modalButton: {
     flex: 1,
@@ -1167,7 +1167,7 @@ const styles = StyleSheet.create({
   modalButtonSecondary: {
     backgroundColor: '#F9FAFB',
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
   },
   modalButtonPrimary: {
     backgroundColor: colors.primary,

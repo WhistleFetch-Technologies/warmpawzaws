@@ -247,7 +247,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: borderRadius.full,
-    backgroundColor: colors.gray.100,
+    backgroundColor: colors.gray['100'],
   },
   filterButtonActive: {
     backgroundColor: colors.primary,

@@ -493,7 +493,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: spacing.md,
-    backgroundColor: colors.gray.100,
+    backgroundColor: colors.gray['100'],
     borderRadius: borderRadius.md,
   },
   locationLoadingText: {
@@ -565,7 +565,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   bookButtonDisabled: {
-    backgroundColor: colors.gray.400,
+    backgroundColor: colors.gray['400'],
   },
   bookButtonText: {
     color: colors.white,
@@ -574,7 +574,7 @@ const styles = StyleSheet.create({
   },
   footer: {
     padding: spacing.md,
-    backgroundColor: colors.gray.100,
+    backgroundColor: colors.gray['100'],
     borderRadius: borderRadius.md,
     marginBottom: spacing.lg,
   },

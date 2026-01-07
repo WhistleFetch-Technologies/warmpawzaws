@@ -740,7 +740,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
   },
   statNumber: {
     fontSize: typography.h2,
@@ -782,7 +782,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     backgroundColor: colors.white,
     borderBottomWidth: 1,
-    borderBottomColor: colors.gray.200,
+    borderBottomColor: colors.gray['200'],
   },
   headerTitleContainer: {
     flex: 1,
@@ -824,13 +824,13 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
     fontSize: typography.body,
   },
   categoriesContainer: {
     backgroundColor: colors.white,
     borderBottomWidth: 1,
-    borderBottomColor: colors.gray.200,
+    borderBottomColor: colors.gray['200'],
   },
   categoriesContent: {
     paddingHorizontal: spacing.md,
@@ -868,7 +868,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     margin: '1%',
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
     overflow: 'hidden',
   },
   productImageContainer: {
@@ -1139,7 +1139,7 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: borderRadius.md,
-    backgroundColor: colors.gray.200,
+    backgroundColor: colors.gray['200'],
   },
   cartItemInfo: {
     flex: 1,
@@ -1194,7 +1194,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
     paddingTop: spacing.md,
     borderTopWidth: 1,
-    borderTopColor: colors.gray.200,
+    borderTopColor: colors.gray['200'],
   },
   cartSummaryTotalLabel: {
     fontSize: typography.h3,
@@ -1242,7 +1242,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
     paddingTop: spacing.md,
     borderTopWidth: 1,
-    borderTopColor: colors.gray.200,
+    borderTopColor: colors.gray['200'],
   },
   checkoutTotalLabel: {
     fontSize: typography.h3,

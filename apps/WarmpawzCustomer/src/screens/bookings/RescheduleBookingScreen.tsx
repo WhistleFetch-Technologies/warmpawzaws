@@ -360,7 +360,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
   },
   currentBookingLabel: {
     fontSize: typography.caption,
@@ -417,7 +417,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
   },
   slotsTitle: {
     fontSize: typography.h3,
@@ -461,7 +461,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     borderRadius: borderRadius.md,
     borderWidth: 2,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
     backgroundColor: colors.white,
     alignItems: 'center',
   },
@@ -487,7 +487,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
   },
   reasonTitle: {
     fontSize: typography.body,
@@ -500,7 +500,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
     fontSize: typography.body,
     color: colors.text,
     minHeight: 100,
@@ -517,7 +517,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   submitButtonDisabled: {
-    backgroundColor: colors.gray.200,
+    backgroundColor: colors.gray['200'],
   },
   submitButtonText: {
     color: colors.white,

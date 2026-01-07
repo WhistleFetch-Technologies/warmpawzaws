@@ -269,7 +269,7 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: borderRadius.xs,
   },
   messageBubbleOther: {
-    backgroundColor: colors.gray.200,
+    backgroundColor: colors.gray['200'],
     borderBottomLeftRadius: borderRadius.xs,
   },
   messageText: {
@@ -302,7 +302,7 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    backgroundColor: colors.gray.100,
+    backgroundColor: colors.gray['100'],
     borderRadius: borderRadius.md,
     padding: spacing.sm,
     fontSize: 14,
@@ -317,7 +317,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
   },
   sendButtonDisabled: {
-    backgroundColor: colors.gray.400,
+    backgroundColor: colors.gray['400'],
   },
   sendButtonText: {
     color: colors.white,

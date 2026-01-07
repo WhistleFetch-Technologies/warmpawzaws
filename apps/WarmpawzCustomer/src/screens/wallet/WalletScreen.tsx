@@ -643,7 +643,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
   },
   quickActionIcon: {
     fontSize: 32,
@@ -682,13 +682,13 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
   },
   transactionIcon: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: colors.gray.200,
+    backgroundColor: colors.gray['200'],
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: spacing.md,
@@ -763,7 +763,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: colors.gray.200,
+    borderBottomColor: colors.gray['200'],
   },
   modalTitle: {
     fontSize: typography.fontSizes.xl,
@@ -774,7 +774,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: colors.gray.100,
+    backgroundColor: colors.gray['100'],
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -807,7 +807,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
     position: 'relative',
   },
   quickAmountButtonActive: {
@@ -859,7 +859,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
     fontSize: typography.fontSizes.lg,
     fontWeight: 'bold',
     color: colors.text,
@@ -874,7 +874,7 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     padding: spacing.md,
     borderTopWidth: 1,
-    borderTopColor: colors.gray.200,
+    borderTopColor: colors.gray['200'],
   },
   modalButton: {
     flex: 1,
@@ -885,7 +885,7 @@ const styles = StyleSheet.create({
   modalButtonSecondary: {
     backgroundColor: '#F9FAFB',
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
   },
   modalButtonPrimary: {
     backgroundColor: colors.primary,
@@ -905,7 +905,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderBottomWidth: 1,
-    borderBottomColor: colors.gray.200,
+    borderBottomColor: colors.gray['200'],
   },
   filterTab: {
     flex: 1,

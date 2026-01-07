@@ -254,7 +254,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
     flexDirection: 'row',
     alignItems: 'center',
   },
@@ -262,7 +262,7 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: colors.gray.200,
+    backgroundColor: colors.gray['200'],
     overflow: 'hidden',
     marginRight: spacing.md,
   },
@@ -306,7 +306,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FCE7F3',
   },
   genderBadgeUnknown: {
-    backgroundColor: colors.gray.100,
+    backgroundColor: colors.gray['100'],
   },
   genderBadgeText: {
     fontSize: typography.caption,

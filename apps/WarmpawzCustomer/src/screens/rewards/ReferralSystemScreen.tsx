@@ -543,7 +543,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     backgroundColor: '#F9FAFB',
     borderBottomWidth: 1,
-    borderBottomColor: colors.gray.200,
+    borderBottomColor: colors.gray['200'],
   },
   tab: {
     flex: 1,
@@ -599,7 +599,7 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
   },
   referralCodeLabel: {
     fontSize: typography.fontSizes.sm,
@@ -630,7 +630,7 @@ const styles = StyleSheet.create({
   copyButton: {
     padding: spacing.sm,
     borderRadius: borderRadius.md,
-    backgroundColor: colors.gray.100,
+    backgroundColor: colors.gray['100'],
   },
   copyButtonText: {
     fontSize: typography.fontSizes.lg,
@@ -665,7 +665,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
   },
   statIcon: {
     fontSize: 32,
@@ -700,7 +700,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
   },
   stepNumber: {
     width: 40,
@@ -736,7 +736,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
   },
   rewardsInfoTitle: {
     fontSize: typography.fontSizes.lg,
@@ -773,7 +773,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
   },
   monthlyStatsTitle: {
     fontSize: typography.fontSizes.md,
@@ -807,7 +807,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
   },
   historyHeader: {
     flexDirection: 'row',
@@ -859,7 +859,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
     paddingTop: spacing.xs,
     borderTopWidth: 1,
-    borderTopColor: colors.gray.200,
+    borderTopColor: colors.gray['200'],
   },
   historyEarningsLabel: {
     fontSize: typography.fontSizes.sm,

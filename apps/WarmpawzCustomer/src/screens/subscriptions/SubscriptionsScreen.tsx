@@ -390,7 +390,7 @@ const styles = StyleSheet.create({
   },
   pauseButton: {
     flex: 1,
-    backgroundColor: colors.gray.100,
+    backgroundColor: colors.gray['100'],
     padding: spacing.sm,
     borderRadius: borderRadius.md,
     alignItems: 'center',

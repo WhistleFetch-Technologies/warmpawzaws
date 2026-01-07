@@ -266,13 +266,13 @@ export function OrderDetailScreen({
                       styles.timelineIcon,
                       item.completed
                         ? { backgroundColor: colors.primary }
-                        : { backgroundColor: colors.gray.200 },
+                        : { backgroundColor: colors.gray['200'] },
                     ]}
                   >
                     <Text
                       style={[
                         styles.timelineIconText,
-                        item.completed ? { color: colors.white } : { color: colors.gray.400 },
+                        item.completed ? { color: colors.white } : { color: colors.gray['400'] },
                       ]}
                     >
                       {item.completed ? '✓' : '○'}
@@ -284,7 +284,7 @@ export function OrderDetailScreen({
                         styles.timelineLine,
                         item.completed
                           ? { backgroundColor: colors.primary }
-                          : { backgroundColor: colors.gray.200 },
+                          : { backgroundColor: colors.gray['200'] },
                       ]}
                     />
                   )}
@@ -778,13 +778,13 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
   },
   itemImage: {
     width: 80,
     height: 80,
     borderRadius: borderRadius.md,
-    backgroundColor: colors.gray.100,
+    backgroundColor: colors.gray['100'],
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: spacing.md,
@@ -846,7 +846,7 @@ const styles = StyleSheet.create({
   },
   paymentDivider: {
     height: 1,
-    backgroundColor: colors.gray.200,
+    backgroundColor: colors.gray['200'],
     marginVertical: spacing.sm,
   },
   paymentTotalLabel: {
@@ -865,7 +865,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     paddingTop: spacing.sm,
     borderTopWidth: 1,
-    borderTopColor: colors.gray.200,
+    borderTopColor: colors.gray['200'],
   },
   paymentMethodIcon: {
     fontSize: 16,
@@ -884,7 +884,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
   },
   trackingInfo: {
     flex: 1,
@@ -911,7 +911,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.sm,
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
   },
   helpIcon: {
     fontSize: 24,
@@ -939,7 +939,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     backgroundColor: colors.white,
     borderTopWidth: 1,
-    borderTopColor: colors.gray.200,
+    borderTopColor: colors.gray['200'],
     gap: spacing.sm,
   },
   actionButton: {
@@ -1039,7 +1039,7 @@ const styles = StyleSheet.create({
   modalButtonSecondary: {
     backgroundColor: '#F9FAFB',
     borderWidth: 1,
-    borderColor: colors.gray.200,
+    borderColor: colors.gray['200'],
   },
   modalButtonDanger: {
     backgroundColor: '#EF4444',

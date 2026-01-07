@@ -250,7 +250,7 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: borderRadius.md,
-    backgroundColor: colors.gray.100,
+    backgroundColor: colors.gray['100'],
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: spacing.md,

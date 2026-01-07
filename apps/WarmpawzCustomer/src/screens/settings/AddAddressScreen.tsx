@@ -358,7 +358,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   saveButtonDisabled: {
-    backgroundColor: colors.gray.400,
+    backgroundColor: colors.gray['400'],
   },
   saveButtonText: {
     color: colors.white,
