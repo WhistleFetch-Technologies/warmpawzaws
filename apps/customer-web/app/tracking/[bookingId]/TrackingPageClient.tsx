@@ -223,7 +223,7 @@ export function TrackingPageClient({ bookingId }: TrackingPageClientProps) {
               <p className={`text-sm ${getStatusColor(tracking.status)} font-medium`}>
                 {getStatusMessage(tracking.status)}
               </p>
-              {tracking.distance_traveled_km > 0 && (
+              {tracking.distance_traveled_km != null && tracking.distance_traveled_km > 0 && (
                 <p className="text-xs text-gray-500 mt-1">
                   Traveled: {tracking.distance_traveled_km.toFixed(2)} km
                 </p>
