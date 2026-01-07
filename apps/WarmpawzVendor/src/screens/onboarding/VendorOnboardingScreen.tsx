@@ -457,7 +457,7 @@ const styles = StyleSheet.create({
   },
   selectOptionSelected: {
     borderColor: colors.primary,
-    backgroundColor: colors.primary.50,
+    backgroundColor: colors.gradientOrange50,
   },
   selectOptionText: {
     fontSize: typography.fontSizes.md,
@@ -485,7 +485,7 @@ const styles = StyleSheet.create({
   },
   navButtonPrimary: {
     borderColor: colors.primary,
-    backgroundColor: colors.primary.50,
+    backgroundColor: colors.gradientOrange50,
   },
   navButtonText: {
     fontSize: typography.fontSizes.md,

@@ -255,7 +255,7 @@ const styles = StyleSheet.create({
   },
   categoryCardSelected: {
     borderColor: colors.primary,
-    backgroundColor: colors.primary.50,
+    backgroundColor: colors.gradientOrange50,
   },
   categoryIcon: {
     fontSize: 32,
@@ -288,7 +288,7 @@ const styles = StyleSheet.create({
   },
   problemCardSelected: {
     borderColor: colors.primary,
-    backgroundColor: colors.primary.50,
+    backgroundColor: colors.gradientOrange50,
   },
   problemIcon: {
     fontSize: 24,

@@ -413,7 +413,7 @@ const styles = StyleSheet.create({
   },
   addressCardSelected: {
     borderColor: colors.primary,
-    backgroundColor: colors.primary.50,
+    backgroundColor: colors.gradientOrange50,
   },
   addressInfo: {
     flex: 1,
@@ -510,7 +510,7 @@ const styles = StyleSheet.create({
   },
   paymentOptionSelected: {
     borderColor: colors.primary,
-    backgroundColor: colors.primary.50,
+    backgroundColor: colors.gradientOrange50,
   },
   paymentIcon: {
     fontSize: 24,

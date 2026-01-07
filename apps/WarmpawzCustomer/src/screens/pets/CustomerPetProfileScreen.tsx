@@ -607,7 +607,7 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: borderRadius.lg,
-    backgroundColor: colors.primary.50,
+    backgroundColor: colors.gradientOrange50,
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
@@ -658,7 +658,7 @@ const styles = StyleSheet.create({
     color: colors.error,
   },
   emptyState: {
-    backgroundColor: colors.primary.50,
+    backgroundColor: colors.gradientOrange50,
     borderWidth: 2,
     borderColor: '#FFE0B2',
     borderRadius: borderRadius.xl,
@@ -679,7 +679,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderStyle: 'dashed',
     borderColor: colors.primary,
-    backgroundColor: colors.primary.50,
+    backgroundColor: colors.gradientOrange50,
     borderRadius: borderRadius.xl,
     padding: spacing.md,
     alignItems: 'center',
@@ -785,7 +785,7 @@ const styles = StyleSheet.create({
     width: 96,
     height: 96,
     borderRadius: 48,
-    backgroundColor: colors.primary.50,
+    backgroundColor: colors.gradientOrange50,
     borderWidth: 4,
     borderColor: colors.background,
     overflow: 'hidden',
@@ -846,7 +846,7 @@ const styles = StyleSheet.create({
   },
   typeButtonSelected: {
     borderColor: colors.primary,
-    backgroundColor: colors.primary.50,
+    backgroundColor: colors.gradientOrange50,
   },
   typeButtonText: {
     fontSize: typography.fontSizes.sm,
@@ -871,7 +871,7 @@ const styles = StyleSheet.create({
   },
   genderButtonSelected: {
     borderColor: colors.primary,
-    backgroundColor: colors.primary.50,
+    backgroundColor: colors.gradientOrange50,
   },
   genderButtonText: {
     fontSize: typography.fontSizes.md,

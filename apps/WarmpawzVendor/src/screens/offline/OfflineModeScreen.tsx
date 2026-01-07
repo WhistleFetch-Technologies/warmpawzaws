@@ -315,7 +315,7 @@ const styles = StyleSheet.create({
     color: colors.white,
   },
   offlineInfo: {
-    backgroundColor: colors.primary.50,
+    backgroundColor: colors.gradientOrange50,
     borderWidth: 2,
     borderColor: colors.warning,
     borderRadius: borderRadius.xl,

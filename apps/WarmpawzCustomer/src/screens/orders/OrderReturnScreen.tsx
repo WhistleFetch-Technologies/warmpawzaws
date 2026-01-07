@@ -311,7 +311,7 @@ const styles = StyleSheet.create({
   },
   itemCardSelected: {
     borderColor: colors.primary,
-    backgroundColor: colors.primary.50,
+    backgroundColor: colors.gradientOrange50,
   },
   itemInfo: {
     flex: 1,
@@ -351,7 +351,7 @@ const styles = StyleSheet.create({
   },
   reasonCardSelected: {
     borderColor: colors.primary,
-    backgroundColor: colors.primary.50,
+    backgroundColor: colors.gradientOrange50,
   },
   reasonText: {
     flex: 1,

@@ -94,6 +94,10 @@ export abstract class BaseHandlerEnhanced {
    * Main handler method - must be implemented by subclasses
    */
   abstract handle(context: HandlerContext): Promise<HandlerResponse>;
+}
+
+// Export alias for backward compatibility
+export abstract class BaseHandler extends BaseHandlerEnhanced {}
 
   /**
    * Wrapper that provides common functionality

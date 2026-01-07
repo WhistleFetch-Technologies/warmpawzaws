@@ -352,7 +352,7 @@ const styles = StyleSheet.create({
   },
   genderButtonSelected: {
     borderColor: colors.primary,
-    backgroundColor: colors.primary.50,
+    backgroundColor: colors.gradientOrange50,
   },
   genderButtonText: {
     fontSize: 14,

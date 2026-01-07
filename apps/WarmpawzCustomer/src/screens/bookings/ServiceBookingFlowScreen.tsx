@@ -532,7 +532,7 @@ const styles = StyleSheet.create({
   },
   petCardSelected: {
     borderColor: colors.primary,
-    backgroundColor: colors.primary.50,
+    backgroundColor: colors.gradientOrange50,
   },
   petName: {
     fontSize: 18,
@@ -593,7 +593,7 @@ const styles = StyleSheet.create({
   },
   timeSlotSelected: {
     borderColor: colors.primary,
-    backgroundColor: colors.primary.50,
+    backgroundColor: colors.gradientOrange50,
   },
   timeSlotText: {
     fontSize: 14,
@@ -616,7 +616,7 @@ const styles = StyleSheet.create({
   },
   addressCardSelected: {
     borderColor: colors.primary,
-    backgroundColor: colors.primary.50,
+    backgroundColor: colors.gradientOrange50,
   },
   addressName: {
     fontSize: 16,

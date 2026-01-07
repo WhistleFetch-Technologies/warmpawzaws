@@ -454,7 +454,7 @@ const styles = StyleSheet.create({
     width: 128,
     height: 128,
     borderRadius: 64,
-    backgroundColor: colors.primary.50,
+    backgroundColor: colors.gradientOrange50,
     borderWidth: 4,
     borderColor: colors.background,
     overflow: 'hidden',

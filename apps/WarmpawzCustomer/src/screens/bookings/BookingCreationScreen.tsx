@@ -267,7 +267,7 @@ const styles = StyleSheet.create({
   },
   petOptionSelected: {
     borderColor: colors.primary,
-    backgroundColor: colors.primary.50,
+    backgroundColor: colors.gradientOrange50,
   },
   petEmoji: {
     fontSize: 32,

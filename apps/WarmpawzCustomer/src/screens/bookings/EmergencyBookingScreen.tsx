@@ -426,7 +426,7 @@ const styles = StyleSheet.create({
   },
   serviceCardSelected: {
     borderColor: colors.primary,
-    backgroundColor: colors.primary.50,
+    backgroundColor: colors.gradientOrange50,
   },
   serviceIcon: {
     fontSize: 32,
@@ -476,7 +476,7 @@ const styles = StyleSheet.create({
   },
   petCardSelected: {
     borderColor: colors.primary,
-    backgroundColor: colors.primary.50,
+    backgroundColor: colors.gradientOrange50,
   },
   petName: {
     fontSize: 16,

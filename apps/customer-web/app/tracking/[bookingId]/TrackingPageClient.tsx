@@ -20,6 +20,7 @@ interface TrackingData {
   };
   eta_minutes: number | null;
   distance_km: number;
+  distance_traveled_km?: number;
   status: 'on_way' | 'arriving' | 'arrived' | 'in_progress' | 'completed';
   eta_calculation_method?: 'google_maps' | 'estimated';
   service_name: string;

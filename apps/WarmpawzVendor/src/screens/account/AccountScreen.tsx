@@ -210,7 +210,7 @@ const styles = StyleSheet.create({
   dangerSection: {
     marginTop: spacing.xl,
     padding: spacing.md,
-    backgroundColor: colors.primary.50,
+    backgroundColor: colors.gradientOrange50,
     borderWidth: 2,
     borderColor: colors.error,
     borderRadius: borderRadius.xl,

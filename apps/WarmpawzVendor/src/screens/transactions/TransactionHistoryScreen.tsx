@@ -222,7 +222,7 @@ const styles = StyleSheet.create({
   },
   filterButtonActive: {
     borderColor: colors.primary,
-    backgroundColor: colors.primary.50,
+    backgroundColor: colors.gradientOrange50,
   },
   filterText: {
     fontSize: typography.fontSizes.sm,
