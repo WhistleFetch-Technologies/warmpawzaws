@@ -376,7 +376,7 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
           contact: customerPhone,
         },
         theme: {
-          color: colors.primary, // Using design token primary color
+          color: '#F97316', // Orange primary color
         },
         modal: {
           ondismiss: () => {
