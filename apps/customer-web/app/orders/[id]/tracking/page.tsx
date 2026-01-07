@@ -2,9 +2,12 @@ import { Suspense } from 'react';
 import TrackingContent from './TrackingContent';
 
 // Required for static export with dynamic routes
-export function generateStaticParams() {
-  return [];
+export async function generateStaticParams() {
+  return [{ id: 'placeholder' }];
 }
+
+// Allow dynamic params at runtime (client-side navigation)
+export const dynamicParams = true;
 
 export default function OrderTrackingPage() {
   return (
