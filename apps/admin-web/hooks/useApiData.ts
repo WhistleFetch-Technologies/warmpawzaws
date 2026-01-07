@@ -6,7 +6,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { apiClient } from '@/lib/api-client';
 
-interface UseApiDataOptions<T> {
+export interface UseApiDataOptions<T> {
   endpoint: string;
   params?: Record<string, string | number | boolean>;
   dataKey?: string; // Key to extract from response (e.g., 'banners', 'regions')
@@ -15,7 +15,7 @@ interface UseApiDataOptions<T> {
   onError?: (error: Error) => void;
 }
 
-interface UseApiDataReturn<T> {
+export interface UseApiDataReturn<T> {
   data: T[];
   loading: boolean;
   error: string | null;
