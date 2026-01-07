@@ -249,7 +249,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   noOtpSection: {
-    backgroundColor: colors.primary.50,
+    backgroundColor: colors.gradientOrange50,
     borderWidth: 2,
     borderColor: colors.primary,
     borderRadius: borderRadius.xl,

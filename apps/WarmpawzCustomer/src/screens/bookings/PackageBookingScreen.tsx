@@ -348,7 +348,7 @@ const styles = StyleSheet.create({
   },
   packageCardSelected: {
     borderColor: colors.primary,
-    backgroundColor: colors.primary.50,
+    backgroundColor: colors.gradientOrange50,
   },
   packageHeader: {
     flexDirection: 'row',
@@ -445,7 +445,7 @@ const styles = StyleSheet.create({
   },
   petCardSelected: {
     borderColor: colors.primary,
-    backgroundColor: colors.primary.50,
+    backgroundColor: colors.gradientOrange50,
   },
   petName: {
     flex: 1,

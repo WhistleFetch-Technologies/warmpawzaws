@@ -213,7 +213,7 @@ const styles = StyleSheet.create({
   },
   periodButtonActive: {
     borderColor: colors.primary,
-    backgroundColor: colors.primary.50,
+    backgroundColor: colors.gradientOrange50,
   },
   periodButtonText: {
     fontSize: typography.fontSizes.sm,

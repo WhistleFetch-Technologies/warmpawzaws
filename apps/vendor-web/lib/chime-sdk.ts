@@ -101,16 +101,15 @@ export class ChimeSDKManager {
       console.log(`Audio ${muted ? 'muted' : 'unmuted'}`);
     });
 
-    this.audioVideo.realtimeSubscribeToLocalVideoTileDidChange((tile: VideoTile | null) => {
-      if (tile?.boundVideoElement && this.localVideoElement) {
-        this.localVideoElement.srcObject = tile.boundVideoElement.srcObject;
-      }
-    });
-
-    // Observe remote video tiles
+    // Observe video tiles using observer pattern
     this.audioVideo.addObserver({
       videoTileDidUpdate: (tileState: any) => {
-        if (tileState.boundVideoElement && this.remoteVideoElement && !tileState.isContent) {
+        // Handle local video tile
+        if (tileState.localTile && tileState.boundVideoElement && this.localVideoElement) {
+          this.localVideoElement.srcObject = tileState.boundVideoElement.srcObject;
+        }
+        // Handle remote video tile
+        if (!tileState.localTile && tileState.boundVideoElement && this.remoteVideoElement && !tileState.isContent) {
           this.remoteVideoElement.srcObject = tileState.boundVideoElement.srcObject;
         }
       },

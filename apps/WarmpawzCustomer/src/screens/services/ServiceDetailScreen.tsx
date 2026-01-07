@@ -250,7 +250,7 @@ const styles = StyleSheet.create({
   },
   ratingContainer: {
     alignSelf: 'flex-start',
-    backgroundColor: colors.primary.50,
+    backgroundColor: colors.gradientOrange50,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs / 2,
     borderRadius: borderRadius.md,

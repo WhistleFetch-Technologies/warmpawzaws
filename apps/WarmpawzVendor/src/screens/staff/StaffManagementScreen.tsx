@@ -481,7 +481,7 @@ const styles = StyleSheet.create({
   },
   roleButtonSelected: {
     borderColor: colors.primary,
-    backgroundColor: colors.primary.50,
+    backgroundColor: colors.gradientOrange50,
   },
   roleButtonText: {
     fontSize: typography.fontSizes.sm,

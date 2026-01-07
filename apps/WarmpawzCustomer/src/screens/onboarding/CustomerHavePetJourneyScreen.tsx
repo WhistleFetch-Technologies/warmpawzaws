@@ -1220,7 +1220,7 @@ const styles = StyleSheet.create({
   },
   optionButtonSelected: {
     borderColor: colors.primary,
-    backgroundColor: colors.primary.50,
+    backgroundColor: colors.gradientOrange50,
   },
   optionButtonSmall: {
     width: '100%',
@@ -1293,7 +1293,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   proTipCard: {
-    backgroundColor: colors.primary.50,
+    backgroundColor: colors.gradientOrange50,
     borderWidth: 2,
     borderColor: '#FFE0B2',
     borderRadius: borderRadius.xl,
@@ -1334,7 +1334,7 @@ const styles = StyleSheet.create({
   },
   traitButtonSelected: {
     borderColor: colors.primary,
-    backgroundColor: colors.primary.50,
+    backgroundColor: colors.gradientOrange50,
   },
   traitText: {
     fontSize: typography.fontSizes.sm,

@@ -320,7 +320,7 @@ const styles = StyleSheet.create({
   },
   bookingCardSelected: {
     borderColor: colors.primary,
-    backgroundColor: colors.primary.50,
+    backgroundColor: colors.gradientOrange50,
   },
   bookingHeader: {
     flexDirection: 'row',

@@ -240,7 +240,7 @@ const styles = StyleSheet.create({
   },
   staffCardSelected: {
     borderColor: colors.primary,
-    backgroundColor: colors.primary.50,
+    backgroundColor: colors.gradientOrange50,
   },
   staffInfo: {
     flex: 1,

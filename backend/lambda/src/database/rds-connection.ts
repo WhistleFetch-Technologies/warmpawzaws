@@ -295,6 +295,11 @@ export async function deleteRows(
 }
 
 /**
+ * Alias for deleteRows (for backward compatibility)
+ */
+export const deleteRecord = deleteRows;
+
+/**
  * Execute an UPSERT query
  */
 export async function upsert(

@@ -278,7 +278,7 @@ const styles = StyleSheet.create({
   },
   quickAmountButtonSelected: {
     borderColor: colors.primary,
-    backgroundColor: colors.primary.50,
+    backgroundColor: colors.gradientOrange50,
   },
   quickAmountText: {
     fontSize: 16,

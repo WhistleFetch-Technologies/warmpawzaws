@@ -258,7 +258,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   currentAppointment: {
-    backgroundColor: colors.primary.50,
+    backgroundColor: colors.gradientOrange50,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: spacing.lg,
@@ -314,7 +314,7 @@ const styles = StyleSheet.create({
   },
   timeSlotSelected: {
     borderColor: colors.primary,
-    backgroundColor: colors.primary.50,
+    backgroundColor: colors.gradientOrange50,
   },
   timeSlotText: {
     fontSize: 14,

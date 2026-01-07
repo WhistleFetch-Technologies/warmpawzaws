@@ -471,7 +471,7 @@ const styles = StyleSheet.create({
   couponCardSelected: {
     borderColor: colors.primary,
     borderWidth: 2,
-    backgroundColor: colors.primary.50,
+    backgroundColor: colors.gradientOrange50,
   },
   couponHeader: {
     flexDirection: 'row',

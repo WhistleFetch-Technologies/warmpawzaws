@@ -345,7 +345,7 @@ const styles = StyleSheet.create({
   },
   methodCardSelected: {
     borderColor: colors.primary,
-    backgroundColor: colors.primary.50,
+    backgroundColor: colors.gradientOrange50,
   },
   methodIcon: {
     fontSize: 32,

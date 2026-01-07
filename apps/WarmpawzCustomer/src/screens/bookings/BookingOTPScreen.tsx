@@ -313,7 +313,7 @@ const styles = StyleSheet.create({
   },
   otpInputFilled: {
     borderColor: colors.primary,
-    backgroundColor: colors.primary.50,
+    backgroundColor: colors.gradientOrange50,
   },
   resendContainer: {
     marginBottom: spacing.lg,

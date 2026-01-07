@@ -304,7 +304,7 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   ratingContainer: {
-    backgroundColor: colors.primary.50,
+    backgroundColor: colors.gradientOrange50,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs / 2,
     borderRadius: borderRadius.md,
