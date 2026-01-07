@@ -14,7 +14,6 @@ import {
   MeetingSessionConfiguration,
   AudioVideoFacade,
   DefaultDeviceController,
-  DefaultMeetingSession,
   Logger,
   LogLevel,
   VideoTile,
@@ -142,7 +141,11 @@ export class ChimeSDKManager {
     if (!this.audioVideo) throw new Error('Not initialized');
     
     const isMuted = this.audioVideo.realtimeIsLocalAudioMuted();
-    this.audioVideo.realtimeMuteLocalAudio(!isMuted);
+    if (isMuted) {
+      this.audioVideo.realtimeUnmuteLocalAudio();
+    } else {
+      this.audioVideo.realtimeMuteLocalAudio();
+    }
     return !isMuted;
   }
 
