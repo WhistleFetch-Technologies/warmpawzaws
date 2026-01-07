@@ -97,7 +97,7 @@ export function BookingDetailScreen({
         return '#3B82F6';
       case 'in_progress':
       case 'active':
-        return {colors.success};
+        return colors.success;
       case 'completed':
         return '#6B7280';
       case 'cancelled':

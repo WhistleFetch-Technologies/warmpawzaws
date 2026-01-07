@@ -178,7 +178,7 @@ export function ReferralSystemScreen({
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'completed':
-        return {colors.success};
+        return colors.success;
       case 'pending':
         return '#F59E0B';
       case 'expired':

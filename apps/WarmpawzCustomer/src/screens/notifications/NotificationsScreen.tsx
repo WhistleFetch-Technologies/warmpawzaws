@@ -196,9 +196,9 @@ export function NotificationsScreen({
       case 'booking':
         return '#3B82F6';
       case 'payment':
-        return {colors.success};
+        return colors.success;
       case 'success':
-        return {colors.success};
+        return colors.success;
       case 'warning':
         return '#F59E0B';
       case 'error':

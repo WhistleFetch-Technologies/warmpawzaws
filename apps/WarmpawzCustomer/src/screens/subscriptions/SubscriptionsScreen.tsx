@@ -155,7 +155,7 @@ export function SubscriptionsScreen({
     switch (status) {
       case 'active': return '#16a34a';
       case 'paused': return '#f59e0b';
-      case 'cancelled': return {colors.error};
+      case 'cancelled': return colors.error;
       default: return colors.textSecondary;
     }
   };
