@@ -97,7 +97,7 @@ export abstract class BaseHandlerEnhanced {
 }
 
 // Export alias for backward compatibility
-export abstract class BaseHandler extends BaseHandlerEnhanced {}
+export { BaseHandlerEnhanced as BaseHandler };
 
   /**
    * Wrapper that provides common functionality
