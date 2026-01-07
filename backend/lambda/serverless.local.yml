@@ -1,0 +1,94 @@
+# ============================================================================
+# SERVERLESS LOCAL CONFIGURATION
+# ============================================================================
+# For local testing with serverless-offline
+# ============================================================================
+
+service: warmpawz-api
+
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: nodejs18.x
+  region: ap-south-1
+  stage: local
+  memorySize: 512
+  timeout: 30
+  
+  # Local environment variables (override with .env file)
+  environment:
+    NODE_ENV: local
+    AWS_REGION: ap-south-1
+    
+    # RDS Configuration (local or remote)
+    DB_HOST: ${env:DB_HOST, 'localhost'}
+    DB_PORT: ${env:DB_PORT, '5432'}
+    DB_NAME: ${env:DB_NAME, 'warmpawz'}
+    DB_USER: ${env:DB_USER, 'postgres'}
+    DB_PASSWORD: ${env:DB_PASSWORD, 'postgres'}
+    
+    # Cognito Configuration (use test values)
+    COGNITO_USER_POOL_ID: ${env:COGNITO_USER_POOL_ID, 'ap-south-1_TEST123'}
+    COGNITO_CLIENT_ID: ${env:COGNITO_CLIENT_ID, 'test-client-id'}
+    COGNITO_REGION: ap-south-1
+    
+    # SNS Configuration (mock for local)
+    SNS_SMS_TOPIC_ARN: ${env:SNS_SMS_TOPIC_ARN, 'arn:aws:sns:ap-south-1:123456789012:test-sms'}
+    
+    # Razorpay Configuration (test keys)
+    RAZORPAY_KEY_ID: ${env:RAZORPAY_KEY_ID, 'test-key-id'}
+    RAZORPAY_KEY_SECRET: ${env:RAZORPAY_KEY_SECRET, 'test-key-secret'}
+    RAZORPAY_WEBHOOK_SECRET: ${env:RAZORPAY_WEBHOOK_SECRET, 'test-webhook-secret'}
+    
+    # Feature Flags
+    UAT_MODE: ${env:UAT_MODE, 'true'}
+
+functions:
+  api:
+    handler: dist/handler.handler
+    description: Warmpawz API Gateway Handler (Local)
+    events:
+      - httpApi:
+          path: /{proxy+}
+          method: ANY
+      - httpApi:
+          path: /
+          method: ANY
+
+# Serverless Offline Plugin
+plugins:
+  - serverless-offline
+
+custom:
+  serverless-offline:
+    httpPort: 3000
+    host: 0.0.0.0
+    noPrependStageInUrl: true
+    lambdaPort: 3002
+    # CORS configuration
+    cors:
+      origin: '*'
+      headers:
+        - Content-Type
+        - Authorization
+        - X-Requested-With
+        - X-Request-Id
+      allowCredentials: false
+
+# Package Configuration
+package:
+  patterns:
+    - '!node_modules/**'
+    - '!src/**'
+    - '!*.ts'
+    - '!*.tsx'
+    - '!tsconfig.json'
+    - '!esbuild.config.js'
+    - 'dist/**'
+    - 'node_modules/@warmpawz/**'
+    - 'node_modules/zod/**'
+    - 'node_modules/hono/**'
+    - 'node_modules/jose/**'
+    - 'node_modules/pg/**'
+

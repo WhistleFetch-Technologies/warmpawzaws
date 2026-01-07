@@ -50,6 +50,12 @@ jobs:
           npm ci --legacy-peer-deps
           npm run build
 
+      - name: Build API Contracts Package
+        run: |
+          cd packages/api-contracts
+          npm ci --legacy-peer-deps || npm install --legacy-peer-deps
+          npm run build
+
       - name: Build Admin Web
         run: |
           cd apps/admin-web
