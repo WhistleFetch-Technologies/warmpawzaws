@@ -1,8 +1,12 @@
 'use client';
 
-export const dynamic = 'force-dynamic';
-
 import React, { useState, useEffect } from 'react';
+
+// Required for static export - generates no pages at build time
+// but allows client-side navigation to work
+export function generateStaticParams() {
+  return [];
+}
 import { useRouter, useParams } from 'next/navigation';
 import { apiClientWithMock as apiClient } from '@/lib/api-client-with-mock';
 import Link from 'next/link';
