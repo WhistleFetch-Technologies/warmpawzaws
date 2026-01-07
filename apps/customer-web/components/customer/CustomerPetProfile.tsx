@@ -183,7 +183,7 @@ export function CustomerPetProfile({ phone, onComplete, onBack }: CustomerPetPro
         <div className="w-24 h-24 bg-primary rounded-full flex items-center justify-center mb-4 shadow-lg shadow-primary/30">
           <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
             <ellipse cx="24" cy="30" rx="11" ry="13" fill="white"/>
-            <path d="M24 28C22.5 26.5 20 26.5 18.5 28C17 29.5 17 32 18.5 33.5L24 39L29.5 33.5C31 32 31 29.5 29.5 28C28 26.5 25.5 26.5 24 28Z" fill={colors.primary}/>
+            <path d="M24 28C22.5 26.5 20 26.5 18.5 28C17 29.5 17 32 18.5 33.5L24 39L29.5 33.5C31 32 31 29.5 29.5 28C28 26.5 25.5 26.5 24 28Z" fill="#F97316"/>
             <ellipse cx="16" cy="16" rx="5" ry="7" transform="rotate(-15 16 16)" fill="white"/>
             <ellipse cx="22" cy="12" rx="5" ry="7" transform="rotate(-5 22 12)" fill="white"/>
             <ellipse cx="26" cy="12" rx="5" ry="7" transform="rotate(5 26 12)" fill="white"/>
