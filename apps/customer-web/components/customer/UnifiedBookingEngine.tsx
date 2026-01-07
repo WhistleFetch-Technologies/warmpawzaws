@@ -166,11 +166,11 @@ export function UnifiedBookingEngine({
       const customer: any = await apiClient.get(`/customers/phone/${customerPhone}`);
       if (customer) {
         // Load pets
-        const petsData = await apiClient.get(`/customers/${customer.id}/pets`);
+        const petsData: any = await apiClient.get(`/customers/${customer.id}/pets`);
         setPets(petsData || []);
 
         // Load addresses
-        const addressesData = await apiClient.get(`/customers/${customer.id}/addresses`);
+        const addressesData: any = await apiClient.get(`/customers/${customer.id}/addresses`);
         setAddresses(addressesData || []);
       }
     } catch (err: any) {
