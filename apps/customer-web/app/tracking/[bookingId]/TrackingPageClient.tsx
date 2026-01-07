@@ -18,9 +18,10 @@ interface TrackingData {
     longitude: number;
     address: string;
   };
-  eta_minutes: number;
+  eta_minutes: number | null;
   distance_km: number;
   status: 'on_way' | 'arriving' | 'arrived' | 'in_progress' | 'completed';
+  eta_calculation_method?: 'google_maps' | 'estimated';
   service_name: string;
   booking_time: string;
 }
@@ -39,11 +40,16 @@ export function TrackingPageClient({ bookingId }: TrackingPageClientProps) {
   const loadTracking = useCallback(async () => {
     try {
       const response = await apiClient.get<any>(`/gps-tracking/booking/${bookingId}`);
-      if (response.tracking) {
+      if (response.isTracking && response.tracking) {
         setTracking(response.tracking);
+        setError(null);
+      } else if (!response.isTracking) {
+        setError(response.message || 'GPS tracking is not active for this booking');
+        setTracking(null);
       }
     } catch (err: any) {
       setError(err.message || 'Failed to load tracking data');
+      setTracking(null);
     } finally {
       setLoading(false);
     }
@@ -52,8 +58,8 @@ export function TrackingPageClient({ bookingId }: TrackingPageClientProps) {
   useEffect(() => {
     loadTracking();
     
-    // Poll for updates every 10 seconds
-    const interval = setInterval(loadTracking, 10000);
+    // Poll for updates every 5 seconds for better real-time feel
+    const interval = setInterval(loadTracking, 5000);
     return () => clearInterval(interval);
   }, [loadTracking]);
 
@@ -134,25 +140,58 @@ export function TrackingPageClient({ bookingId }: TrackingPageClientProps) {
         </div>
       </header>
 
-      {/* Map Placeholder */}
+      {/* Map with Google Maps Link */}
       <div className="h-[50vh] bg-gray-200 relative">
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="text-center">
-            <div className="text-6xl mb-4">🗺️</div>
-            <p className="text-gray-500">Map View</p>
-            <p className="text-sm text-gray-400">Google Maps integration</p>
+        {tracking.current_location && tracking.current_location.latitude && tracking.destination && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="text-center">
+              <div className="text-6xl mb-4">🗺️</div>
+              <p className="text-gray-500 mb-2">Live Tracking</p>
+              <a
+                href={`https://www.google.com/maps/dir/${tracking.current_location.latitude},${tracking.current_location.longitude}/${tracking.destination.latitude},${tracking.destination.longitude}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition text-sm font-medium"
+              >
+                Open in Google Maps →
+              </a>
+              <p className="text-xs text-gray-400 mt-2">
+                Real-time location updates every 5 seconds
+              </p>
+            </div>
           </div>
-        </div>
+        )}
+        {(!tracking.current_location || !tracking.current_location.latitude) && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="text-center">
+              <div className="text-6xl mb-4">📍</div>
+              <p className="text-gray-500">Waiting for location update...</p>
+            </div>
+          </div>
+        )}
         
         {/* ETA Badge */}
         <div className="absolute top-4 left-4 right-4 flex justify-between">
           <div className="bg-white rounded-xl px-4 py-2 shadow-lg">
             <p className="text-xs text-gray-500">ETA</p>
-            <p className="text-lg font-bold text-blue-600">{tracking.eta_minutes} mins</p>
+            <p className="text-lg font-bold text-blue-600">
+              {tracking.eta_minutes !== null && tracking.eta_minutes !== undefined 
+                ? `${tracking.eta_minutes} mins` 
+                : 'Calculating...'}
+            </p>
+            {tracking.eta_calculation_method && (
+              <p className="text-xs text-gray-400">
+                {tracking.eta_calculation_method === 'google_maps' ? '🚗 Google Maps' : '📍 Estimated'}
+              </p>
+            )}
           </div>
           <div className="bg-white rounded-xl px-4 py-2 shadow-lg">
             <p className="text-xs text-gray-500">Distance</p>
-            <p className="text-lg font-bold text-gray-900">{tracking.distance_km.toFixed(1)} km</p>
+            <p className="text-lg font-bold text-gray-900">
+              {tracking.distance_km !== null && tracking.distance_km !== undefined 
+                ? `${tracking.distance_km.toFixed(1)} km` 
+                : '--'}
+            </p>
           </div>
         </div>
       </div>
@@ -168,15 +207,26 @@ export function TrackingPageClient({ bookingId }: TrackingPageClientProps) {
                   <img src={tracking.staff_photo_url} alt={tracking.staff_name} className="w-full h-full object-cover" />
                 ) : '👤'}
               </div>
-              <div className={`absolute -bottom-1 -right-1 w-6 h-6 ${tracking.status === 'on_way' || tracking.status === 'arriving' ? 'bg-green-500' : 'bg-gray-400'} rounded-full border-2 border-white flex items-center justify-center`}>
+              <div className={`absolute -bottom-1 -right-1 w-6 h-6 ${
+                tracking.status === 'on_way' || tracking.status === 'arriving' 
+                  ? 'bg-green-500 animate-pulse' 
+                  : tracking.status === 'arrived' || tracking.status === 'in_progress'
+                  ? 'bg-green-500'
+                  : 'bg-gray-400'
+              } rounded-full border-2 border-white flex items-center justify-center`}>
                 <span className="text-xs">📍</span>
               </div>
             </div>
             <div className="flex-1">
               <h3 className="font-semibold text-gray-900">{tracking.staff_name}</h3>
-              <p className={`text-sm ${getStatusColor(tracking.status)}`}>
+              <p className={`text-sm ${getStatusColor(tracking.status)} font-medium`}>
                 {getStatusMessage(tracking.status)}
               </p>
+              {tracking.distance_traveled_km > 0 && (
+                <p className="text-xs text-gray-500 mt-1">
+                  Traveled: {tracking.distance_traveled_km.toFixed(2)} km
+                </p>
+              )}
             </div>
           </div>
         </div>
