@@ -147,17 +147,18 @@ export function RewardsLoyaltyScreen({
         const response = await RewardsApi.getAvailableRewards(customerId);
         const rewardsData = (response as any).rewards || (response as any).catalog || Array.isArray(response) ? response : [];
       
-      const formattedRewards: RewardItem[] = rewardsData.map((reward: any) => ({
-        id: reward.id || reward.rewardId,
-        name: reward.name || reward.rewardName,
-        pointsCost: reward.pointsCost || reward.points_cost || reward.points || 0,
-        cashValue: reward.cashValue || reward.cash_value || reward.value || 0,
-        type: (reward.type || reward.rewardType || 'cashback') as any,
-        description: reward.description || reward.rewardDescription || '',
-        imageUrl: reward.imageUrl || reward.image || reward.image_url,
-      }));
-      
-      setRewardsCatalog(formattedRewards);
+        const formattedRewards: RewardItem[] = rewardsData.map((reward: any) => ({
+          id: reward.id || reward.rewardId,
+          name: reward.name || reward.rewardName,
+          pointsCost: reward.pointsCost || reward.points_cost || reward.points || 0,
+          cashValue: reward.cashValue || reward.cash_value || reward.value || 0,
+          type: (reward.type || reward.rewardType || 'cashback') as any,
+          description: reward.description || reward.rewardDescription || '',
+          imageUrl: reward.imageUrl || reward.image || reward.image_url,
+        }));
+        
+        setRewardsCatalog(formattedRewards);
+      }
     } catch (error: any) {
       console.error('Error loading rewards catalog:', error);
       // Set empty array on error
