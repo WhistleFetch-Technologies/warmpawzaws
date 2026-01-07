@@ -35,6 +35,8 @@ interface Address {
   address: string;
   city: string;
   pincode: string;
+  latitude?: number;
+  longitude?: number;
 }
 
 interface BookingFlowProps {
