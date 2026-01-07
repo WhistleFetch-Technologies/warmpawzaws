@@ -18,6 +18,8 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
+        {/* Runtime config injected at deploy-time (static hosting safe). */}
+        <script src="/runtime-config.js" />
         <Providers>{children}</Providers>
       </body>
     </html>

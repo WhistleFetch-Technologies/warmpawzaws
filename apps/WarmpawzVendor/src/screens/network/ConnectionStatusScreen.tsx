@@ -201,7 +201,7 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   warningBox: {
-    backgroundColor: '#FFF4E6',
+    backgroundColor: colors.gradientOrange50,
     borderWidth: 2,
     borderColor: colors.warning,
     borderRadius: borderRadius.xl,

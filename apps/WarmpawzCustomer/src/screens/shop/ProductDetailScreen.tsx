@@ -311,7 +311,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -351,7 +351,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   imageContainer: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
   },
   mainImage: {
     width: '100%',
@@ -378,7 +378,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.sm,
   },
   productInfo: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
@@ -472,7 +472,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
@@ -495,7 +495,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   quantityButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 18,
     fontWeight: 'bold',
   },
@@ -508,7 +508,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   section: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
@@ -529,7 +529,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: spacing.sm,
     borderBottomWidth: 1,
-    borderBottomColor: '#f3f4f6',
+    borderBottomColor: colors.gray.100,
   },
   specLabel: {
     fontSize: 14,
@@ -542,7 +542,7 @@ const styles = StyleSheet.create({
   },
   footer: {
     flexDirection: 'row',
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderTopWidth: 1,
     borderTopColor: colors.border,
     padding: spacing.md,
@@ -550,7 +550,7 @@ const styles = StyleSheet.create({
   },
   addToCartButton: {
     flex: 1,
-    backgroundColor: '#f3f4f6',
+    backgroundColor: colors.gray.100,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     alignItems: 'center',
@@ -568,7 +568,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   buyNowButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 16,
     fontWeight: 'bold',
   },

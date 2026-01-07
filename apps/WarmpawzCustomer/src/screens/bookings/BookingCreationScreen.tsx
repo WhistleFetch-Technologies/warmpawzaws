@@ -198,7 +198,7 @@ export function BookingCreationScreen({
           disabled={loading}
         >
           {loading ? (
-            <ActivityIndicator color="#ffffff" />
+            <ActivityIndicator color={colors.white} />
           ) : (
             <Text style={styles.submitButtonText}>Create Booking</Text>
           )}
@@ -267,7 +267,7 @@ const styles = StyleSheet.create({
   },
   petOptionSelected: {
     borderColor: colors.primary,
-    backgroundColor: '#FFF4E6',
+    backgroundColor: colors.gradientOrange50,
   },
   petEmoji: {
     fontSize: 32,
@@ -320,7 +320,7 @@ const styles = StyleSheet.create({
   submitButtonText: {
     fontSize: typography.fontSizes.md,
     fontWeight: typography.fontWeights.semibold,
-    color: '#ffffff',
+    color: colors.white,
   },
 });
 

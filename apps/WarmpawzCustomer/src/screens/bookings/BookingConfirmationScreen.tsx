@@ -227,7 +227,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
   },
   backButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 16,
     fontWeight: '600',
   },
@@ -272,7 +272,7 @@ const styles = StyleSheet.create({
   },
   bookingDetails: {
     width: '100%',
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: spacing.lg,
@@ -311,7 +311,7 @@ const styles = StyleSheet.create({
   },
   paymentStatusCard: {
     width: '100%',
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: spacing.lg,
@@ -329,7 +329,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: borderRadius.md,
-    backgroundColor: '#fee2e2',
+    backgroundColor: colors.error + 20% opacity,
   },
   paymentStatusPaid: {
     backgroundColor: '#dcfce7',
@@ -337,14 +337,14 @@ const styles = StyleSheet.create({
   paymentStatusText: {
     fontSize: 12,
     fontWeight: 'bold',
-    color: '#dc2626',
+    color: colors.error,
   },
   paymentStatusTextPaid: {
     color: '#16a34a',
   },
   nextStepsCard: {
     width: '100%',
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: spacing.lg,
@@ -382,12 +382,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   viewBookingButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 16,
     fontWeight: 'bold',
   },
   homeButton: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     alignItems: 'center',

@@ -1,0 +1,200 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { CustomerOnboarding } from './CustomerOnboarding';
+import { CustomerUserProfile } from './CustomerUserProfile';
+import { CustomerPetProfile } from './CustomerPetProfile';
+import { CustomerHomeComplete } from './CustomerHomeComplete';
+import { isUatMode } from '@/lib/api-client';
+
+interface CustomerSession {
+  phone: string;
+  customerId?: string;
+  customer?: any;
+  sessionToken?: string;
+  verified: boolean;
+  isNewUser?: boolean;
+  hasCompletedOnboarding?: boolean;
+  hasPets?: boolean;
+}
+
+interface CustomerAppProps {
+  initialSession: CustomerSession;
+}
+
+export function CustomerApp({ initialSession }: CustomerAppProps) {
+  const router = useRouter();
+  const [session, setSession] = useState<CustomerSession>(initialSession);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [journeyStage, setJourneyStage] = useState<string | null>(null);
+  const [showJourney, setShowJourney] = useState(false);
+  const [showUserProfile, setShowUserProfile] = useState(false);
+  const [showPetProfile, setShowPetProfile] = useState(false);
+  const [currentScreen, setCurrentScreen] = useState<string>('home');
+  const [petData, setPetData] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Determine initial flow state based on session
+  useEffect(() => {
+    const determineInitialState = () => {
+      console.log('🎯 CustomerApp: Checking session state', session);
+      
+      const isOnboardingComplete = session.hasCompletedOnboarding || 
+        localStorage.getItem('customerOnboardingComplete') === 'true';
+      const storedJourney = localStorage.getItem('customerJourneyStage');
+      const storedProfile = localStorage.getItem('customerProfile');
+      const storedPets = localStorage.getItem('customerPets');
+      
+      console.log('📊 State check:', {
+        isOnboardingComplete,
+        storedJourney,
+        hasProfile: !!storedProfile,
+        hasPets: !!storedPets
+      });
+      
+      if (isOnboardingComplete) {
+        // User has completed full journey - go directly to home
+        console.log('✅ Returning user with completed profile - going to home');
+        setCurrentScreen('home');
+      } else if (storedProfile && !storedPets) {
+        // Has user profile but no pets - show pet profile
+        console.log('⚠️ User has profile but no pets - showing pet profile');
+        setJourneyStage(storedJourney || 'have-pet');
+        setShowPetProfile(true);
+      } else if (storedJourney && !storedProfile) {
+        // Has selected journey but no profile - show user profile
+        console.log('⚠️ User selected journey but needs profile');
+        setJourneyStage(storedJourney);
+        setShowUserProfile(true);
+      } else if (session.isNewUser || !storedJourney) {
+        // New user - show onboarding
+        console.log('🆕 New user - showing onboarding');
+        setShowOnboarding(true);
+      } else {
+        // Default to home
+        setCurrentScreen('home');
+      }
+      
+      setIsLoading(false);
+    };
+
+    determineInitialState();
+  }, [session]);
+
+  const handleOnboardingComplete = (stage: string) => {
+    console.log('📋 Journey stage selected:', stage);
+    setJourneyStage(stage);
+    localStorage.setItem('customerJourneyStage', stage);
+    setShowOnboarding(false);
+    
+    // Flow based on stage selection
+    if (stage === 'planning') {
+      // Planning: Go to User Profile → Home (skip pet profile)
+      setShowUserProfile(true);
+    } else if (stage === 'have-pet') {
+      // Already Have a Pet: Go to User Profile → Pet Profile → Home
+      setShowUserProfile(true);
+    } else if (stage === 'end-of-life') {
+      // End of Life Care: Go to User Profile → Home (no pet required)
+      setShowUserProfile(true);
+    }
+  };
+
+  const handleUserProfileComplete = (profile: any) => {
+    console.log('👤 User profile completed:', profile);
+    setShowUserProfile(false);
+    
+    // After User Profile:
+    // - "Already Have a Pet": Go to Pet Profile
+    // - "End of Life Care": Go to Home (no pet required)
+    // - "Planning": Go to Home
+    if (journeyStage === 'have-pet') {
+      setShowPetProfile(true);
+    } else {
+      // For end-of-life and planning, mark onboarding complete and go to home
+      localStorage.setItem('customerOnboardingComplete', 'true');
+      setCurrentScreen('home');
+    }
+  };
+
+  const handlePetProfileComplete = (pets: any[]) => {
+    console.log('🐾 Pet profiles completed:', pets);
+    setPetData(pets);
+    setShowPetProfile(false);
+    localStorage.setItem('customerOnboardingComplete', 'true');
+    setCurrentScreen('home');
+  };
+
+  const handleNavigate = (screen: string) => {
+    if (screen === 'logout') {
+      // Clear all session data
+      localStorage.removeItem('customerPhone');
+      localStorage.removeItem('authToken');
+      localStorage.removeItem('customerData');
+      localStorage.removeItem('customerProfile');
+      localStorage.removeItem('customerPets');
+      localStorage.removeItem('customerOnboardingComplete');
+      localStorage.removeItem('customerJourneyStage');
+      router.push('/auth');
+      return;
+    }
+    setCurrentScreen(screen);
+  };
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-white w-full max-w-[430px] mx-auto flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading your profile...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Onboarding flow
+  if (showOnboarding) {
+    return <CustomerOnboarding onComplete={handleOnboardingComplete} />;
+  }
+
+  // User Profile form
+  if (showUserProfile) {
+    return (
+      <CustomerUserProfile 
+        phone={session.phone}
+        journeyStage={journeyStage}
+        onComplete={handleUserProfileComplete}
+      />
+    );
+  }
+
+  // Pet Profile form
+  if (showPetProfile) {
+    return (
+      <CustomerPetProfile 
+        phone={session.phone}
+        onComplete={handlePetProfileComplete}
+        onBack={() => setShowUserProfile(true)}
+      />
+    );
+  }
+
+  // Home screen
+  if (currentScreen === 'home') {
+    return (
+      <CustomerHomeComplete 
+        phone={session.phone}
+      />
+    );
+  }
+
+  // Fallback: redirect to home
+  return (
+    <CustomerHomeComplete 
+      phone={session.phone}
+    />
+  );
+}
+

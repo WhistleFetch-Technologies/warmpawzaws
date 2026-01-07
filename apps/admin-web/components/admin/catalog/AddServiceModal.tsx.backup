@@ -1,0 +1,251 @@
+'use client';
+
+import { X, Package } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Button } from '@warmpawz/ui';
+import { apiClient } from '@/lib/api-client';
+
+interface AddServiceModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onSuccess?: () => void;
+  categoryId?: string;
+  subCategoryId?: string;
+}
+
+export function AddServiceModal({
+  isOpen,
+  onClose,
+  onSuccess,
+  categoryId,
+  subCategoryId
+}: AddServiceModalProps) {
+  const [loading, setLoading] = useState(false);
+  const [categories, setCategories] = useState<any[]>([]);
+  const [formData, setFormData] = useState({
+    name: '',
+    code: '',
+    description: '',
+    categoryId: categoryId || '',
+    subCategoryId: subCategoryId || '',
+    price: '',
+    duration: '',
+    serviceType: 'at-home' as 'at-home' | 'at-center',
+    status: 'active' as 'active' | 'inactive' | 'draft'
+  });
+
+  useEffect(() => {
+    if (isOpen) {
+      loadCategories();
+      if (categoryId) {
+        setFormData(prev => ({ ...prev, categoryId }));
+      }
+      if (subCategoryId) {
+        setFormData(prev => ({ ...prev, subCategoryId }));
+      }
+    }
+  }, [isOpen, categoryId, subCategoryId]);
+
+  const loadCategories = async () => {
+    try {
+      const data = await apiClient.get<any>('/admin/catalog/categories');
+      setCategories(data.categories || []);
+    } catch (error) {
+      console.error('Error loading categories:', error);
+    }
+  };
+
+  const handleChange = (field: string, value: any) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleSubmit = async () => {
+    if (!formData.name || !formData.price) {
+      alert('Please fill in all required fields');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      await apiClient.post('/admin/catalog/services', formData);
+      alert('Service created successfully!');
+      onSuccess?.();
+      onClose();
+      setFormData({
+        name: '',
+        code: '',
+        description: '',
+        categoryId: categoryId || '',
+        subCategoryId: subCategoryId || '',
+        price: '',
+        duration: '',
+        serviceType: 'at-home',
+        status: 'active'
+      });
+    } catch (error) {
+      console.error('Error creating service:', error);
+      alert('Failed to create service. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between p-6 border-b sticky top-0 bg-white">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-blue-100 rounded-lg">
+              <Package className="w-5 h-5 text-blue-600" />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900">Add Service</h3>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1 hover:bg-gray-100 rounded"
+            disabled={loading}
+          >
+            <X className="w-5 h-5 text-gray-500" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Service Name *
+              </label>
+              <input
+                type="text"
+                value={formData.name}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleChange('name', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                placeholder="e.g., Daily Dog Walking"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Service Code
+              </label>
+              <input
+                type="text"
+                value={formData.code}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleChange('code', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                placeholder="e.g., WALK-001"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Description
+            </label>
+            <textarea
+              value={formData.description}
+              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => handleChange('description', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              rows={3}
+              placeholder="Service description..."
+            />
+          </div>
+
+          {!categoryId && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Category
+              </label>
+              <select
+                value={formData.categoryId}
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => handleChange('categoryId', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              >
+                <option value="">Select category</option>
+                {categories.map(cat => (
+                  <option key={cat.id} value={cat.id}>{cat.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Price (₹) *
+              </label>
+              <input
+                type="number"
+                value={formData.price}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleChange('price', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                placeholder="0.00"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Duration
+              </label>
+              <input
+                type="text"
+                value={formData.duration}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleChange('duration', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                placeholder="e.g., 30 min"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Service Type
+              </label>
+              <select
+                value={formData.serviceType}
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => handleChange('serviceType', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              >
+                <option value="at-home">At Home</option>
+                <option value="at-center">At Center</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Status
+              </label>
+              <select
+                value={formData.status}
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => handleChange('status', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              >
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+                <option value="draft">Draft</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-3 p-6 border-t">
+          <Button
+            variant="outline"
+            onClick={onClose}
+            disabled={loading}
+          >
+            Cancel
+          </Button>
+          <Button
+            className="bg-[#FF8C42] hover:bg-[#FF7A2E]"
+            onClick={handleSubmit}
+            disabled={loading}
+          >
+            {loading ? 'Creating...' : 'Create Service'}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+

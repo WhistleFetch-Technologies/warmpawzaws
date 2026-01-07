@@ -123,11 +123,57 @@ export function NutritionistServiceScreen({
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
           <Icon name="arrow-left" size={24} color={colors.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Nutritionist Consultation</Text>
+        <Text style={styles.headerTitle}>Nutrition Services</Text>
         <View style={styles.placeholder} />
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Service Type Selection */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Choose Service</Text>
+          <View style={styles.serviceTypeContainer}>
+            <TouchableOpacity
+              style={styles.serviceTypeCard}
+              onPress={() => {
+                // Show consultation booking
+                // (existing flow)
+              }}
+            >
+              <Icon name="stethoscope" size={32} color={colors.primary} />
+              <Text style={styles.serviceTypeTitle}>Consultation</Text>
+              <Text style={styles.serviceTypeDescription}>Book a nutrition consultation</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.serviceTypeCard}
+              onPress={() => {
+                if (onNavigate) {
+                  // Check if we have nutritionists, if yes go to ordering, if no go to orders list
+                  if (nutritionists.length > 0) {
+                    onNavigate('MealPlanOrderScreen', { 
+                      vendorId: nutritionists[0].id || nutritionists[0].vendorId 
+                    });
+                  } else {
+                    // Show option to view orders or order new
+                    Alert.alert(
+                      'Meal Plans',
+                      'Would you like to order a new meal plan or view your existing orders?',
+                      [
+                        { text: 'View Orders', onPress: () => onNavigate('MealPlanOrders') },
+                        { text: 'Order New', onPress: () => onNavigate('ServiceDiscovery') },
+                        { text: 'Cancel', style: 'cancel' },
+                      ]
+                    );
+                  }
+                }
+              }}
+            >
+              <Icon name="food" size={32} color={colors.primary} />
+              <Text style={styles.serviceTypeTitle}>Meal Plans</Text>
+              <Text style={styles.serviceTypeDescription}>Order custom meal plans</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         {/* Consultation Type Selection */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Consultation Type</Text>
@@ -142,7 +188,7 @@ export function NutritionistServiceScreen({
               <Icon 
                 name="account-plus" 
                 size={24} 
-                color={consultationType === 'initial' ? '#fff' : colors.text} 
+                color={consultationType === 'initial' ? {colors.white} : colors.text} 
               />
               <Text
                 style={[
@@ -163,7 +209,7 @@ export function NutritionistServiceScreen({
               <Icon 
                 name="account-check" 
                 size={24} 
-                color={consultationType === 'followup' ? '#fff' : colors.text} 
+                color={consultationType === 'followup' ? {colors.white} : colors.text} 
               />
               <Text
                 style={[
@@ -297,7 +343,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -350,7 +396,7 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeights.medium,
   },
   typeButtonTextActive: {
-    color: '#fff',
+    color: colors.white,
   },
   petCard: {
     flexDirection: 'row',
@@ -361,7 +407,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     marginBottom: spacing.sm,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
   },
   petCardSelected: {
     borderColor: colors.primary,
@@ -390,7 +436,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     marginBottom: spacing.sm,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
   },
   nutritionistCardSelected: {
     borderColor: colors.primary,
@@ -435,7 +481,7 @@ const styles = StyleSheet.create({
     color: colors.text,
     minHeight: 100,
     textAlignVertical: 'top',
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
   },
   bookButton: {
     backgroundColor: colors.primary,
@@ -450,7 +496,7 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   bookButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: typography.fontSizes.md,
     fontWeight: typography.fontWeights.bold,
   },
@@ -463,6 +509,32 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSizes.sm,
     color: colors.textMuted,
     marginTop: spacing.md,
+  },
+  serviceTypeContainer: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  serviceTypeCard: {
+    flex: 1,
+    backgroundColor: colors.white,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: colors.border,
+  },
+  serviceTypeTitle: {
+    fontSize: typography.fontSizes.md,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.text,
+    marginTop: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  serviceTypeDescription: {
+    fontSize: typography.fontSizes.xs,
+    color: colors.textMuted,
+    textAlign: 'center',
   },
 });
 

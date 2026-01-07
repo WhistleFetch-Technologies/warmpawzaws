@@ -640,7 +640,7 @@ export function PharmacyStoreScreen({
           disabled={loading}
         >
           {loading ? (
-            <ActivityIndicator color="#fff" />
+            <ActivityIndicator color={colors.white} />
           ) : (
             <Text style={styles.primaryButtonText}>Place Order</Text>
           )}
@@ -695,7 +695,7 @@ export function PharmacyStoreScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
   },
   header: {
     padding: spacing.md,
@@ -705,23 +705,23 @@ const styles = StyleSheet.create({
   },
   backButton: {
     fontSize: typography.body,
-    color: '#fff',
+    color: colors.white,
     marginBottom: spacing.sm,
   },
   headerTitle: {
     fontSize: typography.h1,
     fontWeight: 'bold',
-    color: '#fff',
+    color: colors.white,
   },
   title: {
     fontSize: typography.h1,
     fontWeight: 'bold',
-    color: '#fff',
+    color: colors.white,
     marginBottom: spacing.sm,
   },
   subtitle: {
     fontSize: typography.body,
-    color: '#fff',
+    color: colors.white,
     opacity: 0.9,
   },
   landingContent: {
@@ -740,7 +740,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   statNumber: {
     fontSize: typography.h2,
@@ -780,9 +780,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: spacing.md,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: colors.gray.200,
   },
   headerTitleContainer: {
     flex: 1,
@@ -811,26 +811,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   cartBadgeText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 12,
     fontWeight: 'bold',
   },
   searchContainer: {
     padding: spacing.md,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
   },
   searchInput: {
     backgroundColor: '#F9FAFB',
     borderRadius: borderRadius.md,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
     fontSize: typography.body,
   },
   categoriesContainer: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: colors.gray.200,
   },
   categoriesContent: {
     paddingHorizontal: spacing.md,
@@ -852,7 +852,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   categoryChipTextActive: {
-    color: '#fff',
+    color: colors.white,
   },
   productsContainer: {
     flex: 1,
@@ -864,11 +864,11 @@ const styles = StyleSheet.create({
   },
   productCard: {
     width: '48%',
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderRadius: borderRadius.md,
     margin: '1%',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
     overflow: 'hidden',
   },
   productImageContainer: {
@@ -891,7 +891,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.sm,
   },
   rxBadgeText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 10,
     fontWeight: 'bold',
   },
@@ -905,7 +905,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.sm,
   },
   discountBadgeText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 10,
     fontWeight: 'bold',
   },
@@ -967,7 +967,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   addButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: typography.h3,
     fontWeight: 'bold',
   },
@@ -990,18 +990,18 @@ const styles = StyleSheet.create({
   },
   floatingCartItems: {
     fontSize: typography.caption,
-    color: '#fff',
+    color: colors.white,
     opacity: 0.9,
   },
   floatingCartTotal: {
     fontSize: typography.h3,
     fontWeight: 'bold',
-    color: '#fff',
+    color: colors.white,
   },
   floatingCartText: {
     fontSize: typography.body,
     fontWeight: '600',
-    color: '#fff',
+    color: colors.white,
   },
   productDetailContainer: {
     flex: 1,
@@ -1091,7 +1091,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   quantityButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: typography.h3,
     fontWeight: 'bold',
   },
@@ -1139,7 +1139,7 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: borderRadius.md,
-    backgroundColor: '#E5E7EB',
+    backgroundColor: colors.gray.200,
   },
   cartItemInfo: {
     flex: 1,
@@ -1194,7 +1194,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
     paddingTop: spacing.md,
     borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
+    borderTopColor: colors.gray.200,
   },
   cartSummaryTotalLabel: {
     fontSize: typography.h3,
@@ -1242,7 +1242,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
     paddingTop: spacing.md,
     borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
+    borderTopColor: colors.gray.200,
   },
   checkoutTotalLabel: {
     fontSize: typography.h3,
@@ -1298,7 +1298,7 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   primaryButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: typography.body,
     fontWeight: 'bold',
   },

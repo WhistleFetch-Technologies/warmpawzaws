@@ -142,7 +142,7 @@ const styles = StyleSheet.create({
   },
   orderDetails: {
     width: '100%',
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: spacing.xl,
@@ -174,12 +174,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   trackOrderButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 16,
     fontWeight: 'bold',
   },
   viewOrderButton: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     alignItems: 'center',
@@ -192,7 +192,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   continueShoppingButton: {
-    backgroundColor: '#f3f4f6',
+    backgroundColor: colors.gray.100,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     alignItems: 'center',

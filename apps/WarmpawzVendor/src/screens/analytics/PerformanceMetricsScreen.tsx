@@ -15,7 +15,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
-import { PerformanceApi } from '../../services/api';
+import { PerformanceMetricsApi, AnalyticsApi } from '../../services/api';
 
 interface PerformanceMetricsScreenProps {
   vendorId: string;
@@ -33,8 +33,11 @@ export function PerformanceMetricsScreen({ vendorId, onBack }: PerformanceMetric
   const loadMetrics = async () => {
     try {
       setLoading(true);
-      const response = await PerformanceApi.getMetrics(vendorId);
-      setMetrics(response.metrics);
+      // Try AnalyticsApi first, fallback to PerformanceMetricsApi
+      const response = await AnalyticsApi.getPerformanceMetrics(vendorId, 'month').catch(() =>
+        PerformanceMetricsApi.getMetrics(vendorId, 'month')
+      );
+      setMetrics(response.metrics || response);
     } catch (error) {
       console.error('Error loading metrics:', error);
     } finally {
@@ -163,18 +166,18 @@ const styles = StyleSheet.create({
   },
   metricTitle: {
     fontSize: typography.fontSizes.md,
-    color: '#ffffff',
+    color: colors.white,
     marginBottom: spacing.sm,
   },
   metricValue: {
     fontSize: typography.fontSizes['3xl'],
     fontWeight: typography.fontWeights.bold,
-    color: '#ffffff',
+    color: colors.white,
     marginBottom: spacing.xs,
   },
   metricLabel: {
     fontSize: typography.fontSizes.sm,
-    color: '#ffffff',
+    color: colors.white,
   },
   metricsGrid: {
     flexDirection: 'row',

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { Button, Card, CardHeader, CardTitle, CardContent, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, Input, Label, Badge, Textarea, Checkbox } from '@warmpawz/ui';
 
 interface Role {
   id: string;
@@ -70,64 +71,70 @@ export function AdminRolesPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
       </div>
     );
   }
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
+    <div className="p-0">
+      <div className="flex items-center justify-between mb-0">
         <h1 className="text-2xl font-bold text-gray-900">Roles & Capabilities</h1>
-        <button
+        <Button
           onClick={() => setShowAddModal(true)}
-          className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+          variant="default"
         >
           + Add Role
-        </button>
+        </Button>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
-        <div className="bg-white rounded-xl p-4 shadow-sm">
-          <p className="text-sm text-gray-500">Total Roles</p>
-          <p className="text-2xl font-bold text-gray-900">{roles.length}</p>
-        </div>
-        <div className="bg-white rounded-xl p-4 shadow-sm">
-          <p className="text-sm text-gray-500">Active Roles</p>
-          <p className="text-2xl font-bold text-green-600">{roles.filter(r => r.is_active).length}</p>
-        </div>
-        <div className="bg-white rounded-xl p-4 shadow-sm">
-          <p className="text-sm text-gray-500">Total Capabilities</p>
-          <p className="text-2xl font-bold text-blue-600">{capabilities.length}</p>
-        </div>
+      <div className="grid grid-cols-3 gap-4 mb-0">
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-sm text-muted-foreground">Total Roles</p>
+            <p className="text-2xl font-bold text-gray-900">{roles.length}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-sm text-muted-foreground">Active Roles</p>
+            <p className="text-2xl font-bold text-green-600">{roles.filter(r => r.is_active).length}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-sm text-muted-foreground">Total Capabilities</p>
+            <p className="text-2xl font-bold text-primary">{capabilities.length}</p>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Roles Grid */}
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
         {roles.map((role) => (
-          <div
+          <Card
             key={role.id}
-            className="bg-white rounded-xl p-4 shadow-sm hover:shadow-md transition cursor-pointer"
+            className="cursor-pointer hover:shadow-md transition"
             onClick={() => setSelectedRole(role)}
           >
-            <div className="flex items-start justify-between">
-              <div>
-                <h3 className="font-semibold text-gray-900">{role.display_name}</h3>
-                <p className="text-sm text-gray-500">{role.name}</p>
+            <CardContent className="p-4">
+              <div className="flex items-start justify-between">
+                <div>
+                  <h3 className="font-semibold text-gray-900">{role.display_name}</h3>
+                  <p className="text-sm text-muted-foreground">{role.name}</p>
+                </div>
+                <Badge variant={role.is_active ? "default" : "secondary"}>
+                  {role.is_active ? 'Active' : 'Inactive'}
+                </Badge>
               </div>
-              <span className={`text-xs px-2 py-1 rounded-full ${
-                role.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
-              }`}>
-                {role.is_active ? 'Active' : 'Inactive'}
-              </span>
-            </div>
-            <p className="text-sm text-gray-600 mt-2 line-clamp-2">{role.description}</p>
-            <div className="flex items-center justify-between mt-4 pt-3 border-t">
-              <span className="text-xs text-gray-400">{role.category}</span>
-              <span className="text-xs text-blue-600">{role.capabilities?.length || 0} capabilities</span>
-            </div>
-          </div>
+              <p className="text-sm text-gray-600 mt-0 line-clamp-0">{role.description}</p>
+              <div className="flex items-center justify-between mt-4 pt-0 border-t">
+                <span className="text-xs text-muted-foreground">{role.category}</span>
+                <span className="text-xs text-primary">{role.capabilities?.length || 0} capabilities</span>
+              </div>
+            </CardContent>
+          </Card>
         ))}
       </div>
 
@@ -201,84 +208,82 @@ function RoleDetailModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-2xl p-6 w-full max-w-3xl max-h-[80vh] overflow-y-auto">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-bold">{role.display_name}</h2>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg">✕</button>
-        </div>
+    <Dialog open={true} onOpenChange={onClose}>
+      <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{role.display_name}</DialogTitle>
+          <DialogDescription>Edit role details and capabilities</DialogDescription>
+        </DialogHeader>
 
-        <div className="space-y-4 mb-6">
+        <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Display Name</label>
-            <input
+            <Label htmlFor="display_name">Display Name</Label>
+            <Input
+              id="display_name"
               type="text"
               value={formData.display_name}
-              onChange={(e) => setFormData({ ...formData, display_name: e.target.value })}
-              className="w-full px-3 py-2 border rounded-lg"
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, display_name: e.target.value })}
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-            <textarea
+            <Label htmlFor="description">Description</Label>
+            <Textarea
+              id="description"
               value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData({ ...formData, description: e.target.value })}
               rows={2}
-              className="w-full px-3 py-2 border rounded-lg"
             />
           </div>
         </div>
 
-        <h3 className="font-semibold mb-3">Capabilities ({formData.capabilities.length} selected)</h3>
+        <h3 className="font-semibold mb-0">Capabilities ({formData.capabilities.length} selected)</h3>
         <div className="space-y-4 max-h-80 overflow-y-auto">
           {Object.entries(groupedCapabilities).map(([category, caps]) => (
-            <div key={category} className="border rounded-lg p-3">
-              <h4 className="font-medium text-gray-700 mb-2">{category}</h4>
-              <div className="grid grid-cols-2 gap-2">
-                {caps.map((cap) => (
-                  <label
-                    key={cap.id}
-                    className={`flex items-center gap-2 p-2 rounded cursor-pointer ${
-                      formData.capabilities.includes(cap.name) ? 'bg-blue-50' : 'hover:bg-gray-50'
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={formData.capabilities.includes(cap.name)}
-                      onChange={() => toggleCapability(cap.name)}
-                      className="w-4 h-4 accent-blue-500"
-                    />
-                    <span className="text-sm">{cap.name}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
+            <Card key={category}>
+              <CardContent className="p-0">
+                <h4 className="font-medium text-gray-700 mb-0">{category}</h4>
+                <div className="grid grid-cols-2 gap-0">
+                  {caps.map((cap) => (
+                    <label
+                      key={cap.id}
+                      className={`flex items-center gap-0 p-0 rounded cursor-pointer ${
+                        formData.capabilities.includes(cap.name) ? 'bg-primary/10' : 'hover:bg-gray-50'
+                      }`}
+                    >
+                      <Checkbox
+                        checked={formData.capabilities.includes(cap.name)}
+                        onCheckedChange={() => toggleCapability(cap.name)}
+                      />
+                      <span className="text-sm">{cap.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
           ))}
         </div>
 
-        <div className="flex justify-between items-center mt-6 pt-4 border-t">
-          <button
+        <DialogFooter>
+          <Button
             onClick={onToggle}
-            className={`px-4 py-2 rounded-lg ${
-              role.is_active ? 'bg-gray-100 text-gray-600' : 'bg-green-100 text-green-600'
-            }`}
+            variant={role.is_active ? "secondary" : "default"}
           >
             {role.is_active ? 'Deactivate Role' : 'Activate Role'}
-          </button>
-          <div className="flex gap-3">
-            <button onClick={onClose} className="px-4 py-2 border rounded-lg hover:bg-gray-50">
+          </Button>
+          <div className="flex gap-0">
+            <Button onClick={onClose} variant="outline">
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={() => onSave(formData)}
-              className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+              variant="default"
             >
               Save Changes
-            </button>
+            </Button>
           </div>
-        </div>
-      </div>
-    </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -308,49 +313,50 @@ function AddRoleModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-2xl p-6 w-full max-w-3xl max-h-[80vh] overflow-y-auto">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-bold">Create New Role</h2>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg">✕</button>
-        </div>
+    <Dialog open={true} onOpenChange={onClose}>
+      <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Create New Role</DialogTitle>
+          <DialogDescription>Define a new role with capabilities</DialogDescription>
+        </DialogHeader>
 
-        <div className="grid md:grid-cols-2 gap-4 mb-6">
+        <div className="grid md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Role Name (ID)</label>
-            <input
+            <Label htmlFor="role_name">Role Name (ID)</Label>
+            <Input
+              id="role_name"
               type="text"
               value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value.toLowerCase().replace(/\s+/g, '_') })}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, name: e.target.value.toLowerCase().replace(/\s+/g, '_') })}
               placeholder="e.g., pet_groomer"
-              className="w-full px-3 py-2 border rounded-lg"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Display Name</label>
-            <input
+            <Label htmlFor="display_name_new">Display Name</Label>
+            <Input
+              id="display_name_new"
               type="text"
               value={formData.display_name}
-              onChange={(e) => setFormData({ ...formData, display_name: e.target.value })}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, display_name: e.target.value })}
               placeholder="e.g., Pet Groomer"
-              className="w-full px-3 py-2 border rounded-lg"
             />
           </div>
           <div className="md:col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-            <textarea
+            <Label htmlFor="description_new">Description</Label>
+            <Textarea
+              id="description_new"
               value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData({ ...formData, description: e.target.value })}
               rows={2}
-              className="w-full px-3 py-2 border rounded-lg"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+            <Label htmlFor="category">Category</Label>
             <select
+              id="category"
               value={formData.category}
-              onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-              className="w-full px-3 py-2 border rounded-lg"
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData({ ...formData, category: e.target.value })}
+              className="w-full h-9 px-0 py-0 text-sm border rounded-md"
             >
               <option value="healthcare">Healthcare</option>
               <option value="service_provider">Service Provider</option>
@@ -361,38 +367,38 @@ function AddRoleModal({
           </div>
         </div>
 
-        <h3 className="font-semibold mb-3">Select Capabilities</h3>
+        <h3 className="font-semibold mb-0">Select Capabilities</h3>
         <div className="space-y-4 max-h-60 overflow-y-auto">
           {Object.entries(groupedCapabilities).map(([category, caps]) => (
-            <div key={category} className="border rounded-lg p-3">
-              <h4 className="font-medium text-gray-700 mb-2">{category}</h4>
-              <div className="grid grid-cols-2 gap-2">
-                {caps.map((cap) => (
-                  <label
-                    key={cap.id}
-                    className={`flex items-center gap-2 p-2 rounded cursor-pointer ${
-                      formData.capabilities.includes(cap.name) ? 'bg-blue-50' : 'hover:bg-gray-50'
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={formData.capabilities.includes(cap.name)}
-                      onChange={() => toggleCapability(cap.name)}
-                      className="w-4 h-4 accent-blue-500"
-                    />
-                    <span className="text-sm">{cap.name}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
+            <Card key={category}>
+              <CardContent className="p-0">
+                <h4 className="font-medium text-gray-700 mb-0">{category}</h4>
+                <div className="grid grid-cols-2 gap-0">
+                  {caps.map((cap) => (
+                    <label
+                      key={cap.id}
+                      className={`flex items-center gap-0 p-0 rounded cursor-pointer ${
+                        formData.capabilities.includes(cap.name) ? 'bg-primary/10' : 'hover:bg-gray-50'
+                      }`}
+                    >
+                      <Checkbox
+                        checked={formData.capabilities.includes(cap.name)}
+                        onCheckedChange={() => toggleCapability(cap.name)}
+                      />
+                      <span className="text-sm">{cap.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
           ))}
         </div>
 
-        <div className="flex justify-end gap-3 mt-6 pt-4 border-t">
-          <button onClick={onClose} className="px-4 py-2 border rounded-lg hover:bg-gray-50">
+        <DialogFooter>
+          <Button onClick={onClose} variant="outline">
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
             onClick={() => {
               if (!formData.name || !formData.display_name) {
                 alert('Please fill in all required fields');
@@ -400,13 +406,13 @@ function AddRoleModal({
               }
               onSave(formData);
             }}
-            className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+            variant="default"
           >
             Create Role
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

@@ -30,6 +30,7 @@ import { AdoptionServiceRouter } from './src/screens/services/AdoptionServiceRou
 import { InsuranceServicesScreen } from './src/screens/services/InsuranceServicesScreen';
 import { NutritionistServiceScreen } from './src/screens/services/NutritionistServiceScreen';
 import { PetCafeServicesScreen } from './src/screens/services/PetCafeServicesScreen';
+import { MealPlanOrderScreen } from './src/screens/services/MealPlanOrderScreen';
 import { PharmacyStoreScreen } from './src/screens/services/PharmacyStoreScreen';
 import { ShopDashboardScreen } from './src/screens/services/ShopDashboardScreen';
 import { ResortServicesScreen } from './src/screens/services/ResortServicesScreen';
@@ -39,9 +40,6 @@ import { BookingConfirmationScreen } from './src/screens/bookings/BookingConfirm
 import { RescheduleBookingScreen } from './src/screens/bookings/RescheduleBookingScreen';
 import { CancelBookingScreen } from './src/screens/bookings/CancelBookingScreen';
 import { CustomerPetsPageScreen } from './src/screens/pets/CustomerPetsPageScreen';
-import { CustomerPetProfileScreen } from './src/screens/pets/CustomerPetProfileScreen';
-import { PetProfileDashboardScreen } from './src/screens/pets/PetProfileDashboardScreen';
-import { MedicalRecordsScreen } from './src/screens/pets/MedicalRecordsScreen';
 import { CustomerProfileScreen } from './src/screens/profile/CustomerProfileScreen';
 import { SettingsScreen } from './src/screens/settings/SettingsScreen';
 import { PaymentMethodsScreen } from './src/screens/settings/PaymentMethodsScreen';
@@ -50,6 +48,7 @@ import { HelpSupportScreen } from './src/screens/settings/HelpSupportScreen';
 import { OrderHistoryScreen } from './src/screens/orders/OrderHistoryScreen';
 import { OrderDetailScreen } from './src/screens/orders/OrderDetailScreen';
 import { OrderTrackingScreen } from './src/screens/orders/OrderTrackingScreen';
+import { MealPlanOrdersScreen } from './src/screens/orders/MealPlanOrdersScreen';
 import { WalletScreen } from './src/screens/wallet/WalletScreen';
 import { RewardsLoyaltyScreen } from './src/screens/rewards/RewardsLoyaltyScreen';
 import { ReferralSystemScreen } from './src/screens/rewards/ReferralSystemScreen';
@@ -79,7 +78,6 @@ import { PackageBookingScreen } from './src/screens/bookings/PackageBookingScree
 import { PrescriptionViewScreen } from './src/screens/medical/PrescriptionViewScreen';
 // Batch 3: New screens
 import { LiveTrackingDashboardScreen } from './src/screens/logistics/LiveTrackingDashboardScreen';
-import { OrderTrackingScreen } from './src/screens/orders/OrderTrackingScreen';
 import { WalletTopUpScreen } from './src/screens/wallet/WalletTopUpScreen';
 import { TransactionHistoryScreen } from './src/screens/wallet/TransactionHistoryScreen';
 import { CouponApplyScreen } from './src/screens/payments/CouponApplyScreen';
@@ -88,13 +86,6 @@ import { NotificationCenterScreen } from './src/screens/notifications/Notificati
 import { ServiceSearchScreen } from './src/screens/services/ServiceSearchScreen';
 import { VendorProfileScreen } from './src/screens/vendors/VendorProfileScreen';
 import { ServiceBookingFlowScreen } from './src/screens/bookings/ServiceBookingFlowScreen';
-import { BookingConfirmationScreen } from './src/screens/bookings/BookingConfirmationScreen';
-import { PaymentMethodsScreen } from './src/screens/settings/PaymentMethodsScreen';
-import { HelpSupportScreen } from './src/screens/settings/HelpSupportScreen';
-import { SettingsScreen } from './src/screens/settings/SettingsScreen';
-import { PetProfileDashboardScreen } from './src/screens/pets/PetProfileDashboardScreen';
-import { MedicalRecordsScreen } from './src/screens/pets/MedicalRecordsScreen';
-import { OrderHistoryScreen } from './src/screens/orders/OrderHistoryScreen';
 // Bottom Tab Navigator
 import { BottomTabNavigator } from './src/navigation/BottomTabNavigator';
 // Batch 5: New screens
@@ -108,6 +99,8 @@ import { ChangePasswordScreen } from './src/screens/settings/ChangePasswordScree
 import { EditProfileScreen } from './src/screens/profile/EditProfileScreen';
 import { WishlistScreen } from './src/screens/shop/WishlistScreen';
 import { OrderInvoiceScreen } from './src/screens/orders/OrderInvoiceScreen';
+// Phase 3: AI Chatbot
+import { AIChatbotScreen } from './src/screens/ai-chatbot/AIChatbotScreen';
 
 // Import theme
 import { colors } from './src/theme/colors';
@@ -124,6 +117,10 @@ export default function App() {
     // Check for existing session
     const checkSession = async () => {
       try {
+        // Initialize API service with network monitoring
+        const { ApiService } = require('./src/services/api');
+        await ApiService.initialize();
+        
         // TODO: Check AsyncStorage for existing session
         // For now, always show auth screen
         setIsLoading(false);
@@ -1151,6 +1148,17 @@ export default function App() {
                       />
                     )}
                   </Stack.Screen>
+                  <Stack.Screen name="AIChatbot">
+                    {(props) => (
+                      <AIChatbotScreen
+                        {...props}
+                        phone={session.phone}
+                        customerId={session.customerId}
+                        onBack={() => handleNavigate('HelpSupport')}
+                        onNavigate={handleNavigate}
+                      />
+                    )}
+                  </Stack.Screen>
                   <Stack.Screen name="Settings">
                     {(props) => (
                       <SettingsScreen
@@ -1199,6 +1207,17 @@ export default function App() {
                         phone={session.phone}
                         customerId={session.customerId}
                         onBack={() => handleNavigate('Home')}
+                        onNavigate={handleNavigate}
+                      />
+                    )}
+                  </Stack.Screen>
+                  <Stack.Screen name="MealPlanOrders">
+                    {(props) => (
+                      <MealPlanOrdersScreen
+                        {...props}
+                        phone={session.phone}
+                        customerId={session.customerId}
+                        onBack={() => handleNavigate('NutritionistServiceScreen')}
                         onNavigate={handleNavigate}
                       />
                     )}

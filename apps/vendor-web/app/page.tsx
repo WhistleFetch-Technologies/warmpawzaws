@@ -1,81 +1,68 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { VendorCapabilityDashboard } from '@/components/vendor/VendorCapabilityDashboard';
-import { apiClient } from '@/lib/api-client';
+import { VendorApp } from '@/components/vendor/VendorApp';
+
+interface VendorSession {
+  phone: string;
+  vendorId?: string;
+  vendor?: any;
+  sessionToken?: string;
+  verified: boolean;
+  isStaffLogin?: boolean;
+  staff?: any;
+}
 
 export default function VendorHomePage() {
   const router = useRouter();
-  const [vendorId, setVendorId] = useState<string | null>(null);
-  const [vendorStatus, setVendorStatus] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [session, setSession] = useState<VendorSession | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    checkVendorStatus();
-  }, []);
-
-  const checkVendorStatus = async () => {
-    try {
+    // Get session data from localStorage
+    const loadSession = () => {
+      const storedPhone = localStorage.getItem('vendorPhone');
+      const storedToken = localStorage.getItem('authToken');
+      const storedVendor = localStorage.getItem('vendorData');
       const storedVendorId = localStorage.getItem('vendorId');
-      const storedPhone = localStorage.getItem('onboarding_phone');
 
-      if (!storedVendorId && !storedPhone) {
-        // No vendor data at all - redirect to onboarding
-        router.push('/onboarding');
-        return;
-      }
-
-      if (storedVendorId) {
-        // Check vendor status from API
-        const response = await apiClient.get<any>(`/vendor/${storedVendorId}/status`);
+      if (storedPhone && storedToken) {
+        const vendorData = storedVendor ? JSON.parse(storedVendor) : null;
         
-        if (response.status === 'approved' || response.status === 'active') {
-          setVendorId(storedVendorId);
-          setVendorStatus('active');
-        } else if (response.status === 'pending') {
-          router.push('/onboarding');
-        } else if (response.status === 'rejected') {
-          router.push('/onboarding');
-        } else if (response.status === 'clarification_requested') {
-          router.push('/onboarding');
-        }
-      } else if (storedPhone) {
-        // Check by phone number
-        const response = await apiClient.get<any>(`/vendor/check-phone/${storedPhone}`);
-        
-        if (response.exists && (response.status === 'approved' || response.status === 'active')) {
-          localStorage.setItem('vendorId', response.vendorId);
-          setVendorId(response.vendorId);
-          setVendorStatus('active');
-        } else {
-          router.push('/onboarding');
-        }
+        setSession({
+          phone: storedPhone,
+          sessionToken: storedToken,
+          verified: true,
+          vendor: vendorData,
+          vendorId: storedVendorId || vendorData?.id
+        });
+      } else {
+        // Redirect to auth if no session
+        router.push('/auth');
       }
-    } catch (err) {
-      console.error('Error checking vendor status:', err);
-      // On error, redirect to onboarding
-      router.push('/onboarding');
-    } finally {
-      setLoading(false);
-    }
-  };
+      setIsLoading(false);
+    };
 
-  if (loading) {
+    loadSession();
+  }, [router]);
+
+  if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
           <p className="mt-4 text-gray-600">Loading...</p>
         </div>
       </div>
     );
   }
 
-  if (!vendorId || vendorStatus !== 'active') {
-    return null; // Will redirect
+  if (!session) {
+    return null; // Will redirect to /auth
   }
 
-  return <VendorCapabilityDashboard vendorId={vendorId} />;
+  return <VendorApp initialSession={session} />;
 }
-

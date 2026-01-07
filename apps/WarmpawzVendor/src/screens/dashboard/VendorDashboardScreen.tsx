@@ -316,7 +316,7 @@ const styles = StyleSheet.create({
   },
   tabActive: {
     borderColor: colors.primary,
-    backgroundColor: '#FFF4E6',
+    backgroundColor: colors.gradientOrange50,
   },
   tabText: {
     fontSize: typography.fontSizes.sm,

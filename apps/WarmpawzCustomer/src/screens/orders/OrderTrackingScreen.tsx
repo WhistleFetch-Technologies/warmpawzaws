@@ -75,7 +75,53 @@ export function OrderTrackingScreen({
   };
 
   const generateTrackingEvents = (orderData: any): TrackingEvent[] => {
-    const events: TrackingEvent[] = [
+    // Check if it's a meal plan order
+    const isMealPlan = orderData.order_type === 'meal_plan_delivery' || 
+                       orderData.orderType === 'meal_plan_delivery' ||
+                       orderData.service_type === 'meal_plan';
+
+    const events: TrackingEvent[] = isMealPlan ? [
+      {
+        id: '1',
+        status: 'ordered',
+        label: 'Order Placed',
+        timestamp: orderData.createdAt || orderData.created_at || new Date().toISOString(),
+        description: 'Your meal plan order has been placed',
+        completed: true,
+      },
+      {
+        id: '2',
+        status: 'confirmed',
+        label: 'Order Confirmed',
+        timestamp: orderData.confirmedAt || orderData.confirmed_at || new Date().toISOString(),
+        description: 'Order confirmed and payment received',
+        completed: orderData.status !== 'pending',
+      },
+      {
+        id: '3',
+        status: 'preparing',
+        label: 'Preparing Meal Plan',
+        timestamp: orderData.processingAt || orderData.processing_at || new Date().toISOString(),
+        description: 'Your meal plan is being prepared',
+        completed: ['out_for_delivery', 'delivered'].includes(orderData.status),
+      },
+      {
+        id: '4',
+        status: 'out_for_delivery',
+        label: 'Out for Delivery',
+        timestamp: orderData.outForDeliveryAt || orderData.out_for_delivery_at || new Date().toISOString(),
+        description: 'Your meal plan is on the way',
+        completed: orderData.status === 'delivered',
+      },
+      {
+        id: '5',
+        status: 'delivered',
+        label: 'Delivered',
+        timestamp: orderData.deliveredAt || orderData.delivered_at || new Date().toISOString(),
+        description: 'Meal plan has been delivered',
+        completed: orderData.status === 'delivered',
+      },
+    ] : [
       {
         id: '1',
         status: 'ordered',
@@ -285,7 +331,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -315,7 +361,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   orderInfo: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: spacing.lg,
@@ -333,7 +379,7 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   timelineContainer: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: spacing.lg,
@@ -358,7 +404,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#e5e7eb',
+    backgroundColor: colors.gray.200,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -366,14 +412,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
   },
   timelineCheck: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 16,
     fontWeight: 'bold',
   },
   timelineConnector: {
     width: 2,
     height: 40,
-    backgroundColor: '#e5e7eb',
+    backgroundColor: colors.gray.200,
     marginTop: spacing.xs,
   },
   timelineConnectorCompleted: {
@@ -404,7 +450,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   agentCard: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     borderWidth: 1,
@@ -443,7 +489,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs / 2,
   },
   callButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 12,
     fontWeight: '600',
   },
@@ -455,7 +501,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   viewOrderButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 16,
     fontWeight: 'bold',
   },

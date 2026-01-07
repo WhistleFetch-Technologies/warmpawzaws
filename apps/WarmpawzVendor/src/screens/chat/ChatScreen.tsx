@@ -232,7 +232,7 @@ export function ChatScreen({
             disabled={!newMessage.trim() || sending}
           >
             {sending ? (
-              <ActivityIndicator color="#ffffff" size="small" />
+              <ActivityIndicator color={colors.white} size="small" />
             ) : (
               <Text style={styles.sendButtonText}>Send</Text>
             )}
@@ -314,7 +314,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs / 2,
   },
   ownMessageText: {
-    color: '#ffffff',
+    color: colors.white,
   },
   timestamp: {
     fontSize: typography.fontSizes.xs,
@@ -355,7 +355,7 @@ const styles = StyleSheet.create({
   sendButtonText: {
     fontSize: typography.fontSizes.md,
     fontWeight: typography.fontWeights.semibold,
-    color: '#ffffff',
+    color: colors.white,
   },
 });
 

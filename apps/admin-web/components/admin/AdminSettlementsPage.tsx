@@ -95,21 +95,21 @@ export function AdminSettlementsPage() {
   };
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
+    <div className="p-0">
+      <div className="flex items-center justify-between mb-0">
         <h1 className="text-2xl font-bold text-gray-900">Settlements & Payouts</h1>
-        <div className="flex gap-3">
+        <div className="flex gap-0">
           <button
             onClick={handleTriggerDailySettlement}
             disabled={processing}
-            className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50"
+            className="px-4 py-0 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50"
           >
             {processing ? 'Processing...' : '📊 Calculate Daily'}
           </button>
           <button
             onClick={handleProcessPayouts}
             disabled={processing}
-            className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:opacity-50"
+            className="px-4 py-0 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:opacity-50"
           >
             {processing ? 'Processing...' : '💸 Process Payouts'}
           </button>
@@ -118,9 +118,9 @@ export function AdminSettlementsPage() {
 
       {/* Stats */}
       {stats && (
-        <div className="grid grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-4 gap-4 mb-0">
           <div className="bg-white rounded-xl p-4 shadow-sm">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-0">
               <div className="w-10 h-10 rounded-full bg-yellow-100 flex items-center justify-center">⏳</div>
               <div>
                 <p className="text-sm text-gray-500">Pending</p>
@@ -130,7 +130,7 @@ export function AdminSettlementsPage() {
             </div>
           </div>
           <div className="bg-white rounded-xl p-4 shadow-sm">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-0">
               <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">⚙️</div>
               <div>
                 <p className="text-sm text-gray-500">Processing</p>
@@ -139,7 +139,7 @@ export function AdminSettlementsPage() {
             </div>
           </div>
           <div className="bg-white rounded-xl p-4 shadow-sm">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-0">
               <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">✅</div>
               <div>
                 <p className="text-sm text-gray-500">Completed</p>
@@ -149,7 +149,7 @@ export function AdminSettlementsPage() {
             </div>
           </div>
           <div className="bg-white rounded-xl p-4 shadow-sm">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-0">
               <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">❌</div>
               <div>
                 <p className="text-sm text-gray-500">Failed</p>
@@ -161,7 +161,7 @@ export function AdminSettlementsPage() {
       )}
 
       {/* Filter Tabs */}
-      <div className="flex bg-white rounded-lg p-1 shadow-sm mb-6 w-fit">
+      <div className="flex bg-white rounded-lg p-0 shadow-sm mb-0 w-fit">
         {[
           { id: 'all', label: 'All' },
           { id: 'pending', label: 'Pending' },
@@ -172,7 +172,7 @@ export function AdminSettlementsPage() {
           <button
             key={tab.id}
             onClick={() => setFilter(tab.id)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+            className={`px-4 py-0 rounded-lg text-sm font-medium transition ${
               filter === tab.id ? 'bg-blue-500 text-white' : 'text-gray-600 hover:bg-gray-100'
             }`}
           >
@@ -225,7 +225,7 @@ export function AdminSettlementsPage() {
                     ₹{settlement.net_amount.toLocaleString()}
                   </td>
                   <td className="p-4">
-                    <span className={`text-xs px-2 py-1 rounded-full ${getStatusColor(settlement.settlement_status)}`}>
+                    <span className={`text-xs px-0 py-0 rounded-full ${getStatusColor(settlement.settlement_status)}`}>
                       {settlement.settlement_status}
                     </span>
                   </td>

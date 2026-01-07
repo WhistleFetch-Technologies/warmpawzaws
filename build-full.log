@@ -1,0 +1,86 @@
+
+> warmpawz-platform@1.0.0 build
+> turbo run build
+
+• Packages in scope: @warmpawz/admin-web, @warmpawz/api-client, @warmpawz/config, @warmpawz/customer-web, @warmpawz/types, @warmpawz/ui, @warmpawz/vendor-web
+• Running build in 7 packages
+• Remote caching disabled
+@warmpawz/admin-web:build: cache miss, executing 61c89cc7efbc9f64
+@warmpawz/vendor-web:build: cache miss, executing 6667d7120d789e4f
+@warmpawz/customer-web:build: cache miss, executing e55ed3189d0b076b
+@warmpawz/customer-web:build: 
+@warmpawz/customer-web:build: > @warmpawz/customer-web@0.1.0 build
+@warmpawz/customer-web:build: > next build
+@warmpawz/customer-web:build: 
+@warmpawz/admin-web:build: 
+@warmpawz/admin-web:build: > @warmpawz/admin-web@0.1.0 build
+@warmpawz/admin-web:build: > next build
+@warmpawz/admin-web:build: 
+@warmpawz/vendor-web:build: 
+@warmpawz/vendor-web:build: > @warmpawz/vendor-web@0.1.0 build
+@warmpawz/vendor-web:build: > next build
+@warmpawz/vendor-web:build: 
+@warmpawz/customer-web:build:   ▲ Next.js 14.2.35
+@warmpawz/customer-web:build:   - Environments: .env.local
+@warmpawz/customer-web:build: 
+@warmpawz/admin-web:build:   ▲ Next.js 14.2.35
+@warmpawz/admin-web:build:   - Environments: .env.local
+@warmpawz/admin-web:build: 
+@warmpawz/vendor-web:build:   ▲ Next.js 14.2.35
+@warmpawz/vendor-web:build:   - Environments: .env.local
+@warmpawz/vendor-web:build: 
+@warmpawz/customer-web:build:    Creating an optimized production build ...
+@warmpawz/admin-web:build:    Creating an optimized production build ...
+@warmpawz/vendor-web:build:    Creating an optimized production build ...
+@warmpawz/admin-web:build:  ✓ Compiled successfully
+@warmpawz/admin-web:build:    Linting and checking validity of types ...
+@warmpawz/customer-web:build:  ✓ Compiled successfully
+@warmpawz/customer-web:build:    Linting and checking validity of types ...
+@warmpawz/vendor-web:build:  ✓ Compiled successfully
+@warmpawz/vendor-web:build:    Linting and checking validity of types ...
+@warmpawz/admin-web:build: Failed to compile.
+@warmpawz/admin-web:build: 
+@warmpawz/admin-web:build: ../../packages/api-client/auth.ts:38:9
+@warmpawz/admin-web:build: Type error: Object literal may only specify known properties, and 'region' does not exist in type 'CognitoUserPoolConfig & CognitoIdentityPoolConfig'.
+@warmpawz/admin-web:build: 
+@warmpawz/admin-web:build: [0m [90m 36 |[39m         userPoolId[33m:[39m config[33m.[39muserPoolId[33m,[39m[0m
+@warmpawz/admin-web:build: [0m [90m 37 |[39m         userPoolClientId[33m:[39m config[33m.[39muserPoolClientId[33m,[39m[0m
+@warmpawz/admin-web:build: [0m[31m[1m>[22m[39m[90m 38 |[39m         region[33m:[39m config[33m.[39mregion[33m,[39m[0m
+@warmpawz/admin-web:build: [0m [90m    |[39m         [31m[1m^[22m[39m[0m
+@warmpawz/admin-web:build: [0m [90m 39 |[39m       }[33m,[39m[0m
+@warmpawz/admin-web:build: [0m [90m 40 |[39m     }[33m,[39m[0m
+@warmpawz/admin-web:build: [0m [90m 41 |[39m   }[33m,[39m {[0m
+@warmpawz/customer-web:build: Failed to compile.
+@warmpawz/customer-web:build: 
+@warmpawz/customer-web:build: ./app/home/page.tsx:155:65
+@warmpawz/customer-web:build: Type error: Property 'customer' does not exist on type 'never'.
+@warmpawz/customer-web:build: 
+@warmpawz/customer-web:build: [0m [90m 153 |[39m           [33m<[39m[33mp[39m className[33m=[39m[32m"text-red-600 mb-4"[39m[33m>[39m{error}[33m<[39m[33m/[39m[33mp[39m[33m>[39m[0m
+@warmpawz/customer-web:build: [0m [90m 154 |[39m           [33m<[39m[33mbutton[39m[0m
+@warmpawz/customer-web:build: [0m[31m[1m>[22m[39m[90m 155 |[39m             onClick[33m=[39m{() [33m=>[39m dashboard [33m&&[39m loadDashboard(dashboard[33m.[39mcustomer[33m.[39mid)}[0m
+@warmpawz/customer-web:build: [0m [90m     |[39m                                                                 [31m[1m^[22m[39m[0m
+@warmpawz/customer-web:build: [0m [90m 156 |[39m             className[33m=[39m[32m"px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"[39m[0m
+@warmpawz/customer-web:build: [0m [90m 157 |[39m           [33m>[39m[0m
+@warmpawz/customer-web:build: [0m [90m 158 |[39m             [33mRetry[39m[0m
+@warmpawz/admin-web:build: Next.js build worker exited with code: 1 and signal: null
+@warmpawz/customer-web:build: Next.js build worker exited with code: 1 and signal: null
+@warmpawz/admin-web:build: npm error Lifecycle script `build` failed with error:
+@warmpawz/admin-web:build: npm error code 1
+@warmpawz/admin-web:build: npm error path /Users/ketan/Documents/warmpawzecodev/apps/admin-web
+@warmpawz/admin-web:build: npm error workspace @warmpawz/admin-web@0.1.0
+@warmpawz/admin-web:build: npm error location /Users/ketan/Documents/warmpawzecodev/apps/admin-web
+@warmpawz/admin-web:build: npm error command failed
+@warmpawz/admin-web:build: npm error command sh -c next build
+@warmpawz/customer-web:build: npm error Lifecycle script `build` failed with error:
+@warmpawz/customer-web:build: npm error code 1
+@warmpawz/customer-web:build: npm error path /Users/ketan/Documents/warmpawzecodev/apps/customer-web
+@warmpawz/customer-web:build: npm error workspace @warmpawz/customer-web@0.1.0
+@warmpawz/customer-web:build: npm error location /Users/ketan/Documents/warmpawzecodev/apps/customer-web
+@warmpawz/customer-web:build: npm error command failed
+@warmpawz/customer-web:build: npm error command sh -c next build
+
+ Tasks:    0 successful, 3 total
+Cached:    0 cached, 3 total
+  Time:    18.117s 
+Failed:    @warmpawz/admin-web#build
+

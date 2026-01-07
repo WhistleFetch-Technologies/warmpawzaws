@@ -447,7 +447,7 @@ export function AdoptionServiceRouter({
           disabled={loading}
         >
           {loading ? (
-            <ActivityIndicator color="#fff" />
+            <ActivityIndicator color={colors.white} />
           ) : (
             <Text style={styles.primaryButtonText}>Submit Application</Text>
           )}
@@ -509,7 +509,7 @@ export function AdoptionServiceRouter({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
   },
   header: {
     padding: spacing.md,
@@ -519,23 +519,23 @@ const styles = StyleSheet.create({
   },
   backButton: {
     fontSize: typography.body,
-    color: '#fff',
+    color: colors.white,
     marginBottom: spacing.sm,
   },
   headerTitle: {
     fontSize: typography.h1,
     fontWeight: 'bold',
-    color: '#fff',
+    color: colors.white,
   },
   title: {
     fontSize: typography.h1,
     fontWeight: 'bold',
-    color: '#fff',
+    color: colors.white,
     marginBottom: spacing.sm,
   },
   subtitle: {
     fontSize: typography.body,
-    color: '#fff',
+    color: colors.white,
     opacity: 0.9,
   },
   landingContent: {
@@ -572,7 +572,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   centerName: {
     fontSize: typography.h3,
@@ -601,7 +601,7 @@ const styles = StyleSheet.create({
   imagePlaceholder: {
     width: '100%',
     height: 200,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: colors.gray.100,
     borderRadius: borderRadius.md,
     justifyContent: 'center',
     alignItems: 'center',
@@ -630,7 +630,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   petCountContainer: {
-    backgroundColor: '#FEE2E2',
+    backgroundColor: colors.error + 20% opacity,
     borderRadius: borderRadius.md,
     padding: spacing.md,
     marginBottom: spacing.lg,
@@ -652,13 +652,13 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   petImagePlaceholder: {
     width: 80,
     height: 80,
     borderRadius: borderRadius.md,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: colors.gray.100,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: spacing.md,
@@ -703,7 +703,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   selectedPetCard: {
-    backgroundColor: '#FEE2E2',
+    backgroundColor: colors.error + 20% opacity,
     borderRadius: borderRadius.md,
     padding: spacing.md,
     marginBottom: spacing.lg,
@@ -729,12 +729,12 @@ const styles = StyleSheet.create({
   },
   formInput: {
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
     borderRadius: borderRadius.md,
     padding: spacing.md,
     fontSize: typography.body,
     color: colors.text,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
   },
   formTextArea: {
     minHeight: 80,
@@ -804,7 +804,7 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   primaryButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: typography.body,
     fontWeight: 'bold',
   },

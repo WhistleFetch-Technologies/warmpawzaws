@@ -1,0 +1,62 @@
+'use client';
+
+import React, { useState } from 'react';
+import { Bug, X } from 'lucide-react';
+
+interface CapabilityDebugOverlayProps {
+  capabilities: Record<string, any>;
+  vendorData?: any;
+}
+
+export function CapabilityDebugOverlay({ capabilities, vendorData }: CapabilityDebugOverlayProps) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  if (process.env.NODE_ENV === 'production') {
+    return null; // Don't show in production
+  }
+
+  return (
+    <>
+      <button
+        onClick={() => setIsOpen(true)}
+        className="fixed bottom-4 right-4 p-0 bg-gray-800 text-white rounded-full shadow-lg hover:bg-gray-700 z-50"
+        title="Debug Capabilities"
+      >
+        <Bug className="w-5 h-5" />
+      </button>
+
+      {isOpen && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-0 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-gray-900">Capability Debug Info</h2>
+              <button
+                onClick={() => setIsOpen(false)}
+                className="p-0 hover:bg-gray-100 rounded-lg"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            <div className="p-4 space-y-4">
+              <div>
+                <h3 className="font-semibold text-gray-900 mb-0">Capabilities</h3>
+                <pre className="bg-gray-50 p-0 rounded-lg text-xs overflow-x-auto">
+                  {JSON.stringify(capabilities, null, 2)}
+                </pre>
+              </div>
+              {vendorData && (
+                <div>
+                  <h3 className="font-semibold text-gray-900 mb-0">Vendor Data</h3>
+                  <pre className="bg-gray-50 p-0 rounded-lg text-xs overflow-x-auto">
+                    {JSON.stringify(vendorData, null, 2)}
+                  </pre>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+

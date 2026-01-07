@@ -153,7 +153,7 @@ export function BookingCompletionScreen({
           disabled={loading || (requiresOTP && !otp.trim())}
         >
           {loading ? (
-            <ActivityIndicator color="#ffffff" />
+            <ActivityIndicator color={colors.white} />
           ) : (
             <Text style={styles.completeButtonText}>
               {requiresOTP ? 'Complete with OTP' : 'Complete Booking'}
@@ -249,7 +249,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   noOtpSection: {
-    backgroundColor: '#FFF4E6',
+    backgroundColor: colors.gradientOrange50,
     borderWidth: 2,
     borderColor: colors.primary,
     borderRadius: borderRadius.xl,
@@ -284,7 +284,7 @@ const styles = StyleSheet.create({
   completeButtonText: {
     fontSize: typography.fontSizes.md,
     fontWeight: typography.fontWeights.semibold,
-    color: '#ffffff',
+    color: colors.white,
   },
 });
 

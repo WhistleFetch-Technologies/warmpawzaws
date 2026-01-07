@@ -187,7 +187,7 @@ export function WalletTopUpScreen({
           disabled={!amount || parseFloat(amount) < 100 || loading}
         >
           {loading ? (
-            <ActivityIndicator size="small" color="#fff" />
+            <ActivityIndicator size="small" color={colors.white} />
           ) : (
             <Text style={styles.topUpButtonText}>
               Top Up ₹{amount || '0'}
@@ -210,7 +210,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -243,14 +243,14 @@ const styles = StyleSheet.create({
   },
   balanceLabel: {
     fontSize: 14,
-    color: '#fff',
+    color: colors.white,
     opacity: 0.9,
     marginBottom: spacing.xs,
   },
   balanceAmount: {
     fontSize: 32,
     fontWeight: 'bold',
-    color: '#fff',
+    color: colors.white,
   },
   section: {
     marginBottom: spacing.lg,
@@ -269,7 +269,7 @@ const styles = StyleSheet.create({
   quickAmountButton: {
     flex: 1,
     minWidth: '30%',
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     borderWidth: 2,
@@ -278,7 +278,7 @@ const styles = StyleSheet.create({
   },
   quickAmountButtonSelected: {
     borderColor: colors.primary,
-    backgroundColor: '#fff7ed',
+    backgroundColor: colors.gradientOrange50,
   },
   quickAmountText: {
     fontSize: 16,
@@ -291,7 +291,7 @@ const styles = StyleSheet.create({
   amountInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: borderRadius.md,
@@ -316,7 +316,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   offerCard: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     borderWidth: 1,
@@ -342,10 +342,10 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   topUpButtonDisabled: {
-    backgroundColor: '#9ca3af',
+    backgroundColor: colors.gray.400,
   },
   topUpButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 18,
     fontWeight: 'bold',
   },

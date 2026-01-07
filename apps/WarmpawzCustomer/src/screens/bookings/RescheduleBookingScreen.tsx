@@ -289,7 +289,7 @@ export function RescheduleBookingScreen({
             disabled={!selectedSlot || submitting}
           >
             {submitting ? (
-              <ActivityIndicator color="#fff" />
+              <ActivityIndicator color={colors.white} />
             ) : (
               <Text style={styles.submitButtonText}>Confirm Reschedule</Text>
             )}
@@ -303,7 +303,7 @@ export function RescheduleBookingScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
   },
   header: {
     flexDirection: 'row',
@@ -315,13 +315,13 @@ const styles = StyleSheet.create({
   },
   backButton: {
     fontSize: typography.body,
-    color: '#fff',
+    color: colors.white,
     marginRight: spacing.md,
   },
   headerTitle: {
     fontSize: typography.h1,
     fontWeight: 'bold',
-    color: '#fff',
+    color: colors.white,
     flex: 1,
   },
   loadingContainer: {
@@ -360,7 +360,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   currentBookingLabel: {
     fontSize: typography.caption,
@@ -417,7 +417,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   slotsTitle: {
     fontSize: typography.h3,
@@ -461,13 +461,13 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     borderRadius: borderRadius.md,
     borderWidth: 2,
-    borderColor: '#E5E7EB',
-    backgroundColor: '#fff',
+    borderColor: colors.gray.200,
+    backgroundColor: colors.white,
     alignItems: 'center',
   },
   timeSlotButtonSelected: {
     borderColor: colors.primary,
-    backgroundColor: '#FEE2E2',
+    backgroundColor: colors.error + 20% opacity,
   },
   timeSlotIcon: {
     fontSize: 20,
@@ -487,7 +487,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   reasonTitle: {
     fontSize: typography.body,
@@ -496,11 +496,11 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   reasonInput: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderRadius: borderRadius.md,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
     fontSize: typography.body,
     color: colors.text,
     minHeight: 100,
@@ -517,10 +517,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   submitButtonDisabled: {
-    backgroundColor: '#E5E7EB',
+    backgroundColor: colors.gray.200,
   },
   submitButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: typography.body,
     fontWeight: 'bold',
   },

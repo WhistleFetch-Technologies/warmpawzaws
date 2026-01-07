@@ -1103,7 +1103,7 @@ export function CustomerHavePetJourneyScreen({
             disabled={!validateStep(currentStep) || loading}
           >
             {loading ? (
-              <ActivityIndicator color="#ffffff" />
+              <ActivityIndicator color={colors.white} />
             ) : (
               <Text style={styles.nextButtonText}>
                 {currentStep === totalSteps ? 'Complete' : 'Continue →'}
@@ -1220,7 +1220,7 @@ const styles = StyleSheet.create({
   },
   optionButtonSelected: {
     borderColor: colors.primary,
-    backgroundColor: '#FFF4E6',
+    backgroundColor: colors.gradientOrange50,
   },
   optionButtonSmall: {
     width: '100%',
@@ -1293,7 +1293,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   proTipCard: {
-    backgroundColor: '#FFF4E6',
+    backgroundColor: colors.gradientOrange50,
     borderWidth: 2,
     borderColor: '#FFE0B2',
     borderRadius: borderRadius.xl,
@@ -1334,7 +1334,7 @@ const styles = StyleSheet.create({
   },
   traitButtonSelected: {
     borderColor: colors.primary,
-    backgroundColor: '#FFF4E6',
+    backgroundColor: colors.gradientOrange50,
   },
   traitText: {
     fontSize: typography.fontSizes.sm,
@@ -1407,7 +1407,7 @@ const styles = StyleSheet.create({
   nextButtonText: {
     fontSize: typography.fontSizes.md,
     fontWeight: typography.fontWeights.semibold,
-    color: '#ffffff',
+    color: colors.white,
   },
 });
 

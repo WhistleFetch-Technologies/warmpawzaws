@@ -76,10 +76,10 @@ export function VendorEarningsPage({ vendorId }: VendorEarningsPageProps) {
   }
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
+    <div className="p-0">
+      <div className="flex items-center justify-between mb-0">
         <h1 className="text-2xl font-bold text-gray-900">Earnings & Settlements</h1>
-        <div className="flex bg-white rounded-lg p-1 shadow-sm">
+        <div className="flex bg-white rounded-lg p-0 shadow-sm">
           {[
             { id: '7d', label: '7 Days' },
             { id: '30d', label: '30 Days' },
@@ -89,7 +89,7 @@ export function VendorEarningsPage({ vendorId }: VendorEarningsPageProps) {
             <button
               key={period.id}
               onClick={() => setTimeRange(period.id as any)}
-              className={`px-3 py-1.5 text-sm font-medium rounded-md transition ${
+              className={`px-0 py-0.5 text-sm font-medium rounded-md transition ${
                 timeRange === period.id
                   ? 'bg-orange-500 text-white'
                   : 'text-gray-600 hover:bg-gray-100'
@@ -102,9 +102,9 @@ export function VendorEarningsPage({ vendorId }: VendorEarningsPageProps) {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-0">
         <div className="bg-white rounded-xl p-4 shadow-sm">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-0">
             <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
               <span className="text-lg">💰</span>
             </div>
@@ -115,7 +115,7 @@ export function VendorEarningsPage({ vendorId }: VendorEarningsPageProps) {
           </div>
         </div>
         <div className="bg-white rounded-xl p-4 shadow-sm">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-0">
             <div className="w-10 h-10 rounded-full bg-yellow-100 flex items-center justify-center">
               <span className="text-lg">⏳</span>
             </div>
@@ -126,7 +126,7 @@ export function VendorEarningsPage({ vendorId }: VendorEarningsPageProps) {
           </div>
         </div>
         <div className="bg-white rounded-xl p-4 shadow-sm">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-0">
             <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
               <span className="text-lg">✅</span>
             </div>
@@ -137,7 +137,7 @@ export function VendorEarningsPage({ vendorId }: VendorEarningsPageProps) {
           </div>
         </div>
         <div className="bg-white rounded-xl p-4 shadow-sm">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-0">
             <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center">
               <span className="text-lg">📊</span>
             </div>
@@ -150,7 +150,7 @@ export function VendorEarningsPage({ vendorId }: VendorEarningsPageProps) {
       </div>
 
       {/* Commission Info */}
-      <div className="bg-gradient-to-r from-orange-500 to-amber-500 rounded-xl p-4 mb-6 text-white">
+      <div className="bg-gradient-to-r from-orange-500 to-amber-500 rounded-xl p-4 mb-0 text-white">
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm opacity-90">Your Commission Rate</p>
@@ -174,7 +174,7 @@ export function VendorEarningsPage({ vendorId }: VendorEarningsPageProps) {
         </div>
         
         {settlements.length === 0 ? (
-          <div className="text-center py-12">
+          <div className="text-center py-0">
             <span className="text-5xl">📋</span>
             <p className="mt-4 text-gray-500">No settlements yet</p>
           </div>
@@ -184,15 +184,15 @@ export function VendorEarningsPage({ vendorId }: VendorEarningsPageProps) {
               <div key={settlement.id} className="p-4 hover:bg-gray-50">
                 <div className="flex items-center justify-between">
                   <div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-0">
                       <span className="font-medium text-gray-900">
                         Settlement #{settlement.id.slice(0, 8)}
                       </span>
-                      <span className={`text-xs px-2 py-1 rounded-full ${getStatusColor(settlement.settlement_status)}`}>
+                      <span className={`text-xs px-0 py-0 rounded-full ${getStatusColor(settlement.settlement_status)}`}>
                         {settlement.settlement_status}
                       </span>
                     </div>
-                    <p className="text-sm text-gray-500 mt-1">
+                    <p className="text-sm text-gray-500 mt-0">
                       Period: {new Date(settlement.settlement_period_start).toLocaleDateString()} - {new Date(settlement.settlement_period_end).toLocaleDateString()}
                     </p>
                   </div>
@@ -204,7 +204,7 @@ export function VendorEarningsPage({ vendorId }: VendorEarningsPageProps) {
                   </div>
                 </div>
                 {settlement.processed_at && (
-                  <p className="text-xs text-gray-400 mt-2">
+                  <p className="text-xs text-gray-400 mt-0">
                     Processed on {new Date(settlement.processed_at).toLocaleString()}
                   </p>
                 )}

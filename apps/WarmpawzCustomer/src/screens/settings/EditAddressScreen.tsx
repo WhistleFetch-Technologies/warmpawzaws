@@ -297,7 +297,7 @@ export function EditAddressScreen({
             disabled={saving}
           >
             {saving ? (
-              <ActivityIndicator size="small" color="#fff" />
+              <ActivityIndicator size="small" color={colors.white} />
             ) : (
               <Text style={styles.saveButtonText}>Save Changes</Text>
             )}
@@ -319,7 +319,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -351,7 +351,7 @@ const styles = StyleSheet.create({
   locationButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: spacing.lg,
@@ -380,7 +380,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   input: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: borderRadius.md,
@@ -421,7 +421,7 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
   },
   checkboxCheck: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 14,
     fontWeight: 'bold',
   },
@@ -434,13 +434,13 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   deleteButton: {
-    backgroundColor: '#fee2e2',
+    backgroundColor: colors.error + 20% opacity,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     alignItems: 'center',
   },
   deleteButtonText: {
-    color: '#dc2626',
+    color: colors.error,
     fontSize: 16,
     fontWeight: '600',
   },
@@ -451,10 +451,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   saveButtonDisabled: {
-    backgroundColor: '#9ca3af',
+    backgroundColor: colors.gray.400,
   },
   saveButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 16,
     fontWeight: 'bold',
   },

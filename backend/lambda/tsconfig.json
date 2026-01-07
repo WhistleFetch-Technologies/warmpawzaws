@@ -11,6 +11,11 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "moduleResolution": "node",
+    "baseUrl": ".",
+    "paths": {
+      "@warmpawz/api-contracts": ["../../packages/api-contracts/dist/index"],
+      "@warmpawz/api-contracts/*": ["../../packages/api-contracts/dist/*"]
+    },
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,

@@ -15,6 +15,6 @@ export default function BookingsPage() {
     return <div>Loading...</div>;
   }
 
-  return <MyBookings customerPhone={phone} />;
+  return <MyBookings phone={phone} />;
 }
 

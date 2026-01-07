@@ -1,0 +1,70 @@
+[19:36:34] Starting comprehensive testing for Batch 23
+[19:36:34] Testing 12 files
+[0;34mℹ[0m Testing syntax: customer-ecommerce-endpoints-sql.tsx
+[0;32m✓[0m Syntax check passed: customer-ecommerce-endpoints-sql.tsx
+[0;34mℹ[0m Testing syntax: booking-lifecycle-management-sql.tsx
+[0;32m✓[0m Syntax check passed: booking-lifecycle-management-sql.tsx
+[0;34mℹ[0m Testing syntax: cafe-table-management-sql.tsx
+[0;32m✓[0m Syntax check passed: cafe-table-management-sql.tsx
+[0;34mℹ[0m Testing syntax: critical-flow-fixes-sql.tsx
+[0;32m✓[0m Syntax check passed: critical-flow-fixes-sql.tsx
+[0;34mℹ[0m Testing syntax: bank-verification-endpoints-sql.tsx
+[0;32m✓[0m Syntax check passed: bank-verification-endpoints-sql.tsx
+[0;34mℹ[0m Testing syntax: advanced-filtering-system-sql.tsx
+[0;32m✓[0m Syntax check passed: advanced-filtering-system-sql.tsx
+[0;34mℹ[0m Testing syntax: controlled-substances-endpoints-sql.tsx
+[0;32m✓[0m Syntax check passed: controlled-substances-endpoints-sql.tsx
+[0;34mℹ[0m Testing syntax: appointment-lifecycle-endpoints-sql.tsx
+[0;32m✓[0m Syntax check passed: appointment-lifecycle-endpoints-sql.tsx
+[0;34mℹ[0m Testing syntax: aws-chime-video-integration-sql.tsx
+[0;32m✓[0m Syntax check passed: aws-chime-video-integration-sql.tsx
+[0;34mℹ[0m Testing syntax: auto-assignment-logic-sql.tsx
+[0;32m✓[0m Syntax check passed: auto-assignment-logic-sql.tsx
+[0;34mℹ[0m Testing syntax: advanced-search-engine-sql.tsx
+[0;32m✓[0m Syntax check passed: advanced-search-engine-sql.tsx
+[0;34mℹ[0m Testing syntax: center-availability-endpoints-sql.tsx
+[0;32m✓[0m Syntax check passed: center-availability-endpoints-sql.tsx
+[0;34mℹ[0m Testing route registration: customer-ecommerce-endpoints-sql.tsx
+[0;32m✓[0m Route registered: customer-ecommerce-endpoints-sql.tsx
+[0;34mℹ[0m Testing route registration: booking-lifecycle-management-sql.tsx
+[0;32m✓[0m Route registered: booking-lifecycle-management-sql.tsx
+[0;34mℹ[0m Testing route registration: cafe-table-management-sql.tsx
+[0;32m✓[0m Route registered: cafe-table-management-sql.tsx
+[0;34mℹ[0m Testing route registration: critical-flow-fixes-sql.tsx
+[0;32m✓[0m Route registered: critical-flow-fixes-sql.tsx
+[0;34mℹ[0m Testing route registration: bank-verification-endpoints-sql.tsx
+[0;32m✓[0m Route registered: bank-verification-endpoints-sql.tsx
+[0;34mℹ[0m Testing route registration: advanced-filtering-system-sql.tsx
+[0;32m✓[0m Route registered: advanced-filtering-system-sql.tsx
+[0;34mℹ[0m Testing route registration: controlled-substances-endpoints-sql.tsx
+[0;32m✓[0m Route registered: controlled-substances-endpoints-sql.tsx
+[0;34mℹ[0m Testing route registration: appointment-lifecycle-endpoints-sql.tsx
+[0;32m✓[0m Route registered: appointment-lifecycle-endpoints-sql.tsx
+[0;34mℹ[0m Testing route registration: aws-chime-video-integration-sql.tsx
+[0;32m✓[0m Route registered: aws-chime-video-integration-sql.tsx
+[0;34mℹ[0m Testing route registration: auto-assignment-logic-sql.tsx
+[0;32m✓[0m Route registered: auto-assignment-logic-sql.tsx
+[0;34mℹ[0m Testing route registration: advanced-search-engine-sql.tsx
+[0;32m✓[0m Route registered: advanced-search-engine-sql.tsx
+[0;34mℹ[0m Testing route registration: center-availability-endpoints-sql.tsx
+[0;32m✓[0m Route registered: center-availability-endpoints-sql.tsx
+[0;34mℹ[0m Testing handlers: customer-ecommerce-endpoints-sql.tsx
+[0;32m✓[0m Handlers found: customer-ecommerce-endpoints-sql.tsx (11 routes)
+[0;34mℹ[0m Testing handlers: booking-lifecycle-management-sql.tsx
+[0;32m✓[0m Handlers found: booking-lifecycle-management-sql.tsx (6 routes)
+[0;34mℹ[0m Testing handlers: cafe-table-management-sql.tsx
+[0;32m✓[0m Handlers found: cafe-table-management-sql.tsx (6 routes)
+[0;34mℹ[0m Testing handlers: critical-flow-fixes-sql.tsx
+[0;32m✓[0m Handlers found: critical-flow-fixes-sql.tsx (6 routes)
+[0;34mℹ[0m Testing handlers: bank-verification-endpoints-sql.tsx
+[0;32m✓[0m Handlers found: bank-verification-endpoints-sql.tsx (7 routes)
+[0;34mℹ[0m Testing handlers: advanced-filtering-system-sql.tsx
+[0;32m✓[0m Handlers found: advanced-filtering-system-sql.tsx (4 routes)
+[0;34mℹ[0m Testing handlers: controlled-substances-endpoints-sql.tsx
+[0;32m✓[0m Handlers found: controlled-substances-endpoints-sql.tsx (7 routes)
+[0;34mℹ[0m Testing handlers: appointment-lifecycle-endpoints-sql.tsx
+[0;32m✓[0m Handlers found: appointment-lifecycle-endpoints-sql.tsx (4 routes)
+[0;34mℹ[0m Testing handlers: aws-chime-video-integration-sql.tsx
+[0;32m✓[0m Handlers found: aws-chime-video-integration-sql.tsx (8 routes)
+[0;34mℹ[0m Testing handlers: auto-assignment-logic-sql.tsx
+[0;31m✗[0m No handlers found: auto-assignment-logic-sql.tsx

@@ -213,7 +213,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -254,7 +254,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   prescriptionHeader: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: spacing.lg,
@@ -297,7 +297,7 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   medicineCard: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: spacing.md,
@@ -339,7 +339,7 @@ const styles = StyleSheet.create({
   instructionsContainer: {
     marginTop: spacing.sm,
     padding: spacing.sm,
-    backgroundColor: '#f3f4f6',
+    backgroundColor: colors.gray.100,
     borderRadius: borderRadius.sm,
   },
   instructionsLabel: {
@@ -358,7 +358,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.text,
     lineHeight: 20,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     borderWidth: 1,
@@ -373,7 +373,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   orderButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 16,
     fontWeight: 'bold',
   },

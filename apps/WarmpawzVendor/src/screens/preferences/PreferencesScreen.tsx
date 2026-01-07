@@ -13,10 +13,10 @@ import {
   SafeAreaView,
   ScrollView,
   Switch,
+  Alert,
 } from 'react-native';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { PreferencesApi } from '../../services/api';
-import { Alert } from 'react-native';
 
 interface PreferencesScreenProps {
   vendorId: string;
@@ -227,7 +227,7 @@ const styles = StyleSheet.create({
   saveButtonText: {
     fontSize: typography.fontSizes.md,
     fontWeight: typography.fontWeights.semibold,
-    color: '#ffffff',
+    color: colors.white,
   },
 });
 

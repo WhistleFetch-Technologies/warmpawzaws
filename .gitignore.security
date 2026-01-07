@@ -1,0 +1,53 @@
+# Secrets and Credentials
+*.env
+*.env.*
+!.env.example
+scripts/setup-github-secrets.sh
+scripts/setup-aws-secrets.sh
+SECURITY_WARNING.md
+QUICK_SETUP_CREDENTIALS.md
+**/credentials.json
+**/secrets.json
+**/.aws/
+**/.credentials
+
+# Terraform sensitive files
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+.terraform/
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build outputs
+dist/
+build/
+*.zip
+.next/
+out/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+logs/
+*.log
+

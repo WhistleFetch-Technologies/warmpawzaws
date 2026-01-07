@@ -9,7 +9,12 @@ buildscript {
     }
     repositories {
         google()
+        // Razorpay Maven repository (MUST be before mavenCentral - Razorpay doesn't publish to Maven Central)
+        maven { url "https://maven.razorpay.com/releases" }
         mavenCentral()
+        // Fallback repositories for CI/CD (Maven Central 403 issues)
+        maven { url 'https://maven.google.com' }
+        maven { url 'https://jitpack.io' }
     }
     dependencies {
         classpath("com.android.tools.build:gradle")
@@ -19,3 +24,36 @@ buildscript {
 }
 
 apply plugin: "com.facebook.react.rootproject"
+
+// Configure repositories for all subprojects (CI/CD compatibility)
+allprojects {
+    repositories {
+        // Order matters: Google first (most React Native deps), then Razorpay, then Maven Central with fallbacks
+        google()
+        // Razorpay Maven repository (MUST be before mavenCentral - Razorpay doesn't publish to Maven Central)
+        maven { url "https://maven.razorpay.com/releases" }
+        mavenCentral()
+        // Fallback for CI/CD when Maven Central returns 403
+        maven { url 'https://maven.google.com' }
+        maven { url 'https://jitpack.io' }
+        maven { url 'https://repo.maven.apache.org/maven2' }
+    }
+}
+
+// Force compatible versions to prevent CI/CD resolution errors
+subprojects {
+    configurations.all {
+        resolutionStrategy {
+            // AndroidX core compatibility for compileSdk 34 and AGP 8.1.1
+            force 'androidx.core:core:1.13.1'
+            force 'androidx.core:core-ktx:1.13.1'
+            
+            // Force soloader version (prevents Maven Central 403 issues in CI)
+            force 'com.facebook.soloader:soloader:0.10.5'
+            
+            // Force Fresco version compatibility
+            force 'com.facebook.fresco:fresco:2.5.0'
+            force 'com.facebook.fresco:imagepipeline-okhttp3:2.5.0'
+        }
+    }
+}

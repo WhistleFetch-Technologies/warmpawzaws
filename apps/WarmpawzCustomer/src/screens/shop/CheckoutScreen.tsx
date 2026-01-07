@@ -248,7 +248,7 @@ export function CheckoutScreen({
               disabled={applyingCoupon}
             >
               {applyingCoupon ? (
-                <ActivityIndicator size="small" color="#fff" />
+                <ActivityIndicator size="small" color={colors.white} />
               ) : (
                 <Text style={styles.applyButtonText}>Apply</Text>
               )}
@@ -346,7 +346,7 @@ export function CheckoutScreen({
           disabled={loading}
         >
           {loading ? (
-            <ActivityIndicator size="small" color="#fff" />
+            <ActivityIndicator size="small" color={colors.white} />
           ) : (
             <Text style={styles.placeOrderButtonText}>
               Place Order • ₹{getTotal().toLocaleString()}
@@ -369,7 +369,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -404,7 +404,7 @@ const styles = StyleSheet.create({
   },
   addressCard: {
     flexDirection: 'row',
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: spacing.sm,
@@ -413,7 +413,7 @@ const styles = StyleSheet.create({
   },
   addressCardSelected: {
     borderColor: colors.primary,
-    backgroundColor: '#fff7ed',
+    backgroundColor: colors.gradientOrange50,
   },
   addressInfo: {
     flex: 1,
@@ -443,12 +443,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   selectedCheck: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 14,
     fontWeight: 'bold',
   },
   addAddressButton: {
-    backgroundColor: '#f3f4f6',
+    backgroundColor: colors.gray.100,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     alignItems: 'center',
@@ -467,7 +467,7 @@ const styles = StyleSheet.create({
   },
   couponInput: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: borderRadius.md,
@@ -483,7 +483,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   applyButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 14,
     fontWeight: '600',
   },
@@ -501,7 +501,7 @@ const styles = StyleSheet.create({
   paymentOption: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: spacing.sm,
@@ -510,7 +510,7 @@ const styles = StyleSheet.create({
   },
   paymentOptionSelected: {
     borderColor: colors.primary,
-    backgroundColor: '#fff7ed',
+    backgroundColor: colors.gradientOrange50,
   },
   paymentIcon: {
     fontSize: 24,
@@ -523,7 +523,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   summaryCard: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     borderWidth: 1,
@@ -563,7 +563,7 @@ const styles = StyleSheet.create({
     color: colors.primary,
   },
   footer: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderTopWidth: 1,
     borderTopColor: colors.border,
     padding: spacing.md,
@@ -575,10 +575,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   placeOrderButtonDisabled: {
-    backgroundColor: '#9ca3af',
+    backgroundColor: colors.gray.400,
   },
   placeOrderButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 16,
     fontWeight: 'bold',
   },

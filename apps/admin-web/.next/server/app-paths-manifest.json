@@ -1,0 +1,21 @@
+{
+  "/banners/page": "app/banners/page.js",
+  "/analytics/page": "app/analytics/page.js",
+  "/loyalty/page": "app/loyalty/page.js",
+  "/_not-found/page": "app/_not-found/page.js",
+  "/promotions/page": "app/promotions/page.js",
+  "/regions/page": "app/regions/page.js",
+  "/refunds/page": "app/refunds/page.js",
+  "/roles/page": "app/roles/page.js",
+  "/page": "app/page.js",
+  "/notifications/page": "app/notifications/page.js",
+  "/catalog/page": "app/catalog/page.js",
+  "/governance/page": "app/governance/page.js",
+  "/logistics/page": "app/logistics/page.js",
+  "/integrations/page": "app/integrations/page.js",
+  "/vendors/page": "app/vendors/page.js",
+  "/settlements/page": "app/settlements/page.js",
+  "/tiers/page": "app/tiers/page.js",
+  "/sellers/page": "app/sellers/page.js",
+  "/reports/page": "app/reports/page.js"
+}

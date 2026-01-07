@@ -305,7 +305,7 @@ export function CancelBookingScreen({
             disabled={!cancellationReason.trim() || cancelling}
           >
             {cancelling ? (
-              <ActivityIndicator color="#fff" />
+              <ActivityIndicator color={colors.white} />
             ) : (
               <Text style={styles.cancelButtonText}>Confirm Cancellation</Text>
             )}
@@ -319,7 +319,7 @@ export function CancelBookingScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
   },
   header: {
     flexDirection: 'row',
@@ -331,13 +331,13 @@ const styles = StyleSheet.create({
   },
   backButton: {
     fontSize: typography.body,
-    color: '#fff',
+    color: colors.white,
     marginRight: spacing.md,
   },
   headerTitle: {
     fontSize: typography.h1,
     fontWeight: 'bold',
-    color: '#fff',
+    color: colors.white,
     flex: 1,
   },
   loadingContainer: {
@@ -355,7 +355,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   bookingDetailsLabel: {
     fontSize: typography.caption,
@@ -381,10 +381,10 @@ const styles = StyleSheet.create({
   },
   refundCardPositive: {
     backgroundColor: '#F0FDF4',
-    borderColor: '#10B981',
+    borderColor: colors.success,
   },
   refundCardNegative: {
-    backgroundColor: '#FEE2E2',
+    backgroundColor: colors.error + 20% opacity,
     borderColor: '#EF4444',
   },
   refundHeader: {
@@ -421,7 +421,7 @@ const styles = StyleSheet.create({
     color: '#047857',
   },
   refundPolicyNegative: {
-    color: '#DC2626',
+    color: colors.error,
   },
   deductionText: {
     fontSize: typography.caption,
@@ -434,7 +434,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   reasonTitle: {
     fontSize: typography.body,
@@ -443,11 +443,11 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   reasonInput: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderRadius: borderRadius.md,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
     fontSize: typography.body,
     color: colors.text,
     minHeight: 120,
@@ -488,13 +488,13 @@ const styles = StyleSheet.create({
   cancelButtonSecondary: {
     backgroundColor: '#F9FAFB',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: colors.gray.200,
   },
   cancelButtonDisabled: {
-    backgroundColor: '#E5E7EB',
+    backgroundColor: colors.gray.200,
   },
   cancelButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: typography.body,
     fontWeight: 'bold',
   },

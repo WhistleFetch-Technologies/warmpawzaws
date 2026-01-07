@@ -17,7 +17,7 @@ import {
   TextInput,
 } from 'react-native';
 import { colors, spacing, borderRadius } from '../../theme/colors';
-import { CustomerApi } from '../../services/api';
+import { CustomerApi, OrderReturnApi } from '../../services/api';
 
 interface OrderReturnScreenProps {
   orderId: string;
@@ -78,8 +78,14 @@ export function OrderReturnScreen({
         notes: additionalNotes,
       };
 
-      // TODO: Call actual return API
-      await CustomerApi.cancelOrder(orderId, returnData.reason);
+      // ✅ API Integration: Use OrderReturnApi
+      const customerId = await CustomerApi.getCustomerByPhone(phone).then(c => c.id || c.customerId).catch(() => null);
+      const returnResponse = await OrderReturnApi.createReturn({
+        orderId,
+        items: returnItems.map(itemId => ({ itemId, quantity: 1 })),
+        reason: returnData.reason,
+        customerId: customerId || phone,
+      });
 
       Alert.alert(
         'Return Request Submitted',
@@ -222,7 +228,7 @@ export function OrderReturnScreen({
           disabled={loading}
         >
           {loading ? (
-            <ActivityIndicator size="small" color="#fff" />
+            <ActivityIndicator size="small" color={colors.white} />
           ) : (
             <Text style={styles.submitButtonText}>Submit Return Request</Text>
           )}
@@ -243,7 +249,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -277,7 +283,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   orderInfo: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     borderWidth: 1,
@@ -296,7 +302,7 @@ const styles = StyleSheet.create({
   itemCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: spacing.sm,
@@ -305,7 +311,7 @@ const styles = StyleSheet.create({
   },
   itemCardSelected: {
     borderColor: colors.primary,
-    backgroundColor: '#fff7ed',
+    backgroundColor: colors.gradientOrange50,
   },
   itemInfo: {
     flex: 1,
@@ -329,14 +335,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   selectedCheck: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 14,
     fontWeight: 'bold',
   },
   reasonCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: spacing.sm,
@@ -345,7 +351,7 @@ const styles = StyleSheet.create({
   },
   reasonCardSelected: {
     borderColor: colors.primary,
-    backgroundColor: '#fff7ed',
+    backgroundColor: colors.gradientOrange50,
   },
   reasonText: {
     flex: 1,
@@ -353,7 +359,7 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   textInput: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: borderRadius.md,
@@ -374,10 +380,10 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   submitButtonDisabled: {
-    backgroundColor: '#9ca3af',
+    backgroundColor: colors.gray.400,
   },
   submitButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 16,
     fontWeight: 'bold',
   },

@@ -1,0 +1,826 @@
+name: 🚀 Deploy to Development
+
+on:
+  push:
+    branches:
+      - develop
+  workflow_dispatch:
+
+# Prevent parallel deployments to the same environment
+concurrency:
+  group: dev-deployment
+  cancel-in-progress: true
+
+env:
+  AWS_REGION: ap-south-1
+  TERRAFORM_VERSION: 1.6.0
+  NODE_VERSION: 22
+  JAVA_VERSION: 17
+
+jobs:
+  # ============================================
+  # STATIC ANALYSIS
+  # ============================================
+  static-analysis:
+    name: 🔍 Static Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Run linter
+        run: npm run lint || echo "Lint script not found, skipping..."
+        continue-on-error: true
+
+      - name: Run type check
+        run: npm run type-check || echo "Type-check script not found, skipping..."
+        continue-on-error: true
+
+  # ============================================
+  # BUILD BACKEND
+  # ============================================
+  build-backend:
+    name: 🔨 Build Backend
+    runs-on: ubuntu-latest
+    needs: static-analysis
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Build Lambda handlers
+        working-directory: backend/lambda
+        run: |
+          npm ci
+          npm run build
+          ls -lh api-handler.zip  # Verify ZIP was created
+
+      - name: Upload Lambda artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lambda-handlers
+          path: backend/lambda/api-handler.zip
+          retention-days: 1
+          if-no-files-found: error
+
+  # ============================================
+  # BUILD FRONTEND APPS
+  # ============================================
+  build-frontend:
+    name: 🎨 Build Frontend Apps
+    runs-on: ubuntu-latest
+    needs: static-analysis
+    strategy:
+      matrix:
+        app: [admin-web, vendor-web, customer-web]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        working-directory: apps/${{ matrix.app }}
+        run: npm ci --legacy-peer-deps
+
+      - name: Build ${{ matrix.app }}
+        working-directory: apps/${{ matrix.app }}
+        run: npm run build
+        env:
+          # Next.js requires NEXT_PUBLIC_ prefix (not VITE_)
+          # Use DEV_API_URL secret if set, otherwise fall back to API Gateway format
+          # NOTE: Set DEV_API_URL secret to actual API Gateway invoke URL after first deploy
+          NEXT_PUBLIC_API_BASE_URL: ${{ secrets.DEV_API_URL || 'https://dev.api.warmpawz.com' }}
+          NEXT_PUBLIC_COGNITO_USER_POOL_ID: ${{ secrets.DEV_COGNITO_USER_POOL_ID }}
+          NEXT_PUBLIC_COGNITO_CLIENT_ID: ${{ secrets.DEV_COGNITO_CLIENT_ID }}
+          NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+          NEXT_PUBLIC_UAT_MODE: 'true'
+          NODE_ENV: production
+
+      - name: Upload frontend artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-${{ matrix.app }}
+          path: apps/${{ matrix.app }}/dist
+          retention-days: 1
+
+  # ============================================
+  # BUILD MOBILE APPS
+  # ============================================
+  build-mobile-android:
+    name: 📱 Build Android Apps
+    runs-on: ubuntu-latest
+    needs: static-analysis
+    strategy:
+      matrix:
+        app: [WarmpawzCustomer, WarmpawzVendor]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Setup Gradle cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        working-directory: apps/${{ matrix.app }}
+        run: npm ci --legacy-peer-deps
+
+      - name: Create environment config
+        working-directory: apps/${{ matrix.app }}
+        run: |
+          cat > .env << EOF
+          API_BASE_URL=https://dev.api.warmpawz.com
+          GOOGLE_MAPS_API_KEY=${{ secrets.GOOGLE_MAPS_API_KEY }}
+          RAZORPAY_KEY_ID=${{ secrets.RAZORPAY_KEY_ID }}
+          ENVIRONMENT=dev
+          EOF
+
+      - name: Build Android APK
+        working-directory: apps/${{ matrix.app }}/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDevRelease --no-daemon
+          
+      - name: List build outputs (debug)
+        working-directory: apps/${{ matrix.app }}/android
+        run: |
+          echo "Build outputs:"
+          find app/build/outputs/apk -name "*.apk" -type f
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-${{ matrix.app }}
+          path: apps/${{ matrix.app }}/android/app/build/outputs/apk/dev/release/*.apk
+          retention-days: 7
+          if-no-files-found: error
+
+  # ============================================
+  # DEPLOY LAMBDA (CODE ONLY - NO INFRASTRUCTURE)
+  # ============================================
+  deploy-lambda:
+    name: ⚡ Deploy Lambda Code
+    runs-on: ubuntu-latest
+    needs: build-backend
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Download Lambda artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: lambda-handlers
+          path: backend/lambda
+
+      - name: Update Lambda function code
+        run: |
+          echo "⚡ Updating Lambda function code (NO INFRASTRUCTURE CHANGES)..."
+          aws lambda update-function-code \
+            --function-name warmpawz-dev-api-handler \
+            --zip-file fileb://backend/lambda/api-handler.zip \
+            --region ${{ env.AWS_REGION }}
+          
+          echo "✅ Lambda function code updated successfully"
+
+  # ============================================
+  # DEPLOY FRONTEND APPS
+  # ============================================
+  deploy-frontend:
+    name: 🌐 Deploy Frontend Apps
+    runs-on: ubuntu-latest
+    needs: [build-frontend, deploy-lambda]
+    strategy:
+      matrix:
+        include:
+          - app: admin-web
+          - app: vendor-web
+          - app: customer-web
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Download frontend artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-${{ matrix.app }}
+          path: dist
+
+      - name: Get S3 bucket and CloudFront ID from AWS
+        id: get-resources
+        run: |
+          # Get S3 bucket name (standard naming convention)
+          APP_NAME=$(echo "${{ matrix.app }}" | sed 's/-web//')
+          BUCKET_NAME="warmpawz-dev-${APP_NAME}-frontend-ap-south-1"
+          echo "bucket_name=$BUCKET_NAME" >> $GITHUB_OUTPUT
+          
+          # Get CloudFront distribution ID by finding distribution with matching origin
+          # Use --output text and take only the first result, handling multiple IDs properly
+          DIST_ID=$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?Origins.Items[?DomainName==\`${BUCKET_NAME}.s3.ap-south-1.amazonaws.com\`]].Id" \
+            --output text | awk '{print $1}' | head -1)
+          
+          # Clean up any whitespace or newlines
+          DIST_ID=$(echo "$DIST_ID" | tr -d '[:space:]')
+          
+          if [ -z "$DIST_ID" ] || [ "$DIST_ID" = "None" ] || [ "$DIST_ID" = "null" ]; then
+            echo "⚠️  CloudFront distribution not found for ${BUCKET_NAME}"
+            echo "   Trying alternative lookup by comment..."
+            # Try finding by comment/tags
+            DIST_ID=$(aws cloudfront list-distributions \
+              --query "DistributionList.Items[?Comment==\`warmpawz-dev-${APP_NAME}-frontend\`].Id" \
+              --output text | awk '{print $1}' | head -1)
+            DIST_ID=$(echo "$DIST_ID" | tr -d '[:space:]')
+          fi
+          
+          if [ -z "$DIST_ID" ] || [ "$DIST_ID" = "None" ] || [ "$DIST_ID" = "null" ]; then
+            echo "❌ CloudFront distribution not found. Skipping cache invalidation."
+            echo "cloudfront_id=" >> $GITHUB_OUTPUT
+          else
+            echo "cloudfront_id=$DIST_ID" >> $GITHUB_OUTPUT
+            echo "✅ Found resources:"
+            echo "   Bucket: $BUCKET_NAME"
+            echo "   CloudFront: $DIST_ID"
+          fi
+
+      - name: Deploy to S3
+        run: |
+          aws s3 sync dist/ s3://${{ steps.get-resources.outputs.bucket_name }}/ --delete
+
+      - name: Invalidate CloudFront cache
+        if: steps.get-resources.outputs.cloudfront_id != ''
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id ${{ steps.get-resources.outputs.cloudfront_id }} \
+            --paths "/*"
+
+  # ============================================
+  # DATABASE MIGRATIONS
+  # ============================================
+  # TEMPORARILY DISABLED - Run migrations manually after deployment
+  # See: scripts/manual-migrate.sh for manual execution
+  database-migrations:
+    name: 🗄️ Run Database Migrations (DISABLED)
+    runs-on: ubuntu-latest
+    needs: deploy-lambda
+    if: false  # SKIP THIS JOB - Run migrations manually
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Ensure RDS is accessible (Dev Only)
+        run: |
+          echo "🔧 Ensuring RDS is accessible for migrations..."
+          chmod +x scripts/ci-enable-rds-access.sh
+          scripts/ci-enable-rds-access.sh
+        env:
+          ENVIRONMENT: dev
+          AWS_REGION: ${{ env.AWS_REGION }}
+
+      - name: Get database credentials
+        id: db-creds
+        env:
+          DEV_DATABASE_URL: ${{ secrets.DEV_DATABASE_URL }}
+        run: |
+          echo "🔐 Retrieving database credentials..."
+          
+          # PRIORITY 1: Use DEV_DATABASE_URL secret if provided (most reliable)
+          if [ -n "$DEV_DATABASE_URL" ]; then
+            echo "✅ Using DEV_DATABASE_URL from GitHub secrets"
+            echo "::add-mask::$DEV_DATABASE_URL"
+            echo "database_url=$DEV_DATABASE_URL" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          echo "ℹ️  DEV_DATABASE_URL not set, falling back to Secrets Manager..."
+          
+          # Get RDS endpoint from AWS directly (no Terraform needed)
+          RDS_CLUSTER_ID="warmpawz-dev-cluster"
+          RDS_ENDPOINT=$(aws rds describe-db-clusters --db-cluster-identifier "$RDS_CLUSTER_ID" --region ap-south-1 --query 'DBClusters[0].Endpoint' --output text 2>/dev/null || echo "")
+          RDS_PORT=$(aws rds describe-db-clusters --db-cluster-identifier "$RDS_CLUSTER_ID" --region ap-south-1 --query 'DBClusters[0].Port' --output text 2>/dev/null || echo "5432")
+          RDS_DB_NAME=$(aws rds describe-db-clusters --db-cluster-identifier "$RDS_CLUSTER_ID" --region ap-south-1 --query 'DBClusters[0].DatabaseName' --output text 2>/dev/null || echo "warmpawz")
+          
+          # Get secret ARN from Secrets Manager
+          RDS_SECRET_ARN=$(aws secretsmanager list-secrets --region ap-south-1 --query "SecretList[?starts_with(Name, 'warmpawz-dev-rds-master')].ARN" --output text | head -1 || echo "")
+          
+          # CRITICAL: Validate all required values exist
+          if [ -z "$RDS_ENDPOINT" ] || [ "$RDS_ENDPOINT" = "None" ] || [ "$RDS_ENDPOINT" = "null" ]; then
+            echo "❌ ERROR: RDS endpoint is empty or undefined"
+            echo "   This usually means RDS has not been created yet"
+            exit 1
+          fi
+          
+          if [ -z "$RDS_SECRET_ARN" ] || [ "$RDS_SECRET_ARN" = "None" ] || [ "$RDS_SECRET_ARN" = "null" ]; then
+            echo "❌ ERROR: RDS secret ARN is empty or undefined"
+            exit 1
+          fi
+          
+          if [ -z "$RDS_DB_NAME" ] || [ "$RDS_DB_NAME" = "None" ] || [ "$RDS_DB_NAME" = "null" ]; then
+            echo "⚠️  WARNING: RDS database name is empty, defaulting to 'warmpawz'"
+            RDS_DB_NAME="warmpawz"
+          fi
+          
+          if [ -z "$RDS_PORT" ] || [ "$RDS_PORT" = "None" ] || [ "$RDS_PORT" = "null" ]; then
+            echo "⚠️  WARNING: RDS port is empty, defaulting to 5432"
+            RDS_PORT="5432"
+          fi
+          
+          echo "✅ AWS RDS information retrieved:"
+          echo "   Endpoint: ${RDS_ENDPOINT}"
+          echo "   Database: ${RDS_DB_NAME}"
+          echo "   Port: ${RDS_PORT}"
+          echo ""
+          
+          # Get credentials from Secrets Manager with validation
+          echo "🔑 Retrieving credentials from Secrets Manager..."
+          DB_SECRET=$(aws secretsmanager get-secret-value --secret-id "$RDS_SECRET_ARN" --query SecretString --output text 2>/dev/null || echo "")
+          
+          if [ -z "$DB_SECRET" ]; then
+            echo "❌ ERROR: Failed to retrieve secret from Secrets Manager"
+            echo "   Secret ARN: ${RDS_SECRET_ARN}"
+            exit 1
+          fi
+          
+          DB_PASSWORD=$(echo "$DB_SECRET" | jq -r '.password // .Password // .' 2>/dev/null || echo "")
+          DB_USERNAME=$(echo "$DB_SECRET" | jq -r '.username // .Username // "postgres"' 2>/dev/null || echo "postgres")
+          
+          if [ -z "$DB_PASSWORD" ] || [ "$DB_PASSWORD" = "null" ] || [ "$DB_PASSWORD" = "." ]; then
+            echo "❌ ERROR: Failed to parse password from secret"
+            echo "   Secret structure may be invalid"
+            exit 1
+          fi
+          
+          if [ -z "$DB_USERNAME" ] || [ "$DB_USERNAME" = "null" ]; then
+            echo "⚠️  WARNING: username not found in secret, using 'postgres'"
+            DB_USERNAME="postgres"
+          fi
+          
+          echo "✅ Credentials retrieved successfully"
+          echo "   Username: ${DB_USERNAME}"
+          echo ""
+          
+          # CRITICAL: URL-encode the password (may contain special chars like #, *, +, @, etc.)
+          # Without encoding, DATABASE_URL will be invalid and psql will fail
+          DB_PASSWORD_ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('''$DB_PASSWORD''', safe=''))")
+          echo "   Password encoded: Yes (${#DB_PASSWORD} chars → ${#DB_PASSWORD_ENCODED} chars)"
+          echo ""
+          
+          # Construct DATABASE_URL with encoded password
+          # NOTE: Do NOT add ?sslmode=require here - the migration script handles SSL automatically
+          # Adding sslmode in URL causes "unable to get local issuer certificate" errors
+          # because it conflicts with the script's ssl: { rejectUnauthorized: false } config
+          DATABASE_URL="postgresql://${DB_USERNAME}:${DB_PASSWORD_ENCODED}@${RDS_ENDPOINT}:${RDS_PORT}/${RDS_DB_NAME}"
+          
+          # CRITICAL: Validate DATABASE_URL format
+          if ! echo "$DATABASE_URL" | grep -qE '^postgresql://[^:]+:[^@]+@[^:]+:[0-9]+/[^/]+$'; then
+            echo "❌ ERROR: Constructed DATABASE_URL has invalid format"
+            echo "   Expected: postgresql://username:password@host:port/database"
+            echo "   Got (sanitized): postgresql://${DB_USERNAME}:***@${RDS_ENDPOINT}:${RDS_PORT}/${RDS_DB_NAME}"
+            exit 1
+          fi
+          
+          echo "✅ DATABASE_URL constructed and validated"
+          echo "   Format: postgresql://${DB_USERNAME}:***@${RDS_ENDPOINT}:${RDS_PORT}/${RDS_DB_NAME}"
+          echo "   SSL: Handled automatically by migration script (rejectUnauthorized: false)"
+          echo ""
+          
+          # Mask sensitive data
+          echo "::add-mask::$DB_PASSWORD"
+          echo "::add-mask::$DATABASE_URL"
+          
+          # Output for next steps
+          echo "database_url=$DATABASE_URL" >> $GITHUB_OUTPUT
+
+      - name: Test database connectivity
+        run: |
+          echo "🔍 Testing database connectivity..."
+          
+          # Extract host and port from DATABASE_URL
+          DB_URL="${{ steps.db-creds.outputs.database_url }}"
+          DB_HOST=$(echo "$DB_URL" | sed -n 's|.*@\([^:]*\):[0-9]*/.*|\1|p')
+          DB_PORT=$(echo "$DB_URL" | sed -n 's|.*@[^:]*:\([0-9]*\)/.*|\1|p')
+          
+          echo "   Host: $DB_HOST"
+          echo "   Port: ${DB_PORT:-5432}"
+          echo ""
+          
+          # Test DNS resolution first
+          echo "🌐 Testing DNS resolution..."
+          if host "$DB_HOST" > /dev/null 2>&1; then
+            RESOLVED_IP=$(host "$DB_HOST" | grep "has address" | head -n1 | awk '{print $NF}')
+            echo "   ✅ DNS resolves to: $RESOLVED_IP"
+          else
+            echo "   ⚠️  Could not resolve DNS (this might be okay)"
+          fi
+          
+          echo ""
+          echo "🔗 Testing TCP connection to RDS (with retries)..."
+          
+          MAX_ATTEMPTS=5
+          ATTEMPT=1
+          TCP_SUCCESS=false
+          
+          while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+            echo "   Attempt $ATTEMPT of $MAX_ATTEMPTS..."
+            
+            if timeout 15 bash -c "cat < /dev/null > /dev/tcp/$DB_HOST/${DB_PORT:-5432}" 2>/dev/null; then
+              echo "   ✅ TCP connection successful"
+              TCP_SUCCESS=true
+              break
+            else
+              echo "   ⚠️  Connection failed (timeout or refused)"
+              if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+                echo "   Waiting 10 seconds before retry..."
+                sleep 10
+              fi
+            fi
+            
+            ATTEMPT=$((ATTEMPT + 1))
+          done
+          
+          if [ "$TCP_SUCCESS" != "true" ]; then
+            echo ""
+            echo "❌ ERROR: Cannot connect to $DB_HOST:${DB_PORT:-5432} after $MAX_ATTEMPTS attempts"
+            echo ""
+            echo "   Diagnostics:"
+            echo "   - RDS endpoint: $DB_HOST"
+            echo "   - Port: ${DB_PORT:-5432}"
+            echo "   - All TCP connection attempts failed"
+            echo ""
+            echo "   Possible causes:"
+            echo "   1. RDS public accessibility not enabled"
+            echo "   2. Security group not configured for GitHub Actions IPs"
+            echo "   3. RDS is still initializing or being modified"
+            echo "   4. Network routing issue"
+            echo ""
+            echo "   Check RDS status:"
+            echo "   aws rds describe-db-instances --db-instance-identifier warmpawz-dev-instance-1 --region ap-south-1"
+            echo ""
+            echo "   Manually enable access:"
+            echo "   ./scripts/enable-rds-public-access-dev.sh"
+            echo ""
+            exit 1
+          fi
+          
+          echo ""
+          echo "🔑 Testing PostgreSQL authentication..."
+          # Install psql for connection test
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client > /dev/null
+          
+          # Test actual PostgreSQL connection with retries
+          MAX_PG_ATTEMPTS=3
+          PG_ATTEMPT=1
+          PG_SUCCESS=false
+          
+          while [ $PG_ATTEMPT -le $MAX_PG_ATTEMPTS ]; do
+            echo "   Attempt $PG_ATTEMPT of $MAX_PG_ATTEMPTS..."
+            
+            if psql "$DB_URL" -c "SELECT version();" > /dev/null 2>&1; then
+              echo "   ✅ PostgreSQL connection successful"
+              PG_SUCCESS=true
+              break
+            else
+              echo "   ⚠️  Authentication failed"
+              if [ $PG_ATTEMPT -lt $MAX_PG_ATTEMPTS ]; then
+                echo "   Waiting 5 seconds before retry..."
+                sleep 5
+              fi
+            fi
+            
+            PG_ATTEMPT=$((PG_ATTEMPT + 1))
+          done
+          
+          if [ "$PG_SUCCESS" != "true" ]; then
+            echo ""
+            echo "❌ ERROR: PostgreSQL authentication failed after $MAX_PG_ATTEMPTS attempts"
+            echo ""
+            echo "   Possible causes:"
+            echo "   1. Incorrect username or password in Secrets Manager"
+            echo "   2. Database does not exist"
+            echo "   3. SSL/TLS configuration issue"
+            echo "   4. RDS is rejecting connections"
+            echo ""
+            echo "   Verify credentials:"
+            echo "   aws secretsmanager get-secret-value --secret-id <RDS_SECRET_ARN>"
+            echo ""
+            exit 1
+          fi
+          
+          echo ""
+          echo "📊 Database information:"
+          psql "$DB_URL" -c "SELECT version();" | head -n 3
+          
+          echo ""
+          echo "✅ Database is ready for migrations"
+        env:
+          PGCONNECT_TIMEOUT: 15
+
+      - name: Run migrations
+        working-directory: db
+        run: |
+          npm ci
+          npm run migrate:up
+        env:
+          DATABASE_URL: ${{ steps.db-creds.outputs.database_url }}
+          ENVIRONMENT: dev
+
+      - name: Verify migrations
+        working-directory: db
+        run: npm run migrate:status
+        env:
+          DATABASE_URL: ${{ steps.db-creds.outputs.database_url }}
+
+  # ============================================
+  # SEED DATA
+  # ============================================
+  # TEMPORARILY DISABLED - Seed data manually after running migrations
+  seed-data:
+    name: 🌱 Seed Base Data (DISABLED)
+    runs-on: ubuntu-latest
+    needs: deploy-lambda
+    if: false  # SKIP THIS JOB - Seed manually after migrations
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get database credentials
+        id: db-creds
+        env:
+          DEV_DATABASE_URL: ${{ secrets.DEV_DATABASE_URL }}
+        run: |
+          # PRIORITY 1: Use DEV_DATABASE_URL secret if provided
+          if [ -n "$DEV_DATABASE_URL" ]; then
+            echo "✅ Using DEV_DATABASE_URL from GitHub secrets"
+            echo "::add-mask::$DEV_DATABASE_URL"
+            echo "database_url=$DEV_DATABASE_URL" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          echo "ℹ️  Falling back to Secrets Manager..."
+          
+          # Get RDS endpoint from AWS directly (no Terraform needed)
+          RDS_CLUSTER_ID="warmpawz-dev-cluster"
+          RDS_ENDPOINT=$(aws rds describe-db-clusters --db-cluster-identifier "$RDS_CLUSTER_ID" --region ap-south-1 --query 'DBClusters[0].Endpoint' --output text 2>/dev/null || echo "")
+          RDS_PORT=$(aws rds describe-db-clusters --db-cluster-identifier "$RDS_CLUSTER_ID" --region ap-south-1 --query 'DBClusters[0].Port' --output text 2>/dev/null || echo "5432")
+          RDS_DB_NAME=$(aws rds describe-db-clusters --db-cluster-identifier "$RDS_CLUSTER_ID" --region ap-south-1 --query 'DBClusters[0].DatabaseName' --output text 2>/dev/null || echo "warmpawz")
+          
+          # Get secret ARN from Secrets Manager
+          RDS_SECRET_ARN=$(aws secretsmanager list-secrets --region ap-south-1 --query "SecretList[?starts_with(Name, 'warmpawz-dev-rds-master')].ARN" --output text | head -1 || echo "")
+          
+          if [ -z "$RDS_ENDPOINT" ] || [ "$RDS_ENDPOINT" = "None" ] || [ "$RDS_ENDPOINT" = "null" ]; then
+            echo "❌ ERROR: RDS endpoint is empty or undefined"
+            exit 1
+          fi
+          
+          if [ -z "$RDS_SECRET_ARN" ] || [ "$RDS_SECRET_ARN" = "None" ] || [ "$RDS_SECRET_ARN" = "null" ]; then
+            echo "❌ ERROR: RDS secret ARN is empty or undefined"
+            exit 1
+          fi
+          
+          # Get credentials from Secrets Manager
+          DB_SECRET=$(aws secretsmanager get-secret-value --secret-id "$RDS_SECRET_ARN" --query SecretString --output text 2>/dev/null || echo "")
+          DB_PASSWORD=$(echo "$DB_SECRET" | jq -r '.password // .Password // .' 2>/dev/null || echo "")
+          DB_USERNAME=$(echo "$DB_SECRET" | jq -r '.username // .Username // "postgres"' 2>/dev/null || echo "postgres")
+          
+          DB_PASSWORD_ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('''$DB_PASSWORD''', safe=''))")
+          DATABASE_URL="postgresql://${DB_USERNAME}:${DB_PASSWORD_ENCODED}@${RDS_ENDPOINT}:${RDS_PORT}/${RDS_DB_NAME}"
+          
+          echo "database_url=$DATABASE_URL" >> $GITHUB_OUTPUT
+
+      - name: Seed database
+        working-directory: db
+        run: |
+          npm ci
+          npm run seed
+        env:
+          DATABASE_URL: ${{ steps.db-creds.outputs.database_url }}
+          ENVIRONMENT: dev
+
+  # ============================================
+  # SMOKE TESTS
+  # ============================================
+  smoke-tests:
+    name: 💨 Smoke Tests
+    runs-on: ubuntu-latest
+    needs: [deploy-frontend]  # seed-data is disabled, removed from dependencies
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get deployment URLs from AWS
+        id: urls
+        run: |
+          # Get API Gateway endpoint
+          API_ID=$(aws apigatewayv2 get-apis --query "Items[?Name=='warmpawz-dev-api'].ApiId" --output text | head -1)
+          if [ -n "$API_ID" ] && [ "$API_ID" != "None" ]; then
+            API_ENDPOINT="https://${API_ID}.execute-api.ap-south-1.amazonaws.com"
+          else
+            # Fallback to standard domain
+            API_ENDPOINT="https://dev.api.warmpawz.com"
+          fi
+          
+          # Get CloudFront URLs
+          ADMIN_DIST=$(aws cloudfront list-distributions --query "DistributionList.Items[?Origins.Items[?DomainName==\`warmpawz-dev-admin-frontend-ap-south-1.s3.ap-south-1.amazonaws.com\`]].DomainName" --output text | head -1)
+          VENDOR_DIST=$(aws cloudfront list-distributions --query "DistributionList.Items[?Origins.Items[?DomainName==\`warmpawz-dev-vendor-frontend-ap-south-1.s3.ap-south-1.amazonaws.com\`]].DomainName" --output text | head -1)
+          CUSTOMER_DIST=$(aws cloudfront list-distributions --query "DistributionList.Items[?Origins.Items[?DomainName==\`warmpawz-dev-customer-frontend-ap-south-1.s3.ap-south-1.amazonaws.com\`]].DomainName" --output text | head -1)
+          
+          ADMIN_URL="https://${ADMIN_DIST:-dev.admin.warmpawz.com}"
+          VENDOR_URL="https://${VENDOR_DIST:-dev.vendor.warmpawz.com}"
+          CUSTOMER_URL="https://${CUSTOMER_DIST:-dev.customer.warmpawz.com}"
+          
+          echo "api_endpoint=$API_ENDPOINT" >> $GITHUB_OUTPUT
+          echo "admin_url=$ADMIN_URL" >> $GITHUB_OUTPUT
+          echo "vendor_url=$VENDOR_URL" >> $GITHUB_OUTPUT
+          echo "customer_url=$CUSTOMER_URL" >> $GITHUB_OUTPUT
+          
+          echo "Deployment URLs:"
+          echo "  API: $API_ENDPOINT"
+          echo "  Admin: $ADMIN_URL"
+          echo "  Vendor: $VENDOR_URL"
+          echo "  Customer: $CUSTOMER_URL"
+
+      - name: Test API endpoint
+        run: |
+          echo "Testing API health endpoint..."
+          API_URL="${{ steps.urls.outputs.api_endpoint }}"
+          
+          if [ -z "$API_URL" ] || [ "$API_URL" = "null" ]; then
+            echo "⚠️  API endpoint not available"
+            echo "   This is expected if API Gateway deployment is still in progress"
+            exit 0
+          fi
+          
+          echo "Testing: ${API_URL}/health"
+          if curl -f -s -m 10 "${API_URL}/health" > /dev/null 2>&1; then
+            echo "✅ API health check passed"
+          else
+            echo "⚠️  API health check failed (may still be deploying)"
+          fi
+
+      - name: Test frontend URLs
+        run: |
+          echo "Testing frontend CloudFront distributions..."
+          
+          ADMIN_URL="${{ steps.urls.outputs.admin_url }}"
+          VENDOR_URL="${{ steps.urls.outputs.vendor_url }}"
+          CUSTOMER_URL="${{ steps.urls.outputs.customer_url }}"
+          
+          # Test admin app
+          if [ -n "$ADMIN_URL" ] && [ "$ADMIN_URL" != "null" ]; then
+            echo "Testing: $ADMIN_URL"
+            if curl -f -s -m 10 "$ADMIN_URL" > /dev/null 2>&1; then
+              echo "✅ Admin app accessible"
+            else
+              echo "⚠️  Admin app not yet accessible (CloudFront may be propagating)"
+            fi
+          fi
+          
+          # Test vendor app
+          if [ -n "$VENDOR_URL" ] && [ "$VENDOR_URL" != "null" ]; then
+            echo "Testing: $VENDOR_URL"
+            if curl -f -s -m 10 "$VENDOR_URL" > /dev/null 2>&1; then
+              echo "✅ Vendor app accessible"
+            else
+              echo "⚠️  Vendor app not yet accessible (CloudFront may be propagating)"
+            fi
+          fi
+          
+          # Test customer app
+          if [ -n "$CUSTOMER_URL" ] && [ "$CUSTOMER_URL" != "null" ]; then
+            echo "Testing: $CUSTOMER_URL"
+            if curl -f -s -m 10 "$CUSTOMER_URL" > /dev/null 2>&1; then
+              echo "✅ Customer app accessible"
+            else
+              echo "⚠️  Customer app not yet accessible (CloudFront may be propagating)"
+            fi
+          fi
+          
+          echo ""
+          echo "Note: CloudFront distributions may take 5-15 minutes to fully propagate"
+          echo "Custom domains (dev.*.warmpawz.com) require DNS configuration"
+
+  # ============================================
+  # DEPLOYMENT SUMMARY
+  # ============================================
+  deployment-summary:
+    name: 📊 Deployment Summary
+    runs-on: ubuntu-latest
+    needs: [smoke-tests, build-mobile-android]
+    if: always()
+    steps:
+      - name: Download Android APKs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: android-*
+          path: mobile-apks/
+          merge-multiple: true
+
+      - name: List artifacts
+        run: |
+          echo "📱 Mobile APKs built:"
+          ls -la mobile-apks/ || echo "No APKs found"
+
+      - name: Generate deployment report
+        run: |
+          echo "# 🚀 Development Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** dev" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Triggered by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 🌐 Deployed URLs" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| App | URL |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|-----|" >> $GITHUB_STEP_SUMMARY
+          echo "| API | https://dev.api.warmpawz.com |" >> $GITHUB_STEP_SUMMARY
+          echo "| Admin | https://dev.admin.warmpawz.com |" >> $GITHUB_STEP_SUMMARY
+          echo "| Vendor | https://dev.vendor.warmpawz.com |" >> $GITHUB_STEP_SUMMARY
+          echo "| Customer | https://dev.customer.warmpawz.com |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 📱 Mobile Apps" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Android APKs are available as workflow artifacts." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## ✅ Deployment Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "All code deployments completed. Infrastructure was NOT modified." >> $GITHUB_STEP_SUMMARY

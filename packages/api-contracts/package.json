@@ -1,0 +1,50 @@
+{
+  "name": "@warmpawz/api-contracts",
+  "version": "1.0.0",
+  "description": "Warmpawz API Contracts - Zod-based validation and TypeScript types",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./auth": {
+      "types": "./dist/auth.d.ts",
+      "default": "./dist/auth.js"
+    },
+    "./bookings": {
+      "types": "./dist/bookings.d.ts",
+      "default": "./dist/bookings.js"
+    },
+    "./vendors": {
+      "types": "./dist/vendors.d.ts",
+      "default": "./dist/vendors.js"
+    },
+    "./customers": {
+      "types": "./dist/customers.d.ts",
+      "default": "./dist/customers.js"
+    },
+    "./payments": {
+      "types": "./dist/payments.d.ts",
+      "default": "./dist/payments.js"
+    },
+    "./common": {
+      "types": "./dist/common.d.ts",
+      "default": "./dist/common.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "lint": "eslint src/",
+    "test": "jest"
+  },
+  "dependencies": {
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}
+

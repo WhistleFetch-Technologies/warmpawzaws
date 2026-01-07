@@ -251,7 +251,7 @@ export function ProfileScreen({ vendorId, onBack }: ProfileScreenProps) {
             disabled={saving}
           >
             {saving ? (
-              <ActivityIndicator color="#ffffff" />
+              <ActivityIndicator color={colors.white} />
             ) : (
               <Text style={styles.saveButtonText}>Save Changes</Text>
             )}
@@ -331,7 +331,7 @@ const styles = StyleSheet.create({
   },
   editBadgeText: {
     fontSize: typography.fontSizes.xs,
-    color: '#ffffff',
+    color: colors.white,
     fontWeight: typography.fontWeights.medium,
   },
   form: {
@@ -377,7 +377,7 @@ const styles = StyleSheet.create({
   saveButtonText: {
     fontSize: typography.fontSizes.md,
     fontWeight: typography.fontWeights.semibold,
-    color: '#ffffff',
+    color: colors.white,
   },
 });
 

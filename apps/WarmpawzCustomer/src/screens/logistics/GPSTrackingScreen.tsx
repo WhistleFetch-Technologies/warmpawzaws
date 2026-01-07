@@ -283,7 +283,7 @@ export function GPSTrackingScreen({
             disabled={loading}
           >
             {loading ? (
-              <ActivityIndicator size="small" color="#fff" />
+              <ActivityIndicator size="small" color={colors.white} />
             ) : (
               <Text style={styles.startButtonText}>▶ Start Tracking</Text>
             )}
@@ -312,7 +312,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -342,7 +342,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f3f4f6',
+    backgroundColor: colors.gray.100,
   },
   mapPlaceholderText: {
     marginTop: spacing.md,
@@ -351,7 +351,7 @@ const styles = StyleSheet.create({
   },
   statsContainer: {
     flexDirection: 'row',
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     padding: spacing.md,
     borderTopWidth: 1,
     borderTopColor: colors.border,
@@ -375,7 +375,7 @@ const styles = StyleSheet.create({
   },
   controls: {
     padding: spacing.md,
-    backgroundColor: '#fff',
+    backgroundColor: colors.white,
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
@@ -386,18 +386,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   startButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 16,
     fontWeight: 'bold',
   },
   stopButton: {
-    backgroundColor: '#dc2626',
+    backgroundColor: colors.error,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     alignItems: 'center',
   },
   stopButtonText: {
-    color: '#fff',
+    color: colors.white,
     fontSize: 16,
     fontWeight: 'bold',
   },

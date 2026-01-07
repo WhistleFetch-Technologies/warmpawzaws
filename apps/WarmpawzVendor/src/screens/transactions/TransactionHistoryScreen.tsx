@@ -222,7 +222,7 @@ const styles = StyleSheet.create({
   },
   filterButtonActive: {
     borderColor: colors.primary,
-    backgroundColor: '#FFF4E6',
+    backgroundColor: colors.gradientOrange50,
   },
   filterText: {
     fontSize: typography.fontSizes.sm,
@@ -287,7 +287,7 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: typography.fontSizes.xs,
     fontWeight: typography.fontWeights.medium,
-    color: '#ffffff',
+    color: colors.white,
   },
   emptyState: {
     padding: spacing.xl,
