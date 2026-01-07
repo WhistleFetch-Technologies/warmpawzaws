@@ -26,11 +26,13 @@ esbuild.build({
   outfile: 'dist/handler.js',
   
   // External dependencies (AWS SDK, native modules)
-  // These are provided by Lambda runtime
+  // These are provided by Lambda runtime or bundled separately
   external: [
     '@aws-sdk/*',
     'aws-lambda',
     'pg-native', // Native PostgreSQL module
+    '@opensearch-project/opensearch',
+    '@opensearch-project/opensearch/aws',
   ],
   
   // Exclude old non-enhanced handlers from bundle
@@ -40,6 +42,12 @@ esbuild.build({
   format: 'cjs', // CommonJS for Lambda
   sourcemap: !isProduction,
   minify: isProduction,
+  
+  // Node paths for proper module resolution
+  nodePaths: [
+    path.resolve(__dirname, 'node_modules'),
+    path.resolve(__dirname, '../../node_modules'),
+  ],
   
   // Resolve path aliases for API contracts
   alias: {
