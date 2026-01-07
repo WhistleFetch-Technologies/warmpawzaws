@@ -34,6 +34,8 @@ const ERROR_CODES = {
   MISSING_REQUIRED_FIELD: 'MISSING_REQUIRED_FIELD',
 } as const;
 
+type ErrorCode = typeof ERROR_CODES[keyof typeof ERROR_CODES];
+
 function createSuccessResponse<T>(data: T, requestId?: string) {
   return {
     success: true as const,
@@ -94,10 +96,6 @@ export abstract class BaseHandlerEnhanced {
    * Main handler method - must be implemented by subclasses
    */
   abstract handle(context: HandlerContext): Promise<HandlerResponse>;
-}
-
-// Export alias for backward compatibility
-export { BaseHandlerEnhanced as BaseHandler };
 
   /**
    * Wrapper that provides common functionality
@@ -408,3 +406,5 @@ export { BaseHandlerEnhanced as BaseHandler };
   }
 }
 
+// Export alias for backward compatibility
+export { BaseHandlerEnhanced as BaseHandler };
