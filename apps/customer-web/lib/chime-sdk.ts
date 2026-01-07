@@ -16,7 +16,6 @@ import {
   DefaultDeviceController,
   Logger,
   LogLevel,
-  VideoTile,
 } from 'amazon-chime-sdk-js';
 
 export interface ChimeMeetingInfo {
@@ -96,22 +95,23 @@ export class ChimeSDKManager {
   private setupEventObservers(): void {
     if (!this.audioVideo) return;
 
-    // Observe video tiles
-    this.audioVideo.observeVideoTiles((tile: VideoTile) => {
-      if (tile.boundVideoElement && this.remoteVideoElement) {
-        this.remoteVideoElement.srcObject = tile.boundVideoElement.srcObject;
-      }
-    });
-
     // Observe audio/video state changes
     this.audioVideo.realtimeSubscribeToMuteAndUnmuteLocalAudio((muted: boolean) => {
       console.log(`Audio ${muted ? 'muted' : 'unmuted'}`);
     });
 
-    this.audioVideo.realtimeSubscribeToLocalVideoTileDidChange((tile: VideoTile | null) => {
-      if (tile?.boundVideoElement && this.localVideoElement) {
-        this.localVideoElement.srcObject = tile.boundVideoElement.srcObject;
-      }
+    // Observe video tiles using observer pattern
+    this.audioVideo.addObserver({
+      videoTileDidUpdate: (tileState: any) => {
+        // Handle local video tile
+        if (tileState.localTile && tileState.boundVideoElement && this.localVideoElement) {
+          this.localVideoElement.srcObject = tileState.boundVideoElement.srcObject;
+        }
+        // Handle remote video tile
+        if (!tileState.localTile && tileState.boundVideoElement && this.remoteVideoElement && !tileState.isContent) {
+          this.remoteVideoElement.srcObject = tileState.boundVideoElement.srcObject;
+        }
+      },
     });
   }
 
