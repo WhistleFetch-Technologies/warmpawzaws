@@ -93,6 +93,9 @@ let pool: Pool | null = null;
  */
 export async function getRdsPool(): Promise<Pool> {
   if (!pool) {
+    console.log('[DB] Initializing RDS connection pool...');
+    console.log('[DB] Host:', DB_HOST, 'Port:', DB_PORT, 'Database:', DB_NAME);
+    
     // Ensure credentials are fetched before creating pool
     await fetchDbCredentials();
 
@@ -100,6 +103,7 @@ export async function getRdsPool(): Promise<Pool> {
       throw new Error('Database credentials not available');
     }
 
+    console.log('[DB] Creating connection pool...');
     pool = new Pool({
       host: DB_HOST,
       port: DB_PORT,
@@ -108,14 +112,25 @@ export async function getRdsPool(): Promise<Pool> {
       password: DB_PASSWORD,
       max: 20, // Maximum number of clients in the pool
       idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 2000,
+      connectionTimeoutMillis: 10000, // Increased from 2000ms to 10000ms for VPC connections
       ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
     });
 
     // Handle pool errors
     pool.on('error', (err) => {
-      console.error('Unexpected error on idle client', err);
+      console.error('[DB] Unexpected error on idle client', err);
     });
+
+    // Test connection immediately
+    try {
+      console.log('[DB] Testing initial connection...');
+      const testResult = await pool.query('SELECT 1 as test');
+      console.log('[DB] Connection test successful:', testResult.rows[0]);
+    } catch (error) {
+      console.error('[DB] Initial connection test failed:', error);
+      // Don't throw here - let individual queries handle errors
+      // This allows the pool to be created even if initial test fails
+    }
   }
   return pool;
 }
@@ -139,8 +154,15 @@ export async function query(
   text: string,
   params?: any[]
 ): Promise<QueryResult<any>> {
-  const pool = await getRdsPool();
   const start = Date.now();
+  let pool: Pool;
+  
+  try {
+    pool = await getRdsPool();
+  } catch (error) {
+    console.error('[DB] Failed to get connection pool:', error);
+    throw new Error(`Database connection failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
   
   try {
     const result = await pool.query<any>(text, params);
@@ -151,10 +173,21 @@ export async function query(
     }
     
     return result;
-  } catch (error) {
-    console.error('[DB] Query error:', error);
-    console.error('[DB] Query:', text);
+  } catch (error: any) {
+    const duration = Date.now() - start;
+    console.error('[DB] Query error after', duration, 'ms:', error?.message || error);
+    console.error('[DB] Error code:', error?.code);
+    console.error('[DB] Query:', text.substring(0, 200));
     console.error('[DB] Params:', params);
+    
+    // Provide more helpful error messages
+    if (error?.code === 'ETIMEDOUT' || error?.code === 'ECONNREFUSED') {
+      throw new Error(`Database connection timeout or refused. Check RDS availability and security groups. Original: ${error.message}`);
+    }
+    if (error?.code === 'ENOTFOUND') {
+      throw new Error(`Database host not found: ${DB_HOST}. Check DB_HOST environment variable.`);
+    }
+    
     throw error;
   }
 }
