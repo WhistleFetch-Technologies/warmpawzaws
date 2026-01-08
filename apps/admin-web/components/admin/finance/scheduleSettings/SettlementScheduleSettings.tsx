@@ -1,0 +1,308 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardContent,
+  CardDescription,
+  Switch,
+  Label,
+  Input,
+  Button,
+} from '@warmpawz/ui';
+import {
+  Clock,
+  Calendar,
+  DollarSign,
+  Settings as SettingsIcon,
+  Play,
+  Pause,
+  CheckCircle2,
+  AlertCircle,
+  Save,
+} from 'lucide-react';
+import { apiClient } from '@/lib/api-client';
+import { toast } from 'sonner';
+
+interface SettlementSchedule {
+  enabled: boolean;
+  scheduleType: 'daily' | 'weekly' | 'biweekly' | 'monthly';
+  scheduleDay: number;
+  scheduleTime: string;
+  settlementPeriodDays: number;
+  autoProcess: boolean;
+  minPayoutAmount: number;
+  timezone: string;
+  lastProcessedAt: string | null;
+  nextProcessAt: string | null;
+}
+
+export function SettlementScheduleSettings() {
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [processing, setProcessing] = useState(false);
+  const [settings, setSettings] = useState<SettlementSchedule>({
+    enabled: true,
+    scheduleType: 'daily',
+    scheduleDay: 1,
+    scheduleTime: '09:00',
+    settlementPeriodDays: 3,
+    autoProcess: true,
+    minPayoutAmount: 100,
+    timezone: 'Asia/Kolkata',
+    lastProcessedAt: null,
+    nextProcessAt: null,
+  });
+
+  useEffect(() => {
+    loadSettings();
+  }, []);
+
+  const loadSettings = async () => {
+    setLoading(true);
+    try {
+      const data = await apiClient.get<any>('/admin/finance/settlement-schedule');
+      if ((data as any).data?.settings || (data as any).settings) {
+        setSettings((data as any).data?.settings || (data as any).settings);
+      }
+    } catch (error) {
+      console.error('Error loading settings:', error);
+      toast.error('Failed to load settlement schedule settings');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const data = await apiClient.post<any>('/admin/finance/settlement-schedule', settings);
+      setSettings((data as any).data?.settings || (data as any).settings || settings);
+      toast.success('Settlement schedule saved successfully');
+    } catch (error) {
+      toast.error('Error saving settings');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleProcessNow = async () => {
+    setProcessing(true);
+    try {
+      const data = await apiClient.post<any>('/admin/finance/process-settlements', { force: false });
+      toast.success(
+        `Processed ${(data as any).data?.processed || (data as any).processed || 0} settlements successfully`
+      );
+      loadSettings();
+    } catch (error) {
+      toast.error('Failed to process settlements');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42]"></div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Status Card */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Settlement Schedule Status</CardTitle>
+          <CardDescription>Current schedule configuration and status</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div
+                className={`w-12 h-12 rounded-lg flex items-center justify-center ${
+                  settings.enabled ? 'bg-green-100' : 'bg-gray-100'
+                }`}
+              >
+                {settings.enabled ? (
+                  <CheckCircle2 className="w-6 h-6 text-green-600" />
+                ) : (
+                  <Pause className="w-6 h-6 text-gray-600" />
+                )}
+              </div>
+              <div>
+                <p className="font-semibold text-gray-900">
+                  {settings.enabled ? 'Schedule Active' : 'Schedule Disabled'}
+                </p>
+                <p className="text-sm text-gray-500">
+                  {settings.scheduleType} at {settings.scheduleTime}
+                </p>
+              </div>
+            </div>
+            <Switch
+              checked={settings.enabled}
+              onCheckedChange={(checked) => setSettings({ ...settings, enabled: checked })}
+            />
+          </div>
+
+          {settings.lastProcessedAt && (
+            <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+              <p className="text-sm text-gray-600">
+                Last processed: {new Date(settings.lastProcessedAt).toLocaleString()}
+              </p>
+            </div>
+          )}
+
+          {settings.nextProcessAt && (
+            <div className="mt-2 p-3 bg-blue-50 rounded-lg">
+              <p className="text-sm text-blue-600">
+                Next process: {new Date(settings.nextProcessAt).toLocaleString()}
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Schedule Configuration */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Schedule Configuration</CardTitle>
+          <CardDescription>Configure automatic settlement processing schedule</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Schedule Type</Label>
+              <select
+                value={settings.scheduleType}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    scheduleType: e.target.value as any,
+                  })
+                }
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
+              >
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="biweekly">Bi-weekly</option>
+                <option value="monthly">Monthly</option>
+              </select>
+            </div>
+
+            {settings.scheduleType !== 'daily' && (
+              <div className="space-y-2">
+                <Label>Schedule Day</Label>
+                <Input
+                  type="number"
+                  min="1"
+                  max={settings.scheduleType === 'weekly' ? 7 : 31}
+                  value={settings.scheduleDay}
+                  onChange={(e) =>
+                    setSettings({
+                      ...settings,
+                      scheduleDay: parseInt(e.target.value),
+                    })
+                  }
+                />
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label>Schedule Time</Label>
+              <Input
+                type="time"
+                value={settings.scheduleTime}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    scheduleTime: e.target.value,
+                  })
+                }
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Settlement Period (days)</Label>
+              <Input
+                type="number"
+                value={settings.settlementPeriodDays}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    settlementPeriodDays: parseInt(e.target.value),
+                  })
+                }
+              />
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <Label>Auto Process</Label>
+                <p className="text-sm text-gray-500">
+                  Automatically process settlements on schedule
+                </p>
+              </div>
+              <Switch
+                checked={settings.autoProcess}
+                onCheckedChange={(checked) =>
+                  setSettings({ ...settings, autoProcess: checked })
+                }
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Minimum Payout Amount (₹)</Label>
+              <Input
+                type="number"
+                value={settings.minPayoutAmount}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    minPayoutAmount: parseFloat(e.target.value),
+                  })
+                }
+              />
+              <p className="text-sm text-gray-500">
+                Only process payouts above this amount
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Timezone</Label>
+              <select
+                value={settings.timezone}
+                onChange={(e) => setSettings({ ...settings, timezone: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
+              >
+                <option value="Asia/Kolkata">Asia/Kolkata (IST)</option>
+                <option value="UTC">UTC</option>
+              </select>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Actions */}
+      <div className="flex items-center justify-end gap-3">
+        <Button onClick={handleProcessNow} disabled={processing} variant="outline">
+          <Play className="w-4 h-4 mr-2" />
+          {processing ? 'Processing...' : 'Process Now'}
+        </Button>
+        <Button
+          onClick={handleSave}
+          disabled={saving}
+          className="bg-[#FF8C42] text-white hover:bg-[#E67A32]"
+        >
+          <Save className="w-4 h-4 mr-2" />
+          {saving ? 'Saving...' : 'Save Settings'}
+        </Button>
+      </div>
+    </div>
+  );
+}
