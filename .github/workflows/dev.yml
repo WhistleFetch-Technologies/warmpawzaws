@@ -668,13 +668,40 @@ jobs:
           echo "   2. Ensuring RDS cluster password matches..."
           echo "      (This ensures RDS cluster password = Secrets Manager password)"
           
-          # Check current cluster status first
+          # Check current cluster status first and wait if needed
           CLUSTER_STATUS=$(aws rds describe-db-clusters \
             --db-cluster-identifier warmpawz-dev-cluster \
             --query 'DBClusters[0].Status' \
             --output text 2>/dev/null || echo "unknown")
           
           echo "      Current cluster status: $CLUSTER_STATUS"
+          
+          # Wait for cluster to be available if it's in a transitional state
+          if [ "$CLUSTER_STATUS" != "available" ] && [ "$CLUSTER_STATUS" != "unknown" ]; then
+            echo "      ⏳ Cluster is in '$CLUSTER_STATUS' state - waiting for it to become 'available'..."
+            MAX_WAIT=180
+            WAITED=0
+            while [ $WAITED -lt $MAX_WAIT ]; do
+              CLUSTER_STATUS=$(aws rds describe-db-clusters \
+                --db-cluster-identifier warmpawz-dev-cluster \
+                --query 'DBClusters[0].Status' \
+                --output text 2>/dev/null || echo "unknown")
+              
+              if [ "$CLUSTER_STATUS" = "available" ]; then
+                echo "      ✅ Cluster is now available (waited ${WAITED}s)"
+                break
+              fi
+              
+              echo "      Status: $CLUSTER_STATUS (waited ${WAITED}s, max ${MAX_WAIT}s)..."
+              sleep 15
+              WAITED=$((WAITED + 15))
+            done
+            
+            if [ "$CLUSTER_STATUS" != "available" ]; then
+              echo "      ⚠️  Warning: Cluster is still in '$CLUSTER_STATUS' state after ${MAX_WAIT}s"
+              echo "      Will attempt password update anyway, but it may fail..."
+            fi
+          fi
           
           # Update RDS cluster password with error capture
           echo "      Executing: aws rds modify-db-cluster --db-cluster-identifier warmpawz-dev-cluster --master-user-password '***' --apply-immediately"
