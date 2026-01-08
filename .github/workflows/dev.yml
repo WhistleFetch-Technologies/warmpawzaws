@@ -1134,6 +1134,14 @@ jobs:
         working-directory: db
         run: |
           echo "🔍 Verifying schema deployment..."
+          
+          # Install dependencies if not already installed
+          if [ ! -d "node_modules" ]; then
+            echo "📦 Installing dependencies..."
+            npm ci
+          fi
+          
+          # Run migration status check
           npm run migrate:status
         env:
           DATABASE_URL: ${{ steps.db-creds-updated.outputs.database_url || steps.db-creds.outputs.database_url }}
